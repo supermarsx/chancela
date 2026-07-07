@@ -1,0 +1,6 @@
+# Platform icons are generated from icon-source.png via `npx tauri icon`
+# (see README.md). Regenerate locally; do not commit the derivatives.
+*
+!.gitignore
+!README.md
+!icon-source.png

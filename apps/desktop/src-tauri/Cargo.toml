@@ -1,0 +1,110 @@
+[package]
+name = "chancela-desktop"
+version = "0.1.0"
+description = "Chancela desktop shell (Tauri v2)"
+authors = ["Chancela contributors"]
+license = "MIT"
+repository = "https://github.com/chancela/chancela"
+edition = "2021"
+rust-version = "1.85"
+
+# --- Self-contained workspace (double defense) -------------------------------
+# This empty [workspace] table makes `apps/desktop/src-tauri` its OWN Cargo
+# workspace, so it is never pulled into the repo-root workspace. The root
+# Cargo.toml ALSO lists it under `exclude = ["apps/desktop/src-tauri"]`. Either
+# guard alone is sufficient; both are present on purpose so a mistake in one
+# place cannot make `cargo build/test` at the repo root start compiling the
+# (heavy) Tauri dependency tree. See spec ARC-04 and plan t1 §2 "Desktop".
+[workspace]
+
+# The library crate is what Tauri actually runs. `main.rs` is a thin launcher
+# that calls into it. `staticlib`/`cdylib` are required for the mobile targets
+# (iOS/Android) that Tauri v2 supports from this same codebase (ARC-04); `rlib`
+# keeps it usable as a normal Rust library for tests/tooling.
+[lib]
+name = "chancela_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Persists window position + size across launches (restore on start, save on
+# move/resize/close). Desktop-only; gated behind `#[cfg(desktop)]` in lib.rs.
+tauri-plugin-window-state = "2"
+# Guards against a second copy of the app running against the same per-app data
+# dir (settings.json/users.json) and the shared WebView2 user-data profile
+# (bundle identifier pt.chancela.desktop is shared by debug + release). A second
+# launch focuses the existing window and exits before it starts a server or
+# WebView. Desktop-only; registered first, behind `#[cfg(desktop)]` in lib.rs.
+tauri-plugin-single-instance = "2"
+# Opens external http(s) links in the user's DEFAULT browser instead of navigating
+# them inside the WebView (which is pointed at the embedded server, so a `_blank`
+# would be a chrome-less in-app navigation). The web client calls the matching
+# `@tauri-apps/plugin-opener` JS API via a lazy dynamic import (see
+# apps/web/src/desktop/openExternal.ts); the `opener:allow-open-url` permission is
+# granted to the embedded-server remote origin in capabilities/default.json.
+tauri-plugin-opener = "2"
+# Restarts the app from the crash screen's "Reiniciar aplicação" action. The web client
+# calls the matching `@tauri-apps/plugin-process` `relaunch()` via a lazy dynamic import
+# (see apps/web/src/desktop/relaunch.ts); the `process:allow-restart` permission is granted
+# to the embedded-server remote origin in capabilities/default.json. Registered on all
+# targets (t26 crash handling).
+tauri-plugin-process = "2"
+
+# --- embedded-server feature deps (optional) ---------------------------------
+# Path deps on the workspace crates the browser client already talks to. They
+# are `optional = true` so a `--no-default-features` build stays a plain WebView
+# shell with no server and no heavy dependency tree. `chancela-api` is a member
+# of the ROOT workspace, so its own `{ workspace = true }` fields resolve against
+# the repo-root Cargo.toml (not this self-contained desktop workspace) — cargo
+# builds it as an ordinary path dependency. chancela-api pulls in axum,
+# chancela-core and chancela-ledger transitively; NONE of the t4 signing crates
+# are in that tree.
+chancela-api = { path = "../../../crates/chancela-api", optional = true }
+# The CAE catalog library. Used only for its detached, offline-safe background
+# refresh (`spawn_background_refresh`) at startup — the catalog itself is served by
+# the embedded `chancela-api`, which already depends on this crate. A direct dep here
+# lets the shell proactively refresh the on-disk cache like `chancela-server` does.
+chancela-cae = { path = "../../../crates/chancela-cae", optional = true }
+# The durable store library. Used only for its two banner constants (`DB_FILE`,
+# `schema::SCHEMA_VERSION`) so `build_app_state` can log the store path + schema version
+# the same way `chancela-server`'s startup banner does (t30 §3.4). chancela-api already
+# depends on this crate, so this is a direct handle to two constants, not a new build.
+chancela-store = { path = "../../../crates/chancela-store", optional = true }
+# We drive the Axum app on our own multi-thread Tokio runtime. `net` is needed
+# for the loopback TcpListener; `rt-multi-thread` so API requests are served off
+# the Tauri/WebView thread.
+tokio = { version = "1", features = ["rt-multi-thread", "net"], optional = true }
+# `chancela_api::app()` hands back an `axum::Router`; `axum::serve` turns it into
+# a running server over our TcpListener. Pinned to the same "0.8" the root
+# workspace pins for chancela-api, so both unify to one axum in this workspace's
+# lockfile and the `Router` types match. Default features carry the tokio-based
+# `serve`.
+axum = { version = "0.8", optional = true }
+
+[features]
+# The desktop app is useless without the API it renders, so the embedded server
+# is ON by default: `cargo build` / `tauri build` produce a self-hosting binary.
+# Build with `--no-default-features` for a bare WebView shell that expects an
+# external server (or the dev server).
+default = ["embedded-server"]
+
+# ARC-03: start the same Axum API the browser client consumes, in-process on a
+# loopback port, and navigate the WebView to it (see src/lib.rs). `dep:` gates
+# the optional crates above so they are only compiled when the feature is on.
+embedded-server = [
+    "dep:chancela-api",
+    "dep:chancela-cae",
+    "dep:chancela-store",
+    "dep:tokio",
+    "dep:axum",
+]
+
+# Keep the release binary small; mirrors the root workspace's release profile.
+[profile.release]
+lto = "thin"
+strip = true

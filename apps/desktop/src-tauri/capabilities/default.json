@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Baseline capability for the Chancela desktop shell. Grants Tauri core defaults plus the FULL window-control permission set the custom (decorationless) title bar drives: drag, minimize, maximize/unmaximize/toggle-maximize, close, position/size, and the double-click-to-maximize the drag region performs; and `opener:open-url` so external http(s) links open in the user's DEFAULT browser (allow-open-url grants the command, allow-default-urls grants the mailto/tel/http(s) URL scope open_url enforces); and `process:allow-restart` so the crash screen's 'Reiniciar aplicação' action can relaunch the process (t26). This is our own trusted first-party UI. The `remote` clause is REQUIRED because the shell serves that UI from an in-process embedded server and navigates the main window to it at http://127.0.0.1:<ephemeral-port> (and, in `tauri dev`, http://localhost:5173) — a REMOTE origin as far as the ACL is concerned. Without it, every `plugin:window|*` and `plugin:opener|*` IPC (start_dragging, minimize, toggle-maximize, close, is-maximized, open_url) is rejected by the ACL, so the title bar cannot drag, its buttons do nothing, and external links cannot reach the browser. Both patterns are loopback-only (unreachable off-device); the granted permissions are window control, external-URL opening, and core defaults only. Additional permissions (fs, dialog, shell, etc.) MUST still be added explicitly as features are built.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-unminimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-set-focus",
+    "opener:allow-open-url",
+    "opener:allow-default-urls",
+    "process:allow-restart"
+  ]
+}

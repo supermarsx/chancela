@@ -1,0 +1,14 @@
+{
+  "name": "@chancela/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chancela desktop app shell (Tauri v2). Intentionally NOT part of the repo-root npm workspaces or Cargo workspace — install and run it from this directory.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
