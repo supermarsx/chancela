@@ -1,0 +1,25 @@
+[package]
+name = "chancela-registry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Certidão permanente (registo comercial/fundação) consultation by access code → typed RegistryExtract (spec LEG-20/21/22, DOC-30, AI-30)."
+
+[dependencies]
+scraper = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+# Enables `#[ignore]`d tests that consult the live registry over the network with a real,
+# user-supplied access code (CHANCELA_REGISTRY_TEST_CODE). Never runs in CI.
+network-tests = []
