@@ -41,7 +41,8 @@ test('user → session → entity → book → ata → seal → Arquivo chain wi
   await page.getByRole('link', { name: 'Nova entidade' }).click();
   await expect(page).toHaveURL(/\/entidades\/nova$/);
   await page.getByLabel('Denominação').fill('Encosto Estratégico, S.A.');
-  await page.getByLabel('NIPC').fill('503004642'); // fake-but-valid check digit
+  // Exact match: the "NIPC sem validação" override switch also contains "NIPC".
+  await page.getByLabel('NIPC', { exact: true }).fill('503004642'); // fake-but-valid check digit
   await page.getByLabel('Sede').fill('Lisboa');
   await page.getByLabel('Forma jurídica').selectOption('SociedadeAnonima');
   await page.getByRole('button', { name: 'Criar entidade' }).click();
@@ -68,9 +69,25 @@ test('user → session → entity → book → ata → seal → Arquivo chain wi
 
   // --- Fill the ata and save -------------------------------------------------
   await page.getByLabel('Data da reunião').fill('2026-03-30');
+  await page.getByLabel('Hora da reunião').fill('15:00');
   await page.getByLabel('Local').fill('Sede social');
   await page.getByLabel('Referência de presenças').fill('Lista de presenças anexa');
+  // The mesa presidente is the seal-unblocker for a commercial company (csc-art63/v2):
+  // without it the compliance panel keeps a blocking «CSC-63/mesa-presidente» error.
+  await page.getByLabel('Presidente da mesa').fill('Amélia Marques');
+  // A secretary clears the advisory «CSC-63/mesa-secretarios» so the panel reads «Conforme».
+  await page.getByRole('button', { name: 'Adicionar secretário' }).click();
+  await page.getByLabel('Nome do secretário').fill('Rui Secretário');
   await page.getByLabel('Texto').fill('Aprovadas por unanimidade as contas do exercício de 2025.');
+
+  // Minimal structured content: one agenda point and one per-item deliberation with a
+  // unanimous vote, exercising the new mesa/agenda/deliberação editors.
+  await page.getByRole('button', { name: 'Adicionar ponto' }).click();
+  await page.getByLabel('Ponto da ordem de trabalhos').fill('Aprovação de contas');
+  await page.getByRole('button', { name: 'Adicionar deliberação' }).click();
+  await page.getByLabel('Texto da deliberação').fill('Aprovadas as contas do exercício de 2025.');
+  await page.getByLabel('Resultado da votação').selectOption('Unanimous');
+
   await page.getByRole('button', { name: 'Guardar' }).click();
   await expect(page.getByRole('button', { name: 'A guardar…' })).toHaveCount(0);
 

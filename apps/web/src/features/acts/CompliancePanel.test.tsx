@@ -94,7 +94,9 @@ describe('AtaEditorPage seal gating', () => {
 
     const sealButton = await screen.findByRole<HTMLButtonElement>('button', { name: /selar ata/i });
     expect(sealButton.disabled).toBe(true);
-    expect(screen.getByText(/CSC art\. 63/i)).toBeTruthy();
+    // The blocking issue message is rendered (scoped tight: several field hints also cite
+    // "CSC art. 63", so match the issue's own wording).
+    expect(screen.getByText(/tem de registar as deliberações/i)).toBeTruthy();
   });
 
   it('enables the seal action when compliance is clean and the act is Signing', async () => {

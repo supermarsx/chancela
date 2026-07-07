@@ -6,7 +6,7 @@
  * advanced, so it stays in step with edits.
  */
 import type { ComplianceReport } from '../../api/types';
-import { severityLabels } from '../../api/labels';
+import { entityFamilyLabels, severityLabels } from '../../api/labels';
 import { useT } from '../../i18n';
 import { Badge, EmptyState, InlineWarning } from '../../ui';
 
@@ -18,6 +18,12 @@ export function CompliancePanel({ report }: { report: ComplianceReport }) {
     <div className="stack--tight">
       <div className="row-wrap">
         <span className="card__label">{t('compliance.rules', { rulePack: report.rule_pack })}</span>
+        <Badge tone="neutral">
+          {t('compliance.family', { family: entityFamilyLabels[report.family] })}
+        </Badge>
+        {report.statute_overlay ? (
+          <Badge tone="accent">{t('compliance.statuteOverlay')}</Badge>
+        ) : null}
         {report.errors > 0 ? (
           <Badge tone="error">
             {report.errors === 1

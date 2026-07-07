@@ -20,6 +20,8 @@ import {
 } from '../../ui';
 import { BooksTable } from '../books/BooksTable';
 import { RegistryProvenance } from '../registry/RegistryProvenance';
+import { EntityStatuteEditor } from './EntityStatuteEditor';
+import { NipcBadge } from './NipcBadge';
 import { PrintButton } from './PrintButton';
 import { EntityPrintDocument } from './EntityPrintDocument';
 
@@ -64,7 +66,10 @@ export function EntityDetailPage() {
           <div>
             <dt>{t('entities.field.nipc')}</dt>
             <dd>
-              <code className="mono">{ent.nipc}</code>
+              <span className="nipc-cell">
+                <code className="mono">{ent.nipc}</code>
+                {!ent.nipc_validated ? <NipcBadge /> : null}
+              </span>
             </dd>
           </div>
           <div>
@@ -81,6 +86,8 @@ export function EntityDetailPage() {
           </div>
         </dl>
       </Card>
+
+      <EntityStatuteEditor entity={ent} />
 
       <section className="stack">
         <div className="section-head">

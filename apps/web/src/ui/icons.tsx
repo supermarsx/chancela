@@ -217,6 +217,24 @@ export function ArrowRight(props: IconProps) {
   );
 }
 
+/** move up / reorder — an up chevron. */
+export function ArrowUp(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 19V6m0 0-5 5m5-5 5 5" />
+    </Icon>
+  );
+}
+
+/** move down / reorder — a down chevron. */
+export function ArrowDown(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v13m0 0 5-5m-5 5-5-5" />
+    </Icon>
+  );
+}
+
 /** users / people. */
 export function Users(props: IconProps) {
   return (
