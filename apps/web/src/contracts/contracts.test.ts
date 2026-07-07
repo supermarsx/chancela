@@ -35,6 +35,8 @@ import {
   type AppearanceSettings,
   type BookView,
   type CaeSourceEntry,
+  type CaeUpdates,
+  type CaeVersion,
   type CatalogSettings,
   type CaeCatalogView,
   type CaeEntryView,
@@ -666,6 +668,27 @@ describe('contract fixtures parse through the real client', () => {
     }
   });
 
+  it('cae.updates.json → CaeUpdates (GET /v1/cae/updates)', async () => {
+    stubFetch(fixture('cae.updates.json'));
+    const updates: CaeUpdates = await api.getCaeUpdates();
+    assertExactKeys<CaeUpdates>(
+      updates,
+      { rev3: true, rev4: true, checked_at: true },
+      'CaeUpdates',
+    );
+    assertTimestamp(updates.checked_at, 'CaeUpdates.checked_at');
+    for (const rev of ['rev3', 'rev4'] as const) {
+      const version = assertExactKeys<CaeVersion>(
+        updates[rev],
+        { version: true, designation: true },
+        `CaeUpdates.${rev}`,
+      );
+      // SMI version codes are `V#####` (t33).
+      expect(version.version, `CaeUpdates.${rev}.version`).toMatch(/^V\d+$/);
+      expect(version.designation.length).toBeGreaterThan(0);
+    }
+  });
+
   it('user.json → UserView (POST/GET /v1/users)', async () => {
     stubFetch(fixture('user.json'));
     const user: UserView = await api.getUser('6d5e4f00-0000-4000-8000-000000000005');
@@ -722,7 +745,7 @@ describe('contract fixtures parse through the real client', () => {
 describe('contract fixtures — cross-cutting guarantees', () => {
   it('every fixture is real, non-empty JSON (the wire bytes a client must parse)', () => {
     const names = Object.keys(rawFixtures).map((p) => p.split('/').pop());
-    // The 11 canonical fixtures the README inventories.
+    // The canonical fixtures the README inventories.
     for (const expected of [
       'entity.json',
       'book.json',
@@ -733,6 +756,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'registry.extract.json',
       'cae.entry.json',
       'cae.catalog.json',
+      'cae.updates.json',
       'user.json',
       'session.json',
     ]) {

@@ -22,6 +22,7 @@ import type {
   SealActBody,
   Settings,
   UpdateActBody,
+  UpdateEntityBody,
   UpdateUserBody,
   ActState,
 } from './types';
@@ -70,6 +71,23 @@ export function useCreateEntity() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.entities });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+/**
+ * Set/clear an entity's statute overlay (`PATCH /v1/entities/{id}`, ENT-03/t31). On
+ * success the entity refetches (so the profile/statute panels reflect the change) and
+ * the ledger refetches (the PATCH appends an `entity.statute_updated` event).
+ */
+export function useUpdateEntity(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateEntityBody) => api.updateEntity(id, body),
+    onSuccess: (entity) => {
+      qc.setQueryData(keys.entity(id), entity);
+      void qc.invalidateQueries({ queryKey: keys.entity(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }

@@ -607,16 +607,17 @@ export interface CaeRefreshResult {
   failures: CaeSourceFailure[];
 }
 
-/** One current official CAE version as INE SMI publishes it (t33). */
-export interface CaeVersionView {
+/** One current official CAE version as INE SMI publishes it (t33-e2). */
+export interface CaeVersion {
   version: string;
   designation: string;
 }
 
-/** `GET /v1/cae/updates` — the INE SMI update-availability signal (t33). */
-export interface CaeUpdatesView {
-  rev3: CaeVersionView;
-  rev4: CaeVersionView;
+/** `GET /v1/cae/updates` — the INE SMI update-availability signal (t33-e2). RFC-3339
+ *  `checked_at`; `502 {error}` when SMI is unreachable/unparseable. */
+export interface CaeUpdates {
+  rev3: CaeVersion;
+  rev4: CaeVersion;
   checked_at: string;
 }
 

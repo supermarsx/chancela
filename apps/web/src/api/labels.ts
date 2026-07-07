@@ -27,6 +27,7 @@ import type {
   Severity,
   SignatoryCapacity,
   SignatureFamily,
+  SignaturePolicyHint,
   ThemeMode,
 } from './types';
 
@@ -58,6 +59,7 @@ export const signatoryCapacityLabels = enumLabels<SignatoryCapacity>('signatoryC
 export const severityLabels = enumLabels<Severity>('severity');
 export const localeLabels = enumLabels<Locale>('locale');
 export const signatureFamilyLabels = enumLabels<SignatureFamily>('signatureFamily');
+export const signaturePolicyLabels = enumLabels<SignaturePolicyHint>('signaturePolicy');
 export const themeModeLabels = enumLabels<ThemeMode>('themeMode');
 export const caeRoleLabels = enumLabels<CaeRole>('caeRole');
 export const caeLevelLabels = enumLabels<CaeLevel>('caeLevel');

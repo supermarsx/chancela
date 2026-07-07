@@ -16,6 +16,7 @@ import type {
   CaeNode,
   CaeRefreshResult,
   CaeRevision,
+  CaeUpdates,
   CloseBookBody,
   ComplianceIssue,
   ComplianceReport,
@@ -36,6 +37,7 @@ import type {
   RegistryLookupBody,
   SealActBody,
   SealResult,
+  UpdateEntityBody,
   SessionResult,
   SessionView,
   Settings,
@@ -181,6 +183,9 @@ export const api = {
   listEntities: () => get<Entity[]>('/v1/entities'),
   getEntity: (id: string) => get<Entity>(`/v1/entities/${id}`),
   createEntity: (body: CreateEntityBody) => post<Entity>('/v1/entities', body),
+  // Statute overlay (ENT-03, t31). Omit `statute` to leave it untouched, `null` to
+  // clear it, or an object to set it; appends an `entity.statute_updated` ledger event.
+  updateEntity: (id: string, body: UpdateEntityBody) => patch<Entity>(`/v1/entities/${id}`, body),
 
   // Books (§2.4)
   listBooks: (entityId?: string) => get<BookView[]>(`/v1/books${query({ entity_id: entityId })}`),
@@ -215,6 +220,9 @@ export const api = {
     get<CaeNode[]>(`/v1/cae${query({ search, ...params })}`),
   getCaeCatalog: () => get<CaeCatalogView>('/v1/cae'),
   refreshCae: () => post<CaeRefreshResult>('/v1/cae/refresh'),
+  // The INE SMI update-availability signal (t33-e2). Read-only; 502 when SMI is
+  // unreachable. The "Verificar novas revisões" UI that consumes it is t23-e3's.
+  getCaeUpdates: () => get<CaeUpdates>('/v1/cae/updates'),
 
   // Law archive (t27, FROZEN §law-v1) — the local "mini law archive". `GET /v1/law` is a
   // bare `[LawEntryView]`; the tolerant `{ entries }` alternative is kept only so the hook's

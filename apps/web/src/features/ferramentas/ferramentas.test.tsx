@@ -172,6 +172,45 @@ describe('Ferramentas — CAE catalog panel', () => {
   });
 });
 
+describe('Ferramentas — sub-tab animation + indicator', () => {
+  // A stub that also answers the Legislação surface's `/v1/law` probe cleanly.
+  function toolsFetch(): typeof fetch {
+    const base = ferramentasFetch();
+    return ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/v1/law')) return Promise.resolve(jsonResponse([]));
+      return base(input, init);
+    }) as typeof fetch;
+  }
+
+  it('re-keys the content on tool switch but not on an unrelated (?q) param change', async () => {
+    vi.stubGlobal('fetch', toolsFetch());
+    const { container } = renderWithProviders(<FerramentasPage />, ['/ferramentas']);
+    const animKey = () => container.querySelector('[data-anim-key]')?.getAttribute('data-anim-key');
+
+    // Default surface is CAE; its indicator + active pill track the CAE sub-tab.
+    expect(await screen.findByText('Incorporado')).toBeTruthy();
+    expect(animKey()).toBe('cae');
+    expect(container.querySelector('.ferramentas-subnav__indicator')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Catálogo CAE' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+
+    // Switching tool re-keys the content region (so it replays the enter animation).
+    fireEvent.click(screen.getByRole('button', { name: 'Legislação' }));
+    expect(animKey()).toBe('legislacao');
+    expect(screen.getByRole('button', { name: 'Legislação' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+
+    // Legislação's own ?q search changes the URL but NOT the section → no re-key/replay.
+    fireEvent.change(screen.getByLabelText('Procurar na legislação'), {
+      target: { value: 'condominio' },
+    });
+    expect(animKey()).toBe('legislacao');
+  });
+});
+
 describe('Ferramentas — CAE explorer', () => {
   it('searches, and selecting a hit resolves its detail with a hierarchy breadcrumb', async () => {
     vi.stubGlobal('fetch', ferramentasFetch());

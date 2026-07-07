@@ -13,8 +13,9 @@
  * unchanged. The CAE explorer's own `?code=`/`?rev=` params are independent and preserved
  * across switches. The `SECTIONS` list is the single extension point for future tools.
  */
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useT } from '../../i18n';
+import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { PageHeader } from '../../ui';
 import { CaeExplorer } from '../cae/CaeExplorer';
@@ -30,8 +31,53 @@ const SECTIONS: { id: FerramentasSection; label: MessageKey }[] = [
 
 export function FerramentasPage() {
   const t = useT();
+  const locale = useActiveLocale();
   const [params, setParams] = useSearchParams();
   const section: FerramentasSection = params.get('tool') === 'legislacao' ? 'legislacao' : 'cae';
+
+  // A gilt indicator that glides to the active sub-tab (consistent with the top bar's
+  // active-tab indicator). Measured from the active button so it works with the two
+  // labels' differing widths and re-measures on locale change / resize; the CSS
+  // transition does the sliding and collapses under prefers-reduced-motion.
+  const navRef = useRef<HTMLDivElement>(null);
+  const btnRefs = useRef<Record<FerramentasSection, HTMLButtonElement | null>>({
+    cae: null,
+    legislacao: null,
+  });
+  const [indicator, setIndicator] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const btn = btnRefs.current[section];
+      if (!btn) return;
+      const next = {
+        left: btn.offsetLeft,
+        top: btn.offsetTop,
+        width: btn.offsetWidth,
+        height: btn.offsetHeight,
+      };
+      // Only update on a real geometry change — returning the same object ref keeps this
+      // from looping (the effect itself re-runs on section/locale/resize, not on the state
+      // it sets). `locale` is a stable tag; re-measure when the label widths change with it.
+      setIndicator((prev) =>
+        prev &&
+        prev.left === next.left &&
+        prev.top === next.top &&
+        prev.width === next.width &&
+        prev.height === next.height
+          ? prev
+          : next,
+      );
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [section, locale]);
 
   function selectSection(next: FerramentasSection) {
     setParams(
@@ -50,10 +96,32 @@ export function FerramentasPage() {
   return (
     <div className="stack">
       <PageHeader crumbs={t('tools.crumbs')} title={t('tools.title')} lede={t('tools.lede')}>
-        <div className="ferramentas-subnav" role="group" aria-label={t('tools.subnav.aria')}>
+        <div
+          className="ferramentas-subnav"
+          role="group"
+          aria-label={t('tools.subnav.aria')}
+          ref={navRef}
+        >
+          <span
+            className="ferramentas-subnav__indicator"
+            aria-hidden="true"
+            style={
+              indicator
+                ? {
+                    transform: `translateX(${indicator.left}px)`,
+                    top: `${indicator.top}px`,
+                    width: `${indicator.width}px`,
+                    height: `${indicator.height}px`,
+                  }
+                : { opacity: 0 }
+            }
+          />
           {SECTIONS.map((s) => (
             <button
               key={s.id}
+              ref={(el) => {
+                btnRefs.current[s.id] = el;
+              }}
               type="button"
               className={
                 s.id === section ? 'ferramentas-subnav__btn is-active' : 'ferramentas-subnav__btn'
@@ -67,14 +135,20 @@ export function FerramentasPage() {
         </div>
       </PageHeader>
 
-      {section === 'legislacao' ? (
-        <LegislacaoPage />
-      ) : (
-        <>
-          <CaeExplorer />
-          <CaeCatalogPanel />
-        </>
-      )}
+      {/* The content region replays the route-enter animation when the sub-tab changes.
+          Keying on `section` (the `tool` param) means switching tool re-animates, while
+          the CAE explorer's own `?code=`/`?rev=` and Legislação's `?q=` param changes do
+          NOT re-key (no distracting replay). Reduced-motion collapses the animation. */}
+      <div className="route-transition" key={section} data-anim-key={section}>
+        {section === 'legislacao' ? (
+          <LegislacaoPage />
+        ) : (
+          <>
+            <CaeExplorer />
+            <CaeCatalogPanel />
+          </>
+        )}
+      </div>
     </div>
   );
 }

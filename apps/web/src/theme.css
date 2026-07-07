@@ -279,6 +279,14 @@ a:focus-visible {
   gap: 0.75rem;
 }
 
+/* NIPC + its "não validado" flag, kept together on one line (list cell / detail dd). */
+.nipc-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .muted {
   color: var(--text-muted);
   font-size: 0.92rem;
@@ -721,6 +729,54 @@ a.btn--icon {
 
 .preview p {
   margin: 0 0 0.75rem;
+}
+
+/* Agenda (ordem de trabalhos) — the number chip leading each editable row. */
+.agenda__num {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  min-width: 1.4rem;
+  text-align: right;
+}
+
+/* Structured deliberation item — a bordered sub-card grouping text + vote + statements. */
+.delib-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+
+.delib-item + .delib-item {
+  margin-top: 0.75rem;
+}
+
+.delib-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Vote-result editor: the mode select and the (optional) count fields stack tightly. */
+.vote {
+  margin: 0.5rem 0;
+}
+
+.vote > * + * {
+  margin-top: 0.5rem;
+}
+
+.vote .field {
+  flex: 1 1 5rem;
+}
+
+/* A narrow number field for a condómino's permilage (‰), kept from growing to fill. */
+.input--permilage {
+  width: auto;
+  flex: 0 1 5.5rem;
+  min-width: 4.5rem;
 }
 
 /* Lifecycle stepper. */
@@ -1267,6 +1323,12 @@ a,
   align-items: start;
 }
 
+/* One settings section shown at a time (sub-tabbed) — cap its width so a lone card doesn't
+   stretch across the whole page. */
+.settings-section {
+  max-width: 46rem;
+}
+
 .settings-toggle {
   display: inline-flex;
   align-items: center;
@@ -1451,6 +1513,168 @@ a,
   margin: 0.4rem 0 0;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+/* Structured inscription detail (t21) — the parsed payload cards rendered above the
+   raw text, plus the validity badge, anotações and import-warning surfaces. */
+.registry-detail-wrap {
+  margin-top: 0.35rem;
+}
+
+.registry-detail {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0.6rem 0 0;
+}
+
+.registry-detail__block {
+  margin: 0;
+}
+
+.registry-detail__h {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+  margin: 0 0 0.35rem;
+}
+
+.registry-detail__prose {
+  margin: 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* The raw certidão body, always reachable one toggle away from the structured card. */
+.registry-detail__raw {
+  margin-top: 0.5rem;
+}
+
+.registry-detail__raw > summary {
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-strong, var(--accent));
+}
+
+.registry-detail__raw[open] > summary {
+  margin-bottom: 0.3rem;
+}
+
+/* A printed address: free lines, then postal, then the admin breakdown. */
+.registry-address {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.registry-address__admin {
+  font-size: 0.82rem;
+}
+
+/* Órgãos designados → members, each with an identity pair grid. */
+.registry-organs,
+.registry-members,
+.registry-signatures {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.registry-organ + .registry-organ {
+  margin-top: 0.75rem;
+}
+
+.registry-organ__name {
+  font-family: var(--font-display);
+  font-size: 0.98rem;
+  margin: 0 0 0.4rem;
+}
+
+.registry-member + .registry-member {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.registry-member__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.registry-member__name {
+  font-family: var(--font-display);
+  font-size: 0.96rem;
+}
+
+.registry-member__meta {
+  margin-top: 0.35rem;
+}
+
+.registry-signature {
+  font-size: 0.82rem;
+}
+
+/* Anotações — the publication annotations on the matrícula. */
+.registry-anotacoes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.registry-anotacao + .registry-anotacao {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.registry-anotacao__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.registry-anotacao__num {
+  font-weight: 600;
+  color: var(--accent-strong, var(--accent));
+}
+
+.registry-anotacao__date {
+  margin-left: auto;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.registry-anotacao__text {
+  margin: 0.35rem 0 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.registry-anotacao__pub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+}
+
+/* Validity badge in the Proveniência card header; the expired variant reads loudest. */
+.registry-validity--expired .badge {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.registry-warnings {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
 }
 
 /* ==========================================================================
@@ -2382,6 +2606,71 @@ a.btn--primary {
     white-space: pre-wrap;
   }
 
+  /* Structured constitution inside an inscrição (t21): pair grid + sócios/quotas table. */
+  .print-constitution {
+    margin: 3pt 0 2pt;
+  }
+
+  .print-h3 {
+    margin: 6pt 0 3pt;
+    font-size: 8.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #444;
+  }
+
+  .print-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+
+  .print-table th,
+  .print-table td {
+    text-align: left;
+    vertical-align: top;
+    padding: 2pt 6pt 2pt 0;
+    border-bottom: 0.5pt solid #ddd;
+  }
+
+  .print-table th {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #666;
+  }
+
+  /* Anotações — publication annotations on the matrícula. */
+  .print-anotacoes {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .print-anotacao {
+    margin: 0 0 5pt;
+    page-break-inside: avoid;
+  }
+
+  .print-anotacao__head {
+    display: flex;
+    align-items: baseline;
+    gap: 8pt;
+  }
+
+  .print-anotacao__num {
+    font-weight: 700;
+    color: #7a5c12;
+  }
+
+  .print-anotacao__date {
+    margin-left: auto;
+    font-size: 9pt;
+    color: #555;
+  }
+
   /* Provenance footer + printed-on date. */
   .print-provenance {
     margin-top: 16pt;
@@ -2405,11 +2694,17 @@ a.btn--primary {
 }
 
 /* ==========================================================================
- * Ferramentas sub-navigation (t24) — a segmented control switching between the
- * "Catálogo CAE" and "Legislação" surfaces. Shares the pill idiom of the CAE
- * revision switch, sized for the two longer section labels.
+ * Segmented sub-navigation — a pill group with a gliding gilt indicator that slides
+ * under the active button. Landed for Ferramentas (Catálogo CAE | Legislação, t24) with
+ * its own inline measurement; the SAME styling is aliased onto the generic `.subnav*`
+ * classes so the shared `<SubNav>` component (used by Configurações) reads identically
+ * without re-churning the tested Ferramentas implementation. Shares the pill idiom of the
+ * CAE revision switch. On narrow viewports the generic variant scrolls rather than wraps
+ * so the indicator's offset math stays valid.
  * ========================================================================== */
-.ferramentas-subnav {
+.ferramentas-subnav,
+.subnav {
+  position: relative;
   display: inline-flex;
   align-self: flex-start;
   margin-top: 1.1rem;
@@ -2419,32 +2714,72 @@ a.btn--primary {
   gap: 0.15rem;
 }
 
-.ferramentas-subnav__btn {
+/* The generic sub-nav can hold more (and longer) sections than Ferramentas' two, so it
+   scrolls horizontally instead of wrapping — wrapping would break the indicator's
+   single-row offset math. */
+.subnav {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.subnav::-webkit-scrollbar {
+  display: none;
+}
+
+/* The gliding gilt pill behind the active sub-tab — its geometry is set inline from the
+   measured active button (see FerramentasPage / SubNav), and it slides on the same easing
+   as the top bar's active-tab indicator. It sits behind the button labels (z-index 0 vs 1). */
+.ferramentas-subnav__indicator,
+.subnav__indicator {
+  position: absolute;
+  left: 0;
+  top: 0.15rem;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  transition:
+    transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: transform, width;
+}
+
+.ferramentas-subnav__btn,
+.subnav__btn {
+  position: relative;
+  z-index: 1;
   font-family: var(--font-sans);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
+  white-space: nowrap;
   padding: 0.4rem 1rem;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
+  transition: color 0.15s ease;
 }
 
-.ferramentas-subnav__btn.is-active {
-  background: var(--accent-strong);
+/* The active pill is the sliding indicator; the button itself stays transparent and only
+   flips its ink to read on the gilt. */
+.ferramentas-subnav__btn.is-active,
+.subnav__btn.is-active {
+  background: transparent;
   color: var(--on-accent);
 }
 
-.ferramentas-subnav__btn:not(.is-active):hover {
+.ferramentas-subnav__btn:not(.is-active):hover,
+.subnav__btn:not(.is-active):hover {
   color: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ferramentas-subnav__btn {
+  .ferramentas-subnav__btn,
+  .ferramentas-subnav__indicator,
+  .subnav__btn,
+  .subnav__indicator {
     transition: none;
   }
 }
@@ -2679,30 +3014,36 @@ a.btn--primary {
   background: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
-/* --- Uniform page header (item e) ---------------------------------------------- */
+/* --- Uniform page header (item e) ----------------------------------------------
+ * A slim, compact header: the page title mostly repeats the active tab, so it is kept
+ * small (well under the in-page `.section-title` scale) with tight margins and the actions
+ * inline on its right. Applied everywhere PageHeader is used. */
 .page-header {
   display: flex;
   flex-direction: column;
 }
 
 .page-header__crumbs {
-  margin: 0 0 0.45rem;
+  margin: 0 0 0.25rem;
+  font-size: 0.72rem;
 }
 
 .page-header__bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.5rem 1.25rem;
+  gap: 0.35rem 1rem;
 }
 
-/* The title shares the editorial `.section-title` type scale but drops its stray outer
-   margins so every page starts with the same rhythm under the tab bar. */
+/* The title keeps the display face for character but drops the `.section-title` size,
+   underline and stray margins — a slim row rather than a heavy heading. */
 .page-header__title {
   margin: 0;
   border-bottom: none;
   padding-bottom: 0;
+  font-size: 1.12rem;
+  letter-spacing: 0.01em;
 }
 
 .page-header__actions {
@@ -2713,7 +3054,8 @@ a.btn--primary {
 }
 
 .page-header__lede {
-  margin: 0.55rem 0 0;
+  margin: 0.3rem 0 0;
+  font-size: 0.92rem;
 }
 
 /* --- Skeleton loaders (item c) -------------------------------------------------- */
@@ -2864,13 +3206,24 @@ input[type='radio']:disabled {
 
 /* --- Toggle switch (item b) ----------------------------------------------------- */
 .toggle {
-  display: inline-flex;
+  /* Block-level flex (was inline-flex): a toggle occupies its own row, so two stacked
+     toggles never flow onto the same line and crowd/overlap. `fit-content` keeps the
+     clickable label area to its content rather than stretching the full row width. */
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.65rem;
   cursor: pointer;
   font-family: var(--font-sans);
   font-size: 0.82rem;
   white-space: normal;
+}
+
+/* Default block spacing between stacked toggles, independent of the parent container
+   (so no call site needs a bespoke margin). */
+.toggle + .toggle {
+  margin-top: 1rem;
 }
 
 .toggle--disabled {
@@ -2933,7 +3286,7 @@ input[type='radio']:disabled {
 }
 
 .toggle__label {
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 /* ============================================================================
