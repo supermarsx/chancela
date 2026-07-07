@@ -1,0 +1,28 @@
+{
+  "id": "4b3c2d00-0000-4000-8000-000000000003",
+  "book_id": "3a2b1c00-0000-4000-8000-000000000002",
+  "title": "Ata da Assembleia Geral Anual",
+  "channel": "Physical",
+  "meeting_date": "2026-03-30",
+  "meeting_time": "10:00",
+  "place": "Sede social",
+  "mesa": {
+    "presidente": "Ana Presidente",
+    "secretarios": ["Rui Secretário"]
+  },
+  "agenda": [{ "number": 1, "text": "Aprovação das contas do exercício" }],
+  "attendance_reference": "Lista de presenças anexa",
+  "members_present": null,
+  "members_represented": null,
+  "referenced_documents": [],
+  "deliberations": "Aprovadas por unanimidade as contas do exercício de 2025.",
+  "deliberation_items": [],
+  "telematic_evidence": null,
+  "attachments": [],
+  "signatories": [],
+  "state": "Sealed",
+  "ata_number": 1,
+  "payload_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "seal_event_seq": 5,
+  "retifies": null
+}

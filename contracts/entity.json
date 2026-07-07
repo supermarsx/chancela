@@ -1,0 +1,24 @@
+{
+  "id": "2f1c8e40-0000-4000-8000-000000000001",
+  "name": "Encosto Estratégico, S.A.",
+  "nipc": "503004642",
+  "nipc_validated": true,
+  "seat": "Lisboa",
+  "family": "CommercialCompany",
+  "kind": "SociedadeAnonima",
+  "profile": {
+    "family": "CommercialCompany",
+    "rule_pack_id": "csc-art63/v2",
+    "allowed_channels": ["Physical", "Hybrid", "Telematic", "WrittenResolution"],
+    "signature_policy": "QualifiedPreferred",
+    "template_family": "csc-commercial",
+    "calendar_presets": [
+      {
+        "id": "csc-art376-annual",
+        "label": "Assembleia geral anual (CSC art. 376.º)",
+        "months_after_fiscal_year_end": 3
+      }
+    ]
+  },
+  "statute": null
+}

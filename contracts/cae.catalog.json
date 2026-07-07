@@ -1,0 +1,11 @@
+{
+  "origin": "Embedded",
+  "schema_version": 1,
+  "generated_at": "2026-07-07T00:00:00Z",
+  "source_note": "Gerado a partir de DL 381/2007 (CAE-Rev.3) e DL 9/2025 (CAE-Rev.4), Diário da República 1.ª série.",
+  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "counts": {
+    "rev3": { "seccao": 21, "divisao": 88, "grupo": 272, "classe": 616, "subclasse": 850 },
+    "rev4": { "seccao": 22, "divisao": 87, "grupo": 287, "classe": 651, "subclasse": 915 }
+  }
+}

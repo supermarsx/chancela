@@ -1,0 +1,15 @@
+[
+  {
+    "id": "5c4d3e00-0000-4000-8000-000000000004",
+    "seq": 1,
+    "actor": "amelia.marques",
+    "justification": "registry import",
+    "timestamp": "2026-07-07T10:15:30Z",
+    "scope": "2f1c8e40-0000-4000-8000-000000000001",
+    "kind": "entity.created",
+    "payload_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "attestation": null
+  }
+]

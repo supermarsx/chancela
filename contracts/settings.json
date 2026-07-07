@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "organization": {
+    "name": "Encosto Estratégico, S.A.",
+    "default_actor": "amelia.marques"
+  },
+  "documents": {
+    "locale": "pt-PT",
+    "numbering_scheme_default": "Sequential"
+  },
+  "catalog": {
+    "cae_update_url": null,
+    "cae_sources": [
+      {
+        "url": "https://espelho.example.pt/cae.json",
+        "format": "Auto",
+        "digest": null
+      }
+    ],
+    "cae_official_source": false
+  },
+  "signing": {
+    "preferred_family": "CartaoCidadao",
+    "tsa_url": "http://ts.cartaodecidadao.pt/tsa/server",
+    "tsl_url": "https://www.gns.gov.pt/media/TSLPT.xml",
+    "require_qualified_for_seal": false
+  },
+  "appearance": {
+    "theme": "system",
+    "leather_texture": true,
+    "texture_intensity": 60,
+    "button_texture": true
+  },
+  "onboarding": {
+    "completed": false,
+    "completed_at": null
+  }
+}
