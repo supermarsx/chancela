@@ -60,6 +60,7 @@ export function RegistryImportPanel({ entityId }: { entityId: string }) {
   const conflicts = report?.conflicts ?? [];
   const applied = report?.applied ?? [];
   const cae = report?.extract.cae ?? [];
+  const warnings = report?.warnings ?? [];
 
   return (
     <Card title={t('registry.importCard')}>
@@ -91,6 +92,16 @@ export function RegistryImportPanel({ entityId }: { entityId: string }) {
 
       {report ? (
         <div className="stack--tight registry-report">
+          {warnings.length > 0 ? (
+            <InlineWarning tone="warn" title={t('registry.warnings.title')}>
+              <ul className="registry-warnings">
+                {warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </InlineWarning>
+          ) : null}
+
           {applied.length > 0 ? (
             <div className="registry-applied">
               <p className="field__label">{t('registry.appliedFields')}</p>

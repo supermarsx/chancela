@@ -5,7 +5,14 @@ import { renderWithProviders } from '../../test/utils';
 import { ImportFromRegistryForm } from './ImportFromRegistryForm';
 import { RegistryImportPanel } from './RegistryImportPanel';
 import { RegistryProvenance } from './RegistryProvenance';
-import type { Entity, RegistryExtractView, RegistryImportReport } from '../../api/types';
+import { EntityPrintDocument } from '../entities/EntityPrintDocument';
+import type {
+  Entity,
+  InscriptionDetailView,
+  RegistryEventView,
+  RegistryExtractView,
+  RegistryImportReport,
+} from '../../api/types';
 
 // The full código de acesso used across these tests. It must NEVER appear in any
 // rendered output — provenance is masked, and inputs are cleared after submit.
@@ -330,5 +337,279 @@ describe('RegistryProvenance', () => {
     // Long free-text fields (objeto, sede, firma, CAE) span both columns.
     const wide = pairs?.querySelectorAll('.deflist__wide');
     expect(wide && wide.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// --- Structured inscription layer (t21) -----------------------------------------
+
+/** A full Constitution `detail` mirroring the frozen §2.7-v2 wire (fictional values). */
+const CONSTITUTION_DETAIL: InscriptionDetailView = {
+  apresentacao: {
+    number: '1',
+    date: '2020-01-15',
+    time: '00:55:25 UTC',
+    act_kinds: ['CONSTITUIÇÃO DE SOCIEDADE', 'DESIGNAÇÃO DE MEMBRO(S) DE ÓRGÃO(S) SOCIAL(AIS)'],
+  },
+  payload: {
+    type: 'Constitution',
+    firma: 'Encosto Estratégico, Lda.',
+    nipc: '503004642',
+    natureza_juridica: 'Sociedade por quotas',
+    sede: {
+      lines: ['Rua do Exemplo, n.º 11, Lugarejo'],
+      distrito: 'Porto',
+      concelho: 'Porto',
+      freguesia: 'Cedofeita',
+      postal_code: '4000-100',
+      locality: 'PORTO',
+    },
+    objecto: 'Consultoria para os negócios e a gestão.',
+    capital: { amount_text: '100,00', currency: 'Euros' },
+    capital_realization_note: 'A entregar nos cofres da sociedade.',
+    fiscal_year_end: '31 Dezembro',
+    socios: [
+      {
+        amount: { amount_text: '99,00', currency: 'Euros' },
+        titular: {
+          name: 'Rui Tavares',
+          nif: '999999990',
+          estado_civil: 'Casado',
+          nacionalidade: 'Portuguesa',
+          residencia: {
+            lines: ['Rua A, n.º 1'],
+            distrito: null,
+            concelho: null,
+            freguesia: null,
+            postal_code: null,
+            locality: null,
+          },
+        },
+      },
+      {
+        amount: { amount_text: '1,00', currency: 'Euros' },
+        titular: {
+          name: 'Amélia Marques',
+          nif: '999999982',
+          estado_civil: 'Solteira',
+          nacionalidade: 'Portuguesa',
+          residencia: null,
+        },
+      },
+    ],
+    forma_de_obrigar: 'Obriga-se com a assinatura de um gerente.',
+    orgaos: [
+      {
+        name: 'GERÊNCIA',
+        members: [
+          {
+            name: 'Amélia Marques',
+            nif: '999999982',
+            cargo: 'Gerente',
+            nacionalidade: 'Portuguesa',
+            residencia: null,
+          },
+        ],
+      },
+    ],
+    deliberation_date: '2026-05-11',
+  },
+  signatures: [
+    { conservatoria: 'Conservatória do Registo Comercial Porto', oficial: 'Amélia Marques' },
+  ],
+};
+
+const RAW_CONSTITUTION_TEXT =
+  'CONSTITUIÇÃO DE SOCIEDADE. FIRMA: Encosto Estratégico, Lda. NIPC: 503004642. (texto integral da certidão)';
+
+/** A deferred v1 kind (transmissão de quotas): recognized act, but no structured payload. */
+const UNSTRUCTURED_DETAIL: InscriptionDetailView = {
+  apresentacao: {
+    number: '3',
+    date: '2021-03-01',
+    time: null,
+    act_kinds: ['TRANSMISSÃO DE QUOTA'],
+  },
+  payload: null,
+  signatures: [],
+};
+
+const STRUCTURED_INSCRICOES: RegistryEventView[] = [
+  {
+    number: '1',
+    kind_hint: 'CONSTITUIÇÃO',
+    apresentacao: 'AP. 1/20200115',
+    date: '2020-01-15',
+    text: RAW_CONSTITUTION_TEXT,
+    detail: CONSTITUTION_DETAIL,
+  },
+  {
+    number: '2',
+    kind_hint: 'TRANSMISSÃO DE QUOTA',
+    apresentacao: 'AP. 3/20210301',
+    date: '2021-03-01',
+    text: 'Transmissão de quota de Rui Tavares para Amélia Marques.',
+    detail: UNSTRUCTURED_DETAIL,
+  },
+];
+
+const STRUCTURED_EXTRACT: RegistryExtractView = {
+  ...EXTRACT,
+  inscricoes: STRUCTURED_INSCRICOES,
+  anotacoes: [
+    {
+      number: '1',
+      date: '2020-01-20',
+      publication_url: 'http://publicacoes.mj.pt',
+      text: 'Publicação da constituição.',
+    },
+  ],
+  provenance: {
+    ...EXTRACT.provenance,
+    conservatoria: 'Conservatória do Registo Comercial Porto',
+    oficial: 'Amélia Marques',
+    subscribed_on: '2026-06-01',
+    valid_until: '2025-01-01',
+    expired: true,
+  },
+};
+
+describe('RegistryProvenance — structured inscriptions', () => {
+  it('renders the full Constitution card: apresentação acts, sócios/quotas, órgãos and sede', async () => {
+    const { fn } = recordingFetch((r) =>
+      r.url.includes('/registry') ? jsonResponse(STRUCTURED_EXTRACT) : jsonResponse([]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+
+    // Multi-act apresentação: one accent badge per act kind.
+    expect(await screen.findByText('CONSTITUIÇÃO DE SOCIEDADE')).toBeTruthy();
+    expect(screen.getByText('DESIGNAÇÃO DE MEMBRO(S) DE ÓRGÃO(S) SOCIAL(AIS)')).toBeTruthy();
+
+    // Sócios e quotas table: quota amount + titular identity.
+    expect(screen.getByText('Sócios e quotas')).toBeTruthy();
+    expect(screen.getByText('Rui Tavares')).toBeTruthy();
+    expect(screen.getByText('999999990')).toBeTruthy();
+    expect(screen.getByText('99,00 Euros')).toBeTruthy();
+    expect(screen.getByText('Casado')).toBeTruthy();
+
+    // Órgãos designados: the GERÊNCIA organ with a Gerente member (Amélia appears as
+    // sócia and as gerente; "Gerente" also labels the extract-level órgãos roll-up).
+    expect(screen.getByText('GERÊNCIA')).toBeTruthy();
+    expect(screen.getAllByText('Gerente').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Amélia Marques').length).toBeGreaterThanOrEqual(2);
+
+    // Sede address with the administrative breakdown.
+    expect(screen.getByText('Rua do Exemplo, n.º 11, Lugarejo')).toBeTruthy();
+    expect(screen.getByText(/Distrito: Porto/)).toBeTruthy();
+    expect(screen.getByText('4000-100 PORTO')).toBeTruthy();
+
+    // Deliberation date + forma de obrigar.
+    expect(screen.getByText('2026-05-11')).toBeTruthy();
+    expect(screen.getByText('Obriga-se com a assinatura de um gerente.')).toBeTruthy();
+  });
+
+  it('keeps the raw text one "texto integral" toggle away when structured, and shows it plainly when not', async () => {
+    const { fn } = recordingFetch((r) =>
+      r.url.includes('/registry') ? jsonResponse(STRUCTURED_EXTRACT) : jsonResponse([]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    const { container } = renderWithProviders(<RegistryProvenance entityId="ent-1" />, [
+      '/entidades/ent-1',
+    ]);
+
+    // Structured entry: raw body is present but tucked under a collapsible toggle.
+    expect(await screen.findByText('Texto integral')).toBeTruthy();
+    expect(container.querySelector('details.registry-detail__raw')).toBeTruthy();
+    expect(screen.getByText(RAW_CONSTITUTION_TEXT)).toBeTruthy();
+
+    // Unstructured (deferred) entry: the raw text is shown directly, not hidden.
+    expect(
+      screen.getByText('Transmissão de quota de Rui Tavares para Amélia Marques.'),
+    ).toBeTruthy();
+    // Its recognized act kind still surfaces (head kind_hint + apresentação act badge).
+    expect(screen.getAllByText('TRANSMISSÃO DE QUOTA').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders anotações with a publication link opened externally', async () => {
+    const { fn } = recordingFetch((r) =>
+      r.url.includes('/registry') ? jsonResponse(STRUCTURED_EXTRACT) : jsonResponse([]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+
+    expect(await screen.findByText('Anotações')).toBeTruthy();
+    expect(screen.getByText('An. 1')).toBeTruthy();
+    expect(screen.getByText('Publicação da constituição.')).toBeTruthy();
+    const link = screen.getByRole('link', {
+      name: 'http://publicacoes.mj.pt',
+    }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('http://publicacoes.mj.pt');
+    expect(link.getAttribute('target')).toBe('_blank');
+  });
+
+  it('shows the CERTIDÃO EXPIRADA badge and the certidão validity metadata', async () => {
+    const { fn } = recordingFetch((r) =>
+      r.url.includes('/registry') ? jsonResponse(STRUCTURED_EXTRACT) : jsonResponse([]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<RegistryProvenance entityId="ent-1" />, ['/entidades/ent-1']);
+
+    expect(await screen.findByText('Certidão expirada')).toBeTruthy();
+    // The validity window + conservatória/oficial surface in the provenance card.
+    expect(screen.getByText('2025-01-01')).toBeTruthy();
+    expect(screen.getAllByText('Conservatória do Registo Comercial Porto').length).toBeGreaterThan(
+      0,
+    );
+  });
+});
+
+describe('RegistryImportPanel — expired warning', () => {
+  it('surfaces the import report warnings verbatim', async () => {
+    const report: RegistryImportReport = {
+      entity: { ...ENTITY, id: 'ent-1' },
+      extract: STRUCTURED_EXTRACT,
+      applied: [],
+      conflicts: [],
+      warnings: ['certidão expirada em 2025-01-01'],
+    };
+    const { fn } = recordingFetch((r) =>
+      r.url.includes('/registry/import') ? jsonResponse(report) : jsonResponse([]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entidades/ent-1']);
+
+    fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
+      target: { value: FULL_CODE },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /consultar e importar/i }));
+
+    expect(await screen.findByText('Avisos da importação')).toBeTruthy();
+    expect(screen.getByText('certidão expirada em 2025-01-01')).toBeTruthy();
+  });
+});
+
+describe('EntityPrintDocument — structured constitution', () => {
+  it('includes the sócios/quotas table and órgãos when a constitution is present', async () => {
+    const { fn } = recordingFetch((r) =>
+      r.url.includes('/registry') ? jsonResponse(STRUCTURED_EXTRACT) : jsonResponse(ENTITY),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<EntityPrintDocument entityId="ent-1" />, ['/entidades/ent-1']);
+
+    // The print sheet composes the structured constitution, not just the raw feed.
+    expect(await screen.findByText('Sócios e quotas')).toBeTruthy();
+    expect(screen.getByText('Rui Tavares')).toBeTruthy();
+    expect(screen.getByText('99,00 Euros')).toBeTruthy();
+    expect(screen.getByText('Órgãos designados')).toBeTruthy();
+    // The raw text still prints beneath the structured card.
+    expect(screen.getByText(RAW_CONSTITUTION_TEXT)).toBeTruthy();
+    // Anotações section is composed too.
+    expect(screen.getByText('An. 1')).toBeTruthy();
   });
 });

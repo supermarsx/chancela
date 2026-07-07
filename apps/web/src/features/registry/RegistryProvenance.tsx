@@ -19,7 +19,13 @@ import { ApiError } from '../../api/client';
 import { useT } from '../../i18n';
 import { Badge, Card, Digest, EmptyState, ErrorNote, Loading, Truncate } from '../../ui';
 import { CaeRefList } from '../cae/CaeRefList';
-import type { RegistryEventView, RegistryExtractView, RegistryOfficerView } from '../../api/types';
+import { AnotacoesList, InscriptionDetailBody } from './InscriptionDetail';
+import type {
+  RegistryEventView,
+  RegistryExtractView,
+  RegistryOfficerView,
+  RegistryProvenanceView,
+} from '../../api/types';
 
 /**
  * A `<dl>` row, omitted entirely when the value is absent. In a two-column grid
@@ -74,10 +80,12 @@ function Officer({ officer }: { officer: RegistryOfficerView }) {
 }
 
 /**
- * A single inscrição / averbamento / anotação, rendered as distinct, labelled parts
- * (t13 item 6): the número as a mono marker, the kind hint as an accent badge, the date
- * aligned to the end of the header, the apresentação on its own labelled meta line, and
- * the text body cleanly set below — while preserving the printed certidão order.
+ * A single inscrição / averbamento / anotação. The número (mono marker), kind hint
+ * (accent badge) and date (aligned to the end of the header) always head the entry; the
+ * body is either the structured `detail` (apresentação, a per-kind payload card, and the
+ * raw text one "texto integral" toggle away — see {@link InscriptionDetailBody}) or, when
+ * the parser produced no structure, the raw apresentação line + text as before (t13). The
+ * printed certidão order is preserved either way.
  */
 function Inscricao({ event, index }: { event: RegistryEventView; index: number }) {
   const t = useT();
@@ -92,17 +100,47 @@ function Inscricao({ event, index }: { event: RegistryEventView; index: number }
           </time>
         ) : null}
       </div>
-      {event.apresentacao ? (
-        <p className="registry-inscricao__meta">
-          <span className="registry-inscricao__meta-label">
-            {t('registry.inscricao.apresentacao')}
-          </span>
-          <span className="mono">{event.apresentacao}</span>
-        </p>
-      ) : null}
-      <p className="registry-inscricao__text">{event.text}</p>
+      {event.detail ? (
+        <InscriptionDetailBody detail={event.detail} rawText={event.text} />
+      ) : (
+        <>
+          {event.apresentacao ? (
+            <p className="registry-inscricao__meta">
+              <span className="registry-inscricao__meta-label">
+                {t('registry.inscricao.apresentacao')}
+              </span>
+              <span className="mono">{event.apresentacao}</span>
+            </p>
+          ) : null}
+          <p className="registry-inscricao__text">{event.text}</p>
+        </>
+      )}
     </li>
   );
+}
+
+/**
+ * The certidão's validity, driven by the server-computed `expired` flag: a prominent
+ * danger badge past `valid_until`, an "em vigor" badge while it holds, and nothing when
+ * the certidão carried no validity window. Shown in the Proveniência card header.
+ */
+function ValidityBadge({ provenance }: { provenance: RegistryProvenanceView }) {
+  const t = useT();
+  if (provenance.expired === true) {
+    return (
+      <span className="registry-validity registry-validity--expired">
+        <Badge tone="error">{t('registry.provenance.expired')}</Badge>
+      </span>
+    );
+  }
+  if (provenance.valid_until) {
+    return (
+      <span className="registry-validity">
+        <Badge tone="ok">{t('registry.provenance.valid')}</Badge>
+      </span>
+    );
+  }
+  return null;
 }
 
 function ExtractBody({ extract }: { extract: RegistryExtractView }) {
@@ -113,13 +151,21 @@ function ExtractBody({ extract }: { extract: RegistryExtractView }) {
 
   return (
     <div className="stack">
-      <Card title={t('registry.provenance.title')}>
+      <Card title={t('registry.provenance.title')} actions={<ValidityBadge provenance={p} />}>
         <dl className="deflist">
           <Row term={t('registry.provenance.accessCode')}>
             <code className="mono">{p.access_code_masked}</code>
           </Row>
           <Row term={t('registry.provenance.retrievedAt')}>
             <span className="mono">{p.retrieved_at}</span>
+          </Row>
+          <Row term={t('registry.provenance.conservatoria')}>{p.conservatoria}</Row>
+          <Row term={t('registry.provenance.oficial')}>{p.oficial}</Row>
+          <Row term={t('registry.provenance.subscribedOn')}>
+            {p.subscribed_on ? <span className="mono">{p.subscribed_on}</span> : null}
+          </Row>
+          <Row term={t('registry.provenance.validUntil')}>
+            {p.valid_until ? <span className="mono">{p.valid_until}</span> : null}
           </Row>
           <Row term={t('registry.provenance.source')}>
             <Truncate text={p.source_url} href={p.source_url} mono />
@@ -175,6 +221,12 @@ function ExtractBody({ extract }: { extract: RegistryExtractView }) {
           </ol>
         )}
       </Card>
+
+      {extract.anotacoes.length > 0 ? (
+        <Card title={t('registry.anotacoes.title')}>
+          <AnotacoesList anotacoes={extract.anotacoes} />
+        </Card>
+      ) : null}
     </div>
   );
 }

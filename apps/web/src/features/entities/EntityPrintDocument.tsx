@@ -33,7 +33,10 @@ import {
 } from '../../api/labels';
 import { useT, useLocale } from '../../i18n';
 import type {
+  AddressView,
   Entity,
+  InscriptionPayloadView,
+  MoneyView,
   RegistryEventView,
   RegistryExtractView,
   RegistryOfficerView,
@@ -81,8 +84,106 @@ function PrintOfficer({ officer }: { officer: RegistryOfficerView }) {
   );
 }
 
+/** "100,00 Euros" — amount and currency joined, currency omitted when absent. */
+function moneyText(money: MoneyView): string {
+  return money.currency ? `${money.amount_text} ${money.currency}` : money.amount_text;
+}
+
+/** A postal address flattened to a single print line (free lines · postal · admin). */
+function printAddress(address: AddressView): string {
+  const postal = [address.postal_code, address.locality].filter(Boolean).join(' ');
+  return [...address.lines, postal, address.distrito, address.concelho, address.freguesia]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
+ * The structured constitution, composed for the print sheet: identificação, sede,
+ * objecto, the sócios/quotas table, and the órgãos designados. Only rendered when the
+ * inscrição carried a parsed `Constitution` payload — the raw text always prints below it.
+ */
+function PrintConstitution({
+  payload,
+}: {
+  payload: Extract<InscriptionPayloadView, { type: 'Constitution' }>;
+}) {
+  const t = useT();
+  return (
+    <div className="print-constitution">
+      <dl className="print-deflist">
+        <PrintRow term={t('registry.field.firma')} wide value={payload.firma} />
+        <PrintRow
+          term={t('registry.field.nipc')}
+          value={payload.nipc ? <span className="print-mono">{payload.nipc}</span> : null}
+        />
+        <PrintRow term={t('registry.detail.naturezaJuridica')} value={payload.natureza_juridica} />
+        <PrintRow
+          term={t('registry.field.capital')}
+          value={payload.capital ? moneyText(payload.capital) : null}
+        />
+        <PrintRow term={t('registry.detail.deliberationDate')} value={payload.deliberation_date} />
+        <PrintRow
+          term={t('registry.field.sede')}
+          wide
+          value={payload.sede ? printAddress(payload.sede) : null}
+        />
+        <PrintRow term={t('registry.field.objeto')} wide value={payload.objecto} />
+        <PrintRow term={t('registry.detail.formaObrigar')} wide value={payload.forma_de_obrigar} />
+      </dl>
+
+      {payload.socios.length > 0 ? (
+        <div className="print-quotas">
+          <h3 className="print-h3">{t('registry.detail.socios')}</h3>
+          <table className="print-table">
+            <thead>
+              <tr>
+                <th>{t('registry.quota.amount')}</th>
+                <th>{t('registry.quota.titular')}</th>
+                <th>{t('registry.party.nif')}</th>
+                <th>{t('registry.party.residencia')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payload.socios.map((q, i) => (
+                <tr key={`${q.titular.name}-${i}`}>
+                  <td className="print-mono">{moneyText(q.amount)}</td>
+                  <td>{q.titular.name}</td>
+                  <td className="print-mono">{q.titular.nif ?? '—'}</td>
+                  <td>{q.titular.residencia ? printAddress(q.titular.residencia) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {payload.orgaos.length > 0 ? (
+        <div className="print-organs">
+          <h3 className="print-h3">{t('registry.detail.orgaos')}</h3>
+          <ul className="print-officers">
+            {payload.orgaos.flatMap((organ, oi) =>
+              organ.members.map((m, mi) => (
+                <li key={`${organ.name}-${oi}-${m.name}-${mi}`} className="print-officer">
+                  <span className="print-officer__name">{m.name}</span>
+                  {m.cargo ? <span className="print-officer__role"> — {m.cargo}</span> : null}
+                  <span className="print-officer__role"> · {organ.name}</span>
+                </li>
+              )),
+            )}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PrintInscricao({ event, index }: { event: RegistryEventView; index: number }) {
   const t = useT();
+  const payload = event.detail?.payload ?? null;
+  const apresentacao =
+    event.detail?.apresentacao?.number != null
+      ? `AP. ${event.detail.apresentacao.number}`
+      : event.apresentacao;
   return (
     <li className="print-inscricao">
       <div className="print-inscricao__head">
@@ -90,11 +191,12 @@ function PrintInscricao({ event, index }: { event: RegistryEventView; index: num
         {event.kind_hint ? <span className="print-inscricao__kind">{event.kind_hint}</span> : null}
         {event.date ? <span className="print-inscricao__date">{event.date}</span> : null}
       </div>
-      {event.apresentacao ? (
+      {apresentacao ? (
         <div className="print-inscricao__meta">
-          {t('entities.print.inscricao.apresentacao', { num: event.apresentacao })}
+          {t('entities.print.inscricao.apresentacao', { num: apresentacao })}
         </div>
       ) : null}
+      {payload?.type === 'Constitution' ? <PrintConstitution payload={payload} /> : null}
       <p className="print-inscricao__text">{event.text}</p>
     </li>
   );
@@ -174,6 +276,25 @@ function ExtractDocument({ extract }: { extract: RegistryExtractView }) {
         )}
       </section>
 
+      {extract.anotacoes.length > 0 ? (
+        <section className="print-section">
+          <h2 className="print-h2">{t('registry.anotacoes.title')}</h2>
+          <ul className="print-anotacoes">
+            {extract.anotacoes.map((a, i) => (
+              <li key={`${a.number ?? i}`} className="print-anotacao">
+                <div className="print-anotacao__head">
+                  <span className="print-anotacao__num">
+                    {a.number ? t('registry.anotacoes.item', { number: a.number }) : `#${i + 1}`}
+                  </span>
+                  {a.date ? <span className="print-anotacao__date">{a.date}</span> : null}
+                </div>
+                <p className="print-inscricao__text">{a.text}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <footer className="print-provenance">
         <h2 className="print-h2">{t('registry.provenance.title')}</h2>
         <dl className="print-deflist">
@@ -184,6 +305,16 @@ function ExtractDocument({ extract }: { extract: RegistryExtractView }) {
           <PrintRow
             term={t('registry.provenance.retrievedAt')}
             value={<span className="print-mono">{p.retrieved_at}</span>}
+          />
+          <PrintRow term={t('registry.provenance.conservatoria')} value={p.conservatoria} />
+          <PrintRow term={t('registry.provenance.oficial')} value={p.oficial} />
+          <PrintRow
+            term={t('registry.provenance.subscribedOn')}
+            value={p.subscribed_on ? <span className="print-mono">{p.subscribed_on}</span> : null}
+          />
+          <PrintRow
+            term={t('registry.provenance.validUntil')}
+            value={p.valid_until ? <span className="print-mono">{p.valid_until}</span> : null}
           />
           <PrintRow
             term={t('registry.provenance.source')}
@@ -210,7 +341,12 @@ function IdentificationDocument({ entity }: { entity: Entity }) {
       <dl className="print-deflist">
         <PrintRow
           term={t('entities.field.nipc')}
-          value={<span className="print-mono">{entity.nipc}</span>}
+          value={
+            <span className="print-mono">
+              {entity.nipc}
+              {entity.nipc_validated ? '' : ` ${t('entities.print.nipcUnvalidated')}`}
+            </span>
+          }
         />
         <PrintRow term={t('entities.field.legalForm')} value={entityKindLabels[entity.kind]} />
         <PrintRow term={t('entities.field.family')} value={entityFamilyLabels[entity.family]} />
@@ -240,13 +376,11 @@ export function EntityPrintDocument({ entityId }: { entityId: string }) {
       (registry.data.legal_form ? legalFormLabel(registry.data.legal_form) : null))
     : entityKindLabels[ent.kind];
 
-  const subtitle = [
-    ent.nipc ? t('entities.print.subtitleNipc', { nipc: ent.nipc }) : null,
-    formaJuridica,
-    ent.seat,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const nipcLine = ent.nipc
+    ? t('entities.print.subtitleNipc', { nipc: ent.nipc }) +
+      (ent.nipc_validated ? '' : ` ${t('entities.print.nipcUnvalidated')}`)
+    : null;
+  const subtitle = [nipcLine, formaJuridica, ent.seat].filter(Boolean).join(' · ');
 
   const doc = (
     <article className="print-doc" role="document" aria-hidden="true">
