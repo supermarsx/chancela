@@ -1,0 +1,34 @@
+[package]
+name = "chancela-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Axum HTTP layer for Chancela: in-memory entity CRUD and ledger verification over the domain core (ARC-02, thin API)."
+
+[dependencies]
+chancela-core = { workspace = true }
+chancela-ledger = { workspace = true }
+chancela-registry = { workspace = true }
+chancela-cae = { workspace = true }
+chancela-store = { workspace = true }
+argon2 = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+ecdsa = { workspace = true }
+p256 = { workspace = true }
+rand_core = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true }

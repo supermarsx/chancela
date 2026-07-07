@@ -1,0 +1,1181 @@
+//! Certidão permanente registry endpoints (contract §2.7): preview a lookup, enrich an
+//! existing entity, and create a new entity from a `código de acesso`.
+//!
+//! Every consultation goes through [`consult`], which parses and validates the access code
+//! (`422` on a malformed one), resolves the transport (the injected
+//! [`AppState::registry`](crate::AppState) or an [`HttpRegistryTransport`] from the
+//! environment), and runs the **blocking** fetch on a dedicated OS thread so the live transport
+//! (whose `reqwest::blocking` client owns an internal runtime) is built and dropped clear of the
+//! async runtime — see [`consult`]. A `RegistryError` maps to `422`/`502` via
+//! [`From<RegistryError>`](crate::error::ApiError).
+//!
+//! Secret handling (LEG-22 / GDPR): the full access code is used only to fetch; nothing beyond
+//! its masked `****-****-NNNN` form is stored, returned, or written to the ledger. The
+//! `registry.imported` audit event carries only the extract digest and the masked code.
+//!
+//! Multi-lock handlers extend the fixed global order to **entities → books → acts →
+//! registry_extracts → ledger**.
+
+use std::fmt::Write as _;
+use std::sync::Arc;
+
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use chancela_core::{Entity, EntityId, EntityKind, Nipc};
+use chancela_registry::{
+    AccessCode, HttpRegistryTransport, LegalForm, RegistryExtract, RegistryTransport,
+    parse_certidao,
+};
+use serde::Deserialize;
+use serde_json::json;
+use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
+use uuid::Uuid;
+
+use crate::AppState;
+use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::dto::{
+    EntityView, RegistryConflict, RegistryExtractView, RegistryImportReport, compute_expired,
+};
+use crate::error::ApiError;
+
+// --- Request bodies ----------------------------------------------------------------------
+
+/// Body of `POST /v1/registry/lookup`.
+#[derive(Deserialize)]
+pub struct RegistryLookupRequest {
+    /// The 12-digit certidão permanente access code (any grouping; validated server-side).
+    pub code: String,
+    /// Optional e-mail the new consultation platform requires.
+    pub email: Option<String>,
+}
+
+/// Body of `POST /v1/entities/{id}/registry/import`.
+#[derive(Deserialize)]
+pub struct RegistryImportRequest {
+    pub code: String,
+    pub email: Option<String>,
+    /// When `true`, divergent fields are overwritten from the extract instead of kept as
+    /// conflicts. Defaults to `false`.
+    #[serde(default)]
+    pub overwrite: bool,
+}
+
+/// Body of `POST /v1/entities/import-from-registry`.
+#[derive(Deserialize)]
+pub struct RegistryCreateRequest {
+    pub code: String,
+    pub email: Option<String>,
+}
+
+// --- LegalForm → EntityKind mapping ------------------------------------------------------
+
+/// Map a normalized [`LegalForm`] to the 1:1 [`EntityKind`] (variant names are aligned by
+/// design). `Other`, and any future unmapped variant, yield `None`.
+pub(crate) fn legal_form_to_kind(lf: &LegalForm) -> Option<EntityKind> {
+    match lf {
+        LegalForm::SociedadePorQuotas => Some(EntityKind::SociedadePorQuotas),
+        LegalForm::SociedadeUnipessoalPorQuotas => Some(EntityKind::SociedadeUnipessoalPorQuotas),
+        LegalForm::SociedadeAnonima => Some(EntityKind::SociedadeAnonima),
+        LegalForm::SociedadeEmNomeColetivo => Some(EntityKind::SociedadeEmNomeColetivo),
+        LegalForm::SociedadeEmComanditaSimples => Some(EntityKind::SociedadeEmComanditaSimples),
+        LegalForm::SociedadeEmComanditaPorAcoes => Some(EntityKind::SociedadeEmComanditaPorAcoes),
+        LegalForm::Cooperativa => Some(EntityKind::Cooperativa),
+        LegalForm::Fundacao => Some(EntityKind::Fundacao),
+        LegalForm::Associacao => Some(EntityKind::Associacao),
+        // `Other(_)` and any future non-exhaustive variant are unmappable.
+        _ => None,
+    }
+}
+
+/// The bare variant name of a [`LegalForm`] for the wire view: a mapped form's name, else
+/// `None` (the raw natureza jurídica text stays in `forma_juridica`).
+pub(crate) fn legal_form_name(lf: &LegalForm) -> Option<String> {
+    legal_form_to_kind(lf).map(|k| kind_name(k).to_owned())
+}
+
+/// The contract's `EntityKind` encoding (§2.1): the bare variant name.
+fn kind_name(kind: EntityKind) -> &'static str {
+    use EntityKind::*;
+    match kind {
+        SociedadeEmNomeColetivo => "SociedadeEmNomeColetivo",
+        SociedadePorQuotas => "SociedadePorQuotas",
+        SociedadeUnipessoalPorQuotas => "SociedadeUnipessoalPorQuotas",
+        SociedadeAnonima => "SociedadeAnonima",
+        SociedadeEmComanditaSimples => "SociedadeEmComanditaSimples",
+        SociedadeEmComanditaPorAcoes => "SociedadeEmComanditaPorAcoes",
+        Condominio => "Condominio",
+        Associacao => "Associacao",
+        Fundacao => "Fundacao",
+        Cooperativa => "Cooperativa",
+    }
+}
+
+// --- Consultation ------------------------------------------------------------------------
+
+/// Validate the code, then fetch + parse the certidão on a dedicated OS thread.
+///
+/// The live [`HttpRegistryTransport`] wraps a `reqwest::blocking::Client`, which owns its own
+/// internal tokio runtime. That client must be **built and dropped outside any async context**:
+/// a `tokio::task::spawn_blocking` worker still carries the outer runtime's context, so dropping
+/// the client there panics with "Cannot drop a runtime in a context where blocking is not
+/// allowed". We therefore run the whole consultation on a freshly spawned `std::thread` (which
+/// has no tokio runtime context) and await its result over a oneshot channel — so nothing blocks
+/// the async runtime and the client is dropped safely on that thread. For an injected transport
+/// (e.g. the test mock) this just clones an `Arc` and drops the clone on the thread — harmless.
+///
+/// The full access code is used only inside the thread (to build the request); the returned
+/// extract's provenance carries only its masked form.
+async fn consult(
+    state: &AppState,
+    code: &str,
+    email: Option<&str>,
+) -> Result<RegistryExtract, ApiError> {
+    let access = AccessCode::parse(code).map_err(ApiError::from)?;
+    let injected = state.registry.clone();
+    let email = email.map(str::to_owned);
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new()
+        .name("registry-consult".to_owned())
+        .spawn(move || {
+            let result: Result<RegistryExtract, ApiError> = (|| {
+                // Build the live transport here (not in the async context) so its blocking
+                // client is also dropped here, never on a runtime-bearing thread.
+                let transport: Arc<dyn RegistryTransport> = match injected {
+                    Some(transport) => transport,
+                    None => Arc::new(HttpRegistryTransport::from_env()?),
+                };
+                let document = transport.fetch(&access, email.as_deref())?;
+                Ok(parse_certidao(
+                    &document.html,
+                    &access.masked(),
+                    &document.source_url,
+                    &document.retrieved_at,
+                )?)
+            })();
+            // If the receiver was dropped (request cancelled) the result is simply discarded.
+            let _ = tx.send(result);
+        })
+        .map_err(|e| ApiError::Internal(format!("failed to spawn registry consult thread: {e}")))?;
+
+    rx.await.map_err(|_| {
+        ApiError::Internal("registry consultation thread ended unexpectedly".to_owned())
+    })?
+}
+
+/// Lowercase-hex sha256, matching the ledger/registry digest convention.
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(digest.len() * 2);
+    for b in digest {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
+/// Serialize the `registry.imported` ledger payload (LEG-22): the extract digest and the
+/// **masked** code only — never the full código de acesso.
+fn imported_payload(extract: &RegistryExtract) -> Result<Vec<u8>, ApiError> {
+    let extract_digest = sha256_hex(&serde_json::to_vec(extract)?);
+    let payload = json!({
+        "extract_digest": extract_digest,
+        "code_masked": extract.provenance.access_code_masked,
+    });
+    Ok(serde_json::to_vec(&payload)?)
+}
+
+/// Non-fatal import advisories (contract §2.7 `warnings`). An **expired** certidão (its
+/// `valid_until` strictly before today, UTC) yields a PT notice but never blocks the import —
+/// honest surfacing over a hard failure.
+fn import_warnings(extract: &RegistryExtract) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let today = OffsetDateTime::now_utc().date();
+    let valid_until = extract.provenance.valid_until.as_deref();
+    if compute_expired(valid_until, today) == Some(true) {
+        if let Some(vu) = valid_until {
+            warnings.push(format!("certidão expirada em {vu}"));
+        }
+    }
+    warnings
+}
+
+// --- Cross-check -------------------------------------------------------------------------
+
+/// Reconcile an existing entity with the extract (contract §2.7): fill blank text fields
+/// silently (→ `applied`), and on a divergence keep the current value as a `conflict` unless
+/// `overwrite` (then apply it, reported in `applied`).
+fn cross_check(
+    entity: &mut Entity,
+    extract: &RegistryExtract,
+    overwrite: bool,
+) -> (Vec<String>, Vec<RegistryConflict>) {
+    let mut applied = Vec::new();
+    let mut conflicts = Vec::new();
+
+    // Backfill blanks from the matrícula block, falling back to the constitution body (t21 §3.3)
+    // so a certidão whose summary block is absent still enriches from its constitution — exactly
+    // like the matrícula fields, via the registry crate's `effective_*` accessors.
+    let eff_firma = extract.effective_firma();
+    let eff_sede = extract.effective_sede();
+    let eff_nipc = extract.effective_nipc();
+
+    check_text_field(
+        "name",
+        &mut entity.name,
+        eff_firma.as_deref(),
+        overwrite,
+        &mut applied,
+        &mut conflicts,
+    );
+    check_text_field(
+        "seat",
+        &mut entity.seat,
+        eff_sede.as_deref(),
+        overwrite,
+        &mut applied,
+        &mut conflicts,
+    );
+
+    // NIPC is never blank (validated at creation), so only a divergence is possible — and
+    // overwriting requires the incoming NIPC to itself be valid (Nipc::parse).
+    if let Some(incoming) = eff_nipc.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let current = entity.nipc.as_str().to_owned();
+        if current != incoming {
+            match (overwrite, Nipc::parse(incoming)) {
+                (true, Ok(nipc)) => {
+                    entity.nipc = nipc;
+                    applied.push("nipc".to_owned());
+                }
+                // Kept on no-overwrite, or when the incoming NIPC cannot be validated.
+                _ => conflicts.push(RegistryConflict {
+                    field: "nipc".to_owned(),
+                    current: Some(current),
+                    incoming: Some(incoming.to_owned()),
+                }),
+            }
+        }
+    }
+
+    // Kind via legal_form → EntityKind; an unmapped natureza jurídica is not cross-checked.
+    if let Some(incoming) = extract.legal_form.as_ref().and_then(legal_form_to_kind) {
+        if incoming != entity.kind {
+            if overwrite {
+                entity.kind = incoming;
+                entity.family = incoming.family();
+                applied.push("kind".to_owned());
+            } else {
+                conflicts.push(RegistryConflict {
+                    field: "kind".to_owned(),
+                    current: Some(kind_name(entity.kind).to_owned()),
+                    incoming: Some(kind_name(incoming).to_owned()),
+                });
+            }
+        }
+    }
+
+    (applied, conflicts)
+}
+
+/// Cross-check one text field (name/seat): fill a blank current value, else keep a divergence
+/// as a conflict unless overwriting.
+fn check_text_field(
+    field: &str,
+    current: &mut String,
+    incoming: Option<&str>,
+    overwrite: bool,
+    applied: &mut Vec<String>,
+    conflicts: &mut Vec<RegistryConflict>,
+) {
+    let Some(incoming) = incoming.map(str::trim).filter(|s| !s.is_empty()) else {
+        return; // the extract carried nothing for this field
+    };
+    if current.trim().is_empty() {
+        *current = incoming.to_owned();
+        applied.push(field.to_owned());
+    } else if current.as_str() != incoming {
+        if overwrite {
+            *current = incoming.to_owned();
+            applied.push(field.to_owned());
+        } else {
+            conflicts.push(RegistryConflict {
+                field: field.to_owned(),
+                current: Some(current.clone()),
+                incoming: Some(incoming.to_owned()),
+            });
+        }
+    }
+    // else: equal → no change, no report
+}
+
+// --- Handlers ----------------------------------------------------------------------------
+
+/// `POST /v1/registry/lookup` — preview only: consult + parse, **no storage, no ledger event**.
+pub async fn registry_lookup(
+    State(state): State<AppState>,
+    Json(req): Json<RegistryLookupRequest>,
+) -> Result<Json<RegistryExtractView>, ApiError> {
+    let extract = consult(&state, &req.code, req.email.as_deref()).await?;
+    let cae = state.cae.read().await;
+    Ok(Json(RegistryExtractView::build(&extract, &cae)))
+}
+
+/// `GET /v1/entities/{id}/registry` — the stored extract for an entity, or `404` if the entity
+/// is unknown or nothing has been imported.
+pub async fn get_entity_registry(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<RegistryExtractView>, ApiError> {
+    let extracts = state.registry_extracts.read().await;
+    let extract = extracts.get(&EntityId(id)).ok_or(ApiError::NotFound)?;
+    let cae = state.cae.read().await;
+    Ok(Json(RegistryExtractView::build(extract, &cae)))
+}
+
+/// `POST /v1/entities/{id}/registry/import` — enrich an existing entity from the extract, store
+/// it with provenance, and append a `registry.imported` audit event (LEG-22).
+pub async fn import_into_entity(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<RegistryImportRequest>,
+) -> Result<Json<RegistryImportReport>, ApiError> {
+    let eid = EntityId(id);
+    // Consult BEFORE taking any lock — the fetch is blocking and runs off the runtime.
+    let extract = consult(&state, &req.code, req.email.as_deref()).await?;
+
+    // Lock order: entities → registry_extracts → ledger.
+    let mut entities = state.entities.write().await;
+    let entity = entities.get_mut(&eid).ok_or(ApiError::NotFound)?;
+
+    // Cross-check a clone, so the enriched entity + stored extract are committed to the read model
+    // only after the durable write (event + both aggregate rows) commits.
+    let mut next = entity.clone();
+    let (applied, conflicts) = cross_check(&mut next, &extract, req.overwrite);
+    let entity_view = EntityView::from(&next);
+
+    let payload = imported_payload(&extract)?;
+    let actor = actor.resolve("api");
+    {
+        let mut extracts = state.registry_extracts.write().await;
+        let mut ledger = state.ledger.write().await;
+        ledger.append(
+            &actor,
+            &eid.to_string(),
+            "registry.imported",
+            Some("registry import"),
+            &payload,
+        );
+        state.persist_write_through(&mut ledger, 1, |tx| {
+            tx.upsert_entity(&next)?;
+            tx.upsert_registry_extract(eid, &extract)
+        })?;
+        state.attest_latest(&attestor, &ledger).await;
+        *entity = next;
+        extracts.insert(eid, extract.clone());
+    }
+
+    let warnings = import_warnings(&extract);
+    let cae = state.cae.read().await;
+    Ok(Json(RegistryImportReport {
+        entity: entity_view,
+        extract: RegistryExtractView::build(&extract, &cae),
+        applied,
+        conflicts,
+        warnings,
+    }))
+}
+
+/// `POST /v1/entities/import-from-registry` — create a new entity from the extract (needs a
+/// valid NIPC, a firma, and a mappable legal form), store the extract, and append
+/// `entity.created` then `registry.imported`.
+pub async fn import_from_registry(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<RegistryCreateRequest>,
+) -> Result<(StatusCode, Json<RegistryImportReport>), ApiError> {
+    let extract = consult(&state, &req.code, req.email.as_deref()).await?;
+
+    // Collect everything the certidão lacked so the 422 explains exactly what was missing.
+    let mut lacking: Vec<String> = Vec::new();
+
+    // Backfill identity from the constitution body when the matrícula summary block is absent
+    // (t21 §3.3). `kind` still needs the extract-level `legal_form` (normalized only from the
+    // matrícula block) — an unmapped natureza jurídica keeps the entity uncreatable, honestly.
+    let eff_firma = extract.effective_firma();
+    let eff_nipc = extract.effective_nipc();
+    let eff_sede = extract.effective_sede();
+
+    let firma = eff_firma
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if firma.is_none() {
+        lacking.push("a firma (name)".to_owned());
+    }
+
+    // Registry creation stays strict: a certidão is an official record, so an entity minted from
+    // one must carry a control-digit-valid NIPC. The `allow_invalid_nipc` override is a MANUAL
+    // `POST /v1/entities` affordance for foreign/legacy entities that lack one — it deliberately
+    // does not apply to this path, where the NIPC comes from the registry itself.
+    let nipc = match eff_nipc.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(raw) => match Nipc::parse(raw) {
+            Ok(n) => Some(n),
+            Err(_) => {
+                lacking.push("a valid NIPC".to_owned());
+                None
+            }
+        },
+        None => {
+            lacking.push("a NIPC".to_owned());
+            None
+        }
+    };
+
+    let kind = match extract.legal_form.as_ref().map(legal_form_to_kind) {
+        Some(Some(k)) => Some(k),
+        _ => {
+            let raw = extract.forma_juridica.as_deref().unwrap_or("(absent)");
+            lacking.push(format!(
+                "a mappable legal form (natureza jurídica {raw:?} is not supported)"
+            ));
+            None
+        }
+    };
+
+    let (firma, nipc, kind) = match (firma, nipc, kind) {
+        (Some(f), Some(n), Some(k)) => (f.to_owned(), n, k),
+        _ => {
+            return Err(ApiError::Unprocessable(format!(
+                "cannot create an entity from this certidão: it lacked {}",
+                lacking.join(", ")
+            )));
+        }
+    };
+
+    let seat = eff_sede.clone().unwrap_or_default();
+    let entity = Entity::new(firma, nipc, seat, kind);
+    let eid = entity.id;
+
+    // Every populated field of a fresh entity was sourced from the extract (matrícula or body).
+    let mut applied = vec!["name".to_owned(), "nipc".to_owned(), "kind".to_owned()];
+    if eff_sede
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|s| !s.is_empty())
+    {
+        applied.push("seat".to_owned());
+    }
+
+    let entity_payload = serde_json::to_vec(&entity)?;
+    let imported = imported_payload(&extract)?;
+
+    let actor = actor.resolve("api");
+
+    // Lock order: entities → registry_extracts → ledger. Both events + both new aggregate rows
+    // persist in one transaction, and the read model is committed only after that succeeds.
+    let mut entities = state.entities.write().await;
+    let mut extracts = state.registry_extracts.write().await;
+    {
+        let mut ledger = state.ledger.write().await;
+        ledger.append(
+            &actor,
+            &eid.to_string(),
+            "entity.created",
+            None,
+            &entity_payload,
+        );
+        ledger.append(
+            &actor,
+            &eid.to_string(),
+            "registry.imported",
+            Some("registry import"),
+            &imported,
+        );
+        state.persist_write_through(&mut ledger, 2, |tx| {
+            tx.upsert_entity(&entity)?;
+            tx.upsert_registry_extract(eid, &extract)
+        })?;
+        state.attest_latest(&attestor, &ledger).await;
+        entities.insert(eid, entity.clone());
+        extracts.insert(eid, extract.clone());
+    }
+
+    let warnings = import_warnings(&extract);
+    let cae = state.cae.read().await;
+    Ok((
+        StatusCode::CREATED,
+        Json(RegistryImportReport {
+            entity: EntityView::from(&entity),
+            extract: RegistryExtractView::build(&extract, &cae),
+            applied,
+            conflicts: Vec::new(),
+            warnings,
+        }),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use chancela_registry::MockRegistryTransport;
+    use serde_json::Value;
+    use tower::ServiceExt; // for `oneshot`
+
+    /// Build a small but structurally faithful certidão HTML with the given identity fields,
+    /// so tests can inject a control-digit-valid NIPC (the shipped fixtures use fake NIPCs).
+    fn certidao_html(firma: &str, nipc: &str, natureza: &str, sede: &str) -> String {
+        format!(
+            "<!DOCTYPE html><html lang=\"pt-PT\"><body><div class=\"matricula\">\
+             <p>MATRÍCULA</p><table>\
+             <tr><td>Matrícula:</td><td>99999/20200101</td></tr>\
+             <tr><td>NIF/NIPC:</td><td>{nipc}</td></tr>\
+             <tr><td>Firma:</td><td>{firma}</td></tr>\
+             <tr><td>Natureza Jurídica:</td><td>{natureza}</td></tr>\
+             <tr><td>Sede:</td><td>{sede}</td></tr>\
+             <tr><td>Capital:</td><td>5.000,00 EUR</td></tr>\
+             <tr><td>CAE:</td><td>70220</td></tr>\
+             <tr><td>Data de constituição:</td><td>2020-01-01</td></tr>\
+             </table></div>\
+             <div class=\"inscricoes\"><p>Inscrições - Averbamentos - Anotações</p>\
+             <div><p>Insc. 1 AP. 1/20200101</p><p>CONSTITUIÇÃO DE SOCIEDADE</p></div>\
+             </div></body></html>"
+        )
+    }
+
+    fn state_with(transport: MockRegistryTransport) -> AppState {
+        AppState {
+            registry: Some(Arc::new(transport)),
+            ..Default::default()
+        }
+    }
+
+    async fn send(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
+        let response = crate::router(state)
+            .oneshot(req)
+            .await
+            .expect("router responds");
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collects");
+        let value = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes).expect("body is JSON")
+        };
+        (status, value)
+    }
+
+    fn get(uri: &str) -> Request<Body> {
+        Request::builder()
+            .uri(uri)
+            .body(Body::empty())
+            .expect("request builds")
+    }
+
+    fn post_json(uri: &str, body: Value) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .expect("request builds")
+    }
+
+    /// Create an entity and return its id string.
+    async fn create_entity(
+        state: &AppState,
+        name: &str,
+        nipc: &str,
+        seat: &str,
+        kind: &str,
+    ) -> String {
+        let (status, e) = send(
+            state.clone(),
+            post_json(
+                "/v1/entities",
+                json!({ "name": name, "nipc": nipc, "seat": seat, "kind": kind }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        e["id"].as_str().expect("entity id").to_owned()
+    }
+
+    #[tokio::test]
+    async fn lookup_returns_view_with_masked_provenance_and_no_ledger_event() {
+        let html = certidao_html(
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Sociedade por quotas",
+            "Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+
+        let (status, view) = send(
+            state.clone(),
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["firma"], "Encosto Estratégico, Lda");
+        assert_eq!(view["nipc"], "503004642");
+        assert_eq!(view["legal_form"], "SociedadePorQuotas");
+        assert_eq!(view["provenance"]["access_code_masked"], "****-****-9012");
+        assert_eq!(
+            view["provenance"]["raw_digest"]
+                .as_str()
+                .expect("digest")
+                .len(),
+            64
+        );
+
+        // A preview lookup stores nothing and appends no ledger event.
+        let (_, events) = send(state, get("/v1/ledger/events")).await;
+        assert_eq!(events.as_array().expect("events").len(), 0);
+    }
+
+    #[tokio::test]
+    async fn import_fills_blanks_and_reports_a_kept_conflict() {
+        let html = certidao_html(
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Sociedade por quotas",
+            "Avenida da Liberdade, Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        // Blank seat (to be filled), a divergent name, matching NIPC and kind.
+        let id = create_entity(
+            &state,
+            "Nome Original, Lda",
+            "503004642",
+            "",
+            "SociedadePorQuotas",
+        )
+        .await;
+
+        let (status, report) = send(
+            state,
+            post_json(
+                &format!("/v1/entities/{id}/registry/import"),
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let applied: Vec<&str> = report["applied"]
+            .as_array()
+            .expect("applied")
+            .iter()
+            .map(|v| v.as_str().expect("field"))
+            .collect();
+        assert!(applied.contains(&"seat"), "blank seat filled: {applied:?}");
+        assert!(!applied.contains(&"name"), "divergent name not applied");
+
+        let conflicts = report["conflicts"].as_array().expect("conflicts");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0]["field"], "name");
+        assert_eq!(conflicts[0]["current"], "Nome Original, Lda");
+        assert_eq!(conflicts[0]["incoming"], "Encosto Estratégico, Lda");
+
+        // The entity's seat was filled; its name kept (no overwrite).
+        assert_eq!(report["entity"]["seat"], "Avenida da Liberdade, Lisboa");
+        assert_eq!(report["entity"]["name"], "Nome Original, Lda");
+    }
+
+    #[tokio::test]
+    async fn import_with_overwrite_applies_a_divergent_field() {
+        let html = certidao_html(
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Sociedade por quotas",
+            "Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        // Both name and seat diverge from the extract.
+        let id = create_entity(
+            &state,
+            "Nome Original, Lda",
+            "503004642",
+            "Porto",
+            "SociedadePorQuotas",
+        )
+        .await;
+
+        let (status, report) = send(
+            state,
+            post_json(
+                &format!("/v1/entities/{id}/registry/import"),
+                json!({ "code": "1234-5678-9012", "overwrite": true }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let applied: Vec<&str> = report["applied"]
+            .as_array()
+            .expect("applied")
+            .iter()
+            .map(|v| v.as_str().expect("field"))
+            .collect();
+        assert!(applied.contains(&"name"));
+        assert!(applied.contains(&"seat"));
+        assert_eq!(report["conflicts"].as_array().expect("conflicts").len(), 0);
+
+        // Both fields now carry the extract's values.
+        assert_eq!(report["entity"]["name"], "Encosto Estratégico, Lda");
+        assert_eq!(report["entity"]["seat"], "Lisboa");
+    }
+
+    #[tokio::test]
+    async fn import_appends_one_masked_event_and_never_the_full_code() {
+        let html = certidao_html(
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Sociedade por quotas",
+            "Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        let id = create_entity(
+            &state,
+            "Nome Original, Lda",
+            "503004642",
+            "",
+            "SociedadePorQuotas",
+        )
+        .await;
+
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/entities/{id}/registry/import"),
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (_, events) = send(state, get("/v1/ledger/events")).await;
+        let imported: Vec<&Value> = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter(|e| e["kind"] == "registry.imported")
+            .collect();
+        assert_eq!(imported.len(), 1, "exactly one registry.imported event");
+        assert_eq!(imported[0]["scope"], id);
+        assert_eq!(imported[0]["justification"], "registry import");
+
+        // The full código de acesso must appear NOWHERE in the whole ledger dump.
+        let dump = events.to_string();
+        assert!(!dump.contains("1234-5678-9012"), "grouped code leaked");
+        assert!(!dump.contains("123456789012"), "bare code leaked");
+    }
+
+    #[tokio::test]
+    async fn import_from_registry_creates_a_consistent_entity_with_both_events() {
+        let html = certidao_html(
+            "Encosto Estratégico, S.A.",
+            "503004642",
+            "Sociedade Anónima",
+            "Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+
+        let (status, report) = send(
+            state.clone(),
+            post_json(
+                "/v1/entities/import-from-registry",
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(report["entity"]["name"], "Encosto Estratégico, S.A.");
+        assert_eq!(report["entity"]["nipc"], "503004642");
+        assert_eq!(report["entity"]["kind"], "SociedadeAnonima");
+        assert_eq!(report["entity"]["family"], "CommercialCompany");
+        assert_eq!(report["conflicts"].as_array().expect("conflicts").len(), 0);
+        let id = report["entity"]["id"].as_str().expect("id").to_owned();
+
+        // The entity is queryable.
+        let (status, _) = send(state.clone(), get(&format!("/v1/entities/{id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // entity.created precedes registry.imported.
+        let (_, events) = send(state, get("/v1/ledger/events")).await;
+        let kinds: Vec<&str> = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .map(|e| e["kind"].as_str().expect("kind"))
+            .collect();
+        let created = kinds.iter().position(|k| *k == "entity.created");
+        let imported = kinds.iter().position(|k| *k == "registry.imported");
+        assert!(created.is_some() && imported.is_some());
+        assert!(
+            created < imported,
+            "entity.created before registry.imported"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_from_registry_without_a_valid_nipc_is_422() {
+        // The shipped SPQ fixture's NIPC (500002020) fails the mod-11 control digit, so no
+        // entity can be created from it — the 422 must say what the certidão lacked.
+        let state = state_with(MockRegistryTransport::from_fixture_spq());
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/entities/import-from-registry",
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("valid NIPC"),
+            "422 explains the missing valid NIPC: {}",
+            body["error"]
+        );
+    }
+
+    #[tokio::test]
+    async fn lookup_with_a_malformed_code_is_422_without_echoing_it() {
+        let state = state_with(MockRegistryTransport::from_fixture_spq());
+        let (status, body) = send(
+            state,
+            post_json("/v1/registry/lookup", json!({ "code": "12-34" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let error = body["error"].as_str().expect("error");
+        // The message must never echo the (mistyped) digits.
+        assert!(!error.contains("1234"), "code echoed: {error}");
+    }
+
+    #[tokio::test]
+    async fn lookup_on_an_unrecognized_page_is_502() {
+        let state = state_with(
+            MockRegistryTransport::empty().with_html(chancela_registry::mock::FIXTURE_EXPIRED),
+        );
+        let (status, body) = send(
+            state,
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(body["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn lookup_on_an_upstream_failure_is_502() {
+        // An empty mock has no canned document → RegistryError::Upstream.
+        let state = state_with(MockRegistryTransport::empty());
+        let (status, body) = send(
+            state,
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(body["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn get_entity_registry_is_404_before_import_and_200_after() {
+        let html = certidao_html(
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Sociedade por quotas",
+            "Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        let id = create_entity(
+            &state,
+            "Nome Original, Lda",
+            "503004642",
+            "",
+            "SociedadePorQuotas",
+        )
+        .await;
+
+        let (status, _) = send(state.clone(), get(&format!("/v1/entities/{id}/registry"))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/entities/{id}/registry/import"),
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (status, view) = send(state, get(&format!("/v1/entities/{id}/registry"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["nipc"], "503004642");
+        assert_eq!(view["provenance"]["access_code_masked"], "****-****-9012");
+    }
+
+    #[tokio::test]
+    async fn lookup_view_enriches_role_tagged_cae_from_the_catalog() {
+        // A certidão with a Principal (catalogued Rev.4 code) and a Secundário (uncatalogued).
+        let html = "<!DOCTYPE html><html lang=\"pt-PT\"><body><div class=\"matricula\">\
+             <p>MATRÍCULA</p><table>\
+             <tr><td>Matrícula:</td><td>99999/20200101</td></tr>\
+             <tr><td>NIF/NIPC:</td><td>503004642</td></tr>\
+             <tr><td>Firma:</td><td>Encosto Estratégico, Lda</td></tr>\
+             <tr><td>Natureza Jurídica:</td><td>Sociedade por quotas</td></tr>\
+             <tr><td>Sede:</td><td>Lisboa</td></tr>\
+             <tr><td>CAE Principal:</td><td>68110 - Compra e venda de bens imobiliários</td></tr>\
+             <tr><td>CAE Secundário:</td><td>99999</td></tr>\
+             </table></div></body></html>"
+            .to_owned();
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+
+        let (status, view) = send(
+            state,
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let cae = view["cae"].as_array().expect("cae array");
+        assert_eq!(cae.len(), 2);
+
+        // Principal: catalogued → role + designation + level + revision present.
+        assert_eq!(cae[0]["code"], "68110");
+        assert_eq!(cae[0]["role"], "Principal");
+        assert_eq!(
+            cae[0]["designation"],
+            "Compra e venda de bens imobiliários."
+        );
+        assert_eq!(cae[0]["level"], "Subclasse");
+        assert_eq!(cae[0]["revision"], "Rev4");
+
+        // Secundário: uncatalogued code → role kept, enrichment fields null (honest).
+        assert_eq!(cae[1]["code"], "99999");
+        assert_eq!(cae[1]["role"], "Secundario");
+        assert_eq!(cae[1]["designation"], Value::Null);
+        assert_eq!(cae[1]["level"], Value::Null);
+        assert_eq!(cae[1]["revision"], Value::Null);
+    }
+
+    /// A structurally faithful certidão carrying a validity window in its trailer, so the
+    /// expiry/warnings paths can be exercised with a chosen `válida até` date.
+    fn certidao_html_with_validity(nipc: &str, subscribed: &str, valid_until: &str) -> String {
+        format!(
+            "<!DOCTYPE html><html lang=\"pt-PT\"><body><div class=\"matricula\">\
+             <p>MATRÍCULA</p><table>\
+             <tr><td>Matrícula:</td><td>99999/20200101</td></tr>\
+             <tr><td>NIF/NIPC:</td><td>{nipc}</td></tr>\
+             <tr><td>Firma:</td><td>Encosto Estratégico, Lda</td></tr>\
+             <tr><td>Natureza Jurídica:</td><td>Sociedade por quotas</td></tr>\
+             <tr><td>Sede:</td><td>Lisboa</td></tr>\
+             </table></div>\
+             <div class=\"inscricoes\"><p>Inscrições - Averbamentos - Anotações</p>\
+             <div><p>Insc. 1 AP. 1/20200101</p><p>CONSTITUIÇÃO DE SOCIEDADE</p></div>\
+             <div class=\"trailer\">\
+             <p>Conservatória do Registo Comercial do Porto</p>\
+             <p>O(A) Oficial de Registos, Amélia Marques</p>\
+             <p>Certidão permanente subscrita em {subscribed} e válida até {valid_until}.</p>\
+             <p>Fim da Certidão</p></div>\
+             </div></body></html>"
+        )
+    }
+
+    #[test]
+    fn compute_expired_is_true_only_for_a_parseable_past_date() {
+        use time::macros::date;
+        let today = date!(2026 - 07 - 07);
+        assert_eq!(compute_expired(Some("2021-01-01"), today), Some(true));
+        assert_eq!(compute_expired(Some("2099-01-01"), today), Some(false));
+        // Today itself is not "before today" → not expired.
+        assert_eq!(compute_expired(Some("2026-07-07"), today), Some(false));
+        // Absent or unparseable → we do not claim an expiry we cannot compute.
+        assert_eq!(compute_expired(None, today), None);
+        assert_eq!(compute_expired(Some("not-a-date"), today), None);
+    }
+
+    #[tokio::test]
+    async fn lookup_surfaces_the_structured_constitution_payload_and_meta() {
+        // The rich constitution specimen: minimal matrícula block, full constitution body.
+        let state = state_with(MockRegistryTransport::from_fixture_constituicao());
+        let (status, view) = send(
+            state,
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // The structured layer renders per the frozen internally-tagged encoding.
+        let detail = &view["inscricoes"][0]["detail"];
+        assert_eq!(detail["payload"]["type"], "Constitution");
+        assert_eq!(detail["payload"]["firma"], "Encosto Estratégico, Lda");
+        assert_eq!(detail["payload"]["nipc"], "503004642");
+        assert_eq!(detail["payload"]["sede"]["freguesia"], "Cedofeita");
+        assert_eq!(detail["payload"]["sede"]["postal_code"], "4000-111");
+        assert_eq!(detail["payload"]["capital"]["amount_text"], "100,00");
+        let socios = detail["payload"]["socios"].as_array().expect("socios");
+        assert_eq!(socios.len(), 2);
+        assert_eq!(socios[0]["titular"]["name"], "Rui Tavares Nogueira");
+        let orgaos = detail["payload"]["orgaos"].as_array().expect("orgaos");
+        assert!(
+            orgaos[0]["name"]
+                .as_str()
+                .expect("organ name")
+                .contains("GER")
+        );
+        assert_eq!(orgaos[0]["members"][0]["cargo"], "Gerente");
+
+        // Multi-act apresentação: both act kinds + the UTC timestamp.
+        let ap = &detail["apresentacao"];
+        assert_eq!(ap["number"], "1");
+        assert_eq!(ap["time"], "00:55:25 UTC");
+        assert_eq!(ap["act_kinds"].as_array().expect("act_kinds").len(), 2);
+
+        // Anotações + conservatória/oficial + validity surface on the view.
+        let anot = view["anotacoes"].as_array().expect("anotacoes");
+        assert_eq!(anot.len(), 1);
+        assert!(
+            anot[0]["publication_url"]
+                .as_str()
+                .expect("url")
+                .contains("publicacoes.mj.pt")
+        );
+        let prov = &view["provenance"];
+        assert!(
+            prov["conservatoria"]
+                .as_str()
+                .expect("conservatoria")
+                .contains("Porto")
+        );
+        assert_eq!(prov["oficial"], "Amélia Marques");
+        assert_eq!(prov["subscribed_on"], "2026-07-05");
+        assert_eq!(prov["valid_until"], "2027-07-05");
+        // The specimen is valid past today's fixed anchor → not expired.
+        assert_eq!(prov["expired"], false);
+    }
+
+    #[tokio::test]
+    async fn import_backfills_blank_identity_from_the_constitution_body() {
+        // The constituição specimen's matrícula block is blank; identity lives in the body.
+        let state = state_with(MockRegistryTransport::from_fixture_constituicao());
+        // Existing entity: matching NIPC, a divergent name, a blank seat to be backfilled.
+        let id = create_entity(
+            &state,
+            "Nome Original, Lda",
+            "503004642",
+            "",
+            "SociedadePorQuotas",
+        )
+        .await;
+
+        let (status, report) = send(
+            state,
+            post_json(
+                &format!("/v1/entities/{id}/registry/import"),
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let applied: Vec<&str> = report["applied"]
+            .as_array()
+            .expect("applied")
+            .iter()
+            .map(|v| v.as_str().expect("field"))
+            .collect();
+        // Seat was blank → backfilled from the constitution body's SEDE.
+        assert!(applied.contains(&"seat"), "seat backfilled: {applied:?}");
+        assert!(
+            report["entity"]["seat"]
+                .as_str()
+                .expect("seat")
+                .contains("Rua do Comércio")
+        );
+        // The divergent name is kept as a conflict, sourced from the body's FIRMA.
+        let conflicts = report["conflicts"].as_array().expect("conflicts");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0]["field"], "name");
+        assert_eq!(conflicts[0]["incoming"], "Encosto Estratégico, Lda");
+    }
+
+    #[tokio::test]
+    async fn expired_certidao_surfaces_expired_flag_and_import_warning() {
+        let html = certidao_html_with_validity("503004642", "01/01/2020", "01/01/2021");
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+
+        // Lookup computes `expired: true` against today.
+        let (status, view) = send(
+            state.clone(),
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["provenance"]["valid_until"], "2021-01-01");
+        assert_eq!(view["provenance"]["expired"], true);
+
+        // Create-from-registry still succeeds (201) but carries the expiry warning.
+        let (status, report) = send(
+            state,
+            post_json(
+                "/v1/entities/import-from-registry",
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let warnings: Vec<&str> = report["warnings"]
+            .as_array()
+            .expect("warnings")
+            .iter()
+            .map(|v| v.as_str().expect("warning"))
+            .collect();
+        assert_eq!(warnings, vec!["certidão expirada em 2021-01-01"]);
+    }
+
+    #[tokio::test]
+    async fn a_valid_certidao_import_reports_no_warnings() {
+        let html = certidao_html_with_validity("503004642", "01/01/2099", "31/12/2099");
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        let (status, report) = send(
+            state,
+            post_json(
+                "/v1/entities/import-from-registry",
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(report["extract"]["provenance"]["expired"], false);
+        assert_eq!(report["warnings"].as_array().expect("warnings").len(), 0);
+    }
+
+    #[tokio::test]
+    async fn import_into_a_missing_entity_is_404() {
+        let html = certidao_html("X, Lda", "503004642", "Sociedade por quotas", "Lisboa");
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        let missing = Uuid::new_v4();
+        let (status, _) = send(
+            state,
+            post_json(
+                &format!("/v1/entities/{missing}/registry/import"),
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+}
