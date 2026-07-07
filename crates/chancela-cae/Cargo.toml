@@ -1,0 +1,28 @@
+[package]
+name = "chancela-cae"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Extensive Classificação Portuguesa das Atividades Económicas (CAE) library — full official Rev.3 + Rev.4 table with lookup/hierarchy/search, data-dir cache + auto-update (spec LEG-20/21/22, DAT-10)."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+# lopdf: pure-Rust object-level PDF reader, already a workspace dep (used by chancela-pades). The
+# official-source obtainer (`src/obtain/`) reads the immutable Diário da República diploma PDFs and
+# ports gen_cae.py's coordinate extraction over lopdf's content-stream text positions — no native
+# library, so the default build stays native-dep-free. (Coordinator ruling t23-m1: lopdf-primary;
+# pdfium-render is the documented escalation if lopdf proves infeasible — reversible without redesign.)
+lopdf = { workspace = true }
+
+[features]
+# Enables `#[ignore]`d tests that fetch a live CAE dataset over the network from CHANCELA_CAE_URL.
+# Never runs in CI (there is no official CAE JSON feed; the live remote is an ops decision).
+network-tests = []

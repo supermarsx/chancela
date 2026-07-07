@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-01T00:00:00Z",
+  "source_note": "chancela-cae test update fixture (small but structurally valid)",
+  "rev3": [],
+  "rev4": [
+    { "code": "A", "designation": "Secção de teste A", "level": "Seccao", "revision": "Rev4", "parent": null },
+    { "code": "01", "designation": "Divisão de teste", "level": "Divisao", "revision": "Rev4", "parent": "A" },
+    { "code": "011", "designation": "Grupo de teste", "level": "Grupo", "revision": "Rev4", "parent": "01" },
+    { "code": "0111", "designation": "Classe de teste", "level": "Classe", "revision": "Rev4", "parent": "011" },
+    { "code": "01111", "designation": "Subclasse de teste", "level": "Subclasse", "revision": "Rev4", "parent": "0111" }
+  ]
+}
