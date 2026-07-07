@@ -1,0 +1,33 @@
+[package]
+name = "chancela-signing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Signature-middleware crates this rework orchestrates (t4-e8). Wired here by t4-e1 so the
+# rework never touches this manifest. See .orchestration/plans/t4.md §2.1.
+chancela-cades = { workspace = true }
+chancela-smartcard = { workspace = true }
+chancela-cmd = { workspace = true }
+chancela-tsl = { workspace = true }
+chancela-tsa = { workspace = true }
+chancela-pades = { workspace = true }
+# CSPRNG (rand_core::OsRng) for PROD CMD field encryption via chancela-cmd's
+# FieldEncryptor::AmaRsa (caller-supplied `&mut R: CryptoRngCore`). See root manifest.
+rand_core = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+# Test-only: build/verify self-signed certs and raw signatures in unit/integration tests
+# (no production code path uses these). See .orchestration escalation t4-m3 / t4-e8.
+rsa = { workspace = true }
+p256 = { workspace = true }
+der = { workspace = true }
+spki = { workspace = true }
+x509-cert = { workspace = true }

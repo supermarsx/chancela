@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <ValidateOtpResponse xmlns="http://tempuri.org/">
+      <ValidateOtpResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <a:Signature i:nil="true"/>
+        <a:Status>
+          <a:Code>402</a:Code>
+          <a:Message>Invalid or expired OTP.</a:Message>
+        </a:Status>
+      </ValidateOtpResult>
+    </ValidateOtpResponse>
+  </s:Body>
+</s:Envelope>

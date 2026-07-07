@@ -1,0 +1,26 @@
+[package]
+name = "chancela-tsl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Portuguese Trusted List (ETSI TS 119 612) ingestion + qualified-status query (spec 04, SIG-10..13)."
+
+[dependencies]
+quick-xml = { workspace = true }
+reqwest = { workspace = true }
+x509-cert = { workspace = true }
+der = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+# Enables `#[ignore]`d tests that fetch the live Trusted List over the network. Never runs in CI.
+network-tests = []

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <ValidateOtpResponse xmlns="http://tempuri.org/">
+      <ValidateOtpResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+        <a:Signature>wEnshEBJ/qi4exi+Anf2OobBdHGcSLHnU24q3wzJ/9ifUOQthPB3SBXrLexxlIMG4ERZoz/0V2XLJHFRrEb+bTJoGNiaDZgnc7fiBJ1nbpOEQ+A1Jb0suXwP4akbRbhW8zMIXdacpRLCkxbM2h99S3lTKekf2v17m+HiosayN99n3ovQvEvceJ/QOV5WPKFRAv1NYI26vldkNw4FajiedXWAnXa0uQzOjRjGNDpjGul3/EvOWhpfL1zkuo+uuyrEjzB7nXEgdgdLo0WeAXbv6sZChoLd8DepX7vimzqPXgbr/snkMOgOgZpql6Q5ihWcjgARkB8Q/lQAwDXQW4qkZQ==</a:Signature>
+        <a:Status>
+          <a:Code>200</a:Code>
+          <a:Message>Signature completed.</a:Message>
+        </a:Status>
+      </ValidateOtpResult>
+    </ValidateOtpResponse>
+  </s:Body>
+</s:Envelope>

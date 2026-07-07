@@ -1,0 +1,27 @@
+[package]
+name = "chancela-tsa"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "RFC 3161 qualified timestamp client: build/parse/verify TimeStampToken (spec 04, SIG-22)."
+
+[dependencies]
+x509-tsp = { workspace = true }
+cms = { workspace = true }
+x509-cert = { workspace = true }
+der = { workspace = true }
+sha2 = { workspace = true }
+reqwest = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+# Enables `#[ignore]`d tests that hit a live RFC 3161 TSA endpoint. Never runs in CI.
+network-tests = []
