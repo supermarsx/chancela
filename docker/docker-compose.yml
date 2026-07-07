@@ -1,0 +1,68 @@
+# Hardened single-node deployment of chancela-server (ARC-40/41/42 single-node).
+#
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# Security posture:
+#   - read_only root filesystem, writable scratch via tmpfs only.
+#   - all Linux capabilities dropped.
+#   - no-new-privileges: process cannot gain privileges via setuid binaries.
+#   - config injected via environment at runtime (never baked into the image).
+name: chancela
+
+services:
+  server:
+    build:
+      # Context is the repo root so the Dockerfile can see the whole workspace.
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    image: chancela-server:latest
+    # --- container hardening (ARC-41) ---
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      # Writable scratch space; the root filesystem stays read-only.
+      - /tmp
+    environment:
+      # Bind on all interfaces inside the container (host maps the port below).
+      CHANCELA_ADDR: 0.0.0.0:8080
+    ports:
+      - "8080:8080"
+    volumes:
+      # Durable data directory for future local-first storage (ARC-10/14).
+      # The scaffold server is in-memory, so this is currently unused; it is
+      # declared here so a writable, persistent path exists once storage lands.
+      - chancela-data:/var/lib/chancela
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # --- Future services (ARC-40 requires app + worker + optional sidecar) ---
+  #
+  # worker:
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/Dockerfile.worker   # not yet implemented
+  #   read_only: true
+  #   cap_drop: [ALL]
+  #   security_opt: ["no-new-privileges:true"]
+  #   tmpfs: ["/tmp"]
+  #   depends_on: [server]
+  #
+  # sidecar:                                   # optional validation / AI bundle
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/Dockerfile.sidecar  # not yet implemented
+  #   read_only: true
+  #   cap_drop: [ALL]
+  #   security_opt: ["no-new-privileges:true"]
+  #   tmpfs: ["/tmp"]
+
+volumes:
+  chancela-data:

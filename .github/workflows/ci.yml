@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Rust: format, lint (deny warnings) and test on all three desktop platforms.
+  # ---------------------------------------------------------------------------
+  rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # chancela-smartcard links libpcsclite via the pcsc crate; Linux needs the
+      # dev headers + daemon (Windows uses WinSCard, macOS the PCSC framework).
+      - name: Install PC/SC system deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+  # ---------------------------------------------------------------------------
+  # Web: lint, test and build the @chancela/web workspace on supported Node LTS.
+  # No lockfile is committed at scaffold time, so `npm ci` falls back to
+  # `npm install`, and npm caching is intentionally left off (it requires a
+  # lockfile to key on).
+  # ---------------------------------------------------------------------------
+  web:
+    name: Web (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint --workspace apps/web
+
+      - name: Test
+        run: npm run test --workspace apps/web
+
+      - name: Build
+        run: npm run build --workspace apps/web
+
+  # ---------------------------------------------------------------------------
+  # Docker: prove the server image builds. Kept off pull requests (the release
+  # build is slow) so PR feedback stays fast; it gates pushes to main. No push.
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker build (server)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build server image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.server
+          push: false
+          tags: chancela-server:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # E2E: composed-system journeys that drive the REAL cargo-built
+  # chancela-server binary over HTTP (crates/chancela-server/tests/**, gated
+  # behind the `e2e` cargo feature). This is the layer every layer-isolated unit
+  # test missed — the stale-server / SPA-static-fallback bug. The harness writes
+  # its own synthetic web dist and spawns in-process axum registry/CAE fixtures,
+  # so it needs no Node, no npm, and no apps/web build. ~7s locally, so it runs
+  # on every push and PR (ubuntu only; Windows e2e stays on the dev box).
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E (composed server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # chancela-server's dependency tree does not link libpcsclite today, but
+      # install it defensively (matching the rust job) so a future transitive
+      # pcsc dep can't break the link step here.
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run composed-system E2E journeys
+        run: cargo test -p chancela-server --features e2e
+
+  # ---------------------------------------------------------------------------
+  # Browser E2E (Playwright, headless chromium): the only layer that reproduces
+  # the bug as the user saw it — a real browser parsing a real response — and
+  # the only one that catches UI-render/route regressions. `npm run test:browser`
+  # builds the release chancela-server + the web dist and drives the UI, so it is
+  # heavier than the `e2e` job. To keep PR latency sane it is gated to pushes on
+  # main and to PRs carrying the `run-browser-tests` label (opt-in per PR); when
+  # it runs it is blocking (no continue-on-error).
+  # ---------------------------------------------------------------------------
+  browser:
+    name: Browser E2E (Playwright)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-browser-tests'))
+    steps:
+      - uses: actions/checkout@v4
+
+      # test:browser builds the release chancela-server; keep the pcsc dep in
+      # place for the same defensive reason as the e2e job.
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      # Downloads the chromium browser + its OS deps into the Playwright cache.
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      # cargo build --release -p chancela-server && npm run build && playwright test
+      - name: Run browser E2E
+        run: npm run test:browser --workspace apps/web

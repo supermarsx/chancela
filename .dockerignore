@@ -1,0 +1,23 @@
+# Build artifacts
+target
+**/target
+dist
+apps/web/dist
+
+# Dependencies (reinstalled inside the image)
+node_modules
+**/node_modules
+
+# VCS / tooling / orchestration metadata
+.git
+.gitignore
+.gitattributes
+.github
+.orchestration
+
+# Desktop shell is not part of the server or web image
+apps/desktop
+
+# Misc
+*.log
+.DS_Store
