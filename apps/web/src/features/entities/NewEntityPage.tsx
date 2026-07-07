@@ -12,7 +12,18 @@ import { entityKindLabels, optionsFrom } from '../../api/labels';
 import { ENTITY_KINDS, type EntityKind } from '../../api/types';
 import { ApiError } from '../../api/client';
 import { useT } from '../../i18n';
-import { Button, ButtonLink, Card, Field, Icon, Input, PageHeader, Select } from '../../ui';
+import {
+  Button,
+  ButtonLink,
+  Card,
+  Field,
+  Icon,
+  InlineWarning,
+  Input,
+  PageHeader,
+  Select,
+  Toggle,
+} from '../../ui';
 
 export function NewEntityPage() {
   const t = useT();
@@ -22,14 +33,21 @@ export function NewEntityPage() {
   const [nipc, setNipc] = useState('');
   const [seat, setSeat] = useState('');
   const [kind, setKind] = useState<EntityKind>('SociedadePorQuotas');
+  // §entity-v2 override: create even when the NIPC fails control-digit validation
+  // (foreign entities / special registrations). Sends `allow_invalid_nipc: true`.
+  const [allowInvalidNipc, setAllowInvalidNipc] = useState(false);
 
+  // With the override on, a bad check digit no longer 422s, so the inline NIPC error only
+  // applies to the strict path.
   const nipcError =
-    create.error instanceof ApiError && create.error.status === 422 ? create.error.message : null;
+    !allowInvalidNipc && create.error instanceof ApiError && create.error.status === 422
+      ? create.error.message
+      : null;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     create.mutate(
-      { name, nipc, seat, kind },
+      { name, nipc, seat, kind, allow_invalid_nipc: allowInvalidNipc },
       { onSuccess: (entity) => navigate(`/entidades/${entity.id}`) },
     );
   }
@@ -65,12 +83,22 @@ export function NewEntityPage() {
             <Input
               id="ent-nipc"
               required
-              inputMode="numeric"
+              inputMode={allowInvalidNipc ? 'text' : 'numeric'}
               value={nipc}
               onChange={(e) => setNipc(e.target.value)}
               placeholder={t('entities.form.nipcPlaceholder')}
             />
           </Field>
+          <div className="stack--tight">
+            <Toggle
+              label={t('entities.form.allowInvalidNipc.label')}
+              checked={allowInvalidNipc}
+              onChange={setAllowInvalidNipc}
+            />
+            {allowInvalidNipc ? (
+              <InlineWarning tone="warn">{t('entities.form.allowInvalidNipc.hint')}</InlineWarning>
+            ) : null}
+          </div>
           <Field label={t('entities.form.seat')} htmlFor="ent-seat">
             <Input
               id="ent-seat"

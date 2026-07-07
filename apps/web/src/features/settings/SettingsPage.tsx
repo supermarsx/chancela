@@ -9,9 +9,13 @@
  * mutation updates the shared cache optimistically, so the global appearance layer
  * (mounted in the shell) stays in step everywhere else in the app.
  *
- * Sections: Aparência, Identidade, Documentos, Assinaturas, Sobre.
+ * Sections are reached through a segmented sub-nav (the Ferramentas idiom, via the shared
+ * `<SubNav>`): Aparência · Identidade · Documentos · Assinaturas · Gestão · Sobre. The
+ * active section is deep-linkable (`?sec=`); the working copy spans all of them, so the
+ * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useHealth, useLedgerVerify, useSettings, useUpdateSettings } from '../../api/hooks';
 import {
   localeLabels,
@@ -39,6 +43,7 @@ import {
 } from '../../api/types';
 import { UI_VERSION } from '../../api/versionCheck';
 import { useT } from '../../i18n';
+import type { MessageKey } from '../../i18n';
 import { grainStore } from '../../theme/grainStore';
 import { applyAppearance, applyLocale } from '../../theme/appearance';
 import {
@@ -53,14 +58,45 @@ import {
   Loading,
   PageHeader,
   Select,
+  SubNav,
   Toggle,
 } from '../../ui';
 
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
 
+/** The sub-tabs, in order. Each label reuses its section card title (identical text). */
+type SettingsSection =
+  'aparencia' | 'identidade' | 'documentos' | 'assinaturas' | 'gestao' | 'sobre';
+
+const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey }[] = [
+  { id: 'aparencia', label: 'settings.appearance.cardTitle' },
+  { id: 'identidade', label: 'settings.identity.cardTitle' },
+  { id: 'documentos', label: 'settings.documents.cardTitle' },
+  { id: 'assinaturas', label: 'settings.signing.cardTitle' },
+  { id: 'gestao', label: 'settings.management.cardTitle' },
+  { id: 'sobre', label: 'settings.about.cardTitle' },
+];
+
+const isSettingsSection = (v: string | null): v is SettingsSection =>
+  SETTINGS_SECTIONS.some((s) => s.id === v);
+
 export function SettingsPage() {
   const t = useT();
+  const [params, setParams] = useSearchParams();
+  // Aparência is the default and carries no `sec` param (so `/configuracoes` lands on it).
+  const secParam = params.get('sec');
+  const section: SettingsSection = isSettingsSection(secParam) ? secParam : 'aparencia';
+  const selectSection = (next: SettingsSection) =>
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (next === 'aparencia') p.delete('sec');
+        else p.set('sec', next);
+        return p;
+      },
+      { replace: true },
+    );
   const settings = useSettings();
   const health = useHealth();
   const ledger = useLedgerVerify();
@@ -150,261 +186,284 @@ export function SettingsPage() {
         crumbs={t('settings.breadcrumb')}
         title={t('settings.page.title')}
         lede={t('settings.page.lede')}
-      />
+      >
+        <SubNav
+          items={SETTINGS_SECTIONS.map((s) => ({ id: s.id, label: t(s.label) }))}
+          active={section}
+          onSelect={selectSection}
+          ariaLabel={t('settings.subnav.aria')}
+        />
+      </PageHeader>
 
-      <div className="settings-grid">
+      {/* One section at a time; the working copy spans all of them and the save bar below
+          is always reachable. The panel replays the route-enter fade on each switch. */}
+      <div className="route-transition settings-section" key={section}>
         {/* Aparência --------------------------------------------------------------- */}
-        <Card title={t('settings.appearance.cardTitle')}>
-          <div className="form">
-            <Field
-              label={t('settings.appearance.theme.label')}
-              htmlFor="set-theme"
-              hint={t('settings.appearance.theme.hint')}
-            >
-              <Select
-                id="set-theme"
-                value={a.theme}
-                onChange={(e) => setAppearance('theme', e.target.value as ThemeMode)}
-                options={optionsFrom(THEME_MODES, themeModeLabels)}
-              />
-            </Field>
-
-            <Toggle
-              label={t('settings.appearance.leatherBg.label')}
-              checked={a.leather_texture}
-              onChange={(v) => setAppearance('leather_texture', v)}
-            />
-
-            <Toggle
-              label={t('settings.appearance.leatherButtons.label')}
-              checked={a.button_texture}
-              onChange={(v) => setAppearance('button_texture', v)}
-            />
-
-            <Field
-              label={t('settings.appearance.intensity.label', { value: a.texture_intensity })}
-              htmlFor="set-intensity"
-              hint={t('settings.appearance.intensity.hint')}
-            >
-              <input
-                id="set-intensity"
-                className="control control--range"
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={a.texture_intensity}
-                disabled={!a.leather_texture}
-                onChange={(e) => setAppearance('texture_intensity', Number(e.target.value))}
-              />
-            </Field>
-
-            <div className="form__actions">
-              <Button
-                type="button"
-                variant="secondary"
-                icon={<Icon.Shuffle />}
-                disabled={!a.leather_texture}
-                onClick={() => grainStore.reroll()}
+        {section === 'aparencia' ? (
+          <Card title={t('settings.appearance.cardTitle')}>
+            <div className="form">
+              <Field
+                label={t('settings.appearance.theme.label')}
+                htmlFor="set-theme"
+                hint={t('settings.appearance.theme.hint')}
               >
-                {t('settings.appearance.reroll')}
-              </Button>
+                <Select
+                  id="set-theme"
+                  value={a.theme}
+                  onChange={(e) => setAppearance('theme', e.target.value as ThemeMode)}
+                  options={optionsFrom(THEME_MODES, themeModeLabels)}
+                />
+              </Field>
+
+              <Toggle
+                label={t('settings.appearance.leatherBg.label')}
+                checked={a.leather_texture}
+                onChange={(v) => setAppearance('leather_texture', v)}
+              />
+
+              <Toggle
+                label={t('settings.appearance.leatherButtons.label')}
+                checked={a.button_texture}
+                onChange={(v) => setAppearance('button_texture', v)}
+              />
+
+              <Field
+                label={t('settings.appearance.intensity.label', { value: a.texture_intensity })}
+                htmlFor="set-intensity"
+                hint={t('settings.appearance.intensity.hint')}
+              >
+                <input
+                  id="set-intensity"
+                  className="control control--range"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={a.texture_intensity}
+                  disabled={!a.leather_texture}
+                  onChange={(e) => setAppearance('texture_intensity', Number(e.target.value))}
+                />
+              </Field>
+
+              <div className="form__actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.Shuffle />}
+                  disabled={!a.leather_texture}
+                  onClick={() => grainStore.reroll()}
+                >
+                  {t('settings.appearance.reroll')}
+                </Button>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        ) : null}
 
         {/* Identidade -------------------------------------------------------------- */}
-        <Card title={t('settings.identity.cardTitle')}>
-          <div className="form">
-            <Field
-              label={t('settings.identity.orgName.label')}
-              htmlFor="set-org-name"
-              hint={t('settings.identity.orgName.hint')}
-            >
-              <Input
-                id="set-org-name"
-                value={draft.organization.name ?? ''}
-                placeholder={t('settings.identity.orgName.placeholder')}
-                onChange={(e) => setOrganization('name', e.target.value)}
-              />
-            </Field>
-            <p className="field__hint">{t('settings.identity.actorNote')}</p>
-          </div>
-        </Card>
+        {section === 'identidade' ? (
+          <Card title={t('settings.identity.cardTitle')}>
+            <div className="form">
+              <Field
+                label={t('settings.identity.orgName.label')}
+                htmlFor="set-org-name"
+                hint={t('settings.identity.orgName.hint')}
+              >
+                <Input
+                  id="set-org-name"
+                  value={draft.organization.name ?? ''}
+                  placeholder={t('settings.identity.orgName.placeholder')}
+                  onChange={(e) => setOrganization('name', e.target.value)}
+                />
+              </Field>
+              <p className="field__hint">{t('settings.identity.actorNote')}</p>
+            </div>
+          </Card>
+        ) : null}
 
         {/* Documentos -------------------------------------------------------------- */}
-        <Card title={t('settings.documents.cardTitle')}>
-          <div className="form">
-            <Field
-              label={t('settings.documents.locale.label')}
-              htmlFor="set-locale"
-              hint={t('settings.documents.locale.hint')}
-            >
-              <Select
-                id="set-locale"
-                value={draft.documents.locale}
-                onChange={(e) => setDocuments('locale', e.target.value as Locale)}
-                options={optionsFrom(LOCALES, localeLabels)}
-              />
-            </Field>
-            <Field
-              label={t('settings.documents.numbering.label')}
-              htmlFor="set-numbering"
-              hint={t('settings.documents.numbering.hint')}
-            >
-              <Select
-                id="set-numbering"
-                value={draft.documents.numbering_scheme_default}
-                onChange={(e) =>
-                  setDocuments('numbering_scheme_default', e.target.value as NumberingScheme)
-                }
-                options={optionsFrom(NUMBERING_SCHEMES, numberingSchemeLabels)}
-              />
-            </Field>
-            <Field
-              label={t('settings.documents.caeUrl.label')}
-              htmlFor="set-cae-url"
-              hint={t('settings.documents.caeUrl.hint')}
-            >
-              <Input
-                id="set-cae-url"
-                type="url"
-                value={draft.catalog.cae_update_url ?? ''}
-                placeholder={t('settings.documents.caeUrl.placeholder')}
-                onChange={(e) => setCatalog('cae_update_url', e.target.value)}
-              />
-            </Field>
-          </div>
-        </Card>
+        {section === 'documentos' ? (
+          <Card title={t('settings.documents.cardTitle')}>
+            <div className="form">
+              <Field
+                label={t('settings.documents.locale.label')}
+                htmlFor="set-locale"
+                hint={t('settings.documents.locale.hint')}
+              >
+                <Select
+                  id="set-locale"
+                  value={draft.documents.locale}
+                  onChange={(e) => setDocuments('locale', e.target.value as Locale)}
+                  options={optionsFrom(LOCALES, localeLabels)}
+                />
+              </Field>
+              <Field
+                label={t('settings.documents.numbering.label')}
+                htmlFor="set-numbering"
+                hint={t('settings.documents.numbering.hint')}
+              >
+                <Select
+                  id="set-numbering"
+                  value={draft.documents.numbering_scheme_default}
+                  onChange={(e) =>
+                    setDocuments('numbering_scheme_default', e.target.value as NumberingScheme)
+                  }
+                  options={optionsFrom(NUMBERING_SCHEMES, numberingSchemeLabels)}
+                />
+              </Field>
+              <Field
+                label={t('settings.documents.caeUrl.label')}
+                htmlFor="set-cae-url"
+                hint={t('settings.documents.caeUrl.hint')}
+              >
+                <Input
+                  id="set-cae-url"
+                  type="url"
+                  value={draft.catalog.cae_update_url ?? ''}
+                  placeholder={t('settings.documents.caeUrl.placeholder')}
+                  onChange={(e) => setCatalog('cae_update_url', e.target.value)}
+                />
+              </Field>
+            </div>
+          </Card>
+        ) : null}
 
         {/* Assinaturas ------------------------------------------------------------- */}
-        <Card title={t('settings.signing.cardTitle')}>
-          <div className="form">
-            <Field label={t('settings.signing.family.label')} htmlFor="set-family">
-              <Select
-                id="set-family"
-                value={draft.signing.preferred_family}
-                onChange={(e) => setSigning('preferred_family', e.target.value as SignatureFamily)}
-                options={optionsFrom(SIGNATURE_FAMILIES, signatureFamilyLabels)}
+        {section === 'assinaturas' ? (
+          <Card title={t('settings.signing.cardTitle')}>
+            <div className="form">
+              <Field label={t('settings.signing.family.label')} htmlFor="set-family">
+                <Select
+                  id="set-family"
+                  value={draft.signing.preferred_family}
+                  onChange={(e) =>
+                    setSigning('preferred_family', e.target.value as SignatureFamily)
+                  }
+                  options={optionsFrom(SIGNATURE_FAMILIES, signatureFamilyLabels)}
+                />
+              </Field>
+              <Field
+                label={t('settings.signing.tsaUrl.label')}
+                htmlFor="set-tsa"
+                hint={t('settings.signing.officialHint')}
+              >
+                <div className="input-reset">
+                  <Input
+                    id="set-tsa"
+                    type="url"
+                    value={draft.signing.tsa_url ?? ''}
+                    placeholder={t('settings.signing.tsaUrl.placeholder')}
+                    onChange={(e) => setSigning('tsa_url', e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.Refresh />}
+                    disabled={
+                      (draft.signing.tsa_url ?? '') === (DEFAULT_SETTINGS.signing.tsa_url ?? '')
+                    }
+                    onClick={() => setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '')}
+                  >
+                    {t('settings.signing.reset')}
+                  </Button>
+                </div>
+              </Field>
+              <Field
+                label={t('settings.signing.tslUrl.label')}
+                htmlFor="set-tsl"
+                hint={t('settings.signing.officialHint')}
+              >
+                <div className="input-reset">
+                  <Input
+                    id="set-tsl"
+                    type="url"
+                    value={draft.signing.tsl_url ?? ''}
+                    placeholder={t('settings.signing.tslUrl.placeholder')}
+                    onChange={(e) => setSigning('tsl_url', e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.Refresh />}
+                    disabled={
+                      (draft.signing.tsl_url ?? '') === (DEFAULT_SETTINGS.signing.tsl_url ?? '')
+                    }
+                    onClick={() => setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '')}
+                  >
+                    {t('settings.signing.reset')}
+                  </Button>
+                </div>
+              </Field>
+              <Toggle
+                label={t('settings.signing.requireQualified.label')}
+                checked={draft.signing.require_qualified_for_seal}
+                onChange={(v) => setSigning('require_qualified_for_seal', v)}
               />
-            </Field>
-            <Field
-              label={t('settings.signing.tsaUrl.label')}
-              htmlFor="set-tsa"
-              hint={t('settings.signing.officialHint')}
-            >
-              <div className="input-reset">
-                <Input
-                  id="set-tsa"
-                  type="url"
-                  value={draft.signing.tsa_url ?? ''}
-                  placeholder={t('settings.signing.tsaUrl.placeholder')}
-                  onChange={(e) => setSigning('tsa_url', e.target.value)}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  icon={<Icon.Refresh />}
-                  disabled={
-                    (draft.signing.tsa_url ?? '') === (DEFAULT_SETTINGS.signing.tsa_url ?? '')
-                  }
-                  onClick={() => setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '')}
-                >
-                  {t('settings.signing.reset')}
-                </Button>
-              </div>
-            </Field>
-            <Field
-              label={t('settings.signing.tslUrl.label')}
-              htmlFor="set-tsl"
-              hint={t('settings.signing.officialHint')}
-            >
-              <div className="input-reset">
-                <Input
-                  id="set-tsl"
-                  type="url"
-                  value={draft.signing.tsl_url ?? ''}
-                  placeholder={t('settings.signing.tslUrl.placeholder')}
-                  onChange={(e) => setSigning('tsl_url', e.target.value)}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  icon={<Icon.Refresh />}
-                  disabled={
-                    (draft.signing.tsl_url ?? '') === (DEFAULT_SETTINGS.signing.tsl_url ?? '')
-                  }
-                  onClick={() => setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '')}
-                >
-                  {t('settings.signing.reset')}
-                </Button>
-              </div>
-            </Field>
-            <Toggle
-              label={t('settings.signing.requireQualified.label')}
-              checked={draft.signing.require_qualified_for_seal}
-              onChange={(v) => setSigning('require_qualified_for_seal', v)}
-            />
-            <p className="field__hint">{t('settings.signing.note')}</p>
-          </div>
-        </Card>
+              <p className="field__hint">{t('settings.signing.note')}</p>
+            </div>
+          </Card>
+        ) : null}
 
         {/* Gestão ------------------------------------------------------------------ */}
-        <Card title={t('settings.management.cardTitle')}>
-          <div className="form">
-            <p className="field__hint">{t('settings.management.note')}</p>
-            <div className="row-wrap">
-              <ButtonLink to="/utilizadores" icon={<Icon.Users />}>
-                {t('settings.management.usersLink')}
-              </ButtonLink>
-              <ButtonLink to="/ferramentas" icon={<Icon.Wrench />}>
-                {t('settings.management.toolsLink')}
-              </ButtonLink>
+        {section === 'gestao' ? (
+          <Card title={t('settings.management.cardTitle')}>
+            <div className="form">
+              <p className="field__hint">{t('settings.management.note')}</p>
+              <div className="row-wrap">
+                <ButtonLink to="/utilizadores" icon={<Icon.Users />}>
+                  {t('settings.management.usersLink')}
+                </ButtonLink>
+                <ButtonLink to="/ferramentas" icon={<Icon.Wrench />}>
+                  {t('settings.management.toolsLink')}
+                </ButtonLink>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        ) : null}
 
         {/* Sobre ------------------------------------------------------------------- */}
-        <Card title={t('settings.about.cardTitle')}>
-          <dl className="deflist">
-            <div>
-              <dt>{t('settings.about.serverVersion')}</dt>
-              <dd className="mono">{health.data?.version ?? '—'}</dd>
-            </div>
-            <div>
-              <dt>{t('settings.about.uiVersion')}</dt>
-              <dd className="mono">
-                {UI_VERSION}
-                {health.data?.version && health.data.version !== UI_VERSION && (
-                  <>
-                    {' '}
-                    <Badge tone="error">{t('settings.about.serverOutdated')}</Badge>
-                  </>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>{t('settings.about.ledger')}</dt>
-              <dd>
-                {ledger.data ? (
-                  ledger.data.valid ? (
-                    <Badge tone="ok">
-                      {t('settings.about.ledger.valid', { count: ledger.data.length })}
-                    </Badge>
+        {section === 'sobre' ? (
+          <Card title={t('settings.about.cardTitle')}>
+            <dl className="deflist">
+              <div>
+                <dt>{t('settings.about.serverVersion')}</dt>
+                <dd className="mono">{health.data?.version ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>{t('settings.about.uiVersion')}</dt>
+                <dd className="mono">
+                  {UI_VERSION}
+                  {health.data?.version && health.data.version !== UI_VERSION && (
+                    <>
+                      {' '}
+                      <Badge tone="error">{t('settings.about.serverOutdated')}</Badge>
+                    </>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('settings.about.ledger')}</dt>
+                <dd>
+                  {ledger.data ? (
+                    ledger.data.valid ? (
+                      <Badge tone="ok">
+                        {t('settings.about.ledger.valid', { count: ledger.data.length })}
+                      </Badge>
+                    ) : (
+                      <Badge tone="error">{t('settings.about.ledger.compromised')}</Badge>
+                    )
                   ) : (
-                    <Badge tone="error">{t('settings.about.ledger.compromised')}</Badge>
-                  )
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>{t('settings.about.schemaVersion')}</dt>
-              <dd className="mono">{draft.schema_version}</dd>
-            </div>
-          </dl>
-        </Card>
+                    <span className="muted">—</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('settings.about.schemaVersion')}</dt>
+                <dd className="mono">{draft.schema_version}</dd>
+              </div>
+            </dl>
+          </Card>
+        ) : null}
       </div>
 
       {/* Save bar ------------------------------------------------------------------ */}

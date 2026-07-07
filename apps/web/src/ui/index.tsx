@@ -19,6 +19,7 @@ export { Digest, abbreviateDigest } from './Digest';
 export { Truncate } from './Truncate';
 export { ButtonLink } from './ButtonLink';
 export { PageHeader } from './PageHeader';
+export { SubNav, type SubNavItem } from './SubNav';
 export * as Icon from './icons';
 export { Skeleton, SkeletonText, SkeletonTable, SkeletonCards, SkeletonDeflist } from './Skeleton';
 

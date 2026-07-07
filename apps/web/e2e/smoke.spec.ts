@@ -45,6 +45,28 @@ test('settings theme flip applies [data-theme] live', async ({ page }) => {
   await expect(html).not.toHaveAttribute('data-theme', /.*/);
 });
 
+test('Configurações sub-tabs switch sections and deep-link via ?sec=', async ({ page }) => {
+  await page.goto('/configuracoes');
+
+  // Aparência is the default section (its theme control shows). The sub-tab pills use the
+  // shared SubNav (gliding indicator, same guarded effect as Ferramentas) — repeated
+  // switching must not trigger the "Maximum update depth" loop in a real browser.
+  await expect(page.getByLabel('Tema')).toBeVisible();
+
+  // Documentos: its CAE-URL field appears, the section deep-links, and Aparência's control
+  // is gone (one section at a time).
+  await page.getByRole('button', { name: 'Documentos' }).click();
+  await expect(page.getByLabel('URL de atualização do catálogo CAE')).toBeVisible();
+  await expect(page).toHaveURL(/[?&]sec=documentos/);
+  await expect(page.getByLabel('Tema')).toHaveCount(0);
+
+  // Switch to Sobre and back to Aparência — no crash across repeated indicator re-measures.
+  await page.getByRole('button', { name: 'Sobre' }).click();
+  await expect(page.getByText('Versão da interface')).toBeVisible();
+  await page.getByRole('button', { name: 'Aparência' }).click();
+  await expect(page.getByLabel('Tema')).toBeVisible();
+});
+
 test('safe mode (?safe=1) shows the banner and bypasses the appearance layer', async ({ page }) => {
   await page.goto('/?safe=1');
 

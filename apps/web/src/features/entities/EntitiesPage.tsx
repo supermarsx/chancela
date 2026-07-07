@@ -19,6 +19,7 @@ import {
   SkeletonTable,
   Table,
 } from '../../ui';
+import { NipcBadge } from './NipcBadge';
 
 export function EntitiesPage() {
   const t = useT();
@@ -69,7 +70,10 @@ export function EntitiesPage() {
               <tr key={ent.id}>
                 <td>{ent.name}</td>
                 <td>
-                  <code className="mono">{ent.nipc}</code>
+                  <span className="nipc-cell">
+                    <code className="mono">{ent.nipc}</code>
+                    {!ent.nipc_validated ? <NipcBadge /> : null}
+                  </span>
                 </td>
                 <td>{ent.seat}</td>
                 <td>

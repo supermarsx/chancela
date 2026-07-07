@@ -55,24 +55,42 @@ afterEach(() => {
 });
 
 describe('SettingsPage', () => {
-  it('renders every configuration section', async () => {
+  it('offers a sub-tab per section and shows Aparência by default', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes']);
 
-    // Card titles for the five sections.
-    expect(await screen.findByText('Aparência')).toBeTruthy();
-    for (const title of ['Identidade', 'Documentos', 'Assinaturas', 'Sobre']) {
-      expect(screen.getByText(title)).toBeTruthy();
+    // A segmented sub-tab per section (Gestão included).
+    for (const name of [
+      'Aparência',
+      'Identidade',
+      'Documentos',
+      'Assinaturas',
+      'Gestão',
+      'Sobre',
+    ]) {
+      expect(await screen.findByRole('button', { name })).toBeTruthy();
     }
-    // The version from /health surfaces in Sobre.
+    // Aparência is the default section: its theme control is present…
+    expect(await screen.findByLabelText('Tema')).toBeTruthy();
+    // …while a Documentos-only field is not rendered until that sub-tab is active.
+    expect(screen.queryByLabelText('URL de atualização do catálogo CAE')).toBeNull();
+  });
+
+  it('deep-links to a section via ?sec= and navigates between sub-tabs', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=documentos']);
+
+    // The deep-linked section renders its field; the default section's does not.
+    expect(await screen.findByLabelText('URL de atualização do catálogo CAE')).toBeTruthy();
+    expect(screen.queryByLabelText('Tema')).toBeNull();
+
+    // Switching to Sobre surfaces the /health version there.
+    fireEvent.click(screen.getByRole('button', { name: 'Sobre' }));
     expect(await screen.findByText('9.9.9')).toBeTruthy();
-    // The manual "Ator predefinido" input is gone — the audit actor is the signed-in
-    // user (topbar picker), not a settings field (t22-web).
-    expect(screen.queryByLabelText('Ator predefinido')).toBeNull();
-    // The CAE update URL field (contract F1b) lives under Documentos.
-    expect(screen.getByLabelText('URL de atualização do catálogo CAE')).toBeTruthy();
   });
 
   it('applies the theme override to the document root live', async () => {
@@ -104,18 +122,25 @@ describe('SettingsPage', () => {
     );
   });
 
-  it('PUTs the full settings document on save', async () => {
+  it('PUTs the full settings document on save, with edits spanning sub-tabs', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage />, ['/configuracoes']);
 
+    // Edit the org name under Identidade…
+    fireEvent.click(await screen.findByRole('button', { name: 'Identidade' }));
     const nameInput = (await screen.findByLabelText('Nome da organização')) as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: 'Encosto Estratégico, Lda.' } });
 
-    const caeUrl = screen.getByLabelText('URL de atualização do catálogo CAE') as HTMLInputElement;
+    // …then the CAE URL under Documentos (the working copy spans sub-tabs).
+    fireEvent.click(screen.getByRole('button', { name: 'Documentos' }));
+    const caeUrl = (await screen.findByLabelText(
+      'URL de atualização do catálogo CAE',
+    )) as HTMLInputElement;
     fireEvent.change(caeUrl, { target: { value: 'https://catalog.example.pt/cae_dataset.json' } });
 
+    // The save bar is reachable from any section.
     fireEvent.click(screen.getByRole('button', { name: /guardar configurações/i }));
 
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
