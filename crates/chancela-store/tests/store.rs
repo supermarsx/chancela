@@ -1,0 +1,542 @@
+//! Integration tests for the durable system of record (t30-e1).
+//!
+//! This crate is the durability guard for the whole application, so the coverage here is
+//! deliberately thorough: open/reopen idempotency, transactional atomicity (a mid-closure error
+//! must persist *nothing*), a full drop-and-reload round trip with chain re-verification, raw-SQL
+//! tamper detection, the schema-version-too-new rejection, and the `VACUUM INTO` hot backup
+//! (archive present, per-file digests match, snapshot re-openable and self-verifying).
+
+use std::collections::HashMap;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use chancela_core::{Act, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
+use chancela_ledger::{Event, Ledger, LedgerError};
+use chancela_registry::{RegistryExtract, RegistryProvenance};
+use chancela_store::{Store, StoreError};
+use sha2::{Digest, Sha256};
+
+// --- std-only tempdir (the crate's Cargo.toml is frozen; no `tempfile` dev-dep) -----------------
+
+static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// A unique scratch directory under the OS temp dir, removed on drop.
+struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    fn new() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "chancela-store-test-{}-{nanos}-{n}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        TempDir { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+// --- fixtures -----------------------------------------------------------------------------------
+
+fn sample_entity(name: &str) -> Entity {
+    Entity::new(
+        name,
+        Nipc::unvalidated("500002020"),
+        "Rua de Teste, Lisboa",
+        EntityKind::SociedadePorQuotas,
+    )
+}
+
+fn sample_extract(nipc: &str) -> RegistryExtract {
+    RegistryExtract {
+        matricula: Some("12345".to_string()),
+        nipc: Some(nipc.to_string()),
+        firma: Some("Firma de Teste, Lda".to_string()),
+        forma_juridica: None,
+        legal_form: None,
+        sede: Some("Lisboa".to_string()),
+        cae: Vec::new(),
+        objeto: None,
+        capital: None,
+        data_constituicao: None,
+        orgaos: Vec::new(),
+        inscricoes: Vec::new(),
+        anotacoes: Vec::new(),
+        provenance: RegistryProvenance {
+            access_code_masked: "****-****-1234".to_string(),
+            retrieved_at: "2026-07-07T00:00:00Z".to_string(),
+            source_url: "https://example.test/certidao".to_string(),
+            raw_digest: "deadbeef".to_string(),
+            conservatoria: None,
+            oficial: None,
+            subscribed_on: None,
+            valid_until: None,
+        },
+    }
+}
+
+/// Append an event to `ledger` and persist it (event-only), returning the appended event.
+fn persist_event(store: &Store, ledger: &mut Ledger, scope: &str, kind: &str) -> Event {
+    let event = ledger
+        .append("amelia.marques", scope, kind, None, scope.as_bytes())
+        .clone();
+    store
+        .persist(|tx| tx.append_event(&event))
+        .expect("persist event");
+    event
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+// --- tests --------------------------------------------------------------------------------------
+
+#[test]
+fn open_creates_db_and_reopen_is_idempotent() {
+    let dir = TempDir::new();
+    {
+        let store = Store::open(dir.path()).expect("open fresh");
+        let loaded = store.load().expect("load fresh");
+        assert!(loaded.entities.is_empty());
+        assert!(loaded.books.is_empty());
+        assert!(loaded.acts.is_empty());
+        assert!(loaded.registry_extracts.is_empty());
+        assert_eq!(loaded.chain_status, Ok(0));
+        assert_eq!(loaded.ledger.len(), 0);
+    }
+    // The db file was created and reopening the same directory succeeds without wiping it.
+    assert!(dir.path().join("chancela.db").exists());
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(reopened.load().expect("reload").chain_status, Ok(0));
+}
+
+#[test]
+fn persist_commits_event_and_aggregate_together() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+    let entity = sample_entity("Alfa, Lda");
+
+    let event = ledger
+        .append(
+            "amelia.marques",
+            "entity:alfa",
+            "entity.created",
+            None,
+            b"alfa",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&event)?;
+            tx.upsert_entity(&entity)?;
+            Ok(())
+        })
+        .expect("persist entity + event");
+
+    let loaded = store.load().expect("load");
+    assert_eq!(loaded.chain_status, Ok(1));
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+}
+
+#[test]
+fn mid_closure_error_rolls_back_the_whole_transaction() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+    let entity = sample_entity("Beta, Lda");
+
+    // The event is appended in-memory and the closure gets as far as upserting the aggregate, then
+    // fails. Because the transaction rolls back on the `Err`, neither the event row nor the entity
+    // row may survive.
+    let event = ledger
+        .append(
+            "amelia.marques",
+            "entity:beta",
+            "entity.created",
+            None,
+            b"beta",
+        )
+        .clone();
+    let result = store.persist(|tx| {
+        tx.append_event(&event)?;
+        tx.upsert_entity(&entity)?;
+        Err(StoreError::NotPersistent)
+    });
+    assert!(matches!(result, Err(StoreError::NotPersistent)));
+
+    let loaded = store.load().expect("load after rollback");
+    assert_eq!(loaded.ledger.len(), 0, "event row must have rolled back");
+    assert!(
+        loaded.entities.is_empty(),
+        "entity row must have rolled back"
+    );
+    assert_eq!(loaded.chain_status, Ok(0));
+
+    // A subsequent good persist of seq 0 still works (the failed attempt left no phantom seq).
+    store
+        .persist(|tx| {
+            tx.append_event(&event)?;
+            tx.upsert_entity(&entity)?;
+            Ok(())
+        })
+        .expect("retry persists cleanly");
+    assert_eq!(store.load().expect("reload").chain_status, Ok(1));
+}
+
+#[test]
+fn full_round_trip_survives_drop_and_reopen() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Gama, Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata n.º 1", MeetingChannel::Physical);
+    let extract = sample_extract("500002020");
+
+    let mut expected_entities = HashMap::new();
+    let mut expected_books = HashMap::new();
+    let mut expected_acts = HashMap::new();
+    let mut expected_extracts = HashMap::new();
+
+    {
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = Ledger::new();
+
+        // Four mutations, each in its own transaction, each persisting its event + aggregate.
+        let e0 = ledger
+            .append(
+                "amelia.marques",
+                "entity:gama",
+                "entity.created",
+                None,
+                b"gama",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e0)?;
+                tx.upsert_entity(&entity)
+            })
+            .unwrap();
+        expected_entities.insert(entity.id, entity.clone());
+
+        let e1 = ledger
+            .append("amelia.marques", "book:1", "book.opened", None, b"book")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e1)?;
+                tx.upsert_book(&book)
+            })
+            .unwrap();
+        expected_books.insert(book.id, book.clone());
+
+        let e2 = ledger
+            .append("amelia.marques", "act:1", "act.drafted", None, b"act")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e2)?;
+                tx.upsert_act(&act)
+            })
+            .unwrap();
+        expected_acts.insert(act.id, act.clone());
+
+        let e3 = ledger
+            .append(
+                "amelia.marques",
+                "entity:gama",
+                "registry.imported",
+                None,
+                b"cert",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e3)?;
+                tx.upsert_registry_extract(entity.id, &extract)
+            })
+            .unwrap();
+        expected_extracts.insert(entity.id, extract.clone());
+        // Store dropped here — the process "restarts".
+    }
+
+    let store = Store::open(dir.path()).expect("reopen");
+    let loaded = store.load().expect("reload");
+    assert_eq!(loaded.entities, expected_entities);
+    assert_eq!(loaded.books, expected_books);
+    assert_eq!(loaded.acts, expected_acts);
+    assert_eq!(loaded.registry_extracts, expected_extracts);
+    assert_eq!(loaded.chain_status, Ok(4));
+    assert_eq!(loaded.ledger.len(), 4);
+}
+
+#[test]
+fn upsert_replaces_the_previous_aggregate_row() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+
+    let mut entity = sample_entity("Delta, Lda");
+    let e0 = ledger
+        .append(
+            "amelia.marques",
+            "entity:delta",
+            "entity.created",
+            None,
+            b"d",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e0)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+
+    // Rename the entity and upsert again under the same id — the row is replaced, not duplicated.
+    entity.name = "Delta Renomeada, Lda".to_string();
+    let e1 = ledger
+        .append(
+            "amelia.marques",
+            "entity:delta",
+            "entity.renamed",
+            None,
+            b"d2",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e1)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+
+    let loaded = store.load().expect("load");
+    assert_eq!(loaded.entities.len(), 1);
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+}
+
+#[test]
+fn tampering_with_an_event_row_is_detected_on_load() {
+    let dir = TempDir::new();
+    {
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = Ledger::new();
+        persist_event(&store, &mut ledger, "book:1", "book.opened");
+        persist_event(&store, &mut ledger, "book:1", "act.sealed");
+        assert_eq!(store.load().unwrap().chain_status, Ok(2));
+    }
+
+    // Flip a field of the seq-1 event row directly, leaving its stored `hash` stale. On reload the
+    // recomputed hash no longer matches → HashMismatch at exactly that seq.
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        let changed = raw
+            .execute("UPDATE events SET actor = 'mallory' WHERE seq = 1", [])
+            .unwrap();
+        assert_eq!(changed, 1);
+    }
+
+    let store = Store::open(dir.path()).expect("reopen");
+    let loaded = store
+        .load()
+        .expect("load still succeeds (never refuse to start)");
+    assert_eq!(
+        loaded.chain_status,
+        Err(LedgerError::HashMismatch { seq: 1 })
+    );
+    // The events are still in hand so the operator can inspect them.
+    assert_eq!(loaded.ledger.len(), 2);
+}
+
+#[test]
+fn a_newer_schema_version_is_rejected() {
+    let dir = TempDir::new();
+    Store::open(dir.path()).expect("create at current schema");
+
+    // Simulate a file written by a future build.
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute(
+            "UPDATE meta SET value = '999' WHERE key = 'schema_version'",
+            [],
+        )
+        .unwrap();
+    }
+
+    match Store::open(dir.path()) {
+        Err(StoreError::UnsupportedSchemaVersion { found, supported }) => {
+            assert_eq!(found, 999);
+            assert_eq!(supported, 1);
+        }
+        other => panic!("expected UnsupportedSchemaVersion, got {other:?}"),
+    }
+}
+
+#[test]
+fn backup_bundles_a_verifiable_snapshot_and_sidecars() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+    let entity = sample_entity("Epsilon, Lda");
+
+    let e0 = ledger
+        .append(
+            "amelia.marques",
+            "entity:eps",
+            "entity.created",
+            None,
+            b"eps",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e0)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+    persist_event(&store, &mut ledger, "book:1", "book.opened");
+
+    // One real sidecar file, one sidecar directory (recursed), one missing path (skipped).
+    let settings = dir.path().join("settings.json");
+    std::fs::write(&settings, br#"{"default_actor":"amelia.marques"}"#).unwrap();
+    let laws = dir.path().join("laws");
+    std::fs::create_dir_all(&laws).unwrap();
+    std::fs::write(laws.join("csc.pdf"), b"%PDF-1.7 fake").unwrap();
+    let missing = dir.path().join("does-not-exist.json");
+
+    let sidecars = vec![settings.clone(), laws.clone(), missing];
+    let manifest = store.backup(dir.path(), &sidecars).expect("backup");
+
+    // Archive is where the manifest says, with the reported size, and ledger metadata matches.
+    let zip_path = Path::new(&manifest.path);
+    assert!(zip_path.exists(), "zip archive must exist at manifest.path");
+    assert_eq!(
+        std::fs::metadata(zip_path).unwrap().len(),
+        manifest.bytes,
+        "manifest.bytes must equal the archive size"
+    );
+    assert_eq!(manifest.ledger_length, 2);
+    assert!(manifest.ledger_verified);
+    assert_eq!(manifest.store_schema_version, 1);
+    assert!(manifest.ledger_head.is_some());
+
+    // The manifest lists the db + both sidecar files (dir recursed), never the missing path.
+    let names: Vec<&str> = manifest.files.iter().map(|f| f.name.as_str()).collect();
+    assert!(names.contains(&"chancela.db"));
+    assert!(names.contains(&"settings.json"));
+    assert!(names.contains(&"laws/csc.pdf"));
+    assert!(!names.iter().any(|n| n.contains("does-not-exist")));
+
+    // Every manifest digest matches the actual archive member bytes.
+    let file = std::fs::File::open(zip_path).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
+    for entry in &manifest.files {
+        let mut member = archive.by_name(&entry.name).expect("member present");
+        let mut bytes = Vec::new();
+        member.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes.len() as u64, entry.bytes, "size for {}", entry.name);
+        assert_eq!(
+            hex(&Sha256::digest(&bytes)),
+            entry.sha256,
+            "digest for {}",
+            entry.name
+        );
+    }
+
+    // The embedded manifest.json is present for the restore path.
+    assert!(archive.by_name("manifest.json").is_ok());
+
+    // Extract the snapshot db into a clean data dir and prove a fresh Store opens + verifies it.
+    let restore = TempDir::new();
+    {
+        let mut db_member = archive.by_name("chancela.db").unwrap();
+        let mut db_bytes = Vec::new();
+        db_member.read_to_end(&mut db_bytes).unwrap();
+        std::fs::write(restore.path().join("chancela.db"), &db_bytes).unwrap();
+    }
+    let restored = Store::open(restore.path()).expect("open restored snapshot");
+    let loaded = restored.load().expect("load restored");
+    assert_eq!(loaded.chain_status, Ok(2));
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+}
+
+#[test]
+fn backup_reflects_a_broken_chain_without_failing() {
+    let dir = TempDir::new();
+    {
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = Ledger::new();
+        persist_event(&store, &mut ledger, "book:1", "book.opened");
+        persist_event(&store, &mut ledger, "book:1", "act.sealed");
+    }
+    // Corrupt seq 0 so the chain no longer verifies.
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute("UPDATE events SET actor = 'x' WHERE seq = 0", [])
+            .unwrap();
+    }
+
+    let store = Store::open(dir.path()).expect("reopen");
+    let manifest = store
+        .backup(dir.path(), &[])
+        .expect("backup still succeeds");
+    assert!(
+        !manifest.ledger_verified,
+        "a broken chain reports unverified"
+    );
+    assert_eq!(manifest.ledger_length, 2);
+}
+
+#[test]
+fn wal_mode_allows_a_concurrent_reader() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+    let entity = sample_entity("Zeta, Lda");
+    let e0 = ledger
+        .append(
+            "amelia.marques",
+            "entity:zeta",
+            "entity.created",
+            None,
+            b"z",
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&e0)?;
+            tx.upsert_entity(&entity)
+        })
+        .unwrap();
+
+    // A second independent connection reads the committed rows while the Store is still open
+    // (WAL lets a reader proceed without blocking on the writer connection).
+    let reader = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let entity_count: i64 = reader
+        .query_row("SELECT COUNT(*) FROM entities", [], |r| r.get(0))
+        .unwrap();
+    let event_count: i64 = reader
+        .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(entity_count, 1);
+    assert_eq!(event_count, 1);
+}

@@ -1,0 +1,26 @@
+[package]
+name = "chancela-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Durable system of record for Chancela: embedded SQLite store (WAL) for the domain aggregates + hash-chained ledger, plus a VACUUM INTO hot-backup bundle (spec ARC-10/11/14, ARC-20 backup-half, SCP-D1)."
+
+[dependencies]
+# Domain types persisted/loaded by the store. It depends on core (Entity/Book/Act ids),
+# ledger (Event/Ledger), and registry (RegistryExtract, held in LoadedState per the frozen §3.1
+# API). It must NOT depend on chancela-api (that would cycle: api → store → api).
+chancela-core = { workspace = true }
+chancela-ledger = { workspace = true }
+chancela-registry = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+# Embedded SQLite (bundled = vendored C, static-linked). See root Cargo.toml / t30.md §D1.
+rusqlite = { workspace = true }
+# Hot-backup archive writer. See root Cargo.toml / t30.md §D6.
+zip = { workspace = true }
