@@ -1,0 +1,3189 @@
+/*
+ * Chancela theme placeholder — dark green + white, old-school editorial (UX-01).
+ * This is a token layer, not a fragile skin (UX-02): colours and type live in CSS
+ * custom properties so the real theme package can supersede them later.
+ * Fonts use system serif/sans/mono stacks only — no runtime font fetching (UX-03).
+ */
+
+:root {
+  /* Brand constants — green / gold / white identity (UX-01: dark-green + gold + white,
+     gilt lettering on a leather ledger). */
+  --green-ink: #10241b;
+  --green-deep: #0b1a13;
+  --green-accent: #1f6f4a;
+  --paper: #f7f3ea;
+
+  /* Old-gold ramp — the refined accent, used sparingly so it reads gilt not gaudy. */
+  --gold: #b8963e; /* base old-gold: hairline rules, fills, decoration */
+  --gold-bright: #d8b55a; /* brighter: dark-theme accent/text on green */
+  --gold-deep: #6b4d12; /* deep antique gold: light-theme accent/text; ≥4.5 on BOTH
+     white surfaces (7.4:1) AND the tan leather base (4.8:1) — a page-level gold button,
+     link, or breadcrumb over raw leather now clears WCAG AA, not just over cards (t35). */
+
+  /* Light theme (default): white/parchment surfaces, gold accent, green ink. */
+  --bg: var(--paper);
+  --surface: #fffdf8;
+  --text: var(--green-ink);
+  --text-muted: #5c5344;
+  --accent: var(--gold-deep);
+  --accent-strong: var(--gold);
+  --on-accent: var(--green-ink);
+  --border: #dcd0b2;
+  /* --field-border: the firmer hairline for INTERACTIVE component edges (inputs,
+     the session pill) — WCAG 1.4.11 wants ≥3:1 for a control's visual boundary, which
+     the decorative --border (a faint 1.5:1 card edge) does not meet. Light olive-gold
+     that clears 3:1 against the field fill, the card surface, AND the leather (t35). */
+  --field-border: #7d6a38;
+  --rule: #cbb079;
+
+  --font-display: Georgia, 'Times New Roman', 'Iowan Old Style', 'Palatino Linotype', serif;
+  --font-body: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  --space: 1rem;
+  --radius: 4px;
+  --measure: 68ch;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--green-ink);
+    --surface: #163026;
+    --text: var(--paper);
+    --text-muted: #a9b8ac;
+    --accent: var(--gold-bright);
+    --accent-strong: var(--gold-bright);
+    --on-accent: var(--green-deep);
+    --border: #2c4a3b;
+    /* Firmer interactive-edge hairline for dark (≥3:1 on field fill, surface, leather). */
+    --field-border: #5f8070;
+    --rule: #4a3d1f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  /* The app shell owns scrolling (fixed title/tab bars); the window itself never
+     scrolls, so content can never slide under the chrome. */
+  overflow: hidden;
+}
+
+body {
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover,
+a:focus-visible {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 3rem);
+  /* Tighten the gap between the fixed tab bar and the page content (t19-e2 item d): the
+     uniform PageHeader no longer carries the old `.section-title` top margin, and the
+     scroll container's top padding is trimmed so pages start close under the tabs. */
+  padding-top: clamp(0.9rem, 1.8vw, 1.35rem);
+}
+
+/* Masthead — editorial newspaper header. */
+.masthead {
+  text-align: center;
+  border-bottom: 3px double var(--rule);
+  padding-bottom: 1.25rem;
+}
+
+.masthead__kicker {
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+
+.masthead__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.75rem, 8vw, 5rem);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.masthead__tagline {
+  font-family: var(--font-body);
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  margin: 0.75rem 0 0;
+}
+
+/* Navigation. */
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.5rem;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.78rem;
+  border-bottom: 1px solid var(--rule);
+  padding: 0.9rem 0;
+  margin-bottom: 2rem;
+}
+
+.nav a {
+  color: var(--text);
+}
+
+/* Dashboard cards. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+
+.card__label {
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin: 0 0 0.6rem;
+}
+
+.card__metric {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  line-height: 1;
+  margin: 0;
+}
+
+.card__note {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0.6rem 0 0;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.4rem;
+  margin: 2.5rem 0 1.25rem;
+}
+
+.footer {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 3px double var(--rule);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ============================================================================
+ * Facilities UI (t5-web) — additive layer over the editorial tokens above.
+ * Extra semantic colours for status/severity; the base palette is unchanged.
+ * ========================================================================== */
+
+:root {
+  --warn: #9a6a00;
+  --warn-bg: #fbf1d8;
+  --error: #9b2226;
+  --error-bg: #f7e0e0;
+  --ok: #1f6f4a;
+  --ok-bg: #e2f0e8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --warn: #e0b64d;
+    --warn-bg: #3a2f12;
+    --error: #f0a3a3;
+    --error-bg: #3a1c1d;
+    --ok: #7fd3a8;
+    --ok-bg: #163a2a;
+  }
+}
+
+/* Nav links (router-driven active state). */
+.nav__link {
+  color: var(--text);
+}
+
+.nav__link.is-active {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Vertical rhythm helpers. */
+.stack > * + * {
+  margin-top: 1.5rem;
+}
+
+.stack--tight > * + * {
+  margin-top: 0.75rem;
+}
+
+.row-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.crumbs {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.ata-title .ata-number {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-left: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
+/* Two-column split: main content + aside forms/panels. */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.split__aside > * + * {
+  margin-top: 1.5rem;
+}
+
+@media (max-width: 860px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Panels. */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel__title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.panel__body {
+  padding: 1.25rem;
+}
+
+/* Forms. */
+.form > * + * {
+  margin-top: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field__label {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.field__hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.field__error {
+  font-size: 0.82rem;
+  color: var(--error);
+  margin: 0;
+}
+
+.control {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--bg);
+  /* An input is an interactive component: its edge uses the firmer --field-border
+     (≥3:1) rather than the faint decorative --border, so the field reads as an input
+     over a card, over the leather, and against its own fill in both themes (t35). */
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.7rem;
+}
+
+.control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.control:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.control--textarea {
+  resize: vertical;
+  font-family: var(--font-body);
+  line-height: 1.5;
+}
+
+.form__actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.rowline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.rowline .control {
+  width: auto;
+  flex: 1 1 8rem;
+}
+
+.check {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* Buttons. */
+.btn {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--accent);
+  cursor: pointer;
+  background: transparent;
+  color: var(--accent);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  /* An inert greyed chip — NOT an opacity dim. Dimming a transparent-fill button (secondary /
+     ghost / base) to 0.5 blends its gold/grey ink toward the surface and drops it to ~2:1,
+     which is the "greyish, bad-contrast" complaint. Instead give disabled an explicit muted
+     treatment whose LABEL clears WCAG AA (≥4.5:1) on both themes' surfaces, with a soft fill
+     and hairline so it still reads as inactive and distinct from an active button. Higher
+     specificity than the variant classes (`.btn:disabled` = two classes), so it also greys a
+     disabled primary consistently. */
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  /* Firmed 42%→80% so the inert border itself clears ≥3:1 on the card surface AND the
+     leather (was ~2:1, a barely-there greyish edge); still visibly muted vs an active
+     button's gold/green ink, so "disabled" stays distinct (t35). */
+  border-color: color-mix(in srgb, var(--text-muted) 80%, transparent);
+}
+
+.btn--primary {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  border-color: var(--accent-strong);
+}
+
+.btn--secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+.btn--ghost {
+  border-color: transparent;
+  /* Deepened from --text-muted (a mid-grey that read as a low-contrast "greyish" button):
+     use the full ink — deep green in light, off-white in dark — so a borderless ghost action
+     (Cancelar / Limpar / Repor / Guardar) is unambiguously legible (≈12:1) yet stays lighter-
+     weight than a bordered gold secondary through its lack of border/fill, keeping the gilt
+     restraint. */
+  color: var(--text);
+  padding: 0.5rem 0.6rem;
+}
+
+.btn--ghost:hover {
+  color: var(--error);
+}
+
+/* Buttons carrying an inline-SVG icon (t19-e2 item g): the label + glyph sit on one
+   centered baseline with a small gap. The icon inherits `currentColor` and sizes to the
+   label (1em), so it reads in the button's ink in either theme and on any variant. */
+.btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+a.btn--icon {
+  display: inline-flex;
+}
+
+.btn__icon {
+  display: inline-flex;
+  flex: none;
+  /* Nudge the optical size up a touch so the line icon balances the uppercase label. */
+  font-size: 1.15em;
+  line-height: 0;
+}
+
+.btn__icon .icon {
+  display: block;
+}
+
+/* ---------------------------------------------------------------------------
+ * Leather-textured buttons (t19-e2) — the same procedural hide as the background,
+ * stamped behind the button's accent so the primary/secondary chrome reads as gilt on
+ * tanned leather. Gated by `:root[data-button-texture='on']` (appearance.button_texture,
+ * default true); when off the buttons are flat fills. The grain sits UNDER the label via
+ * a ::before layer at low opacity, so it never lowers text contrast (WCAG AA holds in
+ * both themes — ink/accent are unchanged, only the fill gains depth). Reuses the
+ * `--leather-grain` data-URI published on the root by AppearanceEffects.
+ * ------------------------------------------------------------------------- */
+.btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* The grain rides a negative-z-index ::before: it paints above the button's own fill but
+   below the in-flow label/icon, so a bare text-node label needs no wrapper to stay on
+   top and its contrast is untouched. */
+:root[data-button-texture='on'] .btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--leather-grain, none);
+  background-repeat: repeat;
+  background-position: center;
+  background-size: 320px 320px;
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+  border-radius: inherit;
+}
+
+/* A ghost button is chromeless text; texture there would read as noise, so skip it. */
+:root[data-button-texture='on'] .btn--ghost::before {
+  display: none;
+}
+
+/* Tables. */
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.table th {
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  border-bottom: 2px solid var(--rule);
+  padding: 0.5rem 0.6rem;
+}
+
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0.6rem;
+  vertical-align: middle;
+}
+
+/* Badges. */
+.badge {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.badge--accent {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.badge--ok {
+  color: var(--ok);
+  background: var(--ok-bg);
+  border-color: var(--ok);
+}
+
+.badge--warn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: var(--warn);
+}
+
+.badge--error {
+  color: var(--error);
+  background: var(--error-bg);
+  border-color: var(--error);
+}
+
+/* Empty states. */
+.empty {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  color: var(--text-muted);
+}
+
+.empty__title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  margin: 0 0 0.4rem;
+}
+
+.empty__body {
+  font-size: 0.92rem;
+}
+
+/* Inline warnings / callouts. */
+.inline-warning {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+
+.inline-warning--warn {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.inline-warning--error {
+  border-left-color: var(--error);
+  background: var(--error-bg);
+}
+
+.inline-warning--info {
+  border-left-color: var(--accent);
+}
+
+.inline-warning__title {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.35rem;
+}
+
+.inline-warning__body {
+  font-size: 0.92rem;
+}
+
+/* Definition lists (entity/book summaries). */
+.deflist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 1rem;
+  margin: 0;
+}
+
+.deflist dt {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.deflist dd {
+  margin: 0.2rem 0 0;
+}
+
+/* Chain status line. */
+.chain-status {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
+/* Deliberations editor + preview. */
+.delib {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 720px) {
+  .delib {
+    grid-template-columns: 1fr;
+  }
+}
+
+.preview {
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  background: var(--bg);
+  min-height: 6rem;
+}
+
+.preview p {
+  margin: 0 0 0.75rem;
+}
+
+/* Lifecycle stepper. */
+.stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.step {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.step--done {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.step--current {
+  color: var(--on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+/* Compliance issue list. */
+.issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.issues > li + li {
+  margin-top: 0.6rem;
+}
+
+.issue {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  padding: 0.6rem 0.8rem;
+}
+
+.issue--error {
+  border-left-color: var(--error);
+}
+
+.issue--warning {
+  border-left-color: var(--warn);
+}
+
+.issue__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.issue__message {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+/* Filter cell inside a panel head. */
+.filter .field {
+  min-width: 14rem;
+}
+
+/* ============================================================================
+ * Leather-textured chrome (t7) — the whole app and its window frame read as one
+ * editorial, leather-bound object. Procedural grain (see theme/leather.ts) is
+ * composited here over a theme base; surfaces stay legible over it; the desktop
+ * title bar and all default chrome (scrollbars, selection, focus) are themed.
+ * ========================================================================== */
+
+:root {
+  /* Warm parchment-leather base for the light theme, with a gilt vignette hint. */
+  --leather-base: #d9c9a6;
+  --leather-highlight: rgba(255, 249, 230, 0.55);
+  --leather-shadow: rgba(120, 90, 30, 0.4);
+
+  /* Grain strength (0..1) — driven live by Configurações › Aparência's intensity
+     slider (settings.appearance.texture_intensity / 100). Default 0.6 matches the
+     server's default of 60; the grain layer's opacity reads it. */
+  --leather-grain-opacity: 0.6;
+
+  /* Surfaces become faintly translucent so a whisper of grain reads through the
+     gutters of a card without touching text contrast (alpha stays high). */
+  --surface: rgba(255, 253, 248, 0.93);
+
+  /* Desktop title-bar height. Zero in the browser (no bar); the Tauri shell
+     flips it on via [data-tauri]. The fixed secondary tab bar sits below it. */
+  --titlebar-h: 0px;
+  --topbar-h: 46px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Deep green-tinted tanned hide for the dark theme, with a subtle gold sheen. */
+    --leather-base: #0e2019;
+    --leather-highlight: rgba(200, 165, 85, 0.09);
+    --leather-shadow: rgba(0, 0, 0, 0.55);
+    --surface: rgba(22, 48, 38, 0.9);
+  }
+}
+
+:root[data-tauri='true'] {
+  --titlebar-h: 30px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Explicit theme override (settings.appearance.theme = "light" | "dark").
+ *
+ * The palette above is driven by `prefers-color-scheme`. When the operator picks
+ * a fixed theme in Configurações, `data-theme` is stamped on the root and these
+ * blocks force the corresponding palette regardless of the OS preference (the
+ * `[data-theme]` attribute selector out-specifies the bare `:root` media rules).
+ * `theme = "system"` removes the attribute, handing control back to the media
+ * queries. Because the whole app — surfaces, chrome, the leather base and the
+ * desktop titlebar — reads these same custom properties, one attribute flips
+ * everything. Values mirror the final effective light/dark tokens above (kept in
+ * step by hand); `color-scheme` is set so native controls match too.
+ * ------------------------------------------------------------------------- */
+:root[data-theme='light'] {
+  --bg: var(--paper);
+  --surface: rgba(255, 253, 248, 0.93);
+  --text: var(--green-ink);
+  --text-muted: #5c5344;
+  --accent: var(--gold-deep);
+  --accent-strong: var(--gold);
+  --on-accent: var(--green-ink);
+  --border: #dcd0b2;
+  --field-border: #7d6a38;
+  --rule: #cbb079;
+  --warn: #9a6a00;
+  --warn-bg: #fbf1d8;
+  --error: #9b2226;
+  --error-bg: #f7e0e0;
+  --ok: #1f6f4a;
+  --ok-bg: #e2f0e8;
+  --leather-base: #d9c9a6;
+  --leather-highlight: rgba(255, 249, 230, 0.55);
+  --leather-shadow: rgba(120, 90, 30, 0.4);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg: var(--green-ink);
+  --surface: rgba(22, 48, 38, 0.9);
+  --text: var(--paper);
+  --text-muted: #a9b8ac;
+  --accent: var(--gold-bright);
+  --accent-strong: var(--gold-bright);
+  --on-accent: var(--green-deep);
+  --border: #2c4a3b;
+  --field-border: #5f8070;
+  --rule: #4a3d1f;
+  --warn: #e0b64d;
+  --warn-bg: #3a2f12;
+  --error: #f0a3a3;
+  --error-bg: #3a1c1d;
+  --ok: #7fd3a8;
+  --ok-bg: #163a2a;
+  --leather-base: #0e2019;
+  --leather-highlight: rgba(200, 165, 85, 0.09);
+  --leather-shadow: rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+/* The leather shows through: the page itself is transparent, html carries the
+   base colour as an instant pre-paint fallback, and the fixed layer paints the
+   grain + depth behind everything. */
+html {
+  background-color: var(--leather-base);
+}
+
+body {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+ * App shell layout: fixed titlebar (desktop) + fixed secondary tab bar, with a
+ * single inner scroll container. The window never scrolls; content scrolls
+ * beneath the chrome and never under it. Degrades cleanly in the browser
+ * (titlebar-h 0, no titlebar element).
+ * ------------------------------------------------------------------------- */
+
+/* Fixed secondary tab bar — topmost in the browser, directly under the custom
+   titlebar in the desktop shell. Slim, themed, gold-ruled. */
+.topbar {
+  position: fixed;
+  top: var(--titlebar-h);
+  left: 0;
+  right: 0;
+  height: var(--topbar-h);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 3vw, 2rem);
+  padding: 0 clamp(1rem, 4vw, 2.25rem);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
+  backdrop-filter: blur(10px) saturate(1.05);
+  border-bottom: 1px solid var(--rule);
+}
+
+.topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* A small gilt seal-mark before the brand. */
+.topbar__brand::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1.5px solid var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 30%, transparent);
+}
+
+/* Desktop already carries the wordmark in the titlebar — don't duplicate it
+   prominently; the tab bar shows only the tabs there. */
+:root[data-tauri='true'] .topbar__brand {
+  display: none;
+}
+
+/* The tab group is centered in the full bar width (absolute-centered so it stays
+   centered whether or not the left brand mark is shown). */
+.topbar__nav {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 4rem);
+  display: flex;
+  flex-wrap: nowrap;
+  gap: clamp(1rem, 2.5vw, 1.6rem);
+  overflow-x: auto;
+  scrollbar-width: none;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+}
+
+.topbar__nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* The one scroll container. Fixed below the chrome so its scrollbar never
+   overlaps the bars; overflow-x hidden keeps the page body from side-scrolling. */
+.app-scroll {
+  position: fixed;
+  top: calc(var(--titlebar-h) + var(--topbar-h));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.leather-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--leather-base);
+  background-image:
+    radial-gradient(130% 100% at 50% -20%, var(--leather-highlight), transparent 60%),
+    radial-gradient(150% 130% at 50% 120%, var(--leather-shadow), transparent 65%);
+  background-repeat: no-repeat, no-repeat;
+  background-position:
+    center top,
+    center bottom;
+  background-size:
+    100% 100%,
+    100% 100%;
+  background-blend-mode: soft-light, multiply;
+}
+
+/* The grain lives on its own layer so its opacity — the texture-intensity slider,
+   published as --leather-grain-opacity — scales the grain independently of the
+   base colour and vignette. soft-light blends it over the layers below so it both
+   lightens and darkens the base → tanned-hide depth. */
+.leather-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--leather-grain, none);
+  background-repeat: repeat;
+  background-position: center;
+  background-size: 520px 520px;
+  mix-blend-mode: soft-light;
+  opacity: var(--leather-grain-opacity, 0.6);
+}
+
+/* Themed scrollbars — one editorial look in both engines/themes. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 55%, transparent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 80%, transparent);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Themed text selection — gilt highlight, green ink (readable in both themes). */
+::selection {
+  background: var(--gold);
+  color: var(--green-ink);
+}
+
+/* ---------------------------------------------------------------------------
+ * Custom window title bar (Tauri desktop). Rendered only inside the shell; the
+ * browser never mounts it. It IS the window frame (native decorations are off).
+ * ------------------------------------------------------------------------- */
+.titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-h);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 0.35rem;
+  background: color-mix(in srgb, var(--leather-base) 80%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  backdrop-filter: blur(8px) saturate(1.1);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-sans);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 100%;
+  padding: 0 0.55rem;
+}
+
+.titlebar__seal {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.titlebar__seal circle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.3;
+}
+
+.titlebar__seal text {
+  fill: var(--accent);
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.titlebar__wordmark {
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  /* Thinner wordmark (t19-e2 item f): a lighter serif weight for a more refined mark in
+     the 30px titlebar, letterspacing kept so it still reads as a wordmark, not a run of
+     letters. 300 falls back to the nearest available weight for the system serif. */
+  font-weight: 300;
+  letter-spacing: 0.09em;
+  color: var(--text);
+}
+
+.titlebar__controls {
+  display: flex;
+  height: 100%;
+}
+
+.titlebar__btn {
+  width: 42px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: default;
+}
+
+.titlebar__btn svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  stroke-width: 1.1;
+  fill: none;
+}
+
+.titlebar__btn:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.titlebar__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -5px;
+}
+
+.titlebar__btn--close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+/* ============================================================================
+ * Motion (t7): an elegant, fast editorial page transition on route change, plus
+ * smooth micro-transitions on interactive elements. The fixed leather background
+ * and chrome never re-animate (only the routed content is keyed on the route).
+ * All of it collapses under prefers-reduced-motion.
+ * ========================================================================== */
+
+/* Routed content fades + slides up briefly on each navigation (keyed on pathname
+   in Layout). ~220ms, editorial ease-out. */
+.route-transition {
+  animation: route-enter 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+@keyframes route-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Smooth, consistent micro-transitions on the themed interactive surfaces. */
+a,
+.nav__link {
+  transition: color 0.15s ease;
+}
+
+.btn {
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.control {
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.card,
+.panel {
+  transition: border-color 0.2s ease;
+}
+
+.badge,
+.step {
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.titlebar__btn {
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+/* Honour reduced-motion: no page-enter animation, no micro-transitions, instant
+   scroll. (The leather texture is already static.) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================================
+ * Configurações page (t8-e2) — the editorial configuration surface. A short hero
+ * lede, then a responsive grid of themed cards, plus a range control and toggles
+ * that inherit the gold/green tokens.
+ * ========================================================================== */
+
+.settings-hero__lede {
+  max-width: var(--measure);
+  color: var(--text-muted);
+  font-size: 1.02rem;
+  margin: 0.5rem 0 0;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  white-space: normal;
+}
+
+.settings-savebar {
+  align-items: center;
+}
+
+/* Gilt range slider — themed track + thumb in both engines. */
+.control--range {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0;
+  height: 1.4rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.control--range:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.control--range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.control--range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.control--range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  border: 1px solid var(--accent);
+}
+
+.control--range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  border: 1px solid var(--accent);
+}
+
+/* ==========================================================================
+ * Registry — certidão permanente import (t11-ui). A read-only, editorial
+ * rendering of imported registry data: provenance, órgãos sociais and the
+ * ordered inscrições feed that seeds the future chronology view.
+ * ========================================================================== */
+
+.section-subtitle {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  margin: 0 0 0.25rem;
+  color: var(--text);
+}
+
+.registry-report {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+}
+
+.registry-applied .field__label {
+  margin-bottom: 0.4rem;
+}
+
+.registry-digest {
+  word-break: break-all;
+}
+
+/* Órgãos sociais. */
+.registry-officers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.registry-officer + .registry-officer {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.registry-officer__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.registry-officer__name {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+}
+
+.registry-officer__role {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-strong, var(--accent));
+}
+
+.registry-officer__dates {
+  margin: 0.2rem 0 0;
+}
+
+/* Inscrições — a numbered, ruled event ledger (seed of the DOC-30 chronology). */
+.registry-inscricoes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: none;
+}
+
+.registry-inscricao {
+  padding: 0.75rem 0;
+  border-left: 2px solid var(--rule);
+  padding-left: 1rem;
+  margin-left: 0.25rem;
+}
+
+.registry-inscricao + .registry-inscricao {
+  border-top: 1px solid var(--border);
+}
+
+.registry-inscricao__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.registry-inscricao__num {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent-strong, var(--accent));
+}
+
+/* The date sits at the end of the header row, apart from the número + kind badge. */
+.registry-inscricao__date {
+  margin-left: auto;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* Apresentação on its own labelled meta line. */
+.registry-inscricao__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+}
+
+.registry-inscricao__meta-label {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+}
+
+.registry-inscricao__text {
+  margin: 0.4rem 0 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* ==========================================================================
+ * Editorial restructure (t13) — button→page flows, full-width lists, and the
+ * reusable Truncate / Digest primitives.
+ * ========================================================================== */
+
+/* A narrow, centered column for the dedicated create/import pages, so an editorial
+   form reads at a comfortable measure instead of stretching the full width. */
+.form-page {
+  max-width: 44rem;
+}
+
+/* A header row pairing a subtitle with a neat action button (e.g. the entity detail
+   "Registo comercial" section). */
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* Router links styled as buttons (ButtonLink): keep the button chrome, drop the
+   link underline, and center the label like a real button. */
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+}
+
+a.btn:hover,
+a.btn:focus-visible {
+  text-decoration: none;
+}
+
+a.btn--primary {
+  color: var(--on-accent);
+}
+
+/* Single-line truncation with an ellipsis; the full value lives on the title tooltip.
+   `min-width: 0` lets it shrink inside flex/grid parents so the ellipsis engages. */
+.truncate {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Abbreviated hex digest + click-to-copy control. */
+.digest {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  vertical-align: baseline;
+}
+
+.digest__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.digest__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  /* Size the 1em inline-SVG copy/confirm glyph to the compact control. */
+  font-size: 0.82rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.digest__copy:hover {
+  color: var(--accent);
+  border-color: var(--border);
+}
+
+.digest__copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ==========================================================================
+ * CAE — role-tagged, catalog-enriched codes (t14 item 8). Rendered wherever a
+ * registry extract appears (provenance, import report) and on the /cae facility.
+ * ========================================================================== */
+
+/* Enriched CAE list on an extract: código + Principal/Secundário badge + level·rev
+   on one head row, the designação (or "não catalogado" note) beneath. */
+.cae-refs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.cae-ref + .cae-ref {
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+.cae-ref__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.cae-ref__code {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--accent-strong, var(--accent));
+}
+
+.cae-ref__meta {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.cae-ref__designation {
+  margin: 0.25rem 0 0;
+  line-height: 1.5;
+}
+
+.cae-ref__designation--missing {
+  font-style: italic;
+}
+
+/* CAE search results on /cae. */
+.cae-results {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.cae-result {
+  padding: 0.6rem 0;
+  border-left: 2px solid var(--rule);
+  padding-left: 0.9rem;
+}
+
+.cae-result + .cae-result {
+  border-top: 1px solid var(--border);
+}
+
+.cae-result__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.cae-result__code {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--accent-strong, var(--accent));
+}
+
+.cae-result__meta {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.cae-result__designation {
+  margin: 0.25rem 0 0;
+  line-height: 1.5;
+}
+
+.cae-search-hint,
+.cae-source-note {
+  margin: 1rem 0 0;
+  font-size: 0.9rem;
+}
+
+.cae-source-note {
+  line-height: 1.5;
+}
+
+.cae-refresh-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* ==========================================================================
+ * CAE catalog explorer (t22-web) — Ferramentas surface. A two-pane consult:
+ * a search/navigation column and a code-detail column with a clickable
+ * hierarchy breadcrumb (drill up) and direct subníveis (drill down).
+ * ========================================================================== */
+
+.cae-explorer {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 780px) {
+  .cae-explorer {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cae-explorer__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.cae-explorer__detail {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  padding: 1.1rem 1.25rem;
+}
+
+/* Segmented revision switch (Rev.3 / Rev.4). */
+.cae-revswitch {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem;
+  gap: 0.15rem;
+}
+
+.cae-revswitch__btn {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.8rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.cae-revswitch__btn.is-active {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+}
+
+.cae-revswitch__btn:not(.is-active):hover {
+  color: var(--accent);
+}
+
+/* Search result picks — full-row buttons. */
+.cae-picklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.cae-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.cae-pick:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--border);
+}
+
+.cae-pick.is-current {
+  border-color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 12%, transparent);
+}
+
+.cae-pick__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.cae-pick__code {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent-strong, var(--accent));
+}
+
+.cae-pick__meta {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.cae-pick__designation {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+/* Detail head + designation. */
+.cae-detail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cae-detail__code {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--accent-strong, var(--accent));
+}
+
+.cae-detail__designation {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  line-height: 1.45;
+}
+
+/* Hierarchy breadcrumb (secção → … → self); ancestors are buttons. */
+.cae-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+}
+
+.cae-breadcrumb__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+}
+
+.cae-breadcrumb__sep {
+  color: var(--text-muted);
+  margin: 0 0.25rem;
+}
+
+.cae-breadcrumb__link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.cae-breadcrumb__link:hover {
+  text-decoration: underline;
+}
+
+.cae-breadcrumb__current {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Direct subníveis (down-drill) — full-row buttons. */
+.cae-tree {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.cae-tree__node {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.cae-tree__node:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--border);
+}
+
+.cae-tree__code {
+  flex: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--accent-strong, var(--accent));
+}
+
+.cae-tree__designation {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+/* ==========================================================================
+ * Current-user picker (t14 item 8) — compact control at the right of the tab bar,
+ * with a small popover menu of active users + sign-out.
+ * ========================================================================== */
+
+.topbar__session {
+  margin-left: auto;
+  flex: none;
+}
+
+.session-picker {
+  position: relative;
+}
+
+.session-picker__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 12rem;
+  padding: 0.25rem 0.55rem 0.25rem 0.3rem;
+  /* The session pill is interactive and sits on the translucent topbar over leather —
+     the faint --border vanished there (~1.5:1). --field-border clears ≥3:1 (t35). */
+  border: 1px solid var(--field-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.session-picker__trigger:hover,
+.session-picker__trigger[aria-expanded='true'] {
+  /* Deep gold --accent (not the brighter --gold) so the hover edge stays ≥3:1 on the
+     near-white topbar in light; in dark --accent already is the bright gold (t35). */
+  border-color: var(--accent);
+}
+
+.session-picker__trigger.is-active {
+  border-color: var(--accent);
+}
+
+.session-picker__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-strong) 22%, transparent);
+  border: 1px solid var(--accent-strong);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.session-picker__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.session-picker__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 940;
+}
+
+.session-picker__menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 950;
+  width: min(20rem, 82vw);
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  font-family: var(--font-sans);
+}
+
+.session-picker__head {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.session-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+.session-picker__empty {
+  margin: 0.2rem 0;
+  font-size: 0.82rem;
+}
+
+.session-picker__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.session-picker__item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--border);
+}
+
+.session-picker__item:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.session-picker__item.is-current {
+  border-color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-strong) 12%, transparent);
+}
+
+.session-picker__item-name {
+  font-size: 0.88rem;
+}
+
+.session-picker__item-user {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.session-picker__error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--error);
+}
+
+.session-picker__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.session-picker__signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  border: none;
+  background: transparent;
+  color: var(--error);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.session-picker__signout:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.session-picker__signout:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.session-picker__manage {
+  font-size: 0.8rem;
+}
+
+/* ==========================================================================
+ * Two-column "Dados do registo" (t20) — a neat label/value pair grid instead of
+ * the auto-fit flow, with long free-text fields spanning both columns.
+ * ========================================================================== */
+.deflist--pairs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 2.75rem;
+  row-gap: 1.15rem;
+}
+
+.deflist--pairs .deflist__wide {
+  grid-column: 1 / -1;
+}
+
+/* Collapse to a single column when there isn't room for two comfortable measures. */
+@media (max-width: 34rem) {
+  .deflist--pairs {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The discreet "Imprimir" action — the base .btn is already a gold outline; add the
+   icon/label alignment and a soft fill on hover. */
+.btn--print {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.btn--print:hover,
+.btn--print:focus-visible {
+  background: color-mix(in srgb, var(--accent-strong) 12%, transparent);
+}
+
+/* ==========================================================================
+ * Print composition (t20) — a filing-quality registry abstract.
+ *
+ * The abstract (features/entities/EntityPrintDocument) is portaled to <body> as a
+ * sibling of `#root` and kept hidden on screen. When printing, the entire app
+ * (`#root`: leather background, titlebar, tab bar, buttons, nav, footer) is hidden
+ * and only the abstract prints — black on white, serif, page-break-aware.
+ * ========================================================================== */
+.print-doc {
+  display: none;
+}
+
+@page {
+  margin: 18mm 16mm;
+}
+
+@media print {
+  /* Force a light paper document regardless of the on-screen theme. */
+  :root {
+    color-scheme: light;
+  }
+
+  /* The app shell holds html/body at 100% height with overflow hidden (the window
+     never scrolls on screen); for print the document must flow across pages, so
+     restore natural height and visible overflow. */
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  /* Hide the whole running application; only the portaled abstract remains. */
+  #root {
+    display: none !important;
+  }
+
+  .print-doc {
+    display: block;
+    color: #111;
+    background: #fff;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    max-width: 100%;
+  }
+
+  /* Letterhead. */
+  .print-letterhead {
+    display: flex;
+    align-items: flex-start;
+    gap: 12pt;
+  }
+
+  .print-seal {
+    width: 34pt;
+    height: 34pt;
+    flex: none;
+    fill: none;
+    stroke: #7a5c12;
+    stroke-width: 0.8;
+  }
+
+  .print-seal text {
+    fill: #7a5c12;
+    stroke: none;
+    font:
+      700 10pt Georgia,
+      serif;
+  }
+
+  .print-letterhead__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .print-title {
+    margin: 0;
+    font-size: 20pt;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .print-subtitle {
+    margin: 3pt 0 0;
+    font-size: 10pt;
+    color: #444;
+  }
+
+  .print-mark {
+    margin: 0;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #7a5c12;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .print-rule {
+    border: none;
+    border-top: 0.75pt solid #7a5c12;
+    margin: 9pt 0 14pt;
+  }
+
+  /* Sections. */
+  .print-section,
+  .print-provenance {
+    margin: 0 0 14pt;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-h2 {
+    margin: 0 0 6pt;
+    padding-bottom: 3pt;
+    font-size: 10.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #333;
+    border-bottom: 0.5pt solid #bbb;
+  }
+
+  /* Two-column definition grid. */
+  .print-deflist {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 24pt;
+    row-gap: 7pt;
+    margin: 0;
+  }
+
+  .print-pair--wide {
+    grid-column: 1 / -1;
+  }
+
+  .print-deflist dt {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #666;
+  }
+
+  .print-deflist dd {
+    margin: 1pt 0 0;
+    font-size: 10.5pt;
+  }
+
+  .print-mono {
+    font-family: 'Courier New', monospace;
+    font-size: 9.5pt;
+  }
+
+  .print-break {
+    word-break: break-all;
+  }
+
+  .print-cae {
+    margin: 0;
+    padding-left: 14pt;
+  }
+
+  .print-cae li {
+    margin: 1pt 0;
+    font-size: 9.5pt;
+  }
+
+  /* Órgãos sociais. */
+  .print-officers {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .print-officer {
+    margin: 0 0 5pt;
+    page-break-inside: avoid;
+  }
+
+  .print-officer__name {
+    font-weight: 700;
+  }
+
+  .print-officer__role {
+    color: #333;
+  }
+
+  .print-officer__dates {
+    margin-top: 1pt;
+    font-size: 8.5pt;
+    color: #555;
+  }
+
+  /* Inscrições — a numbered, ruled ledger. */
+  .print-inscricoes {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .print-inscricao {
+    margin-left: 2pt;
+    padding: 4pt 0 4pt 16pt;
+    border-left: 1pt solid #ccc;
+    page-break-inside: avoid;
+  }
+
+  .print-inscricao + .print-inscricao {
+    border-top: 0.5pt solid #e4e4e4;
+  }
+
+  .print-inscricao__head {
+    display: flex;
+    align-items: baseline;
+    gap: 8pt;
+  }
+
+  .print-inscricao__num {
+    font-family: 'Courier New', monospace;
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #7a5c12;
+  }
+
+  .print-inscricao__kind {
+    padding: 0 3pt;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #555;
+    border: 0.5pt solid #bbb;
+    border-radius: 2pt;
+  }
+
+  .print-inscricao__date {
+    margin-left: auto;
+    font-size: 9pt;
+    color: #555;
+  }
+
+  .print-inscricao__meta {
+    margin: 2pt 0 0;
+    font-size: 8.5pt;
+    color: #555;
+  }
+
+  .print-inscricao__text {
+    margin: 2pt 0 0;
+    font-size: 10pt;
+    white-space: pre-wrap;
+  }
+
+  /* Provenance footer + printed-on date. */
+  .print-provenance {
+    margin-top: 16pt;
+    padding-top: 8pt;
+    border-top: 0.5pt solid #999;
+  }
+
+  .print-printed-on {
+    margin-top: 14pt;
+    font-size: 8.5pt;
+    font-style: italic;
+    color: #666;
+    text-align: right;
+  }
+
+  .print-muted {
+    margin: 4pt 0 0;
+    font-size: 10pt;
+    color: #666;
+  }
+}
+
+/* ==========================================================================
+ * Ferramentas sub-navigation (t24) — a segmented control switching between the
+ * "Catálogo CAE" and "Legislação" surfaces. Shares the pill idiom of the CAE
+ * revision switch, sized for the two longer section labels.
+ * ========================================================================== */
+.ferramentas-subnav {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem;
+  gap: 0.15rem;
+}
+
+.ferramentas-subnav__btn {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  padding: 0.4rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.ferramentas-subnav__btn.is-active {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+}
+
+.ferramentas-subnav__btn:not(.is-active):hover {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ferramentas-subnav__btn {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+ * Legislação — the curated law shelf (t24). An editorial stack of theme groups,
+ * each a set of diploma cards: title + reference, a why-it-matters note, the
+ * extract (a gilt-ruled quotation when verbatim, or a flagged "resumo" panel),
+ * badges (amendment + last-reviewed) and official links.
+ * ========================================================================== */
+.leg-caveat {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Search field: an editorial filter over the shelf (accent-and-case folded, debounced). */
+.leg-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.9rem;
+  margin-top: 0.25rem;
+}
+
+.leg-search .control {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.leg-search__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.leg-search__count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.leg-group {
+  margin-top: 1.75rem;
+}
+
+.leg-group__title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  margin: 0 0 0.9rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--rule);
+  letter-spacing: 0.01em;
+}
+
+.leg-group__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.leg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  padding: 1.1rem 1.2rem;
+}
+
+.leg-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.leg-card__title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.leg-card__ref {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.leg-card__why {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* Verbatim quote — a gilt left rule and a slightly larger serif measure. */
+.leg-card__quote {
+  margin: 0;
+  padding: 0.4rem 0 0.4rem 0.9rem;
+  border-left: 3px solid var(--accent-strong);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  line-height: 1.55;
+  font-style: italic;
+  color: var(--text);
+}
+
+/* Resumo — a plainly framed description, tagged so it is never mistaken for a quote. */
+.leg-card__resumo {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+}
+
+.leg-card__resumo-tag {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.leg-card__resumo-text {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.leg-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: auto;
+  padding-top: 0.2rem;
+}
+
+.leg-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.leg-card__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.leg-link {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.leg-link:hover {
+  color: var(--accent-strong);
+}
+
+/* Archive action (t27) — a compact "Guardar PDF" that sits inline with the text links. */
+.leg-store-btn.btn {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  border-radius: 999px;
+}
+
+.leg-store-error {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--error);
+}
+
+/* ==========================================================================
+ * t19-e2 visual pass — animated tab indicator, uniform page header, skeleton
+ * loaders, themed form controls (select / checkbox / radio / toggle). All motion
+ * collapses under the global prefers-reduced-motion block above.
+ * ========================================================================== */
+
+/* --- Animated tab active-indicator (item a) ------------------------------------
+ * Each tab grows a gilt underline from the centre when it becomes active, instead of
+ * the plain text underline. The `is-active` class flip animates the transform. */
+.topbar__nav .nav__link {
+  position: relative;
+  padding-bottom: 0.4rem;
+}
+
+.topbar__nav .nav__link.is-active {
+  text-decoration: none;
+}
+
+.topbar__nav .nav__link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-strong);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.topbar__nav .nav__link.is-active::after {
+  transform: scaleX(1);
+}
+
+/* A faint hover hint on inactive tabs — a short centred tick. */
+.topbar__nav .nav__link:not(.is-active):hover::after {
+  transform: scaleX(0.4);
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* --- Uniform page header (item e) ---------------------------------------------- */
+.page-header {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-header__crumbs {
+  margin: 0 0 0.45rem;
+}
+
+.page-header__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1.25rem;
+}
+
+/* The title shares the editorial `.section-title` type scale but drops its stray outer
+   margins so every page starts with the same rhythm under the tab bar. */
+.page-header__title {
+  margin: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.page-header__lede {
+  margin: 0.55rem 0 0;
+}
+
+/* --- Skeleton loaders (item c) -------------------------------------------------- */
+.skeleton {
+  display: block;
+  width: 100%;
+  height: 1em;
+  border-radius: var(--radius);
+  background-color: color-mix(in srgb, var(--text-muted) 22%, transparent);
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--accent) 16%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 1.25s ease-in-out infinite;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+.skeleton-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.skeleton-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.skeleton-table__row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 0.35rem 0.1rem;
+}
+
+.skeleton-table__row--head {
+  border-bottom: 2px solid var(--rule);
+  padding-bottom: 0.6rem;
+}
+
+/* Under reduced-motion the sweep stops (the global block zeroes animation-duration);
+   the blocks then rest as a static tint, still communicating "loading" via the busy
+   region's status text. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    background-image: none;
+  }
+}
+
+/* --- Themed form controls (item b): select / checkbox / radio ------------------- */
+
+/* A custom gilt chevron on selects (native arrow removed). The chevron colour is base
+   old-gold, legible over both the parchment and green control backgrounds. */
+.control--select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 2.2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23b8963e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.75 6 6.25 11 1.75'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+  background-size: 0.72rem;
+}
+
+/* Themed checkbox + radio — gold-on-leather boxes with a gilt fill when checked.
+   Excludes `.toggle__input` (the switch owns its own visuals). */
+input[type='checkbox']:not(.toggle__input),
+input[type='radio'] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: -0.18rem;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+input[type='radio'] {
+  border-radius: 999px;
+}
+
+input[type='checkbox']:not(.toggle__input)::before {
+  content: '';
+  width: 0.62rem;
+  height: 0.62rem;
+  transform: scale(0);
+  transition: transform 0.12s ease-in-out;
+  background: var(--on-accent);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+
+input[type='radio']::before {
+  content: '';
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  transform: scale(0);
+  transition: transform 0.12s ease-in-out;
+  background: var(--on-accent);
+}
+
+input[type='checkbox']:not(.toggle__input):checked,
+input[type='radio']:checked {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+input[type='checkbox']:not(.toggle__input):checked::before,
+input[type='radio']:checked::before {
+  transform: scale(1);
+}
+
+input[type='checkbox']:not(.toggle__input):focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --- Toggle switch (item b) ----------------------------------------------------- */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  white-space: normal;
+}
+
+.toggle--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Visually-hidden but focusable native checkbox drives the switch. */
+.toggle__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.toggle__track {
+  position: relative;
+  flex: none;
+  width: 2.5rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 32%, transparent);
+  border: 1px solid var(--border);
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.toggle__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.18rem;
+  width: 0.98rem;
+  height: 0.98rem;
+  border-radius: 999px;
+  background: #fbf7ee;
+  transform: translateY(-50%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.toggle__input:checked + .toggle__track {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.toggle__input:checked + .toggle__track .toggle__thumb {
+  transform: translateY(-50%) translateX(1.05rem);
+}
+
+.toggle__input:focus-visible + .toggle__track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.toggle__label {
+  line-height: 1.3;
+}
+
+/* ============================================================================
+ * Crash screen + safe mode (t26).
+ *
+ * The crash screen is the page/shell error-boundary fallback: an editorial notice
+ * that stays inside the shell (the title bar above it keeps working). Safe mode is a
+ * minimal boot — a persistent banner plus a `data-safe-mode` flag that kills all
+ * motion and hides the leather layer so a crashing appearance config can be repaired.
+ * All of it reads the token layer, so it is correct in light and dark.
+ * ========================================================================== */
+
+/* Editorial crash notice, centered in whatever region the boundary caught. */
+.crash {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 60vh;
+  padding: clamp(1.5rem, 6vh, 4rem) 1rem;
+}
+
+.crash__inner {
+  width: 100%;
+  max-width: 44rem;
+}
+
+.crash__eyebrow {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  color: var(--accent);
+}
+
+.crash__title {
+  margin: 0 0 0.6rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.crash__lede {
+  margin: 0 0 1rem;
+  max-width: var(--measure);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.crash__message {
+  margin: 0 0 1.25rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--error);
+  background: var(--error-bg);
+  color: var(--error);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  overflow-wrap: anywhere;
+}
+
+.crash__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.crash__details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin-bottom: 1.25rem;
+}
+
+.crash__summary {
+  padding: 0.6rem 0.85rem;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--text);
+  user-select: none;
+}
+
+.crash__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.crash__stack-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem 0;
+}
+
+.crash__stack-label {
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+}
+
+.crash__stack {
+  margin: 0.4rem 0 0;
+  padding: 0.5rem 0.85rem 0.85rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+
+.crash__stack--components {
+  border-top: 1px dashed var(--border);
+  color: var(--text);
+}
+
+.crash__note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.crash__note code {
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+/* Shell-boundary fallback: a full-viewport ground with a minimal fixed title-bar strip
+   whose window controls still work, and the crash screen below it. */
+.shell-crash {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: var(--leather-base);
+  overflow-y: auto;
+}
+
+.shell-crash .crash {
+  padding-top: calc(var(--titlebar-h) + clamp(1.5rem, 6vh, 4rem));
+}
+
+/* The minimal title-bar strip reuses `.titlebar` chrome; nothing extra is needed beyond
+   raising it above the crash ground so its buttons receive clicks. */
+.titlebar--fallback {
+  z-index: 2100;
+}
+
+/* Persistent safe-mode banner, pinned to the bottom so it never fights the fixed top
+   chrome. Warn-toned, always legible. */
+.safe-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1500;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem 1.25rem;
+  padding: 0.55rem clamp(1rem, 4vw, 2rem);
+  background: var(--warn-bg);
+  border-top: 2px solid var(--warn);
+  font-family: var(--font-sans);
+  color: var(--text);
+}
+
+.safe-banner__text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.safe-banner__title {
+  color: var(--warn);
+  letter-spacing: 0.02em;
+}
+
+.safe-banner__detail {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.safe-banner__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.safe-banner__btn {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.safe-banner__btn:hover {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+}
+
+.safe-banner__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.safe-banner__btn--danger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.safe-banner__btn--danger:hover {
+  background: var(--error-bg);
+}
+
+.safe-banner__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Safe mode strips all motion and the leather layer so a crashing appearance config can
+   never keep the shell down. */
+:root[data-safe-mode='on'] *,
+:root[data-safe-mode='on'] *::before,
+:root[data-safe-mode='on'] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+:root[data-safe-mode='on'] .leather-bg {
+  display: none !important;
+}
+
+/* i18n: TSA/TSL input + reset-to-default control (settings Assinaturas). */
+.input-reset {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.input-reset > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
