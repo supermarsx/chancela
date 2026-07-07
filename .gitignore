@@ -1,0 +1,25 @@
+# Rust
+/target/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# Node
+node_modules/
+
+# Build / distribution artifacts
+dist/
+apps/web/dist/
+*.tar.gz
+
+# Orchestration scratch (not part of the shipped repo)
+.orchestration/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs and OS cruft
+*.log
+.DS_Store
+Thumbs.db
