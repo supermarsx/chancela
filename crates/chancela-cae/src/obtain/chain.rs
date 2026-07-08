@@ -17,8 +17,8 @@ use crate::{CaeRefreshOutcome, load_catalog};
 
 use super::format::{CaeSourceFormat, parse_artifact};
 use super::{
-    DrPdfSource, ObtainedDataset, OfficialCaeSource, OfficialSourceKind, PARSER_VERSION,
-    fetch_bytes, now_rfc3339, obtain_and_supersede, sha256_hex,
+    DrPdfSource, IneOfficialSource, ObtainedDataset, OfficialCaeSource, OfficialSourceKind,
+    PARSER_VERSION, fetch_bytes, now_rfc3339, obtain_and_supersede, sha256_hex,
 };
 
 /// Where a mirror artifact's bytes come from: a remote URL (fetched), a local file, or in-memory
@@ -137,6 +137,10 @@ pub enum ChainEntry {
     /// The built-in official Diário da República diploma pair (both PDFs, digest-pinned) — a complete
     /// two-revision catalog. Held as a ready [`DrPdfSource`].
     Official(DrPdfSource),
+    /// The INE official source. INE publishes no downloadable bulk CAE artifact (t37), so this entry
+    /// always fails honestly — placed before [`Official`](Self::Official) when INE is preferred, it
+    /// records the failure and the DR pair fulfils the refresh. See [`IneOfficialSource`].
+    Ine(IneOfficialSource),
     /// A JSON mirror (URL / file / bytes), format auto-detected or declared.
     Mirror(MirrorArtifactSource),
 }
@@ -145,6 +149,12 @@ impl ChainEntry {
     /// The built-in official DR source entry (`DrPdfSource::official()`).
     pub fn official() -> Self {
         ChainEntry::Official(DrPdfSource::official())
+    }
+
+    /// The INE official source entry ([`IneOfficialSource`]) — always fails honestly (no viable INE
+    /// bulk artifact, t37); the DR pair after it fulfils the refresh.
+    pub fn ine() -> Self {
+        ChainEntry::Ine(IneOfficialSource)
     }
 
     /// A mirror URL entry with the given format.
@@ -156,6 +166,7 @@ impl ChainEntry {
     pub fn label(&self) -> String {
         match self {
             ChainEntry::Official(_) => "Diário da República (fonte oficial)".to_owned(),
+            ChainEntry::Ine(_) => "INE (fonte oficial)".to_owned(),
             ChainEntry::Mirror(m) => m.label(),
         }
     }
@@ -163,6 +174,7 @@ impl ChainEntry {
     fn as_source(&self) -> &dyn OfficialCaeSource {
         match self {
             ChainEntry::Official(src) => src,
+            ChainEntry::Ine(src) => src,
             ChainEntry::Mirror(m) => m,
         }
     }

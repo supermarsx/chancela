@@ -1422,7 +1422,8 @@ mod tests {
                     { "url": "https://files.example.pt/cae.pdf", "format": "Pdf",
                       "digest": "0000000000000000000000000000000000000000000000000000000000000000" }
                 ],
-                "cae_official_source": true
+                "cae_official_source": true,
+                "preferred_official_source": "Ine"
             },
             "signing": {
                 "preferred_family": "ChaveMovelDigital",
@@ -1621,6 +1622,33 @@ mod tests {
         let (status, got) = send(state, get("/v1/settings")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(got["catalog"], sample_settings()["catalog"]);
+    }
+
+    #[tokio::test]
+    async fn settings_preferred_official_source_defaults_to_ine_and_round_trips() {
+        // Default (omitted) → Ine (user directive t37: "default is ine").
+        let state = AppState::default();
+        let (status, defaults) = send(state, get("/v1/settings")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(defaults["catalog"]["preferred_official_source"], "Ine");
+
+        // A non-default value round-trips.
+        let state = AppState::default();
+        let mut doc = sample_settings();
+        doc["catalog"]["preferred_official_source"] = json!("DiarioRepublica");
+        let (status, stored) = send(state.clone(), put_json("/v1/settings", doc)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            stored["catalog"]["preferred_official_source"],
+            "DiarioRepublica"
+        );
+
+        // An unknown value is rejected by deserialization → 422.
+        let mut bad = sample_settings();
+        bad["catalog"]["preferred_official_source"] = json!("Eurostat");
+        let (status, body) = send(state, put_json("/v1/settings", bad)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body["error"].is_string());
     }
 
     #[tokio::test]

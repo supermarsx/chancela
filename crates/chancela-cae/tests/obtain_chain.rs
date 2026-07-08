@@ -188,3 +188,39 @@ fn official_chain_entry_has_a_label() {
     // Keep the built-in official source constructor exercised (no network in this test).
     let _ = DrPdfSource::official();
 }
+
+/// INE-first (the default preference, t37): the INE entry fails honestly and is recorded in
+/// `failures`, and the next source fulfils the refresh — the "INE indisponível → fallback" behaviour,
+/// with no silent substitution. (Uses a valid mirror in place of the DR pair so the test stays
+/// offline; the api leg puts the real DR pair after INE.)
+#[test]
+fn ine_first_entry_fails_and_chain_falls_through_to_the_fallback() {
+    let dir = TempDir::new();
+    let chain = CaeSourceChain::new(vec![
+        ChainEntry::ine(),
+        bytes_mirror(simple_json_bytes(&marked_dataset("VIA FALLBACK."))),
+    ]);
+
+    let out = obtain_from_chain(&chain, Some(dir.path()));
+    assert!(out.refresh.updated, "the fallback superseded");
+    assert!(out.winner.is_some(), "a winner is recorded (the fallback)");
+    assert_eq!(
+        out.catalog
+            .lookup("A", Some(CaeRevision::Rev4))
+            .unwrap()
+            .designation,
+        "VIA FALLBACK."
+    );
+    // The INE failure is surfaced honestly, not swallowed.
+    assert_eq!(out.failures.len(), 1, "the INE attempt is recorded");
+    assert!(
+        out.failures[0].entry.contains("INE"),
+        "failure names the INE entry: {:?}",
+        out.failures[0].entry
+    );
+    assert!(
+        out.failures[0].error.contains("INE"),
+        "failure carries the honest INE reason: {:?}",
+        out.failures[0].error
+    );
+}

@@ -41,7 +41,7 @@ use axum::response::{IntoResponse, Response};
 use chancela_cae::{
     CaeCatalog, CaeCounts, CaeEntry, CaeLevel, CaeOrigin, CaeProvenance, CaeRevision, CaeSource,
     CaeSourceChain, ChainEntry, ChainOutcome, ENV_CAE_URL, HttpCaeSource, MirrorArtifactSource,
-    SmiSource, default_official_chain, obtain_from_chain, refresh,
+    SmiSource, obtain_from_chain, official_chain_for, refresh,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -372,12 +372,12 @@ pub async fn refresh_cae(
         }
         // No pin: prefer the legacy single mirror URL (settings `cae_update_url`, then
         // `CHANCELA_CAE_URL`) when configured; otherwise, with *nothing* configured, default to the
-        // built-in official Diário da República pair — "sem configuração, o catálogo é atualizado a
-        // partir dos diplomas oficiais do Diário da República". Offline the default chain fails its
-        // fetch → 502 with the failures list (graceful, correct).
-        let settings_url = state.settings.read().await.catalog.cae_update_url.clone();
+        // built-in official chain ordered by `preferred_official_source` (§catalog-v3) — INE-first by
+        // default, with the Diário da República pair always present as the source that actually
+        // fulfils the refresh. Offline the default chain fails its fetch → 502 with the failures list.
+        let catalog = state.settings.read().await.catalog.clone();
         let env_url = std::env::var(ENV_CAE_URL).ok();
-        return match resolve_cae_update_url(settings_url, env_url) {
+        return match resolve_cae_update_url(catalog.cae_update_url.clone(), env_url) {
             Some(url) => {
                 legacy_refresh(
                     state,
@@ -391,7 +391,7 @@ pub async fn refresh_cae(
             None => {
                 let default_chain = match &state.cae_default_chain_factory {
                     Some(factory) => factory(),
-                    None => default_official_chain(),
+                    None => official_chain_for(catalog.preferred_official_source),
                 };
                 run_chain(state, actor, attestor, default_chain, data_dir).await
             }
@@ -609,14 +609,16 @@ async fn legacy_refresh(
     .into_response())
 }
 
-/// Build the strict, fidelity-gated CAE source chain from settings (§cae-v2, plan t23 §2.7): the
-/// optional official DR pair, then each `cae_sources` entry (with its declared format + optional
-/// digest pin), in order. The legacy `cae_update_url`/`CHANCELA_CAE_URL` are NOT part of this chain —
-/// they are the integrity-only fallback handled by [`refresh_cae`] when this chain is empty.
+/// Build the strict, fidelity-gated CAE source chain from settings (§cae-v2/§catalog-v3, plan t23
+/// §2.7): the optional official source(s) — expanded per `preferred_official_source` via
+/// [`official_chain_for`] (INE-first by default, DR always present) — then each `cae_sources` entry
+/// (with its declared format + optional digest pin), in order. The legacy
+/// `cae_update_url`/`CHANCELA_CAE_URL` are NOT part of this chain — they are the integrity-only
+/// fallback handled by [`refresh_cae`] when this chain is empty.
 fn build_strict_chain(catalog: &CatalogSettings) -> CaeSourceChain {
     let mut entries: Vec<ChainEntry> = Vec::new();
     if catalog.cae_official_source {
-        entries.push(ChainEntry::official());
+        entries.extend(official_chain_for(catalog.preferred_official_source).0);
     }
     for src in &catalog.cae_sources {
         let mut mirror = MirrorArtifactSource::from_url(src.url.clone(), src.format);
@@ -643,6 +645,10 @@ fn resolve_cae_update_url(settings_url: Option<String>, env_url: Option<String>)
 /// Apply a `?source` pin to a resolved chain: `official`/`mirror` keep only those entries, a numeric
 /// index keeps the one entry at that position, absent keeps the whole chain. An unparseable selector
 /// is a `422`.
+///
+/// `official` keeps the built-in official government sources — both the Diário da República pair and
+/// the INE entry (§catalog-v3) — so it honours the operator's `preferred_official_source` ordering; a
+/// mirror is excluded.
 fn select_source(chain: CaeSourceChain, source: Option<&str>) -> Result<CaeSourceChain, ApiError> {
     let Some(sel) = source.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(chain);
@@ -651,7 +657,7 @@ fn select_source(chain: CaeSourceChain, source: Option<&str>) -> Result<CaeSourc
     let filtered: Vec<ChainEntry> = match sel {
         "official" => entries
             .into_iter()
-            .filter(|e| matches!(e, ChainEntry::Official(_)))
+            .filter(|e| matches!(e, ChainEntry::Official(_) | ChainEntry::Ine(_)))
             .collect(),
         "mirror" => entries
             .into_iter()
@@ -729,7 +735,7 @@ pub(crate) fn enrich_cae_ref(r: &chancela_registry::CaeRef, cae: &CaeCatalog) ->
 mod tests {
     use super::*;
     use crate::settings::CaeSourceEntry;
-    use chancela_cae::CaeSourceFormat;
+    use chancela_cae::{CaeSourceFormat, PreferredOfficialSource};
 
     fn entry(url: &str) -> CaeSourceEntry {
         CaeSourceEntry {
@@ -744,9 +750,11 @@ mod tests {
     }
 
     const OFFICIAL: &str = "Diário da República (fonte oficial)";
+    const INE: &str = "INE (fonte oficial)";
 
     #[test]
     fn strict_chain_orders_official_then_sources() {
+        // With DR preferred, the official prepend is the DR pair alone, before the sources.
         // cae_update_url is NOT part of the strict chain (it is the legacy fallback).
         let catalog = CatalogSettings {
             cae_update_url: Some("https://fallback.example/cae.json".to_owned()),
@@ -755,6 +763,7 @@ mod tests {
                 entry("https://b.example/cae.json"),
             ],
             cae_official_source: true,
+            preferred_official_source: PreferredOfficialSource::DiarioRepublica,
         };
         assert_eq!(
             labels(&build_strict_chain(&catalog)),
@@ -763,6 +772,26 @@ mod tests {
                 "https://a.example/cae.json",
                 "https://b.example/cae.json",
             ]
+        );
+    }
+
+    #[test]
+    fn strict_chain_ine_first_expands_the_official_pair_by_default() {
+        // The default preference is INE (§catalog-v3, "default is ine"): the official prepend expands
+        // to [INE, DR] before the sources. INE fails at runtime (no bulk artifact) and DR fulfils.
+        let catalog = CatalogSettings {
+            cae_sources: vec![entry("https://a.example/cae.json")],
+            cae_official_source: true,
+            ..CatalogSettings::default()
+        };
+        assert_eq!(
+            catalog.preferred_official_source,
+            PreferredOfficialSource::Ine,
+            "default preference is INE"
+        );
+        assert_eq!(
+            labels(&build_strict_chain(&catalog)),
+            vec![INE, OFFICIAL, "https://a.example/cae.json"]
         );
     }
 
@@ -791,10 +820,25 @@ mod tests {
     }
 
     #[test]
-    fn select_official_keeps_only_the_official_entry() {
+    fn select_official_keeps_the_built_in_official_sources() {
+        // `?source=official` keeps the built-in government sources (INE + DR, in preference order),
+        // dropping the mirror — so it honours `preferred_official_source` (default INE-first here).
         let catalog = CatalogSettings {
             cae_official_source: true,
             cae_sources: vec![entry("https://m.example/cae.json")],
+            ..CatalogSettings::default()
+        };
+        let chain =
+            select_source(build_strict_chain(&catalog), Some("official")).expect("valid selector");
+        assert_eq!(labels(&chain), vec![INE, OFFICIAL]);
+    }
+
+    #[test]
+    fn select_official_with_dr_preference_is_dr_only() {
+        let catalog = CatalogSettings {
+            cae_official_source: true,
+            cae_sources: vec![entry("https://m.example/cae.json")],
+            preferred_official_source: PreferredOfficialSource::DiarioRepublica,
             ..CatalogSettings::default()
         };
         let chain =

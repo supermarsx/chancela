@@ -37,11 +37,12 @@ pub use model::{CaeEntry, CaeLevel, CaeRevision};
 pub use obtain::{
     CaeSourceChain, CaeSourceFormat, CaeVerifier, CaeVersions, ChainEntry, ChainFailure,
     ChainOutcome, DR_REV3_PDF_SHA256, DR_REV3_PDF_URL, DR_REV4_PDF_SHA256, DR_REV4_PDF_URL,
-    DrPdfSource, EXPECTED_REV3_COUNTS, EXPECTED_REV4_COUNTS, MirrorArtifactSource, ObtainedDataset,
-    OfficialCaeSource, OfficialSourceKind, SICONF_BASE_URL, SMI_BASE_URL, SMI_CAE_REV3_VERSION,
+    DrPdfSource, EXPECTED_REV3_COUNTS, EXPECTED_REV4_COUNTS, IneOfficialSource,
+    MirrorArtifactSource, ObtainedDataset, OfficialCaeSource, OfficialSourceKind,
+    PreferredOfficialSource, SICONF_BASE_URL, SMI_BASE_URL, SMI_CAE_REV3_VERSION,
     SMI_CAE_REV4_VERSION, SMI_VERSION_EXPORT_PATH, SiconfVerifier, SmiSource, SmiVersion,
     SmiVersionCatalog, VerifierFinding, default_official_chain, detect_format,
-    obtain_and_supersede, obtain_from_chain, parse_artifact, parse_smi_version_catalog,
-    verify_fidelity,
+    obtain_and_supersede, obtain_from_chain, official_chain_for, parse_artifact,
+    parse_smi_version_catalog, verify_fidelity,
 };
 pub use source::{BytesCaeSource, CaeSource, ENV_CAE_URL, FileCaeSource, HttpCaeSource};

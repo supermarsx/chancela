@@ -17,7 +17,8 @@
         "digest": null
       }
     ],
-    "cae_official_source": false
+    "cae_official_source": false,
+    "preferred_official_source": "Ine"
   },
   "signing": {
     "preferred_family": "CartaoCidadao",

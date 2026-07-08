@@ -31,6 +31,49 @@
 //!
 //! Neither export contains the ~2000 CAE **nodes** (codes/designations) — they are metadata catalogs.
 //!
+//! # Wider INE re-investigation (t37, 2026-07-08) — `ine.pt` proper, not just `/Categoria`
+//!
+//! A follow-up asked whether INE publishes a downloadable **bulk** CAE artifact *anywhere* (the user
+//! wants INE as the default source, not the Diário da República). Every INE avenue was live-probed and
+//! downloaded; none yields a machine-readable node catalog:
+//!
+//! - **SMI per-version documents (`/Versao/Detalhes_TabDocumento/{id}` → `/Versao/Download/{docId}`)** —
+//!   the version-detail page *does* expose per-version file links (the lead the brief flagged for fresh
+//!   eyes). For Rev.4 (`/Versao/Detalhes/5497`) they are **four PDFs**: the EU delegated regulation
+//!   2023/137, CSE Deliberação 1346/2024, `Decreto-Lei n.º 9/2025`, and the INE *publicação*
+//!   "CAE-Rev.4 (publicação)" (~8 MB). Rev.3 (`/Versao/Detalhes/554`) mirrors this (DL 381/2007 + the
+//!   revisão-3 nota introdutória, PDFs). **All PDFs — no XLSX / CSV / XML structured export.**
+//! - **The INE publication PDF is not a better source than the DR diploma.** It is Rev.4 **only** (Rev.3
+//!   would still need DR, so INE could never be the sole default), it is a differently-typeset ~8 MB
+//!   book rather than the sparse DR grid the [`pdf`](super) parser is a faithful port for (parsing it
+//!   would need a whole new coordinate parser at fidelity risk), and its `/Versao/Download/10729` app
+//!   URL is less stable than the immutable `files.diariodarepublica.pt` artifact — for **identical**
+//!   data (both are the same legal classification). The SMI-hosted DL 9/2025 copy (`Download/10660`) is
+//!   even the *same diploma* as ours, only a different byte rendering (sha256 `f9534030…`, 1 001 088 B
+//!   vs the pinned `84286f31…`, 1 003 918 B) — same legal text, needing its own pin, zero data gain.
+//! - **`ine.pt/xportal` publication pages** (`…ine_publicacoes…pub_boui=785493345 / 785466594`) offer
+//!   the single consolidated `CAE-Rev.4.pdf` via `/ngt_server/attachfileu.jsp?look_parentBoui=…` — a
+//!   PDF again, no structured annex.
+//! - **`/Categoria/Exportacao` re-probed with a cookie jar** after seeding the session via
+//!   `/Categoria/Parent/5497` (and `/554` for Rev.3): still **HTTP 500** for `tipo={0,1,2}` and bare,
+//!   and the host sets **no** session cookie over plain HTTP — the node export stays non-interactive-
+//!   impossible, re-confirming the 2026-07-07 verdict.
+//! - **`dados.gov.pt` (API, `/api/1/datasets/?q=CAE`)** — every INE-authored "CAE" dataset is
+//!   *statistical indicator* data organised **by** CAE (JSON), never the classification tree itself.
+//!
+//! **Verdict: no viable INE bulk obtainer exists.** The DR diploma pair remains the source that
+//! actually fulfils a refresh — and it *is* the INE classification: `Decreto-Lei n.º 9/2025` is the
+//! legal instrument enacting INE's CAE-Rev.4, which INE itself redistributes as its authoritative
+//! document. "From INE" and "from the Diário da República" are the **same data**; [`SmiSource`] already
+//! ships the INE update signal that confirms it.
+//!
+//! **Follow-up (t37, "default is ine"):** so the user's "default = INE" preference is still honoured
+//! *honestly*, the built-in official chain now leads with an [`IneOfficialSource`](super) entry when
+//! INE is the preferred source (the new default) — but, per this verdict, that entry always fails and
+//! the always-present DR pair fulfils the refresh. The operator therefore sees "INE indisponível →
+//! Diário da República" in the outcome `failures`, never a silent substitution. See
+//! [`official_chain_for`](super::official_chain_for) / [`PreferredOfficialSource`](super).
+//!
 //! # This module's role — an official **update-availability signal**, not a bulk catalog
 //!
 //! [`SmiSource`] fetches and parses the version catalog (the artifact SMI reliably serves) into

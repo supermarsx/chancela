@@ -17,7 +17,7 @@ cargo fmt   -p chancela-cae --check
 | `tests/obtain.rs` | **The official-source obtainer** (`obtain/`), fully offline over the committed DR PDFs. `vendored_obtain_reproduces_official_table`: the in-app `lopdf` parser output equals the offline-generated embedded dataset — exact totals (1962/1847) AND byte-equal designations on ~27 spot codes (proves the Rust port = the pymupdf generator). `obtain_and_supersede` end-to-end; supersede swaps + writes the cache; identical data is a no-op; a structurally-valid but **short** parse and a structurally-**invalid** parse are both rejected (`Integrity`) and the known-good catalog is retained. |
 | `tests/obtain_json.rs` | **Multi-format JSON obtain** (plan t23 §2.2–2.3). The **Simple JSON** mirror parser: the full official table hosted as a flat array with every `level`/`parent` **omitted** re-derives byte-identically (`simple_json_full_table_derives_and_passes_the_gates`) and clears integrity + fidelity; a **short** array fails fidelity; a **level-mismatch** and an **orphan parent** each fail integrity. **Format auto-detection**: `%PDF`→`Pdf`, `{`→`Envelope`, `[`→`SimpleJson`, garbage→`None`; a real envelope and a real Simple-JSON mirror each parse through `parse_artifact(Auto)`; a `%PDF` on the mirror path and malformed bytes are clear `Parse` errors. |
 | `tests/obtain_chain.rs` | **The ordered source chain** (plan t23 §2.7) over in-memory (`Bytes`) mirrors: the **first superseding source wins** (later entries not applied; Mirror provenance stamped); a **failing entry is recorded and the chain falls through** to the next valid one; when **all sources fail** the known-good catalog is retained unchanged (on-disk + returned); an **up-to-date** source is valid but not a winner (not a failure). |
-| `tests/obtain_smi.rs` | **The INE SMI version-catalog source** (user directive t33). Parses the checked-in real-capture export → extracts both current CAE versions (`V05497` Rev.4 / `V00554` Rev.3, resolved from the `Sigla`); `SmiSource` targets the reliable `/Versao/Exportacao` endpoint (never the 500-ing `/Categoria` tree); **`default_official_chain()` is the digest-pinned DR pair only** (SMI is not a bulk entry); a non-SMI payload is a `Parse` error (never a silently-empty catalog). |
+| `tests/obtain_smi.rs` | **The INE SMI version-catalog source** (user directive t33). Parses the checked-in real-capture export → extracts both current CAE versions (`V05497` Rev.4 / `V00554` Rev.3, resolved from the `Sigla`); `SmiSource` targets the reliable `/Versao/Exportacao` endpoint (never the 500-ing `/Categoria` tree); **`default_official_chain()` is INE-first then the digest-pinned DR pair** (`official_chain_for` orders by preference, DR always present; t37); `IneOfficialSource` always fails honestly; a non-SMI payload is a `Parse` error (never a silently-empty catalog). |
 | lib unit (`obtain/smi.rs`) | The SMI parser internals: UTF-16LE+BOM fixture decode; a UTF-8 mirror of the same shape; only the two current CAE revisions resolve a `CaeRevision` (older revisions / NACE do not); a quoted designation containing a comma is one CSV field; a missing header and a header-without-rows are each `Parse` errors; `version_export_url` composition. |
 | lib unit (`obtain/mod.rs`) | Digest pinning: the vendored PDFs' sha256 equal the pinned official `DR_REV{3,4}_PDF_SHA256` (so the committed files ARE the official artifacts) → obtain accepts; a wrong expected digest is rejected. |
 | lib unit (`obtain/format.rs`) | `detect_format` per branch (PDF/object/array/none); `parse_artifact(Auto)` rejects garbage and a `%PDF` on the mirror path with a clear `Parse` error. |
@@ -180,6 +180,24 @@ parses in-app, and asserts the full official totals (1962/1847).
   (`live_smi_version_catalog_lists_the_current_cae_revisions`), parser covered offline by
   `fixtures/smi_version_catalog.csv`. gov.pt **SICONF** remains a deferred postback-only per-code
   verifier with no bulk export.
+- **No INE bulk artifact exists anywhere — DR stays the default** (t37, 2026-07-08; the user asked for
+  INE as the default source). A full re-probe of `ine.pt` proper (not just `/Categoria`) found only
+  PDFs: the SMI per-version document tab (`/Versao/Detalhes_TabDocumento/{id}` → `/Versao/Download/{n}`)
+  serves four PDFs per revision (EU regulation, CSE deliberação, the DR diploma, the INE *publicação*);
+  the `ine.pt/xportal` publication pages serve one consolidated `CAE-Rev.4.pdf`. The INE *publicação*
+  PDF is Rev.4-**only**, differently typeset (a new coordinate parser at fidelity risk), on a less
+  stable app URL, for **identical** data — strictly worse than the digest-pinned DR pair, so building an
+  `IneSource` was rejected, not faked. `/Categoria/Exportacao` re-probed with a cookie jar after seeding
+  the session still 500s (no cookie is set); `dados.gov.pt` has no CAE *classification* dataset (only
+  statistics organised by CAE). The DR diploma **is** the INE classification — `DL 9/2025` is the legal
+  instrument enacting INE's CAE-Rev.4 — so "from INE" and "from the DR" are the same data.
+- **`preferred_official_source` (default `Ine`) is honoured honestly** (t37 extension, user directive
+  "default is ine"). `official_chain_for(Ine)` = `[IneOfficialSource, DrPdfSource]`; the INE entry
+  always fails (it cannot supply a fidelity-passing dataset — above) and is recorded in the chain
+  `failures`, and the always-present DR pair fulfils the refresh — the outcome shows "INE indisponível →
+  Diário da República", never a silent substitution. `official_chain_for(DiarioRepublica)` = `[DR]`
+  alone. `default_official_chain()` uses the default (`Ine`). `IneOfficialSource` is the single seam to
+  implement a real INE bulk obtain if INE ever ships one (mirrors the deferred `SiconfVerifier`).
 - **Rev.3 group 843** ("Segurança social obrigatória") has no printed header row in DL 381/2007 and
   is reconstructed from its sole child — the only synthesized node (see `PROVENANCE.md`).
 - **Designations are verbatim** (trailing period and "n. e." abbreviations preserved); Rev.3 keeps

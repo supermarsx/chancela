@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
-use chancela_cae::CaeSourceFormat;
+use chancela_cae::{CaeSourceFormat, PreferredOfficialSource};
 use chancela_core::NumberingScheme;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -141,12 +141,22 @@ impl Default for DocumentSettings {
 /// 4. the `CHANCELA_CAE_URL` environment variable as a final trailing `Auto` mirror entry.
 ///
 /// `cae_update_url` is kept for backward compatibility (t19-e1b): a config that only sets it keeps
-/// working unchanged, as the last-but-one chain entry. When nothing is configured the refresh
-/// returns a friendly, settings-aware `422` pointing the operator at Configurações.
+/// working unchanged, as the last-but-one chain entry. When **nothing** is configured the refresh
+/// runs the built-in official chain ([`chancela_cae::official_chain_for`], ordered by
+/// [`preferred_official_source`](Self::preferred_official_source)) rather than erroring — so the
+/// catalog is always obtainable from the official gov source (§catalog-v3).
 ///
-/// **All defaults are empty/off** (`cae_update_url: null`, `cae_sources: []`,
-/// `cae_official_source: false`): there is no official machine-readable CAE *feed*, and the official
-/// DR obtain is heavy, so an operator opts in explicitly.
+/// **The built-in official source ordering (§catalog-v3, user directive t37: "default is ine").**
+/// Wherever the built-in official source enters the chain — the [`cae_official_source`] prepend and the
+/// no-config default — it is expanded per [`preferred_official_source`](Self::preferred_official_source):
+/// INE first (the default) then the Diário da República pair, or the DR pair alone. INE publishes no
+/// downloadable bulk CAE artifact (investigation t37), so the INE entry fails honestly and the DR pair
+/// (always present) fulfils the refresh: the outcome `failures` show "INE indisponível → Diário da
+/// República", never a silent substitution, and the reliable default never regresses.
+///
+/// **Defaults:** `cae_update_url: null`, `cae_sources: []`, `cae_official_source: false` (no official
+/// machine-readable CAE *feed* exists and the DR obtain is heavy, so mirror/official opt-ins are
+/// explicit); `preferred_official_source: Ine` (the user's stated default preference).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CatalogSettings {
@@ -156,9 +166,15 @@ pub struct CatalogSettings {
     /// Ordered fallback chain of CAE update sources, each auto-detected or format-pinned. Empty by
     /// default; tried in order after the optional official pair and before `cae_update_url`.
     pub cae_sources: Vec<CaeSourceEntry>,
-    /// When `true`, prepend the built-in, digest-pinned official Diário da República diploma pair to
-    /// the chain (a complete both-revision catalog obtained + parsed in-app). Default `false`.
+    /// When `true`, prepend the built-in official source(s) to the chain — expanded per
+    /// [`preferred_official_source`](Self::preferred_official_source) (a complete both-revision catalog
+    /// obtained + parsed in-app). Default `false`.
     pub cae_official_source: bool,
+    /// Which built-in official government source leads when the chain obtains from the official source
+    /// (the `cae_official_source` prepend and the no-config default). `Ine` (default) → INE first then
+    /// the Diário da República pair; `DiarioRepublica` → the DR pair directly. The DR pair is always
+    /// present as the reliable fallback (§catalog-v3, user directive t37).
+    pub preferred_official_source: PreferredOfficialSource,
 }
 
 /// One entry in the ordered CAE source chain ([`CatalogSettings::cae_sources`]).

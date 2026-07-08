@@ -17,7 +17,8 @@ fn sample_settings() -> Value {
         "catalog": {
             "cae_update_url": "https://catalog.example.pt/cae.json",
             "cae_sources": [],
-            "cae_official_source": false
+            "cae_official_source": false,
+            "preferred_official_source": "Ine"
         },
         "signing": {
             "preferred_family": "ChaveMovelDigital",

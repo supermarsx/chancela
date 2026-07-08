@@ -45,24 +45,68 @@ pub use smi::{
 };
 pub use verify::{CaeVerifier, SICONF_BASE_URL, SiconfVerifier, VerifierFinding};
 
-/// The built-in **official** source chain used when no update URL is configured (user directive t33):
-/// refresh should still obtain CAE Rev.3 + Rev.4 from the official gov source rather than erroring.
+/// Which built-in **official** government source the operator prefers to obtain the CAE catalog from
+/// (settings `catalog.preferred_official_source`, user directive t37: "default is ine"). Drives the
+/// ordering of [`official_chain_for`] / [`default_official_chain`]. Serializes as the bare variant name
+/// (`"Ine"` / `"DiarioRepublica"`).
 ///
-/// The chain is the digest-pinned **Diário da República diploma pair** ([`ChainEntry::official`]) —
-/// the only source that reliably yields a complete both-revision [`CaeDataset`] passing the exact
-/// fidelity gate (1962 / 1847 nodes). It is the official Portuguese government publication of the two
-/// CAE revisions, so "no URL configured ⇒ obtain from the gov source" is honoured in full.
-///
-/// **INE SMI is intentionally NOT a bulk entry here.** Live investigation (see [`smi`]) established
-/// that SMI serves only the version *catalog* non-interactively — its CAE node tree (`/Categoria`)
-/// returns HTTP 500 for every anonymous access pattern — so an [`SmiSource`] cannot supply the codes
-/// a fidelity-passing dataset needs; it would be a guaranteed chain failure. SMI is exposed instead as
-/// an update-availability signal ([`SmiSource::fetch_catalog`] → [`SmiVersionCatalog::cae_versions`]).
-/// The api leg may resolve additional operator-configured mirrors *before* this default chain; this
-/// helper is the fallback when nothing is configured.
-pub fn default_official_chain() -> CaeSourceChain {
-    CaeSourceChain::new(vec![ChainEntry::official()])
+/// **The default is [`Ine`](Self::Ine)** — the user's stated preference. Note the honest caveat baked
+/// into the chain: INE does **not** publish a downloadable machine-readable CAE catalog (investigation
+/// t37, see [`smi`]), so the [`IneOfficialSource`] entry always fails and the always-present Diário da
+/// República pair fulfils the refresh — the outcome shows "INE indisponível → Diário da República",
+/// never a silent substitution, and the default never regresses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PreferredOfficialSource {
+    /// INE (the classification's legal maintainer) first — the default. Falls through to the DR pair
+    /// because no viable INE bulk artifact exists (t37).
+    #[default]
+    Ine,
+    /// The Diário da República diploma pair directly (no INE attempt).
+    DiarioRepublica,
 }
+
+/// The built-in **official** source chain, ordered by the operator's [`PreferredOfficialSource`]. The
+/// digest-pinned **Diário da República diploma pair** ([`ChainEntry::official`]) is **always present**
+/// as the reliable both-revision anchor (1962 / 1847 nodes past the exact fidelity gate); when INE is
+/// preferred, the [`IneOfficialSource`] entry ([`ChainEntry::ine`]) leads it.
+///
+/// - [`PreferredOfficialSource::Ine`] → `[INE, Diário da República]`. The INE entry records an honest
+///   failure in the chain (it cannot supply a fidelity-passing dataset — see below) and the DR pair
+///   then fulfils the refresh. The user's "default = INE" preference is respected *and* honest.
+/// - [`PreferredOfficialSource::DiarioRepublica`] → `[Diário da República]`. The reliable source
+///   directly; no INE attempt (it would only fail).
+///
+/// **Why the INE entry cannot be a real bulk source.** Live investigation (t33 + t37, see [`smi`])
+/// established that every INE CAE artifact is a PDF — the DR diploma itself, or the Rev.4-only INE
+/// *publicação* — and its node tree (`/Categoria`) returns HTTP 500 for every anonymous pattern; there
+/// is no downloadable machine-readable node catalog anywhere on `ine.pt`. So an INE source cannot yield
+/// the complete both-revision dataset the fidelity gate demands. The DR diploma *is* the INE
+/// classification (`Decreto-Lei n.º 9/2025` enacts CAE-Rev.4), so obtaining "from the DR" delivers
+/// exactly the INE data. SMI is still exposed as an update-availability signal
+/// ([`SmiSource::fetch_catalog`] → [`SmiVersionCatalog::cae_versions`]).
+pub fn official_chain_for(preferred: PreferredOfficialSource) -> CaeSourceChain {
+    let entries = match preferred {
+        PreferredOfficialSource::Ine => vec![ChainEntry::ine(), ChainEntry::official()],
+        PreferredOfficialSource::DiarioRepublica => vec![ChainEntry::official()],
+    };
+    CaeSourceChain::new(entries)
+}
+
+/// The built-in official source chain used when no update URL is configured (user directive t33/t37):
+/// refresh still obtains CAE Rev.3 + Rev.4 from the official gov source rather than erroring. Uses the
+/// **default** [`PreferredOfficialSource`] ([`Ine`](PreferredOfficialSource::Ine)), i.e. INE-first with
+/// the Diário da República pair as the always-present fallback — see [`official_chain_for`].
+pub fn default_official_chain() -> CaeSourceChain {
+    official_chain_for(PreferredOfficialSource::default())
+}
+
+/// The honest failure an [`IneOfficialSource`] obtain records: INE publishes no downloadable
+/// machine-readable CAE catalog (investigation t33 + t37), so it cannot supply a fidelity-passing
+/// dataset. Surfaced in the chain `failures` when INE is the preferred source; the Diário da República
+/// pair then fulfils the refresh.
+const INE_UNAVAILABLE_MSG: &str = "o INE não disponibiliza um artefato descarregável do catálogo CAE (apenas PDF/legislação, não \
+     um exportável de nós); o catálogo é obtido dos diplomas oficiais do Diário da República, que são \
+     a publicação legal da classificação do INE";
 
 /// Human note recording which official diplomas an obtained dataset was parsed from (mirrors the
 /// embedded dataset's note; the in-app obtainer reads the same two DR diplomas).
@@ -116,10 +160,15 @@ pub trait OfficialCaeSource: Send + Sync {
 }
 
 /// Which official source produced a dataset. Serializes as the bare variant name
-/// (`"DiarioRepublica"` / `"Mirror"`); recorded in the provenance envelope (§2.4).
+/// (`"DiarioRepublica"` / `"Ine"` / `"Mirror"`); recorded in the provenance envelope (§2.4).
+///
+/// [`Ine`](Self::Ine) exists for the [`IneOfficialSource`] chain entry, but — because that source
+/// always fails (no viable INE bulk artifact, t37) — no *obtained* dataset is ever stamped `Ine`; the
+/// variant is additive on the wire for completeness and forward-compatibility.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OfficialSourceKind {
     DiarioRepublica,
+    Ine,
     Mirror,
 }
 
@@ -128,8 +177,36 @@ impl OfficialSourceKind {
     pub fn label(self) -> &'static str {
         match self {
             OfficialSourceKind::DiarioRepublica => "Diário da República",
+            OfficialSourceKind::Ine => "INE",
             OfficialSourceKind::Mirror => "espelho",
         }
+    }
+}
+
+/// The INE (`ine.pt` / `smi.ine.pt`) as a would-be **official bulk** CAE source. INE is the
+/// classification's legal maintainer, and the user asked to obtain the catalog "from INE by default"
+/// (t37) — but a full investigation (see [`smi`]) found that INE publishes **no downloadable
+/// machine-readable CAE catalog**: every INE CAE artifact is a PDF (the Diário da República diploma, or
+/// the Rev.4-only INE *publicação*), and the node tree (`/Categoria`) returns HTTP 500 for every
+/// anonymous access pattern. So no `IneOfficialSource` can yield the complete both-revision dataset the
+/// fidelity gate demands.
+///
+/// [`obtain`](OfficialCaeSource::obtain) therefore **always fails** with a clear, honest error
+/// ([`INE_UNAVAILABLE_MSG`]). Placed first when INE is the preferred source
+/// ([`official_chain_for`]), it records that failure in the chain `failures` and the always-present
+/// Diário da República pair fulfils the refresh — so the operator sees "INE indisponível → Diário da
+/// República" in the outcome, never a silent substitution, and the default never regresses. If INE ever
+/// begins publishing a bulk artifact, this is the single place to implement it (mirrors how
+/// [`SiconfVerifier`]'s live transport is a documented deferred seam).
+pub struct IneOfficialSource;
+
+impl OfficialCaeSource for IneOfficialSource {
+    fn kind(&self) -> OfficialSourceKind {
+        OfficialSourceKind::Ine
+    }
+
+    fn obtain(&self) -> Result<ObtainedDataset, CaeError> {
+        Err(CaeError::Http(INE_UNAVAILABLE_MSG.to_owned()))
     }
 }
 
