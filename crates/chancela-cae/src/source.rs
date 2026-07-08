@@ -4,11 +4,41 @@
 //! mechanism is fully built and tested against a fixture URL/file, and a real remote is supplied
 //! via `CHANCELA_CAE_URL` (an honest boundary, mirroring `chancela-registry`'s live path).
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::dataset::CaeDataset;
 use crate::error::CaeError;
+
+/// Maximum response body size (50 MB) accepted from any HTTP fetch. Prevents memory-exhaustion
+/// (DOS-01) via a malicious server streaming gigabytes of data.
+pub(crate) const MAX_RESPONSE_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Read an HTTP response body with a hard size cap. Checks `Content-Length` first (rejecting
+/// oversized responses before allocating), then bounds the stream read at `MAX_RESPONSE_BYTES + 1`
+/// so an overshoot is detected without unbounded memory allocation (defense-in-depth for servers
+/// that omit or lie about `Content-Length`).
+pub(crate) fn read_bounded(response: reqwest::blocking::Response) -> Result<Vec<u8>, CaeError> {
+    if let Some(len) = response.content_length() {
+        if len > MAX_RESPONSE_BYTES {
+            return Err(CaeError::Http(format!(
+                "response exceeds size limit: {len} bytes (max {MAX_RESPONSE_BYTES})"
+            )));
+        }
+    }
+    let mut bytes = Vec::new();
+    response
+        .take(MAX_RESPONSE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| CaeError::Http(e.to_string()))?;
+    if bytes.len() as u64 > MAX_RESPONSE_BYTES {
+        return Err(CaeError::Http(format!(
+            "response exceeded size limit of {MAX_RESPONSE_BYTES} bytes"
+        )));
+    }
+    Ok(bytes)
+}
 
 /// Environment variable naming the dataset URL for [`HttpCaeSource::from_env`].
 pub const ENV_CAE_URL: &str = "CHANCELA_CAE_URL";
@@ -65,17 +95,17 @@ impl CaeSource for HttpCaeSource {
     fn fetch(&self) -> Result<CaeDataset, CaeError> {
         let client = reqwest::blocking::Client::builder()
             .user_agent(&self.user_agent)
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|e| CaeError::Config(e.to_string()))?;
-        let bytes = client
+        let response = client
             .get(&self.url)
             .send()
             .map_err(|e| CaeError::Http(e.to_string()))?
             .error_for_status()
-            .map_err(|e| CaeError::Http(e.to_string()))?
-            .bytes()
             .map_err(|e| CaeError::Http(e.to_string()))?;
+        let bytes = read_bounded(response)?;
         CaeDataset::from_slice(&bytes)
     }
 }

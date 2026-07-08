@@ -345,18 +345,17 @@ impl OfficialCaeSource for DrPdfSource {
 fn fetch_bytes(url: &str, user_agent: &str) -> Result<Vec<u8>, CaeError> {
     let client = reqwest::blocking::Client::builder()
         .user_agent(user_agent)
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| CaeError::Config(e.to_string()))?;
-    let bytes = client
+    let response = client
         .get(url)
         .send()
         .map_err(|e| CaeError::Http(e.to_string()))?
         .error_for_status()
-        .map_err(|e| CaeError::Http(e.to_string()))?
-        .bytes()
         .map_err(|e| CaeError::Http(e.to_string()))?;
-    Ok(bytes.to_vec())
+    crate::source::read_bounded(response)
 }
 
 /// Lowercase-hex sha256 of a byte slice.
