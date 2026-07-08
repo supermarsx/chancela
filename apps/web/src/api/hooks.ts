@@ -18,6 +18,8 @@ import type {
   DraftActBody,
   EntityFamily,
   LifecycleStage,
+  CmdInitiateBody,
+  CmdConfirmBody,
   ImportFromRegistryBody,
   LawEntryView,
   OpenBookBody,
@@ -53,6 +55,7 @@ export const keys = {
   compliance: (id: string) => ['acts', id, 'compliance'] as const,
   actDocumentPreview: (id: string) => ['acts', id, 'document', 'preview'] as const,
   actDocumentBundle: (id: string) => ['acts', id, 'document', 'bundle'] as const,
+  actSignature: (id: string) => ['acts', id, 'signature'] as const,
   templates: (family?: EntityFamily, stage?: LifecycleStage) =>
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
   ledger: (params: { scope?: string; limit?: number }) => ['ledger', params] as const,
@@ -322,6 +325,58 @@ export function useTemplates(family?: EntityFamily, stage?: LifecycleStage) {
  */
 export function useDownloadActDocument(id: string) {
   return useMutation({ mutationFn: () => api.fetchActDocumentPdf(id) });
+}
+
+// --- Qualified CMD signing (§ t57) ----------------------------------------------
+
+/**
+ * The act's signature status (`GET /v1/acts/{id}/signature`, t57). Drives the signing
+ * panel: unsigned / pending (aguarda-OTP) / signed. Enabled only once sealed (the endpoint
+ * is meaningful post-seal); never retried so a transient state resolves immediately.
+ */
+export function useActSignature(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.actSignature(id),
+    queryFn: () => api.getActSignature(id),
+    enabled: enabled && !!id,
+    retry: false,
+  });
+}
+
+/**
+ * Phase 1 of CMD signing (`POST /v1/acts/{id}/signature/cmd/initiate`, t57): phone + PIN →
+ * the server dispatches the SMS OTP and returns a `session_id`. The PIN lives only in the
+ * mutation variables for the duration of this request — never cached or persisted here.
+ */
+export function useCmdInitiateSignature(id: string) {
+  return useMutation({ mutationFn: (body: CmdInitiateBody) => api.cmdInitiateSignature(id, body) });
+}
+
+/**
+ * Phase 2 of CMD signing (`POST /v1/acts/{id}/signature/cmd/confirm`, t57): session_id + OTP
+ * → the signed PDF. The OTP is a transient mutation variable. On success the signature status,
+ * the act and the dashboard refetch (the confirm appends a `document.signed` ledger event).
+ */
+export function useCmdConfirmSignature(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CmdConfirmBody) => api.cmdConfirmSignature(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
+      void qc.invalidateQueries({ queryKey: keys.act(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+/**
+ * Download an act's SIGNED PDF (`GET /v1/acts/{id}/document/signed`, t57). A mutation so the
+ * button gets `isPending` + the toast idiom for free; only offered once the act is signed (the
+ * endpoint 404s until then).
+ */
+export function useDownloadSignedDocument(id: string) {
+  return useMutation({ mutationFn: () => api.fetchSignedActDocumentPdf(id) });
 }
 
 export function useArchiveAct(id: string) {

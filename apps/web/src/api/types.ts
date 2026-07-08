@@ -1056,6 +1056,103 @@ export interface SigningSettings {
   cmd: SigningCmdSettings;
 }
 
+// --- Qualified CMD signing (§ t57) ----------------------------------------------
+//
+// The two-phase Chave Móvel Digital signing flow (frozen `chancela-api::signature`
+// DTOs, t57-S3). A sealed act's unsigned PDF/A is turned into a **qualified** CMD-signed
+// PDF across two requests: `initiate` (phone + PIN → dispatches the SMS OTP) then
+// `confirm` (session_id + OTP → the signed PDF). The PIN and OTP are transient secrets
+// carried ONLY in the request body — never persisted or echoed back on any of these types.
+
+/** The act's derived finalization status (server-owned; the seal is never blocked). */
+export const FINALIZATION_STATUSES = [
+  'rascunho',
+  'finalizado',
+  'aguarda_assinatura_qualificada',
+  'finalizado_qualificado',
+] as const;
+export type FinalizationStatus = (typeof FINALIZATION_STATUSES)[number];
+
+/** The act's signature state (unsigned → pending/aguarda-OTP → signed). */
+export const SIGNATURE_STATUSES = ['unsigned', 'pending', 'signed'] as const;
+export type SignatureStatus = (typeof SIGNATURE_STATUSES)[number];
+
+/** The signed-variant detail surfaced once an act carries a qualified signature. */
+export interface SignedSignatureInfo {
+  family: string;
+  evidentiary_level: string;
+  trusted_list_status: string | null;
+  signer_cert_subject: string | null;
+  signing_time: string;
+  signed_at: string;
+  signed_pdf_digest: string;
+  timestamp_token: boolean;
+  /** The `GET .../document/signed` path for the signed PDF. */
+  download: string;
+}
+
+/** The in-flight pending-session detail (carries no secret). */
+export interface PendingSignatureInfo {
+  session_id: string;
+  masked_phone: string;
+  expires_at: string;
+}
+
+/** `GET /v1/acts/{id}/signature` — the act's signature status + derived finalization. */
+export interface SignatureStatusView {
+  status: SignatureStatus;
+  finalization: FinalizationStatus;
+  require_qualified_for_seal: boolean;
+  /** Present only when `status === 'signed'`. */
+  signed?: SignedSignatureInfo;
+  /** Present only when `status === 'pending'`. */
+  pending?: PendingSignatureInfo;
+}
+
+/**
+ * `POST /v1/acts/{id}/signature/cmd/initiate` — phase 1. The `pin` is a transient
+ * knowledge factor: it is sent once and never stored client-side beyond this request.
+ */
+export interface CmdInitiateBody {
+  phone: string;
+  pin: string;
+  capacity?: string;
+  actor?: string;
+}
+
+/** The initiate response — no secret (no PIN, no OTP, no SCMD process id). */
+export interface CmdInitiateResult {
+  session_id: string;
+  masked_phone: string;
+  status: string;
+  expires_at: string;
+  family: string;
+  evidentiary_level: string;
+}
+
+/**
+ * `POST /v1/acts/{id}/signature/cmd/confirm` — phase 2. The `otp` is a transient
+ * possession factor: it is sent once and never stored client-side beyond this request.
+ */
+export interface CmdConfirmBody {
+  session_id: string;
+  otp: string;
+  actor?: string;
+}
+
+/** The confirm response — the produced qualified signature's metadata. */
+export interface CmdConfirmResult {
+  document_id: string;
+  act_id: string;
+  family: string;
+  evidentiary_level: string;
+  trusted_list_status: string | null;
+  signed_at: string;
+  signed_pdf_digest: string;
+  timestamp_token: boolean;
+  finalization: FinalizationStatus;
+}
+
 export interface AppearanceSettings {
   theme: ThemeMode;
   leather_texture: boolean;
@@ -1127,10 +1224,14 @@ export const DEFAULT_SETTINGS: Settings = {
     preferred_official_source: 'Ine',
   },
   signing: {
-    preferred_family: 'CartaoCidadao',
+    // Default flipped to the recommended Chave Móvel Digital (t57 Slice 1, matching the backend
+    // `SignatureFamily::default` + `contracts/settings.json`).
+    preferred_family: 'ChaveMovelDigital',
     // The official admin-configurable defaults the backend now returns (contract F1);
     // the client's optimistic default mirrors them so it matches before the first GET.
-    tsa_url: 'https://ts.cartaodecidadao.pt/tsa/server',
+    // NOTE: the TSA endpoint is plain http — RFC 3161 timestamping uses http, and the
+    // backend/contract default is http, so the web default must NOT "upgrade" it to https.
+    tsa_url: 'http://ts.cartaodecidadao.pt/tsa/server',
     tsl_url: 'https://www.gns.gov.pt/media/TSLPT.xml',
     require_qualified_for_seal: false,
     cmd: { env: 'preprod', application_id: null, ama_cert_configured: false },

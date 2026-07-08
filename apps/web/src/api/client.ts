@@ -42,6 +42,11 @@ import type {
   RegistryLookupBody,
   SealActBody,
   SealResult,
+  SignatureStatusView,
+  CmdInitiateBody,
+  CmdInitiateResult,
+  CmdConfirmBody,
+  CmdConfirmResult,
   UpdateEntityBody,
   SessionResult,
   SessionRoster,
@@ -318,6 +323,17 @@ export const api = {
   // as a Blob (not JSON) so it can be triggered as a download with an honest filename;
   // carries the session token like every other request. 404 until sealed.
   fetchActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document`),
+
+  // Qualified Chave Móvel Digital signing (§ t57). The two-phase flow: `initiate` (phone +
+  // PIN → dispatches the SMS OTP) then `confirm` (session_id + OTP → the signed PDF). PIN/OTP
+  // ride only in the request body and are never persisted client-side. The signature status
+  // is `null`-free (unsigned/pending/signed); the signed PDF 404s until the act is signed.
+  getActSignature: (id: string) => get<SignatureStatusView>(`/v1/acts/${id}/signature`),
+  cmdInitiateSignature: (id: string, body: CmdInitiateBody) =>
+    post<CmdInitiateResult>(`/v1/acts/${id}/signature/cmd/initiate`, body),
+  cmdConfirmSignature: (id: string, body: CmdConfirmBody) =>
+    post<CmdConfirmResult>(`/v1/acts/${id}/signature/cmd/confirm`, body),
+  fetchSignedActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document/signed`),
 
   // Registry — certidão permanente (§2.7). The `code` in each body is a secret; it is
   // sent transiently in the request and never returned (provenance is masked).

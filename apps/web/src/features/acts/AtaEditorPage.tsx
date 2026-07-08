@@ -74,6 +74,7 @@ import {
 } from '../../ui';
 import { CompliancePanel } from './CompliancePanel';
 import { ActDocumentPanel } from '../documents/ActDocumentPanel';
+import { SigningPanel } from '../signing/SigningPanel';
 
 // Working (editable) copy of the mutable act fields. Scalars are held as strings for the
 // inputs (empty ⇒ absent on save); the structured collections are held as their wire
@@ -1146,6 +1147,9 @@ export function AtaEditorPage() {
           </Card>
 
           <ActDocumentPanel act={a} entityName={entity.data?.name} family={entity.data?.family} />
+
+          {/* Qualified CMD signing — mounts only once the act is sealed (SigningPanel self-gates). */}
+          <SigningPanel act={a} entityName={entity.data?.name} />
         </div>
 
         <div className="split__aside stack">

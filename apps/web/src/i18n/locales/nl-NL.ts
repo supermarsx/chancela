@@ -570,7 +570,7 @@ export const nlNL: Catalog = {
   'settings.signing.requireQualified.label':
     'Gekwalificeerde handtekening vereisen om te verzegelen',
   'settings.signing.note':
-    'De handtekeningvoorkeuren worden nu opgeslagen en worden van kracht zodra de integratie van gekwalificeerde elektronische ondertekening wordt ingeschakeld.',
+    'De ondertekeningsvoorkeuren gelden voor de gekwalificeerde elektronische handtekening met Chave Móvel Digital, beschikbaar bij verzegelde notulen.',
   'settings.signing.officialHint': 'Officiële Portugese standaardwaarde.',
   'settings.signing.reset': 'Terugzetten naar standaard',
   'settings.management.cardTitle': 'Beheer',
@@ -965,6 +965,61 @@ export const nlNL: Catalog = {
   'documents.template.none': 'Geen sjabloon beschikbaar voor deze familie en fase.',
   'documents.template.localeLabel': 'Taal {locale}',
   'toast.document.downloaded': 'PDF gedownload.',
+  // --- Qualified CMD signing (t57) ------------------------------------------------
+  'settings.signing.family.hint': 'Aanbevolen: Chave Móvel Digital.',
+  'settings.signing.requireQualified.hint':
+    'Bepaalt alleen de status “afgerond (gekwalificeerd)” van de akte — verzegelen wordt nooit geblokkeerd. Als dit aanstaat, blijft een verzegelde akte “wacht op gekwalificeerde handtekening” totdat er een geldige gekwalificeerde handtekening is.',
+  'settings.signing.cmd.title': 'Chave Móvel Digital (CMD)',
+  'settings.signing.cmd.intro':
+    'Ondertekenen in productie vereist de AMA-inloggegevens (ApplicationId en certificaat), aangeleverd via omgevingsvariabelen. Deze waarden worden alleen ter informatie getoond.',
+  'settings.signing.cmd.env': 'Omgeving',
+  'settings.signing.cmd.envPreprod': 'Preproductie (AMA)',
+  'settings.signing.cmd.envProd': 'Productie (AMA)',
+  'settings.signing.cmd.applicationId': 'ApplicationId',
+  'settings.signing.cmd.unset': 'Niet ingesteld',
+  'settings.signing.cmd.amaCert': 'AMA-certificaat',
+  'settings.signing.cmd.configured': 'Geconfigureerd',
+  'settings.signing.cmd.notConfigured': 'Niet geconfigureerd',
+  'signing.title': 'Gekwalificeerde handtekening',
+  'signing.unsigned.title': 'Notulen nog niet gekwalificeerd ondertekend',
+  'signing.unsigned.body':
+    'De notulen zijn verzegeld. U kunt ze nu ondertekenen met een gekwalificeerde elektronische handtekening via Chave Móvel Digital.',
+  'signing.required.body':
+    'Deze instelling vereist een gekwalificeerde handtekening om de akte af te ronden. Onderteken de notulen met Chave Móvel Digital om ze te voltooien.',
+  'signing.start': 'Ondertekenen met Chave Móvel Digital',
+  'signing.credentials.intro':
+    'Voer het mobiele nummer in dat aan de Chave Móvel Digital is gekoppeld en de ondertekenings-PIN. De PIN wordt alleen voor dit verzoek gebruikt en nooit opgeslagen.',
+  'signing.phone.label': 'Mobiel nummer',
+  'signing.phone.placeholder': '+351 912345678',
+  'signing.pin.label': 'CMD-ondertekenings-PIN',
+  'signing.pin.hint': 'Alleen voor dit verzoek gebruikt; nooit opgeslagen.',
+  'signing.initiate': 'Sms-code verzenden',
+  'signing.initiate.pending': 'Wachten op sms-code…',
+  'signing.otp.sent':
+    'We hebben een code per sms naar {phone} gestuurd. Voer deze in om de handtekening te voltooien.',
+  'signing.otp.label': 'Sms-code (OTP)',
+  'signing.otp.placeholder': 'Code van 6 cijfers',
+  'signing.otp.hint': 'Alleen gebruikt om deze handtekening te bevestigen; nooit opgeslagen.',
+  'signing.confirm': 'Handtekening bevestigen',
+  'signing.confirm.pending': 'Handtekening voltooien…',
+  'signing.restart': 'Opnieuw beginnen',
+  'signing.expired':
+    'De ondertekeningssessie is verlopen. Begin opnieuw om een nieuwe code te ontvangen.',
+  'signing.signed.title': 'Notulen ondertekend met een gekwalificeerde elektronische handtekening',
+  'signing.signed.qualifiedLabel':
+    'Gekwalificeerde elektronische handtekening (Chave Móvel Digital).',
+  'signing.signed.signer': 'Ondertekenaar',
+  'signing.signed.family': 'Familie',
+  'signing.signed.signingTime': 'Datum en tijd van ondertekening',
+  'signing.signed.trustedList': 'Status in de Vertrouwenslijst',
+  'signing.signed.timestamp': 'Tijdstempel',
+  'signing.signed.timestampPresent': 'Aanwezig',
+  'signing.signed.timestampAbsent': 'Afwezig',
+  'signing.signed.digest': 'Vingerafdruk van ondertekende PDF',
+  'signing.download': 'Ondertekende PDF downloaden',
+  'toast.signing.otpSent': 'Sms-code verzonden.',
+  'toast.signing.signed': 'Notulen ondertekend.',
+  'toast.signing.downloaded': 'Ondertekende PDF gedownload.',
 
   // --- Chain integrity + recovery + data management (t54) ------------------------
   'integrity.cardTitle': 'Boeken & Integriteit',

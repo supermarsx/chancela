@@ -1,0 +1,29 @@
+/**
+ * DEFAULT_SETTINGS invariants (t57-S4).
+ *
+ * The optimistic client default must mirror the backend/contract default byte-for-byte so the UI
+ * matches before the first GET resolves. In particular the TSA endpoint is plain `http` — RFC 3161
+ * timestamping uses http, and the contract fixture (`contracts/settings.json`) is http — so the web
+ * default must NOT "upgrade" it to https (that mismatch was the t57 Slice-1 bug this pins closed).
+ */
+import { describe, it, expect } from 'vitest';
+import { DEFAULT_SETTINGS } from './types';
+
+describe('DEFAULT_SETTINGS.signing', () => {
+  it('keeps the TSA URL on plain http (RFC 3161; matches the backend/contract default)', () => {
+    expect(DEFAULT_SETTINGS.signing.tsa_url).toBe('http://ts.cartaodecidadao.pt/tsa/server');
+    expect(DEFAULT_SETTINGS.signing.tsa_url?.startsWith('https://')).toBe(false);
+  });
+
+  it('defaults the preferred family to the recommended Chave Móvel Digital', () => {
+    expect(DEFAULT_SETTINGS.signing.preferred_family).toBe('ChaveMovelDigital');
+  });
+
+  it('carries the serde-defaulted CMD config (preprod, no ApplicationId, cert not configured)', () => {
+    expect(DEFAULT_SETTINGS.signing.cmd).toEqual({
+      env: 'preprod',
+      application_id: null,
+      ama_cert_configured: false,
+    });
+  });
+});

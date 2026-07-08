@@ -370,7 +370,11 @@ export function SettingsPage() {
         {section === 'assinaturas' ? (
           <Card title={t('settings.signing.cardTitle')}>
             <div className="form">
-              <Field label={t('settings.signing.family.label')} htmlFor="set-family">
+              <Field
+                label={t('settings.signing.family.label')}
+                htmlFor="set-family"
+                hint={t('settings.signing.family.hint')}
+              >
                 <Select
                   id="set-family"
                   value={draft.signing.preferred_family}
@@ -435,7 +439,43 @@ export function SettingsPage() {
                 checked={draft.signing.require_qualified_for_seal}
                 onChange={(v) => setSigning('require_qualified_for_seal', v)}
               />
+              <p className="field__hint">{t('settings.signing.requireQualified.hint')}</p>
               <p className="field__hint">{t('settings.signing.note')}</p>
+
+              {/* Chave Móvel Digital — read-only config. The non-secret selectors (env,
+                  ApplicationId) plus the "AMA cert configured?" flag come from the server; the
+                  AMA secret material itself is supplied via environment variables, never the
+                  settings document, so it is surfaced here for transparency, not edited. */}
+              <div className="stack--tight">
+                <p className="card__label">{t('settings.signing.cmd.title')}</p>
+                <p className="field__hint">{t('settings.signing.cmd.intro')}</p>
+                <dl className="deflist">
+                  <div>
+                    <dt>{t('settings.signing.cmd.env')}</dt>
+                    <dd>
+                      {draft.signing.cmd.env === 'prod'
+                        ? t('settings.signing.cmd.envProd')
+                        : t('settings.signing.cmd.envPreprod')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('settings.signing.cmd.applicationId')}</dt>
+                    <dd className="mono">
+                      {draft.signing.cmd.application_id ?? t('settings.signing.cmd.unset')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('settings.signing.cmd.amaCert')}</dt>
+                    <dd>
+                      {draft.signing.cmd.ama_cert_configured ? (
+                        <Badge tone="ok">{t('settings.signing.cmd.configured')}</Badge>
+                      ) : (
+                        <Badge tone="warn">{t('settings.signing.cmd.notConfigured')}</Badge>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </div>
           </Card>
         ) : null}
