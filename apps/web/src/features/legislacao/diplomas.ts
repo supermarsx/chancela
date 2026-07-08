@@ -244,7 +244,7 @@ export const DIPLOMAS: Diploma[] = [
     title: 'Execução do eIDAS na ordem jurídica interna',
     ref: 'Decreto-Lei n.º 12/2021, de 9 de fevereiro',
     tema: 'assinaturas-confianca',
-    why: 'Fundamenta o valor probatório da ata selada — assinatura qualificada e selo temporal — que o Chancela produz.',
+    why: 'Concretiza na ordem jurídica interna o regime eIDAS da assinatura eletrónica qualificada e do selo temporal — a pilha de confiança em que assenta a selagem que o Chancela aplica à ata.',
     extract:
       'Assegura, na ordem jurídica interna, a execução do Regulamento (UE) n.º 910/2014 (eIDAS): a assinatura eletrónica qualificada aposta num documento eletrónico equivale à assinatura manuscrita e faz presumir a identidade e a representação de quem assina, a sua vontade de subscrever e a integridade do documento; os selos temporais qualificados fazem presumir o momento e a integridade a que se referem.',
     extractKind: 'resumo',
