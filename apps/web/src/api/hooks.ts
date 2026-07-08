@@ -40,6 +40,10 @@ import type {
   StartOverBookBody,
   ResetDataBody,
   StartOverInstanceBody,
+  CreateRoleBody,
+  PatchRoleBody,
+  RoleAssignmentInput,
+  GrantDelegationBody,
 } from './types';
 import { api } from './client';
 import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
@@ -74,7 +78,11 @@ export const keys = {
   users: ['users'] as const,
   user: (id: string) => ['users', id] as const,
   session: ['session'] as const,
+  sessionPermissions: ['session', 'permissions'] as const,
   roster: ['session', 'roster'] as const,
+  roles: ['roles'] as const,
+  permissionCatalog: ['permissions'] as const,
+  delegations: ['delegations'] as const,
 };
 
 // --- Entities -------------------------------------------------------------------
@@ -855,6 +863,157 @@ export function useDeleteSession() {
       clearSessionToken();
       qc.setQueryData(keys.session, { user: null });
       void qc.invalidateQueries({ queryKey: keys.session });
+    },
+  });
+}
+
+// --- RBAC management (t64-E6) — roles, scoped assignment, scoped delegation -------
+
+/**
+ * The role catalog (`GET /v1/roles`, t64-E4). Any valid session may read it — it backs the
+ * Funções list and the assign/delegation role pickers. Also drives the client-side subset
+ * reflection (the server re-enforces regardless).
+ */
+export function useRoles() {
+  return useQuery({ queryKey: keys.roles, queryFn: () => api.listRoles() });
+}
+
+/**
+ * The frozen permission verb catalog (`GET /v1/permissions`, t64-E4) — the 37-verb set with
+ * a `meta` flag per verb. Backs the permission-matrix editor. Static data, kept fresh long.
+ */
+export function usePermissionCatalog() {
+  return useQuery({
+    queryKey: keys.permissionCatalog,
+    queryFn: () => api.listPermissions(),
+    staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * The signed-in principal's fuller permission view (`GET /v1/session/permissions`, t64-E3):
+ * identity + role assignments (with scopes) + effective grants. Used to seed the assignment
+ * manager with the CURRENT user's own assignments (no read endpoint exists for another
+ * user's assignments — the assign/unassign responses are authoritative there).
+ */
+export function useSessionPermissions() {
+  return useQuery({
+    queryKey: keys.sessionPermissions,
+    queryFn: () => api.getSessionPermissions(),
+  });
+}
+
+/** Create a custom role (`POST /v1/roles`, t64-E4). The server rejects a permission the actor
+ *  lacks (subset invariant, 403). Refetches the role list + ledger on success. */
+export function useCreateRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateRoleBody) => api.createRole(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.roles });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Rename / re-set a custom role's permissions (`PATCH /v1/roles/{id}`, t64-E4). A protected
+ *  role refuses any edit (403); a resulting set outside the actor's own perms is refused
+ *  (subset, 403). Refetches roles, the session embed (own grants may change) + ledger. */
+export function usePatchRole(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PatchRoleBody) => api.patchRole(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.roles });
+      void qc.invalidateQueries({ queryKey: keys.session });
+      void qc.invalidateQueries({ queryKey: keys.sessionPermissions });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Delete a non-protected custom role (`DELETE /v1/roles/{id}`, t64-E4). The protected Owner
+ *  role is undeletable (403). Refetches the role list + ledger. */
+export function useDeleteRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteRole(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.roles });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Assign a `(role, scope)` to a user (`POST /v1/users/{id}/roles`, t64-E4). Gated
+ * `role.assign` at the scope + the subset invariant at that scope (server-enforced, 403). The
+ * response is the user's UPDATED assignment list. Refetches the session embed (if assigning
+ * to self, own grants change) + ledger.
+ */
+export function useAssignRole(userId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RoleAssignmentInput) => api.assignRole(userId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.session });
+      void qc.invalidateQueries({ queryKey: keys.sessionPermissions });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Remove a `(role, scope)` assignment from a user (`DELETE /v1/users/{id}/roles`, t64-E4).
+ * The last-Owner guard refuses removing the final Owner\@Global assignment (409 — surfaced as
+ * an honest message). The response is the user's updated assignment list.
+ */
+export function useUnassignRole(userId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RoleAssignmentInput) => api.unassignRole(userId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.session });
+      void qc.invalidateQueries({ queryKey: keys.sessionPermissions });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * The delegations touching the caller (`GET /v1/delegations`, t64-E4): those they granted or
+ * received (own), or all when they hold `delegation.revoke`. Backs the delegation panel's
+ * active/expired/revoked view.
+ */
+export function useDelegations() {
+  return useQuery({ queryKey: keys.delegations, queryFn: () => api.listDelegations() });
+}
+
+/**
+ * Grant a scoped delegation (`POST /v1/delegations`, t64-E4). Only a permission the grantor
+ * holds VIA A ROLE at the scope is delegable (meta verbs are non-delegable); the server 403s
+ * otherwise. Refetches the delegation list + ledger.
+ */
+export function useGrantDelegation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: GrantDelegationBody) => api.grantDelegation(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.delegations });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Revoke a delegation (`DELETE /v1/delegations/{id}`, t64-E4). Allowed to the grantor or a
+ *  `delegation.revoke` holder; revocation is immediate. Refetches the list + ledger. */
+export function useRevokeDelegation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.revokeDelegation(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.delegations });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }

@@ -877,6 +877,90 @@ export interface SessionPermissions {
   permissions: PermissionGrant[];
 }
 
+// --- RBAC management DTOs (§ t64-E4, FROZEN for the E6 role/delegation UI) --------
+//
+// The web half of the frozen `chancela-api::{roles,delegations}` management DTOs. The
+// server is the real guard: every write re-enforces the subset invariant, protected-Owner,
+// last-Owner and delegation hold-via-role rules regardless of what the UI offers. These
+// mirror the server views byte-for-byte.
+//
+// `ScopeInput` (the write shape) is IDENTICAL to `PermissionScope` (the read shape): a
+// serde-`kind`-tagged union `{"kind":"global"|"entity"|"book","id"?}`. We reuse
+// `PermissionScope` for both so the scope picker maps directly onto the wire.
+
+/** A role rendered for the web (`GET /v1/roles`, t64-E4). `permissions` are dotted verb ids
+ *  in the role's deterministic order; `protected` marks the locked, undeletable Owner. */
+export interface RoleView {
+  id: string;
+  name: string;
+  permissions: string[];
+  protected: boolean;
+}
+
+/** One verb in the permission catalog (`GET /v1/permissions`), tagged with whether it is a
+ *  non-delegable meta-permission (a `role.` / `delegation.` verb). Drives the matrix editor. */
+export interface PermissionInfo {
+  permission: string;
+  meta: boolean;
+}
+
+/** Response of `GET /v1/permissions`: the whole frozen verb catalog, in declaration order. */
+export interface PermissionCatalogView {
+  permissions: PermissionInfo[];
+}
+
+/** Body of `POST /v1/roles` (t64-E4). Unknown verb ids are rejected server-side (422). */
+export interface CreateRoleBody {
+  name: string;
+  permissions: string[];
+}
+
+/** Body of `PATCH /v1/roles/{id}` (t64-E4). Absent fields leave that facet unchanged; a
+ *  protected role refuses any edit (403). */
+export interface PatchRoleBody {
+  name?: string;
+  permissions?: string[];
+}
+
+/** Body of `POST`/`DELETE /v1/users/{id}/roles` — the `(role, scope)` assignment to add or
+ *  remove (t64-E4). The scope uses the same tagged union as {@link PermissionScope}. */
+export interface RoleAssignmentInput {
+  role_id: string;
+  scope: PermissionScope;
+}
+
+/**
+ * A delegation rendered for the web (`GET`/`POST /v1/delegations`, t64-E4). `from`/`to` are
+ * user ids; `permission` is a dotted verb id; `scope` the tagged union. `revoked` is the
+ * derived active/inactive flag; `expires_at`/`revoked_at`/`revoked_by` are present only when
+ * set. An expired or revoked delegation contributes nothing (the server re-checks).
+ */
+export interface DelegationView {
+  id: string;
+  from: string;
+  to: string;
+  permission: string;
+  scope: PermissionScope;
+  granted_at: string;
+  expires_at?: string;
+  revoked: boolean;
+  revoked_at?: string;
+  revoked_by?: string;
+}
+
+/**
+ * Body of `POST /v1/delegations` (t64-E4). `to` is the grantee user id; `permission` a dotted
+ * verb id the grantor holds VIA A ROLE at `scope` (meta verbs are non-delegable); `expires_at`
+ * is an optional RFC-3339 timestamp (omit ⇒ until-revoked). The server 403s a permission the
+ * grantor does not hold via a role, and 422s a malformed `expires_at`.
+ */
+export interface GrantDelegationBody {
+  to: string;
+  permission: string;
+  scope: PermissionScope;
+  expires_at?: string;
+}
+
 /**
  * `GET /v1/session` — the active user, or `null` when signed out.
  *

@@ -32,6 +32,7 @@ import {
   useToast,
 } from '../../ui';
 import { UserAccessManager } from './UserAccessManager';
+import { RoleAssignmentManager } from '../rbac/RoleAssignmentManager';
 import type { UserView } from '../../api/types';
 
 function IdentitySection({ user }: { user: UserView }) {
@@ -171,6 +172,10 @@ export function EditUserPage() {
 
       <IdentitySection user={user} />
       <ActivationSection user={user} />
+
+      {/* Funções — scoped role assignment (t64-E6). Gated `role.assign` at each scope; the
+          last-Owner-removal guard surfaces the server's honest 409. */}
+      <RoleAssignmentManager user={user} />
 
       {/* Acesso e auditoria — the password + attestation-key manager, moved here from the
           old inline row. Anchor target for the list's "Acesso e auditoria" action. */}

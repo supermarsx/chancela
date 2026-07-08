@@ -4796,3 +4796,47 @@ input[type='radio']:disabled {
   gap: 0.4rem;
   flex-wrap: wrap;
 }
+
+/* --- RBAC permission-matrix editor (t64-E6) ---------------------------------- */
+.rbac-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.rbac-matrix__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.rbac-matrix__group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.85rem 0.85rem;
+  margin: 0;
+}
+.rbac-matrix__legend {
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0 0.4rem;
+  color: var(--text-muted);
+}
+.rbac-matrix__perms {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.4rem 1rem;
+}
+.rbac-matrix__perm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.rbac-matrix__perm.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.rbac-matrix__perm input {
+  flex: none;
+}

@@ -50,6 +50,8 @@ import { grainStore } from '../../theme/grainStore';
 import { applyAppearance, applyLocale } from '../../theme/appearance';
 import { LivrosIntegridadeSection } from '../recovery/LivrosIntegridadeSection';
 import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
+import { FuncoesSection } from '../rbac/FuncoesSection';
+import { DelegacoesSection } from '../rbac/DelegacoesSection';
 import { useCan } from '../session/permissions';
 import {
   Badge,
@@ -113,6 +115,8 @@ type SettingsSection =
   | 'assinaturas'
   | 'gestao'
   | 'utilizadores'
+  | 'funcoes'
+  | 'delegacoes'
   | 'integridade'
   | 'dados'
   | 'sobre';
@@ -124,14 +128,23 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNo
   { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
   { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
   { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
+  { id: 'funcoes', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
+  { id: 'delegacoes', label: 'rbac.delegacoes.tab', icon: <Icon.ArrowRight /> },
   { id: 'integridade', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
   { id: 'dados', label: 'data.cardTitle', icon: <Icon.Archive /> },
   { id: 'sobre', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
 ];
 
 /** The sub-tabs that manage their OWN data (not the settings working copy), so the
- *  autosave savebar is not shown for them. */
-const STANDALONE_SECTIONS: readonly SettingsSection[] = ['utilizadores', 'integridade', 'dados'];
+ *  autosave savebar is not shown for them. The RBAC tabs (Funções, Delegações) self-gate
+ *  their own `role.manage`/`delegation.*` affordances, so they are standalone too. */
+const STANDALONE_SECTIONS: readonly SettingsSection[] = [
+  'utilizadores',
+  'funcoes',
+  'delegacoes',
+  'integridade',
+  'dados',
+];
 
 /**
  * Whether autosave is enabled. Autosave is always-on today (t49) — there is no
@@ -564,6 +577,12 @@ export function SettingsPage() {
             route keeps working for the CurrentUserPicker links. `UsersList` supplies its
             own Card + "novo" action, so no extra chrome is needed here. */}
           {section === 'utilizadores' ? <UsersList /> : null}
+
+          {/* Funções e permissões (t64-E6) ------------------------------------------ */}
+          {section === 'funcoes' ? <FuncoesSection /> : null}
+
+          {/* Delegações (t64-E6) ---------------------------------------------------- */}
+          {section === 'delegacoes' ? <DelegacoesSection /> : null}
 
           {/* Livros & Integridade ---------------------------------------------------- */}
           {section === 'integridade' ? <LivrosIntegridadeSection /> : null}

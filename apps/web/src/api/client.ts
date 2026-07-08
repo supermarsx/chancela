@@ -60,6 +60,15 @@ import type {
   UpdateActBody,
   UpdateUserBody,
   UserView,
+  RoleView,
+  PermissionCatalogView,
+  CreateRoleBody,
+  PatchRoleBody,
+  RoleAssignmentInput,
+  RoleAssignmentView,
+  SessionPermissions,
+  DelegationView,
+  GrantDelegationBody,
   BookView,
   HealthResponse,
   IntegrityReportView,
@@ -387,6 +396,32 @@ export const api = {
   issueRecovery: (id: string, body: IssueRecoveryBody = {}) =>
     post<RecoveryIssued>(`/v1/users/${id}/recovery`, body),
   getSession: () => get<SessionView>('/v1/session'),
+  // The fuller permission view (identity + role assignments + effective grants) for the
+  // signed-in principal (`GET /v1/session/permissions`, t64-E3). Used to seed the
+  // role-assignment manager with the current user's OWN assignments (there is no read
+  // endpoint for another user's assignments — the assign/unassign responses are the source
+  // of truth for those).
+  getSessionPermissions: () => get<SessionPermissions>('/v1/session/permissions'),
+
+  // RBAC management (§ t64-E4, FROZEN DTOs). The server re-enforces the subset invariant,
+  // protected-Owner, last-Owner and delegation hold-via-role rules on every write regardless
+  // of what the UI offers — a rejected escalation comes back as an honest 403/409.
+  listRoles: () => get<RoleView[]>('/v1/roles'),
+  listPermissions: () => get<PermissionCatalogView>('/v1/permissions'),
+  createRole: (body: CreateRoleBody) => post<RoleView>('/v1/roles', body),
+  patchRole: (id: string, body: PatchRoleBody) => patch<RoleView>(`/v1/roles/${id}`, body),
+  deleteRole: (id: string) => del<void>(`/v1/roles/${id}`),
+  // Assign/unassign a `(role, scope)` to a user. Both echo the user's UPDATED assignment
+  // list, so the caller keeps the shown assignments authoritative without a separate read.
+  assignRole: (userId: string, body: RoleAssignmentInput) =>
+    post<RoleAssignmentView[]>(`/v1/users/${userId}/roles`, body),
+  unassignRole: (userId: string, body: RoleAssignmentInput) =>
+    del<RoleAssignmentView[]>(`/v1/users/${userId}/roles`, body),
+  // Scoped delegations. `GET` returns the delegations touching the caller (own) or all (for a
+  // `delegation.revoke` holder); grant/revoke are gated + invariant-enforced server-side.
+  listDelegations: () => get<DelegationView[]>('/v1/delegations'),
+  grantDelegation: (body: GrantDelegationBody) => post<DelegationView>('/v1/delegations', body),
+  revokeDelegation: (id: string) => del<void>(`/v1/delegations/${id}`),
   // The UNAUTHENTICATED sign-in roster (t45-e1): decides onboarding-vs-sign-in and lists
   // the signable users while signed out, without the auth-gated `GET /v1/users`.
   getSessionRoster: () => get<SessionRoster>('/v1/session/roster'),
