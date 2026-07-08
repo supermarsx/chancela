@@ -11,7 +11,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chancela_core::{Act, ActId, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
+use chancela_core::{
+    Act, ActId, AttendanceWeight, Attendee, Book, BookKind, Convening, ConveningRecipient,
+    DispatchChannel, Entity, EntityKind, MeetingChannel, Nipc, PresenceMode, SecondCall,
+    SignatoryCapacity,
+};
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{Store, StoreError, StoredDocument};
@@ -771,4 +775,174 @@ fn wal_mode_allows_a_concurrent_reader() {
         .unwrap();
     assert_eq!(entity_count, 1);
     assert_eq!(event_count, 1);
+}
+
+// --- G1 (convening) + G2 (attendance) additive fields ride the acts json (t53-E2) --------------
+
+/// Build an act populated with the G1 `convening` record and the G2 `attendees` list, so the
+/// round-trip exercises every new nested type (channels, recipients, second call, weights, proxy).
+fn populated_g1_g2_act(book_id: chancela_core::BookId) -> Act {
+    // Split date/time built via the default `time` constructors (no `macros` feature needed here).
+    let mar_10 = time::Date::from_calendar_date(2026, time::Month::March, 10).unwrap();
+    let mar_30 = time::Date::from_calendar_date(2026, time::Month::March, 30).unwrap();
+    let at_10_30 = time::Time::from_hms(10, 30, 0).unwrap();
+
+    let mut act = Act::draft(
+        book_id,
+        "Ata n.o 1 (com convocatoria e presencas)",
+        MeetingChannel::Physical,
+    );
+    act.convening = Some(Convening {
+        convener: Some("Amélia Marques".to_string()),
+        convener_capacity: Some(SignatoryCapacity::Chair),
+        dispatch_date: Some(mar_10),
+        antecedence_days: Some(15),
+        channel: Some(DispatchChannel::RegisteredLetterAR),
+        recipients: vec![ConveningRecipient {
+            name: "Encosto Estratégico Lda".to_string(),
+            channel: Some(DispatchChannel::Email),
+            reference: Some("RR123456789PT".to_string()),
+            dispatched_at: Some(mar_10),
+        }],
+        second_call: Some(SecondCall {
+            date: Some(mar_30),
+            time: Some(at_10_30),
+            reduced_quorum: true,
+        }),
+    });
+    act.attendees = vec![
+        Attendee {
+            name: "Amélia Marques".to_string(),
+            quality: SignatoryCapacity::Member,
+            presence: PresenceMode::InPerson,
+            represented_by: None,
+            weight: Some(AttendanceWeight::Capital(500_000)),
+        },
+        Attendee {
+            name: "Encosto Estratégico Lda".to_string(),
+            quality: SignatoryCapacity::CondoOwner,
+            presence: PresenceMode::Represented,
+            represented_by: Some("Amélia Marques".to_string()),
+            weight: Some(AttendanceWeight::Permilage(250)),
+        },
+    ];
+    act
+}
+
+/// The store persists acts as one opaque `json` column, so the additive G1/G2 fields ride inside
+/// the same blob with no DDL and no `schema_version` bump. This drives the real durability path
+/// (persist → drop → reopen → load) for both an act carrying the new fields and an old-shape act
+/// that leaves them defaulted, asserting full round-trip equality for each — and confirms the
+/// stamped schema version is unchanged (still v2) across the whole exercise.
+#[test]
+fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Encosto Estratégico Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+
+    // (a) an act WITH the G1 convening record + the G2 attendance list populated,
+    // (b) an act WITHOUT them — plain `draft()`, so `convening: None` / `attendees: []` (old shape).
+    let full_act = populated_g1_g2_act(book.id);
+    let bare_act = Act::draft(
+        book.id,
+        "Ata n.o 2 (sem convocatoria)",
+        MeetingChannel::Physical,
+    );
+    // Precondition: the bare act really carries the additive defaults.
+    assert_eq!(bare_act.convening, None);
+    assert!(bare_act.attendees.is_empty());
+
+    // No schema bump: the stamp is v2 before and after persisting acts carrying the new fields.
+    let stamp = |path: &Path| -> String {
+        let raw = rusqlite::Connection::open(path.join("chancela.db")).unwrap();
+        raw.query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+
+    {
+        let store = Store::open(dir.path()).expect("open");
+        assert_eq!(stamp(dir.path()), "2", "fresh db stamped at v2");
+        let mut ledger = Ledger::new();
+
+        let e0 = ledger
+            .append("amelia.marques", "book:1", "book.opened", None, b"book")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e0)?;
+                tx.upsert_book(&book)
+            })
+            .unwrap();
+
+        let e1 = ledger
+            .append("amelia.marques", "act:1", "act.drafted", None, b"full")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e1)?;
+                tx.upsert_act(&full_act)
+            })
+            .unwrap();
+
+        let e2 = ledger
+            .append("amelia.marques", "act:2", "act.drafted", None, b"bare")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e2)?;
+                tx.upsert_act(&bare_act)
+            })
+            .unwrap();
+        // Store dropped here — the process "restarts". No migration ran; no DDL touched acts.
+        assert_eq!(
+            stamp(dir.path()),
+            "2",
+            "no schema bump after writing G1/G2 acts"
+        );
+    }
+
+    // Reopen and reload: both acts survive byte-for-byte through the json column.
+    let store = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        stamp(dir.path()),
+        "2",
+        "reopen did not bump the schema version"
+    );
+    let loaded = store.load().expect("reload");
+
+    let reloaded_full = loaded.acts.get(&full_act.id).expect("full act reloaded");
+    assert_eq!(
+        reloaded_full, &full_act,
+        "G1/G2 fields survive the store's json round-trip"
+    );
+    // Spot-check the nested new datums explicitly (not just whole-struct equality).
+    let convening = reloaded_full.convening.as_ref().expect("convening present");
+    assert_eq!(convening.antecedence_days, Some(15));
+    assert_eq!(convening.recipients.len(), 1);
+    assert_eq!(
+        convening.second_call.as_ref().map(|s| s.reduced_quorum),
+        Some(true)
+    );
+    assert_eq!(reloaded_full.attendees.len(), 2);
+    assert_eq!(
+        reloaded_full.attendees[1].weight,
+        Some(AttendanceWeight::Permilage(250))
+    );
+    assert_eq!(
+        reloaded_full.attendees[1].represented_by.as_deref(),
+        Some("Amélia Marques")
+    );
+
+    // The old-shape act round-trips too: the defaulted fields come back defaulted.
+    let reloaded_bare = loaded.acts.get(&bare_act.id).expect("bare act reloaded");
+    assert_eq!(
+        reloaded_bare, &bare_act,
+        "old-shape act round-trips (backward-compat)"
+    );
+    assert_eq!(reloaded_bare.convening, None);
+    assert!(reloaded_bare.attendees.is_empty());
 }
