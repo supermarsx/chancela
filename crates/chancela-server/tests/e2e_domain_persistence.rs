@@ -77,9 +77,9 @@ async fn full_domain_survives_restart_and_the_chain_continues() {
     assert_eq!(report["entity"]["nipc"], "503004642");
 
     // A book (termo de abertura) on the manual entity, then a full ata lifecycle → sealed #1.
-    let book_id = open_book(&h, &manual_id).await;
+    let book_id = open_book(&h, &manual_id, &token).await;
     let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
-    fill_act_contents(&h, &act_id).await;
+    fill_act_contents(&h, &act_id, &token).await;
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, sealed) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
@@ -94,7 +94,7 @@ async fn full_domain_survives_restart_and_the_chain_continues() {
     assert_eq!(sealed_digest.len(), 64);
 
     // A CAE refresh supersedes the embedded catalog and writes the on-disk cache.
-    let (status, refresh) = h.post_json("/v1/cae/refresh", json!({})).await;
+    let (status, refresh) = h.post_json_auth("/v1/cae/refresh", json!({}), &token).await;
     assert_eq!(status, 200, "cae refresh: {refresh}");
     assert_eq!(refresh["updated"], true);
     let (status, a) = h.get_json("/v1/cae/A").await;
@@ -122,6 +122,10 @@ async fn full_domain_survives_restart_and_the_chain_continues() {
     h.clear_cae_url();
     h.restart().await;
 
+    // The in-memory session did not survive the restart, so re-open one for the persisted user to
+    // attribute the post-restart mutations below.
+    let token = open_session(&h, &user_id).await;
+
     // Both entities survived, byte-for-byte.
     let (status, e1) = h.get_json(&format!("/v1/entities/{manual_id}")).await;
     assert_eq!(status, 200, "manual entity survived the restart: {e1}");
@@ -147,7 +151,7 @@ async fn full_domain_survives_restart_and_the_chain_continues() {
 
     // The registry extract + its masked-code provenance survived (and the full code never surfaces).
     let (status, extract) = h
-        .get_json(&format!("/v1/entities/{imported_id}/registry"))
+        .get_json_auth(&format!("/v1/entities/{imported_id}/registry"), &token)
         .await;
     assert_eq!(
         status, 200,
@@ -213,7 +217,7 @@ async fn full_domain_survives_restart_and_the_chain_continues() {
         Some(&token),
     )
     .await;
-    fill_act_contents(&h, &act2).await;
+    fill_act_contents(&h, &act2, &token).await;
     advance_to_signing(&h, &act2, Some(&token)).await;
     let (status, sealed2) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.

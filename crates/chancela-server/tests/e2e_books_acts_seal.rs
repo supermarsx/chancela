@@ -16,6 +16,7 @@ use serde_json::json;
 )]
 async fn books_acts_full_seal_lifecycle() {
     let h = ServerHarness::start().await;
+    let token = bootstrap_session(&h).await;
 
     let entity_id = create_entity(
         &h,
@@ -23,14 +24,15 @@ async fn books_acts_full_seal_lifecycle() {
         "503004642",
         "Lisboa",
         "SociedadeAnonima",
+        &token,
     )
     .await;
-    let book_id = open_book(&h, &entity_id).await;
+    let book_id = open_book(&h, &entity_id, &token).await;
 
     // Draft an ata, fill its contents, and advance it to Signing.
-    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", None).await;
-    fill_act_contents(&h, &act_id).await;
-    advance_to_signing(&h, &act_id, None).await;
+    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
+    fill_act_contents(&h, &act_id, &token).await;
+    advance_to_signing(&h, &act_id, Some(&token)).await;
 
     // The fully-filled CSC ata (mesa/time/agenda all set via the wire, t31) has no findings, so
     // the compliance gate permits the seal.
@@ -42,7 +44,7 @@ async fn books_acts_full_seal_lifecycle() {
 
     // Seal → ata #1, Sealed, a 64-hex payload digest. No warnings to acknowledge.
     let (status, sealed) = h
-        .post_json(&format!("/v1/acts/{act_id}/seal"), json!({}))
+        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
         .await;
     assert_eq!(status, 200, "seal: {sealed}");
     assert_eq!(sealed["ata_number"], 1);
@@ -65,13 +67,14 @@ async fn books_acts_full_seal_lifecycle() {
 
     // Close the book (termo de encerramento).
     let (status, closed) = h
-        .post_json(
+        .post_json_auth(
             &format!("/v1/books/{book_id}/close"),
             json!({
                 "reason": "BookFull",
                 "closing_date": "2026-12-31",
                 "required_signatories": ["Administrador"],
             }),
+            &token,
         )
         .await;
     assert_eq!(status, 200, "close book: {closed}");
@@ -80,9 +83,10 @@ async fn books_acts_full_seal_lifecycle() {
 
     // Drafting into a closed book is refused.
     let (status, body) = h
-        .post_json(
+        .post_json_auth(
             "/v1/acts",
             json!({ "book_id": book_id, "title": "Tardia", "channel": "Physical" }),
+            &token,
         )
         .await;
     assert_eq!(status, 409, "draft into closed book: {body}");

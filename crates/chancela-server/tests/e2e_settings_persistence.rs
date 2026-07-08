@@ -38,6 +38,7 @@ fn sample_settings() -> Value {
 )]
 async fn settings_round_trip_validation_and_persistence() {
     let mut h = ServerHarness::start().await;
+    let token = bootstrap_session(&h).await;
 
     // Defaults before any PUT.
     let (status, defaults) = h.get_json("/v1/settings").await;
@@ -47,7 +48,9 @@ async fn settings_round_trip_validation_and_persistence() {
     assert_eq!(defaults["appearance"]["texture_intensity"], 60);
 
     // A full PUT round-trips and is reflected by the next GET.
-    let (status, stored) = h.put_json("/v1/settings", sample_settings()).await;
+    let (status, stored) = h
+        .put_json_auth("/v1/settings", sample_settings(), &token)
+        .await;
     assert_eq!(status, 200);
     assert_eq!(stored, sample_settings());
     let (status, got) = h.get_json("/v1/settings").await;
@@ -75,7 +78,7 @@ async fn settings_round_trip_validation_and_persistence() {
     for mutate in cases {
         let mut bad = sample_settings();
         mutate(&mut bad);
-        let (status, body) = h.put_json("/v1/settings", bad).await;
+        let (status, body) = h.put_json_auth("/v1/settings", bad, &token).await;
         assert_eq!(status, 422, "invalid settings must 422: {body}");
         assert!(body["error"].is_string());
     }

@@ -23,6 +23,7 @@ async fn entities_manual_and_registry_import() {
     let h =
         ServerHarness::start_with(HarnessOptions::default().with_registry(registry.url.clone()))
             .await;
+    let token = bootstrap_session(&h).await;
 
     // Manual create still works alongside the registry path.
     let _manual = create_entity(
@@ -31,12 +32,17 @@ async fn entities_manual_and_registry_import() {
         "500000000",
         "Porto",
         "SociedadePorQuotas",
+        &token,
     )
     .await;
 
     // import-from-registry creates a consistent entity from the certidão (valid NIPC 503004642).
     let (status, report) = h
-        .post_json("/v1/entities/import-from-registry", json!({ "code": CODE }))
+        .post_json_auth(
+            "/v1/entities/import-from-registry",
+            json!({ "code": CODE }),
+            &token,
+        )
         .await;
     assert_eq!(status, 201, "import-from-registry: {report}");
     assert_eq!(report["entity"]["name"], "Encosto Estratégico, Lda");
@@ -63,7 +69,7 @@ async fn entities_manual_and_registry_import() {
 
     // The stored extract is fetchable with only the masked code in its provenance.
     let (status, view) = h
-        .get_json(&format!("/v1/entities/{created_id}/registry"))
+        .get_json_auth(&format!("/v1/entities/{created_id}/registry"), &token)
         .await;
     assert_eq!(status, 200);
     assert_eq!(view["provenance"]["access_code_masked"], "****-****-9012");
@@ -79,12 +85,14 @@ async fn entities_manual_and_registry_import() {
         "503004642",
         "",
         "SociedadePorQuotas",
+        &token,
     )
     .await;
     let (status, report) = h
-        .post_json(
+        .post_json_auth(
             &format!("/v1/entities/{conflicted}/registry/import"),
             json!({ "code": CODE }),
+            &token,
         )
         .await;
     assert_eq!(status, 200, "import into existing: {report}");
@@ -108,12 +116,14 @@ async fn entities_manual_and_registry_import() {
         "503004642",
         "Porto",
         "SociedadePorQuotas",
+        &token,
     )
     .await;
     let (status, report) = h
-        .post_json(
+        .post_json_auth(
             &format!("/v1/entities/{overwritten}/registry/import"),
             json!({ "code": CODE, "overwrite": true }),
+            &token,
         )
         .await;
     assert_eq!(status, 200, "overwrite import: {report}");

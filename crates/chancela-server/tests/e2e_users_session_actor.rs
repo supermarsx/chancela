@@ -1,9 +1,11 @@
 //! Journey: users → session → actor attribution, and persistence across a restart.
 //!
 //! Proves the composed session layer: a mutation chain carrying `X-Chancela-Session` attributes
-//! every ledger event to the user's `username`; the same operation without the header falls back to
-//! the system `"api"` actor; and across a restart of the same data dir, `users.json` persists and
-//! the durable ledger (t30) reloads intact, while in-memory sessions reset.
+//! every ledger event to the user's `username`; the same operation WITHOUT the header is refused
+//! (`401` — under the t41 hardening every mutation endpoint requires a valid session, so an
+//! unauthenticated write is rejected, not downgraded to the system `"api"` actor); and across a
+//! restart of the same data dir, `users.json` persists and the durable ledger (t30) reloads intact,
+//! while in-memory sessions reset (the pre-restart token no longer resolves).
 
 mod common;
 
@@ -70,7 +72,7 @@ async fn users_session_actor_and_persistence_across_restart() {
     let book_id = book["id"].as_str().expect("book id").to_owned();
 
     let act_id = draft_act(&h, &book_id, "Ata da AG anual", Some(&token)).await;
-    fill_act_contents(&h, &act_id).await;
+    fill_act_contents(&h, &act_id, &token).await;
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, sealed) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
@@ -108,18 +110,29 @@ async fn users_session_actor_and_persistence_across_restart() {
         "the chain reached the seal: {chain:?}"
     );
 
-    // The same operation WITHOUT a session header falls back to the system actor.
-    let _ = draft_act(&h, &book_id, "Ata sem sessão", None).await;
+    // The same operation WITHOUT a session header is now REFUSED (t41: every mutation requires a
+    // valid session). It is not downgraded to the system "api" actor — it is a 401, and nothing is
+    // appended to the chain.
+    let (status, refused) = h
+        .post_json(
+            "/v1/acts",
+            json!({ "book_id": book_id, "title": "Ata sem sessão", "channel": "Physical" }),
+        )
+        .await;
+    assert_eq!(
+        status, 401,
+        "an unauthenticated mutation is refused: {refused}"
+    );
     let (_, events) = h.get_json("/v1/ledger/events").await;
-    let no_session_drafts = events
+    let api_drafts = events
         .as_array()
         .expect("events")
         .iter()
         .filter(|e| e["kind"] == "act.drafted" && e["actor"] == "api")
         .count();
     assert_eq!(
-        no_session_drafts, 1,
-        "exactly the no-session draft is attributed to \"api\""
+        api_drafts, 0,
+        "no act.drafted is attributed to \"api\" — the unauthenticated write was rejected"
     );
 
     // Capture the durable ledger length before restarting: with the t30 store, the whole
@@ -136,7 +149,10 @@ async fn users_session_actor_and_persistence_across_restart() {
     // (sessions are in-memory); and the durable ledger reloads intact.
     h.restart().await;
 
-    let (status, list) = h.get_json("/v1/users").await;
+    // The old token is dead (in-memory sessions reset), and `GET /v1/users` is auth-gated (t41), so
+    // re-open a session for the persisted user to read the list back.
+    let fresh_token = open_session(&h, &user_id).await;
+    let (status, list) = h.get_json_auth("/v1/users", &fresh_token).await;
     assert_eq!(status, 200);
     assert!(
         list.as_array()

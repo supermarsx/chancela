@@ -72,7 +72,7 @@ async fn live_responses_match_the_canonical_contracts() {
 
     // A sealed ata (act.sealed.json).
     let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
-    fill_act_contents(&h, &act_id).await;
+    fill_act_contents(&h, &act_id, &token).await;
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, _) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
@@ -85,7 +85,7 @@ async fn live_responses_match_the_canonical_contracts() {
 
     // Settings (settings.json).
     let (status, _) = h
-        .put_json(
+        .put_json_auth(
             "/v1/settings",
             json!({
                 "schema_version": 1,
@@ -99,6 +99,7 @@ async fn live_responses_match_the_canonical_contracts() {
                 },
                 "appearance": { "theme": "system", "leather_texture": true, "texture_intensity": 60 }
             }),
+            &token,
         )
         .await;
     assert_eq!(status, 200);
@@ -116,7 +117,7 @@ async fn live_responses_match_the_canonical_contracts() {
         .await;
     assert_eq!(status, 200);
     let (status, extract) = h
-        .get_json(&format!("/v1/entities/{entity_id}/registry"))
+        .get_json_auth(&format!("/v1/entities/{entity_id}/registry"), &token)
         .await;
     assert_eq!(status, 200);
     assert_shape(
@@ -152,7 +153,7 @@ async fn live_responses_match_the_canonical_contracts() {
 
     // A hot backup manifest (backup.manifest.json). The e2e server is data-dir-backed, so the
     // durable store snapshots and the manifest returns 200 (t30 §3.2).
-    let (status, manifest) = h.post_json("/v1/backup", json!({})).await;
+    let (status, manifest) = h.post_json_auth("/v1/backup", json!({}), &token).await;
     assert_eq!(status, 200, "backup: {manifest}");
     assert_shape(
         "backup.manifest",

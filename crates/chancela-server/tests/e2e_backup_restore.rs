@@ -62,9 +62,9 @@ async fn backup_manifest_verifies_and_restore_over_a_wiped_dir_round_trips() {
         .expect("imported id")
         .to_owned();
 
-    let book_id = open_book(&h, &manual_id).await;
+    let book_id = open_book(&h, &manual_id, &token).await;
     let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
-    fill_act_contents(&h, &act_id).await;
+    fill_act_contents(&h, &act_id, &token).await;
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, _) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
@@ -77,7 +77,7 @@ async fn backup_manifest_verifies_and_restore_over_a_wiped_dir_round_trips() {
     let length_before = verify_before["length"].as_u64().expect("length");
 
     // --- Take a hot backup and verify the manifest -----------------------------------------
-    let (status, manifest) = h.post_json("/v1/backup", json!({})).await;
+    let (status, manifest) = h.post_json_auth("/v1/backup", json!({}), &token).await;
     assert_eq!(status, 200, "backup: {manifest}");
     assert_shape(
         "backup.manifest",

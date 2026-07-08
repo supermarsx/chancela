@@ -17,6 +17,7 @@ use serde_json::json;
 )]
 async fn compliance_refuses_underfilled_seal_and_out_of_order_seal() {
     let h = ServerHarness::start().await;
+    let token = bootstrap_session(&h).await;
 
     let entity_id = create_entity(
         &h,
@@ -24,13 +25,14 @@ async fn compliance_refuses_underfilled_seal_and_out_of_order_seal() {
         "503004642",
         "Lisboa",
         "SociedadeAnonima",
+        &token,
     )
     .await;
-    let book_id = open_book(&h, &entity_id).await;
+    let book_id = open_book(&h, &entity_id, &token).await;
 
     // An empty ata pushed to Signing WITHOUT filling the mandatory contents.
-    let act_id = draft_act(&h, &book_id, "Ata vazia", None).await;
-    advance_to_signing(&h, &act_id, None).await;
+    let act_id = draft_act(&h, &book_id, "Ata vazia", Some(&token)).await;
+    advance_to_signing(&h, &act_id, Some(&token)).await;
 
     // The compliance gate itself reports blocking errors and refuses the seal.
     let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
@@ -40,7 +42,7 @@ async fn compliance_refuses_underfilled_seal_and_out_of_order_seal() {
 
     // Sealing it is a 422 carrying the non-empty, all-Error issue list.
     let (status, body) = h
-        .post_json(&format!("/v1/acts/{act_id}/seal"), json!({}))
+        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
         .await;
     assert_eq!(status, 422, "underfilled seal: {body}");
     let issues = body["issues"].as_array().expect("issues array");
@@ -51,9 +53,9 @@ async fn compliance_refuses_underfilled_seal_and_out_of_order_seal() {
     );
 
     // A second ata, never advanced to Signing, cannot be sealed out of order (409).
-    let draft_id = draft_act(&h, &book_id, "Ainda rascunho", None).await;
+    let draft_id = draft_act(&h, &book_id, "Ainda rascunho", Some(&token)).await;
     let (status, body) = h
-        .post_json(&format!("/v1/acts/{draft_id}/seal"), json!({}))
+        .post_json_auth(&format!("/v1/acts/{draft_id}/seal"), json!({}), &token)
         .await;
     assert_eq!(status, 409, "out-of-order seal: {body}");
     assert!(body["error"].is_string());

@@ -29,6 +29,7 @@ use serde_json::json;
 )]
 async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
     let mut h = ServerHarness::start().await;
+    let token = bootstrap_session(&h).await;
 
     let entity_id = create_entity(
         &h,
@@ -36,16 +37,23 @@ async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
         "503004642",
         "Lisboa",
         "Condominio",
+        &token,
     )
     .await;
-    let book_id = open_book(&h, &entity_id).await;
+    let book_id = open_book(&h, &entity_id, &token).await;
 
     // A condominium ata: essential matters (free-text summary) PLUS a structured deliberation
     // carrying a per-vote result. It has NO mesa, NO agenda, NO meeting time — none of which the
     // DL 268/94 pack requires.
-    let act_id = draft_act(&h, &book_id, "Ata da assembleia de condóminos", None).await;
+    let act_id = draft_act(
+        &h,
+        &book_id,
+        "Ata da assembleia de condóminos",
+        Some(&token),
+    )
+    .await;
     let (status, _) = h
-        .patch_json(
+        .patch_json_auth(
             &format!("/v1/acts/{act_id}"),
             json!({
                 "meeting_date": "2026-03-30",
@@ -59,10 +67,11 @@ async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
                     "statements": []
                 }],
             }),
+            &token,
         )
         .await;
     assert_eq!(status, 200, "patch condo ata contents");
-    advance_to_signing(&h, &act_id, None).await;
+    advance_to_signing(&h, &act_id, Some(&token)).await;
 
     // The gate is the condominium pack — not CSC — and it clears the ata with no mesa.
     let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
@@ -79,7 +88,7 @@ async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
 
     // Seal with NO mesa and NO acknowledgement — the condo pack has nothing to flag.
     let (status, sealed) = h
-        .post_json(&format!("/v1/acts/{act_id}/seal"), json!({}))
+        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
         .await;
     assert_eq!(status, 200, "condo seal without a mesa: {sealed}");
     assert_eq!(sealed["ata_number"], 1);
@@ -131,6 +140,7 @@ async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
 )]
 async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
     let mut h = ServerHarness::start().await;
+    let token = bootstrap_session(&h).await;
 
     let entity_id = create_entity(
         &h,
@@ -138,15 +148,16 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
         "503004642",
         "Lisboa",
         "SociedadePorQuotas",
+        &token,
     )
     .await;
-    let book_id = open_book(&h, &entity_id).await;
+    let book_id = open_book(&h, &entity_id, &token).await;
 
     // A CSC ata complete in everything EXCEPT the mesa (time + agenda + place + attendance +
     // deliberations all present, so only the presiding board is missing).
-    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", None).await;
+    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
     let (status, _) = h
-        .patch_json(
+        .patch_json_auth(
             &format!("/v1/acts/{act_id}"),
             json!({
                 "meeting_date": "2026-03-30",
@@ -156,10 +167,11 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
                 "attendance_reference": "Lista de presenças anexa",
                 "deliberations": "Aprovadas por unanimidade as contas do exercício de 2025.",
             }),
+            &token,
         )
         .await;
     assert_eq!(status, 200, "patch csc ata contents (no mesa)");
-    advance_to_signing(&h, &act_id, None).await;
+    advance_to_signing(&h, &act_id, Some(&token)).await;
 
     // Compliance reports the blocking mesa Error and forbids the seal.
     let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
@@ -178,7 +190,7 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
 
     // Sealing is refused with 422 and the refusal carries the mesa Error.
     let (status, body) = h
-        .post_json(&format!("/v1/acts/{act_id}/seal"), json!({}))
+        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
         .await;
     assert_eq!(status, 422, "seal refused without a mesa: {body}");
     assert!(
@@ -192,11 +204,12 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
 
     // Fill the mesa (presidente + secretários) through the wire.
     let (status, _) = h
-        .patch_json(
+        .patch_json_auth(
             &format!("/v1/acts/{act_id}"),
             json!({
                 "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] }
             }),
+            &token,
         )
         .await;
     assert_eq!(status, 200, "patch mesa onto the csc ata");
@@ -211,9 +224,10 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
     let ack = comp["warnings"].as_u64().expect("warnings") > 0;
 
     let (status, sealed) = h
-        .post_json(
+        .post_json_auth(
             &format!("/v1/acts/{act_id}/seal"),
             json!({ "acknowledge_warnings": ack }),
+            &token,
         )
         .await;
     assert_eq!(
@@ -264,6 +278,7 @@ async fn csc_seal_blocked_without_mesa_then_passes_and_survives_restart() {
 )]
 async fn statute_two_thirds_majority_overlay_fires_then_clears() {
     let h = ServerHarness::start().await;
+    let token = bootstrap_session(&h).await;
 
     let entity_id = create_entity(
         &h,
@@ -271,14 +286,16 @@ async fn statute_two_thirds_majority_overlay_fires_then_clears() {
         "503004642",
         "Lisboa",
         "SociedadeAnonima",
+        &token,
     )
     .await;
 
     // PATCH a 2/3 statutory majority onto the entity; the overlay edit is audited on the chain.
     let (status, patched) = h
-        .patch_json(
+        .patch_json_auth(
             &format!("/v1/entities/{entity_id}"),
             json!({ "statute": { "majority": { "numerator": 2, "denominator": 3 } } }),
+            &token,
         )
         .await;
     assert_eq!(status, 200, "patch statute majority: {patched}");
@@ -292,8 +309,8 @@ async fn statute_two_thirds_majority_overlay_fires_then_clears() {
         "the statute overlay edit is on the audit chain"
     );
 
-    let book_id = open_book(&h, &entity_id).await;
-    let act_id = draft_act(&h, &book_id, "Ata — alteração ao contrato", None).await;
+    let book_id = open_book(&h, &entity_id, &token).await;
+    let act_id = draft_act(&h, &book_id, "Ata — alteração ao contrato", Some(&token)).await;
 
     // A structured vote of 60/40 (misses the 2/3 majority). The ata is otherwise complete so the
     // ONLY finding is the statute overlay's advisory.
@@ -314,10 +331,10 @@ async fn statute_two_thirds_majority_overlay_fires_then_clears() {
         })
     };
     let (status, _) = h
-        .patch_json(&format!("/v1/acts/{act_id}"), patch_vote(60, 40))
+        .patch_json_auth(&format!("/v1/acts/{act_id}"), patch_vote(60, 40), &token)
         .await;
     assert_eq!(status, 200, "patch failing vote");
-    advance_to_signing(&h, &act_id, None).await;
+    advance_to_signing(&h, &act_id, Some(&token)).await;
 
     // The overlay is active and its majority check fires on the 60% vote.
     let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
@@ -334,7 +351,7 @@ async fn statute_two_thirds_majority_overlay_fires_then_clears() {
 
     // Raise the vote to 70/30 — now it meets the 2/3 majority and the finding clears.
     let (status, _) = h
-        .patch_json(&format!("/v1/acts/{act_id}"), patch_vote(70, 30))
+        .patch_json_auth(&format!("/v1/acts/{act_id}"), patch_vote(70, 30), &token)
         .await;
     assert_eq!(status, 200, "patch passing vote");
     let (status, comp) = h.get_json(&format!("/v1/acts/{act_id}/compliance")).await;
@@ -351,9 +368,10 @@ async fn statute_two_thirds_majority_overlay_fires_then_clears() {
     // The now-compliant ata seals (acknowledging any residual advisories honestly).
     let ack = comp["warnings"].as_u64().expect("warnings") > 0;
     let (status, sealed) = h
-        .post_json(
+        .post_json_auth(
             &format!("/v1/acts/{act_id}/seal"),
             json!({ "acknowledge_warnings": ack }),
+            &token,
         )
         .await;
     assert_eq!(status, 200, "the passing ata seals: {sealed}");

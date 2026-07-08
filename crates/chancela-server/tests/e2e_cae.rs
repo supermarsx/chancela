@@ -30,6 +30,11 @@ async fn cae_lookup_search_refresh_and_cache_across_restart() {
     )
     .await;
 
+    // A session so the CAE refresh + settings mutations are authorized (t41). The user id is kept
+    // so a fresh session can be opened after the restart (in-memory sessions do not survive it).
+    let user_id = create_user(&h, "e2e.operator", "E2E Operator").await;
+    let token = open_session(&h, &user_id).await;
+
     // Single-code lookup resolves designation + level + revision + full hierarchy.
     let (status, entry) = h.get_json("/v1/cae/68110").await;
     assert_eq!(status, 200);
@@ -70,7 +75,7 @@ async fn cae_lookup_search_refresh_and_cache_across_restart() {
 
     // Refresh against the fixture supersedes: the live catalog swaps to the tiny dataset, the cache
     // is written, and a cae.updated event is appended.
-    let (status, refresh) = h.post_json("/v1/cae/refresh", json!({})).await;
+    let (status, refresh) = h.post_json_auth("/v1/cae/refresh", json!({}), &token).await;
     assert_eq!(status, 200, "refresh: {refresh}");
     assert_eq!(refresh["updated"], true);
     assert_eq!(refresh["metadata"]["origin"], "Cache");
@@ -93,13 +98,16 @@ async fn cae_lookup_search_refresh_and_cache_across_restart() {
     assert_eq!(updated["scope"], "cae");
 
     // A repeat refresh of the same dataset is a no-op.
-    let (status, refresh) = h.post_json("/v1/cae/refresh", json!({})).await;
+    let (status, refresh) = h.post_json_auth("/v1/cae/refresh", json!({}), &token).await;
     assert_eq!(status, 200);
     assert_eq!(refresh["updated"], false);
 
     // Restart with NO CHANCELA_CAE_URL: the catalog is loaded from the written cache.
     h.clear_cae_url();
     h.restart().await;
+
+    // The in-memory session did not survive the restart; re-open one for the persisted user.
+    let token = open_session(&h, &user_id).await;
     let (status, meta) = h.get_json("/v1/cae").await;
     assert_eq!(status, 200);
     assert_eq!(
@@ -118,7 +126,7 @@ async fn cae_lookup_search_refresh_and_cache_across_restart() {
     // a default is impossible: a `?source` pin that matches nothing configured (e.g. `?source=mirror`
     // with no mirrors). That is the case exercised here (the user's original hit was an opaque 500).
     let (status, body) = h
-        .post_json("/v1/cae/refresh?source=mirror", json!({}))
+        .post_json_auth("/v1/cae/refresh?source=mirror", json!({}), &token)
         .await;
     assert_eq!(status, 422, "pinned source with nothing configured: {body}");
     assert!(
@@ -133,9 +141,9 @@ async fn cae_lookup_search_refresh_and_cache_across_restart() {
     // again by settings, proving settings-over-env resolution. It is a no-op against the cached data.
     let (_, mut settings) = h.get_json("/v1/settings").await;
     settings["catalog"]["cae_update_url"] = json!(cae.url.clone());
-    let (status, _) = h.put_json("/v1/settings", settings).await;
+    let (status, _) = h.put_json_auth("/v1/settings", settings, &token).await;
     assert_eq!(status, 200);
-    let (status, refresh) = h.post_json("/v1/cae/refresh", json!({})).await;
+    let (status, refresh) = h.post_json_auth("/v1/cae/refresh", json!({}), &token).await;
     assert_eq!(
         status, 200,
         "settings-configured URL drives the refresh: {refresh}"

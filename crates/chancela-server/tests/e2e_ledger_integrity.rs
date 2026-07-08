@@ -44,9 +44,9 @@ async fn ledger_integrity_and_secret_sweeps() {
     assert_eq!(status, 201, "import: {report}");
     let entity_id = report["entity"]["id"].as_str().expect("id").to_owned();
 
-    let book_id = open_book(&h, &entity_id).await;
+    let book_id = open_book(&h, &entity_id, &token).await;
     let act_id = draft_act(&h, &book_id, "Ata da AG", Some(&token)).await;
-    fill_act_contents(&h, &act_id).await;
+    fill_act_contents(&h, &act_id, &token).await;
     advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, _) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
@@ -56,7 +56,7 @@ async fn ledger_integrity_and_secret_sweeps() {
 
     // A settings change (its own auditable event).
     let (status, _) = h
-        .put_json(
+        .put_json_auth(
             "/v1/settings",
             json!({
                 "schema_version": 1,
@@ -70,6 +70,7 @@ async fn ledger_integrity_and_secret_sweeps() {
                 },
                 "appearance": { "theme": "dark", "leather_texture": true, "texture_intensity": 42 }
             }),
+            &token,
         )
         .await;
     assert_eq!(status, 200);
@@ -82,10 +83,10 @@ async fn ledger_integrity_and_secret_sweeps() {
 
     // Sweep every wire dump that could carry a secret.
     let (_, events) = h.get_json("/v1/ledger/events").await;
-    let (_, users) = h.get_json("/v1/users").await;
+    let (_, users) = h.get_json_auth("/v1/users", &token).await;
     let (_, settings) = h.get_json("/v1/settings").await;
     let (_, provenance) = h
-        .get_json(&format!("/v1/entities/{entity_id}/registry"))
+        .get_json_auth(&format!("/v1/entities/{entity_id}/registry"), &token)
         .await;
 
     for (label, dump) in [

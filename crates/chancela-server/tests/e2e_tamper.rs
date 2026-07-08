@@ -19,6 +19,7 @@ use serde_json::json;
 )]
 async fn a_tampered_chain_boots_but_reports_itself_broken() {
     let mut h = ServerHarness::start().await;
+    let token = bootstrap_session(&h).await;
 
     // A small but complete domain: entity → book → sealed ata #1.
     let entity_id = create_entity(
@@ -27,15 +28,16 @@ async fn a_tampered_chain_boots_but_reports_itself_broken() {
         "503004642",
         "Lisboa",
         "SociedadeAnonima",
+        &token,
     )
     .await;
-    let book_id = open_book(&h, &entity_id).await;
-    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", None).await;
-    fill_act_contents(&h, &act_id).await;
-    advance_to_signing(&h, &act_id, None).await;
+    let book_id = open_book(&h, &entity_id, &token).await;
+    let act_id = draft_act(&h, &book_id, "Ata da Assembleia Geral Anual", Some(&token)).await;
+    fill_act_contents(&h, &act_id, &token).await;
+    advance_to_signing(&h, &act_id, Some(&token)).await;
     let (status, _) = h
         // The fully-filled CSC ata (mesa set via the wire, t31) has no findings — no ack needed.
-        .post_json(&format!("/v1/acts/{act_id}/seal"), json!({}))
+        .post_json_auth(&format!("/v1/acts/{act_id}/seal"), json!({}), &token)
         .await;
     assert_eq!(status, 200);
 

@@ -215,9 +215,21 @@ impl ServerHarness {
             .await
     }
 
+    /// `PUT path` with a JSON body and a session token → (status, JSON body).
+    pub async fn put_json_auth(&self, path: &str, body: Value, token: &str) -> (u16, Value) {
+        self.exec(reqwest::Method::PUT, path, Some(body), Some(token))
+            .await
+    }
+
     /// `PATCH path` with a JSON body → (status, JSON body).
     pub async fn patch_json(&self, path: &str, body: Value) -> (u16, Value) {
         self.exec(reqwest::Method::PATCH, path, Some(body), None)
+            .await
+    }
+
+    /// `PATCH path` with a JSON body and a session token → (status, JSON body).
+    pub async fn patch_json_auth(&self, path: &str, body: Value, token: &str) -> (u16, Value) {
+        self.exec(reqwest::Method::PATCH, path, Some(body), Some(token))
             .await
     }
 
@@ -547,6 +559,18 @@ fn assert_shape_at(path: &str, actual: &Value, expected: &Value) {
 // Shared journey helpers
 // ---------------------------------------------------------------------------------------------
 
+/// Bootstrap an authenticated session for a fresh server: create the first user (the first-run
+/// `POST /v1/users` is auth-exempt while no users exist) and open a session, returning the token.
+///
+/// Under the t41 security model every mutation endpoint requires a valid `X-Chancela-Session`, so a
+/// journey that mutates state threads this token through its mutation helpers. Journeys that need the
+/// user id later (e.g. to re-open a session after a restart drops the in-memory one) create the user
+/// and session inline instead of calling this.
+pub async fn bootstrap_session(h: &ServerHarness) -> String {
+    let user_id = create_user(h, "e2e.operator", "E2E Operator").await;
+    open_session(h, &user_id).await
+}
+
 /// Create an entity and return its id.
 pub async fn create_entity(
     h: &ServerHarness,
@@ -554,11 +578,13 @@ pub async fn create_entity(
     nipc: &str,
     seat: &str,
     kind: &str,
+    token: &str,
 ) -> String {
     let (status, entity) = h
-        .post_json(
+        .post_json_auth(
             "/v1/entities",
             json!({ "name": name, "nipc": nipc, "seat": seat, "kind": kind }),
+            token,
         )
         .await;
     assert_eq!(status, 201, "create entity: {entity}");
@@ -566,9 +592,9 @@ pub async fn create_entity(
 }
 
 /// Open a book for an entity and return its id.
-pub async fn open_book(h: &ServerHarness, entity_id: &str) -> String {
+pub async fn open_book(h: &ServerHarness, entity_id: &str, token: &str) -> String {
     let (status, book) = h
-        .post_json(
+        .post_json_auth(
             "/v1/books",
             json!({
                 "entity_id": entity_id,
@@ -577,6 +603,7 @@ pub async fn open_book(h: &ServerHarness, entity_id: &str) -> String {
                 "opening_date": "2026-01-15",
                 "required_signatories": ["Administrador"],
             }),
+            token,
         )
         .await;
     assert_eq!(status, 201, "open book: {book}");
@@ -602,9 +629,9 @@ pub async fn draft_act(
 
 /// Fill an act's mandatory CSC art. 63.º contents — including the mesa, time, and agenda now that
 /// the wire carries them (t31) — so a CSC ata seals cleanly with no acknowledgement.
-pub async fn fill_act_contents(h: &ServerHarness, act_id: &str) {
+pub async fn fill_act_contents(h: &ServerHarness, act_id: &str, token: &str) {
     let (status, _) = h
-        .patch_json(
+        .patch_json_auth(
             &format!("/v1/acts/{act_id}"),
             json!({
                 "meeting_date": "2026-03-30",
@@ -615,6 +642,7 @@ pub async fn fill_act_contents(h: &ServerHarness, act_id: &str) {
                 "attendance_reference": "Lista de presenças anexa",
                 "deliberations": "Aprovadas por unanimidade as contas do exercício de 2025.",
             }),
+            token,
         )
         .await;
     assert_eq!(status, 200, "patch act contents");
