@@ -1,0 +1,31 @@
+[package]
+name = "chancela-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Chancela host-level operations CLI (the `chancela` binary)."
+
+# The single binary this crate ships. Docker-style: `chancela <group> <command>`.
+[[bin]]
+name = "chancela"
+path = "src/main.rs"
+
+[dependencies]
+# Domain + durability + audit primitives the CLI operates on directly (OFFLINE — no api client).
+chancela-core.workspace = true
+chancela-ledger.workspace = true
+chancela-store.workspace = true
+chancela-authz.workspace = true
+# chancela-api is consumed ONLY for its committed public `User`/`UserId` types, so `user create`/`ls`
+# write the exact `users.json` serde contract the server reads (never reimplemented). It is used as a
+# library type source, not as an HTTP client.
+chancela-api.workspace = true
+
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+uuid.workspace = true

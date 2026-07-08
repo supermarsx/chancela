@@ -66,6 +66,11 @@ chancela-apikey = { path = "crates/chancela-apikey" }
 # no MCP SDK pinned (hand-rolled JSON-RPC 2.0 over stdio). Must NOT depend on chancela-api (it is an
 # HTTP client of it). Consumed by t65-E5 (server/desktop launcher). See .orchestration/plans/t65.md §2.4.
 chancela-mcp = { path = "crates/chancela-mcp" }
+# Host-level ops CLI (t72): the `chancela` binary — Docker-style nested subcommands operating on the
+# local data dir OFFLINE via chancela-store/ledger/core (NOT an api client). Consumes the committed
+# store recovery + ledger + core public APIs (and chancela-api's `User` type for user provisioning).
+# Leaf binary crate; nothing depends on it. See .orchestration/logs/t72.md.
+chancela-cli = { path = "crates/chancela-cli" }
 
 # Third-party (conservative, declared once so every crate inherits identical versions).
 serde = { version = "1", features = ["derive"] }
@@ -83,6 +88,10 @@ tower-http = { version = "0.6", features = ["fs"] }
 # serde::Serialize record. Apache-2.0, serde-only (no new transitive-dep risk to the der-0.7 pins).
 # Pinned per plan §1-D1. See .orchestration/plans/t48.md §1.
 minijinja = "2.21.0"
+# clap (t72): the argument parser for the `chancela` host-level ops CLI (`chancela-cli`). Derive
+# feature only — the whole Docker-style command tree (nested subcommands, consistent flags, --help)
+# is declared with `#[derive(Parser/Subcommand/Args)]`. No other crate uses it. MIT/Apache-2.0.
+clap = { version = "4", features = ["derive"] }
 
 # --- Signature middleware (t4) ---------------------------------------------------------
 # RustCrypto ASN.1 stack is mid-migration; these der-0.7-family pins are LOAD-BEARING.
