@@ -77,7 +77,7 @@ use chancela_cmd::ScmdTransport;
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryTransport};
-use chancela_signing::TrustPolicy;
+use chancela_signing::{SignerProvider, SigningError, TrustPolicy};
 use chancela_store::{
     PendingCmdSession, Store, StoreError, StoredDocument, StoredSignedDocument, Tx,
 };
@@ -257,8 +257,29 @@ pub struct AppState {
     /// production, where the qualified path builds a `TslTrustPolicy` over the settings `tsl_url`
     /// (network-gated, run during the actual sign). Tests inject a `StaticTrustPolicy` factory to
     /// drive the gate offline (granted / withdrawn) without fetching the live TSL.
+    ///
+    /// **Reused by the Cartão de Cidadão (CC) path too (t58-e2):** the CC qualified signature runs
+    /// the same trusted-list gate over the same factory, so both qualified methods agree on how
+    /// trust is resolved in tests and production.
     #[allow(clippy::type_complexity)]
     pub cmd_trust_policy: Option<Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync>>,
+    /// Whether this API process is **co-located** with a Cartão de Cidadão reader (t58 CC-B).
+    /// Resolved once at construction from the `CHANCELA_LOCAL_SIGNING` signal the desktop shell sets
+    /// on the embedded-server process (t58-e3); a remote `chancela-server` never sets it, so this
+    /// stays `false` and the CC signing endpoint 409s there (the card is on the client's machine,
+    /// unreachable by a remote server's PKCS#11). `Default` is `false`; tests set it directly.
+    pub local_signing: bool,
+    /// Test/DI seam (t58-e2): an injected Cartão de Cidadão signer-provider factory. `None` in
+    /// production, where the co-located desktop handler opens a real `Pkcs11Token` and wraps it as a
+    /// `SmartcardProvider` inside `spawn_blocking`. Tests inject a key-backed provider so the CC sign
+    /// round-trip runs offline (no reader / PKCS#11 / hardware). Invoked inside `spawn_blocking`
+    /// (PKCS#11/PC/SC is blocking + the middleware blocks on PIN entry at the reader); a card/reader
+    /// failure surfaces as [`chancela_signing::SigningError::Provider`]. The produced provider never
+    /// crosses a thread boundary (built and consumed inside the blocking task), so it need not be
+    /// `Send`; only the factory is.
+    #[allow(clippy::type_complexity)]
+    pub cc_provider:
+        Option<Arc<dyn Fn() -> Result<Box<dyn SignerProvider>, SigningError> + Send + Sync>>,
 }
 
 impl AppState {
@@ -368,6 +389,9 @@ impl AppState {
             ),
         }
 
+        // Resolve the CC co-location signal (t58-e2 / CC-B) from the environment the desktop shell
+        // set before it spawned this embedded server (t58-e3). Absent (a remote server) ⇒ `false`.
+        state.local_signing = signature::local_signing_from_env();
         state
     }
 
@@ -534,6 +558,8 @@ impl AppState {
                 let seeded = Arc::new(RwLock::new(chancela_authz::RoleCatalog::seeded_defaults()));
                 AppState {
                     roles: seeded,
+                    // Honour the CC co-location signal even in the pure in-memory desktop dev path.
+                    local_signing: signature::local_signing_from_env(),
                     ..state
                 }
             }
@@ -622,6 +648,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/acts/{id}/signature/cmd/confirm",
             post(signature::confirm_cmd_signature),
+        )
+        .route(
+            "/v1/acts/{id}/signature/cc/sign",
+            post(signature::sign_cc_signature),
         )
         .route(
             "/v1/acts/{id}/signature",

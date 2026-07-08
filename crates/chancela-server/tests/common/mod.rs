@@ -58,6 +58,10 @@ pub struct HarnessOptions {
     /// stale-content-but-fresh-mtime cache that suppresses the startup background refresh without
     /// becoming the active catalog (see the CAE journey). Not re-applied on `restart`.
     pub seed_cae_cache: Option<String>,
+    /// Set `CHANCELA_LOCAL_SIGNING=1` on the child (t58 CC-B), marking it as co-located with a card
+    /// reader — as the desktop shell does for its embedded server. A plain server leaves it off, so
+    /// the Cartão de Cidadão signing endpoint 409s (the card is unreachable by a remote server).
+    pub local_signing: bool,
 }
 
 impl HarnessOptions {
@@ -79,6 +83,11 @@ impl HarnessOptions {
     /// Seed a cache file into the data dir before the first spawn.
     pub fn with_seed_cae_cache(mut self, dataset_json: impl Into<String>) -> Self {
         self.seed_cae_cache = Some(dataset_json.into());
+        self
+    }
+    /// Mark the child as co-located with a card reader (`CHANCELA_LOCAL_SIGNING=1`, t58 CC-B).
+    pub fn with_local_signing(mut self) -> Self {
+        self.local_signing = true;
         self
     }
 }
@@ -402,10 +411,15 @@ fn spawn_child(data_dir: &Path, opts: &HarnessOptions) -> (Child, String) {
     cmd.env_remove("CHANCELA_WEB_DIST")
         .env_remove("CHANCELA_REGISTRY_URL")
         .env_remove("CHANCELA_CAE_URL")
+        .env_remove("CHANCELA_LOCAL_SIGNING")
         .env("CHANCELA_ADDR", &addr)
         .env("CHANCELA_DATA_DIR", data_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+
+    if opts.local_signing {
+        cmd.env("CHANCELA_LOCAL_SIGNING", "1");
+    }
 
     if let Some(dir) = &opts.web_dist {
         cmd.env("CHANCELA_WEB_DIST", dir);

@@ -46,9 +46,10 @@ use axum::response::{IntoResponse, Response};
 use chancela_cmd::{CmdConfig, CmdEnv, HttpScmdTransport, ScmdClient, ScmdTransport};
 use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_signature};
 use chancela_signing::{
-    CmdInitiate, CmdSignSession, TrustPolicy, TrustedListStatus, TslTrustPolicy, cmd_confirm,
-    cmd_initiate,
+    CcSignedPdf, CmdInitiate, CmdSignSession, SignerProvider, SmartcardProvider, TrustPolicy,
+    TrustedListStatus, TslTrustPolicy, cmd_confirm, cmd_initiate, sign_pdf_cc,
 };
+use chancela_smartcard::Pkcs11Token;
 use chancela_store::{PendingCmdSession, StoredSignedDocument};
 use chancela_tsl::HttpTslSource;
 use serde::{Deserialize, Serialize};
@@ -481,6 +482,318 @@ pub async fn confirm_cmd_signature(
         timestamp_token: report.has_signature_timestamp,
         finalization: "finalizado_qualificado",
     }))
+}
+
+// =================================================================================================
+// Cartão de Cidadão (CC) — synchronous qualified signing (t58-e2)
+// =================================================================================================
+//
+// Unlike CMD (two-phase: an SMS OTP arrives *between* two stateless HTTP requests), a CC signature
+// is one synchronous local operation. The card, reader, Autenticação.gov middleware, and PIN entry
+// all live on the SAME host as the API, and the PIN is entered *at the reader*, by the middleware,
+// inside the single PKCS#11 `sign_digest` call — the PIN never enters this process (protected-
+// authentication / NULL-PIN path). So CC needs no session, no persisted pending state, and no
+// secret in the request body: one call takes the sealed unsigned PDF/A, drives the card on
+// `spawn_blocking`, and persists the signed variant. It **reuses t57-S3's signed-document store row
+// + `document.signed` ledger event + derived-status enforcement unchanged** (only the family
+// differs), so no new web-asserted contract type is introduced.
+
+/// The signing family a CC signature produces (matches `SigningFamily::CartaoDeCidadao`).
+const FAMILY_CC: &str = "CartaoDeCidadao";
+
+/// The `CHANCELA_LOCAL_SIGNING` co-location capability signal (t58 CC-B). The desktop shell sets it
+/// on the embedded-server process (t58-e3) when the API is co-located with a card reader; a remote
+/// `chancela-server` never does.
+pub(crate) const LOCAL_SIGNING_ENV: &str = "CHANCELA_LOCAL_SIGNING";
+
+/// Resolve the co-location signal from the environment. Mirrors the desktop's truthy parse (t58-e3):
+/// any value other than blank / `0` / `false` / `off` / `no` counts as enabled, so the two halves
+/// agree. Read once at [`AppState`](crate::AppState) construction into `AppState::local_signing`.
+pub(crate) fn local_signing_from_env() -> bool {
+    match std::env::var(LOCAL_SIGNING_ENV) {
+        Ok(v) => {
+            let v = v.trim().to_ascii_lowercase();
+            !(v.is_empty() || v == "0" || v == "false" || v == "off" || v == "no")
+        }
+        Err(_) => false,
+    }
+}
+
+/// Body of `POST /v1/acts/{id}/signature/cc/sign`. **Carries no secret** — the PIN is entered at the
+/// card reader, driven by the Autenticação.gov middleware, and never enters this process.
+#[derive(Deserialize)]
+pub struct CcSignRequest {
+    /// The capacity in which the signer acts (optional, informational — mirrors the CMD body).
+    #[serde(default)]
+    pub capacity: Option<String>,
+    /// Actor override for attribution.
+    #[serde(default)]
+    pub actor: Option<String>,
+}
+
+/// Response of a successful CC signature — the **same shape** as the CMD confirm response (t57-S3),
+/// with `family: "CartaoDeCidadao"`. No new web-asserted type ⇒ no web contract drift.
+#[derive(Serialize)]
+pub struct CcSignResponse {
+    /// The signed document's source (unsigned) document id.
+    pub document_id: String,
+    /// The owning act id.
+    pub act_id: String,
+    /// The family (`CartaoDeCidadao`).
+    pub family: &'static str,
+    /// The evidentiary level (`Qualified`).
+    pub evidentiary_level: &'static str,
+    /// The signer issuer's trusted-list status at signing time, if a policy was consulted.
+    pub trusted_list_status: Option<String>,
+    /// When the signature completed (RFC 3339).
+    pub signed_at: String,
+    /// Lowercase-hex sha-256 of the signed PDF bytes.
+    pub signed_pdf_digest: String,
+    /// Whether an RFC 3161 signature timestamp is present (B-T); always `false` for B-B.
+    pub timestamp_token: bool,
+    /// The derived finalization status (`finalizado_qualificado`).
+    pub finalization: &'static str,
+}
+
+/// `POST /v1/acts/{id}/signature/cc/sign` — a synchronous Cartão de Cidadão qualified signature.
+///
+/// Loads the act's sealed unsigned PDF/A, drives the card on `spawn_blocking` (PKCS#11/PC/SC FFI +
+/// human PIN entry at the reader both block), and — on success — persists the SIGNED variant + a
+/// chained `document.signed` event, reusing t57-S3's store row and event unchanged. Only reachable
+/// when the API is co-located with the reader (CC-B); a remote server 409s.
+pub async fn sign_cc_signature(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CcSignRequest>,
+) -> Result<Json<CcSignResponse>, ApiError> {
+    // RBAC (t64-E3): a qualified signature is `signing.perform` scoped to the act's book — the SAME
+    // gate as the CMD endpoints. Checked first (before the co-location gate) so an unauthorized
+    // caller is refused identically whether or not the host happens to be co-located.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
+    let act_id = ActId(id);
+
+    // Co-location gate (CC-B): CC needs the card + reader + middleware on the SAME host as the API.
+    // The desktop embedded server sets `CHANCELA_LOCAL_SIGNING` (resolved into `local_signing` at
+    // boot); a remote `chancela-server` never does, so CC is refused there — a remote server's
+    // PKCS#11 can never reach a card in the client's pocket.
+    if !state.local_signing {
+        return Err(ApiError::Conflict(
+            "a assinatura com Cartão de Cidadão só está disponível na aplicação de secretária"
+                .to_owned(),
+        ));
+    }
+
+    // Resolve the act's sealed unsigned document, refusing a not-sealed act (signing is post-seal).
+    {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        if act.ata_number.is_none() {
+            return Err(ApiError::Conflict(
+                "o ato ainda não foi selado; a assinatura qualificada é um passo posterior ao selo"
+                    .to_owned(),
+            ));
+        }
+    }
+    let unsigned = crate::documents::load_document(&state, act_id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
+        })?;
+
+    // One qualified artifact per act (whether produced by CC or CMD).
+    if load_signed(&state, act_id).await?.is_some() {
+        return Err(ApiError::Conflict(
+            "o ato já tem uma assinatura qualificada".to_owned(),
+        ));
+    }
+
+    let tsl_url = { state.settings.read().await.signing.tsl_url.clone() };
+    // A fixed signing time (whole seconds), carried into both the /Sig dict and the signed record.
+    let signing_time = OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let reason = match req
+        .capacity
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+    {
+        Some(capacity) => format!("Assinatura qualificada da ata ({capacity})"),
+        None => "Assinatura qualificada da ata".to_owned(),
+    };
+    let opts = SignOptions {
+        field_name: Some("Assinatura".to_owned()),
+        signing_time: Some(pdf_time(signing_time)),
+        reason: Some(reason),
+        location: None,
+        contact_info: None,
+    };
+
+    // Drive the card on `spawn_blocking` — the PKCS#11/PC/SC FFI and the human-paced PIN entry at
+    // the reader both block, and must not stall the axum async runtime.
+    let cc = run_cc_sign(&state, tsl_url, unsigned.pdf_bytes, signing_time, opts).await?;
+
+    // Resolve the ledger scope from the live act (re-checking presence).
+    let scope = {
+        let entities = state.entities.read().await;
+        let books = state.books.read().await;
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+        let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+        format!("entity:{}/book:{}/act:{}", entity.id, act.book_id, act.id)
+    };
+
+    let digest: [u8; 32] = Sha256::digest(&cc.signed_pdf).into();
+    let signed_pdf_digest = crate::hex::hex(&digest);
+    let signed_at = OffsetDateTime::now_utc();
+    let trusted_list_status = cc.trusted_list_status.map(status_label);
+    let document_id = crate::documents::load_document(&state, act_id)
+        .await?
+        .map(|d| d.id)
+        .unwrap_or_default();
+    // Reuse t57-S3's F4 signed-document store row unchanged (family-agnostic columns).
+    let stored = StoredSignedDocument {
+        act_id,
+        document_id: document_id.clone(),
+        signed_pdf_digest: signed_pdf_digest.clone(),
+        signature_family: FAMILY_CC.to_owned(),
+        evidentiary_level: EVIDENTIARY_QUALIFIED.to_owned(),
+        trusted_list_status: trusted_list_status.clone(),
+        signer_cert_subject: subject_dn(&cc.signing_cert_der),
+        signing_time,
+        signed_at,
+        signer_cert_der: cc.signing_cert_der.clone(),
+        timestamp_token_der: None,
+        signed_pdf_bytes: cc.signed_pdf,
+    };
+
+    // Persist the signed variant + a chained `document.signed` event — one durable commit, the SAME
+    // event/store path CMD uses (t57-S3). No secret anywhere (CC has no PIN/OTP in-process).
+    let event_payload = json!({
+        "act_id": act_id.to_string(),
+        "document_id": document_id,
+        "signed_pdf_digest": signed_pdf_digest,
+        "family": FAMILY_CC,
+        "evidentiary_level": EVIDENTIARY_QUALIFIED,
+        "trusted_list_status": trusted_list_status,
+        "profile": PADES_PROFILE,
+    });
+    let payload = serde_json::to_vec(&event_payload)?;
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &scope,
+            "document.signed",
+            None,
+            &payload,
+        )?;
+        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        state.attest_latest(&attestor, &ledger).await;
+    }
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(act_id, stored.clone());
+
+    Ok(Json(CcSignResponse {
+        document_id,
+        act_id: act_id.to_string(),
+        family: FAMILY_CC,
+        evidentiary_level: EVIDENTIARY_QUALIFIED,
+        trusted_list_status,
+        signed_at: rfc3339(signed_at),
+        signed_pdf_digest,
+        timestamp_token: false,
+        finalization: "finalizado_qualificado",
+    }))
+}
+
+/// Drive the synchronous CC signature on `spawn_blocking`: build the trusted-list policy + the
+/// smartcard provider, then run [`sign_pdf_cc`]. The provider is the injected key-backed test
+/// provider (`cc_provider`), or the real co-located [`Pkcs11Token`]-backed [`SmartcardProvider`]
+/// (production). The provider is built and consumed **inside** the blocking task, so it never
+/// crosses a thread boundary.
+async fn run_cc_sign(
+    state: &AppState,
+    tsl_url: Option<String>,
+    pdf: Vec<u8>,
+    signing_time: OffsetDateTime,
+    opts: SignOptions,
+) -> Result<CcSignedPdf, ApiError> {
+    let policy_factory = state.cmd_trust_policy.clone();
+    let provider_factory = state.cc_provider.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+        let provider: Box<dyn SignerProvider> = match provider_factory {
+            Some(factory) => factory().map_err(map_cc_signing_error)?,
+            None => Box::new(build_pkcs11_cc_provider()?),
+        };
+        sign_pdf_cc(
+            provider.as_ref(),
+            &pdf,
+            signing_time,
+            &opts,
+            Some(policy.as_mut()),
+        )
+        .map_err(map_cc_signing_error)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("cc sign task failed: {e}")))?
+}
+
+/// Build the real Cartão de Cidadão provider for the co-located desktop deployment: open the
+/// Autenticação.gov PKCS#11 token and wrap it as a [`SmartcardProvider`]. **Blocking** (PKCS#11/PC/SC
+/// FFI) — only call inside `spawn_blocking`. A missing reader / absent middleware / no card is a
+/// clean typed error surfaced as an honest 422, never a panic.
+///
+/// **CC-E (hardware-acceptance path, no CI coverage without a physical card):** the card exposes only
+/// the signature leaf; the issuing-CA certificate for the trusted-list gate must be resolved
+/// out-of-band (the leaf AKI against the TSL) and supplied via
+/// [`SmartcardProvider::with_issuer_certificate`]. Until that resolution is wired the qualified gate
+/// fails **closed** with `MissingIssuerCertificate` rather than trusting an unresolved issuer — the
+/// safe default. Mock/CI runs inject `cc_provider` (issuer set) instead of taking this path.
+fn build_pkcs11_cc_provider() -> Result<SmartcardProvider<Pkcs11Token>, ApiError> {
+    let token = Pkcs11Token::open().map_err(|e| {
+        ApiError::Unprocessable(format!(
+            "não foi possível aceder ao Cartão de Cidadão (verifique o leitor e a aplicação \
+             Autenticação.gov): {e}"
+        ))
+    })?;
+    Ok(SmartcardProvider::new(token))
+}
+
+/// Map a [`chancela_signing::SigningError`] from the **CC** path to an [`ApiError`] with honest PT
+/// messages, distinct from the internal PDF-structure (`Pades`) / CMS (`Cades`) errors. A provider
+/// failure (card absent, PIN cancelled/wrong, signature not activated, reader missing) is
+/// client-actionable → 422. No secret is ever echoed (the CC path holds none).
+fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiError {
+    use chancela_signing::SigningError as S;
+    match e {
+        S::UntrustedService { status } => ApiError::Unprocessable(format!(
+            "o certificado do Cartão de Cidadão não está ativo na Lista de Confiança ({})",
+            status_label(status)
+        )),
+        S::MissingIssuerCertificate => ApiError::Unprocessable(
+            "não foi possível resolver o emissor do certificado do Cartão de Cidadão".to_owned(),
+        ),
+        // Where a card/PIN/activation/reader failure surfaces (distinct from Pades/Cades).
+        S::Provider(msg) => ApiError::Unprocessable(format!(
+            "não foi possível assinar com o Cartão de Cidadão (verifique o cartão, o leitor e o \
+             PIN): {msg}"
+        )),
+        S::Cades(msg) | S::Pades(msg) => {
+            ApiError::Internal(format!("falha ao montar a assinatura: {msg}"))
+        }
+        other => ApiError::Upstream(format!("falha no serviço de assinatura: {other}")),
+    }
 }
 
 // --- status / read ----------------------------------------------------------------------------

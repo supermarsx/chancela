@@ -277,9 +277,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/document/bundle", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
-    ("/v1/acts/{id}/signature", RouteClass::Gated), // GET act.read@Book
-    ("/v1/acts/{id}/document/signed", RouteClass::Gated), // GET act.read@Book
-    ("/v1/templates", RouteClass::Gated), // GET act.read@Global
+    ("/v1/acts/{id}/signature/cc/sign", RouteClass::Gated), // POST signing.perform@Book (co-located)
+    ("/v1/acts/{id}/signature", RouteClass::Gated),         // GET act.read@Book
+    ("/v1/acts/{id}/document/signed", RouteClass::Gated),   // GET act.read@Book
+    ("/v1/templates", RouteClass::Gated),                   // GET act.read@Global
     // --- Ledger ---------------------------------------------------------------------------------
     ("/v1/ledger/events", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/verify", RouteClass::Gated), // GET ledger.read@Global
