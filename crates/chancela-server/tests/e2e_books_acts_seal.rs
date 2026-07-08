@@ -113,6 +113,35 @@ async fn books_acts_full_seal_lifecycle() {
     assert_eq!(closed["state"], "Closed");
     assert_eq!(closed["closing_date"], "2026-12-31");
 
+    // t53: closing the book generated the family's termo de encerramento in the SAME commit as
+    // book.closed — a book-scoped `document.generated` event and a preserved, retrievable PDF/A.
+    let (status, events) = h.get_json("/v1/ledger/events").await;
+    assert_eq!(status, 200);
+    let book_doc_events = events
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter(|e| {
+            e["kind"] == "document.generated"
+                && e["scope"]
+                    .as_str()
+                    .is_some_and(|s| s.contains(&format!("book:{book_id}")) && !s.contains("/act:"))
+        })
+        .count();
+    assert!(
+        book_doc_events >= 2,
+        "book-open abertura + book-close encerramento document events: {events}"
+    );
+    // The encerramento is the latest document for the book key (a real csc-termo-encerramento/v1).
+    let (status, bundle) = h
+        .get_json(&format!("/v1/acts/{book_id}/document/bundle"))
+        .await;
+    assert_eq!(status, 200, "encerramento bundle: {bundle}");
+    assert_eq!(
+        bundle["document"]["template_id"], "csc-termo-encerramento/v1",
+        "book-close produced the termo de encerramento document: {bundle}"
+    );
+
     // Drafting into a closed book is refused.
     let (status, body) = h
         .post_json_auth(

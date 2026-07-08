@@ -97,6 +97,12 @@ async fn condominium_is_sealed_by_the_condominio_pack_and_survives_restart() {
         .expect("digest")
         .to_owned();
     assert_eq!(sealed_digest.len(), 64);
+    // t53: a NON-CSC family seal auto-generates its own spine ata document (not the CSC one, and
+    // never an arbitrary subtype) — deterministic per-family document breadth over the real server.
+    assert_eq!(
+        sealed["document"]["template_id"], "condominio-ata-assembleia/v1",
+        "the condominium seal generated its spine ata document: {sealed}"
+    );
 
     // --- RESTART over the same data dir --------------------------------------------------------
     h.restart().await;

@@ -428,6 +428,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/acts/{id}/document/preview",
             get(documents::preview_document),
         )
+        .route(
+            "/v1/acts/{id}/document/generate",
+            post(documents::generate_document),
+        )
         .route("/v1/acts/{id}/document", get(documents::get_document_pdf))
         .route(
             "/v1/acts/{id}/document/bundle",
@@ -1448,6 +1452,174 @@ mod tests {
         assert!(
             bundle["validation_report"].is_null(),
             "the Wave-D validation-report slot is reserved (null): {bundle}"
+        );
+    }
+
+    #[tokio::test]
+    async fn closing_a_book_produces_the_termo_encerramento_document() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        let (status, _) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Close the book → the encerramento document is generated in the same commit as book.closed.
+        let (status, closed) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/books/{book_id}/close"),
+                json!({
+                    "reason": "BookFull",
+                    "closing_date": "2026-12-31",
+                    "required_signatories": ["Administrador"],
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "close: {closed}");
+        assert_eq!(closed["state"], "Closed");
+
+        // A book-scoped `document.generated` event exists for the encerramento (plus the abertura's).
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let book_doc_events = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter(|e| {
+                e["kind"] == "document.generated"
+                    && e["scope"].as_str().is_some_and(|s| {
+                        s.contains(&format!("book:{book_id}")) && !s.contains("/act:")
+                    })
+            })
+            .count();
+        assert!(
+            book_doc_events >= 2,
+            "abertura + encerramento document.generated events: {events}"
+        );
+
+        // The encerramento is the latest document for the book key (a real csc-termo-encerramento).
+        let (status, bundle) = send(
+            state.clone(),
+            get(&format!("/v1/acts/{book_id}/document/bundle")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            bundle["document"]["template_id"],
+            "csc-termo-encerramento/v1"
+        );
+
+        let (_, verify) = send(state, get("/v1/ledger/verify")).await;
+        assert_eq!(verify["valid"], true, "chain still verifies after close");
+    }
+
+    #[tokio::test]
+    async fn on_demand_generate_persists_a_chosen_document_and_emits_the_event() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        // Unknown template id → 404.
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/document/generate?template_id=nao-existe/v9"),
+                json!({}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // A certidão against an UNSEALED act is refused honestly (422).
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/document/generate?template_id=csc-certidao-ata/v1"),
+                json!({}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Seal, then generate the certidão on demand — it persists + emits a document.generated event.
+        let (status, _) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (status, made) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/document/generate?template_id=csc-certidao-ata/v1"),
+                json!({}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "generate: {made}");
+        assert_eq!(made["template_id"], "csc-certidao-ata/v1");
+        assert_eq!(made["act_id"], act_id);
+        assert_eq!(made["pdf_digest"].as_str().expect("digest").len(), 64);
+
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let doc_events = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter(|e| e["kind"] == "document.generated")
+            .count();
+        assert!(
+            doc_events >= 2,
+            "the sealed ata doc + the on-demand certidão doc are both on the chain: {events}"
+        );
+
+        // The chosen document is persisted and downloads as a real PDF.
+        let (status, ctype, bytes) =
+            send_bytes(state, get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(ctype.starts_with("application/pdf"), "ctype={ctype}");
+        assert!(bytes.starts_with(b"%PDF-"));
+    }
+
+    #[tokio::test]
+    async fn seal_template_id_override_selects_a_subtype_and_unknown_errors() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+
+        // An unknown override id is rejected (422), never silently defaulted to the spine.
+        let act_bad = draft_fill_and_advance(&state, &book_id).await;
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_bad}/seal"),
+                json!({ "template_id": "nao-existe/v9" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        // The bad seal rolled back: the act is not sealed.
+        let (_, act) = send(state.clone(), get(&format!("/v1/acts/{act_bad}"))).await;
+        assert_ne!(
+            act["state"], "Sealed",
+            "a failed override seal leaves no trace"
+        );
+
+        // A valid ata subtype override generates that subtype instead of the spine.
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/seal"),
+                json!({ "template_id": "csc-ata-aprovacao-contas/v1" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "override seal: {sealed}");
+        assert_eq!(
+            sealed["document"]["template_id"],
+            "csc-ata-aprovacao-contas/v1"
         );
     }
 

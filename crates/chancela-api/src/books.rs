@@ -136,7 +136,8 @@ pub async fn close_book(
     let closing_date = crate::dto::parse_date(&req.closing_date)?;
     let actor = actor.resolve(&req.actor);
 
-    // books → ledger.
+    // entities → books → ledger (entities read so the family selects the encerramento template).
+    let entities = state.entities.read().await;
     let mut books = state.books.write().await;
     let mut ledger = state.ledger.write().await;
     let book = books.get_mut(&BookId(id)).ok_or(ApiError::NotFound)?;
@@ -159,7 +160,46 @@ pub async fn close_book(
             .expect("termo present immediately after close"),
     )?;
     ledger.append(&actor, &scope, "book.closed", None, &payload);
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&next))?;
+
+    // Termo de encerramento document (t53): closing a book produces the family's preserved
+    // encerramento PDF/A + a `document.generated` event in the SAME durable commit as `book.closed`
+    // (mirrors the book-open abertura path). A render/write failure rolls the just-appended
+    // `book.closed` event back so a failed close leaves no trace; a family without an encerramento
+    // template (or a book whose entity is gone) gets the domain event alone (documented fallback).
+    let termo_ref = next
+        .termo_encerramento
+        .as_ref()
+        .expect("termo present immediately after close");
+    let generated = match entities.get(&next.entity_id) {
+        Some(entity) => {
+            match crate::documents::generate_for_encerramento(termo_ref, &next, entity) {
+                Ok(g) => g,
+                Err(e) => {
+                    AppState::rollback_ledger_events(&mut ledger, 1);
+                    return Err(e);
+                }
+            }
+        }
+        None => None,
+    };
+    match generated {
+        Some(made) => {
+            let doc_payload = serde_json::to_vec(&made.event_payload)?;
+            ledger.append(&actor, &scope, "document.generated", None, &doc_payload);
+            state.persist_write_through(&mut ledger, 2, |tx| {
+                tx.upsert_book(&next)?;
+                tx.upsert_document(&made.stored)
+            })?;
+            state
+                .documents
+                .write()
+                .await
+                .insert(made.stored.act_id, made.stored.clone());
+        }
+        None => {
+            state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&next))?;
+        }
+    }
     state.attest_latest(&attestor, &ledger).await;
     *book = next;
 

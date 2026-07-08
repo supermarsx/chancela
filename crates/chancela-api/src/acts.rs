@@ -280,7 +280,11 @@ pub async fn seal_act_handler(
             // in-memory ledger so a failed seal leaves no trace (the seal transaction is atomic).
             // A family without a template yet yields `None`: the seal proceeds without a document
             // (documented fallback), never blocking the seal.
-            let generated = match crate::documents::generate_for_act(&act_next, entity) {
+            let generated = match crate::documents::generate_for_act(
+                &act_next,
+                entity,
+                req.template_id.as_deref(),
+            ) {
                 Ok(g) => g,
                 Err(e) => {
                     AppState::rollback_ledger_events(&mut ledger, 1);

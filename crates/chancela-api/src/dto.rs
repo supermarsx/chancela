@@ -704,6 +704,12 @@ pub struct SealAct {
     pub actor: String,
     #[serde(default)]
     pub acknowledge_warnings: bool,
+    /// Optional ata-subtype override (t53): the specific `Ata`-stage template id to generate for
+    /// this seal instead of the family's spine ata (e.g. `"csc-ata-aprovacao-contas/v1"`). Additive;
+    /// absent ⇒ the deterministic spine default. An unknown or non-`Ata`/cross-family id is rejected
+    /// (`422`), never silently defaulted.
+    #[serde(default)]
+    pub template_id: Option<String>,
 }
 
 impl Default for SealAct {
@@ -711,6 +717,7 @@ impl Default for SealAct {
         SealAct {
             actor: default_actor(),
             acknowledge_warnings: false,
+            template_id: None,
         }
     }
 }
