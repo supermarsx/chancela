@@ -11,7 +11,10 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chancela_core::{Act, ActError, ActId, BookId, Severity, rule_pack_for, seal_act};
+use chancela_core::{
+    Act, ActError, ActId, BookId, Entity, EntityFamily, EntityKind, Severity, rule_pack_for,
+    seal_act,
+};
 use uuid::Uuid;
 
 use chancela_authz::Permission;
@@ -20,8 +23,8 @@ use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_act, scope_of_book};
 use crate::dto::{
-    ActView, AdvanceAct, ArchiveAct, ComplianceResponse, DraftAct, IssueView, PatchAct, SealAct,
-    SealResponse,
+    ActView, AdvanceAct, ArchiveAct, ComplianceResponse, ConveningAdvisory, DispatchConvening,
+    DraftAct, IssueView, PatchAct, SealAct, SealResponse,
 };
 use crate::error::ApiError;
 
@@ -158,6 +161,23 @@ pub async fn patch_act(
     if let Some(signatories) = req.signatories {
         act.signatories = signatories.into_iter().map(Into::into).collect();
     }
+    // G1 convening (double_option): absent ⇒ leave, explicit null ⇒ clear, value ⇒ replace. Parsing
+    // (into_core) validates dates before any mutation (a malformed date ⇒ 422, act untouched).
+    if let Some(convening) = req.convening {
+        act.convening = match convening {
+            Some(c) => Some(c.into_core()?),
+            None => None,
+        };
+    }
+    // G2 attendance (replace-when-present, [] clears). Convert first so a validation failure
+    // (permilage/proxy ⇒ 422) leaves the act untouched.
+    if let Some(attendees) = req.attendees {
+        let mut converted = Vec::with_capacity(attendees.len());
+        for a in attendees {
+            converted.push(a.into_core()?);
+        }
+        act.attendees = converted;
+    }
 
     Ok(Json(ActView::from(&*act)))
 }
@@ -249,7 +269,73 @@ pub async fn get_compliance(
         errors,
         warnings,
         seal_allowed,
+        convening_advisories: convening_advisories_for(entity, act),
     }))
+}
+
+/// The statutory-antecedence threshold id for an entity, or `None` for families whose convening
+/// regime is a `Clause` (Association / Foundation) rather than a numeric day-count — those get no
+/// numeric antecedence advisory (t61-E1, plan §3). CSC splits SA vs. quotas by [`EntityKind`].
+fn antecedence_threshold_id(entity: &Entity) -> Option<&'static str> {
+    match entity.family {
+        EntityFamily::CommercialCompany => Some(match entity.kind {
+            EntityKind::SociedadeAnonima | EntityKind::SociedadeEmComanditaPorAcoes => {
+                "csc.sa.convocatoria.antecedencia_dias"
+            }
+            _ => "csc.quotas.convocatoria.antecedencia_dias",
+        }),
+        EntityFamily::Condominium => Some("condominio.convocatoria.antecedencia_dias"),
+        EntityFamily::Cooperative => Some("cooperativa.convocatoria.antecedencia_dias"),
+        // Clause regimes (no numeric antecedence to compare against).
+        EntityFamily::Association | EntityFamily::Foundation => None,
+    }
+}
+
+/// Compute the convening-antecedence advisories for an act. Empty unless the act carries a
+/// convening, the family has a numeric threshold, that threshold is *resolved* to `Days(min)`, and
+/// the actual antecedence is below it. **Never blocks** (advisory only).
+fn convening_advisories_for(entity: &Entity, act: &Act) -> Vec<ConveningAdvisory> {
+    let Some(convening) = &act.convening else {
+        return Vec::new();
+    };
+    let Some(threshold_id) = antecedence_threshold_id(entity) else {
+        return Vec::new();
+    };
+    // The resolved minimum, or `None` while the threshold is `[a definir]` (dormant).
+    let minimum_days = match chancela_templates::find_threshold(threshold_id).and_then(|t| t.value)
+    {
+        Some(chancela_templates::ThresholdValue::Days(n)) => Some(n),
+        _ => None,
+    };
+    antecedence_advisory(threshold_id, minimum_days, convening.antecedence_days)
+        .into_iter()
+        .collect()
+}
+
+/// Pure antecedence check (unit-testable without the global registry): a `Warning` iff both the
+/// statutory `minimum_days` is resolved AND the `actual_days` given is strictly below it. Any `None`
+/// (dormant threshold or no actual antecedence recorded) yields no advisory.
+fn antecedence_advisory(
+    threshold_id: &str,
+    minimum_days: Option<u16>,
+    actual_days: Option<u16>,
+) -> Option<ConveningAdvisory> {
+    let minimum = minimum_days?;
+    let actual = actual_days?;
+    if actual >= minimum {
+        return None;
+    }
+    Some(ConveningAdvisory {
+        code: "convening.antecedence.below_minimum".to_owned(),
+        severity: "Warning".to_owned(),
+        message: format!(
+            "A antecedência da convocatória ({actual} dias) é inferior à antecedência mínima \
+             legal ({minimum} dias)."
+        ),
+        threshold_id: threshold_id.to_owned(),
+        actual_days: Some(actual),
+        minimum_days: Some(minimum),
+    })
 }
 
 /// `POST /v1/acts/{id}/seal` — compliance-gated seal (WFL-20). On refusal the compliance
@@ -446,4 +532,190 @@ pub async fn archive_act(
     *act = next;
 
     Ok(Json(ActView::from(&*act)))
+}
+
+/// `POST /v1/acts/{id}/convening/dispatch` — record that the convening notice was dispatched
+/// (t61-E1). Stamps `dispatched_at` (+ optional `channel`/`reference`) on the matching
+/// `convening.recipients` and appends a chained `convening.dispatched` ledger event — unlike a draft
+/// PATCH, dispatch is a real evidentiary action, so it IS auditable. Honest scope: this records the
+/// operator's assertion that the notice was sent; the actual sending stays external/manual.
+///
+/// `404` unknown act · `409` sealed/immutable act · `422` no convening, no recipients (or none
+/// matching the requested names), or a malformed `dispatched_at`.
+pub async fn convening_dispatch(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<DispatchConvening>,
+) -> Result<Json<ActView>, ApiError> {
+    // RBAC (t61-E1): stamping dispatch is an act write, gated at the act's owning book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActEdit, scope).await?;
+    let actor = actor.resolve(&req.actor);
+    let dispatched_at = crate::dto::parse_date(&req.dispatched_at)?;
+
+    // books → acts → ledger (books only to resolve the entity id for the event scope).
+    let books = state.books.read().await;
+    let mut acts = state.acts.write().await;
+    let mut ledger = state.ledger.write().await;
+
+    let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
+    // A sealed/archived act's convening is frozen (maps ActError::Sealed → 409).
+    if !act.is_mutable() {
+        return Err(ApiError::Conflict(ActError::Sealed.to_string()));
+    }
+    let entity_id = books.get(&act.book_id).map(|b| b.entity_id);
+
+    // Stamp a clone; commit to the map only after the durable write succeeds.
+    let mut next = act.clone();
+    let convening = next
+        .convening
+        .as_mut()
+        .ok_or_else(|| ApiError::Unprocessable("act has no convening to dispatch".to_owned()))?;
+    if convening.recipients.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "convening has no recipients to dispatch".to_owned(),
+        ));
+    }
+    // A name filter selects a subset; omitted ⇒ every recipient is stamped.
+    let mut stamped = 0u32;
+    for recipient in convening.recipients.iter_mut() {
+        let selected = match &req.recipients {
+            Some(names) => names.iter().any(|n| n == &recipient.name),
+            None => true,
+        };
+        if !selected {
+            continue;
+        }
+        recipient.dispatched_at = Some(dispatched_at);
+        if req.channel.is_some() {
+            recipient.channel = req.channel;
+        }
+        if req.reference.is_some() {
+            recipient.reference = req.reference.clone();
+        }
+        stamped += 1;
+    }
+    if stamped == 0 {
+        return Err(ApiError::Unprocessable(
+            "no matching recipients to dispatch".to_owned(),
+        ));
+    }
+
+    let scope = match entity_id {
+        Some(eid) => format!("entity:{}/book:{}/act:{}", eid, next.book_id, next.id),
+        None => format!("book:{}/act:{}", next.book_id, next.id),
+    };
+    let justification = format!("convening dispatched to {stamped} recipient(s)");
+    let payload = serde_json::to_vec(&next)?;
+    crate::try_append_event(
+        &mut ledger,
+        &actor,
+        &scope,
+        "convening.dispatched",
+        Some(&justification),
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
+    state.attest_latest(&attestor, &ledger).await;
+    *act = next;
+
+    Ok(Json(ActView::from(&*act)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chancela_core::Nipc;
+
+    fn entity_of(kind: EntityKind) -> Entity {
+        Entity::new(
+            "Encosto Estratégico Lda",
+            Nipc::parse("503004642").expect("valid NIPC"),
+            "Rua das Amoreiras, n.º 12, 1250-020 Lisboa",
+            kind,
+        )
+    }
+
+    /// The pure antecedence check: a Warning only when a resolved minimum is strictly above the
+    /// actual antecedence; dormant (None) when the threshold is `[a definir]` or no actual is given.
+    #[test]
+    fn antecedence_advisory_warns_only_below_a_resolved_minimum() {
+        // Resolved minimum, actual below ⇒ a Warning carrying both day-counts.
+        let warn =
+            antecedence_advisory("csc.sa.convocatoria.antecedencia_dias", Some(21), Some(10))
+                .expect("warns below the minimum");
+        assert_eq!(warn.severity, "Warning");
+        assert_eq!(warn.actual_days, Some(10));
+        assert_eq!(warn.minimum_days, Some(21));
+        assert_eq!(warn.threshold_id, "csc.sa.convocatoria.antecedencia_dias");
+        assert_eq!(warn.code, "convening.antecedence.below_minimum");
+
+        // Actual meets/exceeds the minimum ⇒ no advisory.
+        assert!(antecedence_advisory("x", Some(21), Some(21)).is_none());
+        assert!(antecedence_advisory("x", Some(21), Some(30)).is_none());
+        // Dormant threshold ([a definir]: value None) ⇒ no advisory even with a short actual.
+        assert!(antecedence_advisory("x", None, Some(1)).is_none());
+        // No actual antecedence recorded ⇒ nothing to compare.
+        assert!(antecedence_advisory("x", Some(21), None).is_none());
+    }
+
+    /// Family → numeric-threshold mapping: CSC splits SA/quotas by kind; condominium + cooperative
+    /// have a numeric threshold; association + foundation are Clause regimes (no numeric check).
+    #[test]
+    fn threshold_id_maps_families_and_skips_clause_regimes() {
+        assert_eq!(
+            antecedence_threshold_id(&entity_of(EntityKind::SociedadeAnonima)),
+            Some("csc.sa.convocatoria.antecedencia_dias")
+        );
+        assert_eq!(
+            antecedence_threshold_id(&entity_of(EntityKind::SociedadePorQuotas)),
+            Some("csc.quotas.convocatoria.antecedencia_dias")
+        );
+        assert_eq!(
+            antecedence_threshold_id(&entity_of(EntityKind::Condominio)),
+            Some("condominio.convocatoria.antecedencia_dias")
+        );
+        assert_eq!(
+            antecedence_threshold_id(&entity_of(EntityKind::Cooperativa)),
+            Some("cooperativa.convocatoria.antecedencia_dias")
+        );
+        // Clause regimes → no numeric antecedence advisory.
+        assert_eq!(
+            antecedence_threshold_id(&entity_of(EntityKind::Associacao)),
+            None
+        );
+        assert_eq!(
+            antecedence_threshold_id(&entity_of(EntityKind::Fundacao)),
+            None
+        );
+    }
+
+    /// The registry ships every convocatória-antecedence threshold as `[a definir]` (value None), so
+    /// the advisory is **dormant** in production: even a 1-day antecedence produces no warning until a
+    /// lawyer resolves the value. This locks the honest-disclosure contract (plan D3 / risk 3).
+    #[test]
+    fn advisory_is_dormant_while_the_threshold_is_a_definir() {
+        let mut act = Act::draft(
+            BookId(uuid::Uuid::nil()),
+            "Ata",
+            chancela_core::MeetingChannel::Physical,
+        );
+        act.convening = Some(chancela_core::Convening {
+            antecedence_days: Some(1),
+            ..Default::default()
+        });
+        for kind in [
+            EntityKind::SociedadeAnonima,
+            EntityKind::SociedadePorQuotas,
+            EntityKind::Condominio,
+            EntityKind::Cooperativa,
+        ] {
+            assert!(
+                convening_advisories_for(&entity_of(kind), &act).is_empty(),
+                "{kind:?}: advisory must stay dormant while the threshold is [a definir]"
+            );
+        }
+    }
 }

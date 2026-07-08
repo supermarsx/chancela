@@ -17,9 +17,10 @@ use uuid::Uuid;
 use chancela_cae::CaeCatalog;
 use chancela_core::book::ClosingReason;
 use chancela_core::{
-    Act, ActState, AgendaItem, Attachment, AttachmentKind, Book, BookKind, BookState,
-    ComplianceIssue, DeliberationItem, DocumentReference, Entity, EntityFamily, EntityKind,
-    MeetingChannel, MemberStatement, Mesa, NumberingScheme, Severity, SignatoryCapacity,
+    Act, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee, Book,
+    BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient, DeliberationItem,
+    DispatchChannel, DocumentReference, Entity, EntityFamily, EntityKind, MeetingChannel,
+    MemberStatement, Mesa, NumberingScheme, PresenceMode, SecondCall, Severity, SignatoryCapacity,
     SignatorySlot, SignaturePolicyHint, StatuteOverrides, VoteResult, profile_for,
 };
 use chancela_ledger::Event;
@@ -514,6 +515,257 @@ impl From<DeliberationItemView> for DeliberationItem {
     }
 }
 
+// --- Convening (G1) + attendance (G2) views + inputs (t61-E1) ----------------------------
+
+/// Wire view of one dispatch recipient of a convening notice. Date leaves become the contract's
+/// ISO wire strings.
+#[derive(Serialize)]
+pub struct ConveningRecipientView {
+    pub name: String,
+    pub channel: Option<DispatchChannel>,
+    pub reference: Option<String>,
+    pub dispatched_at: Option<String>,
+}
+
+impl From<&ConveningRecipient> for ConveningRecipientView {
+    fn from(r: &ConveningRecipient) -> Self {
+        ConveningRecipientView {
+            name: r.name.clone(),
+            channel: r.channel,
+            reference: r.reference.clone(),
+            dispatched_at: r.dispatched_at.map(format_date),
+        }
+    }
+}
+
+/// Wire view of a second-call record (split `date` + `time` as `YYYY-MM-DD` / `HH:MM`).
+#[derive(Serialize)]
+pub struct SecondCallView {
+    pub date: Option<String>,
+    pub time: Option<String>,
+    pub reduced_quorum: bool,
+}
+
+impl From<&SecondCall> for SecondCallView {
+    fn from(s: &SecondCall) -> Self {
+        SecondCallView {
+            date: s.date.map(format_date),
+            time: s.time.map(format_time),
+            reduced_quorum: s.reduced_quorum,
+        }
+    }
+}
+
+/// Wire view of an act's convening/dispatch record (G1). Date leaves are ISO strings; enum leaves
+/// keep their bare serde variant names.
+#[derive(Serialize)]
+pub struct ConveningView {
+    pub convener: Option<String>,
+    pub convener_capacity: Option<SignatoryCapacity>,
+    pub dispatch_date: Option<String>,
+    pub antecedence_days: Option<u16>,
+    pub channel: Option<DispatchChannel>,
+    pub recipients: Vec<ConveningRecipientView>,
+    pub second_call: Option<SecondCallView>,
+}
+
+impl From<&Convening> for ConveningView {
+    fn from(c: &Convening) -> Self {
+        ConveningView {
+            convener: c.convener.clone(),
+            convener_capacity: c.convener_capacity,
+            dispatch_date: c.dispatch_date.map(format_date),
+            antecedence_days: c.antecedence_days,
+            channel: c.channel,
+            recipients: c
+                .recipients
+                .iter()
+                .map(ConveningRecipientView::from)
+                .collect(),
+            second_call: c.second_call.as_ref().map(SecondCallView::from),
+        }
+    }
+}
+
+/// Wire view of one attendance row (G2). Carries no date fields, so it mirrors the core type.
+#[derive(Serialize)]
+pub struct AttendeeView {
+    pub name: String,
+    pub quality: SignatoryCapacity,
+    pub presence: PresenceMode,
+    pub represented_by: Option<String>,
+    pub weight: Option<AttendanceWeight>,
+}
+
+impl From<&Attendee> for AttendeeView {
+    fn from(a: &Attendee) -> Self {
+        AttendeeView {
+            name: a.name.clone(),
+            quality: a.quality,
+            presence: a.presence,
+            represented_by: a.represented_by.clone(),
+            weight: a.weight,
+        }
+    }
+}
+
+/// Convening/dispatch record as accepted on a PATCH (input side: dates are ISO strings, parsed to
+/// `time` in [`ConveningInput::into_core`], a malformed value being a `422`).
+#[derive(Deserialize)]
+pub struct ConveningInput {
+    #[serde(default)]
+    pub convener: Option<String>,
+    #[serde(default)]
+    pub convener_capacity: Option<SignatoryCapacity>,
+    #[serde(default)]
+    pub dispatch_date: Option<String>,
+    #[serde(default)]
+    pub antecedence_days: Option<u16>,
+    #[serde(default)]
+    pub channel: Option<DispatchChannel>,
+    #[serde(default)]
+    pub recipients: Vec<ConveningRecipientInput>,
+    #[serde(default)]
+    pub second_call: Option<SecondCallInput>,
+}
+
+impl ConveningInput {
+    /// Convert to the core [`Convening`], parsing every date/time leaf (`422` on a malformed value).
+    pub fn into_core(self) -> Result<Convening, ApiError> {
+        let dispatch_date = match self.dispatch_date {
+            Some(s) => Some(parse_date(&s)?),
+            None => None,
+        };
+        let mut recipients = Vec::with_capacity(self.recipients.len());
+        for r in self.recipients {
+            recipients.push(r.into_core()?);
+        }
+        let second_call = match self.second_call {
+            Some(sc) => Some(sc.into_core()?),
+            None => None,
+        };
+        Ok(Convening {
+            convener: self.convener,
+            convener_capacity: self.convener_capacity,
+            dispatch_date,
+            antecedence_days: self.antecedence_days,
+            channel: self.channel,
+            recipients,
+            second_call,
+        })
+    }
+}
+
+/// One dispatch recipient as accepted on a PATCH.
+#[derive(Deserialize)]
+pub struct ConveningRecipientInput {
+    pub name: String,
+    #[serde(default)]
+    pub channel: Option<DispatchChannel>,
+    #[serde(default)]
+    pub reference: Option<String>,
+    #[serde(default)]
+    pub dispatched_at: Option<String>,
+}
+
+impl ConveningRecipientInput {
+    fn into_core(self) -> Result<ConveningRecipient, ApiError> {
+        let dispatched_at = match self.dispatched_at {
+            Some(s) => Some(parse_date(&s)?),
+            None => None,
+        };
+        Ok(ConveningRecipient {
+            name: self.name,
+            channel: self.channel,
+            reference: self.reference,
+            dispatched_at,
+        })
+    }
+}
+
+/// Second-call record as accepted on a PATCH (split `date` + `time`).
+#[derive(Deserialize)]
+pub struct SecondCallInput {
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default)]
+    pub time: Option<String>,
+    #[serde(default)]
+    pub reduced_quorum: bool,
+}
+
+impl SecondCallInput {
+    fn into_core(self) -> Result<SecondCall, ApiError> {
+        let date = match self.date {
+            Some(s) => Some(parse_date(&s)?),
+            None => None,
+        };
+        let time = match self.time {
+            Some(s) => Some(parse_time(&s)?),
+            None => None,
+        };
+        Ok(SecondCall {
+            date,
+            time,
+            reduced_quorum: self.reduced_quorum,
+        })
+    }
+}
+
+/// One attendance row as accepted on a PATCH. `into_core` validates permilage `≤ 1000` and that
+/// `represented_by` is present **iff** the presence is `Represented` (else `422`).
+#[derive(Deserialize)]
+pub struct AttendeeInput {
+    pub name: String,
+    pub quality: SignatoryCapacity,
+    pub presence: PresenceMode,
+    #[serde(default)]
+    pub represented_by: Option<String>,
+    #[serde(default)]
+    pub weight: Option<AttendanceWeight>,
+}
+
+impl AttendeeInput {
+    /// Convert to the core [`Attendee`], validating the weight and the represented/proxy invariant.
+    pub fn into_core(self) -> Result<Attendee, ApiError> {
+        if let Some(AttendanceWeight::Permilage(p @ 1001..)) = self.weight {
+            return Err(ApiError::Unprocessable(format!(
+                "attendee {:?}: permilage {p} exceeds 1000",
+                self.name
+            )));
+        }
+        let is_represented = matches!(self.presence, PresenceMode::Represented);
+        if is_represented != self.represented_by.is_some() {
+            return Err(ApiError::Unprocessable(format!(
+                "attendee {:?}: represented_by must be present iff presence is Represented",
+                self.name
+            )));
+        }
+        Ok(Attendee {
+            name: self.name,
+            quality: self.quality,
+            presence: self.presence,
+            represented_by: self.represented_by,
+            weight: self.weight,
+        })
+    }
+}
+
+/// Body of `POST /v1/acts/{id}/convening/dispatch`. All fields optional except `dispatched_at`;
+/// `recipients` (names) omitted ⇒ every recipient is stamped.
+#[derive(Deserialize)]
+pub struct DispatchConvening {
+    #[serde(default = "default_actor")]
+    pub actor: String,
+    pub dispatched_at: String,
+    #[serde(default)]
+    pub channel: Option<DispatchChannel>,
+    #[serde(default)]
+    pub reference: Option<String>,
+    #[serde(default)]
+    pub recipients: Option<Vec<String>>,
+}
+
 /// Response view of an `Act` (contract §2.5). The structured art. 63.º content fields
 /// (`meeting_time`, `mesa`, `agenda`, `referenced_documents`, `deliberation_items`,
 /// `members_present`/`members_represented`) are additive (t31 §2.4); old clients tolerate them.
@@ -549,6 +801,15 @@ pub struct ActView {
     pub payload_digest: Option<String>,
     pub seal_event_seq: Option<u64>,
     pub retifies: Option<String>,
+    /// The convening/dispatch record (G1), when set. **Skip-serialized when absent** (t61-E1
+    /// drift-safe): an act without a convening emits **no** `convening` key, so response fixtures for
+    /// convening-less acts stay byte-identical and the web contract test is not forced to change.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub convening: Option<ConveningView>,
+    /// The structured attendance rows (G2). **Skip-serialized when empty** (t61-E1 drift-safe): an
+    /// act with no attendees emits **no** `attendees` key.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub attendees: Vec<AttendeeView>,
 }
 
 impl From<&Act> for ActView {
@@ -585,6 +846,8 @@ impl From<&Act> for ActView {
             payload_digest: a.payload_digest.as_ref().map(hex),
             seal_event_seq: a.seal_event_seq,
             retifies: a.retifies.map(|r| r.to_string()),
+            convening: a.convening.as_ref().map(ConveningView::from),
+            attendees: a.attendees.iter().map(AttendeeView::from).collect(),
         }
     }
 }
@@ -687,6 +950,14 @@ pub struct PatchAct {
     pub telematic_evidence: Option<Option<String>>,
     pub attachments: Option<Vec<AttachmentInput>>,
     pub signatories: Option<Vec<SignatoryInput>>,
+    /// The convening/dispatch record (G1). [`double_option`] semantics: absent ⇒ leave untouched,
+    /// explicit `null` ⇒ clear to `None`, a value ⇒ replace. Dates parse via [`parse_date`]/
+    /// [`parse_time`] (malformed ⇒ `422`).
+    #[serde(default, deserialize_with = "double_option")]
+    pub convening: Option<Option<ConveningInput>>,
+    /// The structured attendance rows (G2). Present ⇒ replace wholesale (`[]` clears); absent ⇒
+    /// leave untouched. Each row is validated in [`AttendeeInput::into_core`] (permilage/proxy).
+    pub attendees: Option<Vec<AttendeeInput>>,
 }
 
 /// Body of `POST /v1/acts/{id}/advance`.
@@ -771,6 +1042,25 @@ pub struct ComplianceResponse {
     pub errors: u32,
     pub warnings: u32,
     pub seal_allowed: bool,
+    /// Convening-antecedence advisories (t61-E1) — **WARN-only, never blocking** (does not feed
+    /// `seal_allowed`). A warning fires only when the family's statutory antecedence threshold is
+    /// *resolved* to a `Days(min)` value AND the act's actual `convening.antecedence_days` is below
+    /// it; the check stays **dormant** (no entry) while the threshold is `[a definir]`. **Additive +
+    /// skip-serialized when empty** (drift-safe): existing compliance responses are unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub convening_advisories: Vec<ConveningAdvisory>,
+}
+
+/// One convening-antecedence advisory (t61-E1). Non-blocking guidance surfaced on the compliance
+/// report; `severity` is the bare string (mirroring [`IssueView`]).
+#[derive(Debug, Serialize, Clone)]
+pub struct ConveningAdvisory {
+    pub code: String,
+    pub severity: String,
+    pub message: String,
+    pub threshold_id: String,
+    pub actual_days: Option<u16>,
+    pub minimum_days: Option<u16>,
 }
 
 // --- Ledger view + query -----------------------------------------------------------------

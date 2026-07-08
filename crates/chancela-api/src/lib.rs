@@ -653,6 +653,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/acts/{id}/seal", post(acts::seal_act_handler))
         .route("/v1/acts/{id}/archive", post(acts::archive_act))
         .route(
+            "/v1/acts/{id}/convening/dispatch",
+            post(acts::convening_dispatch),
+        )
+        .route(
             "/v1/acts/{id}/document/preview",
             get(documents::preview_document),
         )
@@ -7059,6 +7063,281 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "seal one act");
+    }
+
+    // --- t61-E1: convocatória convening/attendee input + dispatch + antecedence advisory ----------
+
+    /// Draft one act into `book_id` and return its id (Owner-authorized via auto-seeded session).
+    async fn draft_one_act(state: &AppState, book_id: &str) -> String {
+        let (status, act) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({ "book_id": book_id, "title": "Ata da AG anual", "channel": "Physical" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "draft act: {act}");
+        act["id"].as_str().expect("act id").to_owned()
+    }
+
+    #[tokio::test]
+    async fn patch_convening_and_attendees_round_trip_and_clear() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_one_act(&state, &book_id).await;
+
+        // Set a full convening + two attendance rows.
+        let (status, patched) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({
+                    "convening": {
+                        "convener": "Amélia Marques",
+                        "convener_capacity": "Administrator",
+                        "dispatch_date": "2026-03-01",
+                        "antecedence_days": 21,
+                        "channel": "RegisteredLetter",
+                        "recipients": [
+                            { "name": "Amélia Marques", "channel": "Email" },
+                            { "name": "Bruno Dias" }
+                        ],
+                        "second_call": { "date": "2026-03-30", "time": "11:00", "reduced_quorum": true }
+                    },
+                    "attendees": [
+                        { "name": "Amélia Marques", "quality": "Administrator", "presence": "InPerson" },
+                        { "name": "Bruno Dias", "quality": "Member", "presence": "Represented",
+                          "represented_by": "Amélia Marques", "weight": { "Permilage": 250 } }
+                    ]
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "patch convening: {patched}");
+        assert_eq!(patched["convening"]["convener"], "Amélia Marques");
+        assert_eq!(patched["convening"]["antecedence_days"], 21);
+        assert_eq!(patched["convening"]["dispatch_date"], "2026-03-01");
+        assert_eq!(patched["convening"]["second_call"]["time"], "11:00");
+        assert_eq!(patched["convening"]["second_call"]["reduced_quorum"], true);
+        assert_eq!(
+            patched["convening"]["recipients"][0]["name"],
+            "Amélia Marques"
+        );
+        assert_eq!(patched["attendees"][1]["represented_by"], "Amélia Marques");
+        assert_eq!(patched["attendees"][1]["weight"]["Permilage"], 250);
+
+        // GET round-trips the same shape.
+        let (status, fetched) = send(state.clone(), get(&format!("/v1/acts/{act_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(fetched["convening"]["antecedence_days"], 21);
+        assert_eq!(fetched["attendees"].as_array().expect("attendees").len(), 2);
+
+        // Explicit null clears convening; omitting attendees leaves them untouched.
+        let (status, cleared) = send(
+            state.clone(),
+            patch_json(&format!("/v1/acts/{act_id}"), json!({ "convening": null })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            cleared.as_object().expect("obj").get("convening").is_none(),
+            "convening cleared ⇒ skip-serialized (no key): {cleared}"
+        );
+        assert_eq!(
+            cleared["attendees"].as_array().expect("attendees").len(),
+            2,
+            "omitted attendees are left untouched"
+        );
+
+        // [] clears attendees (⇒ skip-serialized).
+        let (status, empty) = send(
+            state.clone(),
+            patch_json(&format!("/v1/acts/{act_id}"), json!({ "attendees": [] })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            empty.as_object().expect("obj").get("attendees").is_none(),
+            "empty attendees ⇒ no key: {empty}"
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_attendee_validation_returns_422() {
+        let (state, _e, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_one_act(&state, &book_id).await;
+
+        // Permilage > 1000 → 422.
+        let (status, _b) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({ "attendees": [
+                    { "name": "Amélia Marques", "quality": "CondoOwner", "presence": "InPerson",
+                      "weight": { "Permilage": 1200 } }
+                ]}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "permilage > 1000");
+
+        // Represented without a proxy → 422.
+        let (status, _b) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({ "attendees": [
+                    { "name": "Bruno Dias", "quality": "Member", "presence": "Represented" }
+                ]}),
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "represented w/o proxy"
+        );
+
+        // A malformed convening date → 422 (and the act is left untouched).
+        let (status, _b) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({ "convening": { "dispatch_date": "2026-13-40" } }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "bad date");
+    }
+
+    #[tokio::test]
+    async fn dispatch_stamps_recipients_and_emits_the_event() {
+        let (state, _e, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_one_act(&state, &book_id).await;
+        send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({ "convening": {
+                    "antecedence_days": 21,
+                    "recipients": [ { "name": "Amélia Marques" }, { "name": "Bruno Dias" } ]
+                }}),
+            ),
+        )
+        .await;
+
+        // Dispatch to a single named recipient stamps only that one.
+        let (status, dispatched) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/convening/dispatch"),
+                json!({ "dispatched_at": "2026-03-02", "channel": "Email",
+                        "reference": "RC123", "recipients": ["Amélia Marques"] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "dispatch: {dispatched}");
+        let recips = dispatched["convening"]["recipients"]
+            .as_array()
+            .expect("recipients");
+        let amelia = &recips[0];
+        assert_eq!(amelia["name"], "Amélia Marques");
+        assert_eq!(amelia["dispatched_at"], "2026-03-02");
+        assert_eq!(amelia["channel"], "Email");
+        assert_eq!(amelia["reference"], "RC123");
+        // The unnamed recipient stays un-stamped.
+        assert!(
+            recips[1]["dispatched_at"].is_null(),
+            "Bruno not dispatched: {dispatched}"
+        );
+
+        // A `convening.dispatched` ledger event was appended for this act.
+        let (status, events) = send(
+            state.clone(),
+            get(&format!("/v1/ledger/events?scope=act:{act_id}")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "convening.dispatched"),
+            "convening.dispatched event present: {events}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_422_without_a_convening() {
+        let (state, _e, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_one_act(&state, &book_id).await;
+        let (status, _b) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/convening/dispatch"),
+                json!({ "dispatched_at": "2026-03-02" }),
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "no convening ⇒ 422"
+        );
+    }
+
+    #[tokio::test]
+    async fn actview_without_convening_or_attendees_emits_no_new_keys() {
+        // DRIFT-SAFE guard: a convening-less act's ActView must carry NEITHER `convening` nor
+        // `attendees` (skip-serialized), keeping the committed contracts/act.sealed.json byte-shape.
+        let (state, _e, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_one_act(&state, &book_id).await;
+        let (status, act) = send(state.clone(), get(&format!("/v1/acts/{act_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        let obj = act.as_object().expect("act object");
+        assert!(obj.get("convening").is_none(), "no convening key: {act}");
+        assert!(obj.get("attendees").is_none(), "no attendees key: {act}");
+    }
+
+    #[tokio::test]
+    async fn dispatch_is_forbidden_for_a_read_only_leitor() {
+        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        let (state, _e, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_one_act(&state, &book_id).await;
+        send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({ "convening": { "recipients": [ { "name": "Amélia Marques" } ] } }),
+            ),
+        )
+        .await;
+
+        // A Leitor\@Global holds act.read but NOT act.edit → dispatch is 403 (honest, non-enumerating).
+        let leitor = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &leitor.to_string()).await;
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/acts/{act_id}/convening/dispatch"),
+                    json!({ "dispatched_at": "2026-03-02" }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "leitor cannot dispatch: {body}"
+        );
     }
 
     /// Seed a signed-in user WITH a password (for step-up re-auth), returning `(user_id, token)`.

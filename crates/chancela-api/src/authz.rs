@@ -271,6 +271,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/compliance", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/seal", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/archive", RouteClass::Gated), // POST act.archive@Book
+    ("/v1/acts/{id}/convening/dispatch", RouteClass::Gated), // POST act.edit@Book (t61-E1)
     ("/v1/acts/{id}/document/preview", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/generate", RouteClass::Gated), // POST document.generate@Book
     ("/v1/acts/{id}/document", RouteClass::Gated), // GET act.read@Book
