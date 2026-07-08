@@ -22,7 +22,9 @@ import { LedgerPage } from '../features/ledger/LedgerPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { FerramentasPage } from '../features/ferramentas/FerramentasPage';
 import { CaePage } from '../features/cae/CaePage';
-import { UsersPage } from '../features/users/UsersPage';
+import { UserListPage } from '../features/users/UserListPage';
+import { NewUserPage } from '../features/users/NewUserPage';
+import { EditUserPage } from '../features/users/EditUserPage';
 import { OnboardingWizard } from '../features/onboarding/OnboardingWizard';
 import { NotFoundPage } from '../features/NotFoundPage';
 
@@ -55,7 +57,11 @@ export const router = createBrowserRouter([
       { path: 'configuracoes', element: <SettingsPage /> },
       // `/cae` now redirects into Ferramentas (deep links preserved).
       { path: 'cae', element: <CaePage /> },
-      { path: 'utilizadores', element: <UsersPage /> },
+      { path: 'utilizadores', element: <UserListPage /> },
+      // Static `/novo` before `:id` (React Router ranks static above dynamic anyway —
+      // mirrors the `entidades/nova` note above).
+      { path: 'utilizadores/novo', element: <NewUserPage /> },
+      { path: 'utilizadores/:id', element: <EditUserPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

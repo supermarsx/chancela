@@ -513,6 +513,18 @@ export const ptPT = {
   'users.username.error.tooLong': 'No máximo {max} caracteres.',
   'users.username.error.invalidChars':
     'Apenas minúsculas, dígitos e os símbolos . _ - (sem espaços nem maiúsculas).',
+  'users.list.newButton': 'Novo utilizador',
+  'users.table.access': 'Acesso',
+  'users.action.edit': 'Editar',
+  'users.new.crumb': 'Novo',
+  'users.new.title': 'Novo utilizador',
+  'users.edit.identityCard': 'Identidade',
+  'users.edit.usernameHint':
+    'O nome de utilizador é o identificador de auditoria e não pode ser alterado.',
+  'users.edit.displayNameLabel': 'Nome a apresentar',
+  'users.edit.activationCard': 'Estado',
+  'users.edit.notFound': 'Utilizador não encontrado.',
+  'users.edit.save': 'Guardar nome',
 
   // --- Session (current-user picker) ---------------------------------------------
   'session.trigger.title.active': 'Sessão: {username}',
@@ -887,5 +899,6 @@ export const ptPT = {
   'toast.user.created': 'Utilizador criado.',
   'toast.user.activated': 'Utilizador ativado.',
   'toast.user.deactivated': 'Utilizador desativado.',
+  'toast.user.updated': 'Utilizador atualizado.',
   'toast.signout.success': 'Sessão terminada.',
 };

@@ -492,6 +492,18 @@ export const esES: Catalog = {
   'users.status.inactive': 'Inactivo',
   'users.action.deactivate': 'Desactivar',
   'users.action.reactivate': 'Reactivar',
+  'users.list.newButton': 'Nuevo usuario',
+  'users.table.access': 'Acceso',
+  'users.action.edit': 'Editar',
+  'users.new.crumb': 'Nuevo',
+  'users.new.title': 'Nuevo usuario',
+  'users.edit.identityCard': 'Identidad',
+  'users.edit.usernameHint':
+    'El nombre de usuario es el identificador de auditoría y no se puede cambiar.',
+  'users.edit.displayNameLabel': 'Nombre visible',
+  'users.edit.activationCard': 'Estado',
+  'users.edit.notFound': 'Usuario no encontrado.',
+  'users.edit.save': 'Guardar nombre',
   'users.create.cardTitle': 'Nuevo usuario',
   'users.field.username.label': 'Nombre de usuario',
   'users.field.username.hint':
@@ -884,5 +896,6 @@ export const esES: Catalog = {
   'toast.user.created': 'Usuario creado.',
   'toast.user.activated': 'Usuario activado.',
   'toast.user.deactivated': 'Usuario desactivado.',
+  'toast.user.updated': 'Usuario actualizado.',
   'toast.signout.success': 'Sesión cerrada.',
 };

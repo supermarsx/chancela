@@ -489,6 +489,18 @@ export const ptBR: Catalog = {
   'users.status.inactive': 'Inativo',
   'users.action.deactivate': 'Desativar',
   'users.action.reactivate': 'Reativar',
+  'users.list.newButton': 'Novo usuário',
+  'users.table.access': 'Acesso',
+  'users.action.edit': 'Editar',
+  'users.new.crumb': 'Novo',
+  'users.new.title': 'Novo usuário',
+  'users.edit.identityCard': 'Identidade',
+  'users.edit.usernameHint':
+    'O nome de usuário é o identificador de auditoria e não pode ser alterado.',
+  'users.edit.displayNameLabel': 'Nome de exibição',
+  'users.edit.activationCard': 'Estado',
+  'users.edit.notFound': 'Usuário não encontrado.',
+  'users.edit.save': 'Salvar nome',
   'users.create.cardTitle': 'Novo usuário',
   'users.field.username.label': 'Nome de usuário',
   'users.field.username.hint':
@@ -882,5 +894,6 @@ export const ptBR: Catalog = {
   'toast.user.created': 'Usuário criado.',
   'toast.user.activated': 'Usuário ativado.',
   'toast.user.deactivated': 'Usuário desativado.',
+  'toast.user.updated': 'Usuário atualizado.',
   'toast.signout.success': 'Sessão encerrada.',
 };

@@ -1,9 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
-import { UsersPage } from './UsersPage';
+import { UserListPage } from './UserListPage';
+import { NewUserPage } from './NewUserPage';
+import { EditUserPage } from './EditUserPage';
 import { isValidUsername, usernameError } from './username';
 import type { UserView } from '../../api/types';
+
+/** Render the edit screen at a real `:id` path so `useParams` resolves the user id. */
+function renderEditAt(id: string) {
+  return renderWithProviders(
+    <Routes>
+      <Route path="/utilizadores/:id" element={<EditUserPage />} />
+    </Routes>,
+    [`/utilizadores/${id}`],
+  );
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -62,23 +75,56 @@ describe('username validation', () => {
   });
 });
 
-describe('UsersPage', () => {
+describe('UserListPage (/utilizadores)', () => {
   it('lists users with their state', async () => {
     const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UsersPage />, ['/utilizadores']);
+    renderWithProviders(<UserListPage />, ['/utilizadores']);
 
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
     expect(screen.getByText('Amélia Marques')).toBeTruthy();
     expect(screen.getByText('Ativo')).toBeTruthy();
   });
 
+  it('exposes icon-only row actions via their accessible names', async () => {
+    const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<UserListPage />, ['/utilizadores']);
+
+    // Each row action is an icon-only button whose accessible name comes from its tooltip
+    // label (t50 W1 IconButton) — no visible text label, no native title.
+    expect(await screen.findByRole('button', { name: 'Editar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Desativar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Acesso e auditoria' })).toBeTruthy();
+  });
+
+  it('toggles a user active/inactive via PATCH', async () => {
+    const { fn, calls } = recordingFetch((r) =>
+      r.method === 'PATCH' ? jsonResponse({ ...AMELIA, active: false }) : jsonResponse([AMELIA]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<UserListPage />, ['/utilizadores']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Desativar' }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+    const patch = calls.find((c) => c.method === 'PATCH');
+    expect(patch?.url).toContain('/v1/users/u1');
+    expect(patch?.body).toMatchObject({ active: false });
+    // Deactivating fires the distinct deactivated toast (t44 retrofit-b).
+    expect(await screen.findByText('Utilizador desativado.')).toBeTruthy();
+  });
+});
+
+describe('NewUserPage (/utilizadores/novo)', () => {
   it('renders a client-side validation error for an invalid username and disables submit', async () => {
     const { fn } = recordingFetch(() => jsonResponse([]));
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UsersPage />, ['/utilizadores']);
+    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
 
     const input = await screen.findByLabelText('Nome de utilizador');
     fireEvent.change(input, { target: { value: 'Amelia' } });
@@ -95,7 +141,7 @@ describe('UsersPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UsersPage />, ['/utilizadores']);
+    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
 
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'amelia.marques' },
@@ -112,7 +158,8 @@ describe('UsersPage', () => {
       username: 'amelia.marques',
       display_name: 'Amélia Marques',
     });
-    // A success toast confirms the create (t44 retrofit-b).
+    // A success toast confirms the create (t44 retrofit-b) — it fires as the page navigates
+    // to the new user's edit screen (ToastProvider is above the router).
     expect(await screen.findByText('Utilizador criado.')).toBeTruthy();
   });
 
@@ -124,7 +171,7 @@ describe('UsersPage', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UsersPage />, ['/utilizadores']);
+    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
 
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'amelia.marques' },
@@ -133,24 +180,6 @@ describe('UsersPage', () => {
 
     // The 409 message shows inline against the field and in the error toast (R7).
     expect((await screen.findAllByText(/already exists/)).length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('toggles a user active/inactive via PATCH', async () => {
-    const { fn, calls } = recordingFetch((r) =>
-      r.method === 'PATCH' ? jsonResponse({ ...AMELIA, active: false }) : jsonResponse([AMELIA]),
-    );
-    vi.stubGlobal('fetch', fn);
-
-    renderWithProviders(<UsersPage />, ['/utilizadores']);
-
-    fireEvent.click(await screen.findByRole('button', { name: /desativar/i }));
-
-    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
-    const patch = calls.find((c) => c.method === 'PATCH');
-    expect(patch?.url).toContain('/v1/users/u1');
-    expect(patch?.body).toMatchObject({ active: false });
-    // Deactivating fires the distinct deactivated toast (t44 retrofit-b).
-    expect(await screen.findByText('Utilizador desativado.')).toBeTruthy();
   });
 });
 
@@ -164,19 +193,36 @@ const BRUNO: UserView = {
   has_attestation_key: false,
 };
 
-describe('UserAccessManager (per-row password + audit key)', () => {
+describe('EditUserPage (/utilizadores/:id) — identity + access manager', () => {
+  it('renders identity and resolves a cold deep link via GET /v1/users/{id}', async () => {
+    // Empty list cache → the edit screen falls back to the single-user read.
+    const { fn, calls } = recordingFetch((r) =>
+      r.url.endsWith('/v1/users/u1') ? jsonResponse(AMELIA) : jsonResponse([]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u1');
+
+    // The display name heads the screen (title + breadcrumb); the immutable username shows
+    // as a read-only field value.
+    expect((await screen.findAllByText('Amélia Marques')).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByDisplayValue('amelia.marques')).toBeTruthy();
+    expect(screen.getByDisplayValue('Amélia Marques')).toBeTruthy();
+    expect(calls.some((c) => c.url.endsWith('/v1/users/u1'))).toBe(true);
+  });
+
   it('sets a sign-in password via POST /v1/users/{id}/secret', async () => {
     const { fn, calls } = recordingFetch((r) =>
       r.url.includes('/secret') && r.method === 'POST'
         ? jsonResponse({ ...AMELIA, has_secret: true })
-        : jsonResponse([AMELIA]),
+        : r.url.endsWith('/v1/users/u1')
+          ? jsonResponse(AMELIA)
+          : jsonResponse([AMELIA]),
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UsersPage />, ['/utilizadores']);
+    renderEditAt('u1');
 
-    // Expand the row's access manager.
-    fireEvent.click(await screen.findByRole('button', { name: /Acesso e auditoria/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Definir palavra-passe' }));
 
     fireEvent.change(await screen.findByLabelText('Nova palavra-passe'), {
@@ -196,12 +242,13 @@ describe('UserAccessManager (per-row password + audit key)', () => {
   });
 
   it('blocks mismatched passwords before hitting the server', async () => {
-    const { fn, calls } = recordingFetch(() => jsonResponse([AMELIA]));
+    const { fn, calls } = recordingFetch((r) =>
+      r.url.endsWith('/v1/users/u1') ? jsonResponse(AMELIA) : jsonResponse([AMELIA]),
+    );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UsersPage />, ['/utilizadores']);
+    renderEditAt('u1');
 
-    fireEvent.click(await screen.findByRole('button', { name: /Acesso e auditoria/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Definir palavra-passe' }));
     fireEvent.change(await screen.findByLabelText('Nova palavra-passe'), {
       target: { value: 'password123' },
@@ -223,13 +270,14 @@ describe('UserAccessManager (per-row password + audit key)', () => {
             has_attestation_key: true,
             attestation_key_fingerprint: 'ab'.repeat(16),
           })
-        : jsonResponse([BRUNO]),
+        : r.url.endsWith('/v1/users/u2')
+          ? jsonResponse(BRUNO)
+          : jsonResponse([BRUNO]),
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UsersPage />, ['/utilizadores']);
+    renderEditAt('u2');
 
-    fireEvent.click(await screen.findByRole('button', { name: /Acesso e auditoria/ }));
     fireEvent.change(await screen.findByLabelText('Palavra-passe atual'), {
       target: { value: 'current-pw' },
     });

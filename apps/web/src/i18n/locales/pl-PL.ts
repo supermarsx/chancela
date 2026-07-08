@@ -490,6 +490,18 @@ export const plPL: Catalog = {
   'users.status.inactive': 'Nieaktywny',
   'users.action.deactivate': 'Dezaktywuj',
   'users.action.reactivate': 'Ponownie aktywuj',
+  'users.list.newButton': 'Nowy użytkownik',
+  'users.table.access': 'Dostęp',
+  'users.action.edit': 'Edytuj',
+  'users.new.crumb': 'Nowy',
+  'users.new.title': 'Nowy użytkownik',
+  'users.edit.identityCard': 'Tożsamość',
+  'users.edit.usernameHint':
+    'Nazwa użytkownika jest identyfikatorem audytu i nie można jej zmienić.',
+  'users.edit.displayNameLabel': 'Nazwa wyświetlana',
+  'users.edit.activationCard': 'Stan',
+  'users.edit.notFound': 'Nie znaleziono użytkownika.',
+  'users.edit.save': 'Zapisz nazwę',
   'users.create.cardTitle': 'Nowy użytkownik',
   'users.field.username.label': 'Nazwa użytkownika',
   'users.field.username.hint':
@@ -882,5 +894,6 @@ export const plPL: Catalog = {
   'toast.user.created': 'Użytkownik utworzony.',
   'toast.user.activated': 'Użytkownik aktywowany.',
   'toast.user.deactivated': 'Użytkownik dezaktywowany.',
+  'toast.user.updated': 'Użytkownik zaktualizowany.',
   'toast.signout.success': 'Wylogowano.',
 };

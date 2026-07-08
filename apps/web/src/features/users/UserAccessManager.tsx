@@ -116,6 +116,9 @@ export function UserAccessManager({ user }: { user: UserView }) {
   return (
     <div className="access-manager">
       {/* --- Password --------------------------------------------------------- */}
+      {/* t51-e3: cross-user password-change proof slots here — the `pwMode === 'change'`
+          form below is the isolated seam; a previous-password / recovery-phrase proof step
+          can be inserted ahead of `submitSecret()` without touching the rest of this block. */}
       <div className="access-manager__block">
         <div className="access-manager__head">
           <span className="access-manager__label">{t('users.secret.label')}</span>

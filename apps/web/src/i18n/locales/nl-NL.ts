@@ -490,6 +490,18 @@ export const nlNL: Catalog = {
   'users.status.inactive': 'Inactief',
   'users.action.deactivate': 'Deactiveren',
   'users.action.reactivate': 'Heractiveren',
+  'users.list.newButton': 'Nieuwe gebruiker',
+  'users.table.access': 'Toegang',
+  'users.action.edit': 'Bewerken',
+  'users.new.crumb': 'Nieuw',
+  'users.new.title': 'Nieuwe gebruiker',
+  'users.edit.identityCard': 'Identiteit',
+  'users.edit.usernameHint':
+    'De gebruikersnaam is de audit-identificatie en kan niet worden gewijzigd.',
+  'users.edit.displayNameLabel': 'Weergavenaam',
+  'users.edit.activationCard': 'Status',
+  'users.edit.notFound': 'Gebruiker niet gevonden.',
+  'users.edit.save': 'Naam opslaan',
   'users.create.cardTitle': 'Nieuwe gebruiker',
   'users.field.username.label': 'Gebruikersnaam',
   'users.field.username.hint':
@@ -884,5 +896,6 @@ export const nlNL: Catalog = {
   'toast.user.created': 'Gebruiker aangemaakt.',
   'toast.user.activated': 'Gebruiker geactiveerd.',
   'toast.user.deactivated': 'Gebruiker gedeactiveerd.',
+  'toast.user.updated': 'Gebruiker bijgewerkt.',
   'toast.signout.success': 'Afgemeld.',
 };

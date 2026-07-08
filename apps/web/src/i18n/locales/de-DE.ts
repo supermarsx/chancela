@@ -495,6 +495,18 @@ export const deDE: Catalog = {
   'users.status.inactive': 'Inaktiv',
   'users.action.deactivate': 'Deaktivieren',
   'users.action.reactivate': 'Reaktivieren',
+  'users.list.newButton': 'Neuer Benutzer',
+  'users.table.access': 'Zugang',
+  'users.action.edit': 'Bearbeiten',
+  'users.new.crumb': 'Neu',
+  'users.new.title': 'Neuer Benutzer',
+  'users.edit.identityCard': 'Identität',
+  'users.edit.usernameHint':
+    'Der Benutzername ist die Prüf-Kennung und kann nicht geändert werden.',
+  'users.edit.displayNameLabel': 'Anzeigename',
+  'users.edit.activationCard': 'Status',
+  'users.edit.notFound': 'Benutzer nicht gefunden.',
+  'users.edit.save': 'Namen speichern',
   'users.create.cardTitle': 'Neuer Benutzer',
   'users.field.username.label': 'Benutzername',
   'users.field.username.hint':
@@ -893,5 +905,6 @@ export const deDE: Catalog = {
   'toast.user.created': 'Benutzer erstellt.',
   'toast.user.activated': 'Benutzer aktiviert.',
   'toast.user.deactivated': 'Benutzer deaktiviert.',
+  'toast.user.updated': 'Benutzer aktualisiert.',
   'toast.signout.success': 'Abgemeldet.',
 };

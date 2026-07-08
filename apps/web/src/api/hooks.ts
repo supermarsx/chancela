@@ -55,6 +55,7 @@ export const keys = {
     ['cae', 'children', code, revision] as const,
   lawManifest: ['law', 'manifest'] as const,
   users: ['users'] as const,
+  user: (id: string) => ['users', id] as const,
   session: ['session'] as const,
   roster: ['session', 'roster'] as const,
 };
@@ -420,6 +421,17 @@ export function useFetchLawPdf() {
 
 export function useUsers() {
   return useQuery({ queryKey: keys.users, queryFn: () => api.listUsers() });
+}
+
+/**
+ * A single user by id (`GET /v1/users/{id}`, t50 W2) — the edit screen's cold-deep-link
+ * fallback: when a `/utilizadores/:id` URL is opened directly the list cache may be empty,
+ * so the autonomous edit page resolves the user through this read. Sharing the `['users',
+ * id]` key means a mutation that invalidates `keys.users` (create/toggle/secret/key) also
+ * refetches an open detail view.
+ */
+export function useUser(id: string) {
+  return useQuery({ queryKey: keys.user(id), queryFn: () => api.getUser(id), enabled: !!id });
 }
 
 export function useCreateUser() {
