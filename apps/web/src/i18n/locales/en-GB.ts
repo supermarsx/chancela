@@ -545,7 +545,8 @@ export const enGB: Catalog = {
   'settings.appearance.reroll': 'Regenerate grain',
   'settings.identity.cardTitle': 'Identity',
   'settings.identity.orgName.label': 'Organisation name',
-  'settings.identity.orgName.hint': 'Appears in documents and headers.',
+  'settings.identity.orgName.hint':
+    'Optional operator identity. It does not replace each entity’s name on documents.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'The author of each audit event is the signed-in user (selected in the top-right corner), not a value entered here.',
@@ -1131,4 +1132,39 @@ export const enGB: Catalog = {
     'Runs a factory reset on the server, then clears the interface and reboots. Everything is returned to a blank first-run state.',
   'data.full.button': 'Full reset',
   'data.full.pending': 'Resetting…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Help',
+  'settings.appearance.theme.help':
+    'Choose a light, dark or system theme. The change applies immediately across the whole app.',
+  'settings.appearance.leatherBg.help':
+    'Adds a subtle leather texture to the background. Purely cosmetic — it does not affect documents.',
+  'settings.appearance.leatherButtons.help':
+    'Applies the leather texture to buttons. Cosmetic only.',
+  'settings.appearance.intensity.help':
+    'Controls the opacity of the texture grain, from 0 (none) to 100 (maximum). Only takes effect while the texture is on.',
+  'settings.identity.orgName.help':
+    'The name of your organisation (the office or body that uses the app). Optional. It does not replace each entity’s own name — documents always use the name of the entity they concern.',
+  'settings.documents.locale.help':
+    'Sets the interface language and the default language of generated documents.',
+  'settings.documents.numbering.help':
+    'The scheme pre-selected when opening a new book. You can change it per book.',
+  'settings.documents.caeUrl.help':
+    'Address of the CAE dataset that the “Update catalogue” button under Tools downloads. Leave blank to use the environment variable, if set.',
+  'settings.signing.family.help':
+    'The signature method suggested by default when sealing. Chave Móvel Digital is the recommended option in Portugal.',
+  'settings.signing.tsaUrl.help':
+    'Address of the service that applies the timestamp (date and time) to signatures. The default points to the official Portuguese service.',
+  'settings.signing.tslUrl.help':
+    'Address of the trust list used to validate signing certificates. The default points to the official Portuguese list.',
+  'settings.signing.requireQualified.help':
+    'When on, sealing requires a qualified electronic signature; otherwise advanced signatures are also accepted.',
+  'settings.users.cardTitle': 'Users',
+  'books.open.kindHelp':
+    'Choose the type matching the body that meets: general meeting (minutes of the members’ assembly), management/board, supervisory board, or condominium assembly.',
+  'books.open.schemeHelp':
+    'Sequential numbers the minutes continuously within one book; loose-leaf is for books made of individually numbered sheets. When in doubt, use Sequential.',
+  'books.open.guidanceTitle': 'How to choose',
+  'books.open.guidanceBody':
+    'Choose the book matching the body that meets and the right numbering scheme — the help icons on each field explain the options. The signature method used when sealing minutes is configured in Settings → Signatures.',
 };

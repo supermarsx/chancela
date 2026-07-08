@@ -550,7 +550,8 @@ export const itIT: Catalog = {
   'settings.appearance.reroll': 'Rigenera la grana',
   'settings.identity.cardTitle': 'Identità',
   'settings.identity.orgName.label': 'Nome dell’organizzazione',
-  'settings.identity.orgName.hint': 'Compare nei documenti e nelle intestazioni.',
+  'settings.identity.orgName.hint':
+    'Identità facoltativa dell’operatore. Non sostituisce il nome di ciascun ente nei documenti.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'L’autore di ogni evento di controllo è l’utente con la sessione avviata (selezionato nell’angolo in alto a destra), non un valore inserito qui.',
@@ -1159,4 +1160,39 @@ export const itIT: Catalog = {
     'Esegue un ripristino di fabbrica sul server, quindi cancella l’interfaccia e riavvia. Tutto viene riportato a uno stato di primo avvio vuoto.',
   'data.full.button': 'Ripristino totale',
   'data.full.pending': 'Ripristino…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Aiuto',
+  'settings.appearance.theme.help':
+    'Scegli un tema chiaro, scuro o di sistema. La modifica si applica immediatamente a tutta l’applicazione.',
+  'settings.appearance.leatherBg.help':
+    'Aggiunge una sottile texture in pelle allo sfondo. È puramente estetico e non incide sui documenti.',
+  'settings.appearance.leatherButtons.help':
+    'Applica la texture in pelle ai pulsanti. Solo estetico.',
+  'settings.appearance.intensity.help':
+    'Regola l’opacità della grana della texture, da 0 (nessuna) a 100 (massima). Ha effetto solo con la texture attiva.',
+  'settings.identity.orgName.help':
+    'Nome della tua organizzazione (lo studio o l’ente che utilizza l’applicazione). Facoltativo. Non sostituisce il nome di ciascun ente: i documenti usano sempre il nome dell’ente a cui si riferiscono.',
+  'settings.documents.locale.help':
+    'Imposta la lingua dell’interfaccia e la lingua predefinita dei documenti generati.',
+  'settings.documents.numbering.help':
+    'Schema preselezionato all’apertura di un nuovo libro. Puoi cambiarlo per ogni libro.',
+  'settings.documents.caeUrl.help':
+    'Indirizzo del set di dati CAE scaricato dal pulsante «Aggiorna catalogo», in Strumenti. Lascia vuoto per usare la variabile d’ambiente, se definita.',
+  'settings.signing.family.help':
+    'Metodo di firma suggerito per impostazione predefinita durante la sigillatura. Chave Móvel Digital è l’opzione consigliata in Portogallo.',
+  'settings.signing.tsaUrl.help':
+    'Indirizzo del servizio che applica la marca temporale (data e ora) alle firme. Il valore predefinito punta al servizio ufficiale portoghese.',
+  'settings.signing.tslUrl.help':
+    'Indirizzo dell’elenco di fiducia usato per convalidare i certificati di firma. Il valore predefinito punta all’elenco ufficiale portoghese.',
+  'settings.signing.requireQualified.help':
+    'Se attivo, la sigillatura richiede una firma elettronica qualificata; in caso contrario, sono accettate anche firme avanzate.',
+  'settings.users.cardTitle': 'Utenti',
+  'books.open.kindHelp':
+    'Scegli il tipo corrispondente all’organo che si riunisce: assemblea generale (verbali dell’assemblea dei soci), gerenza/amministrazione, organo di controllo o assemblea di condominio.',
+  'books.open.schemeHelp':
+    'Sequenziale numera i verbali in modo continuo nello stesso libro; fogli mobili è per libri composti da fogli numerati singolarmente. In caso di dubbio, usa Sequenziale.',
+  'books.open.guidanceTitle': 'Come scegliere',
+  'books.open.guidanceBody':
+    'Scegli il libro corrispondente all’organo che si riunisce e lo schema di numerazione adatto: le icone di aiuto di ogni campo spiegano le opzioni. Il metodo di firma usato durante la sigillatura dei verbali si configura in Impostazioni → Firme.',
 };

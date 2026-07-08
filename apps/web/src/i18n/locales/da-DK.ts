@@ -548,7 +548,8 @@ export const daDK: Catalog = {
   'settings.appearance.reroll': 'Regenerér korn',
   'settings.identity.cardTitle': 'Identitet',
   'settings.identity.orgName.label': 'Organisationens navn',
-  'settings.identity.orgName.hint': 'Vises i dokumenter og sidehoveder.',
+  'settings.identity.orgName.hint':
+    'Valgfri operatøridentitet. Erstatter ikke den enkelte enheds navn i dokumenter.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Ophavsmanden til hver revisionshændelse er den bruger, der er logget ind (valgt øverst til højre), ikke en værdi indtastet her.',
@@ -1155,4 +1156,38 @@ export const daDK: Catalog = {
     'Udfører en fabriksnulstilling på serveren, rydder derefter grænsefladen og genstarter. Alt bringes tilbage til en tom førstegangstilstand.',
   'data.full.button': 'Fuld nulstilling',
   'data.full.pending': 'Nulstiller…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Hjælp',
+  'settings.appearance.theme.help':
+    'Vælg et lyst, mørkt eller systemtema. Ændringen anvendes straks i hele appen.',
+  'settings.appearance.leatherBg.help':
+    'Tilføjer en diskret lædertekstur til baggrunden. Rent kosmetisk — det påvirker ikke dokumenter.',
+  'settings.appearance.leatherButtons.help': 'Anvender læderteksturen på knapper. Kun kosmetisk.',
+  'settings.appearance.intensity.help':
+    'Styrer teksturkornets uigennemsigtighed, fra 0 (ingen) til 100 (maksimum). Virker kun, når teksturen er slået til.',
+  'settings.identity.orgName.help':
+    'Navnet på din organisation (kontoret eller enheden, der bruger appen). Valgfrit. Det erstatter ikke den enkelte enheds eget navn — dokumenter bruger altid navnet på den enhed, de vedrører.',
+  'settings.documents.locale.help':
+    'Angiver grænsefladens sprog og standardsproget for genererede dokumenter.',
+  'settings.documents.numbering.help':
+    'Skema, der er forvalgt, når en ny bog åbnes. Du kan ændre det for hver bog.',
+  'settings.documents.caeUrl.help':
+    'Adressen på det CAE-datasæt, som knappen “Opdater katalog” under Værktøjer henter. Lad feltet stå tomt for at bruge miljøvariablen, hvis den er angivet.',
+  'settings.signing.family.help':
+    'Signaturmetode, der foreslås som standard ved forsegling. Chave Móvel Digital er den anbefalede mulighed i Portugal.',
+  'settings.signing.tsaUrl.help':
+    'Adressen på den tjeneste, der tilføjer tidsstempel (dato og klokkeslæt) til signaturer. Standarden peger på den officielle portugisiske tjeneste.',
+  'settings.signing.tslUrl.help':
+    'Adressen på den tillidsliste, der bruges til at validere signaturcertifikater. Standarden peger på den officielle portugisiske liste.',
+  'settings.signing.requireQualified.help':
+    'Når det er slået til, kræver forsegling en kvalificeret elektronisk signatur; ellers accepteres også avancerede signaturer.',
+  'settings.users.cardTitle': 'Brugere',
+  'books.open.kindHelp':
+    'Vælg den type, der svarer til det organ, der mødes: generalforsamling (referater af deltagerforsamlingen), ledelse/bestyrelse, tilsynsorgan eller ejerforeningsmøde.',
+  'books.open.schemeHelp':
+    'Sekventiel nummererer referaterne fortløbende i samme bog; løsblade er til bøger bestående af enkeltvis nummererede ark. Brug Sekventiel, hvis du er i tvivl.',
+  'books.open.guidanceTitle': 'Sådan vælger du',
+  'books.open.guidanceBody':
+    'Vælg den bog, der svarer til det organ, der mødes, og det rette nummereringsskema — hjælpeikonerne ved hvert felt forklarer mulighederne. Signaturmetoden, der bruges ved forsegling af referater, konfigureres under Indstillinger → Signaturer.',
 };

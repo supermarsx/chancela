@@ -551,7 +551,8 @@ export const frFR: Catalog = {
   'settings.appearance.reroll': 'Régénérer le grain',
   'settings.identity.cardTitle': 'Identité',
   'settings.identity.orgName.label': 'Nom de l’organisation',
-  'settings.identity.orgName.hint': 'Apparaît dans les documents et les en-têtes.',
+  'settings.identity.orgName.hint':
+    'Identité facultative de l’opérateur. Ne remplace pas le nom de chaque entité dans les documents.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'L’auteur de chaque événement d’audit est l’utilisateur connecté (sélectionné dans le coin supérieur droit), et non une valeur saisie ici.',
@@ -1158,4 +1159,39 @@ export const frFR: Catalog = {
     'Exécute une réinitialisation d’usine sur le serveur, puis efface l’interface et redémarre. Tout revient à un état de premier démarrage vierge.',
   'data.full.button': 'Réinitialisation totale',
   'data.full.pending': 'Réinitialisation…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Aide',
+  'settings.appearance.theme.help':
+    'Choisissez un thème clair, sombre ou celui du système. Le changement s’applique immédiatement à toute l’application.',
+  'settings.appearance.leatherBg.help':
+    'Ajoute une subtile texture de cuir à l’arrière-plan. Purement esthétique, sans effet sur les documents.',
+  'settings.appearance.leatherButtons.help':
+    'Applique la texture de cuir aux boutons. Esthétique uniquement.',
+  'settings.appearance.intensity.help':
+    'Règle l’opacité du grain de la texture, de 0 (aucun) à 100 (maximum). N’a d’effet que lorsque la texture est activée.',
+  'settings.identity.orgName.help':
+    'Nom de votre organisation (le cabinet ou l’entité qui utilise l’application). Facultatif. Il ne remplace pas le nom de chaque entité : les documents utilisent toujours le nom de l’entité concernée.',
+  'settings.documents.locale.help':
+    'Définit la langue de l’interface et la langue par défaut des documents générés.',
+  'settings.documents.numbering.help':
+    'Schéma présélectionné à l’ouverture d’un nouveau livre. Vous pouvez le modifier pour chaque livre.',
+  'settings.documents.caeUrl.help':
+    'Adresse du jeu de données CAE que télécharge le bouton « Mettre à jour le catalogue », dans Outils. Laissez vide pour utiliser la variable d’environnement, si elle est définie.',
+  'settings.signing.family.help':
+    'Méthode de signature suggérée par défaut lors du scellement. Chave Móvel Digital est l’option recommandée au Portugal.',
+  'settings.signing.tsaUrl.help':
+    'Adresse du service qui applique l’horodatage (date et heure) aux signatures. La valeur par défaut pointe vers le service officiel portugais.',
+  'settings.signing.tslUrl.help':
+    'Adresse de la liste de confiance utilisée pour valider les certificats de signature. La valeur par défaut pointe vers la liste officielle portugaise.',
+  'settings.signing.requireQualified.help':
+    'Lorsqu’activé, le scellement exige une signature électronique qualifiée ; sinon, les signatures avancées sont également acceptées.',
+  'settings.users.cardTitle': 'Utilisateurs',
+  'books.open.kindHelp':
+    'Choisissez le type correspondant à l’organe qui se réunit : assemblée générale (procès-verbaux de l’assemblée des associés), gérance/administration, organe de surveillance ou assemblée de copropriété.',
+  'books.open.schemeHelp':
+    'Séquentiel numérote les procès-verbaux en continu dans le même livre ; feuilles mobiles concerne les livres composés de feuilles numérotées individuellement. En cas de doute, utilisez Séquentiel.',
+  'books.open.guidanceTitle': 'Comment choisir',
+  'books.open.guidanceBody':
+    'Choisissez le livre correspondant à l’organe qui se réunit et le schéma de numérotation adapté — les icônes d’aide de chaque champ expliquent les options. La méthode de signature utilisée lors du scellement des procès-verbaux se configure dans Paramètres → Signatures.',
 };

@@ -12,6 +12,7 @@ import type {
   TextareaHTMLAttributes,
 } from 'react';
 import { useT } from '../i18n';
+import { FieldHelp } from './FieldHelp';
 
 // Presentational primitives kept in their own files (they carry a little local state or
 // a router dependency) but surfaced through this barrel so features import from one place.
@@ -21,6 +22,7 @@ export { ButtonLink } from './ButtonLink';
 export { PageHeader } from './PageHeader';
 export { SubNav, type SubNavItem } from './SubNav';
 export { Tooltip, IconButton, type TooltipPlacement } from './Tooltip';
+export { FieldHelp } from './FieldHelp';
 export * as Icon from './icons';
 export { Skeleton, SkeletonText, SkeletonTable, SkeletonCards, SkeletonDeflist } from './Skeleton';
 export { ToastProvider, useToast, type ToastHandle, type ToastVariant } from './toast';
@@ -65,15 +67,27 @@ interface FieldProps {
   htmlFor?: string;
   hint?: ReactNode;
   error?: ReactNode;
+  /** Optional plain-language explanation → a {@link FieldHelp} glyph after the label. */
+  help?: string;
   children: ReactNode;
 }
 
-export function Field({ label, htmlFor, hint, error, children }: FieldProps) {
+export function Field({ label, htmlFor, hint, error, help, children }: FieldProps) {
+  const labelEl = (
+    <label className="field__label" htmlFor={htmlFor}>
+      {label}
+    </label>
+  );
   return (
     <div className="field">
-      <label className="field__label" htmlFor={htmlFor}>
-        {label}
-      </label>
+      {help ? (
+        <span className="field__labelrow">
+          {labelEl}
+          <FieldHelp text={help} />
+        </span>
+      ) : (
+        labelEl
+      )}
       {children}
       {hint && !error ? <p className="field__hint">{hint}</p> : null}
       {error ? (

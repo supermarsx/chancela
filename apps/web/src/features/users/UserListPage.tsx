@@ -97,9 +97,57 @@ function UserRow({ user }: { user: UserView }) {
   );
 }
 
-export function UserListPage() {
+/**
+ * The roster body — a self-contained Card with its own "novo utilizador" action and the
+ * table/empty/error states. Rendered both standalone under {@link UserListPage} (with a
+ * PageHeader above it) and inline as the Configurações → Utilizadores sub-tab (t60 E5),
+ * where the SubNav supplies the page header instead. Carries no PageHeader of its own so
+ * it drops cleanly into either host.
+ */
+export function UsersList() {
   const t = useT();
   const users = useUsers();
+
+  return (
+    <Card
+      title={t('users.list.cardTitle')}
+      actions={
+        <ButtonLink to="/utilizadores/novo" variant="primary" icon={<Icon.Plus />}>
+          {t('users.list.newButton')}
+        </ButtonLink>
+      }
+    >
+      {users.isLoading ? (
+        <SkeletonTable cols={5} />
+      ) : users.error ? (
+        <ErrorNote error={users.error} />
+      ) : (users.data ?? []).length === 0 ? (
+        <EmptyState title={t('users.list.emptyTitle')}>
+          <p>{t('users.list.emptyBody')}</p>
+        </EmptyState>
+      ) : (
+        <Table
+          head={
+            <tr>
+              <th>{t('users.table.username')}</th>
+              <th>{t('users.table.name')}</th>
+              <th>{t('users.table.state')}</th>
+              <th>{t('users.table.access')}</th>
+              <th>{t('users.table.action')}</th>
+            </tr>
+          }
+        >
+          {(users.data ?? []).map((u) => (
+            <UserRow key={u.id} user={u} />
+          ))}
+        </Table>
+      )}
+    </Card>
+  );
+}
+
+export function UserListPage() {
+  const t = useT();
 
   return (
     <div className="stack">
@@ -118,40 +166,9 @@ export function UserListPage() {
             {t('users.page.ledeAfter')}
           </>
         }
-        actions={
-          <ButtonLink to="/utilizadores/novo" variant="primary" icon={<Icon.Plus />}>
-            {t('users.list.newButton')}
-          </ButtonLink>
-        }
       />
 
-      <Card title={t('users.list.cardTitle')}>
-        {users.isLoading ? (
-          <SkeletonTable cols={5} />
-        ) : users.error ? (
-          <ErrorNote error={users.error} />
-        ) : (users.data ?? []).length === 0 ? (
-          <EmptyState title={t('users.list.emptyTitle')}>
-            <p>{t('users.list.emptyBody')}</p>
-          </EmptyState>
-        ) : (
-          <Table
-            head={
-              <tr>
-                <th>{t('users.table.username')}</th>
-                <th>{t('users.table.name')}</th>
-                <th>{t('users.table.state')}</th>
-                <th>{t('users.table.access')}</th>
-                <th>{t('users.table.action')}</th>
-              </tr>
-            }
-          >
-            {(users.data ?? []).map((u) => (
-              <UserRow key={u.id} user={u} />
-            ))}
-          </Table>
-        )}
-      </Card>
+      <UsersList />
     </div>
   );
 }

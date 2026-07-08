@@ -80,6 +80,24 @@ describe('NewBookPage', () => {
   });
 });
 
+describe('OpenBookForm — book-open guidance (t60)', () => {
+  it('shows the autonomy info panel and per-field help on kind and numbering', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/settings', body: DEFAULT_SETTINGS }]));
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/entidades/ent-1" element={<OpenBookForm entityId="ent-1" />} />
+      </Routes>,
+      ['/entidades/ent-1'],
+    );
+
+    // The concise autonomy-oriented info panel sits at the top of the form.
+    expect(await screen.findByText('Como escolher')).toBeTruthy();
+    // A FieldHelp glyph accompanies the book-kind and numbering-scheme fields (≥2 "Ajuda").
+    expect(screen.getAllByRole('button', { name: 'Ajuda' }).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('OpenBookForm — toast on success', () => {
   it('fires a success toast after opening a book (survives navigate-away)', async () => {
     const book = { id: 'book-9', entity_id: 'ent-1' };

@@ -545,7 +545,8 @@ export const fiFI: Catalog = {
   'settings.appearance.reroll': 'Luo rae uudelleen',
   'settings.identity.cardTitle': 'Identiteetti',
   'settings.identity.orgName.label': 'Organisaation nimi',
-  'settings.identity.orgName.hint': 'Näkyy asiakirjoissa ja otsikoissa.',
+  'settings.identity.orgName.hint':
+    'Valinnainen käyttäjän tunniste. Ei korvaa kunkin yksikön nimeä asiakirjoissa.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Kunkin tarkastustapahtuman tekijä on kirjautunut käyttäjä (valittu oikeasta yläkulmasta), ei tässä syötetty arvo.',
@@ -1153,4 +1154,38 @@ export const fiFI: Catalog = {
     'Suorittaa tehdasasetusten palautuksen palvelimella, tyhjentää sitten käyttöliittymän ja käynnistää uudelleen. Kaikki palautetaan tyhjään ensikäynnistystilaan.',
   'data.full.button': 'Täysi palautus',
   'data.full.pending': 'Palautetaan…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Ohje',
+  'settings.appearance.theme.help':
+    'Valitse vaalea, tumma tai järjestelmän teema. Muutos tulee voimaan heti koko sovelluksessa.',
+  'settings.appearance.leatherBg.help':
+    'Lisää taustaan hienovaraisen nahkatekstuurin. Puhtaasti ulkoasullinen — ei vaikuta asiakirjoihin.',
+  'settings.appearance.leatherButtons.help': 'Käyttää nahkatekstuuria painikkeissa. Vain ulkoasu.',
+  'settings.appearance.intensity.help':
+    'Säätää tekstuurin rakeisuuden peittävyyttä välillä 0 (ei lainkaan) – 100 (enimmäismäärä). Vaikuttaa vain, kun tekstuuri on käytössä.',
+  'settings.identity.orgName.help':
+    'Organisaatiosi nimi (sovellusta käyttävä toimisto tai yksikkö). Valinnainen. Se ei korvaa kunkin yksikön omaa nimeä — asiakirjoissa käytetään aina sen yksikön nimeä, jota ne koskevat.',
+  'settings.documents.locale.help':
+    'Määrittää käyttöliittymän kielen ja luotavien asiakirjojen oletuskielen.',
+  'settings.documents.numbering.help':
+    'Uutta kirjaa avattaessa esivalittu numerointitapa. Voit muuttaa sen kirjakohtaisesti.',
+  'settings.documents.caeUrl.help':
+    'Sen CAE-tietojoukon osoite, jonka Työkalut-osion ”Päivitä luettelo” -painike lataa. Jätä tyhjäksi käyttääksesi ympäristömuuttujaa, jos se on määritetty.',
+  'settings.signing.family.help':
+    'Sinetöinnissä oletuksena ehdotettu allekirjoitustapa. Chave Móvel Digital on Portugalissa suositeltu vaihtoehto.',
+  'settings.signing.tsaUrl.help':
+    'Sen palvelun osoite, joka lisää allekirjoituksiin aikaleiman (päivämäärä ja kellonaika). Oletus osoittaa viralliseen portugalilaiseen palveluun.',
+  'settings.signing.tslUrl.help':
+    'Allekirjoitusvarmenteiden vahvistamiseen käytettävän luottamusluettelon osoite. Oletus osoittaa viralliseen portugalilaiseen luetteloon.',
+  'settings.signing.requireQualified.help':
+    'Käytössä ollessaan sinetöinti edellyttää hyväksyttyä sähköistä allekirjoitusta; muutoin hyväksytään myös kehittyneet allekirjoitukset.',
+  'settings.users.cardTitle': 'Käyttäjät',
+  'books.open.kindHelp':
+    'Valitse kokoontuvaa toimielintä vastaava tyyppi: yhtiökokous (osakkaiden kokouksen pöytäkirjat), johto/hallitus, valvontaelin tai taloyhtiön kokous.',
+  'books.open.schemeHelp':
+    'Juokseva numeroi pöytäkirjat yhtäjaksoisesti samaan kirjaan; irtolehti on tarkoitettu kirjoille, jotka koostuvat erikseen numeroiduista lehdistä. Käytä epävarmassa tilanteessa Juokseva.',
+  'books.open.guidanceTitle': 'Miten valita',
+  'books.open.guidanceBody':
+    'Valitse kokoontuvaa toimielintä vastaava kirja ja sopiva numerointitapa — kunkin kentän ohjekuvakkeet selittävät vaihtoehdot. Pöytäkirjojen sinetöinnissä käytettävä allekirjoitustapa määritetään kohdassa Asetukset → Allekirjoitukset.',
 };

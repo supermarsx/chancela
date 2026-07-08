@@ -213,6 +213,56 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Guardar agora' })).toBeTruthy();
   });
 
+  it('shows a FieldHelp affordance on config fields (Aparência by default)', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes']);
+
+    // The theme control is present…
+    expect(await screen.findByLabelText('Tema')).toBeTruthy();
+    // …and at least one help trigger (accessible name "Ajuda") sits beside a field.
+    expect(screen.getAllByRole('button', { name: 'Ajuda' }).length).toBeGreaterThan(0);
+  });
+
+  it('hosts a Utilizadores sub-tab that lists users inline', async () => {
+    const users = [
+      {
+        id: 'u1',
+        username: 'amelia.marques',
+        display_name: 'Amélia Marques',
+        active: true,
+        has_secret: true,
+        has_attestation_key: false,
+        has_recovery_phrase: false,
+      },
+    ];
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.includes('/v1/users')) return Promise.resolve(jsonResponse(users));
+      if (url.includes('/v1/settings')) {
+        if (method === 'PUT') return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+        return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      }
+      if (url.includes('/v1/ledger/verify'))
+        return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
+      if (url.includes('/health'))
+        return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=utilizadores']);
+
+    // The sub-tab button exists and the roster renders inline (the fictional example user).
+    expect(await screen.findByRole('button', { name: 'Utilizadores' })).toBeTruthy();
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+    // The inline "novo utilizador" action links to the standalone create route (still valid).
+    const novo = screen.getByRole('link', { name: /novo utilizador/i });
+    expect(novo.getAttribute('href')).toBe('/utilizadores/novo');
+  });
+
   it('resets a signing URL to its default via the icon-only reset button', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);

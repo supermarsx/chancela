@@ -548,7 +548,8 @@ export const plPL: Catalog = {
   'settings.appearance.reroll': 'Wygeneruj ziarno ponownie',
   'settings.identity.cardTitle': 'Tożsamość',
   'settings.identity.orgName.label': 'Nazwa organizacji',
-  'settings.identity.orgName.hint': 'Pojawia się w dokumentach i nagłówkach.',
+  'settings.identity.orgName.hint':
+    'Opcjonalna tożsamość operatora. Nie zastępuje nazwy danego podmiotu w dokumentach.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Autorem każdego zdarzenia audytu jest zalogowany użytkownik (wybrany w prawym górnym rogu), a nie wartość wprowadzona tutaj.',
@@ -1154,4 +1155,39 @@ export const plPL: Catalog = {
     'Wykonuje przywracanie ustawień fabrycznych na serwerze, następnie czyści interfejs i uruchamia ponownie. Wszystko wraca do pustego stanu pierwszego uruchomienia.',
   'data.full.button': 'Pełny reset',
   'data.full.pending': 'Przywracanie…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Pomoc',
+  'settings.appearance.theme.help':
+    'Wybierz motyw jasny, ciemny lub systemowy. Zmiana jest stosowana natychmiast w całej aplikacji.',
+  'settings.appearance.leatherBg.help':
+    'Dodaje subtelną teksturę skóry w tle. Wyłącznie estetyczne — nie wpływa na dokumenty.',
+  'settings.appearance.leatherButtons.help':
+    'Stosuje teksturę skóry do przycisków. Tylko estetyczne.',
+  'settings.appearance.intensity.help':
+    'Reguluje krycie ziarna tekstury, od 0 (brak) do 100 (maksimum). Działa tylko przy włączonej teksturze.',
+  'settings.identity.orgName.help':
+    'Nazwa Twojej organizacji (kancelarii lub podmiotu korzystającego z aplikacji). Opcjonalne. Nie zastępuje nazwy poszczególnych podmiotów — dokumenty zawsze używają nazwy podmiotu, którego dotyczą.',
+  'settings.documents.locale.help':
+    'Ustawia język interfejsu oraz domyślny język generowanych dokumentów.',
+  'settings.documents.numbering.help':
+    'Schemat wstępnie wybrany przy otwieraniu nowej księgi. Można go zmienić dla każdej księgi.',
+  'settings.documents.caeUrl.help':
+    'Adres zbioru danych CAE pobieranego przyciskiem „Aktualizuj katalog” w Narzędziach. Pozostaw puste, aby użyć zmiennej środowiskowej, jeśli jest ustawiona.',
+  'settings.signing.family.help':
+    'Metoda podpisu sugerowana domyślnie podczas pieczętowania. Chave Móvel Digital to opcja zalecana w Portugalii.',
+  'settings.signing.tsaUrl.help':
+    'Adres usługi dodającej znacznik czasu (data i godzina) do podpisów. Wartość domyślna wskazuje oficjalną usługę portugalską.',
+  'settings.signing.tslUrl.help':
+    'Adres listy zaufania używanej do weryfikacji certyfikatów podpisu. Wartość domyślna wskazuje oficjalną listę portugalską.',
+  'settings.signing.requireQualified.help':
+    'Gdy włączone, pieczętowanie wymaga kwalifikowanego podpisu elektronicznego; w przeciwnym razie akceptowane są także podpisy zaawansowane.',
+  'settings.users.cardTitle': 'Użytkownicy',
+  'books.open.kindHelp':
+    'Wybierz typ odpowiadający obradującemu organowi: zgromadzenie ogólne (protokoły zgromadzenia wspólników), zarząd/kierownictwo, organ nadzorczy lub zebranie wspólnoty mieszkaniowej.',
+  'books.open.schemeHelp':
+    'Sekwencyjny numeruje protokoły w sposób ciągły w tej samej księdze; luźne kartki dotyczą ksiąg złożonych z oddzielnie numerowanych kart. W razie wątpliwości użyj Sekwencyjnego.',
+  'books.open.guidanceTitle': 'Jak wybrać',
+  'books.open.guidanceBody':
+    'Wybierz księgę odpowiadającą obradującemu organowi oraz właściwy schemat numeracji — ikony pomocy przy każdym polu wyjaśniają opcje. Metodę podpisu używaną podczas pieczętowania protokołów konfiguruje się w Ustawienia → Podpisy.',
 };

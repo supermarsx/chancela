@@ -554,7 +554,8 @@ export const deDE: Catalog = {
   'settings.appearance.reroll': 'Körnung neu erzeugen',
   'settings.identity.cardTitle': 'Identität',
   'settings.identity.orgName.label': 'Name der Organisation',
-  'settings.identity.orgName.hint': 'Erscheint in Dokumenten und Kopfzeilen.',
+  'settings.identity.orgName.hint':
+    'Optionale Betreiberidentität. Ersetzt nicht den Namen des jeweiligen Rechtsträgers in Dokumenten.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Der Autor jedes Prüfereignisses ist der angemeldete Benutzer (oben rechts ausgewählt), nicht ein hier eingegebener Wert.',
@@ -1167,4 +1168,39 @@ export const deDE: Catalog = {
     'Führt einen Werksreset auf dem Server durch, löscht dann die Oberfläche und startet neu. Alles wird auf einen leeren Erststart-Zustand zurückgesetzt.',
   'data.full.button': 'Vollständiger Reset',
   'data.full.pending': 'Wird zurückgesetzt…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Hilfe',
+  'settings.appearance.theme.help':
+    'Wählen Sie ein helles, dunkles oder Systemdesign. Die Änderung gilt sofort für die gesamte App.',
+  'settings.appearance.leatherBg.help':
+    'Fügt dem Hintergrund eine dezente Lederstruktur hinzu. Rein optisch – ohne Auswirkung auf Dokumente.',
+  'settings.appearance.leatherButtons.help':
+    'Wendet die Lederstruktur auf Schaltflächen an. Nur optisch.',
+  'settings.appearance.intensity.help':
+    'Steuert die Deckkraft der Texturkörnung, von 0 (keine) bis 100 (maximal). Wirkt nur bei aktivierter Textur.',
+  'settings.identity.orgName.help':
+    'Name Ihrer Organisation (die Kanzlei oder Stelle, die die App nutzt). Optional. Er ersetzt nicht den Namen der einzelnen Rechtsträger – Dokumente verwenden stets den Namen des betreffenden Rechtsträgers.',
+  'settings.documents.locale.help':
+    'Legt die Sprache der Oberfläche und die Standardsprache der erzeugten Dokumente fest.',
+  'settings.documents.numbering.help':
+    'Beim Anlegen eines neuen Buchs vorausgewähltes Schema. Sie können es je Buch ändern.',
+  'settings.documents.caeUrl.help':
+    'Adresse des CAE-Datensatzes, den die Schaltfläche „Katalog aktualisieren“ unter Werkzeuge herunterlädt. Leer lassen, um die Umgebungsvariable zu verwenden, falls gesetzt.',
+  'settings.signing.family.help':
+    'Beim Siegeln standardmäßig vorgeschlagene Signaturmethode. Chave Móvel Digital ist die in Portugal empfohlene Option.',
+  'settings.signing.tsaUrl.help':
+    'Adresse des Dienstes, der Signaturen einen Zeitstempel (Datum und Uhrzeit) hinzufügt. Der Standardwert verweist auf den offiziellen portugiesischen Dienst.',
+  'settings.signing.tslUrl.help':
+    'Adresse der Vertrauensliste zur Prüfung der Signaturzertifikate. Der Standardwert verweist auf die offizielle portugiesische Liste.',
+  'settings.signing.requireQualified.help':
+    'Wenn aktiviert, erfordert das Siegeln eine qualifizierte elektronische Signatur; andernfalls werden auch fortgeschrittene Signaturen akzeptiert.',
+  'settings.users.cardTitle': 'Benutzer',
+  'books.open.kindHelp':
+    'Wählen Sie den Typ passend zum tagenden Organ: Generalversammlung (Protokolle der Gesellschafterversammlung), Geschäftsführung/Verwaltung, Aufsichtsorgan oder Eigentümerversammlung.',
+  'books.open.schemeHelp':
+    'Fortlaufend nummeriert die Protokolle durchgehend im selben Buch; Loseblatt ist für Bücher aus einzeln nummerierten Blättern. Im Zweifel Fortlaufend verwenden.',
+  'books.open.guidanceTitle': 'So wählen Sie',
+  'books.open.guidanceBody':
+    'Wählen Sie das Buch passend zum tagenden Organ und das richtige Nummerierungsschema – die Hilfesymbole an jedem Feld erläutern die Optionen. Die beim Siegeln der Protokolle verwendete Signaturmethode wird unter Einstellungen → Signaturen konfiguriert.',
 };

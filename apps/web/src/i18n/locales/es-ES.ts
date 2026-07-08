@@ -550,7 +550,8 @@ export const esES: Catalog = {
   'settings.appearance.reroll': 'Regenerar el grano',
   'settings.identity.cardTitle': 'Identidad',
   'settings.identity.orgName.label': 'Nombre de la organización',
-  'settings.identity.orgName.hint': 'Aparece en los documentos y encabezados.',
+  'settings.identity.orgName.hint':
+    'Identidad opcional del operador. No sustituye el nombre de cada entidad en los documentos.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'El autor de cada evento de auditoría es el usuario con la sesión iniciada (seleccionado en la esquina superior derecha), no un valor introducido aquí.',
@@ -1159,4 +1160,39 @@ export const esES: Catalog = {
     'Ejecuta un restablecimiento de fábrica en el servidor y luego borra la interfaz y reinicia. Todo vuelve a un estado de primera ejecución en blanco.',
   'data.full.button': 'Restablecimiento total',
   'data.full.pending': 'Restableciendo…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Ayuda',
+  'settings.appearance.theme.help':
+    'Elija un tema claro, oscuro o del sistema. El cambio se aplica de inmediato a toda la aplicación.',
+  'settings.appearance.leatherBg.help':
+    'Añade una sutil textura de cuero al fondo. Es puramente estético y no afecta a los documentos.',
+  'settings.appearance.leatherButtons.help':
+    'Aplica la textura de cuero a los botones. Solo estético.',
+  'settings.appearance.intensity.help':
+    'Controla la opacidad del grano de la textura, de 0 (ninguno) a 100 (máximo). Solo tiene efecto con la textura activada.',
+  'settings.identity.orgName.help':
+    'Nombre de su organización (el despacho o entidad que utiliza la aplicación). Opcional. No sustituye el nombre de cada entidad: los documentos usan siempre el nombre de la entidad a la que se refieren.',
+  'settings.documents.locale.help':
+    'Define el idioma de la interfaz y el idioma predeterminado de los documentos generados.',
+  'settings.documents.numbering.help':
+    'Esquema preseleccionado al abrir un nuevo libro. Puede cambiarlo en cada libro.',
+  'settings.documents.caeUrl.help':
+    'Dirección del conjunto de datos CAE que descarga el botón «Actualizar catálogo», en Herramientas. Déjelo en blanco para usar la variable de entorno, si está definida.',
+  'settings.signing.family.help':
+    'Método de firma sugerido de forma predeterminada al sellar. Chave Móvel Digital es la opción recomendada en Portugal.',
+  'settings.signing.tsaUrl.help':
+    'Dirección del servicio que aplica el sello de tiempo (fecha y hora) a las firmas. El valor predeterminado apunta al servicio oficial portugués.',
+  'settings.signing.tslUrl.help':
+    'Dirección de la lista de confianza usada para validar los certificados de firma. El valor predeterminado apunta a la lista oficial portuguesa.',
+  'settings.signing.requireQualified.help':
+    'Cuando está activo, el sellado exige una firma electrónica cualificada; de lo contrario, también se aceptan firmas avanzadas.',
+  'settings.users.cardTitle': 'Usuarios',
+  'books.open.kindHelp':
+    'Elija el tipo que corresponde al órgano que se reúne: junta general (actas de la asamblea de socios), gerencia/administración, órgano de fiscalización o junta de comunidad de propietarios.',
+  'books.open.schemeHelp':
+    'Secuencial numera las actas de forma continua en el mismo libro; hojas sueltas es para libros compuestos por hojas numeradas individualmente. En caso de duda, use Secuencial.',
+  'books.open.guidanceTitle': 'Cómo elegir',
+  'books.open.guidanceBody':
+    'Elija el libro que corresponde al órgano que se reúne y el esquema de numeración adecuado; los iconos de ayuda de cada campo explican las opciones. El método de firma usado al sellar las actas se configura en Configuración → Firmas.',
 };

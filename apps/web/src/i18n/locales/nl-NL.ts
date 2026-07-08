@@ -548,7 +548,8 @@ export const nlNL: Catalog = {
   'settings.appearance.reroll': 'Korrel opnieuw genereren',
   'settings.identity.cardTitle': 'Identiteit',
   'settings.identity.orgName.label': 'Naam van de organisatie',
-  'settings.identity.orgName.hint': 'Verschijnt in documenten en kopteksten.',
+  'settings.identity.orgName.hint':
+    'Optionele identiteit van de gebruiker. Vervangt niet de naam van elke entiteit in documenten.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'De auteur van elke auditgebeurtenis is de aangemelde gebruiker (geselecteerd in de rechterbovenhoek), niet een hier ingevoerde waarde.',
@@ -1159,4 +1160,39 @@ export const nlNL: Catalog = {
     'Voert een fabrieksreset uit op de server, wist vervolgens de interface en herstart. Alles wordt teruggezet naar een lege eerste-start-toestand.',
   'data.full.button': 'Volledige reset',
   'data.full.pending': 'Bezig met resetten…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Help',
+  'settings.appearance.theme.help':
+    'Kies een licht, donker of systeemthema. De wijziging wordt direct in de hele app toegepast.',
+  'settings.appearance.leatherBg.help':
+    'Voegt een subtiele leertextuur toe aan de achtergrond. Puur cosmetisch — het heeft geen invloed op documenten.',
+  'settings.appearance.leatherButtons.help':
+    'Past de leertextuur toe op knoppen. Alleen cosmetisch.',
+  'settings.appearance.intensity.help':
+    'Regelt de dekking van de textuurkorrel, van 0 (geen) tot 100 (maximaal). Werkt alleen als de textuur is ingeschakeld.',
+  'settings.identity.orgName.help':
+    'Naam van uw organisatie (het kantoor of de instantie die de app gebruikt). Optioneel. Het vervangt niet de naam van elke entiteit — documenten gebruiken altijd de naam van de betreffende entiteit.',
+  'settings.documents.locale.help':
+    'Bepaalt de taal van de interface en de standaardtaal van de gegenereerde documenten.',
+  'settings.documents.numbering.help':
+    'Vooraf geselecteerd schema bij het openen van een nieuw boek. U kunt het per boek wijzigen.',
+  'settings.documents.caeUrl.help':
+    'Adres van de CAE-dataset die de knop “Catalogus bijwerken” onder Hulpmiddelen downloadt. Laat leeg om de omgevingsvariabele te gebruiken, indien ingesteld.',
+  'settings.signing.family.help':
+    'Standaard voorgestelde ondertekeningsmethode bij het verzegelen. Chave Móvel Digital is de aanbevolen optie in Portugal.',
+  'settings.signing.tsaUrl.help':
+    'Adres van de dienst die het tijdstempel (datum en tijd) aan handtekeningen toevoegt. De standaard verwijst naar de officiële Portugese dienst.',
+  'settings.signing.tslUrl.help':
+    'Adres van de vertrouwenslijst waarmee ondertekeningscertificaten worden gevalideerd. De standaard verwijst naar de officiële Portugese lijst.',
+  'settings.signing.requireQualified.help':
+    'Indien ingeschakeld vereist verzegelen een gekwalificeerde elektronische handtekening; anders worden ook geavanceerde handtekeningen geaccepteerd.',
+  'settings.users.cardTitle': 'Gebruikers',
+  'books.open.kindHelp':
+    'Kies het type dat past bij het orgaan dat vergadert: algemene vergadering (notulen van de ledenvergadering), directie/bestuur, toezichthoudend orgaan of vergadering van eigenaars.',
+  'books.open.schemeHelp':
+    'Doorlopend nummert de notulen aaneengesloten in hetzelfde boek; losbladig is voor boeken met afzonderlijk genummerde bladen. Gebruik bij twijfel Doorlopend.',
+  'books.open.guidanceTitle': 'Hoe kiezen',
+  'books.open.guidanceBody':
+    'Kies het boek dat past bij het orgaan dat vergadert en het juiste nummeringsschema — de hulppictogrammen bij elk veld leggen de opties uit. De ondertekeningsmethode die bij het verzegelen van notulen wordt gebruikt, stelt u in bij Instellingen → Handtekeningen.',
 };

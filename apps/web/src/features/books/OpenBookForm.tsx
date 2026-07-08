@@ -22,7 +22,18 @@ import {
   type Entity,
   type NumberingScheme,
 } from '../../api/types';
-import { Button, Card, ErrorNote, Field, Icon, Input, Select, TextArea, useToast } from '../../ui';
+import {
+  Button,
+  Card,
+  ErrorNote,
+  Field,
+  Icon,
+  InlineWarning,
+  Input,
+  Select,
+  TextArea,
+  useToast,
+} from '../../ui';
 
 export function parseLines(text: string): string[] {
   return text
@@ -92,6 +103,11 @@ export function OpenBookForm({ entityId, entities }: Props) {
   return (
     <Card title={t('books.openBook')}>
       <form className="form" onSubmit={onSubmit}>
+        {/* Autonomy-oriented orientation: which book matches which body, and where the
+            signature type is chosen. The per-field help glyphs cover each option in detail. */}
+        <InlineWarning tone="info" title={t('books.open.guidanceTitle')}>
+          <p>{t('books.open.guidanceBody')}</p>
+        </InlineWarning>
         {!entityId && entities ? (
           <Field label={t('books.entity')} htmlFor="book-entity">
             <Select
@@ -102,7 +118,7 @@ export function OpenBookForm({ entityId, entities }: Props) {
             />
           </Field>
         ) : null}
-        <Field label={t('books.bookKind')} htmlFor="book-kind">
+        <Field label={t('books.bookKind')} htmlFor="book-kind" help={t('books.open.kindHelp')}>
           <Select
             id="book-kind"
             value={kind}
@@ -119,7 +135,11 @@ export function OpenBookForm({ entityId, entities }: Props) {
             placeholder={t('books.purposePlaceholder')}
           />
         </Field>
-        <Field label={t('books.numberingScheme')} htmlFor="book-scheme">
+        <Field
+          label={t('books.numberingScheme')}
+          htmlFor="book-scheme"
+          help={t('books.open.schemeHelp')}
+        >
           <Select
             id="book-scheme"
             value={scheme}

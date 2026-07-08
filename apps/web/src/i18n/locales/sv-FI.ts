@@ -550,7 +550,8 @@ export const svFI: Catalog = {
   'settings.appearance.reroll': 'Generera om kornet',
   'settings.identity.cardTitle': 'Identitet',
   'settings.identity.orgName.label': 'Organisationens namn',
-  'settings.identity.orgName.hint': 'Visas i dokument och sidhuvuden.',
+  'settings.identity.orgName.hint':
+    'Valfri operatörsidentitet. Ersätter inte varje enhets namn i dokument.',
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Upphovsmannen till varje granskningshändelse är den inloggade användaren (vald uppe till höger), inte ett värde som anges här.',
@@ -1157,4 +1158,39 @@ export const svFI: Catalog = {
     'Kör en fabriksåterställning på servern, rensar sedan gränssnittet och startar om. Allt återställs till ett tomt förstagångstillstånd.',
   'data.full.button': 'Fullständig återställning',
   'data.full.pending': 'Återställer…',
+
+  // --- t60 FieldHelp / book-open guidance ---------------------------------------
+  'common.help': 'Hjälp',
+  'settings.appearance.theme.help':
+    'Välj ett ljust, mörkt eller systemtema. Ändringen tillämpas omedelbart i hela appen.',
+  'settings.appearance.leatherBg.help':
+    'Lägger till en diskret lädertextur i bakgrunden. Rent kosmetiskt — det påverkar inte dokument.',
+  'settings.appearance.leatherButtons.help':
+    'Tillämpar lädertexturen på knappar. Endast kosmetiskt.',
+  'settings.appearance.intensity.help':
+    'Styr texturkornets opacitet, från 0 (inget) till 100 (max). Har endast effekt när texturen är på.',
+  'settings.identity.orgName.help':
+    'Namnet på din organisation (byrån eller enheten som använder appen). Valfritt. Det ersätter inte varje enhets eget namn — dokument använder alltid namnet på den enhet de avser.',
+  'settings.documents.locale.help':
+    'Anger gränssnittets språk och standardspråket för genererade dokument.',
+  'settings.documents.numbering.help':
+    'Schema som är förvalt när en ny bok öppnas. Du kan ändra det per bok.',
+  'settings.documents.caeUrl.help':
+    'Adress till det CAE-dataset som knappen ”Uppdatera katalog” under Verktyg hämtar. Lämna tomt för att använda miljövariabeln, om den är angiven.',
+  'settings.signing.family.help':
+    'Signeringsmetod som föreslås som standard vid försegling. Chave Móvel Digital är det rekommenderade alternativet i Portugal.',
+  'settings.signing.tsaUrl.help':
+    'Adress till tjänsten som lägger till tidsstämpel (datum och tid) på signaturer. Standardvärdet pekar på den officiella portugisiska tjänsten.',
+  'settings.signing.tslUrl.help':
+    'Adress till förtroendelistan som används för att validera signeringscertifikat. Standardvärdet pekar på den officiella portugisiska listan.',
+  'settings.signing.requireQualified.help':
+    'När det är på kräver förseglingen en kvalificerad elektronisk signatur; annars godtas även avancerade signaturer.',
+  'settings.users.cardTitle': 'Användare',
+  'books.open.kindHelp':
+    'Välj den typ som motsvarar det organ som sammanträder: bolagsstämma (protokoll från delägarstämman), ledning/styrelse, tillsynsorgan eller föreningsstämma.',
+  'books.open.schemeHelp':
+    'Löpande numrerar protokollen fortlöpande i samma bok; lösblad är för böcker som består av individuellt numrerade blad. Använd Löpande om du är osäker.',
+  'books.open.guidanceTitle': 'Så väljer du',
+  'books.open.guidanceBody':
+    'Välj den bok som motsvarar det organ som sammanträder och rätt numreringsschema — hjälpikonerna vid varje fält förklarar alternativen. Signeringsmetoden som används vid försegling av protokoll konfigureras under Inställningar → Signaturer.',
 };

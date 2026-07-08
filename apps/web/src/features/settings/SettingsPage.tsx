@@ -57,6 +57,7 @@ import {
   Card,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   IconButton,
   Input,
@@ -66,6 +67,7 @@ import {
   SubNav,
   Toggle,
 } from '../../ui';
+import { UsersList } from '../users/UserListPage';
 
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
@@ -108,6 +110,7 @@ type SettingsSection =
   | 'documentos'
   | 'assinaturas'
   | 'gestao'
+  | 'utilizadores'
   | 'integridade'
   | 'dados'
   | 'sobre';
@@ -118,6 +121,7 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNo
   { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
   { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
+  { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
   { id: 'integridade', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
   { id: 'dados', label: 'data.cardTitle', icon: <Icon.Archive /> },
   { id: 'sobre', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
@@ -125,7 +129,7 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNo
 
 /** The sub-tabs that manage their OWN data (not the settings working copy), so the
  *  autosave savebar is not shown for them. */
-const STANDALONE_SECTIONS: readonly SettingsSection[] = ['integridade', 'dados'];
+const STANDALONE_SECTIONS: readonly SettingsSection[] = ['utilizadores', 'integridade', 'dados'];
 
 const isSettingsSection = (v: string | null): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
@@ -244,6 +248,7 @@ export function SettingsPage() {
                 label={t('settings.appearance.theme.label')}
                 htmlFor="set-theme"
                 hint={t('settings.appearance.theme.hint')}
+                help={t('settings.appearance.theme.help')}
               >
                 <Select
                   id="set-theme"
@@ -254,13 +259,23 @@ export function SettingsPage() {
               </Field>
 
               <Toggle
-                label={t('settings.appearance.leatherBg.label')}
+                label={
+                  <>
+                    {t('settings.appearance.leatherBg.label')}{' '}
+                    <FieldHelp text={t('settings.appearance.leatherBg.help')} />
+                  </>
+                }
                 checked={a.leather_texture}
                 onChange={(v) => setAppearance('leather_texture', v)}
               />
 
               <Toggle
-                label={t('settings.appearance.leatherButtons.label')}
+                label={
+                  <>
+                    {t('settings.appearance.leatherButtons.label')}{' '}
+                    <FieldHelp text={t('settings.appearance.leatherButtons.help')} />
+                  </>
+                }
                 checked={a.button_texture}
                 onChange={(v) => setAppearance('button_texture', v)}
               />
@@ -269,6 +284,7 @@ export function SettingsPage() {
                 label={t('settings.appearance.intensity.label', { value: a.texture_intensity })}
                 htmlFor="set-intensity"
                 hint={t('settings.appearance.intensity.hint')}
+                help={t('settings.appearance.intensity.help')}
               >
                 <input
                   id="set-intensity"
@@ -306,6 +322,7 @@ export function SettingsPage() {
                 label={t('settings.identity.orgName.label')}
                 htmlFor="set-org-name"
                 hint={t('settings.identity.orgName.hint')}
+                help={t('settings.identity.orgName.help')}
               >
                 <Input
                   id="set-org-name"
@@ -327,6 +344,7 @@ export function SettingsPage() {
                 label={t('settings.documents.locale.label')}
                 htmlFor="set-locale"
                 hint={t('settings.documents.locale.hint')}
+                help={t('settings.documents.locale.help')}
               >
                 <Select
                   id="set-locale"
@@ -339,6 +357,7 @@ export function SettingsPage() {
                 label={t('settings.documents.numbering.label')}
                 htmlFor="set-numbering"
                 hint={t('settings.documents.numbering.hint')}
+                help={t('settings.documents.numbering.help')}
               >
                 <Select
                   id="set-numbering"
@@ -353,6 +372,7 @@ export function SettingsPage() {
                 label={t('settings.documents.caeUrl.label')}
                 htmlFor="set-cae-url"
                 hint={t('settings.documents.caeUrl.hint')}
+                help={t('settings.documents.caeUrl.help')}
               >
                 <Input
                   id="set-cae-url"
@@ -374,6 +394,7 @@ export function SettingsPage() {
                 label={t('settings.signing.family.label')}
                 htmlFor="set-family"
                 hint={t('settings.signing.family.hint')}
+                help={t('settings.signing.family.help')}
               >
                 <Select
                   id="set-family"
@@ -388,6 +409,7 @@ export function SettingsPage() {
                 label={t('settings.signing.tsaUrl.label')}
                 htmlFor="set-tsa"
                 hint={t('settings.signing.officialHint')}
+                help={t('settings.signing.tsaUrl.help')}
               >
                 <div className="input-reset">
                   <Input
@@ -413,6 +435,7 @@ export function SettingsPage() {
                 label={t('settings.signing.tslUrl.label')}
                 htmlFor="set-tsl"
                 hint={t('settings.signing.officialHint')}
+                help={t('settings.signing.tslUrl.help')}
               >
                 <div className="input-reset">
                   <Input
@@ -435,7 +458,12 @@ export function SettingsPage() {
                 </div>
               </Field>
               <Toggle
-                label={t('settings.signing.requireQualified.label')}
+                label={
+                  <>
+                    {t('settings.signing.requireQualified.label')}{' '}
+                    <FieldHelp text={t('settings.signing.requireQualified.help')} />
+                  </>
+                }
                 checked={draft.signing.require_qualified_for_seal}
                 onChange={(v) => setSigning('require_qualified_for_seal', v)}
               />
@@ -496,6 +524,13 @@ export function SettingsPage() {
             </div>
           </Card>
         ) : null}
+
+        {/* Utilizadores ------------------------------------------------------------ */}
+        {/* The roster hosted inline as a first-class sub-tab (t60 E5). New/edit still live
+            on their own routes (`/utilizadores/novo|:id`); the standalone `/utilizadores`
+            route keeps working for the CurrentUserPicker links. `UsersList` supplies its
+            own Card + "novo" action, so no extra chrome is needed here. */}
+        {section === 'utilizadores' ? <UsersList /> : null}
 
         {/* Livros & Integridade ---------------------------------------------------- */}
         {section === 'integridade' ? <LivrosIntegridadeSection /> : null}

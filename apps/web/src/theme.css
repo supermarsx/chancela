@@ -390,6 +390,58 @@ a:focus-visible {
   margin: 0;
 }
 
+/* FieldHelp (t60) — a quiet borderless glyph after a field label, revealing a plain-
+   language explanation in the shared gilt tooltip. The label + glyph sit on one row. */
+.field__labelrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.field-help-wrap {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.field-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: help;
+  font-size: 0.9rem;
+  border-radius: 999px;
+  transition: color 0.14s ease;
+}
+
+.field-help:hover,
+.field-help:focus-visible {
+  color: var(--gold);
+}
+
+.field-help:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Relax the shared tooltip bubble from its short-label defaults (nowrap + uppercase) to a
+   wrapping sentence when it explains a field. Scoped to the FieldHelp wrapper, so the
+   frozen `.tooltip*` block is left untouched. */
+.field-help-wrap .tooltip__bubble {
+  white-space: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  width: max-content;
+  max-width: 18rem;
+  text-align: left;
+}
+
 .control {
   width: 100%;
   font-family: var(--font-body);
