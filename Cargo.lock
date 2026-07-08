@@ -370,6 +370,7 @@ dependencies = [
  "chancela-pades",
  "chancela-registry",
  "chancela-signing",
+ "chancela-smartcard",
  "chancela-store",
  "chancela-templates",
  "chancela-tsl",
