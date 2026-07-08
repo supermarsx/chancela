@@ -394,6 +394,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-authz"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "chancela-cades"
 version = "0.1.0"
 dependencies = [

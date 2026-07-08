@@ -45,6 +45,10 @@ chancela-store = { path = "crates/chancela-store" }
 # DAG (no cycles): core → templates → api; templates → doc → api. See .orchestration/plans/t48.md §2.
 chancela-templates = { path = "crates/chancela-templates" }
 chancela-doc = { path = "crates/chancela-doc" }
+# Scoped RBAC security core (t64): permission catalog + Global/Entity/Book scopes + roles-as-data +
+# scoped delegation + the escalation invariants. Pure leaf (serde/uuid/time only); must NOT depend on
+# chancela-api. See .orchestration/plans/t64.md §3.
+chancela-authz = { path = "crates/chancela-authz" }
 
 # Third-party (conservative, declared once so every crate inherits identical versions).
 serde = { version = "1", features = ["derive"] }
