@@ -165,6 +165,14 @@ pub struct AppState {
     /// Per-user sign-in backoff (plan t29 §4.5): a naive in-memory speed-bump against repeated
     /// wrong-password attempts. Resets on restart; not a hardened anti-brute-force.
     pub signin_backoff: Arc<RwLock<HashMap<UserId, session::Backoff>>>,
+    /// Cross-user secret/reset backoff (t52): the speed-bump on the credential-reset endpoints
+    /// (`set_secret`/`remove_secret`/`attestation-key`/`recovery`), keyed by
+    /// **`(requester, target-from-request)`** so a failed attempt against a *non-existent* target
+    /// accrues and throttles IDENTICALLY to one against a real target (no enumeration oracle), while
+    /// an attacker hammering a victim's id cannot lock out that victim's own self-service (a
+    /// different key, never throttled). Mirrors `signin_backoff`: in-memory, resets on restart, not a
+    /// hardened anti-brute-force. See `users::authorize_secret_op_throttled`.
+    pub secret_backoff: Arc<RwLock<HashMap<users::SecretBackoffKey, session::Backoff>>>,
     /// The law archive's directory (`<data_dir>/laws`), or `None` for in-memory (no persistence).
     /// Mirrors `users_path`; set only by [`AppState::with_data_dir`]/[`AppState::from_env`].
     pub laws_dir: Option<Arc<PathBuf>>,
@@ -4628,6 +4636,14 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "self-service first password set");
     }
 
+    /// Clear the t52 cross-user secret/reset backoff so an intentionally-repeated failed attempt in
+    /// a matrix test is treated as a fresh (un-throttled) 403 rather than a 429 (mirrors how the
+    /// signin tests clear `signin_backoff`). The throttle itself is asserted by the dedicated t52
+    /// tests below; here it must not mask the uniform-403 / adjacent-op behaviour under test.
+    async fn clear_secret_backoff(state: &AppState) {
+        state.secret_backoff.write().await.clear();
+    }
+
     /// Stored provenance + recovery presence for a user (reads the in-memory state directly).
     async fn stored_user(state: &AppState, id: &str) -> User {
         let uid = UserId(Uuid::parse_str(id).expect("uuid"));
@@ -4746,12 +4762,17 @@ mod tests {
             }
         };
 
+        // The three attempts hit the same (requester,target) key back-to-back; the t52 backoff would
+        // 429 the second one, masking the uniformity under test, so clear it between attempts. Each
+        // remains a fresh, un-throttled, constant-work 403 — exactly what this test compares.
         let (s_wrong, b_wrong) = attempt(
             json!({ "password": "x-new-pass", "current_password": "WRONG" }),
             target.clone(),
         )
         .await;
+        clear_secret_backoff(&state).await;
         let (s_none, b_none) = attempt(json!({ "password": "x-new-pass" }), target.clone()).await;
+        clear_secret_backoff(&state).await;
         let (s_ghost, b_ghost) = attempt(
             json!({ "password": "x-new-pass", "current_password": "whatever" }),
             Uuid::new_v4().to_string(),
@@ -4837,6 +4858,10 @@ mod tests {
         )
         .await;
         assert_eq!(s, StatusCode::FORBIDDEN);
+        // These adjacent-op probes reuse the same (bruno,target) key back-to-back; clear the t52
+        // backoff between them so each is a fresh 403 under test, not a 429 (the throttle has its
+        // own dedicated tests below).
+        clear_secret_backoff(&state).await;
 
         // No-proof cross-user attestation-key removal → 403 (matrix #12).
         let (s, _) = send(
@@ -4852,6 +4877,7 @@ mod tests {
         )
         .await;
         assert_eq!(s, StatusCode::FORBIDDEN);
+        clear_secret_backoff(&state).await;
         // Key is still there — nothing was removed.
         assert!(stored_user(&state, &target).await.attestation_key.is_some());
 
@@ -5065,5 +5091,298 @@ mod tests {
         let user: User = serde_json::from_str(&json).expect("old users.json still loads");
         assert_eq!(user.secret_source, crate::users::SecretSource::Password);
         assert!(user.recovery_hash.is_none());
+    }
+
+    // --- t52: target-keyed backoff + failed-attempt audit on the cross-user reset endpoints -------
+    //
+    // These layer ON TOP of the t51 constant-work / uniform-403 guarantees (never below them): a
+    // repeated FAILED cross-user attempt is throttled, and each un-throttled 403 is audited — without
+    // reintroducing an enumeration oracle (a non-existent target throttles IDENTICALLY to a real one)
+    // and without letting an attacker lock a victim out of their own self-service.
+
+    /// One cross-user `POST /v1/users/{target}/secret` from `bruno_tok`, returning (status, body).
+    async fn cross_user_set(
+        state: &AppState,
+        bruno_tok: &str,
+        target: &str,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        send(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/users/{target}/secret"), body),
+                bruno_tok,
+            ),
+        )
+        .await
+    }
+
+    /// The t52 backoff key `(requester, target-from-request)` for two id strings (target may be a
+    /// non-existent uuid — the key is request-derived, so a ghost target keys just like a real one).
+    fn secret_backoff_key(requester: &str, target: &str) -> (Option<UserId>, UserId) {
+        (
+            Some(UserId(Uuid::parse_str(requester).expect("requester uuid"))),
+            UserId(Uuid::parse_str(target).expect("target uuid")),
+        )
+    }
+
+    /// The recorded consecutive-failure count for `(requester, target)`, or `None` if no failure has
+    /// been recorded yet. Time-independent (unlike the window instant), so it is a robust signal that
+    /// a failed attempt armed the throttle regardless of how slow argon2 is on the test machine.
+    async fn secret_backoff_fails(state: &AppState, requester: &str, target: &str) -> Option<u32> {
+        state
+            .secret_backoff
+            .read()
+            .await
+            .get(&secret_backoff_key(requester, target))
+            .map(|b| b.fails)
+    }
+
+    /// Push the `(requester, target)` throttle window `secs` into the future, so the *response* to a
+    /// throttled request (429) can be asserted deterministically without racing the real 1 s window
+    /// (argon2 cost in a single request can otherwise consume most of it — the wall-clock flake
+    /// t51-e2 flagged for signin). The window itself being SET by a real failure is asserted
+    /// separately; this only fast-forwards an already-earned window to a stable value.
+    async fn push_secret_backoff_window(
+        state: &AppState,
+        requester: &str,
+        target: &str,
+        secs: i64,
+    ) {
+        let now = time::OffsetDateTime::now_utc();
+        let mut bo = state.secret_backoff.write().await;
+        let entry =
+            bo.entry(secret_backoff_key(requester, target))
+                .or_insert(crate::session::Backoff {
+                    fails: 0,
+                    next_allowed_at: now,
+                });
+        entry.fails = entry.fails.max(1);
+        entry.next_allowed_at = now + time::Duration::seconds(secs);
+    }
+
+    #[tokio::test]
+    async fn t52_repeated_failed_cross_user_attempts_trigger_429() {
+        // The reset endpoint now speed-bumps failed cross-user attempts, mirroring `signin_backoff`
+        // on `POST /v1/session`: a failure records an escalating window on (requester,target), and a
+        // request made while the window is open is refused 429 BEFORE any argon2 — so even the
+        // correct password is throttled.
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "target-current-pass").await;
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        // A failed cross-user attempt → uniform 403, and it RECORDS a future throttle window.
+        let (s1, _) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &target,
+            json!({ "password": "x-new-pass", "current_password": "WRONG" }),
+        )
+        .await;
+        assert_eq!(s1, StatusCode::FORBIDDEN);
+        assert_eq!(
+            secret_backoff_fails(&state, &bruno, &target).await,
+            Some(1),
+            "the failed attempt armed the throttle (recorded a consecutive-failure window)"
+        );
+
+        // While throttled, the next request is 429 even with the CORRECT password (short-circuits
+        // before argon2). Fast-forward the earned window to a stable value to avoid the wall-clock race.
+        push_secret_backoff_window(&state, &bruno, &target, 30).await;
+        let (s2, body) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &target,
+            json!({ "password": "x-new-pass", "current_password": "target-current-pass" }),
+        )
+        .await;
+        assert_eq!(
+            s2,
+            StatusCode::TOO_MANY_REQUESTS,
+            "a request within the window is throttled, even with the right password"
+        );
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("tente novamente")
+        );
+    }
+
+    #[tokio::test]
+    async fn t52_backoff_applies_identically_to_a_nonexistent_target() {
+        // Anti-enumeration: a NON-EXISTENT target must throttle EXACTLY like a real one — same 403
+        // body on the first attempt, and same 429 (byte-identical body) while throttled. If a ghost
+        // target were not throttled, or throttled differently, "throttled ⇒ real user" would be an
+        // enumeration oracle. Both keys are pushed to the same window so the 429 bodies must match.
+        let state = AppState::default();
+        let real = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &real, "target-current-pass").await;
+        let ghost = Uuid::new_v4().to_string(); // no such user
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        // First attempt against each: a uniform, constant-work 403 with IDENTICAL body, and each
+        // records its own throttle window (real and ghost alike).
+        let (rs1, rb1) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &real,
+            json!({ "password": "x-new-pass" }),
+        )
+        .await;
+        let (gs1, gb1) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &ghost,
+            json!({ "password": "x-new-pass" }),
+        )
+        .await;
+        assert_eq!(rs1, StatusCode::FORBIDDEN);
+        assert_eq!(gs1, StatusCode::FORBIDDEN);
+        assert_eq!(
+            rb1, gb1,
+            "the first-attempt 403 body is identical (t51 uniform-403)"
+        );
+        // The non-existent target accrued a window JUST like the real one (no "not throttled ⇒ ghost").
+        assert_eq!(
+            secret_backoff_fails(&state, &bruno, &real).await,
+            Some(1),
+            "the real target accrued a throttle window"
+        );
+        assert_eq!(
+            secret_backoff_fails(&state, &bruno, &ghost).await,
+            Some(1),
+            "the NON-EXISTENT target accrued a throttle window identically"
+        );
+
+        // While throttled (both windows fast-forwarded to the same value), the 429 bodies are
+        // byte-identical — a ghost target is indistinguishable from a real one.
+        push_secret_backoff_window(&state, &bruno, &real, 30).await;
+        push_secret_backoff_window(&state, &bruno, &ghost, 30).await;
+        let (rs2, rb2) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &real,
+            json!({ "password": "x-new-pass" }),
+        )
+        .await;
+        let (gs2, gb2) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &ghost,
+            json!({ "password": "x-new-pass" }),
+        )
+        .await;
+        assert_eq!(rs2, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(gs2, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            rb2, gb2,
+            "the throttled 429 body is identical for a real vs a non-existent target"
+        );
+    }
+
+    #[tokio::test]
+    async fn t52_failed_cross_user_attempt_emits_denied_audit_event() {
+        // A failed cross-user authorization (the 403 path) emits `user.secret.reset.denied`,
+        // attributed to the honest requester, with a fixed-shape payload naming the target id, the
+        // operation, and the attempted proof kind — and NO secret material.
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "target-current-pass").await;
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        let (s, _) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &target,
+            json!({ "password": "x-new-pass", "current_password": "WRONG" }),
+        )
+        .await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let denied = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .find(|e| e["kind"] == "user.secret.reset.denied")
+            .expect("a denied audit event was appended");
+        assert_eq!(denied["actor"], "bruno", "honest requester attribution");
+
+        // The payload is exactly {target_id, operation, attempted_proof} (declaration order,
+        // compact) — proving all three are recorded and nothing else leaks. The feed exposes only the
+        // digest, so match against the reconstructed bytes.
+        let expected_bytes = format!(
+            r#"{{"target_id":"{target}","operation":"set_secret","attempted_proof":"palavra-passe"}}"#
+        )
+        .into_bytes();
+        let expected_digest = crate::hex::hex(&chancela_ledger::digest(&expected_bytes));
+        assert_eq!(
+            denied["payload_digest"], expected_digest,
+            "payload names the target id, operation, and attempted proof kind — no secret material"
+        );
+        // Defence in depth: neither the submitted password nor any argon2 hash appears anywhere.
+        let dump = denied.to_string().to_lowercase();
+        assert!(!dump.contains("wrong") && !dump.contains("$argon2"));
+    }
+
+    #[tokio::test]
+    async fn t52_self_service_not_throttled_by_third_party_target_hammering() {
+        // The throttle bites the abusive requester, keyed on (requester,target) — so an attacker
+        // hammering a victim's id as a target can NOT lock the victim out of their own self-service
+        // (a different key, `(victim,victim)`, which is never throttled at all).
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "amelia-pass").await;
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        // Bruno hammers amelia's id and earns a throttle window on (bruno, amelia); fast-forward it
+        // so his next attempt is deterministically 429.
+        let (s1, _) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &target,
+            json!({ "password": "x-new-pass" }),
+        )
+        .await;
+        assert_eq!(s1, StatusCode::FORBIDDEN);
+        push_secret_backoff_window(&state, &bruno, &target, 30).await;
+        let (s2, _) = cross_user_set(
+            &state,
+            &bruno_tok,
+            &target,
+            json!({ "password": "x-new-pass" }),
+        )
+        .await;
+        assert_eq!(
+            s2,
+            StatusCode::TOO_MANY_REQUESTS,
+            "the attacker is now throttled"
+        );
+
+        // Amelia's own self-service password change is UNAFFECTED (different key, never throttled).
+        let self_tok = seed_session(&state, &target).await;
+        let (s_self, view) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/secret"),
+                    json!({ "password": "amelia-new-pass", "current_password": "amelia-pass" }),
+                ),
+                &self_tok,
+            ),
+        )
+        .await;
+        assert_eq!(
+            s_self,
+            StatusCode::OK,
+            "the victim's own self-service is not collateral-throttled"
+        );
+        assert_eq!(view["has_secret"], true);
     }
 }

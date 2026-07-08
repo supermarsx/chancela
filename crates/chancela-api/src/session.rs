@@ -44,8 +44,9 @@ pub struct Backoff {
 }
 
 /// The backoff delay (seconds) after `fails` consecutive failures: `[1,2,4,8,16,32,64]`, capped
-/// at 30 s (t41 M1 — leading zeros dropped so even the first failure buys a second).
-fn backoff_secs(fails: u32) -> i64 {
+/// at 30 s (t41 M1 — leading zeros dropped so even the first failure buys a second). Shared with the
+/// cross-user secret/reset backoff (t52) so both speed-bumps escalate identically.
+pub(crate) fn backoff_secs(fails: u32) -> i64 {
     const TABLE: [i64; 7] = [1, 2, 4, 8, 16, 32, 64];
     let idx = (fails as usize).saturating_sub(1).min(TABLE.len() - 1);
     TABLE[idx].min(30)

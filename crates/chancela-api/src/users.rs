@@ -24,14 +24,15 @@ use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor, resolve_session_actor};
 use crate::attestation::{self, AttestationKeyBlob, MAX_SECRET_LEN, MIN_SECRET_LEN, verify_secret};
 use crate::error::ApiError;
+use crate::session::{Backoff, backoff_secs};
 
 pub const USERS_FILE: &str = "users.json";
 
@@ -43,6 +44,12 @@ impl std::fmt::Display for UserId {
         self.0.fmt(f)
     }
 }
+
+/// Key for the cross-user secret/reset backoff (t52): `(requester, target-from-request)`. The
+/// requester is `Option` (a valid session always resolves to `Some`, but the resolver is fallible);
+/// the target is the id **from the request path**, so a non-existent target keys — and throttles —
+/// exactly like a real one (anti-enumeration). See `authorize_secret_op_throttled`.
+pub type SecretBackoffKey = (Option<UserId>, UserId);
 
 /// How the user's **current** sign-in secret was established (t51 F4). Additive provenance for the
 /// audit trail and the "was this password set via a recovery phrase" semantics. `#[serde(default)]`
@@ -427,38 +434,172 @@ async fn resolve_requester_and_target(
     (requester_id, snapshot)
 }
 
-/// The core t51 authorization decision for the four credential-mutation handlers.
+/// The **constant-work** cross-user proof check (t51 §5). Runs one password-verify and, on failure,
+/// one recovery-verify — always against the target's real verifier when present, else the
+/// [`dummy_phc`], so the branch on target state is not observable. Returns the proof kind on success
+/// or a **uniform** [`ApiError::Forbidden`] for every failure (wrong password, no proof, or a
+/// non-existent target), so no case is distinguishable by status, body, or timing.
+fn verify_cross_user_proof(
+    target: Option<&User>,
+    current_password: Option<&str>,
+    recovery_phrase: Option<&str>,
+) -> Result<ProofKind, ApiError> {
+    let password_hash = target.and_then(|u| u.password_hash.as_deref());
+    if constant_work_verify(password_hash, current_password) {
+        return Ok(ProofKind::Password);
+    }
+    let recovery_hash = target.and_then(|u| u.recovery_hash.as_deref());
+    if constant_work_verify(recovery_hash, recovery_phrase) {
+        return Ok(ProofKind::Recovery);
+    }
+    Err(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))
+}
+
+/// Honest, secret-free description of which proof(s) the request *presented* (never the values, and
+/// never whether they were correct) — for the failed-attempt audit event (t52 D2). Derived only from
+/// the request body, so it can never leak the target's state.
+fn attempted_proof(current_password: Option<&str>, recovery_phrase: Option<&str>) -> &'static str {
+    match (current_password.is_some(), recovery_phrase.is_some()) {
+        (false, false) => "sem prova",
+        (true, false) => "palavra-passe",
+        (false, true) => "frase de recuperação",
+        (true, true) => "palavra-passe + frase de recuperação",
+    }
+}
+
+/// The fixed-shape payload of a `user.secret.reset.denied` audit event (t52 D2). Contains ONLY
+/// request-derived attribution — the target id *from the request path* (attacker-supplied; its
+/// presence here does NOT imply the user exists), the operation, and which proof kind(s) were
+/// presented. It is deliberately **not** a [`UserView`]: emitting a UserView would fire a richer
+/// payload for a real target than for a ghost, turning the ledger into an enumeration oracle. No
+/// secret/phrase/password material ever appears.
+#[derive(Serialize)]
+struct SecretResetDenied<'a> {
+    target_id: String,
+    operation: &'a str,
+    attempted_proof: &'a str,
+}
+
+/// Append a `user.secret.reset.denied` audit event for a FAILED cross-user authorization (the 403
+/// path, t52 D2). The `actor` is the honest requester (session user). Fires with a fixed-shape,
+/// target-existence-independent payload, and goes through the same write-through/attest discipline as
+/// every other user event. Does **not** persist `users.json` — a denial mutates no user state.
+async fn record_secret_denied(
+    state: &AppState,
+    target_id: UserId,
+    operation: &str,
+    attempted_proof: &str,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    let payload = serde_json::to_vec(&SecretResetDenied {
+        target_id: target_id.to_string(),
+        operation,
+        attempted_proof,
+    })?;
+    let actor_name = actor.resolve("api");
+    let mut ledger = state.ledger.write().await;
+    ledger.append(
+        &actor_name,
+        "user",
+        "user.secret.reset.denied",
+        Some("cross-user credential reset refused (no valid proof)"),
+        &payload,
+    );
+    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state.attest_latest(attestor, &ledger).await;
+    Ok(())
+}
+
+/// The core t51 authorization decision, now with the t52 target-keyed backoff + failed-attempt audit
+/// layered on top of the t51 constant-work / uniform-403 guarantees.
 ///
 /// - **Self-service** (`requester == target`, and the target exists): returns
-///   [`SecretAuthz::SelfService`] immediately — the caller preserves the exact prior behaviour.
-/// - **Cross-user**: runs **constant-work** argon2id verification (always one password-verify and,
-///   on failure, one recovery-verify) and returns [`SecretAuthz::CrossUser`] with the proof kind on
-///   success, or a **uniform** [`ApiError::Forbidden`] for every failure — wrong password, no
-///   proof, or a target that does not exist — so no case is distinguishable by status, body, or
-///   timing (t51 §5). A missing target is treated as cross-user and takes the identical path.
-fn authorize_secret_op(
+///   [`SecretAuthz::SelfService`] immediately — no argon2, no backoff, no audit. The caller (who
+///   already *is* the target) preserves the exact prior behaviour and can never be locked out of
+///   their own account by a third party hammering their id (see below).
+/// - **Cross-user** (or an unknown target): throttled on **`(requester, target-from-request)`**.
+///   - *Keying rationale (anti-enumeration + no victim lockout):* the target id is the one from the
+///     request, so a failed attempt against a **non-existent** target accrues and throttles exactly
+///     like one against a real target — an attacker cannot tell "throttled ⇒ real user" from "not
+///     throttled ⇒ no such user". Including the **requester** in the key means the throttle bites the
+///     abusive source; a victim's own self-service uses a different key (`(victim, victim)`, which is
+///     never throttled at all), so an attacker cannot lock a victim out of their own account.
+///   - While throttled → a uniform `429` **before** any argon2, identical for real vs ghost targets
+///     (the delay is a pure function of the attacker's own prior failures against that key).
+///   - Otherwise runs [`verify_cross_user_proof`] (constant-work, t51 §5) **while holding the backoff
+///     lock** (mirrors `signin_backoff`, so concurrent attempts cannot all bypass the speed-bump).
+///     Success clears the counter; a `403` bumps it (escalating `[1,2,4,…]` s window) and is audited
+///     via [`record_secret_denied`] (detectability). The audit fires only on the un-throttled `403`,
+///     not on the `429` — so the ledger can never be flooded faster than the backoff permits.
+#[allow(clippy::too_many_arguments)]
+async fn authorize_secret_op_throttled(
+    state: &AppState,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+    operation: &str,
     requester_id: Option<UserId>,
     target_id: UserId,
     target: Option<&User>,
     current_password: Option<&str>,
     recovery_phrase: Option<&str>,
 ) -> Result<SecretAuthz, ApiError> {
-    // Self-service is only possible when the requester *is* the (existing) target.
+    // Self-service is only possible when the requester *is* the (existing) target. Never throttled,
+    // never audited, never runs argon2 (the caller already holds the account).
     if requester_id == Some(target_id) && target.is_some() {
         return Ok(SecretAuthz::SelfService);
     }
 
-    // Cross-user (or unknown target): uniform 403 + constant work. `target`'s password/recovery
-    // verifiers are used when present, else the dummy PHC — the branch is not observable.
-    let password_hash = target.and_then(|u| u.password_hash.as_deref());
-    if constant_work_verify(password_hash, current_password) {
-        return Ok(SecretAuthz::CrossUser(ProofKind::Password));
+    let key = (requester_id, target_id);
+    let now = OffsetDateTime::now_utc();
+    // Hold the backoff lock across the constant-work verify (mirrors `signin_backoff`): concurrent
+    // attempts cannot each read "no backoff" and then each spend argon2 cost, nor bypass the window.
+    let mut backoff = state.secret_backoff.write().await;
+    {
+        let entry = backoff.entry(key).or_insert_with(|| Backoff {
+            fails: 0,
+            next_allowed_at: now,
+        });
+        if now < entry.next_allowed_at {
+            // Uniform 429 — identical for a real vs a non-existent target (the window is a function
+            // of the attacker's own prior failures against this key, not of the target's state). No
+            // argon2 is spent and no audit event is written (keeps the 429 timing minimal and the
+            // ledger un-floodable). Layered ON TOP of the t51 uniform-403 guarantee, never below it.
+            let ms = (entry.next_allowed_at - now).whole_milliseconds();
+            let remaining = ((ms + 999) / 1000).max(1);
+            return Err(ApiError::TooManyRequests(format!(
+                "demasiadas tentativas — tente novamente em {remaining} s"
+            )));
+        }
     }
-    let recovery_hash = target.and_then(|u| u.recovery_hash.as_deref());
-    if constant_work_verify(recovery_hash, recovery_phrase) {
-        return Ok(SecretAuthz::CrossUser(ProofKind::Recovery));
+
+    match verify_cross_user_proof(target, current_password, recovery_phrase) {
+        Ok(kind) => {
+            backoff.remove(&key); // a valid proof clears the counter (mirrors signin on success)
+            Ok(SecretAuthz::CrossUser(kind))
+        }
+        Err(forbidden) => {
+            {
+                let entry = backoff.entry(key).or_insert_with(|| Backoff {
+                    fails: 0,
+                    next_allowed_at: now,
+                });
+                entry.fails += 1;
+                entry.next_allowed_at = now + Duration::seconds(backoff_secs(entry.fails));
+            }
+            drop(backoff); // release before the ledger write (independent lock, kept un-nested)
+            record_secret_denied(
+                state,
+                target_id,
+                operation,
+                attempted_proof(current_password, recovery_phrase),
+                actor,
+                attestor,
+            )
+            .await?;
+            Err(forbidden)
+        }
     }
-    Err(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))
 }
 
 /// Append a user-scoped audit event whose payload is a [`UserView`] (never the full [`User`], so no
@@ -513,13 +654,18 @@ pub async fn set_secret(
     let uid = UserId(id);
 
     let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
-    let decision = authorize_secret_op(
+    let decision = authorize_secret_op_throttled(
+        &state,
+        &actor,
+        &attestor,
+        "set_secret",
         requester_id,
         uid,
         snapshot.as_ref(),
         req.current_password.as_deref(),
         req.recovery_phrase.as_deref(),
-    )?;
+    )
+    .await?;
     // Authorized. For self the requester *is* the target and exists; for cross-user the authorize
     // step already returned a uniform 403 for a missing target, so a snapshot is present here.
     let snapshot = snapshot.ok_or(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))?;
@@ -621,13 +767,18 @@ pub async fn remove_secret(
     let uid = UserId(id);
 
     let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
-    let decision = authorize_secret_op(
+    let decision = authorize_secret_op_throttled(
+        &state,
+        &actor,
+        &attestor,
+        "remove_secret",
         requester_id,
         uid,
         snapshot.as_ref(),
         req.current_password.as_deref(),
         req.recovery_phrase.as_deref(),
-    )?;
+    )
+    .await?;
 
     match decision {
         SecretAuthz::SelfService => {
@@ -699,13 +850,18 @@ pub async fn generate_attestation_key(
     let uid = UserId(id);
 
     let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
-    let decision = authorize_secret_op(
+    let decision = authorize_secret_op_throttled(
+        &state,
+        &actor,
+        &attestor,
+        "generate_attestation_key",
         requester_id,
         uid,
         snapshot.as_ref(),
         req.current_password.as_deref(),
         req.recovery_phrase.as_deref(),
-    )?;
+    )
+    .await?;
 
     // The new key is wrapped under a password. Determine the wrapping secret per authorization path.
     let (wrapping_secret, cross_user) = match decision {
@@ -761,13 +917,18 @@ pub async fn remove_attestation_key(
     let uid = UserId(id);
 
     let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
-    let decision = authorize_secret_op(
+    let decision = authorize_secret_op_throttled(
+        &state,
+        &actor,
+        &attestor,
+        "remove_attestation_key",
         requester_id,
         uid,
         snapshot.as_ref(),
         req.current_password.as_deref(),
         req.recovery_phrase.as_deref(),
-    )?;
+    )
+    .await?;
 
     match decision {
         SecretAuthz::SelfService => {
@@ -819,13 +980,18 @@ pub async fn issue_recovery(
     let uid = UserId(id);
 
     let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
-    let decision = authorize_secret_op(
+    let decision = authorize_secret_op_throttled(
+        &state,
+        &actor,
+        &attestor,
+        "issue_recovery",
         requester_id,
         uid,
         snapshot.as_ref(),
         req.current_password.as_deref(),
         req.recovery_phrase.as_deref(),
-    )?;
+    )
+    .await?;
 
     if let SecretAuthz::SelfService = decision {
         // Self-service: prove the current password when the account has one (no-op if passwordless).
