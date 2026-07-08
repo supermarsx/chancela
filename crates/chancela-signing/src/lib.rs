@@ -28,6 +28,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod cc;
 pub mod cmd_session;
 pub mod envelope;
 pub mod mock;
@@ -36,6 +37,7 @@ pub mod policy;
 pub mod provider;
 pub mod validate;
 
+pub use cc::{CcSignedPdf, sign_pdf_cc};
 pub use cmd_session::{CmdInitiate, CmdSignSession, cmd_confirm, cmd_initiate};
 pub use envelope::{
     DocumentInput, SigningJob, is_complete, pending_slots, record_manual_signature, sign_slot,
