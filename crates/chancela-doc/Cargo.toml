@@ -13,3 +13,16 @@ chancela-core = { workspace = true }
 lopdf = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+# The Wave-D-unblock proof (t48-e3): sign a chancela-doc PDF with the real PAdES incremental
+# signer and validate the resulting signature. chancela-pades does NOT depend on chancela-doc, so
+# these dev-deps introduce no cycle. Key material is generated ephemerally in-test (no private keys
+# checked in), mirroring `chancela-pades/src/tests.rs` — der-0.7-family pins are load-bearing.
+chancela-pades = { workspace = true }
+chancela-cades = { workspace = true }
+der = { workspace = true }
+x509-cert = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+time = { workspace = true }
