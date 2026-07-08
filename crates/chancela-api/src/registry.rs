@@ -322,10 +322,11 @@ pub async fn registry_lookup(
 }
 
 /// `GET /v1/entities/{id}/registry` — the stored extract for an entity, or `404` if the entity
-/// is unknown or nothing has been imported.
+/// is unknown or nothing has been imported. Requires a valid session (t41 C1).
 pub async fn get_entity_registry(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    _actor: CurrentActor,
 ) -> Result<Json<RegistryExtractView>, ApiError> {
     let extracts = state.registry_extracts.read().await;
     let extract = extracts.get(&EntityId(id)).ok_or(ApiError::NotFound)?;
@@ -556,6 +557,15 @@ mod tests {
     }
 
     async fn send(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
+        // t41: auto-seed a session for requests that don't carry one (mutations require auth).
+        if req.headers().get("x-chancela-session").is_none() {
+            let token = auth_token(&state).await;
+            return send_raw(state, with_session(req, &token)).await;
+        }
+        send_raw(state, req).await
+    }
+
+    async fn send_raw(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
         let response = crate::router(state)
             .oneshot(req)
             .await
@@ -570,6 +580,43 @@ mod tests {
             serde_json::from_slice(&bytes).expect("body is JSON")
         };
         (status, value)
+    }
+
+    fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
+        req.headers_mut().insert(
+            "x-chancela-session",
+            token.parse().expect("valid header value"),
+        );
+        req
+    }
+
+    async fn auth_token(state: &AppState) -> String {
+        use crate::users::{User, UserId};
+        use time::format_description::well_known::Rfc3339;
+        let uid = UserId(uuid::Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: "test.actor".to_owned(),
+            display_name: "Test Actor".to_owned(),
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+        };
+        state.users.write().await.insert(uid, user);
+        let token = uuid::Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc();
+        state.sessions.write().await.insert(
+            token.clone(),
+            crate::session::SessionEntry {
+                user_id: uid,
+                unlocked_key: None,
+                expires_at: now + time::Duration::seconds(crate::actor::SESSION_TTL_SECS),
+            },
+        );
+        token
     }
 
     fn get(uri: &str) -> Request<Body> {

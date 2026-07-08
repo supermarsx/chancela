@@ -117,6 +117,19 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = self.status();
+        // t41 M6: log internal/upstream errors server-side with full detail, return a generic
+        // message to the client so internal state never leaks through the wire.
+        let message = match &self {
+            ApiError::Internal(msg) => {
+                eprintln!("chancela-api internal error: {msg}");
+                "erro interno".to_owned()
+            }
+            ApiError::Upstream(msg) => {
+                eprintln!("chancela-api upstream error: {msg}");
+                "erro de gateway".to_owned()
+            }
+            other => other.message(),
+        };
         match &self {
             ApiError::ComplianceBlocked { message, issues } => (
                 status,
@@ -134,13 +147,7 @@ impl IntoResponse for ApiError {
                 }),
             )
                 .into_response(),
-            _ => (
-                status,
-                Json(ErrorBody {
-                    error: self.message(),
-                }),
-            )
-                .into_response(),
+            _ => (status, Json(ErrorBody { error: message })).into_response(),
         }
     }
 }

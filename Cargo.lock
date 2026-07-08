@@ -437,6 +437,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "x509-cert",
+ "zeroize",
 ]
 
 [[package]]
@@ -533,6 +534,7 @@ dependencies = [
  "time",
  "uuid",
  "x509-cert",
+ "zeroize",
 ]
 
 [[package]]
@@ -572,10 +574,15 @@ version = "0.1.0"
 dependencies = [
  "cms",
  "der",
+ "ecdsa",
+ "p256",
+ "rand_core 0.6.4",
  "reqwest",
+ "rsa",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "spki",
  "thiserror 2.0.18",
  "time",
  "x509-cert",
@@ -589,8 +596,11 @@ dependencies = [
  "der",
  "quick-xml",
  "reqwest",
+ "rsa",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "spki",
  "thiserror 2.0.18",
  "time",
  "tokio",

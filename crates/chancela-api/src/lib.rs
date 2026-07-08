@@ -60,6 +60,7 @@ use axum::Json;
 use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
@@ -443,7 +444,32 @@ pub fn router(state: AppState) -> Router {
         .route("/v1", any(unknown_api_route))
         .route("/v1/{*rest}", any(unknown_api_route))
         .route("/health/{*rest}", any(unknown_api_route))
+        // Security response headers (t41 M2).
+        .layer(middleware::from_fn(security_headers))
         .with_state(state)
+}
+
+/// Middleware that sets security response headers on every response (t41 M2).
+async fn security_headers(request: axum::http::Request<axum::body::Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        "nosniff".parse().unwrap(),
+    );
+    headers.insert(axum::http::header::X_FRAME_OPTIONS, "DENY".parse().unwrap());
+    headers.insert(
+        axum::http::HeaderName::from_static("referrer-policy"),
+        "no-referrer".parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::HeaderName::from_static("content-security-policy"),
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; \
+         script-src 'self'; object-src 'none'; base-uri 'self'"
+            .parse()
+            .unwrap(),
+    );
+    response
 }
 
 /// Fallback for any unmatched path under an API namespace (`/v1`, `/v1/*`, `/health/*`).
@@ -558,7 +584,9 @@ mod tests {
     use uuid::Uuid;
 
     /// Send one request through a fresh router and return (status, parsed JSON body).
-    async fn send(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
+    /// Does NOT auto-seed a session — used by [`send`] and [`auth_token`] internally, and by
+    /// tests that check auth rejection (401 without a session).
+    async fn send_raw(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
         let response = router(state).oneshot(req).await.expect("router responds");
         let status = response.status();
         let bytes = to_bytes(response.into_body(), usize::MAX)
@@ -570,6 +598,25 @@ mod tests {
             serde_json::from_slice(&bytes).expect("body is JSON")
         };
         (status, value)
+    }
+
+    /// Like [`send_raw`] but auto-seeds a session token for requests that don't carry one (t41:
+    /// all mutation endpoints now require auth). For GET requests the extra header is harmless;
+    /// for mutations it satisfies the fallible `CurrentActor` extractor. Tests that specifically
+    /// check auth rejection (401 without a session) use [`send_raw`] directly.
+    async fn send(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
+        if req.headers().get("x-chancela-session").is_none() {
+            let token = auth_token(&state).await;
+            send_raw(state, with_session(req, &token)).await
+        } else {
+            send_raw(state, req).await
+        }
+    }
+
+    /// Auto-seeding variant kept for potential future use.
+    #[allow(dead_code)]
+    async fn send_mut(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
+        send(state, req).await
     }
 
     fn get(uri: &str) -> Request<Body> {
@@ -596,19 +643,65 @@ mod tests {
         body_json("PATCH", uri, body)
     }
 
+    /// A request builder carrying an `X-Chancela-Session` token.
+    fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
+        req.headers_mut().insert(
+            "x-chancela-session",
+            token.parse().expect("valid header value"),
+        );
+        req
+    }
+
+    /// Seed a test user + session directly into the state (bypassing the API) and return the
+    /// token (t41: all mutation endpoints require auth). This avoids creating `user.created`
+    /// ledger events and extra users in lists — the test's own mutations are the only ones
+    /// recorded. The user is passwordless and active.
+    async fn auth_token(state: &AppState) -> String {
+        use crate::users::{User, UserId};
+        use time::format_description::well_known::Rfc3339;
+        let uid = UserId(Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: "test.actor".to_owned(),
+            display_name: "Test Actor".to_owned(),
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+        };
+        state.users.write().await.insert(uid, user);
+        let token = Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc();
+        state.sessions.write().await.insert(
+            token.clone(),
+            crate::session::SessionEntry {
+                user_id: uid,
+                unlocked_key: None,
+                expires_at: now + time::Duration::seconds(crate::actor::SESSION_TTL_SECS),
+            },
+        );
+        token
+    }
+
     /// Create an entity and an open book for it; returns (state, entity_id, book_id).
     async fn entity_and_open_book(kind: &str) -> (AppState, String, String) {
         let state = AppState::default();
+        let token = auth_token(&state).await;
         let (status, entity) = send(
             state.clone(),
-            post_json(
-                "/v1/entities",
-                json!({
-                    "name": "Encosto Estratégico, S.A.",
-                    "nipc": "503004642",
-                    "seat": "Lisboa",
-                    "kind": kind,
-                }),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Encosto Estratégico, S.A.",
+                        "nipc": "503004642",
+                        "seat": "Lisboa",
+                        "kind": kind,
+                    }),
+                ),
+                &token,
             ),
         )
         .await;
@@ -617,15 +710,18 @@ mod tests {
 
         let (status, book) = send(
             state.clone(),
-            post_json(
-                "/v1/books",
-                json!({
-                    "entity_id": entity_id,
-                    "kind": "AssembleiaGeral",
-                    "purpose": "livro de atas da assembleia geral",
-                    "opening_date": "2026-01-15",
-                    "required_signatories": ["Administrador"],
-                }),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": ["Administrador"],
+                    }),
+                ),
+                &token,
             ),
         )
         .await;
@@ -1664,8 +1760,9 @@ mod tests {
             .iter()
             .find(|e| e["kind"] == "settings.updated")
             .expect("settings.updated event present");
-        // Actor falls back to the document's organization.default_actor.
-        assert_eq!(updated["actor"], "amelia.marques");
+        // t41: with a session, the actor is the session username ("test.actor"),
+        // not the document's organization.default_actor.
+        assert_eq!(updated["actor"], "test.actor");
         assert_eq!(updated["scope"], "settings");
         assert_eq!(updated["justification"], "settings updated");
     }
@@ -1686,7 +1783,9 @@ mod tests {
             .iter()
             .find(|e| e["kind"] == "settings.updated")
             .expect("settings.updated event present");
-        assert_eq!(updated["actor"], "auditor");
+        // t41: with a session, the actor is the session username ("test.actor"),
+        // which takes precedence over the ?actor= query param.
+        assert_eq!(updated["actor"], "test.actor");
     }
 
     /// A throwaway data directory (unique under the OS temp dir), cleaned up on drop.
@@ -1731,14 +1830,7 @@ mod tests {
 
     // --- CAE library (§2.7) --------------------------------------------------------------
 
-    /// A request builder carrying an `X-Chancela-Session` token.
-    fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
-        req.headers_mut().insert(
-            "x-chancela-session",
-            token.parse().expect("valid header value"),
-        );
-        req
-    }
+    // `with_session` is defined near the top of the test module (before `entity_and_open_book`).
 
     #[tokio::test]
     async fn cae_lookup_returns_entry_with_hierarchy() {
@@ -1848,7 +1940,7 @@ mod tests {
             .find(|e| e["kind"] == "cae.updated")
             .expect("cae.updated event present");
         assert_eq!(updated["scope"], "cae");
-        assert_eq!(updated["actor"], "api");
+        assert_eq!(updated["actor"], "test.actor"); // t41: session actor
 
         // A second refresh of the same dataset is a no-op: it no longer supersedes the cache.
         let (status, report) = send(state, post_json("/v1/cae/refresh", json!({}))).await;
@@ -2282,7 +2374,7 @@ mod tests {
     }
 
     /// Send one request and return (status, headers, raw body bytes) — for the non-JSON PDF stream.
-    async fn send_raw(
+    async fn send_raw_bytes(
         state: AppState,
         req: Request<Body>,
     ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
@@ -2423,7 +2515,7 @@ mod tests {
         let state = law_state(tmp.dir.clone(), base);
 
         // Not yet fetched → serving is a 404.
-        let (status, _, _) = send_raw(state.clone(), get("/v1/law/dl-9-2025/pdf")).await;
+        let (status, _, _) = send_raw_bytes(state.clone(), get("/v1/law/dl-9-2025/pdf")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
 
         let (status, _) = send(
@@ -2433,7 +2525,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
 
-        let (status, headers, bytes) = send_raw(state, get("/v1/law/dl-9-2025/pdf")).await;
+        let (status, headers, bytes) = send_raw_bytes(state, get("/v1/law/dl-9-2025/pdf")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(headers.get("content-type").unwrap(), "application/pdf");
         assert!(
@@ -2464,7 +2556,7 @@ mod tests {
         assert!(!tmp.dir.join("laws").join("dl-9-2025.pdf").exists());
 
         // Serving is now a 404, and a `law.removed` event was appended.
-        let (status, _, _) = send_raw(state.clone(), get("/v1/law/dl-9-2025/pdf")).await;
+        let (status, _, _) = send_raw_bytes(state.clone(), get("/v1/law/dl-9-2025/pdf")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
         assert!(
@@ -2516,7 +2608,7 @@ mod tests {
 
     /// Open a session for a user id and return its token.
     async fn open_session(state: &AppState, user_id: &str) -> String {
-        let (status, s) = send(
+        let (status, s) = send_raw(
             state.clone(),
             post_json("/v1/session", json!({ "user_id": user_id })),
         )
@@ -2528,7 +2620,8 @@ mod tests {
     #[tokio::test]
     async fn create_user_appends_event_and_lists() {
         let state = AppState::default();
-        let (status, user) = send(
+        // Bootstrap: first user created without auth (no users exist yet).
+        let (status, user) = send_raw(
             state.clone(),
             post_json(
                 "/v1/users",
@@ -2540,18 +2633,24 @@ mod tests {
         assert_eq!(user["username"], "amelia.marques");
         assert_eq!(user["display_name"], "Amélia Marques");
         assert_eq!(user["active"], true);
-        // The reserved phase-2 field never reaches the wire.
         assert!(user.get("password_hash").is_none());
         let id = user["id"].as_str().expect("id").to_owned();
 
-        // GET by id and the list both return it.
-        let (status, got) = send(state.clone(), get(&format!("/v1/users/{id}"))).await;
+        // GET by id (no auth needed for get_user).
+        let (status, got) = send_raw(state.clone(), get(&format!("/v1/users/{id}"))).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(got["username"], "amelia.marques");
 
+        // List requires auth (t41); auto-seed adds "test.actor" as well.
         let (status, list) = send(state.clone(), get("/v1/users")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(list.as_array().expect("list").len(), 1);
+        assert!(
+            list.as_array()
+                .expect("list")
+                .iter()
+                .any(|u| u["username"] == "amelia.marques"),
+            "amelia.marques is in the list: {list}"
+        );
 
         // A `user.created` event was appended.
         let (_, events) = send(state, get("/v1/ledger/events")).await;
@@ -2559,8 +2658,8 @@ mod tests {
             .as_array()
             .expect("events")
             .iter()
-            .find(|e| e["kind"] == "user.created")
-            .expect("user.created event present");
+            .find(|e| e["kind"] == "user.created" && e["actor"] == "api")
+            .expect("user.created event present with actor=api (bootstrap)");
         assert_eq!(created["scope"], "user");
     }
 
@@ -2641,7 +2740,7 @@ mod tests {
         assert_eq!(s["user"]["username"], "amelia.marques");
 
         // No header → user is null.
-        let (status, s) = send(state.clone(), get("/v1/session")).await;
+        let (status, s) = send_raw(state.clone(), get("/v1/session")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(s["user"], Value::Null);
 
@@ -2661,14 +2760,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_for_unknown_user_is_404() {
+    async fn session_for_unknown_user_is_401() {
+        // t41 H1: uniform 401, no enumeration
         let missing = Uuid::new_v4();
-        let (status, _) = send(
+        let (status, _) = send_raw(
             AppState::default(),
             post_json("/v1/session", json!({ "user_id": missing })),
         )
         .await;
-        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -2677,32 +2777,39 @@ mod tests {
         let user_id = create_user(&state, "amelia.marques").await;
         let token = open_session(&state, &user_id).await;
 
-        // Draft an act WITHOUT a session: the ledger actor is the default "api".
-        let (status, act) = send(
+        // t41: all mutations now require a session. Draft WITH the amelia.marques session →
+        // the ledger actor is "amelia.marques".
+        let (status, act) = send_raw(
             state.clone(),
-            post_json(
-                "/v1/acts",
-                json!({ "book_id": book_id, "title": "Ata da AG", "channel": "Physical" }),
+            with_session(
+                post_json(
+                    "/v1/acts",
+                    json!({ "book_id": book_id, "title": "Ata da AG", "channel": "Physical" }),
+                ),
+                &token,
             ),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
         let act_id = act["id"].as_str().expect("act id").to_owned();
 
-        // Fill content (mesa included) and advance to Signing (no session on these).
-        let (status, _) = send(
+        // Fill content + advance, all with the amelia.marques session.
+        let (status, _) = send_raw(
             state.clone(),
-            patch_json(
-                &format!("/v1/acts/{act_id}"),
-                json!({
-                    "meeting_date": "2026-03-30",
-                    "meeting_time": "10:00",
-                    "place": "Sede social",
-                    "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] },
-                    "agenda": [{ "number": 1, "text": "Contas" }],
-                    "attendance_reference": "Lista de presenças",
-                    "deliberations": "Aprovadas as contas.",
-                }),
+            with_session(
+                patch_json(
+                    &format!("/v1/acts/{act_id}"),
+                    json!({
+                        "meeting_date": "2026-03-30",
+                        "meeting_time": "10:00",
+                        "place": "Sede social",
+                        "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] },
+                        "agenda": [{ "number": 1, "text": "Contas" }],
+                        "attendance_reference": "Lista de presenças",
+                        "deliberations": "Aprovadas as contas.",
+                    }),
+                ),
+                &token,
             ),
         )
         .await;
@@ -2714,17 +2821,19 @@ mod tests {
             "TextApproved",
             "Signing",
         ] {
-            let (status, _) = send(
+            let (status, _) = send_raw(
                 state.clone(),
-                post_json(&format!("/v1/acts/{act_id}/advance"), json!({ "to": to })),
+                with_session(
+                    post_json(&format!("/v1/acts/{act_id}/advance"), json!({ "to": to })),
+                    &token,
+                ),
             )
             .await;
             assert_eq!(status, StatusCode::OK);
         }
 
-        // Seal WITH the session header → the seal event's actor is the username. The fully-filled
-        // ata has no findings, so no acknowledgement is needed.
-        let (status, _) = send(
+        // Seal WITH the session → the seal event's actor is "amelia.marques".
+        let (status, _) = send_raw(
             state.clone(),
             with_session(
                 post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
@@ -2744,8 +2853,8 @@ mod tests {
             .iter()
             .find(|e| e["kind"] == "act.sealed")
             .expect("act.sealed present");
-        // No session on draft → the historical default "api"; session on seal → "amelia.marques".
-        assert_eq!(drafted["actor"], "api");
+        // t41: with a session, both draft and seal events are attributed to "amelia.marques".
+        assert_eq!(drafted["actor"], "amelia.marques");
         assert_eq!(sealed["actor"], "amelia.marques");
     }
 
@@ -3454,6 +3563,9 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert!(body["error"].is_string());
+        // t41 M1: the new backoff table [1,2,4,...] kicks in after the first failure,
+        // so clear the backoff before the correct attempt.
+        state.signin_backoff.write().await.clear();
         let (status, _) = send(
             state.clone(),
             post_json(
@@ -3477,16 +3589,15 @@ mod tests {
             ),
         )
         .await;
-        // The first two wrong attempts are 401 (backoff still 0s); the second sets a 1s window.
-        for _ in 0..2 {
-            let (status, _) = send(
-                state.clone(),
-                post_json("/v1/session", json!({ "user_id": id, "password": "wrong" })),
-            )
-            .await;
-            assert_eq!(status, StatusCode::UNAUTHORIZED);
-        }
-        // Within the window even the correct password is refused with 429.
+        // t41 M1: the new backoff table [1,2,4,...] means the FIRST wrong attempt sets a 1s
+        // window. So the first attempt is 401, and any immediate subsequent attempt is 429.
+        let (status, _) = send(
+            state.clone(),
+            post_json("/v1/session", json!({ "user_id": id, "password": "wrong" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        // Within the 1s window even the correct password is refused with 429.
         let (status, body) = send(
             state.clone(),
             post_json(
@@ -3755,6 +3866,8 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+        // t41 M1: clear backoff so the correct attempt isn't blocked by the 1s window.
+        state.signin_backoff.write().await.clear();
         let (status, sess) = send(
             state.clone(),
             post_json(

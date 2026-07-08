@@ -10,9 +10,13 @@ use crate::attestation::{self, Attestation};
 use crate::dto::{AttestationSummary, LedgerEventView, LedgerQuery};
 use crate::error::ApiError;
 
+/// Default and maximum number of events returned by `GET /v1/ledger/events?limit=` (t41 L3).
+const DEFAULT_LEDGER_LIMIT: usize = 100;
+const MAX_LEDGER_LIMIT: usize = 1000;
+
 /// `GET /v1/ledger/events?scope=&limit=` — events in append order, optionally filtered by a
-/// `scope` substring and trimmed to the last `limit`. Each event carries its `attestation`
-/// summary (joined from the in-memory sidecar by `seq`), or `null`.
+/// `scope` substring and trimmed to the last `limit` (clamped to max 1000, default 100 — t41 L3).
+/// Each event carries its `attestation` summary (joined from the in-memory sidecar by `seq`).
 pub async fn list_ledger_events(
     State(state): State<AppState>,
     Query(q): Query<LedgerQuery>,
@@ -23,10 +27,12 @@ pub async fn list_ledger_events(
     if let Some(scope) = &q.scope {
         events.retain(|e| e.scope.contains(scope.as_str()));
     }
-    if let Some(limit) = q.limit {
-        let start = events.len().saturating_sub(limit);
-        events.drain(..start);
-    }
+    let limit = q
+        .limit
+        .unwrap_or(DEFAULT_LEDGER_LIMIT)
+        .min(MAX_LEDGER_LIMIT);
+    let start = events.len().saturating_sub(limit);
+    events.drain(..start);
     Json(
         events
             .into_iter()
