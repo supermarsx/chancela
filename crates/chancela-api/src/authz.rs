@@ -35,7 +35,7 @@ use std::collections::HashMap;
 use time::OffsetDateTime;
 
 use chancela_authz::{
-    BookId as AuthzBookId, EntityId as AuthzEntityId, Permission, Scope, ScopedPermissionSet,
+    BookId as AuthzBookId, EntityId as AuthzEntityId, Permission, Role, Scope, ScopedPermissionSet,
     has_permission,
 };
 use chancela_core::{ActId, BookId, EntityId};
@@ -44,13 +44,14 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::error::ApiError;
 use crate::roles::effective_permissions_for_actor;
+use crate::users::UserId;
 
 /// The single, honest, generic refusal for a missing permission. It never names the permission, the
 /// scope, or the resource — a `403` here is indistinguishable across "you lack this verb", "you lack
 /// it at this scope", and "this resource is outside your scope", so it is a non-enumerating oracle.
 pub(crate) const FORBIDDEN: &str = "sem permissão para esta operação neste âmbito";
 
-fn forbidden() -> ApiError {
+pub(crate) fn forbidden() -> ApiError {
     ApiError::Forbidden(FORBIDDEN.to_owned())
 }
 
@@ -102,11 +103,19 @@ pub async fn require_permission(
 /// run **many** checks (notably the per-row list filtering of note²) without re-resolving the stores
 /// or re-locking `state.books` for each row.
 pub struct Authorizer {
+    principal: UserId,
     eff: ScopedPermissionSet,
     relation: HashMap<AuthzBookId, AuthzEntityId>,
 }
 
 impl Authorizer {
+    /// The resolved acting principal (the session user). Used by the RBAC-management endpoints
+    /// (t64-E4) to attribute a delegation grantor and to authorise a grantor's own revoke.
+    #[must_use]
+    pub fn principal(&self) -> UserId {
+        self.principal
+    }
+
     /// Does the principal hold `perm` covering `scope`?
     #[must_use]
     pub fn permits(&self, perm: Permission, scope: Scope) -> bool {
@@ -122,6 +131,39 @@ impl Authorizer {
             Err(forbidden())
         }
     }
+
+    /// **Subset invariant (role authoring, t64-E4).** May the principal *create or edit* a role whose
+    /// contents are `permission_set`? True iff every permission is within the principal's OWN
+    /// effective authority at `Global` (a catalog role is assignable anywhere, so its contents must be
+    /// within the global ceiling). Holding `role.manage` does **not** exempt this — the meta gate and
+    /// this check are independent.
+    #[must_use]
+    pub fn can_define_role<'a>(
+        &self,
+        permission_set: impl IntoIterator<Item = &'a Permission>,
+    ) -> bool {
+        let books = |b: AuthzBookId| self.relation.get(&b).copied();
+        chancela_authz::can_define_role(&self.eff, permission_set, &books)
+    }
+
+    /// **Subset invariant (role assignment, t64-E4).** May the principal *assign* `role` at `scope`?
+    /// True iff every permission in the role's set is within the principal's own authority covering
+    /// `scope`. Blocks granting a pre-existing "fat" role (or Owner) you do not fully hold. Holding
+    /// `role.assign` does **not** exempt this.
+    #[must_use]
+    pub fn can_assign_role(&self, role: &Role, scope: Scope) -> bool {
+        let books = |b: AuthzBookId| self.relation.get(&b).copied();
+        chancela_authz::can_assign_role(&self.eff, role, scope, &books)
+    }
+
+    /// **Delegation invariant (t64-E4).** May the principal *delegate* `perm` at `scope`? True iff
+    /// `perm` is non-meta AND the principal holds it **via a role** covering `scope`. The via-role
+    /// requirement forbids re-delegation structurally (a received permission is never a role grant).
+    #[must_use]
+    pub fn can_delegate(&self, perm: Permission, scope: Scope) -> bool {
+        let books = |b: AuthzBookId| self.relation.get(&b).copied();
+        chancela_authz::can_delegate(&self.eff, perm, scope, &books)
+    }
 }
 
 /// Resolve the session actor into an [`Authorizer`] (its effective authority + the live book→entity
@@ -129,9 +171,13 @@ impl Authorizer {
 /// endpoints for per-row filtering (note²) and available to any handler running several checks.
 pub async fn authorizer(state: &AppState, actor: &CurrentActor) -> Result<Authorizer, ApiError> {
     let now = OffsetDateTime::now_utc();
-    let (_principal, eff) = effective_permissions_for_actor(state, actor, now).await?;
+    let (principal, eff) = effective_permissions_for_actor(state, actor, now).await?;
     let relation = book_relation(state).await;
-    Ok(Authorizer { eff, relation })
+    Ok(Authorizer {
+        principal,
+        eff,
+        relation,
+    })
 }
 
 /// The target [`Scope`] for an **entity** operation.
@@ -264,6 +310,13 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/users/{id}/secret", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
     ("/v1/users/{id}/attestation-key", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
     ("/v1/users/{id}/recovery", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
+    // --- RBAC management (t64-E4) ---------------------------------------------------------------
+    ("/v1/roles", RouteClass::Gated), // GET list (any session) · POST role.manage@Global + subset
+    ("/v1/roles/{id}", RouteClass::Gated), // PATCH/DELETE role.manage@Global + subset + protected-Owner
+    ("/v1/permissions", RouteClass::Session), // GET the verb catalog (any valid session)
+    ("/v1/users/{id}/roles", RouteClass::Gated), // POST/DELETE role.assign@scope + subset + last-Owner
+    ("/v1/delegations", RouteClass::Gated), // GET own/all · POST delegation.grant@scope + invariant
+    ("/v1/delegations/{id}", RouteClass::Gated), // DELETE grantor OR delegation.revoke@scope
 ];
 
 /// Classify a router path against [`ROUTE_CLASSIFICATION`].

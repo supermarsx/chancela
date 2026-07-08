@@ -71,7 +71,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, get, post};
+use axum::routing::{any, delete, get, patch, post};
 use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
 use chancela_cmd::ScmdTransport;
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
@@ -680,6 +680,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/ledger/attestations/{seq}",
             get(ledger::get_attestation),
+        )
+        // RBAC management (t64-E4): role CRUD, the permission catalog, scoped role assignment, and
+        // scoped delegation. Mutations are gated + invariant-enforced server-side (see the handlers).
+        .route("/v1/roles", get(roles::list_roles).post(roles::create_role))
+        .route(
+            "/v1/roles/{id}",
+            patch(roles::patch_role).delete(roles::delete_role),
+        )
+        .route("/v1/permissions", get(roles::list_permissions))
+        .route(
+            "/v1/users/{id}/roles",
+            post(roles::assign_role).delete(roles::unassign_role),
+        )
+        .route(
+            "/v1/delegations",
+            get(delegations::list_delegations).post(delegations::grant_delegation),
+        )
+        .route(
+            "/v1/delegations/{id}",
+            delete(delegations::revoke_delegation),
         )
         .route("/v1/session/roster", get(session::session_roster))
         .route("/v1/session/permissions", get(session::session_permissions))
@@ -5621,6 +5641,399 @@ mod tests {
             status,
             StatusCode::FORBIDDEN,
             "an entity-scoped grant can never satisfy a Global-scoped check"
+        );
+    }
+
+    // --- t64-E4: RBAC-management endpoints (role CRUD + assignment + scoped delegation) ------------
+
+    #[tokio::test]
+    async fn e4_owner_role_crud_roundtrip() {
+        let state = fresh_state().await;
+        // Owner (auto-seeded session) creates a custom role.
+        let (status, role) = send(
+            state.clone(),
+            post_json(
+                "/v1/roles",
+                json!({ "name": "Auditor", "permissions": ["ledger.read", "entity.read"] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(role["protected"], json!(false));
+        let id = role["id"].as_str().expect("id").to_owned();
+        assert!(
+            role["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .any(|p| p == "ledger.read")
+        );
+
+        // The catalog now lists the 4 seeded defaults + the new one.
+        let (status, list) = send(state.clone(), get("/v1/roles")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(list.as_array().expect("roles").len(), 5);
+
+        // The frozen verb catalog is introspectable by any session.
+        let (status, cat) = send(state.clone(), get("/v1/permissions")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(cat["permissions"].as_array().expect("verbs").len(), 37);
+
+        // Rename + narrow the permission-set.
+        let (status, patched) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/roles/{id}"),
+                json!({ "name": "Auditor Sénior", "permissions": ["ledger.read"] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(patched["name"], json!("Auditor Sénior"));
+        assert_eq!(patched["permissions"].as_array().expect("perms").len(), 1);
+
+        // Delete it; the catalog returns to the 4 seeded defaults.
+        let (status, _) = send(state.clone(), delete(&format!("/v1/roles/{id}"))).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (_, list) = send(state.clone(), get("/v1/roles")).await;
+        assert_eq!(list.as_array().expect("roles").len(), 4);
+    }
+
+    #[tokio::test]
+    async fn e4_protected_owner_cannot_be_edited_or_deleted() {
+        let state = fresh_state().await;
+        let owner_role = chancela_authz::OWNER_ROLE_ID.0.to_string();
+        // Even an Owner cannot narrow/rename the locked super-role...
+        let (status, _) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/roles/{owner_role}"),
+                json!({ "name": "Proprietário Fraco", "permissions": ["entity.read"] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        // ...nor delete it.
+        let (status, _) = send(state.clone(), delete(&format!("/v1/roles/{owner_role}"))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn e4_subset_invariant_role_manage_does_not_exempt() {
+        use chancela_authz::{Permission, Role, RoleAssignment, RoleId, Scope};
+        let state = fresh_state().await;
+        // A role that grants role.manage but only entity.read otherwise.
+        let mgr = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: mgr,
+            name: "Gestor de Acessos".to_owned(),
+            permission_set: [Permission::RoleManage, Permission::EntityRead]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
+        let m = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(mgr, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &m.to_string()).await;
+
+        // A role fully within the actor's own authority → 201.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/roles",
+                    json!({ "name": "Só Leitura", "permissions": ["entity.read"] }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        // Crafting a role containing a permission the actor LACKS is refused — holding role.manage
+        // does NOT exempt the subset check.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/roles",
+                    json!({ "name": "Perigoso", "permissions": ["data.wipe"] }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body["error"].as_str().expect("err").contains("permissão"));
+    }
+
+    #[tokio::test]
+    async fn e4_assign_subset_enforced_and_last_owner_guard() {
+        use chancela_authz::{
+            GESTOR_ROLE_ID, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleId, Scope,
+        };
+        let state = fresh_state().await;
+
+        // An actor holding role.assign but only entity.read otherwise.
+        let ra = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: ra,
+            name: "Atribuidor".to_owned(),
+            permission_set: [Permission::RoleAssign, Permission::EntityRead]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
+        // A role wholly within that actor's authority.
+        let ro = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: ro,
+            name: "Só Entidade".to_owned(),
+            permission_set: [Permission::EntityRead].into_iter().collect(),
+            protected: false,
+        });
+        let assigner = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(ra, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &assigner.to_string()).await;
+        let target = seed_user(&state, "bruno.dias", vec![]).await;
+
+        // Assigning the in-authority role → 200.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/roles"),
+                    json!({ "role_id": ro.0.to_string(), "scope": { "kind": "global" } }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        // Assigning the fat Gestor role (perms the assigner lacks) → 403 — role.assign does not exempt.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/roles"),
+                    json!({ "role_id": GESTOR_ROLE_ID.0.to_string(), "scope": { "kind": "global" } }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // Last-Owner guard: two Owners, remove one (ok), then the last (409).
+        let owner_a = seed_user(
+            &state,
+            "owner.a",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok_a = seed_session(&state, &owner_a.to_string()).await;
+        let owner_b = seed_user(
+            &state,
+            "owner.b",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let owner_body =
+            json!({ "role_id": OWNER_ROLE_ID.0.to_string(), "scope": { "kind": "global" } });
+        // 2 → 1 Owner@Global: allowed.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                body_json(
+                    "DELETE",
+                    &format!("/v1/users/{owner_b}/roles"),
+                    owner_body.clone(),
+                ),
+                &tok_a,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        // Removing the FINAL Owner@Global (its own) → 409, never lockable-out.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                body_json("DELETE", &format!("/v1/users/{owner_a}/roles"), owner_body),
+                &tok_a,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("err")
+                .contains("Proprietário")
+        );
+    }
+
+    #[tokio::test]
+    async fn e4_delegation_grant_revoke_meta_and_redelegation_blocked() {
+        use crate::delegations::{DelegationId, StoredDelegation};
+        use chancela_authz::{
+            Delegation, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleId, Scope,
+            UserId as AuthzUserId,
+        };
+        use time::format_description::well_known::Rfc3339;
+        let state = fresh_state().await;
+
+        let owner = seed_user(
+            &state,
+            "owner.a",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &owner.to_string()).await;
+        let grantee = seed_user(&state, "amelia.marques", vec![]).await;
+        let g_tok = seed_session(&state, &grantee.to_string()).await;
+
+        // Grant a non-meta permission the Owner holds via a role → 201.
+        let (status, view) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({ "to": grantee.to_string(), "permission": "act.advance", "scope": { "kind": "global" } }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(view["permission"], json!("act.advance"));
+        assert_eq!(view["revoked"], json!(false));
+        let del_id = view["id"].as_str().expect("id").to_owned();
+
+        // The grantee now holds act.advance, sourced from the delegation.
+        let (_, perms) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(
+            perms["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .any(|p| p["permission"] == "act.advance" && p["source"] == "delegation")
+        );
+
+        // A META permission is non-delegable → 403 (even for an Owner).
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({ "to": grantee.to_string(), "permission": "role.manage", "scope": { "kind": "global" } }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // Re-delegation is impossible: an actor holding delegation.grant via a role but act.advance
+        // only via a received delegation cannot pass it on.
+        let dg = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: dg,
+            name: "Delegador".to_owned(),
+            permission_set: [Permission::DelegationGrant].into_iter().collect(),
+            protected: false,
+        });
+        let carlos = seed_user(
+            &state,
+            "carlos.nunes",
+            vec![RoleAssignment::new(dg, Scope::Global)],
+        )
+        .await;
+        let granted_at = time::OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .expect("fmt");
+        let recv = Delegation::new(
+            AuthzUserId(owner.0),
+            AuthzUserId(carlos.0),
+            Permission::ActAdvance,
+            Scope::Global,
+        );
+        let stored = StoredDelegation::new(DelegationId(Uuid::new_v4()), granted_at, recv);
+        state.delegations.write().await.insert(stored.id, stored);
+        let c_tok = seed_session(&state, &carlos.to_string()).await;
+        let dora = seed_user(&state, "dora.silva", vec![]).await;
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({ "to": dora.to_string(), "permission": "act.advance", "scope": { "kind": "global" } }),
+                ),
+                &c_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // An already-expired delegation is granted but contributes nothing (expiry honoured).
+        let past = (time::OffsetDateTime::now_utc() - time::Duration::hours(1))
+            .format(&Rfc3339)
+            .expect("fmt");
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({ "to": grantee.to_string(), "permission": "act.read", "scope": { "kind": "global" }, "expires_at": past }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let (_, perms_exp) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(
+            !perms_exp["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .any(|p| p["permission"] == "act.read")
+        );
+
+        // Revoke is immediate: the grantee loses act.advance the moment it is revoked.
+        let (status, rv) = send_raw(
+            state.clone(),
+            with_session(delete(&format!("/v1/delegations/{del_id}")), &tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(rv["revoked"], json!(true));
+        let (_, perms2) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(
+            !perms2["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .any(|p| p["permission"] == "act.advance")
         );
     }
 

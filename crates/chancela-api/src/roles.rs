@@ -16,21 +16,27 @@
 //! **frozen** signature E3's `require_permission` and t65's api-key principal compute against; it is
 //! deliberately NOT wired into any endpoint yet.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
+use axum::Json;
+use axum::extract::{Path as AxumPath, State};
+use axum::http::StatusCode;
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use chancela_authz::{
-    Delegation, GESTOR_ROLE_ID, OWNER_ROLE_ID, Role, RoleAssignment, RoleCatalog, Scope,
-    ScopedPermissionSet, UserId as AuthzUserId, count_owner_admin_holders, effective_permissions,
-    last_owner_guard,
+    BookId as AuthzBookId, Delegation, EntityId as AuthzEntityId, GESTOR_ROLE_ID, OWNER_ROLE_ID,
+    Permission, Role, RoleAssignment, RoleCatalog, RoleId, Scope, ScopedPermissionSet,
+    UserId as AuthzUserId, count_owner_admin_holders, effective_permissions, last_owner_guard,
 };
 
 use crate::AppState;
-use crate::actor::CurrentActor;
+use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{authorizer, forbidden};
 use crate::error::ApiError;
+use crate::session::{RoleAssignmentView, ScopeView};
 use crate::users::{User, UserId};
 
 pub const ROLES_FILE: &str = "roles.json";
@@ -106,8 +112,6 @@ pub(crate) fn write_roles_atomic(path: &Path, catalog: &RoleCatalog) -> std::io:
 
 /// Persist the live role catalog through to `roles.json` when the state is file-backed. A no-op for
 /// pure in-memory state (`roles_path` is `None`). Call after any catalog mutation (E4).
-// Wired by t64-E4 (role-management endpoints); E2 only lands the store + seam.
-#[allow(dead_code)]
 pub(crate) async fn persist_roles(state: &AppState) -> Result<(), ApiError> {
     if let Some(path) = &state.roles_path {
         let roles = state.roles.read().await;
@@ -283,6 +287,458 @@ pub async fn count_owner_admins(state: &AppState) -> usize {
 /// Exposed for E4; not yet wired into any endpoint. Mirrors the t45 last-active-user guard.
 pub async fn last_owner_guard_ok(state: &AppState) -> bool {
     last_owner_guard(count_owner_admins(state).await)
+}
+
+// =================================================================================================
+// RBAC-management endpoints (t64-E4): role CRUD + scoped role assignment. Every mutation composes the
+// meta gate (`role.manage`/`role.assign`) with the escalation invariants (subset / protected-Owner /
+// last-Owner), all enforced **server-side** and fail-closed. FROZEN wire DTOs for t64-E6 + t62.
+// =================================================================================================
+
+/// A [`Scope`] on the wire (request bodies). Tagged union mirroring the output
+/// [`ScopeView`](crate::session::ScopeView): `{"kind":"global"}` / `{"kind":"entity","id":".."}` /
+/// `{"kind":"book","id":".."}`. FROZEN for E6/t62.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ScopeInput {
+    Global,
+    Entity { id: Uuid },
+    Book { id: Uuid },
+}
+
+impl From<ScopeInput> for Scope {
+    fn from(s: ScopeInput) -> Self {
+        match s {
+            ScopeInput::Global => Scope::Global,
+            ScopeInput::Entity { id } => Scope::Entity(AuthzEntityId(id)),
+            ScopeInput::Book { id } => Scope::Book(AuthzBookId(id)),
+        }
+    }
+}
+
+/// A role rendered for the web (FROZEN for E6/t62). `permissions` are dotted verb ids in the role's
+/// deterministic (`BTreeSet`) order; `protected` marks the locked, undeletable Owner.
+#[derive(Debug, Serialize)]
+pub struct RoleView {
+    pub id: String,
+    pub name: String,
+    pub permissions: Vec<String>,
+    pub protected: bool,
+}
+
+impl From<&Role> for RoleView {
+    fn from(r: &Role) -> Self {
+        RoleView {
+            id: r.id.0.to_string(),
+            name: r.name.clone(),
+            permissions: r
+                .permission_set
+                .iter()
+                .map(|p| p.as_str().to_owned())
+                .collect(),
+            protected: r.protected,
+        }
+    }
+}
+
+/// One verb in the permission catalog (`GET /v1/permissions`), tagged with whether it is a
+/// non-delegable meta-permission. Lets the web render the permission-matrix editor (FROZEN).
+#[derive(Serialize)]
+pub struct PermissionInfo {
+    pub permission: String,
+    pub meta: bool,
+}
+
+/// Response of `GET /v1/permissions`: the whole frozen verb catalog, in declaration order.
+#[derive(Serialize)]
+pub struct PermissionCatalogView {
+    pub permissions: Vec<PermissionInfo>,
+}
+
+/// Body of `POST /v1/roles`. Unknown verb ids are rejected at deserialisation (a `422`).
+#[derive(Deserialize)]
+pub struct CreateRole {
+    pub name: String,
+    #[serde(default)]
+    pub permissions: Vec<Permission>,
+}
+
+/// Body of `PATCH /v1/roles/{id}`. Absent fields leave that facet unchanged.
+#[derive(Deserialize)]
+pub struct PatchRole {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub permissions: Option<Vec<Permission>>,
+}
+
+/// Body of `POST`/`DELETE /v1/users/{id}/roles` — the `(role, scope)` assignment to add or remove.
+#[derive(Deserialize)]
+pub struct RoleAssignmentInput {
+    pub role_id: Uuid,
+    pub scope: ScopeInput,
+}
+
+/// The `role.assigned`/`role.unassigned` audit payload (no user secrets — attribution only).
+#[derive(Serialize)]
+struct AssignmentEvent {
+    user_id: String,
+    role_id: String,
+    scope: ScopeView,
+}
+
+fn validate_role_name(raw: &str) -> Result<String, ApiError> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "role name must not be empty".to_owned(),
+        ));
+    }
+    if name.chars().count() > 64 {
+        return Err(ApiError::Unprocessable(
+            "role name must be at most 64 characters".to_owned(),
+        ));
+    }
+    Ok(name.to_owned())
+}
+
+fn assignment_views(assignments: &[RoleAssignment]) -> Vec<RoleAssignmentView> {
+    assignments
+        .iter()
+        .map(|a| RoleAssignmentView {
+            role_id: a.role_id.0.to_string(),
+            scope: ScopeView::from(a.scope),
+        })
+        .collect()
+}
+
+/// Persist `users.json` after a role-assignment change (mirrors `users::persist`, which is private).
+async fn persist_users(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.users_path {
+        let users = state.users.read().await;
+        crate::users::write_users_atomic(path, &users)
+            .map_err(|e| ApiError::Internal(format!("failed to persist users: {e}")))?;
+    }
+    Ok(())
+}
+
+/// Append a chained `role.*` audit event (honest actor, never any secret material). Mirrors the
+/// standard append + write-through + attest discipline.
+async fn record_role_event<T: Serialize>(
+    state: &AppState,
+    scope_id: &str,
+    kind: &str,
+    justification: &str,
+    payload: &T,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    let bytes = serde_json::to_vec(payload)?;
+    let actor_name = actor.resolve("api");
+    let mut ledger = state.ledger.write().await;
+    ledger.append(&actor_name, scope_id, kind, Some(justification), &bytes);
+    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state.attest_latest(attestor, &ledger).await;
+    Ok(())
+}
+
+/// `GET /v1/roles` — the role catalog. Any valid session (`401` without one; `403` if the session
+/// names no active user). Introspection the web needs to render the access matrix — no specific
+/// permission.
+pub async fn list_roles(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<RoleView>>, ApiError> {
+    resolve_principal_id(&state, &actor).await?;
+    let roles = state.roles.read().await;
+    let mut list: Vec<RoleView> = roles.iter().map(RoleView::from).collect();
+    list.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
+    Ok(Json(list))
+}
+
+/// `GET /v1/permissions` — the frozen verb catalog. Any valid session (as [`list_roles`]).
+pub async fn list_permissions(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<PermissionCatalogView>, ApiError> {
+    resolve_principal_id(&state, &actor).await?;
+    let permissions = Permission::ALL
+        .iter()
+        .map(|p| PermissionInfo {
+            permission: p.as_str().to_owned(),
+            meta: p.is_meta(),
+        })
+        .collect();
+    Ok(Json(PermissionCatalogView { permissions }))
+}
+
+/// `POST /v1/roles` — create a custom role. Gated `role.manage`\@Global, **and** the SUBSET INVARIANT:
+/// the whole `permission_set` must be ⊆ the actor's OWN effective authority at Global (holding
+/// `role.manage` does not exempt this). New roles are never protected.
+pub async fn create_role(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CreateRole>,
+) -> Result<(StatusCode, Json<RoleView>), ApiError> {
+    let name = validate_role_name(&req.name)?;
+    let permission_set: BTreeSet<Permission> = req.permissions.iter().copied().collect();
+
+    let authz = authorizer(&state, &actor).await?;
+    // Meta gate: operate the role machinery.
+    authz.require(Permission::RoleManage, Scope::Global)?;
+    // SUBSET INVARIANT (escalation guard): cannot mint a role holding a permission you lack.
+    if !authz.can_define_role(permission_set.iter()) {
+        return Err(forbidden());
+    }
+
+    let role = Role {
+        id: RoleId(Uuid::new_v4()),
+        name,
+        permission_set,
+        protected: false,
+    };
+    state.roles.write().await.insert(role.clone());
+    persist_roles(&state).await?;
+
+    let view = RoleView::from(&role);
+    record_role_event(
+        &state,
+        &view.id,
+        "role.created",
+        "custom role created",
+        &view,
+        &actor,
+        &attestor,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `PATCH /v1/roles/{id}` — rename and/or re-set a custom role's permissions. Gated `role.manage`.
+///
+/// **Protected-Owner:** a protected role (Owner) is locked — neither its name nor its permission-set
+/// may be edited (`403`), closing the "edit your way out of the escalation ceiling" hole. The
+/// **SUBSET INVARIANT** is enforced on the *resulting* permission-set, so an edit can never widen a
+/// role beyond the actor's own authority.
+pub async fn patch_role(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PatchRole>,
+) -> Result<Json<RoleView>, ApiError> {
+    let role_id = RoleId(id);
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::RoleManage, Scope::Global)?;
+
+    let existing = state.roles.read().await.get(role_id).cloned();
+    let existing = existing.ok_or(ApiError::NotFound)?;
+    // Protected-Owner: the locked super-role is never edited, by anyone.
+    if existing.protected {
+        return Err(forbidden());
+    }
+
+    let new_name = match &req.name {
+        Some(n) => validate_role_name(n)?,
+        None => existing.name.clone(),
+    };
+    let new_perms: BTreeSet<Permission> = match &req.permissions {
+        Some(p) => p.iter().copied().collect(),
+        None => existing.permission_set.clone(),
+    };
+    // SUBSET INVARIANT on the resulting contents (narrowing is safe; widening beyond own authority is not).
+    if !authz.can_define_role(new_perms.iter()) {
+        return Err(forbidden());
+    }
+
+    let updated = Role {
+        id: role_id,
+        name: new_name,
+        permission_set: new_perms,
+        protected: false,
+    };
+    {
+        let mut roles = state.roles.write().await;
+        // Re-check under the write lock (protection can only ever be the seeded Owner, but stay honest).
+        match roles.get(role_id) {
+            None => return Err(ApiError::NotFound),
+            Some(r) if r.protected => return Err(forbidden()),
+            Some(_) => {}
+        }
+        roles.insert(updated.clone());
+    }
+    persist_roles(&state).await?;
+
+    let view = RoleView::from(&updated);
+    record_role_event(
+        &state,
+        &view.id,
+        "role.updated",
+        "custom role updated",
+        &view,
+        &actor,
+        &attestor,
+    )
+    .await?;
+    Ok(Json(view))
+}
+
+/// `DELETE /v1/roles/{id}` — delete a custom role. Gated `role.manage`. **Protected-Owner** (and any
+/// protected role) is undeletable (`403`). Dangling assignments to a deleted role resolve to no
+/// authority (fail-closed), so deletion can only ever *reduce* authority.
+pub async fn delete_role(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<StatusCode, ApiError> {
+    let role_id = RoleId(id);
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::RoleManage, Scope::Global)?;
+
+    let removed = {
+        let mut roles = state.roles.write().await;
+        let target = roles.get(role_id).cloned().ok_or(ApiError::NotFound)?;
+        if !target.can_be_deleted() {
+            return Err(forbidden());
+        }
+        // RoleCatalog has no `remove`; rebuild it without the target (FromIterator<Role>).
+        let rebuilt: RoleCatalog = roles.iter().filter(|r| r.id != role_id).cloned().collect();
+        *roles = rebuilt;
+        target
+    };
+    persist_roles(&state).await?;
+
+    let view = RoleView::from(&removed);
+    record_role_event(
+        &state,
+        &view.id,
+        "role.deleted",
+        "custom role deleted",
+        &view,
+        &actor,
+        &attestor,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /v1/users/{id}/roles` — assign a `(role, scope)` to a user. Gated `role.assign` **at the
+/// assignment's scope**, **and** the SUBSET INVARIANT at that scope (the role's perms ⊆ the actor's
+/// authority covering `scope`) — so you can never grant authority you do not hold, not even by
+/// assigning a pre-existing fat role or Owner. Idempotent (a duplicate assignment is a no-op).
+pub async fn assign_role(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<RoleAssignmentInput>,
+) -> Result<Json<Vec<RoleAssignmentView>>, ApiError> {
+    let target_uid = UserId(id);
+    let scope: Scope = req.scope.into();
+    let role_id = RoleId(req.role_id);
+
+    let authz = authorizer(&state, &actor).await?;
+    // Meta gate at the assignment's scope.
+    authz.require(Permission::RoleAssign, scope)?;
+
+    let role = state.roles.read().await.get(role_id).cloned();
+    let role = role.ok_or(ApiError::NotFound)?;
+    // SUBSET INVARIANT @ scope.
+    if !authz.can_assign_role(&role, scope) {
+        return Err(forbidden());
+    }
+
+    let assignment = RoleAssignment::new(role_id, scope);
+    let assignments = {
+        let mut users = state.users.write().await;
+        let user = users.get_mut(&target_uid).ok_or(ApiError::NotFound)?;
+        if !user.role_assignments.contains(&assignment) {
+            user.role_assignments.push(assignment);
+        }
+        user.role_assignments.clone()
+    };
+    persist_users(&state).await?;
+
+    let payload = AssignmentEvent {
+        user_id: target_uid.to_string(),
+        role_id: role_id.0.to_string(),
+        scope: ScopeView::from(scope),
+    };
+    record_role_event(
+        &state,
+        &target_uid.to_string(),
+        "role.assigned",
+        "role assigned to user",
+        &payload,
+        &actor,
+        &attestor,
+    )
+    .await?;
+    Ok(Json(assignment_views(&assignments)))
+}
+
+/// `DELETE /v1/users/{id}/roles` — remove a `(role, scope)` assignment from a user. Gated
+/// `role.assign` at the scope. **Last-Owner guard:** removing the last Owner\@Global assignment is
+/// refused (`409`) so ≥1 administrative Owner always remains (no lockout). Idempotent for a
+/// non-held assignment.
+pub async fn unassign_role(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<RoleAssignmentInput>,
+) -> Result<Json<Vec<RoleAssignmentView>>, ApiError> {
+    let target_uid = UserId(id);
+    let scope: Scope = req.scope.into();
+    let role_id = RoleId(req.role_id);
+
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::RoleAssign, scope)?;
+
+    let assignment = RoleAssignment::new(role_id, scope);
+    let assignments = {
+        let mut users = state.users.write().await;
+        let holds = users
+            .get(&target_uid)
+            .ok_or(ApiError::NotFound)?
+            .role_assignments
+            .contains(&assignment);
+        // Last-Owner guard (checked under the write lock so two concurrent removals cannot both pass).
+        if holds && assignment.is_owner_admin() {
+            let holders = count_owner_admin_holders(users.values().flat_map(|u| {
+                let uid = AuthzUserId(u.id.0);
+                u.role_assignments.iter().map(move |a| (uid, a))
+            }));
+            if !last_owner_guard(holders) {
+                return Err(ApiError::Conflict(
+                    "não pode remover o último Proprietário".to_owned(),
+                ));
+            }
+        }
+        let user = users.get_mut(&target_uid).ok_or(ApiError::NotFound)?;
+        user.role_assignments.retain(|a| a != &assignment);
+        user.role_assignments.clone()
+    };
+    persist_users(&state).await?;
+
+    let payload = AssignmentEvent {
+        user_id: target_uid.to_string(),
+        role_id: role_id.0.to_string(),
+        scope: ScopeView::from(scope),
+    };
+    record_role_event(
+        &state,
+        &target_uid.to_string(),
+        "role.unassigned",
+        "role removed from user",
+        &payload,
+        &actor,
+        &attestor,
+    )
+    .await?;
+    Ok(Json(assignment_views(&assignments)))
 }
 
 #[cfg(test)]

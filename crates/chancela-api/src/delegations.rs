@@ -14,13 +14,23 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use axum::Json;
+use axum::extract::{Path as AxumPath, State};
+use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
-use chancela_authz::{Delegation, UserId as AuthzUserId};
+use chancela_authz::{Delegation, Permission, Scope, UserId as AuthzUserId};
 
 use crate::AppState;
+use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{authorizer, forbidden};
 use crate::error::ApiError;
+use crate::roles::ScopeInput;
+use crate::session::ScopeView;
+use crate::users::UserId;
 
 pub const DELEGATIONS_FILE: &str = "delegations.json";
 
@@ -94,8 +104,6 @@ pub(crate) fn load_delegations(path: &Path) -> Option<HashMap<DelegationId, Stor
 
 /// Atomically write the delegation table to `delegations.json` (tmp file + rename), sorted by
 /// `granted_at` then id for a deterministic document. Mirrors [`crate::users::write_users_atomic`].
-// Wired by t64-E4 (delegation endpoints); E2 lands the store + round-trip. Exercised in tests.
-#[allow(dead_code)]
 pub(crate) fn write_delegations_atomic(
     path: &Path,
     delegations: &HashMap<DelegationId, StoredDelegation>,
@@ -121,8 +129,6 @@ pub(crate) fn write_delegations_atomic(
 
 /// Persist the live delegation table through to `delegations.json` when the state is file-backed.
 /// A no-op for pure in-memory state (`delegations_path` is `None`). Call after any mutation (E4).
-// Wired by t64-E4 (delegation endpoints); E2 only lands the store + seam.
-#[allow(dead_code)]
 pub(crate) async fn persist_delegations(state: &AppState) -> Result<(), ApiError> {
     if let Some(path) = &state.delegations_path {
         let delegations = state.delegations.read().await;
@@ -132,7 +138,6 @@ pub(crate) async fn persist_delegations(state: &AppState) -> Result<(), ApiError
     Ok(())
 }
 
-#[allow(dead_code)] // reachable only via write_delegations_atomic (wired by t64-E4)
 fn tmp_path(path: &Path) -> PathBuf {
     let mut name = path
         .file_name()
@@ -142,12 +147,218 @@ fn tmp_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
+// =================================================================================================
+// Scoped-delegation endpoints (t64-E4): grant / list / revoke. A grant enforces the delegation
+// invariant server-side (non-meta AND held VIA A ROLE at the scope → no privilege escalation, no
+// re-delegation); revocation is immediate (revoked delegations resolve to no authority). FROZEN DTOs.
+// =================================================================================================
+
+/// Body of `POST /v1/delegations` — delegate one permission to a grantee, optionally scoped and
+/// optionally expiring. `permission` deserialises from its dotted id; a meta verb / unknown verb /
+/// out-of-authority verb is refused by [`grant_delegation`] (`403`) or at deserialisation (`422`).
+#[derive(Deserialize)]
+pub struct GrantDelegation {
+    pub to: Uuid,
+    pub permission: Permission,
+    pub scope: ScopeInput,
+    /// RFC 3339 expiry; absent ⇒ until revoked.
+    #[serde(default)]
+    pub expires_at: Option<String>,
+}
+
+/// A delegation rendered for the web (FROZEN for E7/t62). No secret material — only attribution,
+/// the delegated verb, its scope, and lifecycle timestamps.
+#[derive(Serialize)]
+pub struct DelegationView {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub permission: String,
+    pub scope: ScopeView,
+    pub granted_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    pub revoked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoked_by: Option<String>,
+}
+
+impl From<&StoredDelegation> for DelegationView {
+    fn from(d: &StoredDelegation) -> Self {
+        DelegationView {
+            id: d.id.0.to_string(),
+            from: d.inner.from.0.to_string(),
+            to: d.inner.to.0.to_string(),
+            permission: d.inner.permission.as_str().to_owned(),
+            scope: ScopeView::from(d.inner.scope),
+            granted_at: d.granted_at.clone(),
+            expires_at: d.inner.expires_at.and_then(|t| t.format(&Rfc3339).ok()),
+            revoked: d.inner.revoked,
+            revoked_at: d.revoked_at.clone(),
+            revoked_by: d.revoked_by.map(|u| u.0.to_string()),
+        }
+    }
+}
+
+/// Append a chained `delegation.*` audit event (honest actor, no secret material).
+async fn record_delegation_event(
+    state: &AppState,
+    view: &DelegationView,
+    kind: &str,
+    justification: &str,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    let bytes = serde_json::to_vec(view)?;
+    let actor_name = actor.resolve("api");
+    let mut ledger = state.ledger.write().await;
+    ledger.append(&actor_name, &view.id, kind, Some(justification), &bytes);
+    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state.attest_latest(attestor, &ledger).await;
+    Ok(())
+}
+
+/// `GET /v1/delegations` — the delegations the caller may see: a `delegation.revoke`\@Global holder
+/// sees **all**, everyone else sees only delegations they granted or received. Any valid session.
+pub async fn list_delegations(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<DelegationView>>, ApiError> {
+    let authz = authorizer(&state, &actor).await?;
+    let principal = AuthzUserId(authz.principal().0);
+    let can_see_all = authz.permits(Permission::DelegationRevoke, Scope::Global);
+
+    let table = state.delegations.read().await;
+    let mut list: Vec<DelegationView> = table
+        .values()
+        .filter(|d| can_see_all || d.inner.from == principal || d.inner.to == principal)
+        .map(DelegationView::from)
+        .collect();
+    list.sort_by(|a, b| a.granted_at.cmp(&b.granted_at).then(a.id.cmp(&b.id)));
+    Ok(Json(list))
+}
+
+/// `POST /v1/delegations` — grant a scoped, revocable, optionally-expiring delegation. Gated
+/// `delegation.grant` at the delegation's scope, **and** the DELEGATION INVARIANT: the permission
+/// must be non-meta AND held by the actor **via a role** covering that scope. The via-role rule makes
+/// re-delegation structurally impossible (a received permission is never a role grant).
+pub async fn grant_delegation(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<GrantDelegation>,
+) -> Result<(StatusCode, Json<DelegationView>), ApiError> {
+    let scope: Scope = req.scope.into();
+    let authz = authorizer(&state, &actor).await?;
+    // Meta gate at the delegation's scope.
+    authz.require(Permission::DelegationGrant, scope)?;
+    // DELEGATION INVARIANT: non-meta + hold-via-role at scope (blocks escalation AND re-delegation).
+    if !authz.can_delegate(req.permission, scope) {
+        return Err(forbidden());
+    }
+
+    let grantor = authz.principal();
+    let grantee = UserId(req.to);
+    if !state.users.read().await.contains_key(&grantee) {
+        return Err(ApiError::NotFound);
+    }
+
+    let expires_at = match &req.expires_at {
+        Some(s) => Some(OffsetDateTime::parse(s, &Rfc3339).map_err(|_| {
+            ApiError::Unprocessable("expires_at must be an RFC 3339 timestamp".to_owned())
+        })?),
+        None => None,
+    };
+
+    let mut inner = Delegation::new(
+        AuthzUserId(grantor.0),
+        AuthzUserId(grantee.0),
+        req.permission,
+        scope,
+    );
+    if let Some(exp) = expires_at {
+        inner = inner.expiring_at(exp);
+    }
+    let granted_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default();
+    let stored = StoredDelegation::new(DelegationId(Uuid::new_v4()), granted_at, inner);
+
+    state
+        .delegations
+        .write()
+        .await
+        .insert(stored.id, stored.clone());
+    persist_delegations(&state).await?;
+
+    let view = DelegationView::from(&stored);
+    record_delegation_event(
+        &state,
+        &view,
+        "delegation.granted",
+        "permission delegated",
+        &actor,
+        &attestor,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `DELETE /v1/delegations/{id}` — revoke a delegation. The **grantor** may always revoke their own;
+/// otherwise `delegation.revoke` at the delegation's scope is required. Revocation is **immediate**
+/// (a revoked delegation contributes no authority). Idempotent for an already-revoked delegation.
+pub async fn revoke_delegation(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<Json<DelegationView>, ApiError> {
+    let del_id = DelegationId(id);
+    let authz = authorizer(&state, &actor).await?;
+    let principal = AuthzUserId(authz.principal().0);
+
+    let existing = state.delegations.read().await.get(&del_id).cloned();
+    let existing = existing.ok_or(ApiError::NotFound)?;
+    // Grantor may always revoke their own; otherwise require delegation.revoke at the delegation's scope.
+    if existing.inner.from != principal {
+        authz.require(Permission::DelegationRevoke, existing.inner.scope)?;
+    }
+    // Idempotent: already revoked → return the current view unchanged.
+    if existing.inner.revoked {
+        return Ok(Json(DelegationView::from(&existing)));
+    }
+
+    let revoked_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default();
+    let updated = {
+        let mut table = state.delegations.write().await;
+        let d = table.get_mut(&del_id).ok_or(ApiError::NotFound)?;
+        d.inner.revoked = true;
+        d.revoked_at = Some(revoked_at);
+        d.revoked_by = Some(principal);
+        d.clone()
+    };
+    persist_delegations(&state).await?;
+
+    let view = DelegationView::from(&updated);
+    record_delegation_event(
+        &state,
+        &view,
+        "delegation.revoked",
+        "delegation revoked",
+        &actor,
+        &attestor,
+    )
+    .await?;
+    Ok(Json(view))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chancela_authz::{Permission, Scope};
-    use time::OffsetDateTime;
-    use time::format_description::well_known::Rfc3339;
 
     fn uid(n: u128) -> AuthzUserId {
         AuthzUserId(Uuid::from_u128(n))
