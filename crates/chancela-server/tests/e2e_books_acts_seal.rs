@@ -51,6 +51,38 @@ async fn books_acts_full_seal_lifecycle() {
     assert_eq!(sealed["act"]["state"], "Sealed");
     assert_eq!(sealed["payload_digest"].as_str().expect("digest").len(), 64);
 
+    // t48/DOC-01: the seal produced a PDF/A-2u document — the response names its id, digest, and
+    // the pinned template version.
+    let doc = &sealed["document"];
+    assert_eq!(doc["template_id"], "csc-ata-ag/v1", "sealed doc: {sealed}");
+    assert_eq!(doc["pdf_digest"].as_str().expect("pdf digest").len(), 64);
+    assert!(doc["id"].is_string());
+
+    // The document is bound into the tamper-evident chain (a `document.generated` event).
+    let (status, events) = h.get_json("/v1/ledger/events").await;
+    assert_eq!(status, 200);
+    assert!(
+        events
+            .as_array()
+            .expect("events")
+            .iter()
+            .any(|e| e["kind"] == "document.generated"),
+        "the seal appended a document.generated event: {events}"
+    );
+
+    // The DOC-03 bundle is preserved (PDF bytes + metadata), with the Wave-D validation-report
+    // slot explicitly reserved (null).
+    let (status, bundle) = h
+        .get_json(&format!("/v1/acts/{act_id}/document/bundle"))
+        .await;
+    assert_eq!(status, 200, "bundle: {bundle}");
+    assert_eq!(bundle["pdf"]["media_type"], "application/pdf");
+    assert!(bundle["pdf"]["byte_length"].as_u64().expect("length") > 0);
+    assert!(
+        bundle["validation_report"].is_null(),
+        "the DOC-03 validation-report slot is reserved for Wave D"
+    );
+
     // The act now reads Sealed with its ata number.
     let (status, got) = h.get_json(&format!("/v1/acts/{act_id}")).await;
     assert_eq!(status, 200);

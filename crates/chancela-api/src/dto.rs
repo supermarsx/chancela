@@ -738,6 +738,18 @@ pub struct SealResponse {
     pub event_seq: u64,
     pub payload_digest: String,
     pub acknowledged_warnings: Vec<IssueView>,
+    /// The document generated for this seal (t48 / DOC-01): its id, PDF/A-2u digest, and the
+    /// pinned template version. Additive. `null` when the act's family has no bound template yet
+    /// (documented fallback) — existing fields are unchanged.
+    pub document: Option<SealDocument>,
+}
+
+/// The additive `document` block of a [`SealResponse`] (t48 §3.3).
+#[derive(Serialize)]
+pub struct SealDocument {
+    pub id: String,
+    pub pdf_digest: String,
+    pub template_id: String,
 }
 
 /// Response of `GET /v1/acts/{id}/compliance`. `rule_pack` is the **dispatched** family pack id

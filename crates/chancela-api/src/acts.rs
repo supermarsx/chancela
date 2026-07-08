@@ -273,12 +273,58 @@ pub async fn seal_act_handler(
             // The dispatched pack (`Box<dyn RulePack>`, not `Send`) is not needed past here; drop
             // it before the `.await` below so the handler future stays `Send` (axum's bound).
             drop(pack);
-            // `seal_act` appended `act.sealed`; persist it plus the updated book (ata counter) and
-            // the sealed act atomically, then commit the clones into the in-memory maps.
-            state.persist_write_through(&mut ledger, 1, |tx| {
-                tx.upsert_book(&book_next)?;
-                tx.upsert_act(&act_next)
-            })?;
+
+            // Document production (t48 / D4): render the sealed ata → PDF/A-2u → persist the row +
+            // a `document.generated` event **inside the SAME durable commit** as `act.sealed`. A
+            // render/write failure rolls the just-appended `act.sealed` event back out of the
+            // in-memory ledger so a failed seal leaves no trace (the seal transaction is atomic).
+            // A family without a template yet yields `None`: the seal proceeds without a document
+            // (documented fallback), never blocking the seal.
+            let generated = match crate::documents::generate_for_act(&act_next, entity) {
+                Ok(g) => g,
+                Err(e) => {
+                    AppState::rollback_ledger_events(&mut ledger, 1);
+                    return Err(e);
+                }
+            };
+
+            let document = match generated {
+                Some(made) => {
+                    // Bind the document into the tamper-evident chain (TPL-02 / §3.4) and persist
+                    // it with the sealed act + book counter in one commit (event_count = 2).
+                    let scope = format!(
+                        "entity:{}/book:{}/act:{}",
+                        entity.id, act_next.book_id, act_next.id
+                    );
+                    let payload = serde_json::to_vec(&made.event_payload)?;
+                    ledger.append(&actor, &scope, "document.generated", None, &payload);
+                    state.persist_write_through(&mut ledger, 2, |tx| {
+                        tx.upsert_book(&book_next)?;
+                        tx.upsert_act(&act_next)?;
+                        tx.upsert_document(&made.stored)
+                    })?;
+                    // Publish to the live document read model (GET source; store is durability).
+                    state
+                        .documents
+                        .write()
+                        .await
+                        .insert(act_next.id, made.stored.clone());
+                    Some(crate::dto::SealDocument {
+                        id: made.stored.id,
+                        pdf_digest: made.stored.pdf_digest,
+                        template_id: made.stored.template_id,
+                    })
+                }
+                None => {
+                    // No template bound for this family yet — persist the seal as before (1 event).
+                    state.persist_write_through(&mut ledger, 1, |tx| {
+                        tx.upsert_book(&book_next)?;
+                        tx.upsert_act(&act_next)
+                    })?;
+                    None
+                }
+            };
+
             state.attest_latest(&attestor, &ledger).await;
             *book = book_next;
             *act = act_next;
@@ -292,6 +338,7 @@ pub async fn seal_act_handler(
                     .iter()
                     .map(IssueView::from)
                     .collect(),
+                document,
             };
             Ok((StatusCode::OK, Json(resp)).into_response())
         }

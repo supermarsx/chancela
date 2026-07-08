@@ -54,8 +54,43 @@ pub async fn create_book(
     };
     // Appends the `book.opened` genesis event; a fresh book always opens cleanly.
     open_and_seal_book(&mut book, entity, termo, &actor, &mut ledger)?;
-    // Durably persist the event + the new book row before publishing the book to the read model.
-    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&book))?;
+
+    // Termo de abertura document (t48 / TPL-10/11): opening a book likewise produces a preserved
+    // PDF/A document + a `document.generated` event, in the SAME durable commit as `book.opened`
+    // (same transaction discipline as the ata seal). A render/write failure rolls the genesis
+    // event back so a failed open leaves no trace. Families without a termo template yet get the
+    // genesis event alone (documented fallback), never blocking the open.
+    let termo_ref = book
+        .termo_abertura
+        .as_ref()
+        .expect("termo present immediately after open");
+    let generated = match crate::documents::generate_for_termo(termo_ref, &book, entity.family) {
+        Ok(g) => g,
+        Err(e) => {
+            AppState::rollback_ledger_events(&mut ledger, 1);
+            return Err(e);
+        }
+    };
+    match generated {
+        Some(made) => {
+            let scope = format!("entity:{}/book:{}", book.entity_id, book.id);
+            let payload = serde_json::to_vec(&made.event_payload)?;
+            ledger.append(&actor, &scope, "document.generated", None, &payload);
+            state.persist_write_through(&mut ledger, 2, |tx| {
+                tx.upsert_book(&book)?;
+                tx.upsert_document(&made.stored)
+            })?;
+            state
+                .documents
+                .write()
+                .await
+                .insert(made.stored.act_id, made.stored.clone());
+        }
+        None => {
+            // Durably persist the genesis event + the new book row (the prior single-event path).
+            state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&book))?;
+        }
+    }
     state.attest_latest(&attestor, &ledger).await;
 
     let view = BookView::from(&book);

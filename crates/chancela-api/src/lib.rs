@@ -42,6 +42,7 @@ mod books;
 mod cae;
 mod chronology;
 mod dashboard;
+mod documents;
 mod dto;
 mod entities;
 mod error;
@@ -68,7 +69,7 @@ use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryTransport};
-use chancela_store::{Store, StoreError, Tx};
+use chancela_store::{Store, StoreError, StoredDocument, Tx};
 use serde::Serialize;
 use tokio::sync::RwLock;
 use tower_http::services::{ServeDir, ServeFile};
@@ -179,6 +180,12 @@ pub struct AppState {
     /// behaviour, byte-identical). Set only by [`AppState::with_data_dir`]/[`AppState::from_env`];
     /// every mutation write-through goes through [`AppState::persist_write_through`].
     pub store: Option<Store>,
+    /// The live document read model (t48 / DOC-01): generated documents (PDF/A-2u bytes +
+    /// metadata) keyed by the owning [`ActId`]. Book instruments (termos) key on their book id
+    /// cast into an `ActId`. Mirrors `acts`/`books`: an in-memory read model backed by the durable
+    /// `documents` table; the GET endpoints fall back to the store on a miss (e.g. after a restart,
+    /// before the map is repopulated). `Default` empty.
+    pub documents: Arc<RwLock<HashMap<ActId, StoredDocument>>>,
     /// The boot-time chain-verification outcome recorded by [`AppState::with_data_dir`] when the
     /// durable ledger was rehydrated (§D-boot): `Some(Ok(len))` for an intact chain, `Some(Err(..))`
     /// for a broken one (surfaced on `/health` + the startup banner), `None` in-memory. Shared via
@@ -292,6 +299,17 @@ impl AppState {
         Ok(())
     }
 
+    /// Roll the last `count` just-appended events back out of the in-memory `ledger`, rebuilding
+    /// the chain without them. Used when an in-memory step **after** an append fails **before** the
+    /// durable commit (t48: document generation during a seal / book open), so the in-memory chain
+    /// stays identical to the untouched store and no aggregate change is committed. Mirrors the
+    /// rollback [`persist_write_through`] performs on a store failure.
+    pub(crate) fn rollback_ledger_events(ledger: &mut Ledger, count: usize) {
+        let len = ledger.len();
+        let kept: Vec<Event> = ledger.events()[..len - count].to_vec();
+        *ledger = Ledger::try_from_events(kept).0;
+    }
+
     /// Attest the most recently appended ledger event with the request's unlocked key, if it
     /// carries one (plan t29 §4.4). Best-effort enrichment: a signing failure is logged and
     /// skipped, never blocking the mutation. Call **after** [`persist_write_through`] has
@@ -398,6 +416,16 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/acts/{id}/compliance", get(acts::get_compliance))
         .route("/v1/acts/{id}/seal", post(acts::seal_act_handler))
         .route("/v1/acts/{id}/archive", post(acts::archive_act))
+        .route(
+            "/v1/acts/{id}/document/preview",
+            get(documents::preview_document),
+        )
+        .route("/v1/acts/{id}/document", get(documents::get_document_pdf))
+        .route(
+            "/v1/acts/{id}/document/bundle",
+            get(documents::get_document_bundle),
+        )
+        .route("/v1/templates", get(documents::list_templates))
         .route("/v1/ledger/events", get(ledger::list_ledger_events))
         .route("/v1/ledger/verify", get(ledger::verify_ledger))
         .route("/v1/dashboard", get(dashboard::dashboard))
@@ -1171,6 +1199,248 @@ mod tests {
         let arr = book_acts.as_array().expect("acts array");
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["ata_number"], 1);
+    }
+
+    /// Send a request and return (status, content-type, raw body bytes) — for the non-JSON PDF
+    /// download. Auto-seeds a session like [`send`].
+    async fn send_bytes(state: AppState, req: Request<Body>) -> (StatusCode, String, Vec<u8>) {
+        let req = if req.headers().get("x-chancela-session").is_none() {
+            let token = auth_token(&state).await;
+            with_session(req, &token)
+        } else {
+            req
+        };
+        let response = router(state).oneshot(req).await.expect("router responds");
+        let status = response.status();
+        let ctype = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collects");
+        (status, ctype, bytes.to_vec())
+    }
+
+    /// Draft an ata into `book_id`, fill mandatory (compliance-clean) contents, and advance it to
+    /// Signing; returns the act id. Mirrors `full_lifecycle_happy_path`'s fill.
+    async fn draft_fill_and_advance(state: &AppState, book_id: &str) -> String {
+        let (_, act) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({ "book_id": book_id, "title": "Ata da AG anual", "channel": "Physical" }),
+            ),
+        )
+        .await;
+        let act_id = act["id"].as_str().expect("act id").to_owned();
+        send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({
+                    "meeting_date": "2026-03-30",
+                    "meeting_time": "10:00",
+                    "place": "Sede social",
+                    "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] },
+                    "agenda": [{ "number": 1, "text": "Aprovação das contas do exercício" }],
+                    "attendance_reference": "Lista de presenças",
+                    "deliberations": "Aprovadas as contas do exercício.",
+                }),
+            ),
+        )
+        .await;
+        for to in [
+            "Review",
+            "Convened",
+            "Deliberated",
+            "TextApproved",
+            "Signing",
+        ] {
+            let (status, _) = send(
+                state.clone(),
+                post_json(&format!("/v1/acts/{act_id}/advance"), json!({ "to": to })),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+        }
+        act_id
+    }
+
+    #[tokio::test]
+    async fn seal_produces_a_document_and_a_document_generated_event() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        // Pre-seal the persisted PDF is 404 (no document until sealing).
+        let (status, _, _) =
+            send_bytes(state.clone(), get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // Seal → the additive `document` block names the PDF/A digest + pinned template version.
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+        let doc = &sealed["document"];
+        assert_eq!(doc["template_id"], "csc-ata-ag/v1");
+        assert_eq!(doc["pdf_digest"].as_str().expect("digest").len(), 64);
+        assert!(doc["id"].is_string());
+
+        // A `document.generated` event is bound into the chain.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        assert!(
+            events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "document.generated"),
+            "a document.generated event was appended: {events}"
+        );
+
+        // The persisted PDF now downloads as application/pdf and carries the PDF header.
+        let (status, ctype, bytes) =
+            send_bytes(state, get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(ctype.starts_with("application/pdf"), "content-type={ctype}");
+        assert!(bytes.starts_with(b"%PDF-"), "bytes start with a PDF header");
+    }
+
+    #[tokio::test]
+    async fn document_preview_renders_a_model_pre_seal_without_persisting() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let (_, act) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({ "book_id": book_id, "title": "Ata da AG anual", "channel": "Physical" }),
+            ),
+        )
+        .await;
+        let act_id = act["id"].as_str().expect("act id").to_owned();
+        send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({
+                    "meeting_date": "2026-03-30",
+                    "meeting_time": "10:00",
+                    "place": "Sede social",
+                    "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] },
+                    "agenda": [{ "number": 1, "text": "Contas" }],
+                    "deliberations": "Aprovadas.",
+                }),
+            ),
+        )
+        .await;
+
+        // Preview renders the CURRENT (draft) record live to a DocumentModel.
+        let (status, model) = send(
+            state.clone(),
+            get(&format!("/v1/acts/{act_id}/document/preview")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(model["title"], "Ata da AG anual");
+        assert_eq!(model["language"], "pt-PT");
+        assert!(!model["blocks"].as_array().expect("blocks").is_empty());
+
+        // Preview does NOT persist: the PDF endpoint is still 404.
+        let (status, _, _) = send_bytes(state, get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn templates_list_exposes_the_spine_templates() {
+        let state = AppState::default();
+        let (status, all) = send(state.clone(), get("/v1/templates")).await;
+        assert_eq!(status, StatusCode::OK);
+        let ids: Vec<&str> = all
+            .as_array()
+            .expect("templates")
+            .iter()
+            .map(|t| t["id"].as_str().expect("id"))
+            .collect();
+        assert!(ids.contains(&"csc-ata-ag/v1"));
+        assert!(ids.contains(&"csc-termo-abertura/v1"));
+
+        // Filter by family + stage.
+        let (status, ata) = send(
+            state,
+            get("/v1/templates?family=CommercialCompany&stage=Ata"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let arr = ata.as_array().expect("filtered templates");
+        assert!(arr.iter().all(|t| t["stage"] == "Ata"));
+        assert!(
+            arr.iter()
+                .any(|t| t["id"] == "csc-ata-ag/v1" && t["locale"] == "pt-PT")
+        );
+    }
+
+    #[tokio::test]
+    async fn opening_a_book_produces_a_preserved_termo_document() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+
+        // A `document.generated` event for the termo is on the chain right after opening.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        assert!(
+            events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "document.generated"),
+            "opening a book emits a document.generated event: {events}"
+        );
+
+        // The termo PDF is preserved, keyed by the book id (book instruments have no owning act).
+        let (status, ctype, bytes) =
+            send_bytes(state, get(&format!("/v1/acts/{book_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(ctype.starts_with("application/pdf"), "content-type={ctype}");
+        assert!(bytes.starts_with(b"%PDF-"));
+    }
+
+    #[tokio::test]
+    async fn document_bundle_reserves_the_validation_report_for_wave_d() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        // The bundle is 404 until sealed.
+        let (status, _) = send(
+            state.clone(),
+            get(&format!("/v1/acts/{act_id}/document/bundle")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+
+        let (status, bundle) =
+            send(state, get(&format!("/v1/acts/{act_id}/document/bundle"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(bundle["document"]["template_id"], "csc-ata-ag/v1");
+        assert_eq!(
+            bundle["document"]["profile"],
+            "application/pdf; profile=PDF/A-2u"
+        );
+        assert_eq!(bundle["pdf"]["media_type"], "application/pdf");
+        assert!(bundle["pdf"]["byte_length"].as_u64().expect("length") > 0);
+        assert!(bundle["attachments_manifest"].is_array());
+        // The DOC-03 validation-report slot is reserved for Wave D — explicitly null in v1.
+        assert!(
+            bundle["validation_report"].is_null(),
+            "the Wave-D validation-report slot is reserved (null): {bundle}"
+        );
     }
 
     #[tokio::test]
