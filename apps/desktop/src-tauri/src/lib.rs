@@ -85,10 +85,50 @@ pub fn run() {
     builder
         .setup(|app| {
             start_embedded_server_if_enabled(app)?;
+            #[cfg(desktop)]
+            center_main_window_on_first_run(app);
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running Chancela desktop application");
+}
+
+/// First-run centering for the `main` window (belt-and-braces).
+///
+/// `tauri.conf.json` declares `"center": true`, so a fresh install opens the
+/// window centered on the active monitor. On every *subsequent* launch,
+/// `tauri-plugin-window-state` restores the saved geometry — its restore runs
+/// when the window is created, *before* this `setup` hook, so a returning user's
+/// position always wins over the config's declarative center.
+///
+/// This is the defensive fallback for the rare platform/timing where the config
+/// `center` is not honoured: it re-centers `main`, but ONLY on a first run —
+/// detected by the ABSENCE of the plugin's state file. Gating on "no saved state
+/// yet" guarantees we never clobber a legitimately restored position on run 2+
+/// (the plugin already refuses to restore a position that lands off every
+/// connected monitor, so there is no off-screen case to guard here). Best-effort
+/// throughout: any failure is swallowed and must never block launch.
+#[cfg(desktop)]
+fn center_main_window_on_first_run(app: &tauri::App) {
+    use tauri::Manager;
+    use tauri_plugin_window_state::AppHandleExt;
+
+    let handle = app.handle();
+
+    // The plugin persists to `<app_config_dir>/<filename>` (default
+    // `.window-state.json`). Its absence means this is a first run with nothing
+    // to restore, so centering here cannot override a saved position.
+    let state_saved = handle
+        .path()
+        .app_config_dir()
+        .map(|dir| dir.join(handle.filename()).exists())
+        .unwrap_or(false);
+
+    if !state_saved {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.center();
+        }
+    }
 }
 
 /// Environment variable naming the fixed `host:port` the dev-mode embedded server
