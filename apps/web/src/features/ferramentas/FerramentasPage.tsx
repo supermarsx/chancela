@@ -146,10 +146,10 @@ export function FerramentasPage() {
         {section === 'legislacao' ? (
           <LegislacaoPage />
         ) : (
-          <>
+          <div className="stack">
             <CaeExplorer />
             <CaeCatalogPanel />
-          </>
+          </div>
         )}
       </div>
     </div>

@@ -1478,6 +1478,20 @@ a,
   opacity: 0.5;
 }
 
+/* Focus: a clean gilt ring for keyboard users, never the browser's default outline.
+   The default is suppressed only for pointer focus (`:focus:not(:focus-visible)`), so
+   keyboard focus keeps a visible, accessible indicator consistent with the rest of the
+   theme (`outline: 2px solid var(--accent)`). Applies to every range slider. */
+.control--range:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.control--range:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+
 .control--range::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;

@@ -55,6 +55,23 @@ describe('EntitiesPage', () => {
     expect(await screen.findByText('GB-12345')).toBeTruthy();
     expect(screen.getByText('não validado')).toBeTruthy();
   });
+
+  it('opens an entity via an icon button carrying an accessible "Abrir" tooltip label', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/entities', body: [ENTITY] }]));
+    renderWithProviders(
+      <Routes>
+        <Route path="/entidades" element={<EntitiesPage />} />
+        <Route path="/entidades/:id" element={<div>DETALHE DA ENTIDADE</div>} />
+      </Routes>,
+      ['/entidades'],
+    );
+
+    // The open control is an icon-only button named by its tooltip (no visible link text).
+    const open = await screen.findByRole('button', { name: 'Abrir' });
+    expect(screen.queryByRole('link', { name: 'Abrir' })).toBeNull();
+    fireEvent.click(open);
+    expect(await screen.findByText('DETALHE DA ENTIDADE')).toBeTruthy();
+  });
 });
 
 describe('NewEntityPage', () => {

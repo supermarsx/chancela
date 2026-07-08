@@ -4,7 +4,7 @@
  * its own dedicated route (`/entidades/nova`, `/entidades/importar`) — so the list is no
  * longer squeezed by an always-visible aside form (t13 items 1–2).
  */
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useEntities } from '../../api/hooks';
 import { entityFamilyLabels } from '../../api/labels';
 import { useT } from '../../i18n';
@@ -15,6 +15,7 @@ import {
   EmptyState,
   ErrorNote,
   Icon,
+  IconButton,
   PageHeader,
   SkeletonTable,
   Table,
@@ -23,6 +24,7 @@ import { NipcBadge } from './NipcBadge';
 
 export function EntitiesPage() {
   const t = useT();
+  const navigate = useNavigate();
   const { data, isLoading, error } = useEntities();
 
   return (
@@ -79,8 +81,12 @@ export function EntitiesPage() {
                 <td>
                   <Badge>{entityFamilyLabels[ent.family]}</Badge>
                 </td>
-                <td>
-                  <Link to={`/entidades/${ent.id}`}>{t('common.open')}</Link>
+                <td className="users-actions">
+                  <IconButton
+                    icon={<Icon.ArrowRight />}
+                    label={t('common.open')}
+                    onClick={() => navigate(`/entidades/${ent.id}`)}
+                  />
                 </td>
               </tr>
             ))}
