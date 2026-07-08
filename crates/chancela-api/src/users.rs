@@ -18,6 +18,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use axum::Json;
 use axum::extract::{Path as AxumPath, State};
@@ -43,6 +44,19 @@ impl std::fmt::Display for UserId {
     }
 }
 
+/// How the user's **current** sign-in secret was established (t51 F4). Additive provenance for the
+/// audit trail and the "was this password set via a recovery phrase" semantics. `#[serde(default)]`
+/// on the field keeps every pre-t51 `users.json` loadable — an absent value reads as `Password`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretSource {
+    /// Set by the user (or by a cross-user reset that proved the previous password).
+    #[default]
+    Password,
+    /// Set by a cross-user reset authorized by a valid recovery phrase (t51 Phase B).
+    Recovery,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub id: UserId,
@@ -54,6 +68,15 @@ pub struct User {
     pub password_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation_key: Option<crate::attestation::AttestationKeyBlob>,
+    /// How the current secret was established (t51). Additive; defaults to `Password`.
+    #[serde(default)]
+    pub secret_source: SecretSource,
+    /// argon2id **verifier** for the user's recovery phrase (t51 Phase B), or `None` when no
+    /// recovery credential is established. Stores ONLY the verifier — never the plaintext phrase and
+    /// never anything reversible. Independent of the password: possession of the phrase is its own
+    /// proof. Consumed (set back to `None`) after a successful recovery-authorized reset (single-use).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_hash: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -65,6 +88,9 @@ pub struct UserView {
     pub active: bool,
     pub has_secret: bool,
     pub has_attestation_key: bool,
+    /// Whether a recovery credential is established (t51). A **boolean only** — the phrase and its
+    /// verifier never leave the server (mirrors the "no secret material in views" discipline).
+    pub has_recovery_phrase: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attestation_key_fingerprint: Option<String>,
 }
@@ -79,6 +105,7 @@ impl From<&User> for UserView {
             active: u.active,
             has_secret: u.password_hash.is_some(),
             has_attestation_key: u.attestation_key.is_some(),
+            has_recovery_phrase: u.recovery_hash.is_some(),
             attestation_key_fingerprint: u.attestation_key.as_ref().map(|k| k.fingerprint.clone()),
         }
     }
@@ -99,14 +126,45 @@ pub struct PatchUser {
 #[derive(Deserialize)]
 pub struct SetSecret {
     pub password: String,
+    /// Path (b): the target's current password — required to authorize a **cross-user** change,
+    /// and (unchanged) to change one's **own** existing secret.
     #[serde(default)]
     pub current_password: Option<String>,
+    /// Path (a): a valid recovery phrase for the target (t51 Phase B) — an alternative cross-user
+    /// proof. Ignored for self-service.
+    #[serde(default)]
+    pub recovery_phrase: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct CurrentSecret {
     #[serde(default)]
     pub current_password: Option<String>,
+    /// A valid recovery phrase for the target (t51 Phase B) — a cross-user proof for the adjacent
+    /// remove-secret / attestation-key operations.
+    #[serde(default)]
+    pub recovery_phrase: Option<String>,
+}
+
+/// Body of `POST /v1/users/{id}/recovery` — issue or rotate a recovery phrase (t51 Phase B). Self
+/// issuance proves the current password (when one exists); cross-user issuance is authorized by the
+/// same rule as the secret ops (target's current password, or an existing recovery phrase).
+#[derive(Deserialize)]
+pub struct IssueRecovery {
+    #[serde(default)]
+    pub current_password: Option<String>,
+    #[serde(default)]
+    pub recovery_phrase: Option<String>,
+}
+
+/// Response of `POST /v1/users/{id}/recovery`: the freshly-minted phrase, returned **exactly once**
+/// (the server keeps only its argon2id verifier), plus the updated user view.
+#[derive(Serialize)]
+pub struct RecoveryIssued {
+    /// The plaintext recovery phrase — shown to the operator now and never retrievable again.
+    pub recovery_phrase: String,
+    #[serde(flatten)]
+    pub user: UserView,
 }
 
 fn validate_username(raw: &str) -> Result<String, ApiError> {
@@ -237,6 +295,8 @@ pub async fn create_user(
             active: true,
             password_hash: None,
             attestation_key: None,
+            secret_source: SecretSource::default(),
+            recovery_hash: None,
         };
         users.insert(user.id, user.clone());
         user
@@ -291,9 +351,123 @@ fn verify_current(user: &User, provided: Option<&str>) -> Result<(), ApiError> {
     }
 }
 
-async fn record_user_update(
+/// The single, honest PT refusal returned for **every** no-valid-proof cross-user case (wrong
+/// password, no proof, or a non-existent target). Uniform so it never enumerates users (t51 §5).
+const CROSS_USER_FORBIDDEN: &str = "não autorizado a alterar as credenciais de outro utilizador sem a palavra-passe atual ou uma frase de recuperação válida";
+
+/// Refusal for cross-user attestation-key generation authorized only by a recovery phrase: the key
+/// is wrapped under the password KEK, so without the password no usable key can be produced (t51).
+const RECOVERY_CANNOT_GENERATE_KEY: &str =
+    "não é possível gerar uma chave de atestação sem a palavra-passe atual do utilizador";
+
+/// A fixed, valid argon2id PHC used to spend the **same** verification cost when the target has no
+/// password / no recovery verifier / does not exist. Verifying any input against it always yields
+/// `false`, but the argon2 work is spent so timing never reveals the target's state (t51 §5,
+/// constant-work). Computed once with the production [`hash_secret`] params so its cost matches a
+/// real verify exactly.
+fn dummy_phc() -> &'static str {
+    static DUMMY: OnceLock<String> = OnceLock::new();
+    DUMMY.get_or_init(|| {
+        attestation::hash_secret("chancela::t51::constant-work::dummy-verifier")
+            .expect("argon2id hash of a constant never fails")
+    })
+}
+
+/// Run a constant-work argon2id verify of `provided` against the target's `stored` verifier, or
+/// against the [`dummy_phc`] when the target lacks one (or does not exist). Always runs exactly one
+/// argon2 verify regardless of branch, so timing/branching does not leak whether the target has the
+/// credential. `provided == None` still verifies (an empty candidate) so the cost is spent.
+fn constant_work_verify(stored: Option<&str>, provided: Option<&str>) -> bool {
+    let phc = stored.unwrap_or_else(|| dummy_phc());
+    let candidate = provided.unwrap_or("");
+    verify_secret(candidate, phc)
+}
+
+/// Which proof authorized a cross-user credential operation (for audit + provenance).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProofKind {
+    /// The target's current password was supplied and verified (path b).
+    Password,
+    /// A valid recovery phrase for the target was supplied and verified (path a, Phase B).
+    Recovery,
+}
+
+impl ProofKind {
+    /// Honest, secret-free audit phrase.
+    fn describe(self) -> &'static str {
+        match self {
+            ProofKind::Password => "via palavra-passe atual conhecida",
+            ProofKind::Recovery => "via frase de recuperação",
+        }
+    }
+}
+
+/// The authorization outcome for a secret/attestation-key operation (t51 §1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SecretAuthz {
+    /// Requester == target: self-service. Existing `verify_current` rules apply unchanged.
+    SelfService,
+    /// Requester != target, authorized by the named proof.
+    CrossUser(ProofKind),
+}
+
+/// Resolve the requesting user's [`UserId`] (from the session username) and clone the target
+/// snapshot, under a single `users` read lock. The requester is `None` if the session username no
+/// longer maps to a user (should not happen for a valid session, but treated as non-self).
+async fn resolve_requester_and_target(
+    state: &AppState,
+    actor: &CurrentActor,
+    target: UserId,
+) -> (Option<UserId>, Option<User>) {
+    let users = state.users.read().await;
+    let requester_id = actor
+        .session_username()
+        .and_then(|name| users.values().find(|u| u.username == name).map(|u| u.id));
+    let snapshot = users.get(&target).cloned();
+    (requester_id, snapshot)
+}
+
+/// The core t51 authorization decision for the four credential-mutation handlers.
+///
+/// - **Self-service** (`requester == target`, and the target exists): returns
+///   [`SecretAuthz::SelfService`] immediately — the caller preserves the exact prior behaviour.
+/// - **Cross-user**: runs **constant-work** argon2id verification (always one password-verify and,
+///   on failure, one recovery-verify) and returns [`SecretAuthz::CrossUser`] with the proof kind on
+///   success, or a **uniform** [`ApiError::Forbidden`] for every failure — wrong password, no
+///   proof, or a target that does not exist — so no case is distinguishable by status, body, or
+///   timing (t51 §5). A missing target is treated as cross-user and takes the identical path.
+fn authorize_secret_op(
+    requester_id: Option<UserId>,
+    target_id: UserId,
+    target: Option<&User>,
+    current_password: Option<&str>,
+    recovery_phrase: Option<&str>,
+) -> Result<SecretAuthz, ApiError> {
+    // Self-service is only possible when the requester *is* the (existing) target.
+    if requester_id == Some(target_id) && target.is_some() {
+        return Ok(SecretAuthz::SelfService);
+    }
+
+    // Cross-user (or unknown target): uniform 403 + constant work. `target`'s password/recovery
+    // verifiers are used when present, else the dummy PHC — the branch is not observable.
+    let password_hash = target.and_then(|u| u.password_hash.as_deref());
+    if constant_work_verify(password_hash, current_password) {
+        return Ok(SecretAuthz::CrossUser(ProofKind::Password));
+    }
+    let recovery_hash = target.and_then(|u| u.recovery_hash.as_deref());
+    if constant_work_verify(recovery_hash, recovery_phrase) {
+        return Ok(SecretAuthz::CrossUser(ProofKind::Recovery));
+    }
+    Err(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))
+}
+
+/// Append a user-scoped audit event whose payload is a [`UserView`] (never the full [`User`], so no
+/// argon2 hash, wrapped key, or recovery verifier is ever fed into the ledger). The `actor` is the
+/// honest requester (session user), so a cross-user reset names *who* performed it.
+async fn record_user_event(
     state: &AppState,
     user: &User,
+    kind: &str,
     justification: &str,
     actor: &CurrentActor,
     attestor: &CurrentAttestor,
@@ -302,20 +476,32 @@ async fn record_user_update(
     let payload = serde_json::to_vec(&UserView::from(user))?;
     let actor = actor.resolve("api");
     let mut ledger = state.ledger.write().await;
-    ledger.append(
-        &actor,
-        "user",
-        "user.updated",
-        Some(justification),
-        &payload,
-    );
+    ledger.append(&actor, "user", kind, Some(justification), &payload);
     state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
 }
 
+/// A `user.updated` audit event (the common case for self-service + non-reset mutations).
+async fn record_user_update(
+    state: &AppState,
+    user: &User,
+    justification: &str,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    record_user_event(state, user, "user.updated", justification, actor, attestor).await
+}
+
 /// `POST /v1/users/{id}/secret` — set or change the sign-in secret. **t41 H2:** argon2 verify
 /// and key rewrap run OUTSIDE the write lock.
+///
+/// **t51 authorization.** Self-service (requester == target) is unchanged: setting a first secret is
+/// free, changing an existing one proves the current password. A **cross-user** reset is permitted
+/// only with a valid proof — the target's current password (path b), or a valid recovery phrase
+/// (path a, Phase B) — otherwise a uniform `403` (§ [`authorize_secret_op`]). A recovery-authorized
+/// reset cannot recover the password-locked attestation key, so it drops the key and records the new
+/// secret's provenance as [`SecretSource::Recovery`]; the used phrase is consumed (single-use).
 pub async fn set_secret(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -326,24 +512,61 @@ pub async fn set_secret(
     validate_secret(&req.password)?;
     let uid = UserId(id);
 
-    let snapshot = {
-        let users = state.users.read().await;
-        users.get(&uid).cloned().ok_or(ApiError::NotFound)?
-    };
-
+    let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
+    let decision = authorize_secret_op(
+        requester_id,
+        uid,
+        snapshot.as_ref(),
+        req.current_password.as_deref(),
+        req.recovery_phrase.as_deref(),
+    )?;
+    // Authorized. For self the requester *is* the target and exists; for cross-user the authorize
+    // step already returned a uniform 403 for a missing target, so a snapshot is present here.
+    let snapshot = snapshot.ok_or(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))?;
     let changing = snapshot.password_hash.is_some();
-    if changing {
+
+    // Self-service keeps the exact prior contract: prove the current password when changing.
+    if matches!(decision, SecretAuthz::SelfService) && changing {
         verify_current(&snapshot, req.current_password.as_deref())?;
     }
+
     let new_hash = attestation::hash_secret(&req.password)?;
-    let rewrapped = if changing {
-        let old = req.current_password.as_deref().unwrap_or_default();
-        match &snapshot.attestation_key {
-            Some(blob) => Some(blob.rewrap(old, &req.password)?),
-            None => None,
+
+    // Attestation-key + provenance handling by authorization path (argon2/rewrap OUTSIDE the lock).
+    // `proof` is `Some` only on a cross-user reset (drives the distinct audit event + recovery
+    // single-use consumption).
+    let (rewrapped, drop_key, source, proof): (
+        Option<AttestationKeyBlob>,
+        bool,
+        SecretSource,
+        Option<ProofKind>,
+    ) = match decision {
+        // Self-service or cross-user-with-password both hold the current password, so the
+        // attestation key is re-wrapped forward under the new password (identity preserved).
+        SecretAuthz::SelfService | SecretAuthz::CrossUser(ProofKind::Password) => {
+            let rewrapped = if changing {
+                let old = req.current_password.as_deref().unwrap_or_default();
+                match &snapshot.attestation_key {
+                    Some(blob) => Some(blob.rewrap(old, &req.password)?),
+                    None => None,
+                }
+            } else {
+                None
+            };
+            let proof = match decision {
+                SecretAuthz::CrossUser(k) => Some(k),
+                SecretAuthz::SelfService => None,
+            };
+            (rewrapped, false, SecretSource::Password, proof)
         }
-    } else {
-        None
+        // Recovery reset: no old password is available, so the password-locked attestation key
+        // cannot be re-wrapped — it is dropped, and provenance records the recovery origin.
+        SecretAuthz::CrossUser(ProofKind::Recovery) => (
+            None,
+            true,
+            SecretSource::Recovery,
+            Some(ProofKind::Recovery),
+        ),
     };
 
     let user = {
@@ -352,14 +575,42 @@ pub async fn set_secret(
         if let Some(r) = rewrapped {
             user.attestation_key = Some(r);
         }
+        if drop_key {
+            user.attestation_key = None;
+        }
         user.password_hash = Some(new_hash);
+        user.secret_source = source;
+        if matches!(proof, Some(ProofKind::Recovery)) {
+            user.recovery_hash = None; // single-use: the phrase is consumed on a successful reset.
+        }
         user.clone()
     };
-    record_user_update(&state, &user, "sign-in secret set", &actor, &attestor).await?;
+
+    match proof {
+        Some(kind) => {
+            let justification = format!("sign-in secret reset {}", kind.describe());
+            record_user_event(
+                &state,
+                &user,
+                "user.secret.reset",
+                &justification,
+                &actor,
+                &attestor,
+            )
+            .await?;
+        }
+        None => record_user_update(&state, &user, "sign-in secret set", &actor, &attestor).await?,
+    }
     Ok(Json(UserView::from(&user)))
 }
 
 /// `DELETE /v1/users/{id}/secret` — remove the sign-in secret. **t41 H2:** argon2 outside lock.
+///
+/// **t51 authorization.** Self-service is unchanged (no-op when passwordless, else prove the current
+/// password). A cross-user removal follows the same rule as [`set_secret`]: valid proof or a uniform
+/// `403`. The self no-op short-circuit is applied ONLY for self — for a cross-user caller the
+/// authorization runs first (constant-work), so a passwordless/keyless target is refused with `403`
+/// (matrix #10) rather than leaking its state via a `200` no-op.
 pub async fn remove_secret(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -369,36 +620,75 @@ pub async fn remove_secret(
 ) -> Result<Json<UserView>, ApiError> {
     let uid = UserId(id);
 
-    let snapshot = {
-        let users = state.users.read().await;
-        users.get(&uid).cloned().ok_or(ApiError::NotFound)?
-    };
+    let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
+    let decision = authorize_secret_op(
+        requester_id,
+        uid,
+        snapshot.as_ref(),
+        req.current_password.as_deref(),
+        req.recovery_phrase.as_deref(),
+    )?;
 
-    if snapshot.password_hash.is_none() {
-        return Ok(Json(UserView::from(&snapshot)));
+    match decision {
+        SecretAuthz::SelfService => {
+            let s = snapshot.as_ref().ok_or(ApiError::NotFound)?;
+            if s.password_hash.is_none() {
+                return Ok(Json(UserView::from(s))); // self no-op: nothing to remove.
+            }
+            verify_current(s, req.current_password.as_deref())?;
+        }
+        SecretAuthz::CrossUser(_) => {}
     }
-
-    verify_current(&snapshot, req.current_password.as_deref())?;
+    let consume_recovery = matches!(decision, SecretAuthz::CrossUser(ProofKind::Recovery));
 
     let user = {
         let mut users = state.users.write().await;
         let user = users.get_mut(&uid).ok_or(ApiError::NotFound)?;
         user.password_hash = None;
         user.attestation_key = None;
+        user.secret_source = SecretSource::default();
+        if consume_recovery {
+            user.recovery_hash = None; // single-use.
+        }
         user.clone()
     };
-    record_user_update(
-        &state,
-        &user,
-        "sign-in secret removed (attestation key cascaded)",
-        &actor,
-        &attestor,
-    )
-    .await?;
+
+    match decision {
+        SecretAuthz::CrossUser(kind) => {
+            let justification = format!(
+                "sign-in secret removed {} (attestation key cascaded)",
+                kind.describe()
+            );
+            record_user_event(
+                &state,
+                &user,
+                "user.secret.reset",
+                &justification,
+                &actor,
+                &attestor,
+            )
+            .await?;
+        }
+        SecretAuthz::SelfService => {
+            record_user_update(
+                &state,
+                &user,
+                "sign-in secret removed (attestation key cascaded)",
+                &actor,
+                &attestor,
+            )
+            .await?;
+        }
+    }
     Ok(Json(UserView::from(&user)))
 }
 
 /// `POST /v1/users/{id}/attestation-key` — generate or rotate the attestation key. **t41 H2.**
+///
+/// **t51 authorization.** Self-service is unchanged (requires a secret, proves the current
+/// password). A cross-user generation is authorized by the same rule — but ONLY via the target's
+/// **current password** (path b): the new key is wrapped under the password KEK, so a
+/// recovery-phrase proof cannot produce a key the user could ever unlock, and is refused with `403`.
 pub async fn generate_attestation_key(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -408,20 +698,37 @@ pub async fn generate_attestation_key(
 ) -> Result<Json<UserView>, ApiError> {
     let uid = UserId(id);
 
-    let snapshot = {
-        let users = state.users.read().await;
-        users.get(&uid).cloned().ok_or(ApiError::NotFound)?
+    let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
+    let decision = authorize_secret_op(
+        requester_id,
+        uid,
+        snapshot.as_ref(),
+        req.current_password.as_deref(),
+        req.recovery_phrase.as_deref(),
+    )?;
+
+    // The new key is wrapped under a password. Determine the wrapping secret per authorization path.
+    let (wrapping_secret, cross_user) = match decision {
+        SecretAuthz::SelfService => {
+            let s = snapshot.as_ref().ok_or(ApiError::NotFound)?;
+            if s.password_hash.is_none() {
+                return Err(ApiError::Conflict(
+                    "set a sign-in secret before generating an attestation key".to_owned(),
+                ));
+            }
+            verify_current(s, req.current_password.as_deref())?;
+            (req.current_password.clone().unwrap_or_default(), false)
+        }
+        SecretAuthz::CrossUser(ProofKind::Password) => {
+            // The verified current password is the wrapping secret (the target can unlock it later).
+            (req.current_password.clone().unwrap_or_default(), true)
+        }
+        SecretAuthz::CrossUser(ProofKind::Recovery) => {
+            return Err(ApiError::Forbidden(RECOVERY_CANNOT_GENERATE_KEY.to_owned()));
+        }
     };
 
-    if snapshot.password_hash.is_none() {
-        return Err(ApiError::Conflict(
-            "set a sign-in secret before generating an attestation key".to_owned(),
-        ));
-    }
-
-    verify_current(&snapshot, req.current_password.as_deref())?;
-    let secret = req.current_password.as_deref().unwrap_or_default();
-    let new_key = AttestationKeyBlob::generate(secret)?;
+    let new_key = AttestationKeyBlob::generate(&wrapping_secret)?;
 
     let user = {
         let mut users = state.users.write().await;
@@ -429,18 +736,21 @@ pub async fn generate_attestation_key(
         user.attestation_key = Some(new_key);
         user.clone()
     };
-    record_user_update(
-        &state,
-        &user,
-        "attestation key generated",
-        &actor,
-        &attestor,
-    )
-    .await?;
+    let justification = if cross_user {
+        "attestation key generated (cross-user, via known password)"
+    } else {
+        "attestation key generated"
+    };
+    record_user_update(&state, &user, justification, &actor, &attestor).await?;
     Ok(Json(UserView::from(&user)))
 }
 
 /// `DELETE /v1/users/{id}/attestation-key` — remove the attestation key. **t41 H2.**
+///
+/// **t51 authorization.** Self-service is unchanged (no-op when keyless, else prove the current
+/// password). Removal needs no wrapping secret, so a cross-user removal is authorized by **either**
+/// proof (current password or a valid recovery phrase); otherwise a uniform `403`. The self no-op
+/// short-circuit is applied only for self, so a cross-user caller cannot probe key presence.
 pub async fn remove_attestation_key(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -450,25 +760,110 @@ pub async fn remove_attestation_key(
 ) -> Result<Json<UserView>, ApiError> {
     let uid = UserId(id);
 
-    let snapshot = {
-        let users = state.users.read().await;
-        users.get(&uid).cloned().ok_or(ApiError::NotFound)?
-    };
+    let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
+    let decision = authorize_secret_op(
+        requester_id,
+        uid,
+        snapshot.as_ref(),
+        req.current_password.as_deref(),
+        req.recovery_phrase.as_deref(),
+    )?;
 
-    if snapshot.attestation_key.is_none() {
-        return Ok(Json(UserView::from(&snapshot)));
+    match decision {
+        SecretAuthz::SelfService => {
+            let s = snapshot.as_ref().ok_or(ApiError::NotFound)?;
+            if s.attestation_key.is_none() {
+                return Ok(Json(UserView::from(s))); // self no-op: nothing to remove.
+            }
+            verify_current(s, req.current_password.as_deref())?;
+        }
+        SecretAuthz::CrossUser(_) => {}
     }
-
-    verify_current(&snapshot, req.current_password.as_deref())?;
+    let consume_recovery = matches!(decision, SecretAuthz::CrossUser(ProofKind::Recovery));
 
     let user = {
         let mut users = state.users.write().await;
         let user = users.get_mut(&uid).ok_or(ApiError::NotFound)?;
         user.attestation_key = None;
+        if consume_recovery {
+            user.recovery_hash = None; // single-use.
+        }
         user.clone()
     };
-    record_user_update(&state, &user, "attestation key removed", &actor, &attestor).await?;
+    let justification = match decision {
+        SecretAuthz::CrossUser(kind) => {
+            format!("attestation key removed (cross-user, {})", kind.describe())
+        }
+        SecretAuthz::SelfService => "attestation key removed".to_owned(),
+    };
+    record_user_update(&state, &user, &justification, &actor, &attestor).await?;
     Ok(Json(UserView::from(&user)))
+}
+
+/// `POST /v1/users/{id}/recovery` — issue or rotate the user's recovery phrase (t51 Phase B).
+///
+/// The recovery phrase is an **independent** reset credential (not derived from, nor wrapping, the
+/// password). It is generated server-side, returned **exactly once** in the response, and stored
+/// only as an argon2id verifier. Issuing rotates any existing phrase (the old verifier is
+/// overwritten). **Authorization:** self-service proves the current password when one exists (a
+/// recovery credential is a reset backdoor — establishing it requires proving identity beyond the
+/// session); a cross-user issuance uses the same rule as the secret ops (target's current password,
+/// or a still-valid existing recovery phrase).
+pub async fn issue_recovery(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<IssueRecovery>,
+) -> Result<Json<RecoveryIssued>, ApiError> {
+    let uid = UserId(id);
+
+    let (requester_id, snapshot) = resolve_requester_and_target(&state, &actor, uid).await;
+    let decision = authorize_secret_op(
+        requester_id,
+        uid,
+        snapshot.as_ref(),
+        req.current_password.as_deref(),
+        req.recovery_phrase.as_deref(),
+    )?;
+
+    if let SecretAuthz::SelfService = decision {
+        // Self-service: prove the current password when the account has one (no-op if passwordless).
+        let s = snapshot.as_ref().ok_or(ApiError::NotFound)?;
+        verify_current(s, req.current_password.as_deref())?;
+    }
+
+    // Generate the phrase and its verifier OUTSIDE the write lock (argon2 discipline, t41 H2).
+    let phrase = attestation::generate_recovery_phrase();
+    let verifier = attestation::hash_secret(&phrase)?;
+
+    let user = {
+        let mut users = state.users.write().await;
+        let user = users.get_mut(&uid).ok_or(ApiError::NotFound)?;
+        user.recovery_hash = Some(verifier);
+        user.clone()
+    };
+
+    let justification = match decision {
+        SecretAuthz::CrossUser(kind) => {
+            format!("recovery phrase issued (cross-user, {})", kind.describe())
+        }
+        SecretAuthz::SelfService => "recovery phrase issued".to_owned(),
+    };
+    record_user_event(
+        &state,
+        &user,
+        "user.recovery.issued",
+        &justification,
+        &actor,
+        &attestor,
+    )
+    .await?;
+
+    Ok(Json(RecoveryIssued {
+        recovery_phrase: phrase,
+        user: UserView::from(&user),
+    }))
 }
 
 /// `GET /v1/users` — every profile. Requires a valid session (t41 C1).

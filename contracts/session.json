@@ -6,6 +6,7 @@
     "created_at": "2026-07-07T10:15:30Z",
     "active": true,
     "has_secret": false,
-    "has_attestation_key": false
+    "has_attestation_key": false,
+    "has_recovery_phrase": false
   }
 }

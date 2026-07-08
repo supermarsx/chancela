@@ -431,6 +431,7 @@ pub fn router(state: AppState) -> Router {
             "/v1/users/{id}/attestation-key",
             post(users::generate_attestation_key).delete(users::remove_attestation_key),
         )
+        .route("/v1/users/{id}/recovery", post(users::issue_recovery))
         .route(
             "/v1/ledger/attestations/{seq}",
             get(ledger::get_attestation),
@@ -676,6 +677,8 @@ mod tests {
             active: true,
             password_hash: None,
             attestation_key: None,
+            secret_source: Default::default(),
+            recovery_hash: None,
         };
         state.users.write().await.insert(uid, user);
         let token = Uuid::new_v4().to_string();
@@ -3400,7 +3403,10 @@ mod tests {
             "manifest path is the archive: {manifest}"
         );
         assert!(manifest["bytes"].as_u64().expect("bytes") > 0);
-        assert_eq!(manifest["store_schema_version"], 1);
+        assert_eq!(
+            manifest["store_schema_version"],
+            chancela_store::schema::SCHEMA_VERSION
+        );
         assert_eq!(manifest["ledger_verified"], true);
         assert!(manifest["ledger_length"].as_u64().expect("length") >= 4);
         let files = manifest["files"].as_array().expect("files");
@@ -3457,7 +3463,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["persistent"], true);
         assert_eq!(body["ledger_verified"], true);
-        assert_eq!(body["store_schema_version"], 1);
+        assert_eq!(
+            body["store_schema_version"],
+            chancela_store::schema::SCHEMA_VERSION
+        );
         assert!(body["ledger_length"].as_u64().expect("length") >= 4);
     }
 
@@ -3482,19 +3491,28 @@ mod tests {
     /// entity. Returns `(user_id, session_token, entity_event_seq)`.
     async fn attested_entity(state: &AppState, username: &str) -> (String, String, u64) {
         let id = make_user(state, username).await;
+        // t51: setting one's own secret/key is a self-service op — open a session as this user so
+        // the requester matches the target (a cross-user set would now be a 403).
+        let self_tok = open_session(state, &id).await;
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/attestation-key"),
-                json!({ "current_password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3536,6 +3554,8 @@ mod tests {
     async fn secret_gates_session_and_rejects_wrong_password() {
         let state = AppState::default();
         let id = make_user(&state, "amelia.marques").await;
+        // t51: self-service session so setting one's own secret is authorized (not a cross-user op).
+        let self_tok = open_session(&state, &id).await;
 
         // Passwordless: the view says so and sign-in needs no password.
         let (_, view) = send(state.clone(), get(&format!("/v1/users/{id}"))).await;
@@ -3549,12 +3569,15 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
 
-        // Set a secret — no current_password needed the first time.
+        // Set a secret — no current_password needed the first time (self-service).
         let (status, view) = send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "correct horse" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "correct horse" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3587,11 +3610,15 @@ mod tests {
     async fn repeated_wrong_password_triggers_backoff_429() {
         let state = AppState::default();
         let id = make_user(&state, "bruno").await;
+        let self_tok = open_session(&state, &id).await; // t51: self-service secret set.
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3625,28 +3652,38 @@ mod tests {
     async fn attestation_key_requires_a_secret_and_verifies_the_current_one() {
         let state = AppState::default();
         let id = make_user(&state, "carla").await;
-        // No secret → 409.
+        let self_tok = open_session(&state, &id).await; // t51: self-service key/secret ops.
+        // No secret → 409 (self-service precondition; requester == target).
         let (status, _) = send(
             state.clone(),
-            post_json(&format!("/v1/users/{id}/attestation-key"), json!({})),
+            with_session(
+                post_json(&format!("/v1/users/{id}/attestation-key"), json!({})),
+                &self_tok,
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT);
 
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
-        // Wrong current password → 401.
+        // Wrong current password → 401 (self-service).
         let (status, _) = send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/attestation-key"),
-                json!({ "current_password": "nope" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "nope" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3654,9 +3691,12 @@ mod tests {
         // Correct → 200 with a 32-hex fingerprint.
         let (status, view) = send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/attestation-key"),
-                json!({ "current_password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3723,7 +3763,7 @@ mod tests {
     #[tokio::test]
     async fn removing_the_key_makes_prior_attestations_unverifiable() {
         let state = AppState::default();
-        let (id, _token, seq) = attested_entity(&state, "iris").await;
+        let (id, token, seq) = attested_entity(&state, "iris").await;
         // Valid while the key exists.
         let (_, v) = send(
             state.clone(),
@@ -3731,13 +3771,16 @@ mod tests {
         )
         .await;
         assert_eq!(v["valid"], true);
-        // Remove the attestation key.
+        // Remove the attestation key (self-service: iris's own session).
         let (status, view) = send(
             state.clone(),
-            body_json(
-                "DELETE",
-                &format!("/v1/users/{id}/attestation-key"),
-                json!({ "current_password": "s3cret-pass" }),
+            with_session(
+                body_json(
+                    "DELETE",
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "s3cret-pass" }),
+                ),
+                &token,
             ),
         )
         .await;
@@ -3790,29 +3833,39 @@ mod tests {
     async fn removing_the_secret_cascades_the_attestation_key() {
         let state = AppState::default();
         let id = make_user(&state, "fabio").await;
+        let self_tok = open_session(&state, &id).await; // t51: self-service credential ops.
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/attestation-key"),
-                json!({ "current_password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
-        // Wrong current password on removal → 401.
+        // Wrong current password on removal → 401 (self-service).
         let (status, _) = send(
             state.clone(),
-            body_json(
-                "DELETE",
-                &format!("/v1/users/{id}/secret"),
-                json!({ "current_password": "nope" }),
+            with_session(
+                body_json(
+                    "DELETE",
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "current_password": "nope" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3820,10 +3873,13 @@ mod tests {
         // Correct → 200; both the secret and the (now unrecoverable) key are cleared.
         let (status, view) = send(
             state.clone(),
-            body_json(
-                "DELETE",
-                &format!("/v1/users/{id}/secret"),
-                json!({ "current_password": "s3cret-pass" }),
+            with_session(
+                body_json(
+                    "DELETE",
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "current_password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3836,28 +3892,38 @@ mod tests {
     async fn changing_the_secret_rewraps_the_key() {
         let state = AppState::default();
         let id = make_user(&state, "gita").await;
+        let self_tok = open_session(&state, &id).await; // t51: self-service credential ops.
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "old-secret" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "old-secret" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/attestation-key"),
-                json!({ "current_password": "old-secret" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "old-secret" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
-        // Change the secret (current one required).
+        // Change the secret (current one required, self-service).
         let (status, _) = send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "new-secret", "current_password": "old-secret" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "new-secret", "current_password": "old-secret" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3928,12 +3994,16 @@ mod tests {
     async fn short_secret_is_422_and_users_wire_hides_material() {
         let state = AppState::default();
         let id = make_user(&state, "hugo").await;
-        // Below the 8-char floor → 422.
+        let self_tok = open_session(&state, &id).await; // t51: self-service credential ops.
+        // Below the 8-char floor → 422 (validation precedes authorization).
         let (status, body) = send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "short" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "short" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -3943,17 +4013,23 @@ mod tests {
         // Set a valid secret + key, then confirm the wire dump carries no secret material.
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/attestation-key"),
-                json!({ "current_password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -4161,21 +4237,28 @@ mod tests {
         use crate::users::{UserId, UserView};
         let state = AppState::default();
         let id = make_user(&state, "hugo").await;
+        let self_tok = open_session(&state, &id).await; // t51: self-service credential ops.
         // Give hugo a secret + attestation key so the full `User` carries the argon2 PHC and the
         // AEAD-wrapped key — exactly the material that must never reach the ledger payload.
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/secret"),
-                json!({ "password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
         send(
             state.clone(),
-            post_json(
-                &format!("/v1/users/{id}/attestation-key"),
-                json!({ "current_password": "s3cret-pass" }),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/attestation-key"),
+                    json!({ "current_password": "s3cret-pass" }),
+                ),
+                &self_tok,
             ),
         )
         .await;
@@ -4232,5 +4315,485 @@ mod tests {
             patch_ev["payload_digest"], full_digest,
             "patch payload is NOT the full User"
         );
+    }
+
+    // --- t51: cross-user credential authorization + recovery-phrase credential ---------------
+    //
+    // Matrix (§4): self vs cross × {no secret, password-only, recovery, both} × {no proof, wrong
+    // pw, right pw, valid recovery, invalid recovery}. Cross-user no-valid-proof cases collapse to
+    // an indistinguishable 403 with constant-work argon2 (no user enumeration). Examples use
+    // "amelia.marques" (target) and "bruno" (the other operator); never real names.
+
+    /// Seed a self-service session for an existing user directly into state (works regardless of
+    /// whether the user has a password — unlike `open_session`, which signs in passwordless).
+    async fn seed_session(state: &AppState, user_id: &str) -> String {
+        let uid = UserId(Uuid::parse_str(user_id).expect("uuid"));
+        let token = Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc();
+        state.sessions.write().await.insert(
+            token.clone(),
+            crate::session::SessionEntry {
+                user_id: uid,
+                unlocked_key: None,
+                expires_at: now + time::Duration::seconds(crate::actor::SESSION_TTL_SECS),
+            },
+        );
+        token
+    }
+
+    /// Set `target`'s first password as a self-service op (open a session as the target).
+    async fn give_target_password(state: &AppState, target_id: &str, password: &str) {
+        let self_tok = open_session(state, target_id).await;
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target_id}/secret"),
+                    json!({ "password": password }),
+                ),
+                &self_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "self-service first password set");
+    }
+
+    /// Stored provenance + recovery presence for a user (reads the in-memory state directly).
+    async fn stored_user(state: &AppState, id: &str) -> User {
+        let uid = UserId(Uuid::parse_str(id).expect("uuid"));
+        state
+            .users
+            .read()
+            .await
+            .get(&uid)
+            .cloned()
+            .expect("user present")
+    }
+
+    #[tokio::test]
+    async fn t51_cross_user_set_on_passwordless_target_is_403() {
+        // Matrix #7: the closed hole — a signed-in operator setting a FIRST password on a
+        // passwordless account is now refused, never silently set.
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/secret"),
+                    json!({ "password": "attacker-chosen" }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("não autorizado")
+        );
+        // The target is untouched — still passwordless.
+        let (_, view) = send(state.clone(), get(&format!("/v1/users/{target}"))).await;
+        assert_eq!(view["has_secret"], false);
+    }
+
+    #[tokio::test]
+    async fn t51_cross_user_set_with_correct_password_succeeds_and_audits() {
+        // Matrix #4: cross-user reset authorized by the target's known password → 200 + a
+        // `user.secret.reset` event attributed to the requester (honest actor).
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "target-current-pass").await;
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        let (status, view) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/secret"),
+                    json!({ "password": "reset-by-bruno", "current_password": "target-current-pass" }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["has_secret"], true);
+
+        // The reset is auditable as bruno's action, via the known password, with no secret material.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let reset = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .find(|e| e["kind"] == "user.secret.reset")
+            .expect("user.secret.reset present");
+        assert_eq!(reset["actor"], "bruno");
+        assert!(
+            reset["justification"]
+                .as_str()
+                .expect("justification")
+                .contains("palavra-passe atual")
+        );
+        let dump = reset.to_string().to_lowercase();
+        assert!(!dump.contains("reset-by-bruno") && !dump.contains("$argon2"));
+
+        // Provenance stays Password (a known-password reset is not a recovery).
+        assert_eq!(
+            stored_user(&state, &target).await.secret_source,
+            crate::users::SecretSource::Password
+        );
+    }
+
+    #[tokio::test]
+    async fn t51_cross_user_wrong_password_no_proof_and_unknown_target_are_uniform_403() {
+        // Matrix #5/#6 + §5 anti-enumeration: wrong password, no proof, and a non-existent target
+        // all return the SAME 403 body — no status/message difference reveals target state.
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "target-current-pass").await;
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        let attempt = |body: Value, path_id: String| {
+            let tok = bruno_tok.clone();
+            let st = state.clone();
+            async move {
+                send(
+                    st,
+                    with_session(
+                        post_json(&format!("/v1/users/{path_id}/secret"), body),
+                        &tok,
+                    ),
+                )
+                .await
+            }
+        };
+
+        let (s_wrong, b_wrong) = attempt(
+            json!({ "password": "x-new-pass", "current_password": "WRONG" }),
+            target.clone(),
+        )
+        .await;
+        let (s_none, b_none) = attempt(json!({ "password": "x-new-pass" }), target.clone()).await;
+        let (s_ghost, b_ghost) = attempt(
+            json!({ "password": "x-new-pass", "current_password": "whatever" }),
+            Uuid::new_v4().to_string(),
+        )
+        .await;
+
+        assert_eq!(s_wrong, StatusCode::FORBIDDEN);
+        assert_eq!(s_none, StatusCode::FORBIDDEN);
+        assert_eq!(s_ghost, StatusCode::FORBIDDEN);
+        // Indistinguishable bodies: an unknown target is NOT a 404, and no case leaks "has password".
+        assert_eq!(b_wrong, b_none);
+        assert_eq!(b_none, b_ghost);
+    }
+
+    #[tokio::test]
+    async fn t51_403_is_distinct_from_401_session() {
+        // The 403/401 split is honest: no session is 401 `sessão requerida`; a signed-in but
+        // unauthorized cross-user reset is 403 with a different message.
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "target-current-pass").await;
+
+        // No session → 401.
+        let (s401, b401) = send_raw(
+            state.clone(),
+            post_json(
+                &format!("/v1/users/{target}/secret"),
+                json!({ "password": "x-new-pass" }),
+            ),
+        )
+        .await;
+        assert_eq!(s401, StatusCode::UNAUTHORIZED);
+        assert_eq!(b401["error"], "sessão requerida");
+
+        // Signed-in but no proof → 403 with a distinct message.
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+        let (s403, b403) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/secret"),
+                    json!({ "password": "x-new-pass" }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(s403, StatusCode::FORBIDDEN);
+        assert_ne!(b403["error"], b401["error"]);
+    }
+
+    #[tokio::test]
+    async fn t51_cross_user_remove_and_key_ops_enforce_the_same_rule() {
+        // Adjacent-op parity (§5): remove-secret and the attestation-key ops all refuse a
+        // no-proof cross-user caller (matrix #10/#12), and accept a correct-password one (#9/#11).
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "target-current-pass").await;
+        // Give the target an attestation key too (self-service).
+        let self_tok = seed_session(&state, &target).await;
+        send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/attestation-key"),
+                    json!({ "current_password": "target-current-pass" }),
+                ),
+                &self_tok,
+            ),
+        )
+        .await;
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        // No-proof cross-user remove-secret → 403 (does not leak via a 200 no-op).
+        let (s, _) = send(
+            state.clone(),
+            with_session(
+                body_json("DELETE", &format!("/v1/users/{target}/secret"), json!({})),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+
+        // No-proof cross-user attestation-key removal → 403 (matrix #12).
+        let (s, _) = send(
+            state.clone(),
+            with_session(
+                body_json(
+                    "DELETE",
+                    &format!("/v1/users/{target}/attestation-key"),
+                    json!({}),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(s, StatusCode::FORBIDDEN);
+        // Key is still there — nothing was removed.
+        assert!(stored_user(&state, &target).await.attestation_key.is_some());
+
+        // Correct-password cross-user attestation-key rotation → 200 (matrix #11).
+        let (s, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/attestation-key"),
+                    json!({ "current_password": "target-current-pass" }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+
+        // Correct-password cross-user remove-secret → 200 and cascades the key (matrix #9).
+        let (s, view) = send(
+            state.clone(),
+            with_session(
+                body_json(
+                    "DELETE",
+                    &format!("/v1/users/{target}/secret"),
+                    json!({ "current_password": "target-current-pass" }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(view["has_secret"], false);
+        assert_eq!(view["has_attestation_key"], false);
+    }
+
+    #[tokio::test]
+    async fn t51_recovery_phrase_reset_flow_is_single_use() {
+        // Matrix #14 + Phase B: issue an independent recovery phrase, reset a forgotten password
+        // with it cross-user, and prove it is single-use and drops the password-locked key.
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "forgotten-pass").await;
+        // Target holds an attestation key (wrapped under the forgotten password).
+        let self_tok = seed_session(&state, &target).await;
+        send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/attestation-key"),
+                    json!({ "current_password": "forgotten-pass" }),
+                ),
+                &self_tok,
+            ),
+        )
+        .await;
+
+        // Issue a recovery phrase for the target (self, proving the current password). Returned ONCE.
+        let (status, issued) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/recovery"),
+                    json!({ "current_password": "forgotten-pass" }),
+                ),
+                &self_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let phrase = issued["recovery_phrase"]
+            .as_str()
+            .expect("phrase")
+            .to_owned();
+        assert_eq!(phrase.len(), 32 + 3); // 4 groups of 8 base32 chars + 3 separators.
+        assert_eq!(issued["has_recovery_phrase"], true);
+        // The verifier is stored, never the plaintext.
+        let stored = stored_user(&state, &target).await;
+        assert!(
+            stored
+                .recovery_hash
+                .as_deref()
+                .expect("verifier")
+                .starts_with("$argon2")
+        );
+        assert_ne!(stored.recovery_hash.as_deref(), Some(phrase.as_str()));
+
+        // Bruno (another operator) resets the forgotten password using the recovery phrase.
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+        let (status, view) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/secret"),
+                    json!({ "password": "recovered-pass", "recovery_phrase": phrase }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["has_secret"], true);
+        // Recovery consumed (single-use) and the password-locked key was dropped (unrecoverable).
+        assert_eq!(view["has_recovery_phrase"], false);
+        assert_eq!(view["has_attestation_key"], false);
+        let stored = stored_user(&state, &target).await;
+        assert_eq!(stored.secret_source, crate::users::SecretSource::Recovery);
+        assert!(stored.recovery_hash.is_none());
+
+        // The new password signs in; the forgotten one no longer does.
+        let (s_new, _) = send(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": target, "password": "recovered-pass" }),
+            ),
+        )
+        .await;
+        assert_eq!(s_new, StatusCode::OK);
+
+        // Re-using the SAME phrase again is refused — it was consumed (403, uniform).
+        let (s_reuse, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/secret"),
+                    json!({ "password": "second-try", "recovery_phrase": phrase }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(s_reuse, StatusCode::FORBIDDEN);
+
+        // The reset was audited as a recovery-phrase reset by bruno.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let reset = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .find(|e| e["kind"] == "user.secret.reset")
+            .expect("reset event");
+        assert_eq!(reset["actor"], "bruno");
+        assert!(
+            reset["justification"]
+                .as_str()
+                .expect("j")
+                .contains("frase de recuperação")
+        );
+    }
+
+    #[tokio::test]
+    async fn t51_recovery_proof_cannot_generate_attestation_key() {
+        // A recovery phrase authorizes a reset but CANNOT wrap a new attestation key (no password
+        // to derive the KEK) — that specific cross-user op is refused with 403.
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        give_target_password(&state, &target, "target-pass").await;
+        let self_tok = seed_session(&state, &target).await;
+        let (_, issued) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/recovery"),
+                    json!({ "current_password": "target-pass" }),
+                ),
+                &self_tok,
+            ),
+        )
+        .await;
+        let phrase = issued["recovery_phrase"]
+            .as_str()
+            .expect("phrase")
+            .to_owned();
+
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/attestation-key"),
+                    json!({ "recovery_phrase": phrase }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("e")
+                .contains("chave de atestação")
+        );
+    }
+
+    #[tokio::test]
+    async fn t51_provenance_defaults_and_old_users_json_loads() {
+        // F4: `secret_source` is additive with a `Password` default, so a pre-t51 users.json (no
+        // `secret_source`, no `recovery_hash`) still deserializes.
+        let json = json!({
+            "id": Uuid::new_v4().to_string(),
+            "username": "amelia.marques",
+            "display_name": "Amélia Marques",
+            "created_at": "2026-01-01T00:00:00Z",
+            "active": true,
+            "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$c29tZWhhc2g"
+        })
+        .to_string();
+        let user: User = serde_json::from_str(&json).expect("old users.json still loads");
+        assert_eq!(user.secret_source, crate::users::SecretSource::Password);
+        assert!(user.recovery_hash.is_none());
     }
 }

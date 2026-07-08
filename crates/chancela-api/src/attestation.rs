@@ -88,6 +88,45 @@ pub fn verify_secret(secret: &str, phc: &str) -> bool {
     }
 }
 
+// --- Recovery phrase (independent reset credential, t51 Phase B) ----------------------------
+
+/// Bytes of entropy behind a recovery phrase: 20 bytes = **160 bits**, far beyond any offline
+/// brute-force even before the argon2id verifier is considered.
+const RECOVERY_ENTROPY_BYTES: usize = 20;
+
+/// Crockford base32 alphabet (excludes `I`, `L`, `O`, `U` to avoid transcription ambiguity).
+const CROCKFORD_BASE32: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/// Generate a fresh, human-transcribable recovery phrase: 160 bits of OS entropy encoded as
+/// Crockford base32 (32 chars, no ambiguous letters, no padding) grouped `XXXXXXXX-XXXXXXXX-…`.
+///
+/// The phrase is an **independent** credential — it is NOT derived from, nor does it wrap, the
+/// password. The server stores only its argon2id verifier ([`hash_secret`]); the plaintext is
+/// shown to the user exactly once, at issuance, and is unrecoverable thereafter.
+pub fn generate_recovery_phrase() -> String {
+    let mut bytes = [0u8; RECOVERY_ENTROPY_BYTES];
+    OsRng.fill_bytes(&mut bytes);
+    // 20 bytes = 160 bits, an exact multiple of 5, so base32 yields 32 chars with no leftover.
+    let mut chars = String::with_capacity(32);
+    let mut acc: u32 = 0;
+    let mut bits = 0u32;
+    for b in bytes {
+        acc = (acc << 8) | u32::from(b);
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            let idx = ((acc >> bits) & 0x1f) as usize;
+            chars.push(CROCKFORD_BASE32[idx] as char);
+        }
+    }
+    chars
+        .as_bytes()
+        .chunks(8)
+        .map(|c| std::str::from_utf8(c).expect("base32 chars are ASCII"))
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 /// Derive a 32-byte key-encryption key from the password and a per-key salt (separate from the
 /// verification hash — plan §3). argon2id with the default params.
 fn derive_kek(secret: &str, salt: &[u8]) -> Result<[u8; 32], AttestationError> {
@@ -291,6 +330,27 @@ mod tests {
         assert!(phc.starts_with("$argon2"));
         assert!(verify_secret("correct horse battery", &phc));
         assert!(!verify_secret("wrong", &phc));
+    }
+
+    #[test]
+    fn recovery_phrase_is_high_entropy_and_hashes_independently() {
+        let a = generate_recovery_phrase();
+        let b = generate_recovery_phrase();
+        // Shape: 32 base32 chars in four 8-char groups joined by '-'.
+        assert_eq!(a.len(), 32 + 3);
+        assert_eq!(a.split('-').count(), 4);
+        assert!(a.split('-').all(|g| g.len() == 8));
+        assert!(
+            a.chars()
+                .all(|c| c == '-' || CROCKFORD_BASE32.contains(&(c as u8))),
+            "only Crockford base32 + separators: {a}"
+        );
+        // Two draws never collide (160 bits of entropy).
+        assert_ne!(a, b);
+        // Stored only as an argon2id verifier; the plaintext round-trips, a wrong guess fails.
+        let phc = hash_secret(&a).unwrap();
+        assert!(verify_secret(&a, &phc));
+        assert!(!verify_secret(&b, &phc));
     }
 
     #[test]

@@ -27,6 +27,13 @@ pub enum ApiError {
     /// the password-gated session and secret/attestation-key endpoints (plan t29 §4.2/§4.3). The
     /// message never echoes the submitted secret.
     Unauthorized(String),
+    /// The session is valid but not authorized to perform this cross-user operation (403). Distinct
+    /// from [`Unauthorized`](ApiError::Unauthorized) (401 = no/invalid session or a self-service
+    /// wrong-password): a 403 means "you are signed in, but you may not do this to another user
+    /// without the required proof" (t51). The message is honest and never echoes any secret. On the
+    /// cross-user secret/attestation-key endpoints this is returned uniformly for every no-valid-proof
+    /// case (wrong password, no proof, or a target that does not exist) so it never enumerates users.
+    Forbidden(String),
     /// Too many failed sign-in attempts for this user; the caller is in backoff (429). Carries a
     /// human, PT message with the seconds remaining (plan t29 §4.5).
     TooManyRequests(String),
@@ -89,6 +96,7 @@ impl ApiError {
             | ApiError::ComplianceBlocked { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            ApiError::Forbidden(_) => StatusCode::FORBIDDEN,
             ApiError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
             ApiError::Conflict(_) | ApiError::WarningsNotAcknowledged { .. } => {
                 StatusCode::CONFLICT
@@ -105,6 +113,7 @@ impl ApiError {
             ApiError::Conflict(msg)
             | ApiError::Unprocessable(msg)
             | ApiError::Unauthorized(msg)
+            | ApiError::Forbidden(msg)
             | ApiError::TooManyRequests(msg)
             | ApiError::Internal(msg)
             | ApiError::Upstream(msg) => msg.clone(),
