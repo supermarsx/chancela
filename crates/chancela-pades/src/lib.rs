@@ -42,5 +42,8 @@ mod pdf;
 mod tests;
 
 pub use error::PadesError;
-pub use sign::{MAX_CONTENTS_BYTES, SignOptions, add_signature_timestamp, sign_pdf};
+pub use sign::{
+    MAX_CONTENTS_BYTES, PreparedSignature, SignOptions, add_signature_timestamp, embed_signature,
+    prepare_signature, sign_pdf,
+};
 pub use validate::{PdfSignatureReport, validate_pdf_signature};

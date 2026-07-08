@@ -32,3 +32,7 @@ p256 = { workspace = true }
 der = { workspace = true }
 spki = { workspace = true }
 x509-cert = { workspace = true }
+# Test-only: encode the in-test cert PEM + RSA signature into mock SCMD SOAP responses, and
+# build the SHA-256 DigestInfo the CMD raw signature covers (t57 two-phase round-trip).
+base64 = { workspace = true }
+sha2 = { workspace = true }

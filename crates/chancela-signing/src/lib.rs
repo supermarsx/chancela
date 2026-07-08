@@ -28,6 +28,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod cmd_session;
 pub mod envelope;
 pub mod mock;
 pub mod pipeline;
@@ -35,6 +36,7 @@ pub mod policy;
 pub mod provider;
 pub mod validate;
 
+pub use cmd_session::{CmdInitiate, CmdSignSession, cmd_confirm, cmd_initiate};
 pub use envelope::{
     DocumentInput, SigningJob, is_complete, pending_slots, record_manual_signature, sign_slot,
 };
@@ -46,7 +48,7 @@ pub use validate::{SignatureValidationReport, validate_signature};
 
 // Re-export the pieces of the underlying stack callers most often name through this crate.
 pub use chancela_cades::{RawSignature, SignatureAlgorithm};
-pub use chancela_pades::SignOptions;
+pub use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_signature};
 pub use chancela_tsa::{Timestamp, TsaClient};
 
 /// The four signing families the product MUST natively support (SIG-01).

@@ -50,15 +50,40 @@ pub struct SignOptions {
     pub contact_info: Option<String>,
 }
 
-/// The result of preparing the incremental update: the assembled bytes with a placeholder
-/// `/Contents`, the ByteRange digest to sign, and the byte span of the hex placeholder.
-struct Prepared {
+/// Resumable state produced by [`prepare_signature`]: the prepared document bytes (ByteRange
+/// patched, `/Contents` reserved but still zero-filled), the ByteRange digest an external signer
+/// must cover, and the byte span of the hex placeholder needed to embed the CMS later.
+///
+/// This is the two-phase split of [`sign_pdf`]'s single callback (t57 F5): compute the digest now
+/// ([`prepare_signature`]), obtain a detached CMS over it out-of-band (e.g. across an interactive
+/// CMD OTP round-trip), then embed it ([`embed_signature`]). All fields are **non-secret** — the
+/// prepared PDF, the digest, and a byte offset — so the value is safe to persist between requests
+/// (it derives `Serialize`/`Deserialize` for exactly that).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PreparedSignature {
     /// The full document bytes, ByteRange already patched, `/Contents` still zero-filled.
-    bytes: Vec<u8>,
-    /// SHA-256 over the ByteRange-covered bytes.
-    content_digest: [u8; 32],
+    prepared_pdf: Vec<u8>,
+    /// SHA-256 over the ByteRange-covered bytes — the digest the detached CMS must cover.
+    byterange_digest: [u8; 32],
     /// Index of the first hex character inside `<...>` (one past the `<`).
     hex_start: usize,
+}
+
+impl PreparedSignature {
+    /// The SHA-256 ByteRange digest the detached CMS must be built over. This is the value the
+    /// external signer signs: feed it to `chancela_cades::signed_attributes_digest` (with the
+    /// signing certificate and a fixed signing time) to obtain the digest a token/remote signer
+    /// actually signs, then `assemble_cades_b` the result before [`embed_signature`].
+    pub fn byterange_digest(&self) -> &[u8; 32] {
+        &self.byterange_digest
+    }
+
+    /// The prepared PDF bytes (incremental update appended, `/ByteRange` final, `/Contents`
+    /// reserved but zero-filled). Exposed for inspection; embedding goes through
+    /// [`embed_signature`].
+    pub fn prepared_pdf(&self) -> &[u8] {
+        &self.prepared_pdf
+    }
 }
 
 /// Sign an existing PDF, producing a PAdES-B-B signature (SIG-21).
@@ -67,6 +92,9 @@ struct Prepared {
 /// (a DER `ContentInfo` wrapping a CAdES-B `SignedData`) over that digest — typically built with
 /// `chancela_cades::assemble_cades_b`. The returned bytes are the original PDF plus one incremental
 /// update carrying the signature.
+///
+/// This is the synchronous convenience over the two-phase [`prepare_signature`] →
+/// [`embed_signature`] seam: it prepares, invokes the callback, and embeds in one call.
 pub fn sign_pdf<S, E>(
     pdf_bytes: &[u8],
     opts: &SignOptions,
@@ -76,15 +104,46 @@ where
     S: FnOnce(&[u8; 32]) -> Result<Vec<u8>, E>,
     E: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    let prepared = prepare_incremental(pdf_bytes, opts)?;
-    let cms = sign_cms(&prepared.content_digest).map_err(|e| PadesError::Signer(e.into()))?;
-    embed_cms(prepared.bytes, prepared.hex_start, &cms)
+    let prepared = prepare_signature(pdf_bytes, opts)?;
+    let cms = sign_cms(&prepared.byterange_digest).map_err(|e| PadesError::Signer(e.into()))?;
+    // No clone: consume the prepared bytes directly (the synchronous path never reuses them).
+    embed_cms(prepared.prepared_pdf, prepared.hex_start, &cms)
+}
+
+/// **Phase 1 of two-phase signing (t57 F5).** Prepare the incremental-update section over
+/// `pdf_bytes` and return the resumable [`PreparedSignature`] — the ByteRange digest to sign plus
+/// everything needed to embed the CMS later — **without** yet needing the signature.
+///
+/// Pair with [`embed_signature`]. `sign_pdf` is this followed immediately by the callback and
+/// [`embed_signature`]; splitting them lets a caller suspend between computing the digest and
+/// obtaining the CMS (e.g. an interactive OTP round-trip). The same `opts` (notably a fixed
+/// `signing_time`) must be used, and the resulting [`PreparedSignature`] carried unchanged into the
+/// embed phase.
+pub fn prepare_signature(
+    pdf_bytes: &[u8],
+    opts: &SignOptions,
+) -> Result<PreparedSignature, PadesError> {
+    prepare_incremental(pdf_bytes, opts)
+}
+
+/// **Phase 2 of two-phase signing (t57 F5).** Embed `cms` — a detached CMS built over
+/// `prepared.byterange_digest()` — into the reserved `/Contents` placeholder of `prepared`,
+/// producing the final signed PDF. The `/ByteRange` is untouched (the placeholder is excluded), so
+/// the signature the CMS attests remains valid.
+///
+/// Borrows `prepared` (cloning its bytes) so the caller may retry embedding or hold the prepared
+/// state; the synchronous [`sign_pdf`] path consumes the bytes without a clone.
+pub fn embed_signature(prepared: &PreparedSignature, cms: &[u8]) -> Result<Vec<u8>, PadesError> {
+    embed_cms(prepared.prepared_pdf.clone(), prepared.hex_start, cms)
 }
 
 /// Build the incremental-update section: clone/override the catalog and page, add the AcroForm,
 /// signature field, and `/Sig` dictionary, assemble the bytes, patch the `/ByteRange`, and compute
 /// the digest over the covered ranges.
-fn prepare_incremental(pdf_bytes: &[u8], opts: &SignOptions) -> Result<Prepared, PadesError> {
+fn prepare_incremental(
+    pdf_bytes: &[u8],
+    opts: &SignOptions,
+) -> Result<PreparedSignature, PadesError> {
     let doc =
         lopdf::Document::load_mem(pdf_bytes).map_err(|e| PadesError::PdfParse(e.to_string()))?;
 
@@ -289,9 +348,9 @@ fn prepare_incremental(pdf_bytes: &[u8], opts: &SignOptions) -> Result<Prepared,
     hasher.update(&bytes[range2_start..range2_start + range2_len]);
     let content_digest: [u8; 32] = hasher.finalize().into();
 
-    Ok(Prepared {
-        bytes,
-        content_digest,
+    Ok(PreparedSignature {
+        prepared_pdf: bytes,
+        byterange_digest: content_digest,
         hex_start,
     })
 }
