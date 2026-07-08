@@ -24,6 +24,7 @@
 //! The live endpoint/params are validated only behind the `network-tests` feature against a real,
 //! user-supplied access code (see `TESTING.md`).
 
+pub mod chronology;
 pub mod client;
 pub mod code;
 pub mod error;
@@ -33,6 +34,7 @@ pub mod model;
 pub mod parse;
 pub mod transport;
 
+pub use chronology::{Chronology, ChronologyEvent, ChronologyKind};
 pub use client::RegistryClient;
 pub use code::AccessCode;
 pub use error::RegistryError;

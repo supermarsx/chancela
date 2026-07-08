@@ -40,6 +40,7 @@ mod attestation;
 mod backup;
 mod books;
 mod cae;
+mod chronology;
 mod dashboard;
 mod dto;
 mod entities;
@@ -381,6 +382,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/entities/{id}/registry/import",
             post(registry::import_into_entity),
+        )
+        .route(
+            "/v1/entities/{id}/chronology",
+            get(chronology::get_entity_chronology),
         )
         .route("/v1/registry/lookup", post(registry::registry_lookup))
         .route("/v1/books", get(books::list_books).post(books::create_book))
