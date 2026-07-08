@@ -857,6 +857,7 @@ export const daDK: Catalog = {
   'signin.blocked.action': 'Tilbage til login',
   'session.gate.error': 'Sessionen kunne ikke indlæses.',
   'session.gate.retry': 'Prøv igen',
+  'settings.autosave.retry': 'Prøv igen',
   'users.access.title': 'Adgang og revision',
   'users.access.note':
     'En adgangskode er en lokal bremse mod manipulation, ikke kryptering i hvile. Revisionsnøglen er en attestering, ikke en kvalificeret signatur.',

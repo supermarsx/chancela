@@ -858,6 +858,7 @@ export const nlNL: Catalog = {
   'signin.blocked.action': 'Terug naar inloggen',
   'session.gate.error': 'Kan de sessie niet laden.',
   'session.gate.retry': 'Opnieuw proberen',
+  'settings.autosave.retry': 'Opnieuw proberen',
   'users.access.title': 'Toegang en audit',
   'users.access.note':
     'Een wachtwoord is een lokale drempel tegen manipulatie, geen versleuteling in rust. De auditsleutel is een attestatie, geen gekwalificeerde handtekening.',

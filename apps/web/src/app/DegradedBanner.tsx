@@ -10,6 +10,7 @@
  * needed. It links straight to the "Livros & Integridade" sub-tab where the operator sees
  * the exact break and can repair it.
  */
+import { useLayoutEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useDegradedHealth } from '../api/hooks';
 import { useT } from '../i18n';
@@ -18,10 +19,32 @@ export function DegradedBanner() {
   const t = useT();
   const health = useDegradedHealth();
   const degraded = health.data?.degraded === true || health.data?.integrity === 'broken';
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Publish the banner's height as a root CSS var while it is shown, so the toast viewport
+  // (and any other bottom-pinned layer) can lift clear of it — they must never overlap
+  // (t66-webfix #4). Cleared the moment the chain repairs and the banner unmounts.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (!degraded) {
+      root.style.removeProperty('--degraded-banner-h');
+      return;
+    }
+    const measure = () => {
+      root.style.setProperty('--degraded-banner-h', `${ref.current?.offsetHeight ?? 0}px`);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      root.style.removeProperty('--degraded-banner-h');
+    };
+  }, [degraded]);
+
   if (!degraded) return null;
 
   return (
-    <div className="degraded-banner" role="alert" aria-live="assertive">
+    <div ref={ref} className="degraded-banner" role="alert" aria-live="assertive">
       <div className="degraded-banner__text">
         <strong className="degraded-banner__title">{t('degraded.title')}</strong>
         <span className="degraded-banner__detail">{t('degraded.detail')}</span>

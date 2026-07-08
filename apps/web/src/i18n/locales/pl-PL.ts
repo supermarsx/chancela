@@ -856,6 +856,7 @@ export const plPL: Catalog = {
   'signin.blocked.action': 'Powrót do logowania',
   'session.gate.error': 'Nie udało się załadować sesji.',
   'session.gate.retry': 'Spróbuj ponownie',
+  'settings.autosave.retry': 'Spróbuj ponownie',
   'users.access.title': 'Dostęp i audyt',
   'users.access.note':
     'Hasło to lokalna przeszkoda przed manipulacją, a nie szyfrowanie w spoczynku. Klucz audytu to poświadczenie, a nie podpis kwalifikowany.',

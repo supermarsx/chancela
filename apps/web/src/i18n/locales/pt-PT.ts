@@ -861,6 +861,7 @@ export const ptPT = {
   'signin.blocked.action': 'Voltar ao início de sessão',
   'session.gate.error': 'Não foi possível carregar a sessão.',
   'session.gate.retry': 'Tentar novamente',
+  'settings.autosave.retry': 'Tentar novamente',
   'users.access.title': 'Acesso e auditoria',
   'users.access.note':
     'A palavra-passe é um travão local contra adulteração, não cifragem em repouso. A chave de auditoria é uma atestação, não uma assinatura qualificada.',

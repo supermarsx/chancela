@@ -855,6 +855,7 @@ export const fiFI: Catalog = {
   'signin.blocked.action': 'Takaisin kirjautumiseen',
   'session.gate.error': 'Istuntoa ei voitu ladata.',
   'session.gate.retry': 'Yritä uudelleen',
+  'settings.autosave.retry': 'Yritä uudelleen',
   'users.access.title': 'Pääsy ja auditointi',
   'users.access.note':
     'Salasana on paikallinen este peukalointia vastaan, ei lepotilan salausta. Auditointiavain on todistus, ei hyväksytty allekirjoitus.',

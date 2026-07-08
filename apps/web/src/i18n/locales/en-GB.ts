@@ -835,6 +835,7 @@ export const enGB: Catalog = {
   'signin.blocked.action': 'Back to sign in',
   'session.gate.error': 'Could not load the session.',
   'session.gate.retry': 'Try again',
+  'settings.autosave.retry': 'Try again',
   'users.access.title': 'Access and audit',
   'users.access.note':
     'A password is a local tamper speed-bump, not at-rest encryption. The audit key is an attestation, not a qualified signature.',

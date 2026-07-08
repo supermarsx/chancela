@@ -859,6 +859,7 @@ export const svFI: Catalog = {
   'signin.blocked.action': 'Tillbaka till inloggning',
   'session.gate.error': 'Sessionen kunde inte laddas.',
   'session.gate.retry': 'Försök igen',
+  'settings.autosave.retry': 'Försök igen',
   'users.access.title': 'Åtkomst och granskning',
   'users.access.note':
     'Ett lösenord är ett lokalt hinder mot manipulation, inte kryptering i vila. Revisionsnyckeln är en attestering, inte en kvalificerad signatur.',

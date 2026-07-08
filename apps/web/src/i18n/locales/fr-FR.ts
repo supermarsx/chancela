@@ -859,6 +859,7 @@ export const frFR: Catalog = {
   'signin.blocked.action': 'Retour à la connexion',
   'session.gate.error': 'Impossible de charger la session.',
   'session.gate.retry': 'Réessayer',
+  'settings.autosave.retry': 'Réessayer',
   'users.access.title': 'Accès et audit',
   'users.access.note':
     'Un mot de passe est un ralentisseur local contre l’altération, pas un chiffrement au repos. La clé d’audit est une attestation, pas une signature qualifiée.',

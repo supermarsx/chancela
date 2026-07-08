@@ -131,6 +131,16 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNo
  *  autosave savebar is not shown for them. */
 const STANDALONE_SECTIONS: readonly SettingsSection[] = ['utilizadores', 'integridade', 'dados'];
 
+/**
+ * Whether autosave is enabled. Autosave is always-on today (t49) — there is no
+ * server-side disable toggle yet (a deferred t60 slice needing an `autosave_enabled`
+ * settings field). The persistent "Guardar agora" flush is therefore hidden: it would
+ * only ever return when a future toggle turns autosave OFF (`!autosaveEnabled`). A failed
+ * save still exposes a retry affordance regardless (see the savebar), so nothing is stuck.
+ * When the field lands, replace this constant with `draft.<…>.autosave_enabled ?? true`.
+ */
+const AUTOSAVE_ENABLED = true;
+
 const isSettingsSection = (v: string | null): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
 
@@ -610,15 +620,30 @@ export function SettingsPage() {
                   ''
                 )}
               </span>
-              <Button
-                type="button"
-                variant="secondary"
-                icon={<Icon.Save />}
-                disabled={!autosave.isDirty || autosave.isSaving}
-                onClick={() => autosave.flush()}
-              >
-                {t('settings.saveNow')}
-              </Button>
+              {/* Persistent manual flush only when autosave is OFF (never today). When it is
+                  ON, the only manual control is an error-state retry, so a failed save is
+                  always recoverable without a standing "Guardar agora" button. */}
+              {!AUTOSAVE_ENABLED ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.Save />}
+                  disabled={!autosave.isDirty || autosave.isSaving}
+                  onClick={() => autosave.flush()}
+                >
+                  {t('settings.saveNow')}
+                </Button>
+              ) : autosave.status === 'error' ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.Refresh />}
+                  disabled={autosave.isSaving}
+                  onClick={() => autosave.flush()}
+                >
+                  {t('settings.autosave.retry')}
+                </Button>
+              ) : null}
             </div>
           </div>
         </Card>

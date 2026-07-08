@@ -35,4 +35,19 @@ describe('DegradedBanner', () => {
     // Give the health query a tick to resolve, then assert the banner never appears.
     await waitFor(() => expect(container.querySelector('.degraded-banner')).toBeNull());
   });
+
+  it('publishes its height as --degraded-banner-h so the toast viewport lifts clear of it', async () => {
+    vi.stubGlobal('fetch', healthFetch({ status: 'ok', integrity: 'broken', degraded: true }));
+    const { unmount } = renderWithProviders(<DegradedBanner />);
+
+    // While shown, the offset var is set (the toast viewport reads it to avoid overlap).
+    await screen.findByRole('alert');
+    await waitFor(() =>
+      expect(document.documentElement.style.getPropertyValue('--degraded-banner-h')).not.toBe(''),
+    );
+
+    // Cleared once the banner unmounts (chain repaired) so the toast drops back down.
+    unmount();
+    expect(document.documentElement.style.getPropertyValue('--degraded-banner-h')).toBe('');
+  });
 });

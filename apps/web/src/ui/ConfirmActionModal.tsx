@@ -25,6 +25,7 @@
  * spells out the pending action.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReAuth } from '../api/types';
 import { ApiError } from '../api/client';
 import { useT } from '../i18n';
@@ -170,7 +171,13 @@ export function ConfirmActionModal({
     }
   }
 
-  return (
+  // Rendered through a portal to `document.body` so the fixed backdrop escapes the routed
+  // content's transformed ancestor (`.route-transition` establishes a containing block via
+  // its animation/`will-change: transform`, which would otherwise clip a `position: fixed`
+  // descendant to the route's box). At the body level the backdrop covers the whole content
+  // area — see `.modal-backdrop` in theme.css: it starts BELOW the titlebar + tab bar and
+  // sits above page content and the degraded banner, but below the safe-mode banner.
+  return createPortal(
     <div
       className="modal-backdrop"
       onClick={() => {
@@ -311,6 +318,7 @@ export function ConfirmActionModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

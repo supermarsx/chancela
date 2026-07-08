@@ -858,6 +858,7 @@ export const esES: Catalog = {
   'signin.blocked.action': 'Volver al inicio de sesión',
   'session.gate.error': 'No se pudo cargar la sesión.',
   'session.gate.retry': 'Reintentar',
+  'settings.autosave.retry': 'Reintentar',
   'users.access.title': 'Acceso y auditoría',
   'users.access.note':
     'La contraseña es un freno local frente a la manipulación, no cifrado en reposo. La clave de auditoría es una atestación, no una firma cualificada.',

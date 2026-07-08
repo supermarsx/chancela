@@ -1510,10 +1510,11 @@ a,
   align-items: start;
 }
 
-/* One settings section shown at a time (sub-tabbed) — cap its width so a lone card doesn't
-   stretch across the whole page. */
+/* One settings section shown at a time (sub-tabbed). The panel spans the full content width,
+   consistent with the sub-tab strip above it, rather than being capped narrower than the
+   sub-nav (t66-webfix #3). */
 .settings-section {
-  max-width: 46rem;
+  max-width: none;
 }
 
 .settings-toggle {
@@ -2928,6 +2929,70 @@ a.btn--primary {
   display: none;
 }
 
+/* Overflow scroll-shadows: the shared `<SubNav>` wraps the scroller so a fixed fade can be
+   pinned to each visible edge, hinting at more sub-tabs when the strip overflows. The wrapper
+   owns the placement (margin/align that `.subnav` otherwise carries) so the inner pill can
+   flex to its natural width and scroll inside. Ferramentas keeps its own `.ferramentas-subnav`
+   markup (no wrapper) and is untouched. */
+.subnav-wrap {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  align-self: flex-start;
+  margin-top: 1.1rem;
+}
+
+.subnav-wrap > .subnav {
+  margin-top: 0;
+}
+
+/* The fades sit above the buttons (z 1) and indicator (z 0), pinned to the pill's rounded
+   ends. A soft `--text`-tinted smudge reads as a shadow in both light and dark themes. */
+.subnav-wrap::before,
+.subnav-wrap::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1.75rem;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.subnav-wrap::before {
+  left: 1px;
+  border-radius: 999px 0 0 999px;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--text) 14%, transparent),
+    transparent
+  );
+}
+
+.subnav-wrap::after {
+  right: 1px;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(
+    to left,
+    color-mix(in srgb, var(--text) 14%, transparent),
+    transparent
+  );
+}
+
+.subnav-wrap[data-overflow-start]::before,
+.subnav-wrap[data-overflow-end]::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subnav-wrap::before,
+  .subnav-wrap::after {
+    transition: none;
+  }
+}
+
 /* The gliding gilt pill behind the active sub-tab — its geometry is set inline from the
    measured active button (see FerramentasPage / SubNav), and it slides on the same easing
    as the top bar's active-tab indicator. It sits behind the button labels (z-index 0 vs 1). */
@@ -3664,7 +3729,11 @@ input[type='radio']:disabled {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 1500;
+  /* Above the confirm modal (1500) — a client-boot self-heal is the most fundamental state
+     and must never be covered — and below the titlebar chrome (2100). The degraded banner
+     and the toast viewport stack ABOVE it via the `--safe-banner-h` offset below, so the
+     three never overlap. */
+  z-index: 1700;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3760,9 +3829,10 @@ input[type='radio']:disabled {
 /* ============================================================================
  * Toast notifications (t44).
  *
- * A fixed viewport pinned bottom-right, above page content but BELOW the safe-mode
- * banner (1500) and the crash/titlebar layers (2000/2100), so a persistent safe-mode
- * warning is never covered. Toasts are gilt cards on the surface tone with a variant
+ * A fixed viewport pinned bottom-right, above page content but BELOW the confirm modal
+ * (1500), the degraded/safe-mode banners (1450/1700) and the crash/titlebar layers
+ * (2000/2100). It also lifts by the combined banner height (the `--*-banner-h` vars) so it
+ * never overlaps a bottom-pinned banner. Toasts are gilt cards on the surface tone with a variant
  * accent rail. The enter animation is a single keyframe that collapses to nothing under
  * the global prefers-reduced-motion block AND safe mode (both zero `animation`), so no
  * variant-specific reduced-motion rule is needed here.
@@ -3770,7 +3840,13 @@ input[type='radio']:disabled {
 .toast-viewport {
   position: fixed;
   right: clamp(0.75rem, 3vw, 1.5rem);
-  bottom: clamp(0.75rem, 3vw, 1.5rem);
+  /* Floats ABOVE any bottom-pinned banner so a toast is never hidden behind the read-only
+     degraded bar or the safe-mode bar. Each banner publishes its measured height as a CSS
+     var while mounted (0 otherwise), so the toast lifts by the exact combined banner height
+     and the three coexist, fully legible, in every combination. */
+  bottom: calc(
+    clamp(0.75rem, 3vw, 1.5rem) + var(--safe-banner-h, 0px) + var(--degraded-banner-h, 0px)
+  );
   z-index: 1400;
   display: flex;
   /* Newest first in the DOM (screen-reader reads it first); reverse the visual column so
@@ -4481,8 +4557,12 @@ input[type='radio']:disabled {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
-  z-index: 1600;
+  /* Stacks directly ABOVE the safe-mode banner (which pins to the very bottom) so the two
+     read-only signals never overlap when both are present. `--safe-banner-h` is published by
+     the SafeModeBanner while it is mounted (0 otherwise). Sits below the confirm modal (1500)
+     — a destructive confirm covers it — and above the toast viewport (1400) and page content. */
+  bottom: var(--safe-banner-h, 0px);
+  z-index: 1450;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -4522,11 +4602,18 @@ input[type='radio']:disabled {
   background: color-mix(in srgb, var(--error) 16%, transparent);
 }
 
-/* The shared confirm modal (ReAuth + type-to-confirm phrase). */
+/* The shared confirm modal (ReAuth + type-to-confirm phrase). Portalled to <body> so the
+   fixed backdrop is measured from the viewport, not the routed content's transformed box.
+   It starts BELOW the titlebar + tab bar (so the window handle and the top tabs stay
+   uncovered and usable) and covers everything under them — page content AND the degraded
+   banner — while staying below the safe-mode banner (z 1600) and the titlebar (z 2100). */
 .modal-backdrop {
   position: fixed;
-  inset: 0;
-  z-index: 2000;
+  top: calc(var(--titlebar-h) + var(--topbar-h));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1500;
   display: flex;
   align-items: flex-start;
   justify-content: center;

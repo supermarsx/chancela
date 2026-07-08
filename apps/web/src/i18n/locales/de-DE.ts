@@ -865,6 +865,7 @@ export const deDE: Catalog = {
   'signin.blocked.action': 'Zurück zur Anmeldung',
   'session.gate.error': 'Die Sitzung konnte nicht geladen werden.',
   'session.gate.retry': 'Erneut versuchen',
+  'settings.autosave.retry': 'Erneut versuchen',
   'users.access.title': 'Zugang und Prüfung',
   'users.access.note':
     'Ein Passwort ist eine lokale Manipulationsbremse, keine Verschlüsselung im Ruhezustand. Der Prüfschlüssel ist eine Attestierung, keine qualifizierte Signatur.',

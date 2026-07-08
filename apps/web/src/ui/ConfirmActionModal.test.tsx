@@ -21,6 +21,23 @@ function baseProps() {
 }
 
 describe('ConfirmActionModal', () => {
+  it('portals the backdrop to <body> so it overlays the whole content area, not the route box', () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const { container } = renderWithProviders(
+      <ConfirmActionModal {...baseProps()} onConfirm={onConfirm} />,
+    );
+
+    // The backdrop is rendered through a portal to document.body — NOT nested inside the
+    // rendered component tree (whose transformed route ancestor would otherwise clip a
+    // fixed backdrop to the route's box).
+    expect(container.querySelector('.modal-backdrop')).toBeNull();
+    const backdrop = document.body.querySelector('.modal-backdrop');
+    expect(backdrop).toBeTruthy();
+    expect(backdrop?.parentElement).toBe(document.body);
+    // The dialog is still reachable and labelled.
+    expect(screen.getByRole('dialog', { name: 'Reposição de fábrica' })).toBeTruthy();
+  });
+
   it('gates the confirm button on the exact type-to-confirm phrase', async () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     renderWithProviders(

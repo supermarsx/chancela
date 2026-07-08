@@ -13,7 +13,7 @@
  * The file is named `SafeModeBanner` (not `SafeMode`) so it never collides with the
  * `safeMode` store module on a case-insensitive filesystem.
  */
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { DEFAULT_SETTINGS } from '../api/types';
 import { useUpdateSettings } from '../api/hooks';
 import { useT } from '../i18n';
@@ -34,6 +34,22 @@ function exitAndReload(): void {
 export function SafeModeBanner() {
   const t = useT();
   const resetSettings = useUpdateSettings();
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Publish the banner's height as a root CSS var so the bottom-pinned degraded banner and
+  // the toast viewport stack cleanly above it instead of overlapping (t66-webfix #4).
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const measure = () => {
+      root.style.setProperty('--safe-banner-h', `${ref.current?.offsetHeight ?? 0}px`);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      root.style.removeProperty('--safe-banner-h');
+    };
+  }, []);
 
   // Force the default, minimal appearance for as long as safe mode is mounted, and
   // restore the attributes we changed on unmount (a clean exit reloads anyway, but this
@@ -67,7 +83,7 @@ export function SafeModeBanner() {
   }
 
   return (
-    <div className="safe-banner" role="status">
+    <div ref={ref} className="safe-banner" role="status">
       <div className="safe-banner__text">
         <strong className="safe-banner__title">{t('safemode.title')}</strong>
         <span className="safe-banner__detail">{t('safemode.detail')}</span>

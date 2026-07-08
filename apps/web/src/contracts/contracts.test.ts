@@ -28,6 +28,7 @@ import {
   LOCALES,
   MEETING_CHANNELS,
   NUMBERING_SCHEMES,
+  PERMISSION_SOURCES,
   SIGNATURE_FAMILIES,
   THEME_MODES,
   type ActMesa,
@@ -52,6 +53,7 @@ import {
   type LedgerEventView,
   type OnboardingSettings,
   type OrganizationSettings,
+  type PermissionGrant,
   type RegistryAnnotationView,
   type RegistryEventView,
   type RegistryExtractView,
@@ -739,7 +741,9 @@ describe('contract fixtures parse through the real client', () => {
   it('session.json → SessionView (GET /v1/session, populated)', async () => {
     stubFetch(fixture('session.json'));
     const session: SessionView = await api.getSession();
-    assertExactKeys<SessionView>(session, { user: true }, 'SessionView');
+    // `permissions` is the first-paint RBAC embed (t64-E3) — always present (empty when
+    // signed out), so it is a REQUIRED key alongside `user`.
+    assertExactKeys<SessionView>(session, { user: true, permissions: true }, 'SessionView');
     expect(session.user, 'populated session carries a user').not.toBeNull();
     const user = assertExactKeys<UserView>(
       session.user,
@@ -757,6 +761,32 @@ describe('contract fixtures parse through the real client', () => {
       ['attestation_key_fingerprint'],
     );
     expect(user).not.toHaveProperty('password_hash');
+
+    // The embedded effective grants (t64-E3, FROZEN for E5): each a `(permission, scope,
+    // source)` triple; `scope` is a `kind`-tagged union; `source` ∈ {role, delegation}.
+    expect(Array.isArray(session.permissions), 'SessionView.permissions is an array').toBe(true);
+    for (const grant of session.permissions) {
+      const g = assertExactKeys<PermissionGrant>(
+        grant,
+        { permission: true, scope: true, source: true },
+        'SessionView.permissions[]',
+      );
+      expect(typeof g.permission, 'grant.permission is a string').toBe('string');
+      expect(g.permission.length, 'grant.permission is non-empty').toBeGreaterThan(0);
+      inEnum(PERMISSION_SOURCES, g.source, 'SessionView.permissions[].source');
+      // `scope` is the `kind`-tagged union: global carries no id; entity/book carry a uuid.
+      inEnum(['global', 'entity', 'book'], g.scope.kind, 'SessionView.permissions[].scope.kind');
+      if (g.scope.kind === 'global') {
+        assertExactKeys<{ kind: 'global' }>(g.scope, { kind: true }, 'scope(global)');
+      } else {
+        const scoped = assertExactKeys<{ kind: string; id: string }>(
+          g.scope,
+          { kind: true, id: true },
+          `scope(${g.scope.kind})`,
+        );
+        expect(typeof scoped.id, 'scoped grant carries an id').toBe('string');
+      }
+    }
   });
 
   it('session.roster.json → SessionRoster (GET /v1/session/roster, unauth)', async () => {

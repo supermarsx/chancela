@@ -122,7 +122,7 @@ describe('SettingsPage', () => {
     );
   });
 
-  it('PUTs the full settings document via "Guardar agora", with edits spanning sub-tabs', async () => {
+  it('PUTs the full settings document via autosave, with edits spanning sub-tabs', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -140,10 +140,12 @@ describe('SettingsPage', () => {
     )) as HTMLInputElement;
     fireEvent.change(caeUrl, { target: { value: 'https://catalog.example.pt/cae_dataset.json' } });
 
-    // "Guardar agora" flushes the pending debounce and PUTs immediately, from any section.
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar agora' }));
-
-    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
+    // Autosave is always-on (no manual "Guardar agora" button while enabled): the debounced
+    // autosave PUTs the whole document on its own, spanning every edited sub-tab.
+    expect(screen.queryByRole('button', { name: 'Guardar agora' })).toBeNull();
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
 
     const put = calls.find((c) => c.method === 'PUT');
     expect(put).toBeTruthy();
@@ -208,9 +210,24 @@ describe('SettingsPage', () => {
     // The failed autosave surfaces an assertive toast…
     const alert = await screen.findByRole('alert', undefined, { timeout: 3000 });
     expect(alert.textContent).toContain('Falha ao guardar');
-    // …and the field stays editable (retryable) with "Guardar agora" available.
+    // …and the field stays editable (retryable). Autosave is on, so there is no persistent
+    // "Guardar agora"; the error state instead exposes a retry affordance so the save is
+    // still recoverable.
     expect(nameInput.disabled).toBe(false);
-    expect(screen.getByRole('button', { name: 'Guardar agora' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Guardar agora' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeTruthy();
+  });
+
+  it('hides "Guardar agora" while autosave is enabled (no persistent flush button)', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+
+    // The section loaded (its field is present) but the manual flush button is not shown —
+    // autosave is always-on today.
+    await screen.findByLabelText('Nome da organização');
+    expect(screen.queryByRole('button', { name: 'Guardar agora' })).toBeNull();
   });
 
   it('shows a FieldHelp affordance on config fields (Aparência by default)', async () => {

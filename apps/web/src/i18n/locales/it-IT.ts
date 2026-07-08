@@ -859,6 +859,7 @@ export const itIT: Catalog = {
   'signin.blocked.action': 'Torna all’accesso',
   'session.gate.error': 'Impossibile caricare la sessione.',
   'session.gate.retry': 'Riprova',
+  'settings.autosave.retry': 'Riprova',
   'users.access.title': 'Accesso e audit',
   'users.access.note':
     'La password è un freno locale contro le manomissioni, non una cifratura a riposo. La chiave di audit è un’attestazione, non una firma qualificata.',

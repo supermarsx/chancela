@@ -827,9 +827,68 @@ export interface UpdateUserBody {
   active?: boolean;
 }
 
-/** `GET /v1/session` — the active user, or `null` when signed out. */
+// --- RBAC permissions (§ t64-E3, FROZEN for the E5 web permissions context) ------
+//
+// The web half of the frozen `chancela-api::session` permission DTOs. A grant is one
+// `(permission, scope)` pair the signed-in principal effectively holds, tagged by how it
+// arrived (`role` ∪ `delegation`). `scope` is a serde-`kind`-tagged union: `global` covers
+// everything, `entity` covers that entity (and its books), `book` covers that one book —
+// so `can(perm, scope)` maps to the server's `has_permission` semantics. These mirror the
+// server views byte-for-byte and are consumed both by the `GET /v1/session/permissions`
+// endpoint (`SessionPermissions`) and by the first-paint `SessionView.permissions` embed.
+
+/** A grant's provenance: a role assignment or a delegation (t64-E3). */
+export const PERMISSION_SOURCES = ['role', 'delegation'] as const;
+export type PermissionSource = (typeof PERMISSION_SOURCES)[number];
+
+/**
+ * The scope a grant/assignment is held at — a `kind`-tagged union mirroring the server's
+ * `ScopeView` (t64-E3). `global` carries no id; `entity`/`book` carry the target uuid.
+ */
+export type PermissionScope =
+  { kind: 'global' } | { kind: 'entity'; id: string } | { kind: 'book'; id: string };
+
+/**
+ * One effective grant: a dotted permission id (e.g. `entity.read`), the scope it is held
+ * at, and whether it arrived via a role or a delegation (t64-E3, FROZEN for E5).
+ */
+export interface PermissionGrant {
+  /** The dotted permission id, e.g. `"entity.read"`. */
+  permission: string;
+  scope: PermissionScope;
+  source: PermissionSource;
+}
+
+/** One role assignment the user holds: the role id and the scope it is held at (t64-E3). */
+export interface RoleAssignmentView {
+  role_id: string;
+  scope: PermissionScope;
+}
+
+/**
+ * `GET /v1/session/permissions` (t64-E3, FROZEN for E5) — the current principal's identity,
+ * the role assignments they hold (with scopes), and the flattened effective `(permission,
+ * scope)` grant set (role ∪ delegation), each tagged by `source`. Requires any valid session.
+ */
+export interface SessionPermissions {
+  user_id: string;
+  username: string;
+  role_assignments: RoleAssignmentView[];
+  permissions: PermissionGrant[];
+}
+
+/**
+ * `GET /v1/session` — the active user, or `null` when signed out.
+ *
+ * `permissions` is the signed-in principal's effective `(permission, scope)` grant set,
+ * embedded additively for the web's first paint so it can gate its UI without a second
+ * round-trip (t64-E3 / E5). Always present on the wire — an EMPTY array when signed out
+ * (the server serialises a plain `Vec`, never omitting it). The authoritative, fuller
+ * shape (identity + role assignments) is `GET /v1/session/permissions`.
+ */
 export interface SessionView {
   user: UserView | null;
+  permissions: PermissionGrant[];
 }
 
 /**
