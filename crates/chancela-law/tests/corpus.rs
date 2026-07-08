@@ -34,11 +34,23 @@ fn manifest_loads_full_scope_with_priority_slots() {
     assert!(cat.article("csc", "270-A").is_some());
     assert!(cat.article("cc", "1438-A").is_some());
 
-    // Everything is Pending in the E1a skeleton.
+    // Coverage after t55-E1b-eu: the 3 EU-reg diplomas are fully vendored VERBATIM from EUR-Lex
+    // (eIDAS 52 + RGPD 99 + eIDAS2 2 = 153 Verified articles); the 6 DRE-sourced diplomas remain
+    // Pending (the JS-gated DRE SPA is not curl-vendorable — see the pilot findings). So:
+    //   verified = 153, pending = 40 (DRE seeds), articles = 193.
     let c = cat.metadata().counts;
-    assert_eq!(c.verified, 0, "E1a seeds nothing Verified");
-    assert_eq!(c.pending, c.articles, "every seeded slot is Pending");
-    assert!(c.articles >= 40, "cited-article skeleton across §5");
+    assert_eq!(
+        c.verified, 153,
+        "the 3 EU regs are fully vendored (52 + 99 + 2)"
+    );
+    assert_eq!(c.pending, 40, "the 6 DRE diplomas stay Pending");
+    assert_eq!(c.articles, 193, "total = 153 Verified + 40 Pending");
+    assert_eq!(c.verified + c.pending, c.articles);
+
+    // Each EU regulation carries its COMPLETE authentic article set (not the E1a cited seed).
+    assert_eq!(cat.articles_for("eidas-910-2014").len(), 52);
+    assert_eq!(cat.articles_for("gdpr-2016-679").len(), 99);
+    assert_eq!(cat.articles_for("eidas2-2024-1183").len(), 2);
 }
 
 /// The label is derived correctly for suffixed and plain numbers.
@@ -74,8 +86,17 @@ fn folded_search_finds_pending_article_by_heading() {
     // Blank query → no results.
     assert!(cat.search("   ").is_empty());
 
-    // A body-only term will match once E1b vendors it (contract for E2/E3): today no Pending body
-    // carries text, so a nonsense term returns nothing.
+    // Body search now works over the vendored EU-reg text (contract for E2/E3): a term that only
+    // appears inside a Verified article body matches. "pseudonimização" is in RGPD art. 25's body.
+    let body_hits = cat.search("pseudonimizacao");
+    assert!(
+        body_hits
+            .iter()
+            .any(|a| a.diploma_id == "gdpr-2016-679" && a.number == "25"),
+        "accent-folded body search finds the vendored RGPD 25 text"
+    );
+
+    // A nonsense term still returns nothing.
     assert!(cat.search("zzz-nao-existe").is_empty());
 }
 

@@ -65,7 +65,88 @@ For each diploma, vendor the authentic Diário da República / EUR-Lex text and 
 
 | File | Diploma | Official URL | sha256 |
 |---|---|---|---|
-| _(none yet — E1a skeleton)_ | | | |
+| `eurlex/32014R0910.pt.html` | Regulamento (UE) n.º 910/2014 (eIDAS) | https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910 | `bf56872ea8cea5da4af290a3418ae65804491d9f86092a6fe4d8fc93b2e5889f` |
+| `eurlex/32016R0679.pt.html` | Regulamento (UE) 2016/679 (RGPD) | https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32016R0679 | `b27b27f500866926adcb775f2ac115eb075fc2ab8f7985101ea0fe5c68937c23` |
+| `eurlex/32024R1183.pt.html` | Regulamento (UE) 2024/1183 (eIDAS 2.0) | https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32024R1183 | `4c5bef3e6149a679888869e856ebe3728ae6cc3aff70b01e81f5d0c5bfc9eabf` |
+
+## E1b-eu — the 3 EU regulations vendored VERBATIM from EUR-Lex — 2026-07-08
+
+**Outcome: all 3 EU-regulation diplomas are now authentic and Verified** — 153 articles vendored
+verbatim from the EUR-Lex Portuguese OJ HTML, each with a complete source (OJ citation + URL +
+artifact sha256 + retrieved_at). This confirms the pilot's control finding: **EUR-Lex serves the
+full verbatim OJ text to `curl`** (unlike the JS-gated DRE SPA).
+
+| Diploma | CELEX | Articles vendored → Verified | OJ reference |
+|---|---|---|---|
+| `eidas-910-2014` | 32014R0910 | **52** (Artigos 1.º–52.º) | JO L 257 de 28.8.2014, p. 73 |
+| `gdpr-2016-679` | 32016R0679 | **99** (Artigos 1.º–99.º) | JO L 119 de 4.5.2016, p. 1 |
+| `eidas2-2024-1183` | 32024R1183 | **2** (Artigos 1.º–2.º) | JO L, 2024/1183, de 30.4.2024 |
+
+Total: **153 Verified**, **0 left Pending** among the EU regs. (The full corpus is now 153 Verified
++ 40 Pending = 193 articles; the 40 Pending are the 6 DRE-sourced diplomas, blocked by the SPA — the
+pilot's recommendation stands for those.)
+
+**Version decision — original OJ text (not consolidated).** The vendored artifact for each regulation
+is the **original OJ publication** (the CELEX named in the task), not the consolidated in-force
+version. Rationale: the original OJ HTML is clean (`oj-ti-art` / `oj-sti-art` / `oj-normal`), which
+gives reliable, unambiguous verbatim extraction; the consolidated HTML (`02014R0910-20241018`,
+`02016R0679-20160504` — both fetch fine via curl) interleaves amendment markers that would pollute an
+article body. The exact version is pinned by CELEX + URL + sha256, and the eIDAS→eIDAS2 amendments are
+themselves captured authentically as the separate `eidas2-2024-1183` diploma (its Artigo 1.º is the
+verbatim amending clause). A reader thus sees each act exactly as the OJ published it.
+
+**Extraction (deterministic, offline, reproducible).** `gen_law.py` parses the committed
+`eurlex/*.pt.html` artifacts: each article is the `<div class="eli-subdivision" id="art_N">` block
+(sliced by balancing `<div>`/`</div>`, so chapter/section/annex headings are excluded), the label is
+`oj-ti-art`, the epígrafe is `oj-sti-art`, and the body is every paragraph after the title div. Only
+HTML whitespace artifacts are normalized (the ordinal superscript `o` → `º`, `&nbsp;` → space,
+entities unescaped, block tags → newlines) — **every word, accent and punctuation mark is left
+exactly as served**. The generator re-verifies each artifact's sha256 before extracting, so a
+tampered/stale source is caught before it can be presented as law. `python gen_law.py --check` runs
+fully offline against the committed HTML (CI needs no network; the embedded `law_corpus.json` is the
+artifact tests run against).
+
+Fidelity gate: `tests/fidelity.rs` asserts the complete article counts (52/99/2), contiguous
+numbering, that every EU-reg article is Verified + sourced + pinned to the artifact digest, and
+verbatim spot-checks (eIDAS 25 «efeito legal equivalente ao de uma assinatura manuscrita», RGPD 5
+«licitude, lealdade e transparência», RGPD 25 «pseudonimização», eIDAS2 1 amending-clause opening).
+
+## E1b pilot findings — 2026-07-08 (CSC, priority arts 255.º + 399.º)
+
+**Outcome: 0 articles vendored to Verified. The whole corpus stays Pending — the correct authentic
+outcome (a Pending gap is right; a fabricated body is a critical failure).** The documented
+curl-based DRE pipeline does **not** work for the consolidated Portuguese codes. Probes performed:
+
+- `diariodarepublica.pt/dr/legislacao-consolidada/...` (the in-force consolidated CSC) is a
+  **JS-gated OutSystems React SPA**. Every `curl` returns a constant **2346-byte HTML shell**
+  (`<div id="reactContainer">` + `<noscript>JavaScript is required</noscript>`). The article text
+  is loaded at runtime by JS from CSRF-token-gated OutSystems `screenservices` POST endpoints that
+  are bootstrapped inside the SPA session and are not reachable with `curl`. The loader scripts
+  (`dr.index.js` 1.3 KB, `dr.appDefinition.js` 664 B) are themselves stubs that pull modules
+  dynamically, so the endpoint names/version tokens can't be recovered statically either.
+- `data.dre.pt/eli/dec-lei/262/1986/p/cons/...` (the ELI resolver) **301-redirects into that same
+  SPA** (`.../redirect/LinkELI.aspx?...` → `diariodarepublica.pt`). No JSON body.
+- `files.dre.pt/1s/1986/09/...` (the immutable **original** 1986 publication PDF) — constructed
+  URLs **301 back into the SPA**; the exact page-encoded filename is not discoverable via search.
+  Even if fetched, the 1986 *original* wording of arts 255.º/399.º has since been amended, so it is
+  **not** the current in-force text and must not be presented as such for a remuneration feature.
+- No Chrome browser is connected (`list_connected_browsers` → `[]`), so legitimate SPA rendering
+  (the one reliable way to extract verbatim text from dre.pt) was unavailable in this run.
+- `WebFetch` only yields processed/summarised markdown of the SPA shell — explicitly **not** good
+  enough for `Verified` per the authenticity rule.
+
+**What DID work:** **EUR-Lex serves verbatim HTML directly to `curl`** — e.g.
+`eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32014R0910` returns **619 KB** of real content
+containing "Artigo 25.º" and "assinatura eletrónica". So the EU-regulation diplomas
+(`eidas-910-2014`, `gdpr-2016-679`, `eidas2-2024-1183`) ARE autonomously vendorable by CELEX; the
+6 DRE-sourced diplomas (CSC, Código Civil, DL 268/94, DL 76-A/2006, Código Cooperativo, Lei 24/2012)
+are **not**, via curl.
+
+**Fan-out recommendation:** do NOT fan out curl-based per-diploma DRE vendoring — it will fail
+identically for every consolidated code. Unblock the 6 DRE diplomas by one of: (a) run the vendoring
+step with a connected/headless browser that renders the SPA and extract the DOM text verbatim; or
+(b) obtain user-supplied authoritative text (official PDF export from the DRE "descarregar" button)
+to vendor from. The 3 EU regs can be fanned out with the existing curl+CELEX pipeline immediately.
 
 ## Regeneration
 
