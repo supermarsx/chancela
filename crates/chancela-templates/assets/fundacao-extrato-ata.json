@@ -1,0 +1,47 @@
+{
+  "id": "fundacao-extrato-ata/v1",
+  "family": "Foundation",
+  "stage": "Extrato",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "fundacao-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Extrato de ata" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "Resumo criptográfico do ato selado", "value": "{{ payload_digest }}" },
+        { "key": "Evento de selagem", "value": "{{ seal_event_seq }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Certifica-se que a(s) deliberação(ões) abaixo transcrita(s) constitui(em) extrato fiel da ata n.º {{ ata_number }} do órgão da fundação {{ entity.name }}, NIPC {{ entity.nipc }}, selada nesta escrituração digital, cujo resumo criptográfico (digest) do ato selado é {{ payload_digest }}."
+    },
+    { "kind": "Heading", "level": 2, "template": "Deliberações extratadas" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "VoteTable",
+      "items": "deliberation_items",
+      "label": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}",
+      "vote_field": "vote",
+      "unanimous_total": "{{ members_present + members_represented }}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

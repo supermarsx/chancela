@@ -1,0 +1,48 @@
+{
+  "id": "condominio-extrato-ata/v1",
+  "family": "Condominium",
+  "stage": "Extrato",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Extrato de ata" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Livro / órgão", "value": "{{ book.kind }}" },
+        { "key": "Digest do ato selado", "value": "{{ payload_digest }}" },
+        { "key": "Evento de selagem", "value": "{{ seal_event_seq }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Certifica-se que as deliberações a seguir transcritas constituem extrato fiel da ata n.º {{ ata_number }} da assembleia de condóminos do condomínio {{ entity.name }}, realizada em {{ meeting_date | long_date }} e selada nesta escrituração digital, cujo resumo criptográfico (digest) consta acima."
+    },
+    { "kind": "Rule" },
+    { "kind": "Heading", "level": 2, "template": "Deliberações" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "VoteTable",
+      "items": "deliberation_items",
+      "label": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}",
+      "vote_field": "vote",
+      "unanimous_total": "{{ members_present + members_represented }}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -942,4 +942,202 @@ mod tests {
             "a typo'd threshold id must fail the render, not blank-render"
         );
     }
+
+    // --- catalog-wide coverage (the standing guard over the full authored catalog) -------------
+
+    /// A generously-populated fixture that binds every field the catalog's block templates read at
+    /// the record root (dates fed to `long_date`, `channel`/capacity fed to the label filters, the
+    /// vote/attendance counts, and the `convening`/`retifies`/`book` sub-objects). Array sources are
+    /// present-but-empty so every template's loops resolve to nothing while its root prose — where
+    /// the `threshold()` recitals live — still renders. Fictional entity/people only.
+    fn coverage_ctx() -> Value {
+        json!({
+            "title": "Documento — Encosto Estratégico Lda",
+            "subject": "Assunto do documento",
+            "created_at": "2026-07-08T10:30:00Z",
+            "entity": {
+                "name": "Encosto Estratégico Lda",
+                "nipc": "515202030",
+                "seat": "Rua das Amoreiras, n.º 12, 1250-020 Lisboa"
+            },
+            "ata_number": 1,
+            "ata_count": 12,
+            "reason": "LivroEsgotado",
+            "meeting_date": "2026-07-08",
+            "meeting_time": "15:00",
+            "opening_date": "2026-01-02",
+            "closing_date": "2026-12-31",
+            "dispatched_at": "2026-07-01",
+            "place": "sede social, em Lisboa",
+            "channel": "Physical",
+            "mesa": { "presidente": "Amélia Marques", "secretarios": ["Bruno Cardoso"] },
+            "members_present": 3,
+            "members_represented": 1,
+            "attendance_reference": "Lista de presenças anexa (Anexo I)",
+            "telematic_evidence": {
+                "authenticity": "Autenticação por chave móvel digital.",
+                "security": "Ligação cifrada ponto-a-ponto.",
+                "recording": "Gravação integral arquivada."
+            },
+            "statement": {
+                "agenda_number": 1,
+                "member": "Amélia Marques",
+                "text": "Declaração de voto do cooperador."
+            },
+            "payload_digest": "sha256:0f1e2d3c4b5a",
+            "seal_event_seq": 42,
+            "retifies": {
+                "ata_number": 3,
+                "meeting_date": "2026-03-01",
+                "description": "Ata objeto de retificação."
+            },
+            "book": {
+                "kind": "Bound",
+                "predecessor": {
+                    "book_reference": "Livro n.º 1",
+                    "closing_date": "2025-12-31",
+                    "ata_count": 40
+                }
+            },
+            "convening": {
+                "convener": "Amélia Marques",
+                "convener_capacity": "Chair",
+                "dispatch_date": "2026-07-01",
+                "antecedence_days": 15,
+                "channel": "Physical",
+                "second_call": { "date": "2026-07-15", "time": "15:30", "reduced_quorum": true },
+                "recipients": []
+            },
+            "agenda": [],
+            "attendees": [],
+            "deliberation_items": [],
+            "referenced_documents": [],
+            "signatories": [],
+            "required_signatories": [],
+            "attachments": []
+        })
+    }
+
+    /// Flatten every rendered block into one string for cheap catalog-wide text assertions.
+    fn doc_text(doc: &DocumentModel) -> String {
+        let mut s = String::new();
+        for b in &doc.blocks {
+            match b {
+                Block::Heading { text, .. } => {
+                    s.push_str(text);
+                    s.push(' ');
+                }
+                Block::Paragraph { runs } => {
+                    for r in runs {
+                        s.push_str(&r.text);
+                        s.push(' ');
+                    }
+                }
+                Block::KeyValue { rows } => {
+                    for r in rows {
+                        s.push_str(&r.key);
+                        s.push(' ');
+                        s.push_str(&r.value);
+                        s.push(' ');
+                    }
+                }
+                Block::VoteTable { rows } => {
+                    for r in rows {
+                        s.push_str(&r.label);
+                        s.push(' ');
+                    }
+                }
+                Block::SignatureBlock { slots } => {
+                    for slot in slots {
+                        s.push_str(&slot.role);
+                        s.push(' ');
+                        s.push_str(&slot.name);
+                        s.push(' ');
+                    }
+                }
+                Block::PageBreak | Block::Rule => {}
+            }
+        }
+        s
+    }
+
+    /// The standing guard for the whole authored catalog: the full set embeds and deserializes
+    /// (schema and duplicate-id clean via `load_registry`), every spec carries a valid
+    /// family/stage/rule_pack, and every asset renders against the frozen fixture ctx without error,
+    /// with unresolved legal values surfacing as the `[a definir: …]` marker, never a hardcoded number.
+    #[test]
+    fn catalog_loads_indexes_and_every_asset_renders() {
+        let reg = load_registry().expect("the full catalog loads (deserializes + no duplicate id)");
+
+        // Whole-catalog census — a dropped or duplicated asset changes these counts.
+        assert_eq!(
+            reg.specs().len(),
+            83,
+            "expected the full authored catalog (~83 templates)"
+        );
+        let per_family = |f: EntityFamily| reg.specs().iter().filter(|s| s.family == f).count();
+        assert_eq!(per_family(EntityFamily::CommercialCompany), 35, "csc count");
+        assert_eq!(
+            per_family(EntityFamily::Condominium),
+            11,
+            "condominio count"
+        );
+        assert_eq!(per_family(EntityFamily::Association), 15, "assoc count");
+        assert_eq!(per_family(EntityFamily::Foundation), 11, "fundacao count");
+        assert_eq!(
+            per_family(EntityFamily::Cooperative),
+            11,
+            "cooperativa count"
+        );
+
+        // Ids are unique across the whole catalog (loader already rejects dups, assert defensively).
+        let mut ids: Vec<&str> = reg.specs().iter().map(|s| s.id.as_str()).collect();
+        ids.sort_unstable();
+        let unique = {
+            let mut v = ids.clone();
+            v.dedup();
+            v.len()
+        };
+        assert_eq!(
+            unique,
+            ids.len(),
+            "duplicate template id across the catalog"
+        );
+
+        let base = coverage_ctx();
+        let mut saw_threshold_marker = false;
+        for spec in reg.specs() {
+            // Structural invariants every template must satisfy.
+            assert!(!spec.id.is_empty(), "empty template id");
+            assert!(
+                !spec.rule_pack_id.is_empty(),
+                "{}: empty rule_pack_id",
+                spec.id
+            );
+            assert_eq!(spec.locale, "pt-PT", "{}: unexpected locale", spec.id);
+
+            // Bind the frozen fixture (per-spec title so the required envelope key is present) and
+            // render — any deserialization-valid-but-render-broken template trips here.
+            let mut ctx = base.clone();
+            ctx["title"] = json!(format!("Documento — {}", spec.id));
+            let doc = render(spec, &ctx).unwrap_or_else(|e| {
+                panic!(
+                    "{} failed to render against the fixture ctx: {e:?}",
+                    spec.id
+                )
+            });
+            assert_eq!(doc.language, "pt-PT", "{}: locale not propagated", spec.id);
+            assert!(!doc.title.is_empty(), "{}: empty rendered title", spec.id);
+
+            // Threshold guarantee, catalog-wide: an unresolved legal value renders the loud marker
+            // and never a bare number in its place.
+            if doc_text(&doc).contains("[a definir:") {
+                saw_threshold_marker = true;
+            }
+        }
+        assert!(
+            saw_threshold_marker,
+            "expected at least one unresolved threshold marker somewhere in the catalog"
+        );
+    }
 }

@@ -1,0 +1,43 @@
+{
+  "id": "fundacao-termo-retificacao/v1",
+  "family": "Foundation",
+  "stage": "Ata",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "fundacao-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de retificação" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "Ato retificado", "value": "{{ retifies }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Pelo presente termo procede-se à retificação do ato identificado por {{ retifies }}, do órgão da fundação {{ entity.name }}, NIPC {{ entity.nipc }}, nos termos da Lei-Quadro das Fundações e dos artigos 185.º e seguintes do Código Civil, mantendo-se inalterado o registo original selado."
+    },
+    { "kind": "Heading", "level": 2, "template": "Teor da retificação" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if deliberations %}{{ deliberations }}{% endif %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

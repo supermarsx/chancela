@@ -1,0 +1,47 @@
+{
+  "id": "condominio-comunicacao-ausentes/v1",
+  "family": "Condominium",
+  "stage": "Certidao",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Comunicação de deliberações a condóminos ausentes" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Digest do ato selado", "value": "{{ payload_digest }}" },
+        { "key": "Data da assembleia", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Prazo para impugnação", "value": "{{ threshold(\"condominio.ausentes.prazo_impugnacao_dias\") }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Ao abrigo do artigo 1432.º, n.º 6, do Código Civil, comunica-se aos condóminos que não estiveram presentes nem se fizeram representar na assembleia realizada em {{ meeting_date | long_date }} o teor das deliberações nela tomadas, a seguir transcritas."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Os condóminos ausentes que não tenham votado favoravelmente podem impugnar as deliberações no prazo de {{ threshold(\"condominio.ausentes.prazo_impugnacao_dias\") }}, contado da receção da presente comunicação, nos termos dos artigos 1432.º, n.º 6, e 1433.º do Código Civil."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "attendees",
+      "template": "{% if presence == 'Absent' %}Destinatário ausente: {{ name }}{% if weight and weight.Permilage %} — permilagem {{ weight.Permilage }}‰{% endif %}.{% endif %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

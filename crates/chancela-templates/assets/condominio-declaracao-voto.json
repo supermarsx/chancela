@@ -1,0 +1,31 @@
+{
+  "id": "condominio-declaracao-voto/v1",
+  "family": "Condominium",
+  "stage": "Deliberacao",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Declaração de voto" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "Ata de referência", "value": "{{ title }}" },
+        { "key": "Data da reunião", "value": "{{ meeting_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% for s in statements %}{{ s.member }}, na qualidade de condómino, faz constar da ata a seguinte declaração de voto{% if agenda_number %} quanto ao ponto {{ agenda_number }}{% endif %}: {{ s.text }} {% endfor %}"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

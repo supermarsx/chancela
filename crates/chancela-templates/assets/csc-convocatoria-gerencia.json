@@ -1,0 +1,103 @@
+{
+  "id": "csc-convocatoria-gerencia/v1",
+  "family": "CommercialCompany",
+  "stage": "Convocatoria",
+  "channels": [],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Convocatória — Reunião de Gerência"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Sede",
+          "value": "{{ entity.seat }}"
+        },
+        {
+          "key": "Data da reunião",
+          "value": "{{ meeting_date | long_date }}"
+        },
+        {
+          "key": "Hora",
+          "value": "{{ meeting_time }}"
+        },
+        {
+          "key": "Local",
+          "value": "{{ place }}"
+        },
+        {
+          "key": "Modo de reunião",
+          "value": "{{ channel | channel_label }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{{ convening.convener }}, na qualidade de {{ convening.convener_capacity | role_label }}, convoca a reunião da gerência de {{ entity.name }}, NIPC {{ entity.nipc }}, para reunir na data, hora e local acima indicados, nos termos do contrato de sociedade e das regras aplicáveis à gerência."
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Ordem de trabalhos"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.antecedence_days %}A presente convocatória foi expedida com {{ convening.antecedence_days }} dias de antecedência relativamente à data da reunião, observando o prazo previsto no contrato de sociedade.{% endif %}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Comprovativo de expedição"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "convening.recipients",
+      "rows": [
+        {
+          "key": "Destinatário",
+          "value": "{{ name }}"
+        },
+        {
+          "key": "Meio de expedição",
+          "value": "{% if channel == 'RegisteredLetterAR' %}Carta registada com aviso de receção{% elif channel == 'RegisteredLetter' %}Carta registada{% elif channel == 'Email' %}Correio eletrónico{% elif channel == 'HandDelivery' %}Entrega em mão{% elif channel == 'Publication' %}Publicação{% elif channel == 'Portal' %}Portal{% endif %}"
+        },
+        {
+          "key": "Referência",
+          "value": "{{ reference }}"
+        },
+        {
+          "key": "Data de expedição",
+          "value": "{{ dispatched_at | long_date }}"
+        }
+      ]
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

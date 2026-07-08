@@ -1,0 +1,57 @@
+{
+  "id": "assoc-convocatoria-ga/v1",
+  "family": "Association",
+  "stage": "Convocatoria",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "assoc-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Convocatória — Assembleia Geral" },
+    { "kind": "Heading", "level": 2, "template": "{{ entity.name }}" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Sede", "value": "{{ entity.seat }}" },
+        { "key": "Data da reunião", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Hora", "value": "{{ meeting_time }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Modo de reunião", "value": "{{ channel | channel_label }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nos termos dos estatutos e dos artigos 172.º e 173.º do Código Civil, convoca-se a assembleia geral dos associados da associação {{ entity.name }}{% if convening.convener %}, por {{ convening.convener }}{% if convening.convener_capacity %}, na qualidade de {{ convening.convener_capacity | role_label }}{% endif %}{% endif %}, para reunir na data, hora e local acima indicados, com a seguinte ordem de trabalhos."
+    },
+    { "kind": "Heading", "level": 2, "template": "Ordem de trabalhos" },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente convocatória observa o regime de convocatória e de maioria aplicável à assembleia geral de associados ({{ threshold('assoc.convocatoria_maioria') }}), nos termos dos artigos 173.º e 175.º do Código Civil e dos estatutos.{% if convening.antecedence_days %} A convocatória é expedida com {{ convening.antecedence_days }} dias de antecedência sobre a data da reunião.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.second_call.date %}Caso a assembleia não possa reunir e deliberar em primeira convocatória por falta de quórum, reunirá em segunda convocatória no dia {{ convening.second_call.date | long_date }}{% if convening.second_call.time %}, pelas {{ convening.second_call.time }} horas{% endif %}, no mesmo local.{% if convening.second_call.reduced_quorum %} Em segunda convocatória, a assembleia pode deliberar com qualquer número de associados presentes ou representados, nos termos dos estatutos.{% endif %}{% endif %}"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "convening.recipients",
+      "rows": [
+        { "key": "Destinatário", "value": "{{ name }}{% if channel %} — {% if channel == 'RegisteredLetter' %}carta registada{% elif channel == 'RegisteredLetterAR' %}carta registada com aviso de receção{% elif channel == 'Email' %}correio eletrónico{% elif channel == 'HandDelivery' %}entrega em mão{% elif channel == 'Publication' %}publicação{% elif channel == 'Portal' %}portal{% endif %}{% endif %}{% if reference %} (ref. {{ reference }}){% endif %}{% if dispatched_at %}, expedida em {{ dispatched_at | long_date }}{% endif %}" }
+      ]
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

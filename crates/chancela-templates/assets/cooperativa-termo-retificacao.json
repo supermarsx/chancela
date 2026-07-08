@@ -1,0 +1,40 @@
+{
+  "id": "cooperativa-termo-retificacao/v1",
+  "family": "Cooperative",
+  "stage": "Ata",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de retificação" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Ato retificado", "value": "{{ retifies }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Pelo presente termo procede-se à retificação do ato acima identificado, lavrado e selado na escrituração digital de {{ entity.name }}, nos termos do Código Cooperativo (Lei n.º 119/2015)."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente retificação integra a cadeia de registo e reporta-se ao ato retificado, mantendo-se este acessível para efeitos de verificação da integridade da escrituração."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

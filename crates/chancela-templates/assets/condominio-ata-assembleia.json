@@ -1,0 +1,94 @@
+{
+  "id": "condominio-ata-assembleia/v1",
+  "family": "Condominium",
+  "stage": "Ata",
+  "channels": ["Physical", "Hybrid", "Telematic", "WrittenResolution"],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Ata n.º {{ ata_number }}" },
+    { "kind": "Heading", "level": 2, "template": "{{ title }}" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Prédio / sede", "value": "{{ entity.seat }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Hora", "value": "{{ meeting_time }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Modo de reunião", "value": "{{ channel | channel_label }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "No dia {{ meeting_date | long_date }}, pelas {{ meeting_time }} horas, em {{ place }}, reuniu a assembleia de condóminos do condomínio {{ entity.name }}, com o número de identificação fiscal {{ entity.nipc }} e sede em {{ entity.seat }}, para deliberar sobre os assuntos constantes da ordem de trabalhos, nos termos do artigo 1432.º do Código Civil e do Decreto-Lei n.º 268/94."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.second_call and convening.second_call.reduced_quorum %}A assembleia reuniu em segunda convocação, deliberando por maioria dos condóminos presentes, independentemente da percentagem do valor total do prédio que representem, nos termos do artigo 1432.º, n.º 4, do Código Civil.{% endif %}"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condóminos presentes", "value": "{{ members_present }}" },
+        { "key": "Condóminos representados", "value": "{{ members_represented }}" },
+        { "key": "Referência à lista de presenças", "value": "{{ attendance_reference }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "items": "attendees",
+      "template": "{{ name }} — {{ quality | role_label }}{% if weight and weight.Permilage %}, permilagem {{ weight.Permilage }}‰{% endif %}{% if presence == 'InPerson' %}, presente{% elif presence == 'Represented' %}, representado{% if represented_by %} por {{ represented_by }}{% endif %}{% elif presence == 'Absent' %}, ausente{% endif %}."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if channel == 'Telematic' or channel == 'Hybrid' %}Regista-se que a reunião decorreu por meios telemáticos, ficando assegurada a identificação dos condóminos participantes e o registo do teor das deliberações: {{ telematic_evidence }}{% endif %}"
+    },
+    { "kind": "Heading", "level": 2, "template": "{% if agenda %}Ordem de trabalhos{% endif %}" },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    { "kind": "Heading", "level": 2, "template": "Deliberações" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "VoteTable",
+      "items": "deliberation_items",
+      "label": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}",
+      "vote_field": "vote",
+      "unanimous_total": "{{ members_present + members_represented }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "As deliberações consideram-se aprovadas quando reúnam a maioria exigida por lei, apurada em função da permilagem (millésimos) de cada condómino e não pelo simples número de votos: {{ threshold(\"condominio.deliberacao.maioria_permilagem\") }}. Os valores da tabela acima refletem a contagem dos votos registados; o apuramento ponderado por permilagem observa o disposto no artigo 1432.º do Código Civil."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% for s in statements %}Declaração de voto de {{ s.member }}: {{ s.text }} {% endfor %}"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "referenced_documents",
+      "rows": [{ "key": "{{ label }}", "value": "{{ reference }}" }]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nada mais havendo a tratar, foi encerrada a reunião, da qual se lavrou a presente ata que, depois de lida e aprovada, vai ser assinada."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

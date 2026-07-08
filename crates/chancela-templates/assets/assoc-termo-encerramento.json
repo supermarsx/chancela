@@ -1,0 +1,34 @@
+{
+  "id": "assoc-termo-encerramento/v1",
+  "family": "Association",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "assoc-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de encerramento do livro de atas" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "N.º de atas contidas", "value": "{{ ata_count }}" },
+        { "key": "Motivo", "value": "{% if reason == 'BookFull' %}livro esgotado{% elif reason == 'EntityDissolved' %}extinção da associação{% elif reason == 'MigrationToSuccessor' %}migração para livro sucessor{% else %}{{ reason }}{% endif %}" },
+        { "key": "Data de encerramento", "value": "{{ closing_date | long_date }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Encerra-se o presente livro de atas da associação {{ entity.name }}, NIPC {{ entity.nipc }}, que contém {{ ata_count }} atas lavradas e numeradas sequencialmente, cuja integridade se encontra assegurada pela cadeia de registo desta escrituração digital."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

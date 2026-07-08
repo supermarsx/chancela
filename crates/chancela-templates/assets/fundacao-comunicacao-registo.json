@@ -1,0 +1,40 @@
+{
+  "id": "fundacao-comunicacao-registo/v1",
+  "family": "Foundation",
+  "stage": "Certidao",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "fundacao-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Comunicação para registo" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Sede", "value": "{{ entity.seat }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Órgão", "value": "{{ book.kind }}" },
+        { "key": "Resumo criptográfico do ato selado", "value": "{{ payload_digest }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Prepara-se a comunicação para registo das deliberações constantes da ata n.º {{ ata_number }} do órgão da fundação {{ entity.name }}, NIPC {{ entity.nipc }}, selada nesta escrituração digital. O presente documento é preparado e não submetido, ficando a expedição dependente de decisão da entidade."
+    },
+    { "kind": "Heading", "level": 2, "template": "Deliberações a comunicar" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "cooperativa-declaracao-voto/v1",
+  "family": "Cooperative",
+  "stage": "Deliberacao",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Declaração de voto" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Ponto de referência", "value": "{{ statement.agenda_number }}" },
+        { "key": "Cooperador", "value": "{{ statement.member }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{{ statement.text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente declaração de voto é lavrada a pedido do cooperador e faz parte integrante da ata da assembleia geral, nos termos do Código Cooperativo (Lei n.º 119/2015)."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "cooperativa-lista-presencas/v1",
+  "family": "Cooperative",
+  "stage": "Reuniao",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Lista de presenças" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Cooperadores presentes", "value": "{{ members_present }}" },
+        { "key": "Cooperadores representados", "value": "{{ members_represented }}" },
+        { "key": "Referência", "value": "{{ attendance_reference }}" }
+      ]
+    },
+    { "kind": "Heading", "level": 2, "template": "Cooperadores" },
+    {
+      "kind": "KeyValue",
+      "items": "attendees",
+      "rows": [
+        {
+          "key": "{{ name }}",
+          "value": "{% if presence == 'InPerson' %}Presente{% elif presence == 'Represented' %}Representado{% if represented_by %} por {{ represented_by }}{% endif %}{% else %}Ausente{% endif %} — {{ quality | role_label }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente lista regista, por cooperador, a respetiva forma de presença na assembleia geral, para efeitos de verificação do quórum, nos termos do Código Cooperativo (Lei n.º 119/2015)."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

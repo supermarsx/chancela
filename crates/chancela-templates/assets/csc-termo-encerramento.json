@@ -1,0 +1,58 @@
+{
+  "id": "csc-termo-encerramento/v1",
+  "family": "CommercialCompany",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Termo de encerramento do livro de atas"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Órgão",
+          "value": "{{ book.kind }}"
+        },
+        {
+          "key": "N.º de atas contidas",
+          "value": "{{ ata_count }}"
+        },
+        {
+          "key": "Motivo",
+          "value": "{{ reason }}"
+        },
+        {
+          "key": "Data de encerramento",
+          "value": "{{ closing_date | long_date }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Encerra-se o presente livro de atas de {{ entity.name }}, que contém {{ ata_count }} atas lavradas e numeradas sequencialmente, nos termos do artigo 63.º do Código das Sociedades Comerciais."
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "id": "csc-ata-amortizacao-quotas/v1",
+  "family": "CommercialCompany",
+  "stage": "Ata",
+  "channels": [
+    "Physical",
+    "Hybrid",
+    "Telematic",
+    "WrittenResolution"
+  ],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Ata n.º {{ ata_number }}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "{{ title | default(\"Ata de amortização de quotas\") }}"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Sede",
+          "value": "{{ entity.seat }}"
+        },
+        {
+          "key": "Data",
+          "value": "{{ meeting_date | long_date }}"
+        },
+        {
+          "key": "Hora",
+          "value": "{{ meeting_time }}"
+        },
+        {
+          "key": "Local",
+          "value": "{{ place }}"
+        },
+        {
+          "key": "Modo de reunião",
+          "value": "{{ channel | channel_label }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "No dia {{ meeting_date | long_date }}, pelas {{ meeting_time }} horas, em {{ place }}, reuniu a assembleia geral de {{ entity.name }}, NIPC {{ entity.nipc }}, para deliberar sobre a ordem de trabalhos abaixo transcrita, nos termos do artigo 63.º do Código das Sociedades Comerciais."
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Presidente da mesa",
+          "value": "{{ mesa.presidente }}"
+        },
+        {
+          "key": "Secretário(s)",
+          "value": "{{ mesa.secretarios | join(', ') }}"
+        }
+      ]
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Sócios presentes",
+          "value": "{{ members_present }}"
+        },
+        {
+          "key": "Sócios representados",
+          "value": "{{ members_represented }}"
+        },
+        {
+          "key": "Referência à lista de presenças",
+          "value": "{{ attendance_reference }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if channel == 'Telematic' %}Para os efeitos do disposto no artigo 377.º do Código das Sociedades Comerciais, regista-se a seguinte prova da reunião telemática (autenticidade, segurança das comunicações e gravação do conteúdo e dos participantes): {{ telematic_evidence }}{% endif %}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Ordem de trabalhos"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Deliberações"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Deliberou a assembleia geral a amortização de quota(s), nos termos dos artigos 232.º e seguintes do Código das Sociedades Comerciais."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "VoteTable",
+      "items": "deliberation_items",
+      "label": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}",
+      "vote_field": "vote",
+      "unanimous_total": "{{ members_present + members_represented }}"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% for s in statements %}Declaração de voto de {{ s.member }}: {{ s.text }} {% endfor %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente deliberação, por implicar a alteração do contrato de sociedade, depende da maioria qualificada legalmente exigida ({{ threshold(\"csc.deliberacao.maioria_qualificada\") }})."
+    },
+    {
+      "kind": "KeyValue",
+      "items": "referenced_documents",
+      "rows": [
+        {
+          "key": "{{ label }}",
+          "value": "{{ reference }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nada mais havendo a tratar, foi encerrada a sessão, da qual se lavrou a presente ata que, depois de lida e aprovada, vai ser assinada."
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

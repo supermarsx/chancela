@@ -1,0 +1,52 @@
+{
+  "id": "assoc-ata-tomada-posse/v1",
+  "family": "Association",
+  "stage": "Ata",
+  "channels": ["Physical", "Hybrid", "Telematic"],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "assoc-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Ata n.º {{ ata_number }}" },
+    { "kind": "Heading", "level": 2, "template": "{% if title %}{{ title }}{% else %}Tomada de posse dos órgãos sociais{% endif %}" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Sede", "value": "{{ entity.seat }}" },
+        { "key": "Data", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Hora", "value": "{{ meeting_time }}" },
+        { "key": "Local", "value": "{{ place }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "No dia {{ meeting_date | long_date }}, pelas {{ meeting_time }} horas, em {{ place }}, procedeu-se à tomada de posse dos titulares dos órgãos sociais da associação {{ entity.name }}, NIPC {{ entity.nipc }}, eleitos para o mandato em curso, nos termos dos estatutos e dos artigos 170.º e seguintes do Código Civil."
+    },
+    { "kind": "Heading", "level": 2, "template": "Titulares empossados" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{{ text }}"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "signatories",
+      "rows": [
+        { "key": "{{ name }}", "value": "{{ capacity | role_label }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Os titulares acima identificados declararam aceitar os cargos para que foram eleitos e comprometeram-se a exercer as respetivas funções nos termos dos estatutos e da lei. Da presente cerimónia se lavrou a presente ata, que vai ser assinada pelos empossados e pela mesa da assembleia geral."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "id": "condominio-aviso-convocatoria/v1",
+  "family": "Condominium",
+  "stage": "Convocatoria",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Convocatória — Assembleia de condóminos" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Prédio / sede", "value": "{{ entity.seat }}" },
+        { "key": "Data da reunião", "value": "{{ meeting_date | long_date }}" },
+        { "key": "Hora", "value": "{{ meeting_time }}" },
+        { "key": "Local", "value": "{{ place }}" },
+        { "key": "Modo de reunião", "value": "{{ channel | channel_label }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nos termos do artigo 1432.º do Código Civil e do Decreto-Lei n.º 268/94, {{ convening.convener }}, na qualidade de {{ convening.convener_capacity | role_label }}, convoca a assembleia de condóminos do condomínio {{ entity.name }} para a reunião acima identificada, a fim de deliberar sobre a ordem de trabalhos abaixo transcrita."
+    },
+    { "kind": "Heading", "level": 2, "template": "{% if agenda %}Ordem de trabalhos{% endif %}" },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente convocatória é remetida com a antecedência mínima legal exigida pelo artigo 1432.º do Código Civil: {{ threshold(\"condominio.convocatoria.antecedencia_dias\") }}.{% if convening.antecedence_days %} A antecedência efetivamente observada em relação à data da reunião é de {{ convening.antecedence_days }} dias.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if convening.second_call %}Não se verificando, à hora marcada, o número de condóminos suficiente para deliberar validamente, a assembleia reunirá em segunda convocação no dia {{ convening.second_call.date | long_date }}, pelas {{ convening.second_call.time }} horas{% if convening.second_call.reduced_quorum %}, podendo então deliberar por maioria dos condóminos presentes, seja qual for a percentagem do valor total do prédio que representem, nos termos do artigo 1432.º, n.º 4, do Código Civil{% endif %}.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A convocatória é comunicada a todos os condóminos por carta registada, com aviso de receção, ou por entrega em mão contra recibo, conservando-se o respetivo comprovativo de expedição."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "convening.recipients",
+      "template": "Destinatário: {{ name }}{% if reference %} — referência {{ reference }}{% endif %}{% if dispatched_at %}, expedido em {{ dispatched_at | long_date }}{% endif %}."
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "id": "csc-circular-deliberacao-escrito/v1",
+  "family": "CommercialCompany",
+  "stage": "Deliberacao",
+  "channels": [
+    "WrittenResolution"
+  ],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Deliberação unânime por escrito"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Sede",
+          "value": "{{ entity.seat }}"
+        },
+        {
+          "key": "Data",
+          "value": "{{ meeting_date | long_date }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nos termos do artigo 54.º do Código das Sociedades Comerciais, os sócios de {{ entity.name }}, com dispensa de reunião em assembleia geral, deliberam unanimemente por escrito nos termos seguintes."
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Deliberações"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "VoteTable",
+      "items": "deliberation_items",
+      "label": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}",
+      "vote_field": "vote",
+      "unanimous_total": "{{ members_present + members_represented }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A presente deliberação foi tomada por unanimidade de todos os sócios, que a subscrevem."
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

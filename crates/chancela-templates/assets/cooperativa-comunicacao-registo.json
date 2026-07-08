@@ -1,0 +1,42 @@
+{
+  "id": "cooperativa-comunicacao-registo/v1",
+  "family": "Cooperative",
+  "stage": "Certidao",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Comunicação para registo" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Entidade", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Sede", "value": "{{ entity.seat }}" },
+        { "key": "Ata n.º", "value": "{{ ata_number }}" },
+        { "key": "Digest do ato selado", "value": "{{ payload_digest }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Para efeitos de comunicação e registo, transcrevem-se as deliberações tomadas pela assembleia geral de {{ entity.name }}, constantes da ata n.º {{ ata_number }} selada na escrituração digital da entidade, ao abrigo do Código Cooperativo (Lei n.º 119/2015)."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "O presente pacote é preparado para comunicação/registo, não sendo submetido automaticamente pela plataforma."
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}
