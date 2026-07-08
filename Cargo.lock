@@ -491,6 +491,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-csc"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chancela-cades",
+ "chancela-pades",
+ "chancela-signing",
+ "chancela-tsl",
+ "der",
+ "rand_core 0.6.4",
+ "reqwest",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "spki",
+ "thiserror 2.0.18",
+ "time",
+ "x509-cert",
+ "zeroize",
+]
+
+[[package]]
 name = "chancela-doc"
 version = "0.1.0"
 dependencies = [

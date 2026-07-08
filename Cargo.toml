@@ -22,6 +22,12 @@ chancela-api = { path = "crates/chancela-api" }
 chancela-cades = { path = "crates/chancela-cades" }
 chancela-smartcard = { path = "crates/chancela-smartcard" }
 chancela-cmd = { path = "crates/chancela-cmd" }
+# Generic Cloud Signature Consortium (CSC) v2 REST adapter (t59 Slice 2): ONE typed REST client
+# implementing the CSC v2 remote-signing protocol so a single adapter serves every CSC-compliant
+# QTSP (Multicert/DigitalSign/…). Implements the frozen `chancela_signing::RemoteSigningSource`
+# trait as `CscRemoteSource`. Depends on chancela-signing/-cades/-pades; must NOT be depended on by
+# them (no cycle). Mocks-only in tests; live per-provider is an ops step. See .orchestration/plans/t59.md.
+chancela-csc = { path = "crates/chancela-csc" }
 chancela-tsl = { path = "crates/chancela-tsl" }
 chancela-tsa = { path = "crates/chancela-tsa" }
 chancela-pades = { path = "crates/chancela-pades" }

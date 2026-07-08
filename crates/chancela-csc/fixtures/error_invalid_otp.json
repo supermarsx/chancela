@@ -1,0 +1,4 @@
+{
+  "error": "invalid_otp",
+  "error_description": "The OTP is invalid or has expired."
+}
