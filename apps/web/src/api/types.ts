@@ -1522,6 +1522,48 @@ export interface RestoreOutcomeView {
   integrity: IntegrityReportView;
 }
 
+// --- Hot backup (§3.2, plan t30) ------------------------------------------------
+//
+// The `POST /v1/backup` response — the manifest of a hot backup archive. Mirrors the
+// server's `chancela_store::BackupManifest` byte-for-byte: `created_at`/`retrieved_at`
+// are RFC 3339; `store_schema_version` is the snapshotted DB schema version; `ledger_head`
+// is a lowercase-hex chain head, or `null` for an empty ledger; `files` are the per-member
+// sha256 digests of the zip's contents (the SQLite snapshot plus each bundled sidecar).
+// Server-response-modelled: the web app does not yet drive a backup, but the shape is
+// pinned client-side so a wire change breaks the contract test on whichever side moved.
+
+/** One member file inside a {@link BackupManifest}, with its sha256 for restore integrity. */
+export interface BackupFile {
+  /** The archive member name (e.g. `chancela.db`, `settings.json`). */
+  name: string;
+  /** Lowercase-hex (64-char) sha256 of the member's bytes. */
+  sha256: string;
+  /** The member's size in bytes. */
+  bytes: number;
+}
+
+/** `POST /v1/backup` — the manifest of a hot backup archive (frozen contract §3.2, t30). */
+export interface BackupManifest {
+  /** Absolute path to the written `backups/chancela-backup-<utc>.zip`. */
+  path: string;
+  /** Total size of the zip archive in bytes. */
+  bytes: number;
+  /** When the backup was taken (UTC, RFC 3339). */
+  created_at: string;
+  /** The application version that produced the backup. */
+  app_version: string;
+  /** The store schema version of the snapshotted database. */
+  store_schema_version: number;
+  /** Number of events in the ledger at snapshot time. */
+  ledger_length: number;
+  /** The chain head hash as lowercase hex, or `null` for an empty ledger. */
+  ledger_head: string | null;
+  /** Whether the snapshotted chain verified at backup time. */
+  ledger_verified: boolean;
+  /** Per-file digests of the archive members (the db plus each bundled sidecar). */
+  files: BackupFile[];
+}
+
 /** Import collision policy (§2.5). `refuse` is the safe default. */
 export type CollisionPolicy = 'refuse' | 'quarantine_copy';
 

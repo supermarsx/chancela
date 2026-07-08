@@ -78,6 +78,7 @@ import type {
   ReanchorResult,
   RestoreBody,
   RestoreOutcomeView,
+  BackupManifest,
   ImportOutcomeView,
   CollisionPolicy,
   StartOverBookBody,
@@ -449,6 +450,10 @@ export const api = {
     post<ReanchorResult>('/v1/ledger/recovery/reanchor', body),
   restoreLedger: (body: RestoreBody) =>
     post<RestoreOutcomeView>('/v1/ledger/recovery/restore', body),
+  // Take a hot backup and return its manifest (`POST /v1/backup`, contract §3.2, t30). No
+  // body; gated by `data.backup`@Global. 422 when the instance has no on-disk persistence
+  // (in-memory mode). Server-response-modelled — no backup UI drives this yet.
+  backup: () => post<BackupManifest>('/v1/backup'),
   // Book bundle export: a `POST` that streams `application/zip`; the retained path +
   // digest ride in `X-Chancela-Export-Path` / `X-Chancela-Bundle-Digest` headers.
   exportBook: (id: string) => fetchBlobVia(`/v1/books/${id}/export`, 'POST'),

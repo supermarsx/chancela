@@ -34,6 +34,8 @@ import {
   type ActMesa,
   type ActView,
   type AppearanceSettings,
+  type BackupFile,
+  type BackupManifest,
   type BookView,
   type CaeSourceEntry,
   type CaeUpdates,
@@ -50,6 +52,7 @@ import {
   type EntityCalendarPreset,
   type EntityProfile,
   type InscriptionDetailView,
+  type LawEntryView,
   type LedgerEventView,
   type OnboardingSettings,
   type OrganizationSettings,
@@ -709,6 +712,129 @@ describe('contract fixtures parse through the real client', () => {
     }
   });
 
+  it('cae.sections.json → CaeNode[] (GET /v1/cae/sections)', async () => {
+    stubFetch(fixture('cae.sections.json'));
+    // The top-level secções of a revision are a bare `CaeNode[]` — the same node shape the
+    // search endpoint returns, so they parse through the real `searchCae` deserialiser path.
+    const sections: CaeNode[] = await api.searchCae('');
+    expect(Array.isArray(sections)).toBe(true);
+    expect(sections.length).toBeGreaterThan(0);
+    for (const node of sections) {
+      const n = assertExactKeys<CaeNode>(
+        node,
+        { code: true, designation: true, level: true, revision: true },
+        'cae.sections[]',
+      );
+      inEnum(CAE_LEVELS, n.level, 'cae.sections[].level');
+      inEnum(CAE_REVISIONS, n.revision, 'cae.sections[].revision');
+      // Sections are the roots of the tree → always the `Seccao` level.
+      expect(n.level).toBe('Seccao');
+      expect(n.designation.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('cae.children.json → CaeNode[] (GET /v1/cae/{code}/children)', async () => {
+    stubFetch(fixture('cae.children.json'));
+    // The direct children of a code are likewise a bare `CaeNode[]`.
+    const children: CaeNode[] = await api.searchCae('');
+    expect(Array.isArray(children)).toBe(true);
+    expect(children.length).toBeGreaterThan(0);
+    for (const node of children) {
+      const n = assertExactKeys<CaeNode>(
+        node,
+        { code: true, designation: true, level: true, revision: true },
+        'cae.children[]',
+      );
+      inEnum(CAE_LEVELS, n.level, 'cae.children[].level');
+      inEnum(CAE_REVISIONS, n.revision, 'cae.children[].revision');
+      expect(n.designation.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('law.manifest.json → LawEntryView[] (GET /v1/law)', async () => {
+    stubFetch(fixture('law.manifest.json'));
+    // `getLawManifest` returns the bare array (or the tolerant `{ entries }` form); the
+    // fixture is the canonical bare `[LawEntryView]`.
+    const manifest = await api.getLawManifest();
+    expect(Array.isArray(manifest), 'law manifest fixture is a bare array').toBe(true);
+    const entries = manifest as LawEntryView[];
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const e = assertExactKeys<LawEntryView>(
+        entry,
+        {
+          id: true,
+          title: true,
+          ref: true,
+          articles: true,
+          why: true,
+          official_url: true,
+          pdf_url: true,
+          last_amended: true,
+          reviewed_on: true,
+          stored: true,
+          stored_digest: true,
+          stored_bytes: true,
+          retrieved_at: true,
+        },
+        'LawEntryView',
+      );
+      expect(e.id).not.toHaveLength(0);
+      expect(Array.isArray(e.articles)).toBe(true);
+      assertIsoDate(e.reviewed_on, 'LawEntryView.reviewed_on');
+      expect(typeof e.stored).toBe('boolean');
+      // Store state is consistent: a stored entry carries its digest/bytes/timestamp.
+      if (e.stored) {
+        expect(e.stored_digest, 'stored entry has a digest').not.toBeNull();
+        if (e.stored_digest !== null) assertHex64(e.stored_digest, 'LawEntryView.stored_digest');
+        expect(typeof e.stored_bytes).toBe('number');
+        if (e.retrieved_at !== null) assertTimestamp(e.retrieved_at, 'LawEntryView.retrieved_at');
+      }
+    }
+  });
+
+  it('backup.manifest.json → BackupManifest (POST /v1/backup)', async () => {
+    stubFetch(fixture('backup.manifest.json'));
+    const manifest: BackupManifest = await api.backup();
+    assertExactKeys<BackupManifest>(
+      manifest,
+      {
+        path: true,
+        bytes: true,
+        created_at: true,
+        app_version: true,
+        store_schema_version: true,
+        ledger_length: true,
+        ledger_head: true,
+        ledger_verified: true,
+        files: true,
+      },
+      'BackupManifest',
+    );
+    expect(manifest.path).not.toHaveLength(0);
+    expect(typeof manifest.bytes).toBe('number');
+    assertTimestamp(manifest.created_at, 'BackupManifest.created_at');
+    expect(manifest.app_version).not.toHaveLength(0);
+    expect(typeof manifest.store_schema_version).toBe('number');
+    expect(typeof manifest.ledger_length).toBe('number');
+    // Empty-ledger head is null; otherwise a 64-hex chain head.
+    if (manifest.ledger_head !== null)
+      assertHex64(manifest.ledger_head, 'BackupManifest.ledger_head');
+    expect(typeof manifest.ledger_verified).toBe('boolean');
+    expect(Array.isArray(manifest.files)).toBe(true);
+    expect(manifest.files.length).toBeGreaterThan(0);
+    for (const file of manifest.files) {
+      const f = assertExactKeys<BackupFile>(
+        file,
+        { name: true, sha256: true, bytes: true },
+        'BackupManifest.files[]',
+      );
+      expect(f.name).not.toHaveLength(0);
+      assertHex64(f.sha256, 'BackupManifest.files[].sha256');
+      expect(typeof f.bytes).toBe('number');
+    }
+  });
+
   it('user.json → UserView (POST/GET /v1/users)', async () => {
     stubFetch(fixture('user.json'));
     const user: UserView = await api.getUser('6d5e4f00-0000-4000-8000-000000000005');
@@ -834,6 +960,10 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'cae.entry.json',
       'cae.catalog.json',
       'cae.updates.json',
+      'cae.sections.json',
+      'cae.children.json',
+      'law.manifest.json',
+      'backup.manifest.json',
       'user.json',
       'session.json',
       'session.roster.json',
