@@ -457,10 +457,17 @@ dependencies = [
 name = "chancela-doc"
 version = "0.1.0"
 dependencies = [
+ "chancela-cades",
  "chancela-core",
+ "chancela-pades",
+ "der",
  "lopdf",
+ "p256",
+ "rsa",
  "sha2 0.10.9",
  "thiserror 2.0.18",
+ "time",
+ "x509-cert",
 ]
 
 [[package]]
