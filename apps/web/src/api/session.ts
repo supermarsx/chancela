@@ -17,6 +17,15 @@
  */
 let sessionToken: string | null = null;
 
+/**
+ * Listeners notified whenever the session token is cleared — most importantly by a 401
+ * from the server (the server forgot the token, e.g. after a restart). The query layer
+ * registers a listener that invalidates the `['session']` query so the UI re-reads the
+ * session immediately instead of showing a stale signed-in user. Kept as a registry
+ * here (rather than a direct QueryClient import) so this module stays React-free.
+ */
+const clearedListeners = new Set<() => void>();
+
 /** The current session token, or `null` when signed out (the system/"api" actor). */
 export function getSessionToken(): string | null {
   return sessionToken;
@@ -30,4 +39,22 @@ export function setSessionToken(token: string): void {
 /** Forget the token (sign-out); subsequent requests carry no session header. */
 export function clearSessionToken(): void {
   sessionToken = null;
+  for (const cb of clearedListeners) {
+    try {
+      cb();
+    } catch {
+      /* a listener throwing must not break the clear */
+    }
+  }
+}
+
+/**
+ * Register a callback fired whenever the token is cleared (sign-out OR a 401). Returns
+ * an unsubscribe function. The query layer uses this to invalidate the session query.
+ */
+export function onSessionCleared(cb: () => void): () => void {
+  clearedListeners.add(cb);
+  return () => {
+    clearedListeners.delete(cb);
+  };
 }

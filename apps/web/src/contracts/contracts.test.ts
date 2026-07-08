@@ -429,7 +429,12 @@ describe('contract fixtures parse through the real client', () => {
     // Catalog section — legacy single URL + the strict fidelity-gated source chain (t23).
     const catalog = assertExactKeys<CatalogSettings>(
       settings.catalog,
-      { cae_update_url: true, cae_sources: true, cae_official_source: true },
+      {
+        cae_update_url: true,
+        cae_sources: true,
+        cae_official_source: true,
+        preferred_official_source: true,
+      },
       'Settings.catalog',
     );
     if (catalog.cae_update_url !== null) {

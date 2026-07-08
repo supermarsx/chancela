@@ -29,10 +29,27 @@ interface TruncateProps {
   className?: string;
 }
 
+/**
+ * Scheme allowlist for rendered `href`s. A `javascript:`/`data:` URL reaching the
+ * renderer would execute in the app origin, so any absolute scheme other than
+ * http(s)/mailto/tel is treated as untrusted text (rendered as a plain span, no
+ * `href`). Relative URLs (no scheme, e.g. `/entidades/ent-1`) resolve against the
+ * app origin and are always safe.
+ */
+function isSafeUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (/^(https?|mailto|tel):/i.test(trimmed)) return true;
+  // Any other `scheme:` (javascript:, data:, vbscript:, …) is unsafe.
+  if (/^[\w+.-]+:/i.test(trimmed)) return false;
+  // No scheme → relative/app-origin URL; safe.
+  return true;
+}
+
 export function Truncate({ text, href, mono, className }: TruncateProps) {
   const cls = `truncate ${mono ? 'mono' : ''} ${className ?? ''}`.trim().replace(/\s+/g, ' ');
-  if (href) {
-    const external = /^https?:\/\//i.test(href);
+  const safeHref = href && isSafeUrl(href) ? href : undefined;
+  if (safeHref) {
+    const external = /^https?:\/\//i.test(safeHref);
     const extra: AnchorHTMLAttributes<HTMLAnchorElement> = external
       ? {
           target: '_blank',
@@ -42,12 +59,12 @@ export function Truncate({ text, href, mono, className }: TruncateProps) {
             // route a plain click to the OS browser / a new tab via openExternal.
             if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
-            void openExternal(href);
+            void openExternal(safeHref);
           },
         }
       : {};
     return (
-      <a className={cls} href={href} title={text} {...extra}>
+      <a className={cls} href={safeHref} title={text} {...extra}>
         {text}
       </a>
     );

@@ -9,6 +9,7 @@
  * counts live without manual wiring.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import type {
   CaeRevision,
   CloseBookBody,
@@ -27,7 +28,7 @@ import type {
   ActState,
 } from './types';
 import { api } from './client';
-import { clearSessionToken, setSessionToken } from './session';
+import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
 
 export const keys = {
   entities: ['entities'] as const,
@@ -445,8 +446,21 @@ export function useUpdateUser(id: string) {
  * page load the token is gone (it is never persisted — see `./session`), so this
  * resolves to `{ user: null }` until a user is picked; that is the intended v1
  * behaviour. The picker keys its display off this query.
+ *
+ * This hook is always mounted at the app shell (via `CurrentUserPicker` in `layout`),
+ * so it is the natural place to register the 401-clear listener: when the API client
+ * drops a stale token on a 401, the session query is invalidated and refetches with
+ * no token → `{ user: null }`, so the UI reflects the signed-out state immediately
+ * instead of showing a stale signed-in user.
  */
 export function useSession() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    return onSessionCleared(() => {
+      qc.setQueryData(keys.session, { user: null });
+      void qc.invalidateQueries({ queryKey: keys.session });
+    });
+  }, [qc]);
   return useQuery({ queryKey: keys.session, queryFn: () => api.getSession() });
 }
 

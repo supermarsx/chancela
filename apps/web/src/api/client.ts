@@ -47,7 +47,7 @@ import type {
   BookView,
   HealthResponse,
 } from './types';
-import { getSessionToken } from './session';
+import { clearSessionToken, getSessionToken } from './session';
 import { t } from '../i18n';
 
 /** The header that carries the current-user session token (plan t14 §2.8). */
@@ -142,14 +142,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Attach the current-user session token (when signed in) so the server attributes
   // the ledger actor. Absent when signed out → the system ("api") actor, unchanged.
   const token = getSessionToken();
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { [SESSION_HEADER]: token } : {}),
-      ...init?.headers,
-    },
-  });
+  // Caller headers FIRST, then the security-critical ones LAST, so a caller cannot
+  // overwrite the session token or content-type (L-4: header spread order).
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (token) headers[SESSION_HEADER] = token;
+  if (init?.body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(path, { ...init, headers });
+  // A 401 means the server no longer recognises the token (e.g. it restarted and the
+  // in-memory session was lost). Clear the stale token and notify listeners so the
+  // session query refetches and the UI reflects the signed-out state (L-1).
+  if (res.status === 401) {
+    clearSessionToken();
+  }
   return parseResponse<T>(res, path);
 }
 

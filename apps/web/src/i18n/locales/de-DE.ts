@@ -173,6 +173,8 @@ export const deDE: Catalog = {
   'registry.accessCode.label': 'Code der dauerhaften Bescheinigung',
   'registry.accessCode.hint': '12-stelliger Zugangscode im Format XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Code anzeigen',
+  'registry.accessCode.hide': 'Code ausblenden',
   'registry.appliedFields': 'Aktualisierte Felder',
   'registry.caeSection': 'Wirtschaftstätigkeiten (CAE)',
   'registry.conflicts.title': 'Abweichungen gefunden',

@@ -32,5 +32,8 @@ export async function openExternal(url: string): Promise<void> {
       console.error('openExternal: opener plugin failed, falling back', err);
     }
   }
+  // Defence-in-depth: never hand a non-http(s)/mailto/tel scheme to the OS browser
+  // or window.open — a `javascript:`/`data:` URL reaching here would be executed.
+  if (!/^https?:|^mailto:|^tel:/i.test(url)) return;
   window.open(url, '_blank', 'noopener,noreferrer');
 }

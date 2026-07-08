@@ -170,6 +170,8 @@ export const fiFI: Catalog = {
   'registry.accessCode.label': 'Pysyvän otteen koodi',
   'registry.accessCode.hint': '12-numeroinen käyttökoodi muodossa XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Näytä koodi',
+  'registry.accessCode.hide': 'Piilota koodi',
   'registry.appliedFields': 'Päivitetyt kentät',
   'registry.caeSection': 'Taloudelliset toiminnot (CAE)',
   'registry.conflicts.title': 'Löydetyt poikkeamat',

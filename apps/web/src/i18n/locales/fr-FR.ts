@@ -172,6 +172,8 @@ export const frFR: Catalog = {
   'registry.accessCode.label': 'Code du certificat permanent',
   'registry.accessCode.hint': 'Code d’accès à 12 chiffres, au format XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Afficher le code',
+  'registry.accessCode.hide': 'Masquer le code',
   'registry.appliedFields': 'Champs mis à jour',
   'registry.caeSection': 'Activités économiques (CAE)',
   'registry.conflicts.title': 'Divergences trouvées',

@@ -875,12 +875,20 @@ export interface CaeSourceEntry {
   digest: string | null;
 }
 
+/** Preferred built-in official CAE source (t37). Default `Ine`; `DiarioRepublica` uses the
+ *  digest-pinned diploma pair directly. INE is not a viable bulk obtainer, so with `Ine` the
+ *  refresh records INE's failure and the Diário da República fulfils it. */
+export const PREFERRED_OFFICIAL_SOURCES = ['Ine', 'DiarioRepublica'] as const;
+export type PreferredOfficialSource = (typeof PREFERRED_OFFICIAL_SOURCES)[number];
+
 export interface CatalogSettings {
   cae_update_url: string | null;
   /** Ordered fallback chain of strict, fidelity-gated CAE sources (t23). */
   cae_sources: CaeSourceEntry[];
   /** Prepend the built-in official Diário da República source pair to the chain (t23). */
   cae_official_source: boolean;
+  /** Which built-in official source leads the chain; default `Ine` (t37). */
+  preferred_official_source: PreferredOfficialSource;
 }
 
 /** First-run onboarding state (t29). No schema bump — serde-defaulted. */
@@ -906,12 +914,17 @@ export const DEFAULT_SETTINGS: Settings = {
   schema_version: 1,
   organization: { name: null, default_actor: 'api' },
   documents: { locale: 'pt-PT', numbering_scheme_default: 'Sequential' },
-  catalog: { cae_update_url: null, cae_sources: [], cae_official_source: false },
+  catalog: {
+    cae_update_url: null,
+    cae_sources: [],
+    cae_official_source: false,
+    preferred_official_source: 'Ine',
+  },
   signing: {
     preferred_family: 'CartaoCidadao',
     // The official admin-configurable defaults the backend now returns (contract F1);
     // the client's optimistic default mirrors them so it matches before the first GET.
-    tsa_url: 'http://ts.cartaodecidadao.pt/tsa/server',
+    tsa_url: 'https://ts.cartaodecidadao.pt/tsa/server',
     tsl_url: 'https://www.gns.gov.pt/media/TSLPT.xml',
     require_qualified_for_seal: false,
   },

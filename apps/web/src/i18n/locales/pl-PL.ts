@@ -173,6 +173,8 @@ export const plPL: Catalog = {
   'registry.accessCode.label': 'Kod stałego odpisu',
   'registry.accessCode.hint': '12-cyfrowy kod dostępu w formacie XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Pokaż kod',
+  'registry.accessCode.hide': 'Ukryj kod',
   'registry.appliedFields': 'Zaktualizowane pola',
   'registry.caeSection': 'Działalność gospodarcza (CAE)',
   'registry.conflicts.title': 'Znalezione rozbieżności',

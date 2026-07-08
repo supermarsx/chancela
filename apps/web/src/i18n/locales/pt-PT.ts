@@ -178,6 +178,8 @@ export const ptPT = {
   'registry.accessCode.label': 'Código da certidão permanente',
   'registry.accessCode.hint': 'Código de acesso de 12 dígitos, no formato XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Mostrar código',
+  'registry.accessCode.hide': 'Ocultar código',
   'registry.appliedFields': 'Campos atualizados',
   'registry.caeSection': 'Atividades económicas (CAE)',
   'registry.conflicts.title': 'Divergências encontradas',

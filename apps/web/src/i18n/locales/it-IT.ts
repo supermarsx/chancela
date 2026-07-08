@@ -173,6 +173,8 @@ export const itIT: Catalog = {
   'registry.accessCode.label': 'Codice del certificato permanente',
   'registry.accessCode.hint': 'Codice di accesso di 12 cifre, nel formato XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Mostra codice',
+  'registry.accessCode.hide': 'Nascondi codice',
   'registry.appliedFields': 'Campi aggiornati',
   'registry.caeSection': 'Attività economiche (CAE)',
   'registry.conflicts.title': 'Divergenze rilevate',

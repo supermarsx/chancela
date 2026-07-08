@@ -170,6 +170,8 @@ export const nlNL: Catalog = {
   'registry.accessCode.label': 'Code van het permanente uittreksel',
   'registry.accessCode.hint': 'Toegangscode van 12 cijfers, in de indeling XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Code tonen',
+  'registry.accessCode.hide': 'Code verbergen',
   'registry.appliedFields': 'Bijgewerkte velden',
   'registry.caeSection': 'Economische activiteiten (CAE)',
   'registry.conflicts.title': 'Afwijkingen gevonden',

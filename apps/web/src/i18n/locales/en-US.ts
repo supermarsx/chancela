@@ -172,6 +172,8 @@ export const enUS: Catalog = {
   'registry.accessCode.label': 'Permanent certificate code',
   'registry.accessCode.hint': '12-digit access code, in the format XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Show code',
+  'registry.accessCode.hide': 'Hide code',
   'registry.appliedFields': 'Updated fields',
   'registry.caeSection': 'Economic activities (CAE)',
   'registry.conflicts.title': 'Discrepancies found',

@@ -172,6 +172,8 @@ export const svSE: Catalog = {
   'registry.accessCode.label': 'Kod för permanent bevis',
   'registry.accessCode.hint': '12-siffrig åtkomstkod i formatet XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Visa kod',
+  'registry.accessCode.hide': 'Dölj kod',
   'registry.appliedFields': 'Uppdaterade fält',
   'registry.caeSection': 'Ekonomiska verksamheter (CAE)',
   'registry.conflicts.title': 'Avvikelser hittade',

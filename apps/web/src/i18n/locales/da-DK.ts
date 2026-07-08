@@ -172,6 +172,8 @@ export const daDK: Catalog = {
   'registry.accessCode.label': 'Kode til permanent attest',
   'registry.accessCode.hint': '12-cifret adgangskode i formatet XXXX-XXXX-XXXX.',
   'registry.accessCode.placeholder': '1234-5678-9012',
+  'registry.accessCode.show': 'Vis kode',
+  'registry.accessCode.hide': 'Skjul kode',
   'registry.appliedFields': 'Opdaterede felter',
   'registry.caeSection': 'Økonomiske aktiviteter (CAE)',
   'registry.conflicts.title': 'Fundne uoverensstemmelser',

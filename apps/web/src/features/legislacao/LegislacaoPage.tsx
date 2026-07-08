@@ -50,12 +50,29 @@ import {
 } from './diplomas';
 
 /**
+ * Scheme allowlist for external links — a `javascript:`/`data:` URL reaching the
+ * renderer would execute in the app origin, so any absolute scheme other than
+ * http(s)/mailto/tel is rendered as plain text rather than a clickable anchor.
+ * Relative URLs (no scheme) are safe (they resolve against the app origin).
+ */
+function isSafeUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (/^(https?|mailto|tel):/i.test(trimmed)) return true;
+  if (/^[\w+.-]+:/i.test(trimmed)) return false;
+  return true;
+}
+
+/**
  * An external link routed to the OS browser (desktop) or a new tab (browser) through
  * {@link openExternal} on a plain left-click, mirroring the {@link Truncate} idiom:
  * modified/middle clicks keep the native anchor behaviour, so the `href` and
- * `target="_blank"` are retained.
+ * `target="_blank"` are retained. Unsafe schemes (e.g. `javascript:`) are rendered as
+ * plain text with no anchor, so they can never navigate.
  */
 function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  if (!isSafeUrl(href)) {
+    return <span className="leg-link leg-link--text">{children}</span>;
+  }
   return (
     <a
       className="leg-link"
