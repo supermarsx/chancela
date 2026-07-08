@@ -212,4 +212,31 @@ describe('SettingsPage', () => {
     expect(nameInput.disabled).toBe(false);
     expect(screen.getByRole('button', { name: 'Guardar agora' })).toBeTruthy();
   });
+
+  it('resets a signing URL to its default via the icon-only reset button', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+
+    const tsa = (await screen.findByLabelText(
+      'URL da autoridade de selo temporal (TSA)',
+    )) as HTMLInputElement;
+    // The reset control is now an icon-only button; its accessible name comes from the
+    // Tooltip `label` (aria-label), so `getByRole(..., { name })` still resolves it (the TSA
+    // field's reset is the first of the two).
+    const reset = () =>
+      screen.getAllByRole('button', { name: 'Repor predefinição' })[0] as HTMLButtonElement;
+
+    // At the default value the reset is inert…
+    expect(reset().disabled).toBe(true);
+
+    // …editing away from the default enables it…
+    fireEvent.change(tsa, { target: { value: 'https://exemplo.pt/tsa' } });
+    expect(reset().disabled).toBe(false);
+
+    // …and clicking it restores the committed default.
+    fireEvent.click(reset());
+    expect(tsa.value).toBe(DEFAULT_SETTINGS.signing.tsa_url ?? '');
+  });
 });

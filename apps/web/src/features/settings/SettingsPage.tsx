@@ -14,7 +14,7 @@
  * active section is deep-linkable (`?sec=`); the working copy spans all of them, so the
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useHealth, useLedgerVerify, useSettings, useUpdateSettings } from '../../api/hooks';
 import { useAutosave } from '../../hooks/useAutosave';
@@ -56,6 +56,7 @@ import {
   ErrorNote,
   Field,
   Icon,
+  IconButton,
   Input,
   Loading,
   PageHeader,
@@ -101,13 +102,13 @@ function toWireBody(draft: Settings): Settings {
 type SettingsSection =
   'aparencia' | 'identidade' | 'documentos' | 'assinaturas' | 'gestao' | 'sobre';
 
-const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey }[] = [
-  { id: 'aparencia', label: 'settings.appearance.cardTitle' },
-  { id: 'identidade', label: 'settings.identity.cardTitle' },
-  { id: 'documentos', label: 'settings.documents.cardTitle' },
-  { id: 'assinaturas', label: 'settings.signing.cardTitle' },
-  { id: 'gestao', label: 'settings.management.cardTitle' },
-  { id: 'sobre', label: 'settings.about.cardTitle' },
+const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNode }[] = [
+  { id: 'aparencia', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
+  { id: 'identidade', label: 'settings.identity.cardTitle', icon: <Icon.IdCard /> },
+  { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
+  { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
+  { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
+  { id: 'sobre', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
 ];
 
 const isSettingsSection = (v: string | null): v is SettingsSection =>
@@ -209,7 +210,7 @@ export function SettingsPage() {
         lede={t('settings.page.lede')}
       >
         <SubNav
-          items={SETTINGS_SECTIONS.map((s) => ({ id: s.id, label: t(s.label) }))}
+          items={SETTINGS_SECTIONS.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
           active={section}
           onSelect={selectSection}
           ariaLabel={t('settings.subnav.aria')}
@@ -376,17 +377,16 @@ export function SettingsPage() {
                     placeholder={t('settings.signing.tsaUrl.placeholder')}
                     onChange={(e) => setSigning('tsa_url', e.target.value)}
                   />
-                  <Button
+                  <IconButton
                     type="button"
                     variant="ghost"
                     icon={<Icon.Refresh />}
+                    label={t('settings.signing.reset')}
                     disabled={
                       (draft.signing.tsa_url ?? '') === (DEFAULT_SETTINGS.signing.tsa_url ?? '')
                     }
                     onClick={() => setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '')}
-                  >
-                    {t('settings.signing.reset')}
-                  </Button>
+                  />
                 </div>
               </Field>
               <Field
@@ -402,17 +402,16 @@ export function SettingsPage() {
                     placeholder={t('settings.signing.tslUrl.placeholder')}
                     onChange={(e) => setSigning('tsl_url', e.target.value)}
                   />
-                  <Button
+                  <IconButton
                     type="button"
                     variant="ghost"
                     icon={<Icon.Refresh />}
+                    label={t('settings.signing.reset')}
                     disabled={
                       (draft.signing.tsl_url ?? '') === (DEFAULT_SETTINGS.signing.tsl_url ?? '')
                     }
                     onClick={() => setSigning('tsl_url', DEFAULT_SETTINGS.signing.tsl_url ?? '')}
-                  >
-                    {t('settings.signing.reset')}
-                  </Button>
+                  />
                 </div>
               </Field>
               <Toggle

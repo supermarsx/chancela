@@ -13,20 +13,20 @@
  * unchanged. The CAE explorer's own `?code=`/`?rev=` params are independent and preserved
  * across switches. The `SECTIONS` list is the single extension point for future tools.
  */
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
-import { PageHeader } from '../../ui';
+import { Icon, PageHeader } from '../../ui';
 import { CaeExplorer } from '../cae/CaeExplorer';
 import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
 import { LegislacaoPage } from '../legislacao/LegislacaoPage';
 
 type FerramentasSection = 'cae' | 'legislacao';
 
-const SECTIONS: { id: FerramentasSection; label: MessageKey }[] = [
-  { id: 'cae', label: 'tools.section.cae' },
-  { id: 'legislacao', label: 'tools.section.legislacao' },
+const SECTIONS: { id: FerramentasSection; label: MessageKey; icon: ReactNode }[] = [
+  { id: 'cae', label: 'tools.section.cae', icon: <Icon.Layers /> },
+  { id: 'legislacao', label: 'tools.section.legislacao', icon: <Icon.Scale /> },
 ];
 
 export function FerramentasPage() {
@@ -129,6 +129,9 @@ export function FerramentasPage() {
               aria-pressed={s.id === section}
               onClick={() => selectSection(s.id)}
             >
+              <span className="ferramentas-subnav__icon" aria-hidden="true">
+                {s.icon}
+              </span>
               {t(s.label)}
             </button>
           ))}

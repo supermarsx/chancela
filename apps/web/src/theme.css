@@ -510,7 +510,13 @@ a:focus-visible {
   gap: 0.45rem;
 }
 
-a.btn--icon {
+/* A `ButtonLink` (an `<a>`) carrying an icon must stay an inline-flex row so the
+   `.btn--icon` `gap` (icon-to-label spacing) and vertical centring actually apply. The
+   general `a.btn { display: inline-block }` rule below (ButtonLink base) otherwise wins by
+   source order at equal specificity and collapses the flex gap to 0 — the icon then jams
+   against the label (the "messed margins" on the Configurações users/tools buttons). The
+   two-class selector out-specifies `a.btn`, so this holds regardless of source order. */
+a.btn.btn--icon {
   display: inline-flex;
 }
 
