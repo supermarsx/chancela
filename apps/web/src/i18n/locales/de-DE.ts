@@ -593,6 +593,49 @@ export const deDE: Catalog = {
   'legislacao.search.empty.title': 'Keine Ergebnisse',
   'legislacao.search.empty.body': 'Kein Rechtsakt entspricht „{term}".',
 
+  // --- Legislação · Volltext (corpus reader, t55-E3) -----------------------------
+  'legislacao.subnav.aria': 'Ansichten der Gesetzgebung',
+  'legislacao.subnav.corpus': 'Volltext',
+  'legislacao.subnav.shelf': 'Kuratiertes Regal',
+  'legislacao.corpus.title': 'Volltext der Gesetzgebung',
+  'legislacao.corpus.lede':
+    'Lesen Sie den Volltext der Rechtsakte, die Chancela zugrunde liegen, und durchsuchen Sie das gesamte Korpus. Jeder Artikel gibt an, ob sein Text geprüft ist.',
+  'legislacao.corpus.loading': 'Korpus wird geladen…',
+  'legislacao.corpus.unavailable':
+    'Der Volltext der Gesetzgebung ist auf diesem Server nicht verfügbar.',
+  'legislacao.corpus.search.placeholder': 'Im gesamten Text der Gesetzgebung suchen…',
+  'legislacao.corpus.search.aria': 'Gesamte Gesetzgebung durchsuchen',
+  'legislacao.corpus.search.clear': 'Löschen',
+  'legislacao.corpus.search.count': '{count} Ergebnisse',
+  'legislacao.corpus.search.emptyTitle': 'Keine Ergebnisse',
+  'legislacao.corpus.search.empty': 'Nichts entspricht „{term}".',
+  'legislacao.corpus.authenticity.title': 'Herkunft und Authentizität',
+  'legislacao.corpus.authenticity.body':
+    'Korpus {origin}, erstellt am {date}; Fingerabdruck {digest}. {verified} von {articles} Artikeln mit geprüftem amtlichem Text, {pending} ausstehend. Maßgeblich ist stets die amtliche Veröffentlichung im Diário da República / EUR-Lex.',
+  'legislacao.corpus.provenance': 'Quelle: {source}, abgerufen am {date}.',
+  'legislacao.corpus.origin.embedded': 'eingebettet',
+  'legislacao.corpus.origin.cache': 'zwischengespeichert',
+  'legislacao.corpus.diplomas.title': 'Rechtsakte',
+  'legislacao.corpus.diploma.counts':
+    '{articles} Artikel · {verified} geprüft · {pending} ausstehend',
+  'legislacao.corpus.openDiploma': '{title} öffnen',
+  'legislacao.corpus.openArticle': '{label} öffnen',
+  'legislacao.corpus.badge.verified': 'Geprüft',
+  'legislacao.corpus.badge.pending': 'Ausstehend',
+  'legislacao.corpus.back': 'Zurück zu den Rechtsakten',
+  'legislacao.corpus.backToDiploma': 'Zurück zu {title}',
+  'legislacao.corpus.diploma.notFound': 'Rechtsakt nicht gefunden.',
+  'legislacao.corpus.article.notFound': 'Artikel nicht gefunden.',
+  'legislacao.corpus.article.source': 'Quelle',
+  'legislacao.corpus.article.reference': 'Fundstelle (DR / ABl.)',
+  'legislacao.corpus.article.official': 'Amtliche Veröffentlichung',
+  'legislacao.corpus.article.digest': 'Fingerabdruck der Quelle',
+  'legislacao.corpus.article.retrieved': 'Abgerufen am',
+  'legislacao.corpus.pending.title': 'Ungeprüfter Text',
+  'legislacao.corpus.pending.body':
+    'Dieser Artikel enthält noch keinen geprüften amtlichen Text; er darf nicht als Quelle verwendet werden. Der Volltext wird eingebettet, sobald er aus dem Diário da República / EUR-Lex bezogen und geprüft wurde.',
+  'legislacao.corpus.crossRefs': 'Verweise: {refs}',
+
   // --- Users ---------------------------------------------------------------------
   'users.page.title': 'Benutzer',
   'users.page.ledeBefore':

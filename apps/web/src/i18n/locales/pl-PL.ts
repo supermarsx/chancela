@@ -586,6 +586,48 @@ export const plPL: Catalog = {
   'legislacao.search.empty.title': 'Brak wyników',
   'legislacao.search.empty.body': 'Żaden akt nie odpowiada „{term}”.',
 
+  // --- Legislação · pełny tekst (corpus reader, t55-E3) --------------------------
+  'legislacao.subnav.aria': 'Widoki ustawodawstwa',
+  'legislacao.subnav.corpus': 'Pełny tekst',
+  'legislacao.subnav.shelf': 'Wybór redakcyjny',
+  'legislacao.corpus.title': 'Pełny tekst ustawodawstwa',
+  'legislacao.corpus.lede':
+    'Zapoznaj się z pełnym tekstem aktów, na których opiera się Chancela, i przeszukuj cały korpus. Każdy artykuł wskazuje, czy jego tekst został zweryfikowany.',
+  'legislacao.corpus.loading': 'Ładowanie korpusu…',
+  'legislacao.corpus.unavailable': 'Pełny tekst ustawodawstwa nie jest dostępny na tym serwerze.',
+  'legislacao.corpus.search.placeholder': 'Szukaj w pełnym tekście ustawodawstwa…',
+  'legislacao.corpus.search.aria': 'Szukaj w całym ustawodawstwie',
+  'legislacao.corpus.search.clear': 'Wyczyść',
+  'legislacao.corpus.search.count': 'Wyniki: {count}',
+  'legislacao.corpus.search.emptyTitle': 'Brak wyników',
+  'legislacao.corpus.search.empty': 'Nic nie odpowiada „{term}”.',
+  'legislacao.corpus.authenticity.title': 'Pochodzenie i autentyczność',
+  'legislacao.corpus.authenticity.body':
+    'Korpus {origin}, wygenerowany {date}; odcisk {digest}. {verified} z {articles} artykułów ma zweryfikowany tekst urzędowy, {pending} oczekuje. Zawsze rozstrzygająca jest publikacja urzędowa w Diário da República / EUR-Lex.',
+  'legislacao.corpus.provenance': 'Źródło: {source}, pobrane {date}.',
+  'legislacao.corpus.origin.embedded': 'wbudowany',
+  'legislacao.corpus.origin.cache': 'z pamięci podręcznej',
+  'legislacao.corpus.diplomas.title': 'Akty',
+  'legislacao.corpus.diploma.counts':
+    '{articles} artykułów · {verified} zweryfikowanych · {pending} oczekuje',
+  'legislacao.corpus.openDiploma': 'Otwórz {title}',
+  'legislacao.corpus.openArticle': 'Otwórz {label}',
+  'legislacao.corpus.badge.verified': 'Zweryfikowany',
+  'legislacao.corpus.badge.pending': 'Oczekuje',
+  'legislacao.corpus.back': 'Powrót do aktów',
+  'legislacao.corpus.backToDiploma': 'Powrót do {title}',
+  'legislacao.corpus.diploma.notFound': 'Nie znaleziono aktu.',
+  'legislacao.corpus.article.notFound': 'Nie znaleziono artykułu.',
+  'legislacao.corpus.article.source': 'Źródło',
+  'legislacao.corpus.article.reference': 'Odniesienie (DR / Dz.U. UE)',
+  'legislacao.corpus.article.official': 'Publikacja urzędowa',
+  'legislacao.corpus.article.digest': 'Odcisk źródła',
+  'legislacao.corpus.article.retrieved': 'Pobrano',
+  'legislacao.corpus.pending.title': 'Tekst niezweryfikowany',
+  'legislacao.corpus.pending.body':
+    'Ten artykuł nie ma jeszcze zweryfikowanego tekstu urzędowego i nie może być traktowany jako źródło. Pełny tekst zostanie wbudowany po pobraniu i zweryfikowaniu z Diário da República / EUR-Lex.',
+  'legislacao.corpus.crossRefs': 'Odesłania: {refs}',
+
   // --- Users ---------------------------------------------------------------------
   'users.page.title': 'Użytkownicy',
   'users.page.ledeBefore':

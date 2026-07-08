@@ -591,6 +591,49 @@ export const frFR: Catalog = {
   'legislacao.search.empty.title': 'Aucun résultat',
   'legislacao.search.empty.body': 'Aucun texte ne correspond à « {term} ».',
 
+  // --- Legislação · texte intégral (corpus reader, t55-E3) -----------------------
+  'legislacao.subnav.aria': 'Vues de la législation',
+  'legislacao.subnav.corpus': 'Texte intégral',
+  'legislacao.subnav.shelf': 'Sélection commentée',
+  'legislacao.corpus.title': 'Texte intégral de la législation',
+  'legislacao.corpus.lede':
+    'Consultez le texte intégral des textes qui fondent Chancela et effectuez une recherche dans tout le corpus. Chaque article indique si son texte est vérifié.',
+  'legislacao.corpus.loading': 'Chargement du corpus…',
+  'legislacao.corpus.unavailable':
+    'Le texte intégral de la législation n’est pas disponible sur ce serveur.',
+  'legislacao.corpus.search.placeholder': 'Rechercher dans tout le texte de la législation…',
+  'legislacao.corpus.search.aria': 'Rechercher dans toute la législation',
+  'legislacao.corpus.search.clear': 'Effacer',
+  'legislacao.corpus.search.count': '{count} résultats',
+  'legislacao.corpus.search.emptyTitle': 'Aucun résultat',
+  'legislacao.corpus.search.empty': 'Rien ne correspond à « {term} ».',
+  'legislacao.corpus.authenticity.title': 'Origine et authenticité',
+  'legislacao.corpus.authenticity.body':
+    'Corpus {origin}, généré le {date} ; empreinte {digest}. {verified} articles sur {articles} avec un texte officiel vérifié, {pending} en attente. La publication officielle au Diário da República / EUR-Lex fait toujours foi.',
+  'legislacao.corpus.provenance': 'Source : {source}, obtenue le {date}.',
+  'legislacao.corpus.origin.embedded': 'intégré',
+  'legislacao.corpus.origin.cache': 'en cache',
+  'legislacao.corpus.diplomas.title': 'Textes',
+  'legislacao.corpus.diploma.counts':
+    '{articles} articles · {verified} vérifiés · {pending} en attente',
+  'legislacao.corpus.openDiploma': 'Ouvrir {title}',
+  'legislacao.corpus.openArticle': 'Ouvrir {label}',
+  'legislacao.corpus.badge.verified': 'Vérifié',
+  'legislacao.corpus.badge.pending': 'En attente',
+  'legislacao.corpus.back': 'Retour aux textes',
+  'legislacao.corpus.backToDiploma': 'Retour à {title}',
+  'legislacao.corpus.diploma.notFound': 'Texte introuvable.',
+  'legislacao.corpus.article.notFound': 'Article introuvable.',
+  'legislacao.corpus.article.source': 'Source',
+  'legislacao.corpus.article.reference': 'Référence (DR / JO)',
+  'legislacao.corpus.article.official': 'Publication officielle',
+  'legislacao.corpus.article.digest': 'Empreinte de la source',
+  'legislacao.corpus.article.retrieved': 'Obtenu le',
+  'legislacao.corpus.pending.title': 'Texte non vérifié',
+  'legislacao.corpus.pending.body':
+    'Cet article ne dispose pas encore d’un texte officiel vérifié ; il ne doit pas servir de source. Le texte intégral sera intégré dès son obtention et sa vérification auprès du Diário da República / EUR-Lex.',
+  'legislacao.corpus.crossRefs': 'Renvois : {refs}',
+
   // --- Users ---------------------------------------------------------------------
   'users.page.title': 'Utilisateurs',
   'users.page.ledeBefore':

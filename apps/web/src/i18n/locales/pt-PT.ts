@@ -591,6 +591,49 @@ export const ptPT = {
   'legislacao.search.empty.title': 'Sem resultados',
   'legislacao.search.empty.body': 'Nenhum diploma corresponde a «{term}».',
 
+  // --- Legislação · texto integral (corpus reader, t55-E3) -----------------------
+  'legislacao.subnav.aria': 'Vistas da legislação',
+  'legislacao.subnav.corpus': 'Texto integral',
+  'legislacao.subnav.shelf': 'Prateleira curada',
+  'legislacao.corpus.title': 'Texto integral da legislação',
+  'legislacao.corpus.lede':
+    'Consulte o texto integral dos diplomas que fundamentam o Chancela e pesquise em todo o corpus. Cada artigo indica se o texto está verificado.',
+  'legislacao.corpus.loading': 'A carregar o corpus…',
+  'legislacao.corpus.unavailable':
+    'O texto integral da legislação não está disponível neste servidor.',
+  'legislacao.corpus.search.placeholder': 'Pesquisar em todo o texto da legislação…',
+  'legislacao.corpus.search.aria': 'Pesquisar em toda a legislação',
+  'legislacao.corpus.search.clear': 'Limpar',
+  'legislacao.corpus.search.count': '{count} resultados',
+  'legislacao.corpus.search.emptyTitle': 'Sem resultados',
+  'legislacao.corpus.search.empty': 'Nada corresponde a «{term}».',
+  'legislacao.corpus.authenticity.title': 'Origem e autenticidade',
+  'legislacao.corpus.authenticity.body':
+    'Corpus {origin}, gerado em {date}; impressão digital {digest}. {verified} de {articles} artigos com texto oficial verificado, {pending} por verificar. Faz sempre fé a publicação oficial no Diário da República / EUR-Lex.',
+  'legislacao.corpus.provenance': 'Fonte: {source}, obtida em {date}.',
+  'legislacao.corpus.origin.embedded': 'incorporado',
+  'legislacao.corpus.origin.cache': 'em cache',
+  'legislacao.corpus.diplomas.title': 'Diplomas',
+  'legislacao.corpus.diploma.counts':
+    '{articles} artigos · {verified} verificados · {pending} por verificar',
+  'legislacao.corpus.openDiploma': 'Abrir {title}',
+  'legislacao.corpus.openArticle': 'Abrir {label}',
+  'legislacao.corpus.badge.verified': 'Verificado',
+  'legislacao.corpus.badge.pending': 'Por verificar',
+  'legislacao.corpus.back': 'Voltar aos diplomas',
+  'legislacao.corpus.backToDiploma': 'Voltar a {title}',
+  'legislacao.corpus.diploma.notFound': 'Diploma não encontrado.',
+  'legislacao.corpus.article.notFound': 'Artigo não encontrado.',
+  'legislacao.corpus.article.source': 'Fonte',
+  'legislacao.corpus.article.reference': 'Referência (DR / JO)',
+  'legislacao.corpus.article.official': 'Publicação oficial',
+  'legislacao.corpus.article.digest': 'Impressão digital da fonte',
+  'legislacao.corpus.article.retrieved': 'Obtido em',
+  'legislacao.corpus.pending.title': 'Texto por verificar',
+  'legislacao.corpus.pending.body':
+    'Este artigo ainda não tem texto oficial verificado; não deve ser usado como fonte. O texto integral será incorporado assim que obtido e verificado a partir do Diário da República / EUR-Lex.',
+  'legislacao.corpus.crossRefs': 'Remissões: {refs}',
+
   // --- Users ---------------------------------------------------------------------
   'users.page.title': 'Utilizadores',
   'users.page.ledeBefore':

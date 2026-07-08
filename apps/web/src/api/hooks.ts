@@ -79,6 +79,9 @@ export const keys = {
   caeChildren: (code: string, revision: CaeRevision) =>
     ['cae', 'children', code, revision] as const,
   lawManifest: ['law', 'manifest'] as const,
+  lawCorpus: ['law', 'corpus'] as const,
+  lawDiploma: (diploma: string) => ['law', 'corpus', diploma] as const,
+  lawSearch: (q: string) => ['law', 'corpus', 'search', q] as const,
   users: ['users'] as const,
   user: (id: string) => ['users', id] as const,
   session: ['session'] as const,
@@ -735,6 +738,54 @@ export function useFetchLawPdf() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.lawManifest });
     },
+  });
+}
+
+// --- Law corpus reader (t55-E2) — full-text statute reader ----------------------
+
+/**
+ * The embedded law corpus (`GET /v1/law/corpus`, t55): provenance/integrity metadata plus a
+ * per-diploma summary (article/verified/pending counts). Read-only reference — the corpus is
+ * immutable and compiled in, so it is kept fresh for a minute. Backs the reader's diploma
+ * browser and the "origem/autenticidade" caveat.
+ */
+export function useLawCorpus() {
+  return useQuery({
+    queryKey: keys.lawCorpus,
+    queryFn: () => api.getLawCorpus(),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * One diploma with its full article set (`GET /v1/law/corpus/{diploma}`, t55). Enabled only
+ * when a diploma is selected; a `404` (unknown diploma) surfaces as an error the caller renders
+ * as "not found". Static reference data, kept fresh for a minute.
+ */
+export function useLawDiploma(diploma: string, enabled = true) {
+  const id = diploma.trim();
+  return useQuery({
+    queryKey: keys.lawDiploma(id),
+    queryFn: () => api.getLawDiploma(id),
+    enabled: enabled && id.length > 0,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+/**
+ * Full-text corpus search (`GET /v1/law/corpus/search?q=`, t55). Disabled for a blank term (the
+ * server returns an empty set for blank `q`, but there is no point round-tripping it), keeping
+ * the previous results visible while the next term loads — the search-as-you-type idiom the CAE
+ * explorer uses.
+ */
+export function useLawCorpusSearch(q: string, limit?: number) {
+  const term = q.trim();
+  return useQuery({
+    queryKey: keys.lawSearch(term),
+    queryFn: () => api.searchLawCorpus(term, limit),
+    enabled: term.length > 0,
+    placeholderData: (prev) => prev,
   });
 }
 

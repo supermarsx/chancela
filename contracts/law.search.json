@@ -1,0 +1,26 @@
+{
+  "query": "assinatura",
+  "count": 2,
+  "results": [
+    {
+      "diploma_id": "eidas-910-2014",
+      "diploma_title": "Regulamento eIDAS — identificação eletrónica e serviços de confiança",
+      "number": "25",
+      "label": "Artigo 25.º",
+      "heading": "Efeitos legais das assinaturas eletrónicas",
+      "snippet": "…admissibilidade enquanto prova em processo judicial a uma assinatura eletrónica pelo simples facto de se apresentar em formato eletrónico…",
+      "verification": "Verified",
+      "verified": true
+    },
+    {
+      "diploma_id": "csc",
+      "diploma_title": "Código das Sociedades Comerciais",
+      "number": "255",
+      "label": "Artigo 255.º",
+      "heading": "Remuneração dos gerentes",
+      "snippet": "Remuneração dos gerentes",
+      "verification": "Pending",
+      "verified": false
+    }
+  ]
+}

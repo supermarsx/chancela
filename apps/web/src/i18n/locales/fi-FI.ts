@@ -584,6 +584,49 @@ export const fiFI: Catalog = {
   'legislacao.search.empty.title': 'Ei tuloksia',
   'legislacao.search.empty.body': 'Mikään säädös ei vastaa hakua ”{term}”.',
 
+  // --- Legislação · koko teksti (corpus reader, t55-E3) --------------------------
+  'legislacao.subnav.aria': 'Lainsäädännön näkymät',
+  'legislacao.subnav.corpus': 'Koko teksti',
+  'legislacao.subnav.shelf': 'Kuratoitu hylly',
+  'legislacao.corpus.title': 'Lainsäädännön koko teksti',
+  'legislacao.corpus.lede':
+    'Lue Chancelan perustana olevien säädösten koko teksti ja hae koko korpuksesta. Kunkin artiklan kohdalla ilmoitetaan, onko sen teksti todennettu.',
+  'legislacao.corpus.loading': 'Ladataan korpusta…',
+  'legislacao.corpus.unavailable':
+    'Lainsäädännön koko teksti ei ole saatavilla tällä palvelimella.',
+  'legislacao.corpus.search.placeholder': 'Hae lainsäädännön koko tekstistä…',
+  'legislacao.corpus.search.aria': 'Hae kaikesta lainsäädännöstä',
+  'legislacao.corpus.search.clear': 'Tyhjennä',
+  'legislacao.corpus.search.count': '{count} tulosta',
+  'legislacao.corpus.search.emptyTitle': 'Ei tuloksia',
+  'legislacao.corpus.search.empty': 'Mikään ei vastaa hakua ”{term}”.',
+  'legislacao.corpus.authenticity.title': 'Alkuperä ja aitous',
+  'legislacao.corpus.authenticity.body':
+    'Korpus {origin}, luotu {date}; sormenjälki {digest}. {verified} / {articles} artiklaa, joissa on todennettu virallinen teksti, {pending} odottaa. Diário da República / EUR-Lex -julkaisu on aina ratkaiseva.',
+  'legislacao.corpus.provenance': 'Lähde: {source}, haettu {date}.',
+  'legislacao.corpus.origin.embedded': 'upotettu',
+  'legislacao.corpus.origin.cache': 'välimuistissa',
+  'legislacao.corpus.diplomas.title': 'Säädökset',
+  'legislacao.corpus.diploma.counts':
+    '{articles} artiklaa · {verified} todennettu · {pending} odottaa',
+  'legislacao.corpus.openDiploma': 'Avaa {title}',
+  'legislacao.corpus.openArticle': 'Avaa {label}',
+  'legislacao.corpus.badge.verified': 'Todennettu',
+  'legislacao.corpus.badge.pending': 'Odottaa',
+  'legislacao.corpus.back': 'Takaisin säädöksiin',
+  'legislacao.corpus.backToDiploma': 'Takaisin: {title}',
+  'legislacao.corpus.diploma.notFound': 'Säädöstä ei löytynyt.',
+  'legislacao.corpus.article.notFound': 'Artiklaa ei löytynyt.',
+  'legislacao.corpus.article.source': 'Lähde',
+  'legislacao.corpus.article.reference': 'Viite (DR / EUVL)',
+  'legislacao.corpus.article.official': 'Virallinen julkaisu',
+  'legislacao.corpus.article.digest': 'Lähteen sormenjälki',
+  'legislacao.corpus.article.retrieved': 'Haettu',
+  'legislacao.corpus.pending.title': 'Todentamaton teksti',
+  'legislacao.corpus.pending.body':
+    'Tällä artiklalla ei ole vielä todennettua virallista tekstiä, eikä sitä saa käyttää lähteenä. Koko teksti upotetaan heti, kun se on haettu ja todennettu Diário da República / EUR-Lex -lähteestä.',
+  'legislacao.corpus.crossRefs': 'Viittaukset: {refs}',
+
   // --- Users ---------------------------------------------------------------------
   'users.page.title': 'Käyttäjät',
   'users.page.ledeBefore':

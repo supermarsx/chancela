@@ -587,6 +587,49 @@ export const nlNL: Catalog = {
   'legislacao.search.empty.title': 'Geen resultaten',
   'legislacao.search.empty.body': 'Geen enkele regeling komt overeen met “{term}”.',
 
+  // --- Legislação · volledige tekst (corpus reader, t55-E3) ----------------------
+  'legislacao.subnav.aria': 'Weergaven van de wetgeving',
+  'legislacao.subnav.corpus': 'Volledige tekst',
+  'legislacao.subnav.shelf': 'Samengestelde selectie',
+  'legislacao.corpus.title': 'Volledige tekst van de wetgeving',
+  'legislacao.corpus.lede':
+    'Raadpleeg de volledige tekst van de regelingen waarop Chancela is gebaseerd en zoek in het hele corpus. Elk artikel geeft aan of de tekst geverifieerd is.',
+  'legislacao.corpus.loading': 'Corpus laden…',
+  'legislacao.corpus.unavailable':
+    'De volledige tekst van de wetgeving is op deze server niet beschikbaar.',
+  'legislacao.corpus.search.placeholder': 'Zoek in de volledige tekst van de wetgeving…',
+  'legislacao.corpus.search.aria': 'Zoek in alle wetgeving',
+  'legislacao.corpus.search.clear': 'Wissen',
+  'legislacao.corpus.search.count': '{count} resultaten',
+  'legislacao.corpus.search.emptyTitle': 'Geen resultaten',
+  'legislacao.corpus.search.empty': 'Niets komt overeen met “{term}”.',
+  'legislacao.corpus.authenticity.title': 'Herkomst en authenticiteit',
+  'legislacao.corpus.authenticity.body':
+    'Corpus {origin}, gegenereerd op {date}; vingerafdruk {digest}. {verified} van {articles} artikelen met geverifieerde officiële tekst, {pending} in behandeling. De officiële publicatie in de Diário da República / EUR-Lex is altijd doorslaggevend.',
+  'legislacao.corpus.provenance': 'Bron: {source}, opgehaald op {date}.',
+  'legislacao.corpus.origin.embedded': 'ingebed',
+  'legislacao.corpus.origin.cache': 'in cache',
+  'legislacao.corpus.diplomas.title': 'Regelingen',
+  'legislacao.corpus.diploma.counts':
+    '{articles} artikelen · {verified} geverifieerd · {pending} in behandeling',
+  'legislacao.corpus.openDiploma': '{title} openen',
+  'legislacao.corpus.openArticle': '{label} openen',
+  'legislacao.corpus.badge.verified': 'Geverifieerd',
+  'legislacao.corpus.badge.pending': 'In behandeling',
+  'legislacao.corpus.back': 'Terug naar de regelingen',
+  'legislacao.corpus.backToDiploma': 'Terug naar {title}',
+  'legislacao.corpus.diploma.notFound': 'Regeling niet gevonden.',
+  'legislacao.corpus.article.notFound': 'Artikel niet gevonden.',
+  'legislacao.corpus.article.source': 'Bron',
+  'legislacao.corpus.article.reference': 'Referentie (DR / PB)',
+  'legislacao.corpus.article.official': 'Officiële publicatie',
+  'legislacao.corpus.article.digest': 'Vingerafdruk van de bron',
+  'legislacao.corpus.article.retrieved': 'Opgehaald op',
+  'legislacao.corpus.pending.title': 'Niet-geverifieerde tekst',
+  'legislacao.corpus.pending.body':
+    'Dit artikel heeft nog geen geverifieerde officiële tekst en mag niet als bron worden gebruikt. De volledige tekst wordt ingebed zodra deze uit de Diário da República / EUR-Lex is verkregen en geverifieerd.',
+  'legislacao.corpus.crossRefs': 'Verwijzingen: {refs}',
+
   // --- Users ---------------------------------------------------------------------
   'users.page.title': 'Gebruikers',
   'users.page.ledeBefore':

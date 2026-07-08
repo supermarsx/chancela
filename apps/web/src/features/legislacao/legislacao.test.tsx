@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 import { LegislacaoPage } from './LegislacaoPage';
+import { CorpusReader } from './CorpusReader';
 import { FerramentasPage } from '../ferramentas/FerramentasPage';
 import {
   DIPLOMAS,
@@ -10,7 +11,12 @@ import {
   diplomasByTema,
   searchDiplomas,
 } from './diplomas';
-import type { LawEntryView } from '../../api/types';
+import type {
+  LawEntryView,
+  LawCorpusView,
+  LawDiplomaDetailView,
+  LawSearchView,
+} from '../../api/types';
 
 // The law shelf links out through openExternal; mock it so a click is observable and
 // nothing tries to reach the OS / a real tab under jsdom.
@@ -160,7 +166,7 @@ describe('Legislação — data module', () => {
 describe('Legislação — page', () => {
   it('renders every theme group and the informative caveat', () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
     for (const t of LEGISLACAO_TEMAS) {
       expect(screen.getByRole('heading', { name: t.label })).toBeTruthy();
     }
@@ -169,7 +175,7 @@ describe('Legislação — page', () => {
 
   it('shows a diploma card with its amendment + last-reviewed badges', () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
     // DL 268/94 records an amendment (Lei 8/2022) and the review date.
     const card = screen.getByText('Atas das assembleias de condóminos').closest('article');
     expect(card).not.toBeNull();
@@ -180,7 +186,7 @@ describe('Legislação — page', () => {
 
   it('routes the official-source link through openExternal on a plain click', () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
     const card = screen.getByText('Atas das assembleias de condóminos').closest('article');
     const link = within(card as HTMLElement).getByRole('link', { name: 'Publicação oficial' });
     // The anchor keeps its real href for modified/middle clicks…
@@ -203,7 +209,7 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
 
   it('falls back to links-only when the server has no law store (404)', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
     const scope = within(screen.getByText(CAE4).closest('article') as HTMLElement);
     // The official PDF link is shown, but no "Guardar PDF" action (feature absent).
     expect(scope.getByRole('link', { name: 'PDF oficial' })).toBeTruthy();
@@ -214,7 +220,7 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
     // The server manifest for dl-12-2021 has a null pdf_url (cannot pin the DR files. URL) —
     // even though our shelf has a curated pdfUrl, no Guardar action is offered.
     vi.stubGlobal('fetch', lawFetch({ manifest: [lawEntry({ id: 'dl-12-2021', pdf_url: null })] }));
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
     const scope = within(screen.getByText(EIDAS).closest('article') as HTMLElement);
     expect(scope.getByRole('link', { name: 'PDF oficial' })).toBeTruthy();
     await waitFor(() => expect(scope.queryByRole('button', { name: /Guardar PDF/ })).toBeNull());
@@ -225,7 +231,7 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
       manifest: [lawEntry({ id: 'dl-9-2025', pdf_url: 'https://files.x/y.pdf', stored: false })],
     });
     vi.stubGlobal('fetch', fetchMock);
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
 
     const card = screen.getByText(CAE4).closest('article') as HTMLElement;
     const button = await within(card).findByRole('button', { name: 'Guardar PDF' });
@@ -260,7 +266,7 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
         ],
       }),
     );
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
 
     const scope = within(screen.getByText(CAE4).closest('article') as HTMLElement);
     // The stored badge appears (digest + date), and "Abrir PDF" targets the local endpoint.
@@ -277,7 +283,7 @@ describe('Legislação — search', () => {
 
   it('filters the cards live (accent- and case-folded) and shows a match count', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
     const box = screen.getByLabelText('Procurar na legislação');
     // A query typed without accents still matches accented content. Wait for the debounced
     // filter to drop the non-matching diplomas from the shelf.
@@ -291,7 +297,7 @@ describe('Legislação — search', () => {
 
   it('shows an empty state when nothing matches', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
     fireEvent.change(screen.getByLabelText('Procurar na legislação'), {
       target: { value: 'zzzznaoexiste' },
     });
@@ -300,7 +306,7 @@ describe('Legislação — search', () => {
 
   it('clears the search with the clear affordance', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />);
+    renderWithProviders(<LegislacaoPage />, ['/?leg=prateleira']);
     const box = screen.getByLabelText('Procurar na legislação');
     fireEvent.change(box, { target: { value: 'condominio' } });
     await waitFor(() => expect(screen.queryByText(FUNDACOES)).toBeNull());
@@ -311,7 +317,9 @@ describe('Legislação — search', () => {
 
   it('is deep-linkable via ?q= — seeds the field and pre-filters the shelf', async () => {
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<LegislacaoPage />, ['/ferramentas?tool=legislacao&q=eIDAS']);
+    renderWithProviders(<LegislacaoPage />, [
+      '/ferramentas?tool=legislacao&leg=prateleira&q=eIDAS',
+    ]);
     const box = screen.getByLabelText('Procurar na legislação') as HTMLInputElement;
     expect(box.value).toBe('eIDAS');
     // Pre-filtered to eIDAS diplomas; unrelated themes are hidden.
@@ -325,18 +333,227 @@ describe('Legislação — search', () => {
 });
 
 describe('Ferramentas — Legislação sub-navigation', () => {
-  it('defaults to the CAE surface and switches to the law shelf', () => {
-    // Stub fetch so the mounted CAE panels + law manifest resolve quietly.
+  it('defaults to CAE, opens the Legislação corpus reader, then the curated shelf', () => {
+    // Stub fetch so the mounted CAE panels + law manifest resolve quietly. The corpus reader's
+    // /v1/law/corpus probe simply errors under this stub — its search box still renders.
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
     renderWithProviders(<FerramentasPage />, ['/ferramentas']);
 
     // Default: the CAE explorer search is present (keeps the /cae smoke flow intact).
     expect(screen.getByLabelText('Procurar no catálogo CAE')).toBeTruthy();
 
-    // Switching to Legislação reveals the shelf (a known theme heading) and no longer the
-    // CAE search box.
+    // Legislação opens the full-text corpus reader (its default sub-view), not the CAE search.
     fireEvent.click(screen.getByRole('button', { name: 'Legislação' }));
-    expect(screen.getByRole('heading', { name: 'Assinaturas e confiança' })).toBeTruthy();
+    expect(screen.getByLabelText('Pesquisar em toda a legislação')).toBeTruthy();
     expect(screen.queryByLabelText('Procurar no catálogo CAE')).toBeNull();
+
+    // The curated shelf is one sub-tab away — a known theme heading then appears.
+    fireEvent.click(screen.getByRole('button', { name: 'Prateleira curada' }));
+    expect(screen.getByRole('heading', { name: 'Assinaturas e confiança' })).toBeTruthy();
+  });
+});
+
+describe('Legislação — corpus reader (full text, t55-E3)', () => {
+  // Two diplomas: a fully-verified EU regulation and an all-pending code, so the reader must
+  // badge Verified vs Pending distinctly and never present the pending body as authoritative.
+  const CORPUS: LawCorpusView = {
+    schema_version: 1,
+    generated_at: '2026-07-08T00:00:00Z',
+    source_note: 'Corpus de teste.',
+    digest: 'a'.repeat(64),
+    origin: 'Embedded',
+    counts: { diplomas: 2, articles: 3, verified: 1, pending: 2 },
+    diplomas: [
+      {
+        id: 'eidas-910-2014',
+        kind: 'RegulamentoUe',
+        number: '910/2014',
+        title: 'Regulamento eIDAS',
+        ref: 'Regulamento (UE) n.º 910/2014, de 23 de julho',
+        official_url: 'https://eur-lex.europa.eu/eli/reg/2014/910/oj',
+        eli: 'https://eur-lex.europa.eu/eli/reg/2014/910/oj',
+        article_count: 1,
+        verified_count: 1,
+        pending_count: 0,
+      },
+      {
+        id: 'csc',
+        kind: 'Codigo',
+        number: '262/86',
+        title: 'Código das Sociedades Comerciais',
+        ref: 'Decreto-Lei n.º 262/86, de 2 de setembro',
+        official_url: 'https://diariodarepublica.pt/x',
+        article_count: 2,
+        verified_count: 0,
+        pending_count: 2,
+      },
+    ],
+  };
+
+  const EIDAS_DETAIL: LawDiplomaDetailView = {
+    ...CORPUS.diplomas[0],
+    articles: [
+      {
+        diploma_id: 'eidas-910-2014',
+        number: '25',
+        label: 'Artigo 25.º',
+        heading: 'Efeitos legais das assinaturas eletrónicas',
+        body: 'A assinatura eletrónica qualificada tem um efeito legal equivalente ao de uma assinatura manuscrita.',
+        verification: 'Verified',
+        verified: true,
+        source: {
+          diploma: 'Regulamento (UE) n.º 910/2014, de 23 de julho',
+          article: 'Artigo 25.º',
+          dr_reference: 'JO L 257 de 28.8.2014, p. 73',
+          dr_date: '2014-08-28',
+          url: 'https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910',
+          source_digest: 'b'.repeat(64),
+          retrieved_at: '2026-07-08T00:00:00Z',
+          complete: true,
+        },
+      },
+    ],
+  };
+
+  const CSC_DETAIL: LawDiplomaDetailView = {
+    ...CORPUS.diplomas[1],
+    articles: [
+      {
+        diploma_id: 'csc',
+        number: '63',
+        label: 'Artigo 63.º',
+        heading: 'Ata',
+        body: '[NÃO VERIFICADO / fonte pendente]',
+        verification: 'Pending',
+        verified: false,
+        source: {
+          diploma: 'Decreto-Lei n.º 262/86, de 2 de setembro',
+          article: 'Artigo 63.º',
+          complete: false,
+        },
+      },
+      {
+        diploma_id: 'csc',
+        number: '255',
+        label: 'Artigo 255.º',
+        heading: 'Remuneração dos gerentes',
+        body: '[NÃO VERIFICADO / fonte pendente]',
+        verification: 'Pending',
+        verified: false,
+        source: {
+          diploma: 'Decreto-Lei n.º 262/86, de 2 de setembro',
+          article: 'Artigo 255.º',
+          complete: false,
+        },
+      },
+    ],
+  };
+
+  const SEARCH: LawSearchView = {
+    query: 'assinatura',
+    count: 2,
+    results: [
+      {
+        diploma_id: 'eidas-910-2014',
+        diploma_title: 'Regulamento eIDAS',
+        number: '25',
+        label: 'Artigo 25.º',
+        heading: 'Efeitos legais das assinaturas eletrónicas',
+        snippet: '…a assinatura eletrónica qualificada tem um efeito legal equivalente…',
+        verification: 'Verified',
+        verified: true,
+      },
+      {
+        diploma_id: 'csc',
+        diploma_title: 'Código das Sociedades Comerciais',
+        number: '255',
+        label: 'Artigo 255.º',
+        heading: 'Remuneração dos gerentes',
+        snippet: 'Remuneração dos gerentes',
+        verification: 'Pending',
+        verified: false,
+      },
+    ],
+  };
+
+  /** A fetch stub for the corpus endpoints (search / diploma detail / corpus list), in order. */
+  function corpusFetch(): typeof fetch {
+    return vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/v1/law/corpus/search')) return Promise.resolve(json(SEARCH));
+      if (url.includes('/v1/law/corpus/eidas-910-2014')) return Promise.resolve(json(EIDAS_DETAIL));
+      if (url.includes('/v1/law/corpus/csc')) return Promise.resolve(json(CSC_DETAIL));
+      if (url.includes('/v1/law/corpus')) return Promise.resolve(json(CORPUS));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as unknown as typeof fetch;
+  }
+
+  it('browses diplomas with counts and Verified vs Pending authenticity badges', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />);
+
+    // The origem/autenticidade caveat discloses the corpus provenance/integrity.
+    expect(await screen.findByText('Origem e autenticidade')).toBeTruthy();
+    expect(screen.getByText(/gerado em 2026-07-08/)).toBeTruthy();
+
+    // Both diplomas are listed; the fully-verified one badges Verified, the pending one Pending —
+    // and the two badges carry visually-distinct tone classes.
+    const eidas = screen.getByText('Regulamento eIDAS').closest('button') as HTMLElement;
+    const csc = screen
+      .getByText('Código das Sociedades Comerciais')
+      .closest('button') as HTMLElement;
+    expect(within(eidas).getByText('Verificado').className).toContain('badge--ok');
+    expect(within(csc).getByText('Por verificar').className).toContain('badge--warn');
+  });
+
+  it('opens a diploma and never presents a Pending article body as law', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Abrir Código das Sociedades Comerciais' }),
+    );
+
+    // The pending article renders the loud unverified marker inside an explicit warning — never
+    // an un-sourced body dressed up as statute.
+    expect((await screen.findAllByText('Texto por verificar')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('[NÃO VERIFICADO / fonte pendente]').length).toBeGreaterThan(0);
+  });
+
+  it('shows an article view with its full verbatim text and citation (deep-linked)', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />, ['/?diploma=eidas-910-2014&artigo=25']);
+
+    // The full verbatim body + the citation (source + official publication link) are shown.
+    expect(
+      await screen.findByText(/efeito legal equivalente ao de uma assinatura manuscrita/),
+    ).toBeTruthy();
+    expect(screen.getByText('Fonte')).toBeTruthy();
+    const official = screen.getByRole('link', {
+      name: 'https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910',
+    });
+    expect(official).toBeTruthy();
+  });
+
+  it('full-text search ranks hits with the snippet + badge, and a hit opens the article', async () => {
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />);
+
+    fireEvent.change(await screen.findByLabelText('Pesquisar em toda a legislação'), {
+      target: { value: 'assinatura' },
+    });
+
+    // Ranked hits appear with the matched context snippet and the count.
+    expect(await screen.findByText(/efeito legal equivalente/)).toBeTruthy();
+    expect(screen.getByText('2 resultados')).toBeTruthy();
+    // A Verified and a Pending hit are both badged.
+    expect(screen.getAllByText('Verificado').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Por verificar').length).toBeGreaterThan(0);
+
+    // Clicking the verified hit opens that article's full text.
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir Artigo 25.º' }));
+    expect(
+      await screen.findByText(/efeito legal equivalente ao de uma assinatura manuscrita/),
+    ).toBeTruthy();
   });
 });

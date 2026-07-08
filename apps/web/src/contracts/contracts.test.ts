@@ -25,6 +25,8 @@ import {
   CAE_REVISIONS,
   CAE_ROLES,
   ENTITY_KINDS,
+  LAW_DIPLOMA_KINDS,
+  LAW_VERIFICATIONS,
   LOCALES,
   MEETING_CHANNELS,
   NUMBERING_SCHEMES,
@@ -53,6 +55,14 @@ import {
   type EntityProfile,
   type InscriptionDetailView,
   type LawEntryView,
+  type LawArticleView,
+  type LawCorpusView,
+  type LawCounts,
+  type LawDiplomaDetailView,
+  type LawDiplomaSummaryView,
+  type LawSearchHitView,
+  type LawSearchView,
+  type LawSourceView,
   type LedgerEventView,
   type OnboardingSettings,
   type OrganizationSettings,
@@ -793,6 +803,197 @@ describe('contract fixtures parse through the real client', () => {
     }
   });
 
+  // A shared shape check for a corpus article — reused by the diploma-detail and single-article
+  // fixtures. Verifies the authenticity contract on the wire: `verification` is a known variant,
+  // `verified` matches it, and the source's optional citation fields are permitted-but-not-required
+  // (omitted while `Pending`), with `complete` always present.
+  function assertLawArticle(article: unknown, label: string): LawArticleView {
+    const a = assertExactKeys<LawArticleView>(
+      article,
+      {
+        diploma_id: true,
+        number: true,
+        label: true,
+        heading: true,
+        body: true,
+        verification: true,
+        verified: true,
+        source: true,
+      },
+      label,
+      // `cross_refs` is omitted from the wire when empty (skip_serializing_if).
+      ['cross_refs'],
+    );
+    expect(a.diploma_id.length, `${label}.diploma_id`).toBeGreaterThan(0);
+    expect(a.number.length, `${label}.number`).toBeGreaterThan(0);
+    inEnum(LAW_VERIFICATIONS, a.verification, `${label}.verification`);
+    expect(typeof a.verified, `${label}.verified`).toBe('boolean');
+    // The `verified` boolean mirrors the `verification` enum exactly.
+    expect(a.verified).toBe(a.verification === 'Verified');
+    // A `Pending` article never presents an un-sourced body — it renders the loud marker.
+    if (!a.verified) {
+      expect(a.body, `${label} pending body is the unverified marker`).toContain('NÃO VERIFICADO');
+    } else {
+      expect(a.body.trim().length, `${label} verified body is non-empty`).toBeGreaterThan(0);
+    }
+    if (a.cross_refs !== undefined) expect(Array.isArray(a.cross_refs)).toBe(true);
+    const source = assertExactKeys<LawSourceView>(
+      a.source,
+      { diploma: true, article: true, complete: true },
+      `${label}.source`,
+      ['dr_reference', 'dr_date', 'url', 'source_digest', 'retrieved_at'],
+    );
+    expect(typeof source.complete, `${label}.source.complete`).toBe('boolean');
+    // A complete source cites a real origin (diploma + article + dr_reference + url) — the
+    // precondition for a Verified article; an incomplete one omits those authenticity fields.
+    if (source.complete) {
+      expect(source.dr_reference, `${label}.source.dr_reference (complete)`).toBeTruthy();
+      expect(source.url, `${label}.source.url (complete)`).toBeTruthy();
+    }
+    // A Verified article must cite a complete source.
+    if (a.verified) expect(source.complete, `${label} verified ⇒ complete source`).toBe(true);
+    return a;
+  }
+
+  // The required-key map for a diploma SUMMARY, reused by the corpus list and the diploma header.
+  const DIPLOMA_SUMMARY_KEYS = {
+    id: true,
+    kind: true,
+    number: true,
+    title: true,
+    ref: true,
+    official_url: true,
+    article_count: true,
+    verified_count: true,
+    pending_count: true,
+  } as const;
+
+  function assertDiplomaSummary<T extends LawDiplomaSummaryView>(
+    obj: unknown,
+    requiredKeys: Record<RequiredKeys<T>, true>,
+    label: string,
+    optionalKeys: readonly OptionalKeys<T>[],
+  ): T {
+    const d = assertExactKeys<T>(obj, requiredKeys, label, optionalKeys);
+    inEnum(LAW_DIPLOMA_KINDS, d.kind, `${label}.kind`);
+    for (const k of ['article_count', 'verified_count', 'pending_count'] as const) {
+      expect(typeof d[k], `${label}.${k}`).toBe('number');
+    }
+    // The counts partition the diploma: verified + pending = total.
+    expect(d.verified_count + d.pending_count, `${label} counts partition`).toBe(d.article_count);
+    return d;
+  }
+
+  it('law.corpus.json → LawCorpusView (GET /v1/law/corpus)', async () => {
+    stubFetch(fixture('law.corpus.json'));
+    const corpus: LawCorpusView = await api.getLawCorpus();
+    assertExactKeys<LawCorpusView>(
+      corpus,
+      {
+        schema_version: true,
+        generated_at: true,
+        source_note: true,
+        digest: true,
+        origin: true,
+        counts: true,
+        diplomas: true,
+      },
+      'LawCorpusView',
+      // `provenance` is present only on an obtained corpus; the embedded corpus omits it.
+      ['provenance'],
+    );
+    expect(typeof corpus.schema_version).toBe('number');
+    assertTimestamp(corpus.generated_at, 'LawCorpusView.generated_at');
+    assertHex64(corpus.digest, 'LawCorpusView.digest');
+    inEnum(['Embedded', 'Cache'], corpus.origin, 'LawCorpusView.origin');
+    const counts = assertExactKeys<LawCounts>(
+      corpus.counts,
+      { diplomas: true, articles: true, verified: true, pending: true },
+      'LawCorpusView.counts',
+    );
+    for (const [k, v] of Object.entries(counts)) {
+      expect(typeof v, `LawCorpusView.counts.${k}`).toBe('number');
+    }
+    // The corpus-wide counts partition every article into verified/pending.
+    expect(counts.verified + counts.pending, 'counts partition').toBe(counts.articles);
+    expect(Array.isArray(corpus.diplomas)).toBe(true);
+    expect(corpus.diplomas.length).toBeGreaterThan(0);
+    for (const d of corpus.diplomas) {
+      assertDiplomaSummary<LawDiplomaSummaryView>(
+        d,
+        DIPLOMA_SUMMARY_KEYS,
+        'LawCorpusView.diplomas[]',
+        ['eli'],
+      );
+    }
+  });
+
+  it('law.diploma.json → LawDiplomaDetailView (GET /v1/law/corpus/{diploma})', async () => {
+    stubFetch(fixture('law.diploma.json'));
+    const detail: LawDiplomaDetailView = await api.getLawDiploma('eidas-910-2014');
+    // The summary is flattened onto the body, so the detail is a summary PLUS `articles`.
+    const summary = assertDiplomaSummary<LawDiplomaDetailView>(
+      detail,
+      { ...DIPLOMA_SUMMARY_KEYS, articles: true },
+      'LawDiplomaDetailView',
+      ['eli'],
+    );
+    expect(summary.id).not.toHaveLength(0);
+    expect(Array.isArray(detail.articles)).toBe(true);
+    expect(detail.articles.length).toBeGreaterThan(0);
+    for (const a of detail.articles) {
+      const article = assertLawArticle(a, 'LawDiplomaDetailView.articles[]');
+      // A diploma's articles denormalize their owning diploma id.
+      expect(article.diploma_id).toBe(detail.id);
+    }
+  });
+
+  it('law.article.json → LawArticleView (GET /v1/law/corpus/{diploma}/{article})', async () => {
+    stubFetch(fixture('law.article.json'));
+    const article: LawArticleView = await api.getLawArticle('csc', '63');
+    const a = assertLawArticle(article, 'LawArticleView');
+    // The single-article fixture pins the Pending shape: the marker body + an incomplete source.
+    expect(a.verified).toBe(false);
+    expect(a.source.complete).toBe(false);
+  });
+
+  it('law.search.json → LawSearchView (GET /v1/law/corpus/search)', async () => {
+    stubFetch(fixture('law.search.json'));
+    const search: LawSearchView = await api.searchLawCorpus('assinatura');
+    assertExactKeys<LawSearchView>(
+      search,
+      { query: true, count: true, results: true },
+      'LawSearchView',
+    );
+    expect(typeof search.query).toBe('string');
+    expect(typeof search.count).toBe('number');
+    expect(Array.isArray(search.results)).toBe(true);
+    // `count` is the number of returned hits.
+    expect(search.count).toBe(search.results.length);
+    expect(search.results.length).toBeGreaterThan(0);
+    for (const hit of search.results) {
+      const h = assertExactKeys<LawSearchHitView>(
+        hit,
+        {
+          diploma_id: true,
+          diploma_title: true,
+          number: true,
+          label: true,
+          heading: true,
+          snippet: true,
+          verification: true,
+          verified: true,
+        },
+        'LawSearchView.results[]',
+      );
+      expect(h.diploma_id.length, 'hit.diploma_id').toBeGreaterThan(0);
+      expect(h.diploma_title.length, 'hit.diploma_title').toBeGreaterThan(0);
+      expect(h.snippet.length, 'hit.snippet').toBeGreaterThan(0);
+      inEnum(LAW_VERIFICATIONS, h.verification, 'hit.verification');
+      expect(h.verified).toBe(h.verification === 'Verified');
+    }
+  });
+
   it('backup.manifest.json → BackupManifest (POST /v1/backup)', async () => {
     stubFetch(fixture('backup.manifest.json'));
     const manifest: BackupManifest = await api.backup();
@@ -963,6 +1164,10 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'cae.sections.json',
       'cae.children.json',
       'law.manifest.json',
+      'law.corpus.json',
+      'law.diploma.json',
+      'law.article.json',
+      'law.search.json',
       'backup.manifest.json',
       'user.json',
       'session.json',

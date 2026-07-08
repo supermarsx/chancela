@@ -1,0 +1,52 @@
+{
+  "id": "eidas-910-2014",
+  "kind": "RegulamentoUe",
+  "number": "910/2014",
+  "title": "Regulamento eIDAS — identificação eletrónica e serviços de confiança",
+  "ref": "Regulamento (UE) n.º 910/2014, de 23 de julho",
+  "official_url": "https://eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32014R0910",
+  "eli": "https://eur-lex.europa.eu/eli/reg/2014/910/oj",
+  "article_count": 52,
+  "verified_count": 52,
+  "pending_count": 0,
+  "articles": [
+    {
+      "diploma_id": "eidas-910-2014",
+      "number": "25",
+      "label": "Artigo 25.º",
+      "heading": "Efeitos legais das assinaturas eletrónicas",
+      "body": "1. Não podem ser negados efeitos legais nem admissibilidade enquanto prova em processo judicial a uma assinatura eletrónica pelo simples facto de se apresentar em formato eletrónico ou de não cumprir os requisitos exigidos para as assinaturas eletrónicas qualificadas.\n2. A assinatura eletrónica qualificada tem um efeito legal equivalente ao de uma assinatura manuscrita.\n3. As assinaturas eletrónicas qualificadas baseadas em certificados qualificados emitidos num Estado-Membro são reconhecidas como assinatura eletrónica qualificada em todos os outros Estados-Membros.",
+      "verification": "Verified",
+      "verified": true,
+      "source": {
+        "diploma": "Regulamento (UE) n.º 910/2014, de 23 de julho",
+        "article": "Artigo 25.º",
+        "dr_reference": "JO L 257 de 28.8.2014, p. 73",
+        "dr_date": "2014-08-28",
+        "url": "https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910",
+        "source_digest": "bf56872ea8cea5da4af290a3418ae65804491d9f86092a6fe4d8fc93b2e5889f",
+        "retrieved_at": "2026-07-08T00:00:00Z",
+        "complete": true
+      }
+    },
+    {
+      "diploma_id": "eidas-910-2014",
+      "number": "3",
+      "label": "Artigo 3.º",
+      "heading": "Definições",
+      "body": "Para efeitos do presente regulamento, entende-se por:\n1) «Identificação eletrónica»: o processo de utilização dos dados de identificação pessoal em formato eletrónico que representam de modo único uma pessoa singular ou coletiva ou uma pessoa singular que represente uma pessoa coletiva;",
+      "verification": "Verified",
+      "verified": true,
+      "source": {
+        "diploma": "Regulamento (UE) n.º 910/2014, de 23 de julho",
+        "article": "Artigo 3.º",
+        "dr_reference": "JO L 257 de 28.8.2014, p. 73",
+        "dr_date": "2014-08-28",
+        "url": "https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910",
+        "source_digest": "bf56872ea8cea5da4af290a3418ae65804491d9f86092a6fe4d8fc93b2e5889f",
+        "retrieved_at": "2026-07-08T00:00:00Z",
+        "complete": true
+      }
+    }
+  ]
+}

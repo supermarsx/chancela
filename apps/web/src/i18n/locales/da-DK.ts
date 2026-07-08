@@ -586,6 +586,48 @@ export const daDK: Catalog = {
   'legislacao.search.empty.title': 'Ingen resultater',
   'legislacao.search.empty.body': 'Ingen retsakt svarer til »{term}«.',
 
+  // --- Legislação · fuldtekst (corpus reader, t55-E3) ----------------------------
+  'legislacao.subnav.aria': 'Visninger af lovgivningen',
+  'legislacao.subnav.corpus': 'Fuldtekst',
+  'legislacao.subnav.shelf': 'Kurateret hylde',
+  'legislacao.corpus.title': 'Lovgivningens fuldtekst',
+  'legislacao.corpus.lede':
+    'Læs fuldteksten af de retsakter, som Chancela bygger på, og søg i hele korpusset. Hver artikel angiver, om dens tekst er verificeret.',
+  'legislacao.corpus.loading': 'Indlæser korpus…',
+  'legislacao.corpus.unavailable': 'Lovgivningens fuldtekst er ikke tilgængelig på denne server.',
+  'legislacao.corpus.search.placeholder': 'Søg i hele lovgivningens tekst…',
+  'legislacao.corpus.search.aria': 'Søg i al lovgivning',
+  'legislacao.corpus.search.clear': 'Ryd',
+  'legislacao.corpus.search.count': '{count} resultater',
+  'legislacao.corpus.search.emptyTitle': 'Ingen resultater',
+  'legislacao.corpus.search.empty': 'Intet svarer til »{term}«.',
+  'legislacao.corpus.authenticity.title': 'Oprindelse og ægthed',
+  'legislacao.corpus.authenticity.body':
+    'Korpus {origin}, genereret den {date}; fingeraftryk {digest}. {verified} af {articles} artikler med verificeret officiel tekst, {pending} afventer. Den officielle offentliggørelse i Diário da República / EUR-Lex er altid gældende.',
+  'legislacao.corpus.provenance': 'Kilde: {source}, hentet den {date}.',
+  'legislacao.corpus.origin.embedded': 'indlejret',
+  'legislacao.corpus.origin.cache': 'cachelagret',
+  'legislacao.corpus.diplomas.title': 'Retsakter',
+  'legislacao.corpus.diploma.counts':
+    '{articles} artikler · {verified} verificeret · {pending} afventer',
+  'legislacao.corpus.openDiploma': 'Åbn {title}',
+  'legislacao.corpus.openArticle': 'Åbn {label}',
+  'legislacao.corpus.badge.verified': 'Verificeret',
+  'legislacao.corpus.badge.pending': 'Afventer',
+  'legislacao.corpus.back': 'Tilbage til retsakterne',
+  'legislacao.corpus.backToDiploma': 'Tilbage til {title}',
+  'legislacao.corpus.diploma.notFound': 'Retsakt ikke fundet.',
+  'legislacao.corpus.article.notFound': 'Artikel ikke fundet.',
+  'legislacao.corpus.article.source': 'Kilde',
+  'legislacao.corpus.article.reference': 'Reference (DR / EUT)',
+  'legislacao.corpus.article.official': 'Officiel offentliggørelse',
+  'legislacao.corpus.article.digest': 'Kildens fingeraftryk',
+  'legislacao.corpus.article.retrieved': 'Hentet den',
+  'legislacao.corpus.pending.title': 'Ikke-verificeret tekst',
+  'legislacao.corpus.pending.body':
+    'Denne artikel har endnu ikke verificeret officiel tekst og må ikke bruges som kilde. Fuldteksten indlejres, så snart den er hentet og verificeret fra Diário da República / EUR-Lex.',
+  'legislacao.corpus.crossRefs': 'Henvisninger: {refs}',
+
   // --- Users ---------------------------------------------------------------------
   'users.page.title': 'Brugere',
   'users.page.ledeBefore':

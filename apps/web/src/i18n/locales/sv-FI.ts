@@ -589,6 +589,49 @@ export const svFI: Catalog = {
   'legislacao.search.empty.title': 'Inga resultat',
   'legislacao.search.empty.body': 'Ingen rättsakt matchar ”{term}”.',
 
+  // --- Legislação · fulltext (corpus reader, t55-E3) -----------------------------
+  'legislacao.subnav.aria': 'Vyer av lagstiftningen',
+  'legislacao.subnav.corpus': 'Fulltext',
+  'legislacao.subnav.shelf': 'Kurerad hylla',
+  'legislacao.corpus.title': 'Lagstiftningens fulltext',
+  'legislacao.corpus.lede':
+    'Läs fulltexten av de rättsakter som ligger till grund för Chancela och sök i hela korpuset. Varje artikel anger om dess text är verifierad.',
+  'legislacao.corpus.loading': 'Laddar korpuset…',
+  'legislacao.corpus.unavailable':
+    'Lagstiftningens fulltext är inte tillgänglig på den här servern.',
+  'legislacao.corpus.search.placeholder': 'Sök i hela lagstiftningens text…',
+  'legislacao.corpus.search.aria': 'Sök i all lagstiftning',
+  'legislacao.corpus.search.clear': 'Rensa',
+  'legislacao.corpus.search.count': '{count} resultat',
+  'legislacao.corpus.search.emptyTitle': 'Inga resultat',
+  'legislacao.corpus.search.empty': 'Inget matchar ”{term}”.',
+  'legislacao.corpus.authenticity.title': 'Ursprung och äkthet',
+  'legislacao.corpus.authenticity.body':
+    'Korpus {origin}, genererat den {date}; fingeravtryck {digest}. {verified} av {articles} artiklar med verifierad officiell text, {pending} väntar. Den officiella publiceringen i Diário da República / EUR-Lex gäller alltid.',
+  'legislacao.corpus.provenance': 'Källa: {source}, hämtad den {date}.',
+  'legislacao.corpus.origin.embedded': 'inbäddad',
+  'legislacao.corpus.origin.cache': 'cachad',
+  'legislacao.corpus.diplomas.title': 'Rättsakter',
+  'legislacao.corpus.diploma.counts':
+    '{articles} artiklar · {verified} verifierade · {pending} väntar',
+  'legislacao.corpus.openDiploma': 'Öppna {title}',
+  'legislacao.corpus.openArticle': 'Öppna {label}',
+  'legislacao.corpus.badge.verified': 'Verifierad',
+  'legislacao.corpus.badge.pending': 'Väntar',
+  'legislacao.corpus.back': 'Tillbaka till rättsakterna',
+  'legislacao.corpus.backToDiploma': 'Tillbaka till {title}',
+  'legislacao.corpus.diploma.notFound': 'Rättsakt hittades inte.',
+  'legislacao.corpus.article.notFound': 'Artikel hittades inte.',
+  'legislacao.corpus.article.source': 'Källa',
+  'legislacao.corpus.article.reference': 'Referens (DR / EUT)',
+  'legislacao.corpus.article.official': 'Officiell publicering',
+  'legislacao.corpus.article.digest': 'Källans fingeravtryck',
+  'legislacao.corpus.article.retrieved': 'Hämtad den',
+  'legislacao.corpus.pending.title': 'Overifierad text',
+  'legislacao.corpus.pending.body':
+    'Den här artikeln har ännu ingen verifierad officiell text och får inte användas som källa. Fulltexten bäddas in så snart den hämtats och verifierats från Diário da República / EUR-Lex.',
+  'legislacao.corpus.crossRefs': 'Hänvisningar: {refs}',
+
   // --- Users ---------------------------------------------------------------------
   'users.page.title': 'Användare',
   'users.page.ledeBefore':

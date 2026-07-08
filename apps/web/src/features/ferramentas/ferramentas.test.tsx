@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 import { FerramentasPage } from './FerramentasPage';
 import { CaeExplorer } from '../cae/CaeExplorer';
-import type { CaeCatalogView, CaeEntryView, CaeNode } from '../../api/types';
+import type { CaeCatalogView, CaeEntryView, CaeNode, LawCorpusView } from '../../api/types';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -173,11 +173,24 @@ describe('Ferramentas — CAE catalog panel', () => {
 });
 
 describe('Ferramentas — sub-tab animation + indicator', () => {
-  // A stub that also answers the Legislação surface's `/v1/law` probe cleanly.
+  // A minimal but valid corpus so the Legislação corpus reader (the default sub-view) mounts
+  // cleanly; the PDF-archive `/v1/law` probe answers with an empty manifest.
+  const EMPTY_CORPUS: LawCorpusView = {
+    schema_version: 1,
+    generated_at: '2026-07-08T00:00:00Z',
+    source_note: 'Corpus de teste.',
+    digest: 'a'.repeat(64),
+    origin: 'Embedded',
+    counts: { diplomas: 0, articles: 0, verified: 0, pending: 0 },
+    diplomas: [],
+  };
+
+  // A stub that also answers the Legislação surface's corpus + `/v1/law` probes cleanly.
   function toolsFetch(): typeof fetch {
     const base = ferramentasFetch();
     return ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/v1/law/corpus')) return Promise.resolve(jsonResponse(EMPTY_CORPUS));
       if (url.includes('/v1/law')) return Promise.resolve(jsonResponse([]));
       return base(input, init);
     }) as typeof fetch;
@@ -203,8 +216,9 @@ describe('Ferramentas — sub-tab animation + indicator', () => {
       'true',
     );
 
-    // Legislação's own ?q search changes the URL but NOT the section → no re-key/replay.
-    fireEvent.change(screen.getByLabelText('Procurar na legislação'), {
+    // Legislação's own ?q search changes the URL but NOT the section → no re-key/replay. The
+    // default Legislação sub-view is now the full-text corpus reader.
+    fireEvent.change(screen.getByLabelText('Pesquisar em toda a legislação'), {
       target: { value: 'condominio' },
     });
     expect(animKey()).toBe('legislacao');

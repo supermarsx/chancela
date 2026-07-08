@@ -33,6 +33,10 @@ import type {
   TemplateSummary,
   ImportFromRegistryBody,
   LawEntryView,
+  LawCorpusView,
+  LawDiplomaDetailView,
+  LawArticleView,
+  LawSearchView,
   LedgerEventView,
   LedgerVerify,
   OpenBookBody,
@@ -405,6 +409,22 @@ export const api = {
   // body is surfaced to the user via `ApiError.message`.
   getLawManifest: () => get<LawEntryView[] | { entries: LawEntryView[] }>('/v1/law'),
   fetchLawPdf: (id: string) => post<LawEntryView>(`/v1/law/${encodeURIComponent(id)}/fetch`),
+
+  // Law corpus reader (t55-E2, FROZEN corpus-v1) — read-only, full-text access to the embedded
+  // statute corpus, gated `law.read@Global`. Distinct from the PDF archive above: this surfaces
+  // the article-by-article verbatim text (or the loud unverified marker for a `Pending` article)
+  // plus a per-article authenticity status, and an accent/case-insensitive full-text search.
+  // `getLawDiploma`/`getLawArticle` 404 on an unknown diploma/article; a blank search `q` → an
+  // empty result set (`limit` default 50, max 500 server-side).
+  getLawCorpus: () => get<LawCorpusView>('/v1/law/corpus'),
+  getLawDiploma: (diploma: string) =>
+    get<LawDiplomaDetailView>(`/v1/law/corpus/${encodeURIComponent(diploma)}`),
+  getLawArticle: (diploma: string, article: string) =>
+    get<LawArticleView>(
+      `/v1/law/corpus/${encodeURIComponent(diploma)}/${encodeURIComponent(article)}`,
+    ),
+  searchLawCorpus: (q: string, limit?: number) =>
+    get<LawSearchView>(`/v1/law/corpus/search${query({ q, limit })}`),
 
   // Users + session (§2.8, plan t14). The session token is stored in memory (see
   // `./session`) and sent as `X-Chancela-Session` on every request by `request`.

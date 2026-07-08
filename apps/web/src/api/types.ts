@@ -792,6 +792,148 @@ export interface LawEntryView {
   retrieved_at: string | null;
 }
 
+// --- Law corpus reader (t55-E2, FROZEN corpus-v1) — full-text statute reader ------
+//
+// The read-only, full-text corpus endpoints (`chancela-api::law`, t55-E2), distinct from
+// the PDF archive above: `GET /v1/law/corpus` (provenance/integrity metadata + per-diploma
+// summaries), `GET /v1/law/corpus/{diploma}` (a diploma + its full article set), `GET
+// /v1/law/corpus/{diploma}/{article}` (one article's full text + citation), and `GET
+// /v1/law/corpus/search?q=&limit=` (accent/case-insensitive full-text search). All gated
+// `law.read@Global`. The **authenticity contract** is on the wire: every article/hit carries
+// its `verification` (`Verified`/`Pending`) + `verified` boolean; a `Pending` article's `body`
+// is the loud unverified marker, NEVER an un-sourced body — the reader badges the two apart
+// and never presents `Pending` text as authoritative law. These mirror the server views
+// byte-for-byte. Optional (`skip_serializing_if`) fields are omitted from the wire when absent.
+
+/** Whether a corpus article's body is authentically vendored or still a placeholder. */
+export const LAW_VERIFICATIONS = ['Verified', 'Pending'] as const;
+export type LawVerification = (typeof LAW_VERIFICATIONS)[number];
+
+/** The legal instrument a corpus diploma is (bare serde variant names). */
+export const LAW_DIPLOMA_KINDS = [
+  'Codigo',
+  'DecretoLei',
+  'Lei',
+  'RegulamentoUe',
+  'DiretivaUe',
+] as const;
+export type LawDiplomaKind = (typeof LAW_DIPLOMA_KINDS)[number];
+
+/** Where the active corpus was loaded from. */
+export type LawCorpusOrigin = 'Embedded' | 'Cache';
+
+/** Per-corpus counts surfaced on the corpus metadata. */
+export interface LawCounts {
+  diplomas: number;
+  articles: number;
+  verified: number;
+  pending: number;
+}
+
+/** Provenance of an obtained corpus (mirrors `CaeProvenance`); absent for the embedded corpus. */
+export interface LawCorpusProvenance {
+  source_kind: string;
+  source_url: string;
+  artifact_digest: string;
+  retrieved_at: string;
+  parser_version: string;
+}
+
+/**
+ * One article's provenance/citation. `diploma`, `article` and `complete` are always present;
+ * the authenticity fields (`dr_reference`, `dr_date`, `url`, `source_digest`, `retrieved_at`)
+ * are omitted from the wire while an article is `Pending`. `complete` is the server's
+ * `is_complete()` — the precondition a `Verified` article must satisfy.
+ */
+export interface LawSourceView {
+  diploma: string;
+  article: string;
+  dr_reference?: string;
+  dr_date?: string;
+  url?: string;
+  source_digest?: string;
+  retrieved_at?: string;
+  complete: boolean;
+}
+
+/**
+ * One corpus article with its full (display) text + authenticity + citation. `body` is the
+ * verbatim text once `Verified`, or the loud unverified marker while `Pending` — never a raw
+ * un-sourced body. `cross_refs` is omitted from the wire when empty.
+ */
+export interface LawArticleView {
+  diploma_id: string;
+  number: string;
+  label: string;
+  heading: string;
+  body: string;
+  verification: LawVerification;
+  verified: boolean;
+  cross_refs?: string[];
+  source: LawSourceView;
+}
+
+/**
+ * A diploma summary (no article bodies): the element of `GET /v1/law/corpus` and the header of
+ * a diploma detail, with per-diploma authenticity counts. `eli` is omitted when absent.
+ */
+export interface LawDiplomaSummaryView {
+  id: string;
+  kind: LawDiplomaKind;
+  number: string;
+  title: string;
+  ref: string;
+  official_url: string;
+  eli?: string;
+  article_count: number;
+  verified_count: number;
+  pending_count: number;
+}
+
+/**
+ * `GET /v1/law/corpus` — the embedded corpus' provenance/integrity metadata plus a per-diploma
+ * summary list. `provenance` is present only on an obtained corpus (the embedded corpus omits it).
+ */
+export interface LawCorpusView {
+  schema_version: number;
+  generated_at: string;
+  source_note: string;
+  digest: string;
+  origin: LawCorpusOrigin;
+  counts: LawCounts;
+  provenance?: LawCorpusProvenance;
+  diplomas: LawDiplomaSummaryView[];
+}
+
+/**
+ * `GET /v1/law/corpus/{diploma}` — a diploma with its full article set. The server `flatten`s
+ * the summary onto the body, so the wire shape is every {@link LawDiplomaSummaryView} field plus
+ * `articles`.
+ */
+export interface LawDiplomaDetailView extends LawDiplomaSummaryView {
+  articles: LawArticleView[];
+}
+
+/** One search hit: the matched article, its owning diploma, a context snippet, and authenticity. */
+export interface LawSearchHitView {
+  diploma_id: string;
+  diploma_title: string;
+  number: string;
+  label: string;
+  heading: string;
+  /** A `…`-elided context window around the first match. */
+  snippet: string;
+  verification: LawVerification;
+  verified: boolean;
+}
+
+/** `GET /v1/law/corpus/search` — the echoed query, hit count, and ranked hits. */
+export interface LawSearchView {
+  query: string;
+  count: number;
+  results: LawSearchHitView[];
+}
+
 // --- Users + session (§2.8, plan t14; auth t41/t29) -----------------------------
 //
 // User accounts identify the actor behind every ledger mutation AND gate access to it:
