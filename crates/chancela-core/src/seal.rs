@@ -278,6 +278,15 @@ mod tests {
     fn seal_assigns_sequential_numbers_and_chains_events() {
         let e = entity();
         let mut ledger = Ledger::default();
+        // Mirror the real flow: the entity is created first, so the company chain's genesis is
+        // `entity.created` (per the multi-chain model) before the book's `book.opened`.
+        ledger.append(
+            "sec@encosto",
+            &e.id.to_string(),
+            "entity.created",
+            None,
+            b"entity",
+        );
         let mut book = Book::new(e.id, BookKind::AssembleiaGeral);
         open_and_seal_book(&mut book, &e, abertura(&e), "sec@encosto", &mut ledger).unwrap();
 
@@ -309,9 +318,9 @@ mod tests {
         .unwrap();
         assert_eq!(out2.ata_number, 2);
 
-        // genesis + two seals, and the chain verifies.
-        assert_eq!(ledger.events().len(), 3);
-        assert_eq!(ledger.verify().unwrap(), 3);
+        // entity.created (company genesis) + book.opened (book genesis) + two seals; chain verifies.
+        assert_eq!(ledger.events().len(), 4);
+        assert_eq!(ledger.verify().unwrap(), 4);
     }
 
     #[test]

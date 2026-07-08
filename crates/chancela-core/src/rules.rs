@@ -429,20 +429,25 @@ pub fn statute_findings(act: &Act, statute: &StatuteOverrides) -> Vec<Compliance
             }) = item.vote
             {
                 let total = em_favor as u64 + contra as u64 + abstencoes as u64;
-                // em_favor / total >= numerator / denominator, in integer arithmetic.
-                if total > 0
-                    && (em_favor as u64) * (maj.denominator as u64) < (maj.numerator as u64) * total
-                {
-                    issues.push(ComplianceIssue::warning(
-                        "STATUTE/majority",
-                        format!(
-                            "deliberation item {} carried with {em_favor}/{total} in favour, \
-                             below the statutory majority of {}/{}",
-                            i + 1,
-                            maj.numerator,
-                            maj.denominator
-                        ),
-                    ));
+                // em_favor / total >= numerator / denominator, in integer arithmetic. Use u128
+                // for the cross-multiply to prevent overflow when the counts are large.
+                if total > 0 {
+                    let favor: u128 = (em_favor as u64).into();
+                    let den: u128 = (maj.denominator as u64).into();
+                    let num: u128 = (maj.numerator as u64).into();
+                    let total_u128: u128 = total.into();
+                    if favor * den < num * total_u128 {
+                        issues.push(ComplianceIssue::warning(
+                            "STATUTE/majority",
+                            format!(
+                                "deliberation item {} carried with {em_favor}/{total} in favour, \
+                                 below the statutory majority of {}/{}",
+                                i + 1,
+                                maj.numerator,
+                                maj.denominator
+                            ),
+                        ));
+                    }
                 }
             }
         }
