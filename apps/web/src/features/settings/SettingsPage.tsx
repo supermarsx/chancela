@@ -14,9 +14,11 @@
  * active section is deep-linkable (`?sec=`); the working copy spans all of them, so the
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useHealth, useLedgerVerify, useSettings, useUpdateSettings } from '../../api/hooks';
+import { useAutosave } from '../../hooks/useAutosave';
+import { useToast } from '../../ui';
 import {
   localeLabels,
   numberingSchemeLabels,
@@ -65,6 +67,36 @@ import {
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
 
+/**
+ * Normalise the whole working copy to the wire shape (empty → null for nullables; a
+ * blank actor falls back to the server default so the audit event stays attributed).
+ * Pure, so both the debounced autosave and an explicit "Guardar agora" persist an
+ * identical document, and change-detection compares the *normalised* form (so typing a
+ * trailing space that normalises away never triggers a save).
+ */
+function toWireBody(draft: Settings): Settings {
+  return {
+    ...draft,
+    organization: {
+      name: orNull(draft.organization.name ?? ''),
+      // The audit actor is attributed from the session (topbar picker), not entered here;
+      // the stored default is passed through, falling back to the system actor.
+      default_actor: draft.organization.default_actor.trim() || 'api',
+    },
+    catalog: {
+      // Pass through the strict-chain fields untouched (the CAE-source editor is t23-e3);
+      // only the legacy single URL is edited here.
+      ...draft.catalog,
+      cae_update_url: orNull(draft.catalog.cae_update_url ?? ''),
+    },
+    signing: {
+      ...draft.signing,
+      tsa_url: orNull(draft.signing.tsa_url ?? ''),
+      tsl_url: orNull(draft.signing.tsl_url ?? ''),
+    },
+  };
+}
+
 /** The sub-tabs, in order. Each label reuses its section card title (identical text). */
 type SettingsSection =
   'aparencia' | 'identidade' | 'documentos' | 'assinaturas' | 'gestao' | 'sobre';
@@ -83,6 +115,7 @@ const isSettingsSection = (v: string | null): v is SettingsSection =>
 
 export function SettingsPage() {
   const t = useT();
+  const toast = useToast();
   const [params, setParams] = useSearchParams();
   // Aparência is the default and carries no `sec` param (so `/configuracoes` lands on it).
   const secParam = params.get('sec');
@@ -133,6 +166,21 @@ export function SettingsPage() {
     };
   }, []);
 
+  // The normalised wire document the operator's edits currently amount to. Autosave
+  // debounces every edit across all sub-tabs and PUTs this whole document (the §2.8
+  // contract is a single whole-document PUT); the optimistic `useUpdateSettings` keeps
+  // the shared cache — and thus the global appearance layer — in step. Success shows a
+  // subtle inline "Guardado" (no toast — autosave is high-frequency); only an error
+  // raises a toast, and the fields stay editable so it self-heals on the next edit or a
+  // "Guardar agora" retry.
+  const body = useMemo(() => (draft ? toWireBody(draft) : null), [draft]);
+  const autosave = useAutosave<Settings | null>({
+    value: body,
+    enabled: !!draft,
+    onSave: (b) => (b ? save.mutateAsync(b) : Promise.resolve()),
+    onError: (e) => toast.error(e),
+  });
+
   if (settings.isLoading || !draft) return <Loading />;
   if (settings.error) return <ErrorNote error={settings.error} />;
 
@@ -150,33 +198,6 @@ export function SettingsPage() {
     key: K,
     value: AppearanceSettings[K],
   ) => setDraft((d) => (d ? { ...d, appearance: { ...d.appearance, [key]: value } } : d));
-
-  function onSave() {
-    if (!draft) return;
-    // Normalise the whole document to the wire shape (empty → null for nullables;
-    // a blank actor falls back to the server default so the audit event is attributed).
-    const body: Settings = {
-      ...draft,
-      organization: {
-        name: orNull(draft.organization.name ?? ''),
-        // The audit actor is attributed from the session (topbar picker), not entered
-        // here; the stored default is passed through, falling back to the system actor.
-        default_actor: draft.organization.default_actor.trim() || 'api',
-      },
-      catalog: {
-        // Pass through the strict-chain fields untouched (the CAE-source editor is t23-e3);
-        // only the legacy single URL is edited here.
-        ...draft.catalog,
-        cae_update_url: orNull(draft.catalog.cae_update_url ?? ''),
-      },
-      signing: {
-        ...draft.signing,
-        tsa_url: orNull(draft.signing.tsa_url ?? ''),
-        tsl_url: orNull(draft.signing.tsl_url ?? ''),
-      },
-    };
-    save.mutate(body);
-  }
 
   const a = draft.appearance;
 
@@ -466,25 +487,40 @@ export function SettingsPage() {
         ) : null}
       </div>
 
-      {/* Save bar ------------------------------------------------------------------ */}
+      {/* Autosave status bar ------------------------------------------------------- */}
+      {/* Edits across every sub-tab persist automatically (debounced whole-document
+          PUT). The inline status keeps the operator informed without toast spam; only a
+          failed save raises a toast (via the hook's onError) and surfaces an inline note
+          plus a "Guardar agora" retry. The button also lets an operator flush a pending
+          debounce immediately. */}
       <Card>
         <div className="stack--tight">
-          {save.error ? <ErrorNote error={save.error} /> : null}
+          {autosave.status === 'error' ? <ErrorNote error={autosave.error} /> : null}
           <div className="row-wrap settings-savebar">
+            <span className="settings-autosave muted" role="status" aria-live="polite">
+              {autosave.status === 'saving' ? (
+                t('common.saving')
+              ) : autosave.status === 'dirty' ? (
+                t('settings.autosave.pending')
+              ) : autosave.status === 'saved' ? (
+                <>
+                  <Icon.Check /> {t('settings.autosave.saved')}
+                </>
+              ) : autosave.status === 'error' ? (
+                t('settings.autosave.error')
+              ) : (
+                ''
+              )}
+            </span>
             <Button
               type="button"
-              variant="primary"
+              variant="secondary"
               icon={<Icon.Save />}
-              disabled={save.isPending}
-              onClick={onSave}
+              disabled={!autosave.isDirty || autosave.isSaving}
+              onClick={() => autosave.flush()}
             >
-              {save.isPending ? t('common.saving') : t('settings.save')}
+              {t('settings.saveNow')}
             </Button>
-            {save.isSuccess && !save.isPending ? (
-              <span className="muted" role="status">
-                {t('settings.saved')}
-              </span>
-            ) : null}
           </div>
         </div>
       </Card>

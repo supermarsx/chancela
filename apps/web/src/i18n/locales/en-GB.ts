@@ -572,6 +572,11 @@ export const enGB: Catalog = {
   'settings.about.schemaVersion': 'Configuration schema version',
   'settings.save': 'Save settings',
   'settings.saved': 'Settings saved.',
+  'settings.saveNow': 'Save now',
+  'settings.autosave.pending': 'Unsaved changes…',
+  'settings.autosave.saved': 'Saved',
+  'settings.autosave.error':
+    'Couldn’t save automatically. Your changes are kept and can be retried.',
 
   // --- Formatting ----------------------------------------------------------------
   'format.ataNumber': 'Minute no. {padded}/{year}',

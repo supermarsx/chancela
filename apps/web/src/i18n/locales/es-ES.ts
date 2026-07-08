@@ -576,6 +576,11 @@ export const esES: Catalog = {
   'settings.about.schemaVersion': 'Versión del esquema de configuración',
   'settings.save': 'Guardar configuración',
   'settings.saved': 'Configuración guardada.',
+  'settings.saveNow': 'Guardar ahora',
+  'settings.autosave.pending': 'Cambios sin guardar…',
+  'settings.autosave.saved': 'Guardado',
+  'settings.autosave.error':
+    'No se pudo guardar automáticamente. Los cambios se conservan y se pueden reintentar.',
 
   // --- Formato -------------------------------------------------------------------
   'format.ataNumber': 'Acta n.º {padded}/{year}',

@@ -576,6 +576,11 @@ export const itIT: Catalog = {
   'settings.about.schemaVersion': 'Versione dello schema di configurazione',
   'settings.save': 'Salva le impostazioni',
   'settings.saved': 'Impostazioni salvate.',
+  'settings.saveNow': 'Salva ora',
+  'settings.autosave.pending': 'Modifiche non salvate…',
+  'settings.autosave.saved': 'Salvato',
+  'settings.autosave.error':
+    'Impossibile salvare automaticamente. Le modifiche vengono mantenute e possono essere ritentate.',
 
   // --- Formatting ----------------------------------------------------------------
   'format.ataNumber': 'Verbale n. {padded}/{year}',

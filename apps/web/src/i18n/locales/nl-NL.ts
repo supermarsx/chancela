@@ -575,6 +575,11 @@ export const nlNL: Catalog = {
   'settings.about.schemaVersion': 'Versie van het configuratieschema',
   'settings.save': 'Instellingen opslaan',
   'settings.saved': 'Instellingen opgeslagen.',
+  'settings.saveNow': 'Nu opslaan',
+  'settings.autosave.pending': 'Niet-opgeslagen wijzigingen…',
+  'settings.autosave.saved': 'Opgeslagen',
+  'settings.autosave.error':
+    'Automatisch opslaan is mislukt. Je wijzigingen blijven behouden en kunnen opnieuw worden geprobeerd.',
 
   // --- Formatting ----------------------------------------------------------------
   'format.ataNumber': 'Notulen nr. {padded}/{year}',

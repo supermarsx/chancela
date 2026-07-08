@@ -574,6 +574,11 @@ export const plPL: Catalog = {
   'settings.about.schemaVersion': 'Wersja schematu konfiguracji',
   'settings.save': 'Zapisz ustawienia',
   'settings.saved': 'Ustawienia zapisane.',
+  'settings.saveNow': 'Zapisz teraz',
+  'settings.autosave.pending': 'Niezapisane zmiany…',
+  'settings.autosave.saved': 'Zapisano',
+  'settings.autosave.error':
+    'Nie udało się zapisać automatycznie. Zmiany zostały zachowane i można ponowić próbę.',
 
   // --- Formatting ----------------------------------------------------------------
   'format.ataNumber': 'Protokół nr {padded}/{year}',

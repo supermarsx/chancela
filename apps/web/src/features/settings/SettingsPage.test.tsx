@@ -122,7 +122,7 @@ describe('SettingsPage', () => {
     );
   });
 
-  it('PUTs the full settings document on save, with edits spanning sub-tabs', async () => {
+  it('PUTs the full settings document via "Guardar agora", with edits spanning sub-tabs', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -140,8 +140,8 @@ describe('SettingsPage', () => {
     )) as HTMLInputElement;
     fireEvent.change(caeUrl, { target: { value: 'https://catalog.example.pt/cae_dataset.json' } });
 
-    // The save bar is reachable from any section.
-    fireEvent.click(screen.getByRole('button', { name: /guardar configurações/i }));
+    // "Guardar agora" flushes the pending debounce and PUTs immediately, from any section.
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar agora' }));
 
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true));
 
@@ -157,5 +157,59 @@ describe('SettingsPage', () => {
     expect(sent.organization.default_actor).toBe('api');
     // The catalog section (F1b) is part of the whole-document PUT.
     expect(sent.catalog.cae_update_url).toBe('https://catalog.example.pt/cae_dataset.json');
+  });
+
+  it('autosaves an edit after the debounce (no explicit save) and shows an inline "Guardado"', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+
+    const nameInput = (await screen.findByLabelText('Nome da organização')) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'Encosto Estratégico, Lda.' } });
+
+    // No button was clicked: the debounced autosave PUTs on its own.
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const put = calls.find((c) => c.method === 'PUT');
+    const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+    expect(sent.organization.name).toBe('Encosto Estratégico, Lda.');
+
+    // A subtle inline confirmation appears (no toast for the happy path).
+    expect(await screen.findByText('Guardado')).toBeTruthy();
+  });
+
+  it('raises a toast and keeps an inline error when an autosave fails', async () => {
+    const calls: Recorded[] = [];
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method, body: (init?.body as string) ?? null });
+      if (url.includes('/v1/settings')) {
+        if (method === 'PUT') {
+          return Promise.resolve(jsonResponse({ error: 'Falha ao guardar' }, 500));
+        }
+        return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      }
+      if (url.includes('/v1/ledger/verify'))
+        return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
+      if (url.includes('/health'))
+        return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+
+    const nameInput = (await screen.findByLabelText('Nome da organização')) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'Encosto Estratégico, Lda.' } });
+
+    // The failed autosave surfaces an assertive toast…
+    const alert = await screen.findByRole('alert', undefined, { timeout: 3000 });
+    expect(alert.textContent).toContain('Falha ao guardar');
+    // …and the field stays editable (retryable) with "Guardar agora" available.
+    expect(nameInput.disabled).toBe(false);
+    expect(screen.getByRole('button', { name: 'Guardar agora' })).toBeTruthy();
   });
 });
