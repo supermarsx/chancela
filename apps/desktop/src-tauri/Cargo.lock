@@ -721,11 +721,13 @@ dependencies = [
  "chancela-cae",
  "chancela-cmd",
  "chancela-core",
+ "chancela-csc",
  "chancela-doc",
  "chancela-ledger",
  "chancela-pades",
  "chancela-registry",
  "chancela-signing",
+ "chancela-smartcard",
  "chancela-store",
  "chancela-templates",
  "chancela-tsl",
@@ -812,6 +814,25 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "uuid",
+]
+
+[[package]]
+name = "chancela-csc"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chancela-cades",
+ "chancela-pades",
+ "chancela-signing",
+ "der",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "time",
+ "x509-cert",
+ "zeroize",
 ]
 
 [[package]]
