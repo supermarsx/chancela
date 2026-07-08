@@ -1296,6 +1296,30 @@ export interface CmdConfirmResult {
   finalization: FinalizationStatus;
 }
 
+// --- Qualified Cartão de Cidadão signing (§ t58, desktop / co-located) -----------
+//
+// The SYNCHRONOUS smartcard signing flow (frozen `chancela-api::signature::cc` DTOs,
+// t58-e2). A sealed act's unsigned PDF/A is turned into a **qualified** Cartão de Cidadão
+// signed PDF in a single request: `POST /v1/acts/{id}/signature/cc/sign`. There is NO PIN
+// in the body — the PIN is entered at the reader by the Autenticação.gov middleware and
+// never enters the web app. CC signing only works on the desktop where the API process is
+// co-located with the card reader; a remote/browser server refuses with 409. The response
+// REUSES the CMD `CmdConfirmResult` shape (only `family` differs: `"CartaoDeCidadao"`), so
+// no new web-asserted contract type is introduced.
+
+/**
+ * `POST /v1/acts/{id}/signature/cc/sign` — the whole CC signing request body. Both fields
+ * are optional and carry NO secret (the PIN lives only at the reader). `capacity` records
+ * the signatory's stated capacity; `actor` an explicit actor override.
+ */
+export interface CcSignBody {
+  capacity?: string;
+  actor?: string;
+}
+
+/** The CC sign response — the produced qualified signature's metadata (same shape as CMD). */
+export type CcSignResult = CmdConfirmResult;
+
 export interface AppearanceSettings {
   theme: ThemeMode;
   leather_texture: boolean;

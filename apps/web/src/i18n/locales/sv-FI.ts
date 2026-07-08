@@ -772,6 +772,7 @@ export const svFI: Catalog = {
   'enum.severity.Error': 'Fel',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Medborgarkort',
+  'enum.signatureFamily.CartaoDeCidadao': 'Medborgarkort',
   'enum.signatureFamily.ChaveMovelDigital': 'Digital mobilnyckel',
   'enum.signatureFamily.OtherQualified': 'Annat kvalificerat certifikat',
   'enum.signatureFamily.Manual': 'Manuell underskrift',
@@ -1122,6 +1123,17 @@ export const svFI: Catalog = {
   'signing.signed.timestampAbsent': 'Saknas',
   'signing.signed.digest': 'Fingeravtryck för signerad PDF',
   'signing.download': 'Ladda ner signerad PDF',
+  'signing.signed.qualifiedLabelCc': 'Kvalificerad elektronisk underskrift (Medborgarkort).',
+  'signing.cc.start': 'Signera med Medborgarkort',
+  'signing.cc.prompt.title': 'Signering med Medborgarkort',
+  'signing.cc.prompt.body':
+    'Sätt in Medborgarkortet i läsaren. Signerings-PIN anges på läsaren eller i appen Autenticação.gov — den efterfrågas aldrig här.',
+  'signing.cc.sign': 'Signera med kortet',
+  'signing.cc.signing': 'Signerar…',
+  'signing.cc.cancel': 'Avbryt',
+  'signing.cc.coLocation.title': 'Endast tillgänglig i skrivbordsappen',
+  'signing.cc.coLocation.body':
+    'Signering med Medborgarkort är endast tillgänglig i skrivbordsappen, som kortläsaren är ansluten till.',
   'toast.signing.otpSent': 'SMS-kod skickad.',
   'toast.signing.signed': 'Protokoll signerat.',
   'toast.signing.downloaded': 'Signerad PDF nedladdad.',

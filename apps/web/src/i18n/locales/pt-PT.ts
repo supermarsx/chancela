@@ -775,6 +775,7 @@ export const ptPT = {
   'enum.severity.Error': 'Erro',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Cartão de Cidadão',
+  'enum.signatureFamily.CartaoDeCidadao': 'Cartão de Cidadão',
   'enum.signatureFamily.ChaveMovelDigital': 'Chave Móvel Digital',
   'enum.signatureFamily.OtherQualified': 'Outro certificado qualificado',
   'enum.signatureFamily.Manual': 'Assinatura manual',
@@ -1117,6 +1118,7 @@ export const ptPT = {
   'signing.expired': 'A sessão de assinatura expirou. Recomece para receber um novo código.',
   'signing.signed.title': 'Ata assinada com assinatura eletrónica qualificada',
   'signing.signed.qualifiedLabel': 'Assinatura eletrónica qualificada (Chave Móvel Digital).',
+  'signing.signed.qualifiedLabelCc': 'Assinatura eletrónica qualificada (Cartão de Cidadão).',
   'signing.signed.signer': 'Signatário',
   'signing.signed.family': 'Família',
   'signing.signed.signingTime': 'Data e hora da assinatura',
@@ -1126,6 +1128,16 @@ export const ptPT = {
   'signing.signed.timestampAbsent': 'Ausente',
   'signing.signed.digest': 'Impressão do PDF assinado',
   'signing.download': 'Descarregar PDF assinado',
+  'signing.cc.start': 'Assinar com Cartão de Cidadão',
+  'signing.cc.prompt.title': 'Assinatura com Cartão de Cidadão',
+  'signing.cc.prompt.body':
+    'Insira o Cartão de Cidadão no leitor. O PIN de assinatura é introduzido no leitor ou na aplicação Autenticação.gov — nunca é pedido aqui.',
+  'signing.cc.sign': 'Assinar com o cartão',
+  'signing.cc.signing': 'A assinar…',
+  'signing.cc.cancel': 'Cancelar',
+  'signing.cc.coLocation.title': 'Disponível apenas na aplicação de secretária',
+  'signing.cc.coLocation.body':
+    'A assinatura com Cartão de Cidadão só está disponível na aplicação de secretária, onde o leitor de cartões está ligado a este computador.',
   'toast.signing.otpSent': 'Código SMS enviado.',
   'toast.signing.signed': 'Ata assinada.',
   'toast.signing.downloaded': 'PDF assinado descarregado.',

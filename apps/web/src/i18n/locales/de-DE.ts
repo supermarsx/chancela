@@ -778,6 +778,7 @@ export const deDE: Catalog = {
   'enum.severity.Error': 'Fehler',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Bürgerkarte',
+  'enum.signatureFamily.CartaoDeCidadao': 'Bürgerkarte',
   'enum.signatureFamily.ChaveMovelDigital': 'Digitaler Mobilschlüssel',
   'enum.signatureFamily.OtherQualified': 'Anderes qualifiziertes Zertifikat',
   'enum.signatureFamily.Manual': 'Manuelle Unterschrift',
@@ -1134,6 +1135,17 @@ export const deDE: Catalog = {
   'signing.signed.timestampAbsent': 'Nicht vorhanden',
   'signing.signed.digest': 'Fingerabdruck des signierten PDF',
   'signing.download': 'Signiertes PDF herunterladen',
+  'signing.signed.qualifiedLabelCc': 'Qualifizierte elektronische Signatur (Bürgerkarte).',
+  'signing.cc.start': 'Mit Bürgerkarte signieren',
+  'signing.cc.prompt.title': 'Signatur mit der Bürgerkarte',
+  'signing.cc.prompt.body':
+    'Stecken Sie die Bürgerkarte in das Lesegerät. Die Signatur-PIN wird am Lesegerät oder in der Anwendung Autenticação.gov eingegeben — sie wird hier niemals abgefragt.',
+  'signing.cc.sign': 'Mit der Karte signieren',
+  'signing.cc.signing': 'Wird signiert…',
+  'signing.cc.cancel': 'Abbrechen',
+  'signing.cc.coLocation.title': 'Nur in der Desktop-Anwendung verfügbar',
+  'signing.cc.coLocation.body':
+    'Die Signatur mit der Bürgerkarte ist nur in der Desktop-Anwendung verfügbar, an die das Kartenlesegerät angeschlossen ist.',
   'toast.signing.otpSent': 'SMS-Code gesendet.',
   'toast.signing.signed': 'Protokoll signiert.',
   'toast.signing.downloaded': 'Signiertes PDF heruntergeladen.',

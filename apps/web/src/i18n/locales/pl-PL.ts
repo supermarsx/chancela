@@ -770,6 +770,7 @@ export const plPL: Catalog = {
   'enum.severity.Error': 'Błąd',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Karta obywatela',
+  'enum.signatureFamily.CartaoDeCidadao': 'Karta obywatela',
   'enum.signatureFamily.ChaveMovelDigital': 'Cyfrowy klucz mobilny',
   'enum.signatureFamily.OtherQualified': 'Inny certyfikat kwalifikowany',
   'enum.signatureFamily.Manual': 'Podpis odręczny',
@@ -1118,6 +1119,17 @@ export const plPL: Catalog = {
   'signing.signed.timestampAbsent': 'Brak',
   'signing.signed.digest': 'Odcisk podpisanego PDF',
   'signing.download': 'Pobierz podpisany PDF',
+  'signing.signed.qualifiedLabelCc': 'Kwalifikowany podpis elektroniczny (Karta obywatela).',
+  'signing.cc.start': 'Podpisz Kartą obywatela',
+  'signing.cc.prompt.title': 'Podpis Kartą obywatela',
+  'signing.cc.prompt.body':
+    'Włóż Kartę obywatela do czytnika. PIN podpisu wprowadza się na czytniku lub w aplikacji Autenticação.gov — nigdy nie jest wymagany tutaj.',
+  'signing.cc.sign': 'Podpisz kartą',
+  'signing.cc.signing': 'Podpisywanie…',
+  'signing.cc.cancel': 'Anuluj',
+  'signing.cc.coLocation.title': 'Dostępne tylko w aplikacji komputerowej',
+  'signing.cc.coLocation.body':
+    'Podpis Kartą obywatela jest dostępny tylko w aplikacji komputerowej, do której podłączony jest czytnik kart.',
   'toast.signing.otpSent': 'Kod SMS wysłany.',
   'toast.signing.signed': 'Protokół podpisany.',
   'toast.signing.downloaded': 'Podpisany PDF pobrany.',

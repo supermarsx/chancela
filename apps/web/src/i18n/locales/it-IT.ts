@@ -773,6 +773,7 @@ export const itIT: Catalog = {
   'enum.severity.Error': 'Errore',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Carta di Cittadino',
+  'enum.signatureFamily.CartaoDeCidadao': 'Carta di Cittadino',
   'enum.signatureFamily.ChaveMovelDigital': 'Chiave Mobile Digitale',
   'enum.signatureFamily.OtherQualified': 'Altro certificato qualificato',
   'enum.signatureFamily.Manual': 'Firma manuale',
@@ -1123,6 +1124,17 @@ export const itIT: Catalog = {
   'signing.signed.timestampAbsent': 'Assente',
   'signing.signed.digest': 'Impronta del PDF firmato',
   'signing.download': 'Scarica PDF firmato',
+  'signing.signed.qualifiedLabelCc': 'Firma elettronica qualificata (Carta di Cittadino).',
+  'signing.cc.start': 'Firma con Carta di Cittadino',
+  'signing.cc.prompt.title': 'Firma con la Carta di Cittadino',
+  'signing.cc.prompt.body':
+    'Inserisci la Carta di Cittadino nel lettore. Il PIN di firma viene inserito sul lettore o nell’applicazione Autenticação.gov — non viene mai richiesto qui.',
+  'signing.cc.sign': 'Firma con la carta',
+  'signing.cc.signing': 'Firma in corso…',
+  'signing.cc.cancel': 'Annulla',
+  'signing.cc.coLocation.title': 'Disponibile solo nell’applicazione desktop',
+  'signing.cc.coLocation.body':
+    'La firma con Carta di Cittadino è disponibile solo nell’applicazione desktop, a cui è collegato il lettore di carte.',
   'toast.signing.otpSent': 'Codice SMS inviato.',
   'toast.signing.signed': 'Verbale firmato.',
   'toast.signing.downloaded': 'PDF firmato scaricato.',

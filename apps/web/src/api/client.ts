@@ -47,6 +47,8 @@ import type {
   CmdInitiateResult,
   CmdConfirmBody,
   CmdConfirmResult,
+  CcSignBody,
+  CcSignResult,
   UpdateEntityBody,
   SessionResult,
   SessionRoster,
@@ -342,6 +344,13 @@ export const api = {
     post<CmdInitiateResult>(`/v1/acts/${id}/signature/cmd/initiate`, body),
   cmdConfirmSignature: (id: string, body: CmdConfirmBody) =>
     post<CmdConfirmResult>(`/v1/acts/${id}/signature/cmd/confirm`, body),
+  // Qualified Cartão de Cidadão signing (§ t58) — SYNCHRONOUS and desktop-only. A single
+  // call signs the sealed PDF at the co-located card reader; NO PIN in the body (it is
+  // entered at the reader / Autenticação.gov). Refused with 409 when the API is not
+  // co-located with a reader (browser/remote server); a provider failure (no card / wrong
+  // PIN / not activated / no reader) is an honest 422 whose PT message is surfaced verbatim.
+  ccSignSignature: (id: string, body: CcSignBody = {}) =>
+    post<CcSignResult>(`/v1/acts/${id}/signature/cc/sign`, body),
   fetchSignedActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document/signed`),
 
   // Registry — certidão permanente (§2.7). The `code` in each body is a secret; it is

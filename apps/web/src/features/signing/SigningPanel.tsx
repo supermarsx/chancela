@@ -1,21 +1,32 @@
 /**
- * SigningPanel — the qualified Chave Móvel Digital signing surface on a sealed act (plan t57).
+ * SigningPanel — the qualified signing surface on a sealed act (plans t57 + t58).
  *
- * A sealed act's unsigned PDF/A can be turned into a **qualified** CMD-signed PDF through an
- * honest two-phase flow:
- *   1. «Assinar com Chave Móvel Digital» → collect the mobile number + signature PIN → `initiate`
- *      (the server dispatches an SMS OTP);
- *   2. collect the OTP received by SMS → `confirm` → the act is signed.
+ * A sealed act's unsigned PDF/A can be turned into a **qualified** signed PDF through either of
+ * two methods, offered side by side:
  *
- * States are honest end-to-end (unsigned → pending/aguarda-OTP → signed): a 410 expired session
- * restarts cleanly, a rejected OTP surfaces a clear retry. The PIN and OTP are TRANSIENT — held
- * only in this component's form state for the duration of the request that consumes them, cleared
- * the instant they are sent, and never stored client-side beyond that. It is a qualified
- * electronic signature; the copy labels it accurately (never "valor probatório").
+ *   • **Chave Móvel Digital (CMD)** — an honest two-phase flow (t57), remote-capable:
+ *       1. «Assinar com Chave Móvel Digital» → collect the mobile number + signature PIN →
+ *          `initiate` (the server dispatches an SMS OTP);
+ *       2. collect the OTP received by SMS → `confirm` → the act is signed.
+ *
+ *   • **Cartão de Cidadão (CC)** — a SYNCHRONOUS single call (t58), desktop-only. «Assinar com
+ *     Cartão de Cidadão» → an honest prompt (insert the card; the PIN is entered AT THE READER
+ *     via the Autenticação.gov middleware, never here) → `cc/sign` blocks while the card signs →
+ *     the act is signed. CC only works when the API is co-located with the reader (the desktop
+ *     app); a remote/browser server refuses with **409**, which we surface as an honest note.
+ *     A provider failure (no card / wrong PIN / card not activated / no reader) is an honest
+ *     **422** whose PT message is surfaced verbatim.
+ *
+ * States are honest end-to-end (unsigned → pending/aguarda-OTP → signed): a 410 expired CMD
+ * session restarts cleanly, a rejected OTP surfaces a clear retry. The CMD PIN/OTP are TRANSIENT —
+ * held only in this component's form state for the duration of the request that consumes them,
+ * cleared the instant they are sent, and never stored client-side. The CC PIN never enters the
+ * web app at all (it is entered at the reader). Both produce a qualified electronic signature; the
+ * copy labels it accurately per method (never "valor probatório").
  *
  * Read errors render inline; the mutations follow the toast idiom (success + error) per
- * CONVENTIONS §2/§3. RBAC (t64) will later gate the signing ACTION via a `signing.perform`
- * permission — the server already session-gates it, so this UI does not build a parallel gate.
+ * CONVENTIONS §2/§3. The CC action is gated with `useCan('signing.perform', <act's book scope>)`
+ * (disable-with-explanation); the server re-enforces the permission regardless.
  */
 import { useEffect, useState } from 'react';
 import type { ActView, SignatureFamily } from '../../api/types';
@@ -23,10 +34,12 @@ import { ApiError } from '../../api/client';
 import { signatureFamilyLabels } from '../../api/labels';
 import {
   useActSignature,
+  useCcSignSignature,
   useCmdConfirmSignature,
   useCmdInitiateSignature,
   useDownloadSignedDocument,
 } from '../../api/hooks';
+import { GateButton, scopeBook } from '../session/permissions';
 import { useLocale, useT } from '../../i18n';
 import {
   Badge,
@@ -41,6 +54,9 @@ import {
   Skeleton,
   useToast,
 } from '../../ui';
+
+/** The serialized signing family a Cartão de Cidadão signature reports (t58-e2). */
+const FAMILY_CC = 'CartaoDeCidadao';
 
 /** Slugify an entity/title fragment for a filesystem-friendly download name. */
 function slug(value: string): string {
@@ -76,11 +92,15 @@ function useDateTime(): (iso: string) => string {
   };
 }
 
-/** The active step of the local two-phase flow (server-authoritative status backs the rest). */
+/**
+ * The active step of the local flow (server-authoritative status backs the rest). CMD is
+ * two-phase (`credentials` → `otp`); CC is a single synchronous prompt (`cc`).
+ */
 type Step =
   | { kind: 'view' }
   | { kind: 'credentials' }
-  | { kind: 'otp'; sessionId: string; maskedPhone: string };
+  | { kind: 'otp'; sessionId: string; maskedPhone: string }
+  | { kind: 'cc' };
 
 export function SigningPanel({ act, entityName }: { act: ActView; entityName?: string }) {
   const t = useT();
@@ -91,7 +111,10 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const status = useActSignature(act.id, sealed);
   const initiate = useCmdInitiateSignature(act.id);
   const confirm = useCmdConfirmSignature(act.id);
+  const ccSign = useCcSignSignature(act.id);
   const download = useDownloadSignedDocument(act.id);
+  // The CC action is gated at the act's book scope (disable-with-explanation, t64-E5).
+  const bookScope = scopeBook(act.book_id);
 
   const [step, setStep] = useState<Step>({ kind: 'view' });
   // PIN + OTP are transient: they live here only while the form is filled and are cleared the
@@ -100,6 +123,9 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const [pin, setPin] = useState('');
   const [otp, setOtp] = useState('');
   const [expired, setExpired] = useState(false);
+  // Set once a CC sign attempt 409s: the API is not co-located with a card reader (browser /
+  // remote server). We then swap the CC affordance for an honest note rather than fake it.
+  const [ccBlocked, setCcBlocked] = useState(false);
 
   const data = status.data;
 
@@ -164,6 +190,31 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
     setStep({ kind: 'credentials' });
   }
 
+  function onCcSign() {
+    // No secret in the body — the PIN is entered at the reader by the Autenticação.gov
+    // middleware. The call BLOCKS while the card signs; the button shows «A assinar…».
+    ccSign.mutate(
+      {},
+      {
+        onSuccess: () => {
+          setStep({ kind: 'view' });
+          toast.success(t('toast.signing.signed'));
+        },
+        onError: (err) => {
+          toast.error(err);
+          // 409 = the API is not co-located with a reader (browser / remote server). Surface
+          // the honest co-location note and drop the CC affordance rather than retry blindly.
+          if (err instanceof ApiError && err.status === 409) {
+            setCcBlocked(true);
+            setStep({ kind: 'view' });
+          }
+          // A 422 provider error (no card / wrong PIN / not activated / no reader) STAYS on the
+          // CC step so the honest server message renders inline for a retry.
+        },
+      },
+    );
+  }
+
   function onDownloadSigned() {
     const base = entityName ? `${slug(entityName)}-` : '';
     const n = act.ata_number != null ? String(act.ata_number) : act.id;
@@ -190,7 +241,9 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         // --- SIGNED: the qualified-signature record + the signed-PDF download ----------------
         <div className="stack--tight">
           <InlineWarning tone="info" title={t('signing.signed.title')}>
-            {t('signing.signed.qualifiedLabel')}
+            {data.signed.family === FAMILY_CC
+              ? t('signing.signed.qualifiedLabelCc')
+              : t('signing.signed.qualifiedLabel')}
           </InlineWarning>
           <dl className="deflist">
             <div>
@@ -317,8 +370,36 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
             </Button>
           </div>
         </form>
+      ) : step.kind === 'cc' ? (
+        // --- CC: the honest synchronous prompt (PIN is entered at the reader) -----------------
+        <div className="stack--tight">
+          <InlineWarning tone="info" title={t('signing.cc.prompt.title')}>
+            {t('signing.cc.prompt.body')}
+          </InlineWarning>
+          {ccSign.error ? <ErrorNote error={ccSign.error} /> : null}
+          <div className="rowline">
+            <Button
+              type="button"
+              variant="primary"
+              icon={<Icon.IdCard />}
+              disabled={ccSign.isPending}
+              onClick={onCcSign}
+            >
+              {ccSign.isPending ? t('signing.cc.signing') : t('signing.cc.sign')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              icon={<Icon.Refresh />}
+              disabled={ccSign.isPending}
+              onClick={() => setStep({ kind: 'view' })}
+            >
+              {t('signing.cc.cancel')}
+            </Button>
+          </div>
+        </div>
       ) : (
-        // --- UNSIGNED: the honest state + the entry action -----------------------------------
+        // --- UNSIGNED: the honest state + the entry actions (CMD + CC) ------------------------
         <div className="stack--tight">
           <InlineWarning
             tone={data?.require_qualified_for_seal ? 'warn' : 'info'}
@@ -328,14 +409,33 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               ? t('signing.required.body')
               : t('signing.unsigned.body')}
           </InlineWarning>
-          <Button
-            type="button"
-            variant="primary"
-            icon={<Icon.PenNib />}
-            onClick={() => setStep({ kind: 'credentials' })}
-          >
-            {t('signing.start')}
-          </Button>
+          <div className="rowline">
+            <Button
+              type="button"
+              variant="primary"
+              icon={<Icon.PenNib />}
+              onClick={() => setStep({ kind: 'credentials' })}
+            >
+              {t('signing.start')}
+            </Button>
+            {ccBlocked ? null : (
+              <GateButton
+                perm="signing.perform"
+                scope={bookScope}
+                type="button"
+                variant="secondary"
+                icon={<Icon.IdCard />}
+                onClick={() => setStep({ kind: 'cc' })}
+              >
+                {t('signing.cc.start')}
+              </GateButton>
+            )}
+          </div>
+          {ccBlocked ? (
+            <InlineWarning tone="info" title={t('signing.cc.coLocation.title')}>
+              {t('signing.cc.coLocation.body')}
+            </InlineWarning>
+          ) : null}
         </div>
       )}
     </Card>

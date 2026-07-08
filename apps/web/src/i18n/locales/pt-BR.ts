@@ -770,6 +770,7 @@ export const ptBR: Catalog = {
   'enum.severity.Error': 'Erro',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Cartão de Cidadão',
+  'enum.signatureFamily.CartaoDeCidadao': 'Cartão de Cidadão',
   'enum.signatureFamily.ChaveMovelDigital': 'Chave Móvel Digital',
   'enum.signatureFamily.OtherQualified': 'Outro certificado qualificado',
   'enum.signatureFamily.Manual': 'Assinatura manual',
@@ -1120,6 +1121,17 @@ export const ptBR: Catalog = {
   'signing.signed.timestampAbsent': 'Ausente',
   'signing.signed.digest': 'Impressão do PDF assinado',
   'signing.download': 'Baixar PDF assinado',
+  'signing.signed.qualifiedLabelCc': 'Assinatura eletrônica qualificada (Cartão de Cidadão).',
+  'signing.cc.start': 'Assinar com Cartão de Cidadão',
+  'signing.cc.prompt.title': 'Assinatura com Cartão de Cidadão',
+  'signing.cc.prompt.body':
+    'Insira o Cartão de Cidadão no leitor. O PIN de assinatura é inserido no leitor ou no aplicativo Autenticação.gov — nunca é solicitado aqui.',
+  'signing.cc.sign': 'Assinar com o cartão',
+  'signing.cc.signing': 'Assinando…',
+  'signing.cc.cancel': 'Cancelar',
+  'signing.cc.coLocation.title': 'Disponível apenas no aplicativo de desktop',
+  'signing.cc.coLocation.body':
+    'A assinatura com Cartão de Cidadão só está disponível no aplicativo de desktop, onde o leitor de cartões está conectado a este computador.',
   'toast.signing.otpSent': 'Código SMS enviado.',
   'toast.signing.signed': 'Ata assinada.',
   'toast.signing.downloaded': 'PDF assinado baixado.',

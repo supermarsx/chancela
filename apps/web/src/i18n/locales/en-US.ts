@@ -768,6 +768,7 @@ export const enUS: Catalog = {
   'enum.severity.Error': 'Error',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Citizen Card',
+  'enum.signatureFamily.CartaoDeCidadao': 'Citizen Card',
   'enum.signatureFamily.ChaveMovelDigital': 'Digital Mobile Key',
   'enum.signatureFamily.OtherQualified': 'Other qualified certificate',
   'enum.signatureFamily.Manual': 'Manual signature',
@@ -1115,6 +1116,17 @@ export const enUS: Catalog = {
   'signing.signed.timestampAbsent': 'Absent',
   'signing.signed.digest': 'Signed PDF fingerprint',
   'signing.download': 'Download signed PDF',
+  'signing.signed.qualifiedLabelCc': 'Qualified electronic signature (Citizen Card).',
+  'signing.cc.start': 'Sign with Citizen Card',
+  'signing.cc.prompt.title': 'Signing with the Citizen Card',
+  'signing.cc.prompt.body':
+    'Insert the Citizen Card into the reader. The signing PIN is entered at the reader or in the Autenticação.gov application — it is never asked for here.',
+  'signing.cc.sign': 'Sign with the card',
+  'signing.cc.signing': 'Signing…',
+  'signing.cc.cancel': 'Cancel',
+  'signing.cc.coLocation.title': 'Available only in the desktop application',
+  'signing.cc.coLocation.body':
+    'Citizen Card signing is only available in the desktop application, where the card reader is connected to this computer.',
   'toast.signing.otpSent': 'SMS code sent.',
   'toast.signing.signed': 'Minutes signed.',
   'toast.signing.downloaded': 'Signed PDF downloaded.',

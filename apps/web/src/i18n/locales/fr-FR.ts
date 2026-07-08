@@ -775,6 +775,7 @@ export const frFR: Catalog = {
   'enum.severity.Error': 'Erreur',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Carte de Citoyen',
+  'enum.signatureFamily.CartaoDeCidadao': 'Carte de Citoyen',
   'enum.signatureFamily.ChaveMovelDigital': 'Clé Mobile Numérique',
   'enum.signatureFamily.OtherQualified': 'Autre certificat qualifié',
   'enum.signatureFamily.Manual': 'Signature manuelle',
@@ -1125,6 +1126,17 @@ export const frFR: Catalog = {
   'signing.signed.timestampAbsent': 'Absent',
   'signing.signed.digest': 'Empreinte du PDF signé',
   'signing.download': 'Télécharger le PDF signé',
+  'signing.signed.qualifiedLabelCc': 'Signature électronique qualifiée (Carte de Citoyen).',
+  'signing.cc.start': 'Signer avec la Carte de Citoyen',
+  'signing.cc.prompt.title': 'Signature avec la Carte de Citoyen',
+  'signing.cc.prompt.body':
+    'Insérez la Carte de Citoyen dans le lecteur. Le code PIN de signature est saisi sur le lecteur ou dans l’application Autenticação.gov — il n’est jamais demandé ici.',
+  'signing.cc.sign': 'Signer avec la carte',
+  'signing.cc.signing': 'Signature en cours…',
+  'signing.cc.cancel': 'Annuler',
+  'signing.cc.coLocation.title': 'Disponible uniquement dans l’application de bureau',
+  'signing.cc.coLocation.body':
+    'La signature avec la Carte de Citoyen n’est disponible que dans l’application de bureau, à laquelle le lecteur de cartes est connecté.',
   'toast.signing.otpSent': 'Code SMS envoyé.',
   'toast.signing.signed': 'Procès-verbal signé.',
   'toast.signing.downloaded': 'PDF signé téléchargé.',

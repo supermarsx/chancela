@@ -774,6 +774,7 @@ export const esES: Catalog = {
   'enum.severity.Error': 'Error',
   // Familias de firma
   'enum.signatureFamily.CartaoCidadao': 'Tarjeta de Ciudadano',
+  'enum.signatureFamily.CartaoDeCidadao': 'Tarjeta de Ciudadano',
   'enum.signatureFamily.ChaveMovelDigital': 'Clave Móvil Digital',
   'enum.signatureFamily.OtherQualified': 'Otro certificado cualificado',
   'enum.signatureFamily.Manual': 'Firma manual',
@@ -1124,6 +1125,17 @@ export const esES: Catalog = {
   'signing.signed.timestampAbsent': 'Ausente',
   'signing.signed.digest': 'Huella del PDF firmado',
   'signing.download': 'Descargar PDF firmado',
+  'signing.signed.qualifiedLabelCc': 'Firma electrónica cualificada (Tarjeta de Ciudadano).',
+  'signing.cc.start': 'Firmar con Tarjeta de Ciudadano',
+  'signing.cc.prompt.title': 'Firma con Tarjeta de Ciudadano',
+  'signing.cc.prompt.body':
+    'Introduzca la Tarjeta de Ciudadano en el lector. El PIN de firma se introduce en el lector o en la aplicación Autenticação.gov — nunca se solicita aquí.',
+  'signing.cc.sign': 'Firmar con la tarjeta',
+  'signing.cc.signing': 'Firmando…',
+  'signing.cc.cancel': 'Cancelar',
+  'signing.cc.coLocation.title': 'Disponible solo en la aplicación de escritorio',
+  'signing.cc.coLocation.body':
+    'La firma con Tarjeta de Ciudadano solo está disponible en la aplicación de escritorio, donde el lector de tarjetas está conectado a este ordenador.',
   'toast.signing.otpSent': 'Código SMS enviado.',
   'toast.signing.signed': 'Acta firmada.',
   'toast.signing.downloaded': 'PDF firmado descargado.',

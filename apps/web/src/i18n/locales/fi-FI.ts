@@ -767,6 +767,7 @@ export const fiFI: Catalog = {
   'enum.severity.Error': 'Virhe',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Kansalaiskortti',
+  'enum.signatureFamily.CartaoDeCidadao': 'Kansalaiskortti',
   'enum.signatureFamily.ChaveMovelDigital': 'Digitaalinen mobiiliavain',
   'enum.signatureFamily.OtherQualified': 'Muu hyväksytty varmenne',
   'enum.signatureFamily.Manual': 'Manuaalinen allekirjoitus',
@@ -1119,6 +1120,17 @@ export const fiFI: Catalog = {
   'signing.signed.timestampAbsent': 'Puuttuu',
   'signing.signed.digest': 'Allekirjoitetun PDF:n tiiviste',
   'signing.download': 'Lataa allekirjoitettu PDF',
+  'signing.signed.qualifiedLabelCc': 'Hyväksytty sähköinen allekirjoitus (Kansalaiskortti).',
+  'signing.cc.start': 'Allekirjoita Kansalaiskortilla',
+  'signing.cc.prompt.title': 'Allekirjoitus Kansalaiskortilla',
+  'signing.cc.prompt.body':
+    'Aseta Kansalaiskortti lukijaan. Allekirjoitus-PIN syötetään lukijassa tai Autenticação.gov-sovelluksessa — sitä ei koskaan kysytä täällä.',
+  'signing.cc.sign': 'Allekirjoita kortilla',
+  'signing.cc.signing': 'Allekirjoitetaan…',
+  'signing.cc.cancel': 'Peruuta',
+  'signing.cc.coLocation.title': 'Käytettävissä vain työpöytäsovelluksessa',
+  'signing.cc.coLocation.body':
+    'Allekirjoitus Kansalaiskortilla on käytettävissä vain työpöytäsovelluksessa, johon kortinlukija on liitetty.',
   'toast.signing.otpSent': 'Tekstiviestikoodi lähetetty.',
   'toast.signing.signed': 'Pöytäkirja allekirjoitettu.',
   'toast.signing.downloaded': 'Allekirjoitettu PDF ladattu.',

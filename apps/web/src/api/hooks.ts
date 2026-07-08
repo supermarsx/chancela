@@ -20,6 +20,7 @@ import type {
   LifecycleStage,
   CmdInitiateBody,
   CmdConfirmBody,
+  CcSignBody,
   ImportFromRegistryBody,
   LawEntryView,
   OpenBookBody,
@@ -369,6 +370,29 @@ export function useCmdConfirmSignature(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CmdConfirmBody) => api.cmdConfirmSignature(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
+      void qc.invalidateQueries({ queryKey: keys.act(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+/**
+ * Qualified Cartão de Cidadão signing (`POST /v1/acts/{id}/signature/cc/sign`, t58) — a
+ * SYNCHRONOUS, desktop-only single call. No secret rides in the body (the PIN is entered at
+ * the reader by the Autenticação.gov middleware, never here). The call BLOCKS while the card
+ * signs, so the caller shows a brief "a assinar…" busy state. On success the signature
+ * status, the act, the ledger and the dashboard refetch (the sign appends a `document.signed`
+ * event). A 409 means the API is not co-located with a reader (browser/remote); a 422 is an
+ * honest provider error (no card / wrong PIN / not activated / no reader) — both surfaced by
+ * the caller, never persisted.
+ */
+export function useCcSignSignature(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CcSignBody = {}) => api.ccSignSignature(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
       void qc.invalidateQueries({ queryKey: keys.act(id) });

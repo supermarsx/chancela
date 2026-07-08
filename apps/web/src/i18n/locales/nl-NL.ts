@@ -772,6 +772,7 @@ export const nlNL: Catalog = {
   'enum.severity.Error': 'Fout',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Burgerkaart',
+  'enum.signatureFamily.CartaoDeCidadao': 'Burgerkaart',
   'enum.signatureFamily.ChaveMovelDigital': 'Digitale Mobiele Sleutel',
   'enum.signatureFamily.OtherQualified': 'Ander gekwalificeerd certificaat',
   'enum.signatureFamily.Manual': 'Handmatige ondertekening',
@@ -1124,6 +1125,17 @@ export const nlNL: Catalog = {
   'signing.signed.timestampAbsent': 'Afwezig',
   'signing.signed.digest': 'Vingerafdruk van ondertekende PDF',
   'signing.download': 'Ondertekende PDF downloaden',
+  'signing.signed.qualifiedLabelCc': 'Gekwalificeerde elektronische handtekening (Burgerkaart).',
+  'signing.cc.start': 'Ondertekenen met Burgerkaart',
+  'signing.cc.prompt.title': 'Ondertekenen met de Burgerkaart',
+  'signing.cc.prompt.body':
+    'Plaats de Burgerkaart in de lezer. De ondertekenings-PIN wordt op de lezer of in de Autenticação.gov-toepassing ingevoerd — die wordt hier nooit gevraagd.',
+  'signing.cc.sign': 'Ondertekenen met de kaart',
+  'signing.cc.signing': 'Bezig met ondertekenen…',
+  'signing.cc.cancel': 'Annuleren',
+  'signing.cc.coLocation.title': 'Alleen beschikbaar in de desktoptoepassing',
+  'signing.cc.coLocation.body':
+    'Ondertekenen met de Burgerkaart is alleen beschikbaar in de desktoptoepassing, waarop de kaartlezer is aangesloten.',
   'toast.signing.otpSent': 'Sms-code verzonden.',
   'toast.signing.signed': 'Notulen ondertekend.',
   'toast.signing.downloaded': 'Ondertekende PDF gedownload.',

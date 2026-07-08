@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { SigningPanel } from './SigningPanel';
 import { renderWithProviders } from '../../test/utils';
+import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import type { ActView, SignatureStatusView } from '../../api/types';
 
 const sealedAct: ActView = {
@@ -231,5 +232,143 @@ describe('SigningPanel — signed status + download', () => {
     expect(await screen.findByText('CN=Amélia Marques,O=Encosto Estratégico Lda')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Descarregar PDF assinado' }));
     await waitFor(() => expect(createUrl).toHaveBeenCalled());
+  });
+});
+
+// --- Cartão de Cidadão (CC) signing (t58) — synchronous, desktop-only -------------------
+
+const ccSignedStatus: SignatureStatusView = {
+  status: 'signed',
+  finalization: 'finalizado_qualificado',
+  require_qualified_for_seal: false,
+  signed: {
+    family: 'CartaoDeCidadao',
+    evidentiary_level: 'Qualified',
+    trusted_list_status: 'Granted',
+    signer_cert_subject: 'CN=Amélia Marques,O=Encosto Estratégico Lda',
+    signing_time: '2026-07-06T10:00:00Z',
+    signed_at: '2026-07-06T10:00:05Z',
+    signed_pdf_digest: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
+    timestamp_token: false,
+    download: '/v1/acts/act-1/document/signed',
+  },
+};
+
+describe('SigningPanel — Cartão de Cidadão', () => {
+  it('signs synchronously and flips to the signed CC record + download', async () => {
+    let signed = false;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.includes('/signature/cc/sign')) {
+        signed = true;
+        return json({
+          document_id: 'doc-1',
+          act_id: 'act-1',
+          family: 'CartaoDeCidadao',
+          evidentiary_level: 'Qualified',
+          trusted_list_status: 'Granted',
+          signed_at: '2026-07-06T10:00:05Z',
+          signed_pdf_digest: ccSignedStatus.signed!.signed_pdf_digest,
+          timestamp_token: false,
+          finalization: 'finalizado_qualificado',
+        });
+      }
+      if (url.endsWith('/signature') && method === 'GET') {
+        return json(signed ? ccSignedStatus : unsignedStatus);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    // Unsigned → the CC entry action → the honest prompt (no PIN field anywhere).
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar com Cartão de Cidadão' }));
+    const sign = await screen.findByRole('button', { name: 'Assinar com o cartão' });
+    expect(screen.queryByLabelText('PIN de assinatura da CMD')).toBeNull();
+    fireEvent.click(sign);
+
+    // Signed: the CC-specific qualified label + the signed-PDF download.
+    expect(
+      await screen.findByText('Assinatura eletrónica qualificada (Cartão de Cidadão).'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Descarregar PDF assinado' })).toBeTruthy();
+  });
+
+  it('renders an honest co-location note on a 409 (not co-located)', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.includes('/signature/cc/sign')) {
+        return json(
+          {
+            error:
+              'a assinatura com Cartão de Cidadão só está disponível na aplicação de secretária',
+          },
+          409,
+        );
+      }
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar com Cartão de Cidadão' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar com o cartão' }));
+
+    // 409 → honest co-location note; the CC entry affordance is dropped (not faked).
+    expect(await screen.findByText('Disponível apenas na aplicação de secretária')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Assinar com Cartão de Cidadão' })).toBeNull();
+  });
+
+  it('surfaces a provider 422 honestly inline and stays on the CC step', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.includes('/signature/cc/sign')) {
+        return json(
+          {
+            error:
+              'não foi possível assinar com o Cartão de Cidadão (verifique o cartão, o leitor e o PIN): cartão não detetado',
+          },
+          422,
+        );
+      }
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar com Cartão de Cidadão' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar com o cartão' }));
+
+    // The honest server message renders inline; the flow stays on the CC step for a retry.
+    expect(
+      await screen.findByText(/não foi possível assinar com o Cartão de Cidadão/),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Assinar com o cartão' })).toBeTruthy();
+  });
+
+  it('gates the CC action with signing.perform (disable-with-explanation)', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature')) return json(unsignedStatus);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    // A principal WITHOUT signing.perform: the CC action is present but inert (aria-disabled).
+    renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue((perm) => perm !== 'signing.perform')}>
+        <SigningPanel act={sealedAct} />
+      </StaticPermissionsProvider>,
+    );
+
+    const cc = await screen.findByRole('button', { name: 'Assinar com Cartão de Cidadão' });
+    expect(cc.getAttribute('aria-disabled')).toBe('true');
+    // Clicking the gated control does not advance to the CC prompt.
+    fireEvent.click(cc);
+    expect(screen.queryByRole('button', { name: 'Assinar com o cartão' })).toBeNull();
   });
 });

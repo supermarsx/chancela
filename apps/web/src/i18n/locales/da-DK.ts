@@ -769,6 +769,7 @@ export const daDK: Catalog = {
   'enum.severity.Error': 'Fejl',
   // Signature families
   'enum.signatureFamily.CartaoCidadao': 'Borgerkort',
+  'enum.signatureFamily.CartaoDeCidadao': 'Borgerkort',
   'enum.signatureFamily.ChaveMovelDigital': 'Digital mobilnøgle',
   'enum.signatureFamily.OtherQualified': 'Andet kvalificeret certifikat',
   'enum.signatureFamily.Manual': 'Manuel underskrift',
@@ -1120,6 +1121,17 @@ export const daDK: Catalog = {
   'signing.signed.timestampAbsent': 'Ikke til stede',
   'signing.signed.digest': 'Fingeraftryk af signeret PDF',
   'signing.download': 'Download signeret PDF',
+  'signing.signed.qualifiedLabelCc': 'Kvalificeret elektronisk signatur (Borgerkort).',
+  'signing.cc.start': 'Signer med Borgerkort',
+  'signing.cc.prompt.title': 'Signering med Borgerkort',
+  'signing.cc.prompt.body':
+    'Indsæt Borgerkortet i læseren. Signerings-PIN indtastes på læseren eller i Autenticação.gov-appen — den bliver aldrig bedt om her.',
+  'signing.cc.sign': 'Signer med kortet',
+  'signing.cc.signing': 'Signerer…',
+  'signing.cc.cancel': 'Annuller',
+  'signing.cc.coLocation.title': 'Kun tilgængelig i skrivebordsprogrammet',
+  'signing.cc.coLocation.body':
+    'Signering med Borgerkort er kun tilgængelig i skrivebordsprogrammet, hvor kortlæseren er tilsluttet denne computer.',
   'toast.signing.otpSent': 'SMS-kode sendt.',
   'toast.signing.signed': 'Referat signeret.',
   'toast.signing.downloaded': 'Signeret PDF downloadet.',
