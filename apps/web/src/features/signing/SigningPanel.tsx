@@ -1,43 +1,59 @@
 /**
- * SigningPanel — the qualified signing surface on a sealed act (plans t57 + t58).
+ * SigningPanel — the qualified signing surface on a sealed act (plans t57 + t58 + t59).
  *
- * A sealed act's unsigned PDF/A can be turned into a **qualified** signed PDF through either of
- * two methods, offered side by side:
+ * A sealed act's unsigned PDF/A can be turned into a **qualified** signed PDF through a chosen
+ * signing method. The panel presents a provider picker and routes each choice to the right flow:
  *
  *   • **Chave Móvel Digital (CMD)** — an honest two-phase flow (t57), remote-capable:
  *       1. «Assinar com Chave Móvel Digital» → collect the mobile number + signature PIN →
- *          `initiate` (the server dispatches an SMS OTP);
- *       2. collect the OTP received by SMS → `confirm` → the act is signed.
+ *          `cmd/initiate` (the server dispatches an SMS OTP);
+ *       2. collect the OTP received by SMS → `cmd/confirm` → the act is signed.
  *
  *   • **Cartão de Cidadão (CC)** — a SYNCHRONOUS single call (t58), desktop-only. «Assinar com
  *     Cartão de Cidadão» → an honest prompt (insert the card; the PIN is entered AT THE READER
  *     via the Autenticação.gov middleware, never here) → `cc/sign` blocks while the card signs →
  *     the act is signed. CC only works when the API is co-located with the reader (the desktop
  *     app); a remote/browser server refuses with **409**, which we surface as an honest note.
- *     A provider failure (no card / wrong PIN / card not activated / no reader) is an honest
- *     **422** whose PT message is surfaced verbatim.
  *
- * States are honest end-to-end (unsigned → pending/aguarda-OTP → signed): a 410 expired CMD
- * session restarts cleanly, a rejected OTP surfaces a clear retry. The CMD PIN/OTP are TRANSIENT —
- * held only in this component's form state for the duration of the request that consumes them,
- * cleared the instant they are sent, and never stored client-side. The CC PIN never enters the
- * web app at all (it is entered at the reader). Both produce a qualified electronic signature; the
- * copy labels it accurately per method (never "valor probatório").
+ *   • **A configured CSC QTSP** (Multicert / DigitalSign / … by label, t59) — the SAME two-phase
+ *     activation flow as CMD, driven through the GENERIC endpoints
+ *     `remote/{provider}/initiate|confirm` (provider = the chosen id): collect the user reference
+ *     + credential → `initiate` (the QTSP dispatches an OTP/SAD) → enter the activation code →
+ *     `confirm` → the act is signed. Only **configured** QTSPs are offered; an unconfigured one is
+ *     shown disabled with an honest «não configurado» note.
+ *
+ * The picker is fed by `GET /v1/signature/providers`; CMD and CC are always offered (each has a
+ * dedicated flow that does not depend on the list), and every configured CSC QTSP is appended. The
+ * settings `preferred_family` marks the recommended method. When the list is unavailable (an older
+ * server, or a principal without `signing.perform`) the panel simply offers CMD + CC.
+ *
+ * States are honest end-to-end (unsigned → pending/aguarda-OTP → signed): a 410 expired session
+ * restarts cleanly, a rejected OTP surfaces a clear retry. The two-phase credential/OTP (CMD) and
+ * user-reference/credential/activation (CSC) are TRANSIENT — held only in this component's form
+ * state for the duration of the request that consumes them, cleared the instant they are sent, and
+ * never stored client-side. The CC PIN never enters the web app at all (it is entered at the
+ * reader). All produce a qualified electronic signature; the copy labels it accurately per method
+ * (never "valor probatório").
  *
  * Read errors render inline; the mutations follow the toast idiom (success + error) per
- * CONVENTIONS §2/§3. The CC action is gated with `useCan('signing.perform', <act's book scope>)`
- * (disable-with-explanation); the server re-enforces the permission regardless.
+ * CONVENTIONS §2/§3. The sign actions are gated with `useCan('signing.perform', <act's book
+ * scope>)` (disable-with-explanation); the server re-enforces the permission regardless.
  */
 import { useEffect, useState } from 'react';
-import type { ActView, SignatureFamily } from '../../api/types';
+import { useQueryClient } from '@tanstack/react-query';
+import type { ActView, Settings, SignatureFamily } from '../../api/types';
 import { ApiError } from '../../api/client';
 import { signatureFamilyLabels } from '../../api/labels';
 import {
+  keys,
   useActSignature,
   useCcSignSignature,
   useCmdConfirmSignature,
   useCmdInitiateSignature,
   useDownloadSignedDocument,
+  useRemoteConfirmSignature,
+  useRemoteInitiateSignature,
+  useSignatureProviders,
 } from '../../api/hooks';
 import { GateButton, scopeBook } from '../session/permissions';
 import { useLocale, useT } from '../../i18n';
@@ -57,6 +73,10 @@ import {
 
 /** The serialized signing family a Cartão de Cidadão signature reports (t58-e2). */
 const FAMILY_CC = 'CartaoDeCidadao';
+/** The serialized signing family a CSC QTSP signature reports (t59-S3). */
+const FAMILY_CSC = 'QualifiedCertificate';
+/** The built-in Chave Móvel Digital provider id (its `{provider}` path segment). */
+const CMD_PROVIDER_ID = 'cmd';
 
 /** Slugify an entity/title fragment for a filesystem-friendly download name. */
 function slug(value: string): string {
@@ -93,13 +113,22 @@ function useDateTime(): (iso: string) => string {
 }
 
 /**
- * The active step of the local flow (server-authoritative status backs the rest). CMD is
- * two-phase (`credentials` → `otp`); CC is a single synchronous prompt (`cc`).
+ * The chosen two-phase provider: `cmd` drives the dedicated `/signature/cmd/*` path; `csc`
+ * drives the generic `/signature/remote/{id}/*` path. `label` names it in the prompts.
+ */
+type SigningProvider = { id: string; kind: 'cmd' | 'csc'; label: string };
+
+/** The built-in CMD provider descriptor (its labels are fixed; `label` is unused for CMD). */
+const CMD_PROVIDER: SigningProvider = { id: CMD_PROVIDER_ID, kind: 'cmd', label: 'CMD' };
+
+/**
+ * The active step of the local flow (server-authoritative status backs the rest). CMD and CSC
+ * are two-phase (`credentials` → `otp`); CC is a single synchronous prompt (`cc`).
  */
 type Step =
   | { kind: 'view' }
-  | { kind: 'credentials' }
-  | { kind: 'otp'; sessionId: string; maskedPhone: string }
+  | { kind: 'credentials'; provider: SigningProvider }
+  | { kind: 'otp'; provider: SigningProvider; sessionId: string; hint: string }
   | { kind: 'cc' };
 
 export function SigningPanel({ act, entityName }: { act: ActView; entityName?: string }) {
@@ -109,85 +138,125 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
 
   const sealed = act.state === 'Sealed' || act.state === 'Archived';
   const status = useActSignature(act.id, sealed);
+  const providers = useSignatureProviders(sealed);
+  // The preferred signing family (for the «Recomendada» hint) is read from the already-loaded
+  // settings cache — never a fresh fetch here, so a non-sealed act triggers no request at all.
+  const qc = useQueryClient();
   const initiate = useCmdInitiateSignature(act.id);
   const confirm = useCmdConfirmSignature(act.id);
+  const remoteInitiate = useRemoteInitiateSignature(act.id);
+  const remoteConfirm = useRemoteConfirmSignature(act.id);
   const ccSign = useCcSignSignature(act.id);
   const download = useDownloadSignedDocument(act.id);
-  // The CC action is gated at the act's book scope (disable-with-explanation, t64-E5).
+  // The sign actions are gated at the act's book scope (disable-with-explanation, t64-E5).
   const bookScope = scopeBook(act.book_id);
 
   const [step, setStep] = useState<Step>({ kind: 'view' });
-  // PIN + OTP are transient: they live here only while the form is filled and are cleared the
-  // instant they are sent. Nothing persists them (no localStorage, no query cache, no logging).
-  const [phone, setPhone] = useState('');
-  const [pin, setPin] = useState('');
-  const [otp, setOtp] = useState('');
+  // The two-phase secrets are transient: they live here only while the form is filled and are
+  // cleared the instant they are sent. `identifier` is the CMD phone / CSC user_ref; `secret` the
+  // CMD PIN / CSC credential; `activation` the CMD OTP / CSC OTP-SAD. Nothing persists them (no
+  // localStorage, no query cache, no logging).
+  const [identifier, setIdentifier] = useState('');
+  const [secret, setSecret] = useState('');
+  const [activation, setActivation] = useState('');
   const [expired, setExpired] = useState(false);
   // Set once a CC sign attempt 409s: the API is not co-located with a card reader (browser /
   // remote server). We then swap the CC affordance for an honest note rather than fake it.
   const [ccBlocked, setCcBlocked] = useState(false);
 
   const data = status.data;
+  // Only CSC QTSPs come from the picker list — CMD + CC always have their own always-available
+  // entry actions and do not depend on the list resolving (older server / no `signing.perform`).
+  const cscProviders = (providers.data ?? []).filter((p) => p.id !== CMD_PROVIDER_ID);
+  const preferred = qc.getQueryData<Settings>(keys.settings)?.signing.preferred_family;
+
+  /** Whether the settings `preferred_family` recommends a given entry method. */
+  function isRecommended(target: 'cmd' | 'cc' | 'csc'): boolean {
+    if (preferred === 'ChaveMovelDigital') return target === 'cmd';
+    if (preferred === 'CartaoCidadao') return target === 'cc';
+    if (preferred === 'OtherQualified') return target === 'csc';
+    return false;
+  }
 
   // Adopt a server-known pending session (e.g. after a reload mid-flow) into the OTP step, but
-  // only from the neutral «view» step so a deliberate restart is never snapped back.
+  // only from the neutral «view» step so a deliberate restart is never snapped back. The status
+  // view does not carry the provider, so an adopted session is driven as CMD (its dedicated path).
   useEffect(() => {
     if (step.kind === 'view' && data?.status === 'pending' && data.pending) {
       setStep({
         kind: 'otp',
+        provider: CMD_PROVIDER,
         sessionId: data.pending.session_id,
-        maskedPhone: data.pending.masked_phone,
+        hint: data.pending.masked_phone,
       });
     }
   }, [data, step.kind]);
 
   if (!sealed) return null;
 
-  function onInitiate(e: React.FormEvent) {
+  /** Enter phase 1 for a chosen provider. */
+  function onPick(provider: SigningProvider) {
+    setExpired(false);
+    setIdentifier('');
+    setSecret('');
+    setActivation('');
+    setStep({ kind: 'credentials', provider });
+  }
+
+  function onInitiate(e: React.FormEvent, provider: SigningProvider) {
     e.preventDefault();
     setExpired(false);
-    initiate.mutate(
-      { phone: phone.trim(), pin },
-      {
-        onSuccess: (res) => {
-          setPin(''); // secret consumed — drop it immediately
-          setOtp('');
-          setStep({ kind: 'otp', sessionId: res.session_id, maskedPhone: res.masked_phone });
-          toast.success(t('toast.signing.otpSent'));
+    const onSuccess = (sessionId: string, hint: string) => {
+      setSecret(''); // credential consumed — drop it immediately
+      setActivation('');
+      setStep({ kind: 'otp', provider, sessionId, hint });
+      toast.success(t('toast.signing.otpSent'));
+    };
+    if (provider.kind === 'cmd') {
+      initiate.mutate(
+        { phone: identifier.trim(), pin: secret },
+        {
+          onSuccess: (res) => onSuccess(res.session_id, res.masked_phone),
+          onError: (err) => toast.error(err),
         },
-        onError: (err) => toast.error(err),
-      },
-    );
+      );
+    } else {
+      remoteInitiate.mutate(
+        { provider: provider.id, body: { user_ref: identifier.trim(), credential: secret } },
+        {
+          onSuccess: (res) => onSuccess(res.session_id, res.activation_hint),
+          onError: (err) => toast.error(err),
+        },
+      );
+    }
   }
 
-  function onConfirm(e: React.FormEvent, sessionId: string) {
+  function onConfirm(e: React.FormEvent, sessionId: string, provider: SigningProvider) {
     e.preventDefault();
-    confirm.mutate(
-      { session_id: sessionId, otp },
-      {
-        onSuccess: () => {
-          setOtp('');
-          setPhone('');
-          setStep({ kind: 'view' });
-          toast.success(t('toast.signing.signed'));
-        },
-        onError: (err) => {
-          toast.error(err);
-          // A 410 is an expired single-use session — restart cleanly at the credentials step.
-          if (err instanceof ApiError && err.status === 410) {
-            setOtp('');
-            setExpired(true);
-            setStep({ kind: 'credentials' });
-          }
-        },
-      },
-    );
-  }
-
-  function onRestart() {
-    setOtp('');
-    setPin('');
-    setStep({ kind: 'credentials' });
+    const onSuccess = () => {
+      setActivation('');
+      setIdentifier('');
+      setSecret('');
+      setStep({ kind: 'view' });
+      toast.success(t('toast.signing.signed'));
+    };
+    const onError = (err: unknown) => {
+      toast.error(err);
+      // A 410 is an expired single-use session — restart cleanly at the credentials step.
+      if (err instanceof ApiError && err.status === 410) {
+        setActivation('');
+        setExpired(true);
+        setStep({ kind: 'credentials', provider });
+      }
+    };
+    if (provider.kind === 'cmd') {
+      confirm.mutate({ session_id: sessionId, otp: activation }, { onSuccess, onError });
+    } else {
+      remoteConfirm.mutate(
+        { provider: provider.id, body: { session_id: sessionId, activation } },
+        { onSuccess, onError },
+      );
+    }
   }
 
   function onCcSign() {
@@ -231,6 +300,13 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
     return signatureFamilyLabels[family as SignatureFamily] ?? family;
   }
 
+  /** The honest, method-accurate qualified-signature label for a signed record. */
+  function qualifiedLabel(family: string): string {
+    if (family === FAMILY_CC) return t('signing.signed.qualifiedLabelCc');
+    if (family === FAMILY_CSC) return t('signing.signed.qualifiedLabelCsc');
+    return t('signing.signed.qualifiedLabel');
+  }
+
   return (
     <Card title={t('signing.title')}>
       {status.isLoading ? (
@@ -241,9 +317,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         // --- SIGNED: the qualified-signature record + the signed-PDF download ----------------
         <div className="stack--tight">
           <InlineWarning tone="info" title={t('signing.signed.title')}>
-            {data.signed.family === FAMILY_CC
-              ? t('signing.signed.qualifiedLabelCc')
-              : t('signing.signed.qualifiedLabel')}
+            {qualifiedLabel(data.signed.family)}
           </InlineWarning>
           <dl className="deflist">
             <div>
@@ -294,82 +368,138 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
           </Button>
         </div>
       ) : step.kind === 'credentials' ? (
-        // --- PHASE 1: collect the mobile number + signature PIN ------------------------------
-        <form className="form" onSubmit={onInitiate}>
-          {expired ? (
-            <InlineWarning tone="warn" title={t('signing.expired')}>
-              {t('signing.credentials.intro')}
-            </InlineWarning>
-          ) : (
-            <p className="field__hint">{t('signing.credentials.intro')}</p>
-          )}
-          <Field label={t('signing.phone.label')} htmlFor="sign-phone">
-            <Input
-              id="sign-phone"
-              type="tel"
-              autoComplete="off"
-              value={phone}
-              placeholder={t('signing.phone.placeholder')}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </Field>
-          <Field label={t('signing.pin.label')} htmlFor="sign-pin" hint={t('signing.pin.hint')}>
-            <Input
-              id="sign-pin"
-              type="password"
-              inputMode="numeric"
-              autoComplete="off"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-            />
-          </Field>
-          {initiate.error ? <ErrorNote error={initiate.error} /> : null}
-          <div className="form__actions">
-            <Button
-              type="submit"
-              variant="primary"
-              icon={<Icon.PenNib />}
-              disabled={initiate.isPending || !phone.trim() || pin.length === 0}
-            >
-              {initiate.isPending ? t('signing.initiate.pending') : t('signing.initiate')}
-            </Button>
-          </div>
-        </form>
+        // --- PHASE 1: collect the identifier + credential (CMD phone/PIN; CSC user_ref/credential)
+        (() => {
+          const p = step.provider;
+          const isCmd = p.kind === 'cmd';
+          const initiating = isCmd ? initiate.isPending : remoteInitiate.isPending;
+          const initiateError = isCmd ? initiate.error : remoteInitiate.error;
+          return (
+            <form className="form" onSubmit={(e) => onInitiate(e, p)}>
+              {expired ? (
+                <InlineWarning tone="warn" title={t('signing.expired')}>
+                  {isCmd ? t('signing.credentials.intro') : t('signing.csc.credentials.intro')}
+                </InlineWarning>
+              ) : (
+                <p className="field__hint">
+                  {isCmd ? t('signing.credentials.intro') : t('signing.csc.credentials.intro')}
+                </p>
+              )}
+              <Field
+                label={isCmd ? t('signing.phone.label') : t('signing.csc.userRef.label')}
+                htmlFor="sign-identifier"
+                hint={isCmd ? undefined : t('signing.csc.userRef.hint')}
+              >
+                <Input
+                  id="sign-identifier"
+                  type={isCmd ? 'tel' : 'text'}
+                  autoComplete="off"
+                  value={identifier}
+                  placeholder={isCmd ? t('signing.phone.placeholder') : undefined}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                />
+              </Field>
+              <Field
+                label={isCmd ? t('signing.pin.label') : t('signing.csc.credential.label')}
+                htmlFor="sign-secret"
+                hint={isCmd ? t('signing.pin.hint') : t('signing.csc.credential.hint')}
+              >
+                <Input
+                  id="sign-secret"
+                  type="password"
+                  inputMode={isCmd ? 'numeric' : 'text'}
+                  autoComplete="off"
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                />
+              </Field>
+              {initiateError ? <ErrorNote error={initiateError} /> : null}
+              <div className="rowline">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  icon={<Icon.PenNib />}
+                  disabled={initiating || !identifier.trim() || (isCmd && secret.length === 0)}
+                >
+                  {isCmd
+                    ? initiating
+                      ? t('signing.initiate.pending')
+                      : t('signing.initiate')
+                    : initiating
+                      ? t('signing.csc.initiate.pending')
+                      : t('signing.csc.initiate')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.Refresh />}
+                  disabled={initiating}
+                  onClick={() => setStep({ kind: 'view' })}
+                >
+                  {t('signing.cc.cancel')}
+                </Button>
+              </div>
+            </form>
+          );
+        })()
       ) : step.kind === 'otp' ? (
-        // --- PHASE 2: collect the SMS OTP and confirm ----------------------------------------
-        <form className="form" onSubmit={(e) => onConfirm(e, step.sessionId)}>
-          <p className="field__hint">{t('signing.otp.sent', { phone: step.maskedPhone })}</p>
-          <Field label={t('signing.otp.label')} htmlFor="sign-otp" hint={t('signing.otp.hint')}>
-            <Input
-              id="sign-otp"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={otp}
-              placeholder={t('signing.otp.placeholder')}
-              onChange={(e) => setOtp(e.target.value)}
-            />
-          </Field>
-          {confirm.error ? <ErrorNote error={confirm.error} /> : null}
-          <div className="rowline">
-            <Button
-              type="submit"
-              variant="primary"
-              icon={<Icon.Check />}
-              disabled={confirm.isPending || otp.trim().length === 0}
-            >
-              {confirm.isPending ? t('signing.confirm.pending') : t('signing.confirm')}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              icon={<Icon.Refresh />}
-              disabled={confirm.isPending}
-              onClick={onRestart}
-            >
-              {t('signing.restart')}
-            </Button>
-          </div>
-        </form>
+        // --- PHASE 2: collect the activation code (SMS OTP for CMD; OTP/SAD for CSC) and confirm
+        (() => {
+          const p = step.provider;
+          const isCmd = p.kind === 'cmd';
+          const confirming = isCmd ? confirm.isPending : remoteConfirm.isPending;
+          const confirmError = isCmd ? confirm.error : remoteConfirm.error;
+          return (
+            <form className="form" onSubmit={(e) => onConfirm(e, step.sessionId, p)}>
+              {isCmd ? (
+                <p className="field__hint">{t('signing.otp.sent', { phone: step.hint })}</p>
+              ) : (
+                <>
+                  <p className="field__hint">{t('signing.csc.otp.sent')}</p>
+                  {step.hint ? <p className="field__hint">{step.hint}</p> : null}
+                </>
+              )}
+              <Field
+                label={isCmd ? t('signing.otp.label') : t('signing.csc.otp.label')}
+                htmlFor="sign-activation"
+                hint={isCmd ? t('signing.otp.hint') : t('signing.csc.otp.hint')}
+              >
+                <Input
+                  id="sign-activation"
+                  inputMode={isCmd ? 'numeric' : 'text'}
+                  autoComplete="one-time-code"
+                  value={activation}
+                  placeholder={isCmd ? t('signing.otp.placeholder') : undefined}
+                  onChange={(e) => setActivation(e.target.value)}
+                />
+              </Field>
+              {confirmError ? <ErrorNote error={confirmError} /> : null}
+              <div className="rowline">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  icon={<Icon.Check />}
+                  disabled={confirming || activation.trim().length === 0}
+                >
+                  {confirming ? t('signing.confirm.pending') : t('signing.confirm')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.Refresh />}
+                  disabled={confirming}
+                  onClick={() => {
+                    setActivation('');
+                    setSecret('');
+                    setStep({ kind: 'credentials', provider: p });
+                  }}
+                >
+                  {t('signing.restart')}
+                </Button>
+              </div>
+            </form>
+          );
+        })()
       ) : step.kind === 'cc' ? (
         // --- CC: the honest synchronous prompt (PIN is entered at the reader) -----------------
         <div className="stack--tight">
@@ -399,7 +529,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
           </div>
         </div>
       ) : (
-        // --- UNSIGNED: the honest state + the entry actions (CMD + CC) ------------------------
+        // --- UNSIGNED: the honest state + the provider picker (CMD + CC + configured CSC QTSPs) -
         <div className="stack--tight">
           <InlineWarning
             tone={data?.require_qualified_for_seal ? 'warn' : 'info'}
@@ -409,26 +539,74 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               ? t('signing.required.body')
               : t('signing.unsigned.body')}
           </InlineWarning>
-          <div className="rowline">
-            <Button
-              type="button"
-              variant="primary"
-              icon={<Icon.PenNib />}
-              onClick={() => setStep({ kind: 'credentials' })}
-            >
-              {t('signing.start')}
-            </Button>
-            {ccBlocked ? null : (
+          <div className="stack--tight">
+            {/* Chave Móvel Digital — always offered (its dedicated two-phase path). */}
+            <div className="rowline">
               <GateButton
                 perm="signing.perform"
                 scope={bookScope}
                 type="button"
-                variant="secondary"
-                icon={<Icon.IdCard />}
-                onClick={() => setStep({ kind: 'cc' })}
+                variant="primary"
+                icon={<Icon.PenNib />}
+                onClick={() => onPick(CMD_PROVIDER)}
               >
-                {t('signing.cc.start')}
+                {t('signing.start')}
               </GateButton>
+              {isRecommended('cmd') ? (
+                <Badge tone="accent">{t('signing.recommended')}</Badge>
+              ) : null}
+            </div>
+            {/* Cartão de Cidadão — always offered unless a 409 proved this server is not co-located. */}
+            {ccBlocked ? null : (
+              <div className="rowline">
+                <GateButton
+                  perm="signing.perform"
+                  scope={bookScope}
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.IdCard />}
+                  onClick={() => setStep({ kind: 'cc' })}
+                >
+                  {t('signing.cc.start')}
+                </GateButton>
+                {isRecommended('cc') ? (
+                  <Badge tone="accent">{t('signing.recommended')}</Badge>
+                ) : null}
+              </div>
+            )}
+            {/* Every configured CSC QTSP (Multicert / DigitalSign / …) — the generic two-phase path.
+                An unconfigured provider is shown disabled with an honest «não configurado» note. */}
+            {cscProviders.map((provider) =>
+              provider.configured ? (
+                <div className="rowline" key={provider.id}>
+                  <GateButton
+                    perm="signing.perform"
+                    scope={bookScope}
+                    type="button"
+                    variant="secondary"
+                    icon={<Icon.PenNib />}
+                    onClick={() => onPick({ id: provider.id, kind: 'csc', label: provider.label })}
+                  >
+                    {t('signing.csc.start', { provider: provider.label })}
+                  </GateButton>
+                  {isRecommended('csc') ? (
+                    <Badge tone="accent">{t('signing.recommended')}</Badge>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rowline" key={provider.id}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    icon={<Icon.PenNib />}
+                    aria-disabled="true"
+                    disabled
+                  >
+                    {t('signing.csc.start', { provider: provider.label })}
+                  </Button>
+                  <span className="field__hint">{t('signing.csc.notConfigured')}</span>
+                </div>
+              ),
             )}
           </div>
           {ccBlocked ? (

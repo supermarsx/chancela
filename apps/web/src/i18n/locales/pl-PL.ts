@@ -773,6 +773,7 @@ export const plPL: Catalog = {
   'enum.signatureFamily.CartaoDeCidadao': 'Karta obywatela',
   'enum.signatureFamily.ChaveMovelDigital': 'Cyfrowy klucz mobilny',
   'enum.signatureFamily.OtherQualified': 'Inny certyfikat kwalifikowany',
+  'enum.signatureFamily.QualifiedCertificate': 'Certyfikat kwalifikowany (dostawca)',
   'enum.signatureFamily.Manual': 'Podpis odręczny',
   // Theme modes
   'enum.themeMode.system': 'Zgodnie z systemem',
@@ -1130,6 +1131,23 @@ export const plPL: Catalog = {
   'signing.cc.coLocation.title': 'Dostępne tylko w aplikacji komputerowej',
   'signing.cc.coLocation.body':
     'Podpis Kartą obywatela jest dostępny tylko w aplikacji komputerowej, do której podłączony jest czytnik kart.',
+  'signing.signed.qualifiedLabelCsc':
+    'Kwalifikowany podpis elektroniczny (certyfikat kwalifikowany dostawcy usług zaufania).',
+  'signing.recommended': 'Zalecane',
+  'signing.csc.start': 'Podpisz przez {provider}',
+  'signing.csc.notConfigured': 'nie skonfigurowano',
+  'signing.csc.credentials.intro':
+    'Wprowadź swoje odniesienie użytkownika u dostawcy oraz odpowiadające mu poświadczenie podpisu. Poświadczenie jest używane wyłącznie do tego żądania i nigdy nie jest przechowywane.',
+  'signing.csc.userRef.label': 'Odniesienie użytkownika',
+  'signing.csc.userRef.hint': 'Identyfikator Twojego konta lub poświadczenia u dostawcy.',
+  'signing.csc.credential.label': 'Poświadczenie podpisu',
+  'signing.csc.credential.hint': 'Używane wyłącznie do tego żądania; nigdy nie przechowywane.',
+  'signing.csc.initiate': 'Rozpocznij podpisywanie',
+  'signing.csc.initiate.pending': 'Rozpoczynanie…',
+  'signing.csc.otp.sent': 'Wprowadź kod autoryzacji dostawcy, aby zakończyć podpisywanie.',
+  'signing.csc.otp.label': 'Kod autoryzacji',
+  'signing.csc.otp.hint':
+    'Używany wyłącznie do potwierdzenia tego podpisu; nigdy nie przechowywany.',
   'toast.signing.otpSent': 'Kod SMS wysłany.',
   'toast.signing.signed': 'Protokół podpisany.',
   'toast.signing.downloaded': 'Podpisany PDF pobrany.',

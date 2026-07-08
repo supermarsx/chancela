@@ -777,6 +777,7 @@ export const esES: Catalog = {
   'enum.signatureFamily.CartaoDeCidadao': 'Tarjeta de Ciudadano',
   'enum.signatureFamily.ChaveMovelDigital': 'Clave Móvil Digital',
   'enum.signatureFamily.OtherQualified': 'Otro certificado cualificado',
+  'enum.signatureFamily.QualifiedCertificate': 'Certificado cualificado (prestador)',
   'enum.signatureFamily.Manual': 'Firma manual',
   // Modos de tema
   'enum.themeMode.system': 'Según el sistema',
@@ -1136,6 +1137,23 @@ export const esES: Catalog = {
   'signing.cc.coLocation.title': 'Disponible solo en la aplicación de escritorio',
   'signing.cc.coLocation.body':
     'La firma con Tarjeta de Ciudadano solo está disponible en la aplicación de escritorio, donde el lector de tarjetas está conectado a este ordenador.',
+  'signing.signed.qualifiedLabelCsc':
+    'Firma electrónica cualificada (certificado cualificado de un prestador de servicios de confianza).',
+  'signing.recommended': 'Recomendada',
+  'signing.csc.start': 'Firmar con {provider}',
+  'signing.csc.notConfigured': 'no configurado',
+  'signing.csc.credentials.intro':
+    'Introduzca su referencia de usuario en el prestador y su credencial de firma. La credencial se utiliza solo para esta solicitud y nunca se guarda.',
+  'signing.csc.userRef.label': 'Referencia del usuario',
+  'signing.csc.userRef.hint': 'El identificador de su cuenta o credencial en el prestador.',
+  'signing.csc.credential.label': 'Credencial de firma',
+  'signing.csc.credential.hint': 'Se utiliza solo para esta solicitud; nunca se guarda.',
+  'signing.csc.initiate': 'Iniciar la firma',
+  'signing.csc.initiate.pending': 'Iniciando…',
+  'signing.csc.otp.sent':
+    'Introduzca el código de autorización del prestador para completar la firma.',
+  'signing.csc.otp.label': 'Código de autorización',
+  'signing.csc.otp.hint': 'Se utiliza solo para confirmar esta firma; nunca se guarda.',
   'toast.signing.otpSent': 'Código SMS enviado.',
   'toast.signing.signed': 'Acta firmada.',
   'toast.signing.downloaded': 'PDF firmado descargado.',

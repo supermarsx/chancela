@@ -1320,6 +1320,71 @@ export interface CcSignBody {
 /** The CC sign response — the produced qualified signature's metadata (same shape as CMD). */
 export type CcSignResult = CmdConfirmResult;
 
+// --- Generic remote qualified signing (§ t59) -----------------------------------
+//
+// The provider-agnostic two-phase remote-signing surface (frozen `chancela-api::signature`
+// generic DTOs, t59-S3). It unifies Chave Móvel Digital and every configured CSC QTSP behind
+// ONE seam: `GET /v1/signature/providers` enumerates the offered providers, and
+// `POST /v1/acts/{id}/signature/remote/{provider}/initiate|confirm` drives the same two-phase
+// activation flow as CMD. CMD keeps its dedicated `/signature/cmd/*` path (t57); CSC providers
+// use this generic path. The credential (PIN) and the activation (OTP/SAD) are transient
+// secrets carried ONLY in the request body — never persisted or echoed back on any type here.
+
+/**
+ * One row of `GET /v1/signature/providers` — a non-secret picker entry (t59). `id` is the
+ * `{provider}` path segment (`"cmd"`, `"multicert"`, …); `family` is `ChaveMovelDigital` for
+ * CMD or `QualifiedCertificate` for a CSC QTSP; `configured` reports whether the provider's
+ * credentials resolve (never the secret itself) — an unconfigured provider is offered disabled.
+ */
+export interface SignatureProviderView {
+  id: string;
+  family: string;
+  label: string;
+  evidentiary_level: string;
+  configured: boolean;
+}
+
+/**
+ * `POST /v1/acts/{id}/signature/remote/{provider}/initiate` — phase 1. `user_ref` is the
+ * signer's non-secret account reference at the provider (the citizen mobile for CMD, the
+ * user/credential reference for a CSC QTSP); `credential` is the transient PIN (sent once,
+ * never stored; may be empty for an out-of-band user-authorized provider).
+ */
+export interface RemoteInitiateBody {
+  user_ref: string;
+  credential?: string;
+  capacity?: string;
+  actor?: string;
+}
+
+/** The generic initiate response — no secret. `activation_hint` is a non-secret UI hint (a
+ *  masked phone for CMD, or how to authorize for a CSC provider). */
+export interface RemoteInitiateResult {
+  session_id: string;
+  provider_id: string;
+  family: string;
+  evidentiary_level: string;
+  status: string;
+  activation_hint: string;
+  expires_at: string;
+}
+
+/**
+ * `POST /v1/acts/{id}/signature/remote/{provider}/confirm` — phase 2. `activation` is the
+ * transient possession factor (the SMS OTP for CMD; the OTP/SAD for a CSC QTSP): sent once,
+ * never stored client-side beyond this request.
+ */
+export interface RemoteConfirmBody {
+  session_id: string;
+  activation: string;
+  actor?: string;
+}
+
+/** The generic confirm response — the CMD confirm shape plus the resolved `provider_id`. */
+export interface RemoteConfirmResult extends CmdConfirmResult {
+  provider_id: string;
+}
+
 export interface AppearanceSettings {
   theme: ThemeMode;
   leather_texture: boolean;

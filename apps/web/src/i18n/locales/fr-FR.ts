@@ -778,6 +778,7 @@ export const frFR: Catalog = {
   'enum.signatureFamily.CartaoDeCidadao': 'Carte de Citoyen',
   'enum.signatureFamily.ChaveMovelDigital': 'Clé Mobile Numérique',
   'enum.signatureFamily.OtherQualified': 'Autre certificat qualifié',
+  'enum.signatureFamily.QualifiedCertificate': 'Certificat qualifié (prestataire)',
   'enum.signatureFamily.Manual': 'Signature manuelle',
   // Theme modes
   'enum.themeMode.system': 'Selon le système',
@@ -1137,6 +1138,24 @@ export const frFR: Catalog = {
   'signing.cc.coLocation.title': 'Disponible uniquement dans l’application de bureau',
   'signing.cc.coLocation.body':
     'La signature avec la Carte de Citoyen n’est disponible que dans l’application de bureau, à laquelle le lecteur de cartes est connecté.',
+  'signing.signed.qualifiedLabelCsc':
+    "Signature électronique qualifiée (certificat qualifié d'un prestataire de services de confiance).",
+  'signing.recommended': 'Recommandée',
+  'signing.csc.start': 'Signer avec {provider}',
+  'signing.csc.notConfigured': 'non configuré',
+  'signing.csc.credentials.intro':
+    "Saisissez votre référence utilisateur auprès du prestataire et son identifiant de signature. L'identifiant n'est utilisé que pour cette demande et n'est jamais conservé.",
+  'signing.csc.userRef.label': 'Référence utilisateur',
+  'signing.csc.userRef.hint':
+    "L'identifiant de votre compte ou de vos identifiants auprès du prestataire.",
+  'signing.csc.credential.label': 'Identifiant de signature',
+  'signing.csc.credential.hint': 'Utilisé uniquement pour cette demande ; jamais conservé.',
+  'signing.csc.initiate': 'Démarrer la signature',
+  'signing.csc.initiate.pending': 'Démarrage…',
+  'signing.csc.otp.sent':
+    "Saisissez le code d'autorisation du prestataire pour finaliser la signature.",
+  'signing.csc.otp.label': "Code d'autorisation",
+  'signing.csc.otp.hint': 'Utilisé uniquement pour confirmer cette signature ; jamais conservé.',
   'toast.signing.otpSent': 'Code SMS envoyé.',
   'toast.signing.signed': 'Procès-verbal signé.',
   'toast.signing.downloaded': 'PDF signé téléchargé.',

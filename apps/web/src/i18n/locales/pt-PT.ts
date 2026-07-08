@@ -778,6 +778,7 @@ export const ptPT = {
   'enum.signatureFamily.CartaoDeCidadao': 'Cartão de Cidadão',
   'enum.signatureFamily.ChaveMovelDigital': 'Chave Móvel Digital',
   'enum.signatureFamily.OtherQualified': 'Outro certificado qualificado',
+  'enum.signatureFamily.QualifiedCertificate': 'Certificado qualificado (prestador)',
   'enum.signatureFamily.Manual': 'Assinatura manual',
   // Theme modes
   'enum.themeMode.system': 'Conforme o sistema',
@@ -1119,6 +1120,9 @@ export const ptPT = {
   'signing.signed.title': 'Ata assinada com assinatura eletrónica qualificada',
   'signing.signed.qualifiedLabel': 'Assinatura eletrónica qualificada (Chave Móvel Digital).',
   'signing.signed.qualifiedLabelCc': 'Assinatura eletrónica qualificada (Cartão de Cidadão).',
+  'signing.signed.qualifiedLabelCsc':
+    'Assinatura eletrónica qualificada (certificado qualificado de prestador de confiança).',
+  'signing.recommended': 'Recomendada',
   'signing.signed.signer': 'Signatário',
   'signing.signed.family': 'Família',
   'signing.signed.signingTime': 'Data e hora da assinatura',
@@ -1138,6 +1142,20 @@ export const ptPT = {
   'signing.cc.coLocation.title': 'Disponível apenas na aplicação de secretária',
   'signing.cc.coLocation.body':
     'A assinatura com Cartão de Cidadão só está disponível na aplicação de secretária, onde o leitor de cartões está ligado a este computador.',
+  'signing.csc.start': 'Assinar com {provider}',
+  'signing.csc.notConfigured': 'não configurado',
+  'signing.csc.credentials.intro':
+    'Introduza a referência do utilizador junto do prestador e a respetiva credencial de assinatura. A credencial é usada apenas para este pedido e nunca é guardada.',
+  'signing.csc.userRef.label': 'Referência do utilizador',
+  'signing.csc.userRef.hint': 'A identificação da sua conta ou credencial junto do prestador.',
+  'signing.csc.credential.label': 'Credencial de assinatura',
+  'signing.csc.credential.hint': 'Usada apenas para este pedido; nunca é guardada.',
+  'signing.csc.initiate': 'Iniciar assinatura',
+  'signing.csc.initiate.pending': 'A iniciar…',
+  'signing.csc.otp.sent':
+    'Introduza o código de autorização do prestador para concluir a assinatura.',
+  'signing.csc.otp.label': 'Código de autorização',
+  'signing.csc.otp.hint': 'Usado apenas para confirmar esta assinatura; nunca é guardado.',
   'toast.signing.otpSent': 'Código SMS enviado.',
   'toast.signing.signed': 'Ata assinada.',
   'toast.signing.downloaded': 'PDF assinado descarregado.',

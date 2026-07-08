@@ -781,6 +781,7 @@ export const deDE: Catalog = {
   'enum.signatureFamily.CartaoDeCidadao': 'Bürgerkarte',
   'enum.signatureFamily.ChaveMovelDigital': 'Digitaler Mobilschlüssel',
   'enum.signatureFamily.OtherQualified': 'Anderes qualifiziertes Zertifikat',
+  'enum.signatureFamily.QualifiedCertificate': 'Qualifiziertes Zertifikat (Anbieter)',
   'enum.signatureFamily.Manual': 'Manuelle Unterschrift',
   // Theme modes
   'enum.themeMode.system': 'Wie das System',
@@ -1146,6 +1147,23 @@ export const deDE: Catalog = {
   'signing.cc.coLocation.title': 'Nur in der Desktop-Anwendung verfügbar',
   'signing.cc.coLocation.body':
     'Die Signatur mit der Bürgerkarte ist nur in der Desktop-Anwendung verfügbar, an die das Kartenlesegerät angeschlossen ist.',
+  'signing.signed.qualifiedLabelCsc':
+    'Qualifizierte elektronische Signatur (qualifiziertes Zertifikat eines Vertrauensdiensteanbieters).',
+  'signing.recommended': 'Empfohlen',
+  'signing.csc.start': 'Mit {provider} signieren',
+  'signing.csc.notConfigured': 'nicht konfiguriert',
+  'signing.csc.credentials.intro':
+    'Geben Sie Ihre Benutzerkennung beim Anbieter und die zugehörige Signaturberechtigung ein. Die Berechtigung wird nur für diese Anfrage verwendet und niemals gespeichert.',
+  'signing.csc.userRef.label': 'Benutzerkennung',
+  'signing.csc.userRef.hint': 'Ihre Konto- oder Anmeldekennung beim Anbieter.',
+  'signing.csc.credential.label': 'Signaturberechtigung',
+  'signing.csc.credential.hint': 'Nur für diese Anfrage verwendet; niemals gespeichert.',
+  'signing.csc.initiate': 'Signatur starten',
+  'signing.csc.initiate.pending': 'Wird gestartet…',
+  'signing.csc.otp.sent':
+    'Geben Sie den Autorisierungscode des Anbieters ein, um die Signatur abzuschließen.',
+  'signing.csc.otp.label': 'Autorisierungscode',
+  'signing.csc.otp.hint': 'Nur zur Bestätigung dieser Signatur verwendet; niemals gespeichert.',
   'toast.signing.otpSent': 'SMS-Code gesendet.',
   'toast.signing.signed': 'Protokoll signiert.',
   'toast.signing.downloaded': 'Signiertes PDF heruntergeladen.',

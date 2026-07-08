@@ -772,6 +772,7 @@ export const svSE: Catalog = {
   'enum.signatureFamily.CartaoDeCidadao': 'Medborgarkort',
   'enum.signatureFamily.ChaveMovelDigital': 'Digital mobilnyckel',
   'enum.signatureFamily.OtherQualified': 'Annat kvalificerat certifikat',
+  'enum.signatureFamily.QualifiedCertificate': 'Kvalificerat certifikat (leverantör)',
   'enum.signatureFamily.Manual': 'Manuell underskrift',
   // Theme modes
   'enum.themeMode.system': 'Följ systemet',
@@ -1129,6 +1130,23 @@ export const svSE: Catalog = {
   'signing.cc.coLocation.title': 'Endast tillgänglig i skrivbordsappen',
   'signing.cc.coLocation.body':
     'Signering med Medborgarkort är endast tillgänglig i skrivbordsappen, som kortläsaren är ansluten till.',
+  'signing.signed.qualifiedLabelCsc':
+    'Kvalificerad elektronisk underskrift (kvalificerat certifikat från en betrodd tjänsteleverantör).',
+  'signing.recommended': 'Rekommenderas',
+  'signing.csc.start': 'Underteckna med {provider}',
+  'signing.csc.notConfigured': 'inte konfigurerad',
+  'signing.csc.credentials.intro':
+    'Ange din användarreferens hos leverantören och tillhörande signeringsuppgift. Uppgiften används endast för denna begäran och sparas aldrig.',
+  'signing.csc.userRef.label': 'Användarreferens',
+  'signing.csc.userRef.hint':
+    'Identifieringen av ditt konto eller dina uppgifter hos leverantören.',
+  'signing.csc.credential.label': 'Signeringsuppgift',
+  'signing.csc.credential.hint': 'Används endast för denna begäran; sparas aldrig.',
+  'signing.csc.initiate': 'Starta underskrift',
+  'signing.csc.initiate.pending': 'Startar…',
+  'signing.csc.otp.sent': 'Ange leverantörens auktoriseringskod för att slutföra underskriften.',
+  'signing.csc.otp.label': 'Auktoriseringskod',
+  'signing.csc.otp.hint': 'Används endast för att bekräfta denna underskrift; sparas aldrig.',
   'toast.signing.otpSent': 'SMS-kod skickad.',
   'toast.signing.signed': 'Protokoll signerat.',
   'toast.signing.downloaded': 'Signerad PDF nedladdad.',

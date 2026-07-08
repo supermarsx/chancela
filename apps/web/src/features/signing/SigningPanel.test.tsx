@@ -372,3 +372,144 @@ describe('SigningPanel — Cartão de Cidadão', () => {
     expect(screen.queryByRole('button', { name: 'Assinar com o cartão' })).toBeNull();
   });
 });
+
+// --- CSC QTSP providers (t59) — the provider picker + the generic two-phase flow --------
+
+const cscSignedStatus: SignatureStatusView = {
+  status: 'signed',
+  finalization: 'finalizado_qualificado',
+  require_qualified_for_seal: false,
+  signed: {
+    family: 'QualifiedCertificate',
+    evidentiary_level: 'Qualified',
+    trusted_list_status: 'Granted',
+    signer_cert_subject: 'CN=Amélia Marques,O=Encosto Estratégico Lda',
+    signing_time: '2026-07-06T10:00:00Z',
+    signed_at: '2026-07-06T10:00:05Z',
+    signed_pdf_digest: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
+    timestamp_token: false,
+    download: '/v1/acts/act-1/document/signed',
+  },
+};
+
+/** A provider-list row builder (matches `SignatureProviderView`). */
+function provider(id: string, label: string, family: string, configured: boolean) {
+  return { id, family, label, evidentiary_level: 'Qualified', configured };
+}
+
+describe('SigningPanel — CSC QTSP providers', () => {
+  it('lists a configured CSC QTSP and shows an unconfigured one disabled with an honest note', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature/providers')) {
+        return json([
+          provider('cmd', 'Chave Móvel Digital', 'ChaveMovelDigital', true),
+          provider('multicert', 'Multicert', 'QualifiedCertificate', true),
+          provider('digitalsign', 'DigitalSign', 'QualifiedCertificate', false),
+        ]);
+      }
+      if (url.endsWith('/signature')) return json(unsignedStatus);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    // CMD + CC are always offered; the configured QTSP is an enabled entry action.
+    await screen.findByRole('button', { name: 'Assinar com Chave Móvel Digital' });
+    const mc = await screen.findByRole('button', { name: 'Assinar com Multicert' });
+    expect(mc.getAttribute('aria-disabled')).not.toBe('true');
+    // The unconfigured QTSP is offered disabled with an honest «não configurado» note.
+    const ds = screen.getByRole('button', { name: 'Assinar com DigitalSign' });
+    expect((ds as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('não configurado')).toBeTruthy();
+  });
+
+  it('signs via a CSC QTSP through the generic two-phase flow to a signed record', async () => {
+    let signed = false;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) {
+        return json([provider('multicert', 'Multicert', 'QualifiedCertificate', true)]);
+      }
+      if (url.includes('/signature/remote/multicert/initiate')) {
+        return json({
+          session_id: 'sess-csc',
+          provider_id: 'multicert',
+          family: 'QualifiedCertificate',
+          evidentiary_level: 'Qualified',
+          status: 'activation_pending',
+          activation_hint: 'confirme com o código de ativação enviado',
+          expires_at: '2026-07-06T10:05:00Z',
+        });
+      }
+      if (url.includes('/signature/remote/multicert/confirm')) {
+        signed = true;
+        return json({
+          document_id: 'doc-1',
+          act_id: 'act-1',
+          provider_id: 'multicert',
+          family: 'QualifiedCertificate',
+          evidentiary_level: 'Qualified',
+          trusted_list_status: 'Granted',
+          signed_at: '2026-07-06T10:00:05Z',
+          signed_pdf_digest: cscSignedStatus.signed!.signed_pdf_digest,
+          timestamp_token: false,
+          finalization: 'finalizado_qualificado',
+        });
+      }
+      if (url.endsWith('/signature') && method === 'GET') {
+        return json(signed ? cscSignedStatus : unsignedStatus);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    // Choose the QTSP → phase 1 (user reference + credential; no CMD phone/PIN labels).
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar com Multicert' }));
+    const ref = (await screen.findByLabelText('Referência do utilizador')) as HTMLInputElement;
+    const cred = screen.getByLabelText('Credencial de assinatura') as HTMLInputElement;
+    expect(screen.queryByLabelText('PIN de assinatura da CMD')).toBeNull();
+    fireEvent.change(ref, { target: { value: 'amelia.marques' } });
+    fireEvent.change(cred, { target: { value: 'segredo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar assinatura' }));
+
+    // Phase 2: the activation code (the server's honest hint is echoed).
+    const code = (await screen.findByLabelText('Código de autorização')) as HTMLInputElement;
+    expect(screen.getByText('confirme com o código de ativação enviado')).toBeTruthy();
+    fireEvent.change(code, { target: { value: '445566' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar assinatura' }));
+
+    // Signed: the CSC-specific qualified label + the signed-PDF download.
+    expect(
+      await screen.findByText(
+        'Assinatura eletrónica qualificada (certificado qualificado de prestador de confiança).',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Descarregar PDF assinado' })).toBeTruthy();
+  });
+
+  it('gates a CSC QTSP action with signing.perform (disable-with-explanation)', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature/providers')) {
+        return json([provider('multicert', 'Multicert', 'QualifiedCertificate', true)]);
+      }
+      if (url.endsWith('/signature')) return json(unsignedStatus);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue((perm) => perm !== 'signing.perform')}>
+        <SigningPanel act={sealedAct} />
+      </StaticPermissionsProvider>,
+    );
+
+    const mc = await screen.findByRole('button', { name: 'Assinar com Multicert' });
+    expect(mc.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(mc);
+    // The gated control does not advance to the CSC credentials step.
+    expect(screen.queryByLabelText('Referência do utilizador')).toBeNull();
+  });
+});

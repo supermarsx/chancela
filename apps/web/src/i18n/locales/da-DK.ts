@@ -772,6 +772,7 @@ export const daDK: Catalog = {
   'enum.signatureFamily.CartaoDeCidadao': 'Borgerkort',
   'enum.signatureFamily.ChaveMovelDigital': 'Digital mobilnøgle',
   'enum.signatureFamily.OtherQualified': 'Andet kvalificeret certifikat',
+  'enum.signatureFamily.QualifiedCertificate': 'Kvalificeret certifikat (udbyder)',
   'enum.signatureFamily.Manual': 'Manuel underskrift',
   // Theme modes
   'enum.themeMode.system': 'Følg systemet',
@@ -1132,6 +1133,22 @@ export const daDK: Catalog = {
   'signing.cc.coLocation.title': 'Kun tilgængelig i skrivebordsprogrammet',
   'signing.cc.coLocation.body':
     'Signering med Borgerkort er kun tilgængelig i skrivebordsprogrammet, hvor kortlæseren er tilsluttet denne computer.',
+  'signing.signed.qualifiedLabelCsc':
+    'Kvalificeret elektronisk signatur (kvalificeret certifikat fra en tillidstjenesteudbyder).',
+  'signing.recommended': 'Anbefalet',
+  'signing.csc.start': 'Underskriv med {provider}',
+  'signing.csc.notConfigured': 'ikke konfigureret',
+  'signing.csc.credentials.intro':
+    'Indtast din brugerreference hos udbyderen og den tilhørende signaturlegitimation. Legitimationen bruges kun til denne anmodning og gemmes aldrig.',
+  'signing.csc.userRef.label': 'Brugerreference',
+  'signing.csc.userRef.hint': 'Identifikationen af din konto eller legitimation hos udbyderen.',
+  'signing.csc.credential.label': 'Signaturlegitimation',
+  'signing.csc.credential.hint': 'Bruges kun til denne anmodning; gemmes aldrig.',
+  'signing.csc.initiate': 'Start underskrift',
+  'signing.csc.initiate.pending': 'Starter…',
+  'signing.csc.otp.sent': 'Indtast udbyderens autorisationskode for at fuldføre underskriften.',
+  'signing.csc.otp.label': 'Autorisationskode',
+  'signing.csc.otp.hint': 'Bruges kun til at bekræfte denne underskrift; gemmes aldrig.',
   'toast.signing.otpSent': 'SMS-kode sendt.',
   'toast.signing.signed': 'Referat signeret.',
   'toast.signing.downloaded': 'Signeret PDF downloadet.',

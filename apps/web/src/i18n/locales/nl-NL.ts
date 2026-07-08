@@ -775,6 +775,7 @@ export const nlNL: Catalog = {
   'enum.signatureFamily.CartaoDeCidadao': 'Burgerkaart',
   'enum.signatureFamily.ChaveMovelDigital': 'Digitale Mobiele Sleutel',
   'enum.signatureFamily.OtherQualified': 'Ander gekwalificeerd certificaat',
+  'enum.signatureFamily.QualifiedCertificate': 'Gekwalificeerd certificaat (aanbieder)',
   'enum.signatureFamily.Manual': 'Handmatige ondertekening',
   // Theme modes
   'enum.themeMode.system': 'Volg het systeem',
@@ -1136,6 +1137,23 @@ export const nlNL: Catalog = {
   'signing.cc.coLocation.title': 'Alleen beschikbaar in de desktoptoepassing',
   'signing.cc.coLocation.body':
     'Ondertekenen met de Burgerkaart is alleen beschikbaar in de desktoptoepassing, waarop de kaartlezer is aangesloten.',
+  'signing.signed.qualifiedLabelCsc':
+    'Gekwalificeerde elektronische handtekening (gekwalificeerd certificaat van een vertrouwensdienstverlener).',
+  'signing.recommended': 'Aanbevolen',
+  'signing.csc.start': 'Ondertekenen met {provider}',
+  'signing.csc.notConfigured': 'niet geconfigureerd',
+  'signing.csc.credentials.intro':
+    'Voer uw gebruikersreferentie bij de aanbieder en de bijbehorende ondertekeningsreferentie in. De referentie wordt alleen voor dit verzoek gebruikt en nooit opgeslagen.',
+  'signing.csc.userRef.label': 'Gebruikersreferentie',
+  'signing.csc.userRef.hint': 'De identificatie van uw account of referentie bij de aanbieder.',
+  'signing.csc.credential.label': 'Ondertekeningsreferentie',
+  'signing.csc.credential.hint': 'Alleen voor dit verzoek gebruikt; nooit opgeslagen.',
+  'signing.csc.initiate': 'Ondertekening starten',
+  'signing.csc.initiate.pending': 'Starten…',
+  'signing.csc.otp.sent':
+    'Voer de autorisatiecode van de aanbieder in om de handtekening te voltooien.',
+  'signing.csc.otp.label': 'Autorisatiecode',
+  'signing.csc.otp.hint': 'Alleen gebruikt om deze handtekening te bevestigen; nooit opgeslagen.',
   'toast.signing.otpSent': 'Sms-code verzonden.',
   'toast.signing.signed': 'Notulen ondertekend.',
   'toast.signing.downloaded': 'Ondertekende PDF gedownload.',

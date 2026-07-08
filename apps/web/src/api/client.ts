@@ -49,6 +49,11 @@ import type {
   CmdConfirmResult,
   CcSignBody,
   CcSignResult,
+  SignatureProviderView,
+  RemoteInitiateBody,
+  RemoteInitiateResult,
+  RemoteConfirmBody,
+  RemoteConfirmResult,
   UpdateEntityBody,
   SessionResult,
   SessionRoster,
@@ -353,6 +358,23 @@ export const api = {
   ccSignSignature: (id: string, body: CcSignBody = {}) =>
     post<CcSignResult>(`/v1/acts/${id}/signature/cc/sign`, body),
   fetchSignedActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document/signed`),
+
+  // Generic remote qualified signing (§ t59) — the provider picker + the provider-agnostic
+  // two-phase flow. `listSignatureProviders` enumerates CMD + every configured CSC QTSP (gated
+  // `signing.perform`; a role without it → 403); the `remote/{provider}/initiate|confirm` pair
+  // drives a CSC QTSP through the SAME two-phase activation as CMD. The credential/activation
+  // ride only in the request body and are never persisted client-side.
+  listSignatureProviders: () => get<SignatureProviderView[]>('/v1/signature/providers'),
+  remoteInitiateSignature: (id: string, provider: string, body: RemoteInitiateBody) =>
+    post<RemoteInitiateResult>(
+      `/v1/acts/${id}/signature/remote/${encodeURIComponent(provider)}/initiate`,
+      body,
+    ),
+  remoteConfirmSignature: (id: string, provider: string, body: RemoteConfirmBody) =>
+    post<RemoteConfirmResult>(
+      `/v1/acts/${id}/signature/remote/${encodeURIComponent(provider)}/confirm`,
+      body,
+    ),
 
   // Registry — certidão permanente (§2.7). The `code` in each body is a secret; it is
   // sent transiently in the request and never returned (provenance is masked).

@@ -770,6 +770,7 @@ export const fiFI: Catalog = {
   'enum.signatureFamily.CartaoDeCidadao': 'Kansalaiskortti',
   'enum.signatureFamily.ChaveMovelDigital': 'Digitaalinen mobiiliavain',
   'enum.signatureFamily.OtherQualified': 'Muu hyväksytty varmenne',
+  'enum.signatureFamily.QualifiedCertificate': 'Hyväksytty varmenne (palveluntarjoaja)',
   'enum.signatureFamily.Manual': 'Manuaalinen allekirjoitus',
   // Theme modes
   'enum.themeMode.system': 'Järjestelmän mukaan',
@@ -1131,6 +1132,24 @@ export const fiFI: Catalog = {
   'signing.cc.coLocation.title': 'Käytettävissä vain työpöytäsovelluksessa',
   'signing.cc.coLocation.body':
     'Allekirjoitus Kansalaiskortilla on käytettävissä vain työpöytäsovelluksessa, johon kortinlukija on liitetty.',
+  'signing.signed.qualifiedLabelCsc':
+    'Hyväksytty sähköinen allekirjoitus (luottamuspalvelun tarjoajan hyväksytty varmenne).',
+  'signing.recommended': 'Suositeltu',
+  'signing.csc.start': 'Allekirjoita palvelulla {provider}',
+  'signing.csc.notConfigured': 'ei määritetty',
+  'signing.csc.credentials.intro':
+    'Anna käyttäjätunnisteesi palveluntarjoajalla ja siihen liittyvä allekirjoitustunnus. Tunnusta käytetään vain tähän pyyntöön eikä sitä koskaan tallenneta.',
+  'signing.csc.userRef.label': 'Käyttäjätunniste',
+  'signing.csc.userRef.hint': 'Tilisi tai tunnuksesi tunniste palveluntarjoajalla.',
+  'signing.csc.credential.label': 'Allekirjoitustunnus',
+  'signing.csc.credential.hint': 'Käytetään vain tähän pyyntöön; ei koskaan tallenneta.',
+  'signing.csc.initiate': 'Aloita allekirjoitus',
+  'signing.csc.initiate.pending': 'Aloitetaan…',
+  'signing.csc.otp.sent':
+    'Anna palveluntarjoajan valtuutuskoodi allekirjoituksen viimeistelemiseksi.',
+  'signing.csc.otp.label': 'Valtuutuskoodi',
+  'signing.csc.otp.hint':
+    'Käytetään vain tämän allekirjoituksen vahvistamiseen; ei koskaan tallenneta.',
   'toast.signing.otpSent': 'Tekstiviestikoodi lähetetty.',
   'toast.signing.signed': 'Pöytäkirja allekirjoitettu.',
   'toast.signing.downloaded': 'Allekirjoitettu PDF ladattu.',

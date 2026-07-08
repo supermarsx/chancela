@@ -21,6 +21,8 @@ import type {
   CmdInitiateBody,
   CmdConfirmBody,
   CcSignBody,
+  RemoteInitiateBody,
+  RemoteConfirmBody,
   ImportFromRegistryBody,
   LawEntryView,
   OpenBookBody,
@@ -61,6 +63,7 @@ export const keys = {
   actDocumentPreview: (id: string) => ['acts', id, 'document', 'preview'] as const,
   actDocumentBundle: (id: string) => ['acts', id, 'document', 'bundle'] as const,
   actSignature: (id: string) => ['acts', id, 'signature'] as const,
+  signatureProviders: ['signature', 'providers'] as const,
   templates: (family?: EntityFamily, stage?: LifecycleStage) =>
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
   ledger: (params: { scope?: string; limit?: number }) => ['ledger', params] as const,
@@ -393,6 +396,58 @@ export function useCcSignSignature(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CcSignBody = {}) => api.ccSignSignature(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
+      void qc.invalidateQueries({ queryKey: keys.act(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+// --- Generic remote qualified signing (§ t59) — the provider picker + CSC QTSPs ---
+
+/**
+ * The signing-provider picker list (`GET /v1/signature/providers`, t59): Chave Móvel Digital
+ * plus every configured CSC QTSP, each with a non-secret `configured` flag. Enabled only once
+ * sealed and never retried; the endpoint is gated `signing.perform` server-side, so a principal
+ * without signing authority (or an older server) simply gets no list — the panel then falls
+ * back to the always-available CMD + CC flows rather than surfacing an error.
+ */
+export function useSignatureProviders(enabled: boolean) {
+  return useQuery({
+    queryKey: keys.signatureProviders,
+    queryFn: () => api.listSignatureProviders(),
+    enabled,
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Phase 1 of the generic remote flow (`POST .../signature/remote/{provider}/initiate`, t59):
+ * `user_ref` + `credential` → the provider dispatches an activation and returns a `session_id`.
+ * The credential lives only in the mutation variables for this request — never cached or
+ * persisted. Used for CSC QTSPs (CMD keeps its dedicated `/signature/cmd/*` path).
+ */
+export function useRemoteInitiateSignature(id: string) {
+  return useMutation({
+    mutationFn: ({ provider, body }: { provider: string; body: RemoteInitiateBody }) =>
+      api.remoteInitiateSignature(id, provider, body),
+  });
+}
+
+/**
+ * Phase 2 of the generic remote flow (`POST .../signature/remote/{provider}/confirm`, t59):
+ * session_id + activation → the signed PDF. The activation is a transient mutation variable. On
+ * success the signature status, the act, the ledger and the dashboard refetch (the confirm
+ * appends a `document.signed` event).
+ */
+export function useRemoteConfirmSignature(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ provider, body }: { provider: string; body: RemoteConfirmBody }) =>
+      api.remoteConfirmSignature(id, provider, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
       void qc.invalidateQueries({ queryKey: keys.act(id) });
