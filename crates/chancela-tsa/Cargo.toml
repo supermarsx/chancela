@@ -13,6 +13,11 @@ x509-tsp = { workspace = true }
 cms = { workspace = true }
 x509-cert = { workspace = true }
 der = { workspace = true }
+spki = { workspace = true }
+rsa = { workspace = true }
+p256 = { workspace = true }
+ecdsa = { workspace = true }
+rand_core = { workspace = true }
 sha2 = { workspace = true }
 reqwest = { workspace = true }
 time = { workspace = true }

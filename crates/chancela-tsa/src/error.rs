@@ -86,4 +86,30 @@ pub enum TsaError {
     /// The token's `genTime` was not a representable timestamp.
     #[error("invalid genTime in TSTInfo: {0}")]
     InvalidGenTime(String),
+
+    /// The TSA's CMS signature value did not verify against the signer certificate's public key
+    /// (audit t41/C1). The token is forgeable-looking and MUST NOT be trusted.
+    #[error("TSA signature verification failed")]
+    SignatureVerificationFailed,
+
+    /// The TSA signing certificate could not be parsed or its public key decoded (audit t41/C1).
+    #[error("invalid TSA signing certificate or public key: {0}")]
+    InvalidTsaCertificate(String),
+
+    /// The `SignerInfo.signatureAlgorithm` is not one of the supported profiles
+    /// (RSA-PKCS1-SHA256 or ECDSA-P256-SHA256) (audit t41/C1).
+    #[error("unsupported TSA signature algorithm: {oid}")]
+    UnsupportedSignatureAlgorithm {
+        /// The offending algorithm OID, in dotted form.
+        oid: String,
+    },
+
+    /// The signer certificate referenced by the `SignerInfo.sid` was not embedded in the token
+    /// (audit t41/C1 / M3 — the cert must be matched by issuer+serial, not just taken first).
+    #[error("TSA signer certificate referenced by SignerInfo.sid was not embedded in the token")]
+    SignerCertNotEmbedded,
+
+    /// The raw signature bytes were not valid for the declared algorithm.
+    #[error("invalid TSA signature encoding")]
+    InvalidSignatureEncoding,
 }
