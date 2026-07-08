@@ -332,7 +332,9 @@ pub enum LedgerError {
     },
     /// A per-chain backward link (within one non-global chain) did not match the previous
     /// member's `hash`.
-    #[error("chain {chain} link broken at chain-seq {seq}: prev_hash does not match preceding member")]
+    #[error(
+        "chain {chain} link broken at chain-seq {seq}: prev_hash does not match preceding member"
+    )]
     ChainLinkBroken {
         /// The chain whose backward link is broken.
         chain: ChainId,
@@ -404,7 +406,7 @@ fn compute_hash(
     // RFC 3339 is a stable, unambiguous, round-trippable textual encoding of the instant.
     let ts = timestamp
         .format(&Rfc3339)
-        .expect("OffsetDateTime always formats as RFC 3339");
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
     hasher.update(ts.as_bytes());
     hasher.update([FIELD_SEP]);
     hasher.update(payload_digest);
@@ -477,8 +479,11 @@ impl Ledger {
     /// is part of the frozen grammar signature but is not currently needed to disambiguate (an
     /// app keyword is never a UUID, and the hierarchy is fully encoded in the scope).
     pub fn memberships(scope: &str, _kind: &str) -> Vec<ChainId> {
-        let entity_id = segment_value(scope, "entity:");
-        let book_id = segment_value(scope, "book:");
+        // Filter out empty segment values (SCOPE-01): an `entity:` or `book:` prefix with no ID
+        // after it must not create a chain with an empty id (which would be a spurious chain and
+        // could confuse chain verification). An empty entity/book id is treated as absent.
+        let entity_id = segment_value(scope, "entity:").filter(|s| !s.is_empty());
+        let book_id = segment_value(scope, "book:").filter(|s| !s.is_empty());
         let mut chains = Vec::new();
         if let Some(eid) = entity_id {
             chains.push(ChainId::Company(eid.to_owned()));
@@ -867,7 +872,6 @@ mod tests {
     const B1: &str = "22222222-2222-4222-8222-222222222222";
     const B2: &str = "33333333-3333-4333-8333-333333333333";
     const A1: &str = "44444444-4444-4444-8444-444444444444";
-    const A2: &str = "55555555-5555-4555-8555-555555555555";
 
     fn entity_scope(eid: &str) -> String {
         eid.to_owned()
@@ -892,7 +896,13 @@ mod tests {
         let mut l = Ledger::new();
         l.append("mgr", &entity_scope(E1), "entity.created", None, b"entity");
         l.append("mgr", &book_scope(E1, B1), "book.opened", None, b"termo");
-        l.append("sec", &act_scope(E1, B1, A1), "act.sealed", Some("ata 1"), b"a1");
+        l.append(
+            "sec",
+            &act_scope(E1, B1, A1),
+            "act.sealed",
+            Some("ata 1"),
+            b"a1",
+        );
         l.append("admin", "settings", "settings.updated", None, b"cfg");
         l.append("admin", "user", "user.created", None, b"user");
         l
@@ -922,7 +932,11 @@ mod tests {
         assert_eq!(ev.prev_hash, [0u8; 32]);
         assert_ne!(ev.hash, [0u8; 32]);
         // Every non-global link at genesis also has a zero backward link.
-        assert!(ev.links.iter().all(|l| l.prev_hash == [0u8; 32] && l.seq == 0));
+        assert!(
+            ev.links
+                .iter()
+                .all(|l| l.prev_hash == [0u8; 32] && l.seq == 0)
+        );
     }
 
     #[test]
@@ -941,7 +955,13 @@ mod tests {
     #[test]
     fn payload_digest_matches_free_function() {
         let mut ledger = Ledger::new();
-        let ev = ledger.append("alice", "settings", "settings.updated", None, b"deliberations");
+        let ev = ledger.append(
+            "alice",
+            "settings",
+            "settings.updated",
+            None,
+            b"deliberations",
+        );
         assert_eq!(ev.payload_digest, digest(b"deliberations"));
     }
 
@@ -1006,7 +1026,10 @@ mod tests {
     fn application_and_book_chains_are_disjoint() {
         // The literal "different things": no scope yields both Application and a company/book.
         let app = Ledger::memberships("settings", "settings.updated");
-        assert!(!app.iter().any(|c| matches!(c, ChainId::Company(_) | ChainId::Book(_))));
+        assert!(
+            !app.iter()
+                .any(|c| matches!(c, ChainId::Company(_) | ChainId::Book(_)))
+        );
         let bookish = Ledger::memberships(&book_scope(E1, B1), "book.opened");
         assert!(!bookish.contains(&ChainId::Application));
     }
@@ -1030,8 +1053,16 @@ mod tests {
 
         // The book chain's members carry chain-seq 0,1 with correct backward links.
         let members = ledger.events_in_chain(&book(B1));
-        let l0 = members[0].links.iter().find(|l| l.chain == book(B1)).unwrap();
-        let l1 = members[1].links.iter().find(|l| l.chain == book(B1)).unwrap();
+        let l0 = members[0]
+            .links
+            .iter()
+            .find(|l| l.chain == book(B1))
+            .unwrap();
+        let l1 = members[1]
+            .links
+            .iter()
+            .find(|l| l.chain == book(B1))
+            .unwrap();
         assert_eq!((l0.seq, l0.prev_hash), (0, [0u8; 32]));
         assert_eq!((l1.seq, l1.prev_hash), (1, members[0].hash));
         assert_eq!(ledger.chain_head(&book(B1)), Some(members[1].hash));
@@ -1134,7 +1165,13 @@ mod tests {
     fn book_chain_genesis_must_be_book_opened() {
         // First (and only) event of a book chain is an act.sealed, not book.opened.
         let mut l = Ledger::new();
-        l.append("sec", &format!("book:{B1}/act:{A1}"), "act.sealed", None, b"a");
+        l.append(
+            "sec",
+            &format!("book:{B1}/act:{A1}"),
+            "act.sealed",
+            None,
+            b"a",
+        );
         assert_eq!(
             l.verify(),
             Err(LedgerError::ChainGenesisWrong {
@@ -1316,7 +1353,10 @@ mod tests {
         assert_eq!(chains.len(), 3);
         assert!(chains.iter().all(|c| c.verified));
 
-        let app = chains.iter().find(|c| c.chain == ChainId::Application).unwrap();
+        let app = chains
+            .iter()
+            .find(|c| c.chain == ChainId::Application)
+            .unwrap();
         assert_eq!(app.length, 2);
         assert_eq!(app.genesis_kind.as_deref(), Some("settings.updated"));
 
@@ -1337,7 +1377,11 @@ mod tests {
         l.append("m", &entity_scope(E1), "entity.created", None, b"e1");
         l.append("m", &book_scope(E1, B1), "book.opened", None, b"t");
         l.append("a", "settings", "settings.updated", None, b"s");
-        let ids: Vec<String> = l.chains().into_iter().map(|c| c.chain.to_string()).collect();
+        let ids: Vec<String> = l
+            .chains()
+            .into_iter()
+            .map(|c| c.chain.to_string())
+            .collect();
         let mut sorted = ids.clone();
         sorted.sort();
         assert_eq!(ids, sorted, "chains() must be canonically ordered");
@@ -1442,7 +1486,9 @@ mod tests {
     #[test]
     fn try_from_events_adopts_hashes_without_re_hashing() {
         let mut original = Ledger::new();
-        original.append("mgr", &book_scope(E1, B1), "book.opened", None, b"t");
+        // A valid single-event ledger: the company chain's genesis is `entity.created`
+        // (this test exercises hash adoption, not genesis rules — which have their own test).
+        original.append("mgr", &entity_scope(E1), "entity.created", None, b"t");
         let persisted = original.events().to_vec();
 
         let (ledger, status) = Ledger::try_from_events(persisted.clone());
@@ -1506,7 +1552,13 @@ mod tests {
     #[test]
     fn try_from_events_rejects_chain_genesis_wrong() {
         let mut original = Ledger::new();
-        original.append("sec", &format!("book:{B1}/act:{A1}"), "act.sealed", None, b"a");
+        original.append(
+            "sec",
+            &format!("book:{B1}/act:{A1}"),
+            "act.sealed",
+            None,
+            b"a",
+        );
         let events = original.events().to_vec();
         let (_, status) = Ledger::try_from_events(events);
         assert_eq!(
