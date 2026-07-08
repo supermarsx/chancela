@@ -17,6 +17,12 @@ import { useActiveLocale } from '../i18n';
 export interface SubNavItem<T extends string> {
   id: T;
   label: ReactNode;
+  /**
+   * An optional leading glyph (one of the shared `Icon.*` set) rendered before the label
+   * in a decorative `aria-hidden` span. Backward-compatible: items without an `icon` render
+   * exactly as before, so existing call-sites are unchanged.
+   */
+  icon?: ReactNode;
 }
 
 interface SubNavProps<T extends string> {
@@ -94,6 +100,11 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
           aria-pressed={item.id === active}
           onClick={() => onSelect(item.id)}
         >
+          {item.icon ? (
+            <span className="subnav__icon" aria-hidden="true">
+              {item.icon}
+            </span>
+          ) : null}
           {item.label}
         </button>
       ))}

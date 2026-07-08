@@ -514,6 +514,19 @@ a.btn--icon {
   display: inline-flex;
 }
 
+/* Icon-only action button (t50 `IconButton`): a compact square that centres a single glyph
+   with no label padding. The accessible name comes from `aria-label`; the visible label is
+   the wrapping `Tooltip`. Reuses the `.btn`/`.btn--{variant}` chrome above. */
+.btn--iconOnly {
+  padding: 0.4rem;
+  line-height: 0;
+  aspect-ratio: 1 / 1;
+}
+
+.btn--iconOnly .btn__icon {
+  font-size: 1.2em;
+}
+
 .btn__icon {
   display: inline-flex;
   flex: none;
@@ -562,6 +575,90 @@ a.btn--icon {
 /* A ghost button is chromeless text; texture there would read as noise, so skip it. */
 :root[data-button-texture='on'] .btn--ghost::before {
   display: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Tooltip (t50 W1) — a gilt label bubble on a leather-dark ground with a gold
+ * hairline, used by `Tooltip`/`IconButton`. The bubble stays in the DOM (so its
+ * `aria-describedby` target never dangles) and toggles visibility via `.is-open`;
+ * it is `pointer-events: none` so it never intercepts the trigger's clicks or focus.
+ * The entrance fade/rise is a plain opacity+transform transition — it collapses to an
+ * instant show under BOTH the global `prefers-reduced-motion` block AND safe mode
+ * (each zeroes `transition` on `*`), so no motion escapes the two kill-switches.
+ * ------------------------------------------------------------------------- */
+.tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip__bubble {
+  position: absolute;
+  z-index: 1450;
+  pointer-events: none;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius);
+  background: var(--green-deep);
+  color: var(--gold-bright);
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+}
+
+.tooltip__bubble.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(var(--tooltip-open-x, 0), var(--tooltip-open-y, 0));
+}
+
+/* Placement — anchor the bubble to a side of the trigger and seed the pre-open offset
+   (a 2px slide toward the trigger) that `.is-open` releases to its resting position. */
+.tooltip__bubble--top {
+  --tooltip-open-y: -0.5rem;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, calc(-0.5rem + 2px));
+}
+.tooltip__bubble--top.is-open {
+  transform: translate(-50%, -0.5rem);
+}
+
+.tooltip__bubble--bottom {
+  --tooltip-open-y: 0.5rem;
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, calc(0.5rem - 2px));
+}
+.tooltip__bubble--bottom.is-open {
+  transform: translate(-50%, 0.5rem);
+}
+
+.tooltip__bubble--left {
+  --tooltip-open-x: -0.5rem;
+  right: 100%;
+  top: 50%;
+  transform: translate(calc(-0.5rem + 2px), -50%);
+}
+.tooltip__bubble--left.is-open {
+  transform: translate(-0.5rem, -50%);
+}
+
+.tooltip__bubble--right {
+  --tooltip-open-x: 0.5rem;
+  left: 100%;
+  top: 50%;
+  transform: translate(calc(0.5rem - 2px), -50%);
+}
+.tooltip__bubble--right.is-open {
+  transform: translate(0.5rem, -50%);
 }
 
 /* Tables. */
@@ -2749,6 +2846,12 @@ a.btn--primary {
 .subnav__btn {
   position: relative;
   z-index: 1;
+  /* Inline-flex so an optional leading `.subnav__icon` sits on the label's baseline with a
+     small gap; a lone text label is a single flex item, so the gap is inert and icon-less
+     items render exactly as before. */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-family: var(--font-sans);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
@@ -2760,6 +2863,15 @@ a.btn--primary {
   color: var(--text-muted);
   cursor: pointer;
   transition: color 0.15s ease;
+}
+
+/* The decorative sub-tab glyph inherits the button's ink and sizes to the label. */
+.subnav__icon,
+.ferramentas-subnav__icon {
+  display: inline-flex;
+  flex: none;
+  font-size: 1.05em;
+  line-height: 0;
 }
 
 /* The active pill is the sliding indicator; the button itself stays transparent and only

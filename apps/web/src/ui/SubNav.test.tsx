@@ -31,6 +31,24 @@ describe('SubNav', () => {
     expect(onSelect).toHaveBeenCalledWith('c');
   });
 
+  it('renders a decorative leading icon only for items that carry one (backward-compat)', () => {
+    const items: SubNavItem<'a' | 'b'>[] = [
+      { id: 'a', label: 'Alpha', icon: <svg data-testid="glyph" /> },
+      { id: 'b', label: 'Beta' },
+    ];
+    render(<SubNav items={items} active="a" onSelect={() => {}} ariaLabel="Secções" />);
+
+    // The label is unchanged and the button still resolves by its accessible name.
+    const withIcon = screen.getByRole('button', { name: 'Alpha' });
+    const iconSpan = withIcon.querySelector('.subnav__icon');
+    expect(iconSpan).toBeTruthy();
+    expect(iconSpan?.getAttribute('aria-hidden')).toBe('true');
+
+    // An item without an icon renders exactly as before — no decorative span.
+    const withoutIcon = screen.getByRole('button', { name: 'Beta' });
+    expect(withoutIcon.querySelector('.subnav__icon')).toBeNull();
+  });
+
   it('renders the gliding indicator element', () => {
     const { container } = render(
       <SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />,

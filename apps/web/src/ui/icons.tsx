@@ -265,3 +265,116 @@ export function Wrench(props: IconProps) {
     </Icon>
   );
 }
+
+/** edit — a pencil. */
+export function Pencil(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 20l.8-3.5L15 6.3a1.9 1.9 0 0 1 2.7 0l.7.7a1.9 1.9 0 0 1 0 2.7L8.5 20z" />
+      <path d="M13.8 7.5l2.7 2.7" />
+    </Icon>
+  );
+}
+
+/** activate / deactivate — a power symbol. */
+export function Power(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4v7.5" />
+      <path d="M7.5 7.3a7 7 0 1 0 9 0" />
+    </Icon>
+  );
+}
+
+/** appearance / Aparência — an artist's palette. */
+export function Palette(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4a8 8 0 0 0-.5 16c.9.05 1.5-.9 1.1-1.75-.4-.9.2-1.9 1.2-1.9H16a4 4 0 0 0 4-4c0-4.5-3.6-8.35-8-8.35z" />
+      <circle cx="8.5" cy="10.5" r="1" />
+      <circle cx="12" cy="8" r="1" />
+      <circle cx="15.5" cy="10.5" r="1" />
+    </Icon>
+  );
+}
+
+/** identity / Identidade — an ID card with a portrait. */
+export function IdCard(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="6" width="17" height="12" rx="1.5" />
+      <circle cx="8.5" cy="11" r="1.8" />
+      <path d="M5.8 15.6a2.8 2.8 0 0 1 5.4 0" />
+      <path d="M14 10.5h4M14 13.5h4" />
+    </Icon>
+  );
+}
+
+/** document / Documentos — a page with text lines. */
+export function FileText(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6.5 3.5h6.5L18 8.5V19a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V5A1.5 1.5 0 0 1 6.5 3.5z" />
+      <path d="M12.5 3.5V9h5" />
+      <path d="M8.5 13h7M8.5 16h7" />
+    </Icon>
+  );
+}
+
+/** signatures / Assinaturas — a fountain-pen nib. */
+export function PenNib(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 19.5 6.5 13 13 6.5l4.5 4.5L11 17.5z" />
+      <path d="M13 6.5 15 4.5a1.4 1.4 0 0 1 2 0l.5.5a1.4 1.4 0 0 1 0 2L15.5 9" />
+      <circle cx="9.7" cy="14.3" r="1.5" />
+    </Icon>
+  );
+}
+
+/** management / Gestão — adjustment sliders. */
+export function Sliders(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 8h9M17 8h3" />
+      <path d="M4 16h3M11 16h9" />
+      <circle cx="15" cy="8" r="2" />
+      <circle cx="9" cy="16" r="2" />
+    </Icon>
+  );
+}
+
+/** information / Sobre — an "i" in a circle. */
+export function Info(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 11v5" />
+      <path d="M12 8h.01" />
+    </Icon>
+  );
+}
+
+/** catalogue / Catálogo — stacked layers. */
+export function Layers(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4 20 8l-8 4-8-4z" />
+      <path d="M4 12l8 4 8-4" />
+      <path d="M4 16l8 4 8-4" />
+    </Icon>
+  );
+}
+
+/** legislation / Legislação — a balance scale. */
+export function Scale(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4.5v15" />
+      <path d="M7.5 19.5h9" />
+      <path d="M4.5 7h15" />
+      <path d="M4.5 7 2 12.5a2.5 2.5 0 0 0 5 0z" />
+      <path d="M19.5 7 17 12.5a2.5 2.5 0 0 0 5 0z" />
+    </Icon>
+  );
+}
