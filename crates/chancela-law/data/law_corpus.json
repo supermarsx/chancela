@@ -1,0 +1,841 @@
+[
+  {
+    "id": "csc",
+    "kind": "Codigo",
+    "number": "262/86",
+    "title": "Código das Sociedades Comerciais",
+    "reference": "Decreto-Lei n.º 262/86, de 2 de setembro",
+    "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+    "eli": "https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101",
+    "articles": [
+      {
+        "diploma_id": "csc",
+        "number": "255",
+        "label": "Artigo 255.º",
+        "heading": "Remuneração dos gerentes",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 255.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": [
+          "csc:399"
+        ]
+      },
+      {
+        "diploma_id": "csc",
+        "number": "399",
+        "label": "Artigo 399.º",
+        "heading": "Remuneração dos administradores",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 399.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": [
+          "csc:255"
+        ]
+      },
+      {
+        "diploma_id": "csc",
+        "number": "56",
+        "label": "Artigo 56.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 56.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "58",
+        "label": "Artigo 58.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 58.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "63",
+        "label": "Artigo 63.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 63.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "246",
+        "label": "Artigo 246.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 246.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "248",
+        "label": "Artigo 248.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 248.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "250",
+        "label": "Artigo 250.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 250.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "265",
+        "label": "Artigo 265.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 265.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "270-A",
+        "label": "Artigo 270.º-A",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 270.º-A",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "270-E",
+        "label": "Artigo 270.º-E",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 270.º-E",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "376",
+        "label": "Artigo 376.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 376.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "377",
+        "label": "Artigo 377.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 377.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "386",
+        "label": "Artigo 386.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 386.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "csc",
+        "number": "388",
+        "label": "Artigo 388.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 262/86, de 2 de setembro",
+          "article": "Artigo 388.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  },
+  {
+    "id": "cc",
+    "kind": "Codigo",
+    "number": "47344/66",
+    "title": "Código Civil",
+    "reference": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+    "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1966-34509075",
+    "eli": "https://data.dre.pt/eli/dec-lei/47344/1966/p/cons/20260101",
+    "articles": [
+      {
+        "diploma_id": "cc",
+        "number": "157",
+        "label": "Artigo 157.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 157.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "173",
+        "label": "Artigo 173.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 173.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "175",
+        "label": "Artigo 175.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 175.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "184",
+        "label": "Artigo 184.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 184.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "1414",
+        "label": "Artigo 1414.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 1414.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "1424",
+        "label": "Artigo 1424.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 1424.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "1430",
+        "label": "Artigo 1430.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 1430.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "1432",
+        "label": "Artigo 1432.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 1432.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "1433",
+        "label": "Artigo 1433.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 1433.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "1436",
+        "label": "Artigo 1436.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 1436.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "1438",
+        "label": "Artigo 1438.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 1438.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cc",
+        "number": "1438-A",
+        "label": "Artigo 1438.º-A",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 47344, de 25 de novembro de 1966",
+          "article": "Artigo 1438.º-A",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  },
+  {
+    "id": "dl-268-94",
+    "kind": "DecretoLei",
+    "number": "268/94",
+    "title": "Normas regulamentares do regime da propriedade horizontal (condomínios)",
+    "reference": "Decreto-Lei n.º 268/94, de 25 de outubro",
+    "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1994-144575382",
+    "eli": "https://data.dre.pt/eli/dec-lei/268/1994/p/cons/20260101",
+    "articles": [
+      {
+        "diploma_id": "dl-268-94",
+        "number": "1",
+        "label": "Artigo 1.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
+          "article": "Artigo 1.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "dl-268-94",
+        "number": "2",
+        "label": "Artigo 2.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
+          "article": "Artigo 2.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "dl-268-94",
+        "number": "3",
+        "label": "Artigo 3.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
+          "article": "Artigo 3.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "dl-268-94",
+        "number": "4",
+        "label": "Artigo 4.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
+          "article": "Artigo 4.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "dl-268-94",
+        "number": "5",
+        "label": "Artigo 5.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
+          "article": "Artigo 5.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "dl-268-94",
+        "number": "6",
+        "label": "Artigo 6.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 268/94, de 25 de outubro",
+          "article": "Artigo 6.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  },
+  {
+    "id": "dl-76-a-2006",
+    "kind": "DecretoLei",
+    "number": "76-A/2006",
+    "title": "Simplificação e eliminação de atos registais e notariais (societários)",
+    "reference": "Decreto-Lei n.º 76-A/2006, de 29 de março",
+    "official_url": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/76-a-2006-620286",
+    "eli": "https://data.dre.pt/eli/dec-lei/76-a/2006/p/cons/20260101",
+    "articles": [
+      {
+        "diploma_id": "dl-76-a-2006",
+        "number": "1",
+        "label": "Artigo 1.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 76-A/2006, de 29 de março",
+          "article": "Artigo 1.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "dl-76-a-2006",
+        "number": "2",
+        "label": "Artigo 2.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Decreto-Lei n.º 76-A/2006, de 29 de março",
+          "article": "Artigo 2.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  },
+  {
+    "id": "cod-cooperativo",
+    "kind": "Lei",
+    "number": "119/2015",
+    "title": "Código Cooperativo",
+    "reference": "Lei n.º 119/2015, de 31 de agosto",
+    "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2015-70139602",
+    "eli": "https://data.dre.pt/eli/lei/119/2015/p/cons/20260101",
+    "articles": [
+      {
+        "diploma_id": "cod-cooperativo",
+        "number": "33",
+        "label": "Artigo 33.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Lei n.º 119/2015, de 31 de agosto",
+          "article": "Artigo 33.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cod-cooperativo",
+        "number": "34",
+        "label": "Artigo 34.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Lei n.º 119/2015, de 31 de agosto",
+          "article": "Artigo 34.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "cod-cooperativo",
+        "number": "41",
+        "label": "Artigo 41.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Lei n.º 119/2015, de 31 de agosto",
+          "article": "Artigo 41.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  },
+  {
+    "id": "lei-24-2012",
+    "kind": "Lei",
+    "number": "24/2012",
+    "title": "Lei-Quadro das Fundações",
+    "reference": "Lei n.º 24/2012, de 9 de julho",
+    "official_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2012-61239015",
+    "eli": "https://data.dre.pt/eli/lei/24/2012/p/cons/20260101",
+    "articles": [
+      {
+        "diploma_id": "lei-24-2012",
+        "number": "1",
+        "label": "Artigo 1.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Lei n.º 24/2012, de 9 de julho",
+          "article": "Artigo 1.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "lei-24-2012",
+        "number": "5",
+        "label": "Artigo 5.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Lei n.º 24/2012, de 9 de julho",
+          "article": "Artigo 5.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  },
+  {
+    "id": "eidas-910-2014",
+    "kind": "RegulamentoUe",
+    "number": "910/2014",
+    "title": "Regulamento eIDAS — identificação eletrónica e serviços de confiança",
+    "reference": "Regulamento (UE) n.º 910/2014, de 23 de julho",
+    "official_url": "https://eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32014R0910",
+    "eli": "https://eur-lex.europa.eu/eli/reg/2014/910/oj",
+    "articles": [
+      {
+        "diploma_id": "eidas-910-2014",
+        "number": "25",
+        "label": "Artigo 25.º",
+        "heading": "Efeitos legais das assinaturas eletrónicas",
+        "body": "",
+        "source": {
+          "diploma": "Regulamento (UE) n.º 910/2014, de 23 de julho",
+          "article": "Artigo 25.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  },
+  {
+    "id": "gdpr-2016-679",
+    "kind": "RegulamentoUe",
+    "number": "2016/679",
+    "title": "Regulamento Geral sobre a Proteção de Dados (RGPD)",
+    "reference": "Regulamento (UE) 2016/679, de 27 de abril",
+    "official_url": "https://eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32016R0679",
+    "eli": "https://eur-lex.europa.eu/eli/reg/2016/679/oj",
+    "articles": [
+      {
+        "diploma_id": "gdpr-2016-679",
+        "number": "5",
+        "label": "Artigo 5.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Regulamento (UE) 2016/679, de 27 de abril",
+          "article": "Artigo 5.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "gdpr-2016-679",
+        "number": "25",
+        "label": "Artigo 25.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Regulamento (UE) 2016/679, de 27 de abril",
+          "article": "Artigo 25.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "gdpr-2016-679",
+        "number": "32",
+        "label": "Artigo 32.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Regulamento (UE) 2016/679, de 27 de abril",
+          "article": "Artigo 32.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      },
+      {
+        "diploma_id": "gdpr-2016-679",
+        "number": "35",
+        "label": "Artigo 35.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Regulamento (UE) 2016/679, de 27 de abril",
+          "article": "Artigo 35.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  },
+  {
+    "id": "eidas2-2024-1183",
+    "kind": "RegulamentoUe",
+    "number": "2024/1183",
+    "title": "Quadro Europeu de Identidade Digital (eIDAS 2.0)",
+    "reference": "Regulamento (UE) 2024/1183, que altera o Regulamento (UE) n.º 910/2014",
+    "official_url": "https://eur-lex.europa.eu/legal-content/PT/TXT/?uri=CELEX:32024R1183",
+    "eli": "https://eur-lex.europa.eu/eli/reg/2024/1183/oj",
+    "articles": [
+      {
+        "diploma_id": "eidas2-2024-1183",
+        "number": "1",
+        "label": "Artigo 1.º",
+        "heading": "",
+        "body": "",
+        "source": {
+          "diploma": "Regulamento (UE) 2024/1183, que altera o Regulamento (UE) n.º 910/2014",
+          "article": "Artigo 1.º",
+          "dr_reference": null,
+          "dr_date": null,
+          "url": null
+        },
+        "verification": "Pending",
+        "cross_refs": []
+      }
+    ]
+  }
+]

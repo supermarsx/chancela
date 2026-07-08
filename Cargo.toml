@@ -30,6 +30,11 @@ chancela-registry = { path = "crates/chancela-registry" }
 # Extensive CAE library + auto-update (t14). Leaf crate; no new third-party deps (everything it
 # needs — serde/serde_json/sha2/time/reqwest/thiserror — is already declared below).
 chancela-cae = { path = "crates/chancela-cae" }
+# Full-text law corpus (t55): the complete text of every cited diploma, article by article, with
+# per-article DRE provenance + a hard authenticity gate. Mirrors chancela-cae (vendored source +
+# generator + include_str! + folded search). Leaf crate; needs only serde/serde_json/sha2/thiserror
+# (all declared below) + reqwest behind the opt-in `network` feature. See .orchestration/plans/t55.md.
+chancela-law = { path = "crates/chancela-law" }
 # Durable system of record (t30): embedded SQLite store + hot-backup. Sits between the domain
 # crates and chancela-api in the DAG (core, ledger, registry → chancela-store → chancela-api);
 # must NOT depend on chancela-api (no cycle). See .orchestration/plans/t30.md §2.

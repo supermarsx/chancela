@@ -473,6 +473,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-law"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "chancela-ledger"
 version = "0.1.0"
 dependencies = [
@@ -537,6 +548,7 @@ dependencies = [
 name = "chancela-signing"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chancela-cades",
  "chancela-cmd",
  "chancela-pades",
@@ -549,6 +561,7 @@ dependencies = [
  "rsa",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "spki",
  "thiserror 2.0.18",
  "time",
@@ -585,6 +598,7 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.18",
  "time",
+ "uuid",
  "zip",
 ]
 
