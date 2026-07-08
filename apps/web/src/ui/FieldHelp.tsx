@@ -11,9 +11,9 @@
  * gilt `.btn--iconOnly` chrome (too heavy inline right after a label) and forces its
  * accessible name to equal the bubble text. `FieldHelp` keeps the trigger visually quiet
  * (a borderless currentColor glyph) and separates the accessible NAME ("Ajuda") from the
- * DESCRIPTION (the sentence). The `.field-help-wrap` span lets the owned CSS relax the
- * tooltip bubble from its short-label defaults (nowrap/uppercase) to a wrapping sentence
- * without touching the frozen `.tooltip*` block.
+ * DESCRIPTION (the sentence). It passes Tooltip's `variant="prose"` so the bubble relaxes
+ * from its short-label defaults (nowrap/uppercase) to a wrapping sentence — the modifier
+ * rides on the bubble itself, so it survives the bubble being portaled to <body> (t71).
  */
 import { useT } from '../i18n';
 import { Tooltip, type TooltipPlacement } from './Tooltip';
@@ -32,7 +32,7 @@ export function FieldHelp({ text, label, placement = 'top' }: FieldHelpProps) {
   const t = useT();
   return (
     <span className="field-help-wrap">
-      <Tooltip label={text} placement={placement}>
+      <Tooltip label={text} placement={placement} variant="prose">
         <button type="button" className="field-help" aria-label={label ?? t('common.help')}>
           <Icon.Info />
         </button>

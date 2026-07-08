@@ -428,9 +428,11 @@ a:focus-visible {
 }
 
 /* Relax the shared tooltip bubble from its short-label defaults (nowrap + uppercase) to a
-   wrapping sentence when it explains a field. Scoped to the FieldHelp wrapper, so the
-   frozen `.tooltip*` block is left untouched. */
-.field-help-wrap .tooltip__bubble {
+   wrapping sentence when it explains a field (FieldHelp passes `variant="prose"`). The style
+   rides ON the bubble via the `--prose` modifier rather than a `.field-help-wrap` descendant
+   selector, so it survives the bubble being portaled to <body> (t71) — the wrapper no longer
+   contains the bubble. */
+.tooltip__bubble--prose {
   white-space: normal;
   text-transform: none;
   letter-spacing: normal;
@@ -539,11 +541,16 @@ a:focus-visible {
 }
 
 /* The settings working-copy wrapper (t64-E5) is a bare <fieldset> used only to inert its
-   controls when the user lacks `settings.manage` — strip the UA border/padding/margin so it
-   is layout-invisible and the sections render exactly as before. */
+   controls when the user lacks `settings.manage` — strip the UA border/padding and the UA
+   `margin-inline: 2px` so it is layout-invisible and the sections render exactly as before.
+   Crucially it must NOT zero the BLOCK margin: as a `.stack` child it inherits the shared
+   `.stack > * + *` top-margin that separates it from the sub-nav strip above (a flat
+   `margin: 0` here has equal specificity but wins on source order, collapsing that gap to 0 —
+   the t71 spacing regression). Zeroing only the inline axis leaves the vertical rhythm intact. */
 .settings-fieldset {
   border: 0;
-  margin: 0;
+  /* Only the inline (2px UA) margin is stripped; the block margin is left to `.stack`. */
+  margin-inline: 0;
   padding: 0;
   min-inline-size: 0;
 }
@@ -671,9 +678,15 @@ a.btn.btn--icon {
   display: inline-flex;
 }
 
+/* Portaled to <body> and positioned `fixed` against the trigger rect (its inline left/top is
+   the anchor point on the trigger edge; the placement transforms below centre/offset from it).
+   z-index sits at the TOP of the app scale so a tooltip floats above ALL chrome:
+     titlebar 2100 > safe-banner 1700 > modal 1500 > degraded 1450 > toast 1400  →  tooltip 2200
+   (t71). A tooltip inside the confirm modal therefore renders above it, and no overflow/transform
+   ancestor can clip it. */
 .tooltip__bubble {
-  position: absolute;
-  z-index: 1450;
+  position: fixed;
+  z-index: 2200;
   pointer-events: none;
   white-space: nowrap;
   font-family: var(--font-sans);
@@ -696,25 +709,19 @@ a.btn.btn--icon {
 .tooltip__bubble.is-open {
   opacity: 1;
   visibility: visible;
-  transform: translate(var(--tooltip-open-x, 0), var(--tooltip-open-y, 0));
 }
 
-/* Placement — anchor the bubble to a side of the trigger and seed the pre-open offset
-   (a 2px slide toward the trigger) that `.is-open` releases to its resting position. */
+/* Placement — the transform both places the bubble relative to the fixed anchor point (centre
+   it, translate it fully off its own box on the leading axis, add the 0.5rem gap) and seeds a
+   2px pre-open slide toward the trigger that `.is-open` releases to the resting position. */
 .tooltip__bubble--top {
-  --tooltip-open-y: -0.5rem;
-  left: 50%;
-  bottom: 100%;
-  transform: translate(-50%, calc(-0.5rem + 2px));
+  transform: translate(-50%, calc(-100% - 0.5rem + 2px));
 }
 .tooltip__bubble--top.is-open {
-  transform: translate(-50%, -0.5rem);
+  transform: translate(-50%, calc(-100% - 0.5rem));
 }
 
 .tooltip__bubble--bottom {
-  --tooltip-open-y: 0.5rem;
-  left: 50%;
-  top: 100%;
   transform: translate(-50%, calc(0.5rem - 2px));
 }
 .tooltip__bubble--bottom.is-open {
@@ -722,19 +729,13 @@ a.btn.btn--icon {
 }
 
 .tooltip__bubble--left {
-  --tooltip-open-x: -0.5rem;
-  right: 100%;
-  top: 50%;
-  transform: translate(calc(-0.5rem + 2px), -50%);
+  transform: translate(calc(-100% - 0.5rem + 2px), -50%);
 }
 .tooltip__bubble--left.is-open {
-  transform: translate(-0.5rem, -50%);
+  transform: translate(calc(-100% - 0.5rem), -50%);
 }
 
 .tooltip__bubble--right {
-  --tooltip-open-x: 0.5rem;
-  left: 100%;
-  top: 50%;
   transform: translate(calc(0.5rem - 2px), -50%);
 }
 .tooltip__bubble--right.is-open {

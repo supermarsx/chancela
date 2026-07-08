@@ -82,6 +82,38 @@ describe('Tooltip', () => {
     );
     expect(screen.getByRole('tooltip').className).toContain('tooltip__bubble--right');
   });
+
+  it('portals the bubble to document.body so no ancestor can clip or under-stack it', () => {
+    // A clipping/stacking ancestor like the real `.route-transition` container.
+    render(
+      <div className="route-transition" style={{ overflow: 'hidden', transform: 'translateZ(0)' }}>
+        <Tooltip label="Editar">
+          <button type="button">alvo</button>
+        </Tooltip>
+      </div>,
+    );
+    const bubble = screen.getByRole('tooltip');
+    // The bubble is a direct child of <body> (portaled out), NOT nested under the trigger's
+    // `.tooltip` wrapper nor the clipping container.
+    expect(bubble.parentElement).toBe(document.body);
+    expect(document.querySelector('.tooltip')?.contains(bubble)).toBe(false);
+    expect(document.querySelector('.route-transition')?.contains(bubble)).toBe(false);
+    // It still carries the tooltip class the top-of-scale z-index is bound to in the theme.
+    expect(bubble.className).toContain('tooltip__bubble');
+    // …and the aria-describedby association survives the portal (IDs are document-global).
+    expect(screen.getByRole('button', { name: 'alvo' }).getAttribute('aria-describedby')).toBe(
+      bubble.id,
+    );
+  });
+
+  it('adds the prose modifier for the wrapping-sentence variant (FieldHelp)', () => {
+    render(
+      <Tooltip label="Explicação longa" variant="prose">
+        <button type="button">alvo</button>
+      </Tooltip>,
+    );
+    expect(screen.getByRole('tooltip').className).toContain('tooltip__bubble--prose');
+  });
 });
 
 describe('IconButton', () => {
