@@ -915,4 +915,31 @@ export const enGB: Catalog = {
   'toast.user.deactivated': 'User deactivated.',
   'toast.user.updated': 'User updated.',
   'toast.signout.success': 'Signed out.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Document',
+  'documents.preview.show': 'Preview document',
+  'documents.preview.hide': 'Hide preview',
+  'documents.preview.hint':
+    'Preview generated from the current record. Subject to change until sealing.',
+  'documents.preview.empty': 'The document has no content.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'No template available',
+  'documents.preview.noTemplate.body':
+    'There is no document template for this entity family yet. The minutes can still be sealed; the document becomes available once a template is published.',
+  'documents.print': 'Print document',
+  'documents.pageBreak': 'Page break',
+  'documents.vote.label': 'Resolution',
+  'documents.vote.favor': 'In favour',
+  'documents.vote.against': 'Against',
+  'documents.vote.abstain': 'Abstentions',
+  'documents.download': 'Download PDF',
+  'documents.download.pending': 'Downloading…',
+  'documents.download.noneTitle': 'Document not generated',
+  'documents.download.noneBody':
+    'The minutes were sealed, but this entity family has no template yet, so no PDF was generated.',
+  'documents.digest.label': 'PDF fingerprint:',
+  'documents.template.title': 'Applicable template',
+  'documents.template.none': 'No template available for this family and stage.',
+  'documents.template.localeLabel': 'Language {locale}',
+  'toast.document.downloaded': 'PDF downloaded.',
 };

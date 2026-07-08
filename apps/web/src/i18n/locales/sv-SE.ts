@@ -934,4 +934,31 @@ export const svSE: Catalog = {
   'toast.user.deactivated': 'Användare inaktiverad.',
   'toast.user.updated': 'Användare uppdaterad.',
   'toast.signout.success': 'Utloggad.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Dokument',
+  'documents.preview.show': 'Förhandsgranska dokument',
+  'documents.preview.hide': 'Dölj förhandsgranskning',
+  'documents.preview.hint':
+    'Förhandsgranskning genererad från den aktuella posten. Kan ändras fram till förseglingen.',
+  'documents.preview.empty': 'Dokumentet har inget innehåll.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Ingen mall tillgänglig',
+  'documents.preview.noTemplate.body':
+    'Det finns ännu ingen dokumentmall för den här enhetsfamiljen. Protokollet kan ändå förseglas; dokumentet blir tillgängligt när en mall har publicerats.',
+  'documents.print': 'Skriv ut dokument',
+  'documents.pageBreak': 'Sidbrytning',
+  'documents.vote.label': 'Beslut',
+  'documents.vote.favor': 'För',
+  'documents.vote.against': 'Emot',
+  'documents.vote.abstain': 'Nedlagda',
+  'documents.download': 'Ladda ner PDF',
+  'documents.download.pending': 'Laddar ner…',
+  'documents.download.noneTitle': 'Dokument inte genererat',
+  'documents.download.noneBody':
+    'Protokollet förseglades, men den här enhetsfamiljen har ännu ingen mall, så ingen PDF genererades.',
+  'documents.digest.label': 'PDF-fingeravtryck:',
+  'documents.template.title': 'Tillämplig mall',
+  'documents.template.none': 'Ingen mall tillgänglig för den här familjen och fasen.',
+  'documents.template.localeLabel': 'Språk {locale}',
+  'toast.document.downloaded': 'PDF nedladdad.',
 };

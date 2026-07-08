@@ -938,4 +938,31 @@ export const nlNL: Catalog = {
   'toast.user.deactivated': 'Gebruiker gedeactiveerd.',
   'toast.user.updated': 'Gebruiker bijgewerkt.',
   'toast.signout.success': 'Afgemeld.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Document',
+  'documents.preview.show': 'Document voorvertonen',
+  'documents.preview.hide': 'Voorvertoning verbergen',
+  'documents.preview.hint':
+    'Voorvertoning gegenereerd op basis van het huidige record. Kan wijzigen tot de verzegeling.',
+  'documents.preview.empty': 'Het document heeft geen inhoud.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Geen sjabloon beschikbaar',
+  'documents.preview.noTemplate.body':
+    'Er is nog geen documentsjabloon voor deze entiteitsfamilie. De notulen kunnen wel worden verzegeld; het document komt beschikbaar zodra een sjabloon is gepubliceerd.',
+  'documents.print': 'Document afdrukken',
+  'documents.pageBreak': 'Pagina-einde',
+  'documents.vote.label': 'Besluit',
+  'documents.vote.favor': 'Voor',
+  'documents.vote.against': 'Tegen',
+  'documents.vote.abstain': 'Onthoudingen',
+  'documents.download': 'PDF downloaden',
+  'documents.download.pending': 'Bezig met downloaden…',
+  'documents.download.noneTitle': 'Document niet gegenereerd',
+  'documents.download.noneBody':
+    'De notulen zijn verzegeld, maar deze entiteitsfamilie heeft nog geen sjabloon, dus er is geen PDF gegenereerd.',
+  'documents.digest.label': 'PDF-vingerafdruk:',
+  'documents.template.title': 'Toepasselijk sjabloon',
+  'documents.template.none': 'Geen sjabloon beschikbaar voor deze familie en fase.',
+  'documents.template.localeLabel': 'Taal {locale}',
+  'toast.document.downloaded': 'PDF gedownload.',
 };

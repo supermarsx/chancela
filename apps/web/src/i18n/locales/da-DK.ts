@@ -938,4 +938,31 @@ export const daDK: Catalog = {
   'toast.user.deactivated': 'Bruger deaktiveret.',
   'toast.user.updated': 'Bruger opdateret.',
   'toast.signout.success': 'Logget ud.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Dokument',
+  'documents.preview.show': 'Forhåndsvis dokument',
+  'documents.preview.hide': 'Skjul forhåndsvisning',
+  'documents.preview.hint':
+    'Forhåndsvisning genereret ud fra den aktuelle post. Kan ændres indtil forsegling.',
+  'documents.preview.empty': 'Dokumentet har intet indhold.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Ingen skabelon tilgængelig',
+  'documents.preview.noTemplate.body':
+    'Der findes endnu ingen dokumentskabelon for denne enhedsfamilie. Referatet kan stadig forsegles; dokumentet bliver tilgængeligt, når en skabelon er offentliggjort.',
+  'documents.print': 'Udskriv dokument',
+  'documents.pageBreak': 'Sideskift',
+  'documents.vote.label': 'Beslutning',
+  'documents.vote.favor': 'For',
+  'documents.vote.against': 'Imod',
+  'documents.vote.abstain': 'Undlader',
+  'documents.download': 'Download PDF',
+  'documents.download.pending': 'Downloader…',
+  'documents.download.noneTitle': 'Dokument ikke genereret',
+  'documents.download.noneBody':
+    'Referatet blev forseglet, men denne enhedsfamilie har endnu ingen skabelon, så der blev ikke genereret nogen PDF.',
+  'documents.digest.label': 'PDF-fingeraftryk:',
+  'documents.template.title': 'Gældende skabelon',
+  'documents.template.none': 'Ingen skabelon tilgængelig for denne familie og fase.',
+  'documents.template.localeLabel': 'Sprog {locale}',
+  'toast.document.downloaded': 'PDF downloadet.',
 };

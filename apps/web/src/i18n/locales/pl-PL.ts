@@ -936,4 +936,31 @@ export const plPL: Catalog = {
   'toast.user.deactivated': 'Użytkownik dezaktywowany.',
   'toast.user.updated': 'Użytkownik zaktualizowany.',
   'toast.signout.success': 'Wylogowano.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Dokument',
+  'documents.preview.show': 'Podgląd dokumentu',
+  'documents.preview.hide': 'Ukryj podgląd',
+  'documents.preview.hint':
+    'Podgląd wygenerowany na podstawie bieżącego rekordu. Może się zmienić do momentu opieczętowania.',
+  'documents.preview.empty': 'Dokument nie zawiera treści.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Brak dostępnego szablonu',
+  'documents.preview.noTemplate.body':
+    'Dla tej rodziny podmiotów nie ma jeszcze szablonu dokumentu. Protokół można mimo to opieczętować; dokument stanie się dostępny po opublikowaniu szablonu.',
+  'documents.print': 'Drukuj dokument',
+  'documents.pageBreak': 'Podział strony',
+  'documents.vote.label': 'Uchwała',
+  'documents.vote.favor': 'Za',
+  'documents.vote.against': 'Przeciw',
+  'documents.vote.abstain': 'Wstrzymujący się',
+  'documents.download': 'Pobierz PDF',
+  'documents.download.pending': 'Pobieranie…',
+  'documents.download.noneTitle': 'Nie wygenerowano dokumentu',
+  'documents.download.noneBody':
+    'Protokół został opieczętowany, ale ta rodzina podmiotów nie ma jeszcze szablonu, więc nie wygenerowano pliku PDF.',
+  'documents.digest.label': 'Odcisk PDF:',
+  'documents.template.title': 'Obowiązujący szablon',
+  'documents.template.none': 'Brak szablonu dla tej rodziny i etapu.',
+  'documents.template.localeLabel': 'Język {locale}',
+  'toast.document.downloaded': 'Pobrano PDF.',
 };

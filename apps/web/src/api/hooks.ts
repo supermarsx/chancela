@@ -16,6 +16,8 @@ import type {
   CreateEntityBody,
   CreateUserBody,
   DraftActBody,
+  EntityFamily,
+  LifecycleStage,
   ImportFromRegistryBody,
   LawEntryView,
   OpenBookBody,
@@ -43,6 +45,10 @@ export const keys = {
   bookActs: (id: string) => ['books', id, 'acts'] as const,
   act: (id: string) => ['acts', id] as const,
   compliance: (id: string) => ['acts', id, 'compliance'] as const,
+  actDocumentPreview: (id: string) => ['acts', id, 'document', 'preview'] as const,
+  actDocumentBundle: (id: string) => ['acts', id, 'document', 'bundle'] as const,
+  templates: (family?: EntityFamily, stage?: LifecycleStage) =>
+    ['templates', { family: family ?? null, stage: stage ?? null }] as const,
   ledger: (params: { scope?: string; limit?: number }) => ['ledger', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
   dashboard: ['dashboard'] as const,
@@ -255,6 +261,60 @@ export function useSealAct(id: string) {
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });
+}
+
+/**
+ * The live document preview for an act (`GET /v1/acts/{id}/document/preview`, t48). Renders
+ * the CURRENT record — works pre-seal for a draft preview and post-seal alike. Lazily
+ * enabled (the caller flips `enabled` when the user asks to preview) so the render only
+ * runs on demand. A `422`/`404` is the "family has no template" signal, surfaced to the
+ * caller as an honest empty state rather than retried — so `retry: false`.
+ */
+export function useActDocumentPreview(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.actDocumentPreview(id),
+    queryFn: () => api.getActDocumentPreview(id),
+    enabled: enabled && !!id,
+    retry: false,
+  });
+}
+
+/**
+ * The DOC-03 bundle for a sealed act (`GET /v1/acts/{id}/document/bundle`, t48). 404 until
+ * sealed — and 404 for a sealed act whose family has no template (the documented no-document
+ * fallback), which the caller renders honestly. Enabled only once sealed; never retried so
+ * the 404 resolves immediately to the empty state.
+ */
+export function useActDocumentBundle(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.actDocumentBundle(id),
+    queryFn: () => api.getActDocumentBundle(id),
+    enabled: enabled && !!id,
+    retry: false,
+  });
+}
+
+/**
+ * The template catalog for a family × stage (`GET /v1/templates`, t48). Informational for
+ * v1 (the seal auto-picks) — the picker just surfaces which model applies. Kept fresh for
+ * a minute; the catalog is embedded, static data.
+ */
+export function useTemplates(family?: EntityFamily, stage?: LifecycleStage) {
+  return useQuery({
+    queryKey: keys.templates(family, stage),
+    queryFn: () => api.listTemplates({ family, stage }),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Download a sealed act's PDF/A (`GET /v1/acts/{id}/document`, t48). A mutation so the
+ * button gets `isPending` + the toast idiom for free; the caller triggers the browser
+ * download from the returned `Blob` with an honest filename. Only offered post-seal (the
+ * endpoint 404s until then).
+ */
+export function useDownloadActDocument(id: string) {
+  return useMutation({ mutationFn: () => api.fetchActDocumentPdf(id) });
 }
 
 export function useArchiveAct(id: string) {

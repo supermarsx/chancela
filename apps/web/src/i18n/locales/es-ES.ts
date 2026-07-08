@@ -939,4 +939,31 @@ export const esES: Catalog = {
   'toast.user.deactivated': 'Usuario desactivado.',
   'toast.user.updated': 'Usuario actualizado.',
   'toast.signout.success': 'Sesión cerrada.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Documento',
+  'documents.preview.show': 'Previsualizar documento',
+  'documents.preview.hide': 'Ocultar previsualización',
+  'documents.preview.hint':
+    'Previsualización generada a partir del registro actual. Sujeta a cambios hasta el sellado.',
+  'documents.preview.empty': 'El documento no tiene contenido.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'No hay plantilla disponible',
+  'documents.preview.noTemplate.body':
+    'Todavía no existe una plantilla de documento para esta familia de entidad. El acta puede sellarse igualmente; el documento estará disponible cuando se publique una plantilla.',
+  'documents.print': 'Imprimir documento',
+  'documents.pageBreak': 'Salto de página',
+  'documents.vote.label': 'Acuerdo',
+  'documents.vote.favor': 'A favor',
+  'documents.vote.against': 'En contra',
+  'documents.vote.abstain': 'Abstenciones',
+  'documents.download': 'Descargar PDF',
+  'documents.download.pending': 'Descargando…',
+  'documents.download.noneTitle': 'Documento no generado',
+  'documents.download.noneBody':
+    'El acta se selló, pero esta familia de entidad aún no tiene plantilla, por lo que no se generó ningún PDF.',
+  'documents.digest.label': 'Huella del PDF:',
+  'documents.template.title': 'Plantilla aplicable',
+  'documents.template.none': 'No hay plantilla disponible para esta familia y fase.',
+  'documents.template.localeLabel': 'Idioma {locale}',
+  'toast.document.downloaded': 'PDF descargado.',
 };

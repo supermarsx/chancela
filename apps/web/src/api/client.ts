@@ -24,8 +24,13 @@ import type {
   CreateSessionBody,
   CreateUserBody,
   Dashboard,
+  DocumentBundle,
+  DocumentModel,
   DraftActBody,
   Entity,
+  EntityFamily,
+  LifecycleStage,
+  TemplateSummary,
   ImportFromRegistryBody,
   LawEntryView,
   LedgerEventView,
@@ -178,6 +183,32 @@ const del = <T>(path: string, body?: unknown) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
+/**
+ * Fetch a binary body (e.g. a generated PDF) as a `Blob`, attaching the session token
+ * exactly like {@link request} and clearing a stale token on 401. A non-2xx status is
+ * surfaced as an `ApiError` (its friendly `{error}` body parsed when the server sent
+ * JSON — e.g. the 404-until-sealed case), so callers get the same error idiom as the
+ * JSON path. Used for the document download, which must not go through JSON parsing.
+ */
+export async function fetchBlob(path: string): Promise<Blob> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = {};
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(path, { headers });
+  if (res.status === 401) clearSessionToken();
+  if (!res.ok) {
+    let message = t('error.requestFailed', { status: res.status });
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body — keep the generic status message.
+    }
+    throw new ApiError(res.status, { error: message });
+  }
+  return res.blob();
+}
+
 /** Build a query string from defined params only (skips `undefined`). */
 function query(params: Record<string, string | number | undefined>): string {
   const usp = new URLSearchParams();
@@ -218,6 +249,19 @@ export const api = {
   getCompliance: (id: string) => get<ComplianceReport>(`/v1/acts/${id}/compliance`),
   sealAct: (id: string, body: SealActBody) => post<SealResult>(`/v1/acts/${id}/seal`, body),
   archiveAct: (id: string) => post<ActView>(`/v1/acts/${id}/archive`),
+
+  // Generated documents (§3.3, plan t48). The preview renders the CURRENT record live
+  // (works pre-seal); a `422`/`404` means the family has no template for the stage — the
+  // caller renders that as an honest "sem modelo disponível" state, not an error. The
+  // bundle is `404` until sealed (and for a sealed act whose family has no template).
+  getActDocumentPreview: (id: string) => get<DocumentModel>(`/v1/acts/${id}/document/preview`),
+  getActDocumentBundle: (id: string) => get<DocumentBundle>(`/v1/acts/${id}/document/bundle`),
+  listTemplates: (params: { family?: EntityFamily; stage?: LifecycleStage } = {}) =>
+    get<TemplateSummary[]>(`/v1/templates${query(params)}`),
+  // The persisted PDF/A bytes (`GET /v1/acts/{id}/document`, `application/pdf`). Fetched
+  // as a Blob (not JSON) so it can be triggered as a download with an honest filename;
+  // carries the session token like every other request. 404 until sealed.
+  fetchActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document`),
 
   // Registry — certidão permanente (§2.7). The `code` in each body is a secret; it is
   // sent transiently in the request and never returned (provenance is masked).

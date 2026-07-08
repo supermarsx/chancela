@@ -936,4 +936,31 @@ export const ptBR: Catalog = {
   'toast.user.deactivated': 'Usuário desativado.',
   'toast.user.updated': 'Usuário atualizado.',
   'toast.signout.success': 'Sessão encerrada.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Documento',
+  'documents.preview.show': 'Pré-visualizar documento',
+  'documents.preview.hide': 'Ocultar pré-visualização',
+  'documents.preview.hint':
+    'Pré-visualização gerada a partir do registro atual. Sujeita a alterações até o selamento.',
+  'documents.preview.empty': 'O documento não tem conteúdo.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Sem modelo disponível',
+  'documents.preview.noTemplate.body':
+    'Ainda não existe um modelo de documento para esta família de entidade. A ata pode ser selada; o documento fica disponível quando o modelo for publicado.',
+  'documents.print': 'Imprimir documento',
+  'documents.pageBreak': 'Quebra de página',
+  'documents.vote.label': 'Deliberação',
+  'documents.vote.favor': 'A favor',
+  'documents.vote.against': 'Contra',
+  'documents.vote.abstain': 'Abstenções',
+  'documents.download': 'Baixar PDF',
+  'documents.download.pending': 'Baixando…',
+  'documents.download.noneTitle': 'Documento não gerado',
+  'documents.download.noneBody':
+    'A ata foi selada, mas a família desta entidade ainda não tem um modelo, portanto nenhum PDF foi gerado.',
+  'documents.digest.label': 'Impressão do PDF:',
+  'documents.template.title': 'Modelo aplicável',
+  'documents.template.none': 'Sem modelo disponível para esta família e fase.',
+  'documents.template.localeLabel': 'Idioma {locale}',
+  'toast.document.downloaded': 'PDF baixado.',
 };

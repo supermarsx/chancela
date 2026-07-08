@@ -948,4 +948,31 @@ export const deDE: Catalog = {
   'toast.user.deactivated': 'Benutzer deaktiviert.',
   'toast.user.updated': 'Benutzer aktualisiert.',
   'toast.signout.success': 'Abgemeldet.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Dokument',
+  'documents.preview.show': 'Dokumentvorschau anzeigen',
+  'documents.preview.hide': 'Vorschau ausblenden',
+  'documents.preview.hint':
+    'Vorschau aus dem aktuellen Datensatz erzeugt. Änderungen bis zur Versiegelung möglich.',
+  'documents.preview.empty': 'Das Dokument hat keinen Inhalt.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Keine Vorlage verfügbar',
+  'documents.preview.noTemplate.body':
+    'Für diese Rechtsträgerfamilie gibt es noch keine Dokumentvorlage. Das Protokoll kann dennoch versiegelt werden; das Dokument wird verfügbar, sobald eine Vorlage veröffentlicht ist.',
+  'documents.print': 'Dokument drucken',
+  'documents.pageBreak': 'Seitenumbruch',
+  'documents.vote.label': 'Beschluss',
+  'documents.vote.favor': 'Dafür',
+  'documents.vote.against': 'Dagegen',
+  'documents.vote.abstain': 'Enthaltungen',
+  'documents.download': 'PDF herunterladen',
+  'documents.download.pending': 'Wird heruntergeladen…',
+  'documents.download.noneTitle': 'Dokument nicht erzeugt',
+  'documents.download.noneBody':
+    'Das Protokoll wurde versiegelt, aber für diese Rechtsträgerfamilie gibt es noch keine Vorlage, daher wurde kein PDF erzeugt.',
+  'documents.digest.label': 'PDF-Fingerabdruck:',
+  'documents.template.title': 'Anwendbare Vorlage',
+  'documents.template.none': 'Keine Vorlage für diese Familie und Phase verfügbar.',
+  'documents.template.localeLabel': 'Sprache {locale}',
+  'toast.document.downloaded': 'PDF heruntergeladen.',
 };

@@ -939,4 +939,31 @@ export const itIT: Catalog = {
   'toast.user.deactivated': 'Utente disattivato.',
   'toast.user.updated': 'Utente aggiornato.',
   'toast.signout.success': 'Sessione terminata.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Documento',
+  'documents.preview.show': 'Anteprima documento',
+  'documents.preview.hide': 'Nascondi anteprima',
+  'documents.preview.hint':
+    'Anteprima generata dal record corrente. Soggetta a modifiche fino alla sigillatura.',
+  'documents.preview.empty': 'Il documento non ha contenuto.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Nessun modello disponibile',
+  'documents.preview.noTemplate.body':
+    'Non esiste ancora un modello di documento per questa famiglia di enti. Il verbale può comunque essere sigillato; il documento sarà disponibile quando verrà pubblicato un modello.',
+  'documents.print': 'Stampa documento',
+  'documents.pageBreak': 'Interruzione di pagina',
+  'documents.vote.label': 'Deliberazione',
+  'documents.vote.favor': 'A favore',
+  'documents.vote.against': 'Contrari',
+  'documents.vote.abstain': 'Astenuti',
+  'documents.download': 'Scarica PDF',
+  'documents.download.pending': 'Download in corso…',
+  'documents.download.noneTitle': 'Documento non generato',
+  'documents.download.noneBody':
+    'Il verbale è stato sigillato, ma questa famiglia di enti non ha ancora un modello, quindi non è stato generato alcun PDF.',
+  'documents.digest.label': 'Impronta del PDF:',
+  'documents.template.title': 'Modello applicabile',
+  'documents.template.none': 'Nessun modello disponibile per questa famiglia e fase.',
+  'documents.template.localeLabel': 'Lingua {locale}',
+  'toast.document.downloaded': 'PDF scaricato.',
 };

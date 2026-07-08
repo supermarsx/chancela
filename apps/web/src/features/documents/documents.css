@@ -1,0 +1,258 @@
+/**
+ * Styles for the generated-document surface (plan t48-e6): the on-screen DocumentModel
+ * preview, the template picker, and the print rules. The preview supersedes the ad-hoc
+ * deliberations print approach — it is the single faithful render of the server's
+ * DocumentModel, in a conservative serif idiom (UX-04) inside an A4-ish column, and it
+ * doubles as the browser-print artifact (see the `@media print` block below).
+ *
+ * Leans on the theme token layer (`--gold`, `--rule`, `--surface`, …) for the gilt/leather
+ * idiom; the document body itself is a serif on a paper-like surface so it reads like a
+ * filed instrument rather than a UI panel.
+ */
+
+.doc-preview {
+  --doc-serif: Georgia, 'Iowan Old Style', 'Times New Roman', 'Noto Serif', serif;
+  font-family: var(--doc-serif);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--gold);
+  border-radius: var(--radius);
+  padding: 2.25rem 2.5rem;
+  max-width: 46rem;
+  margin: 0 auto;
+  line-height: 1.5;
+  font-size: 0.98rem;
+}
+
+.doc-preview__head {
+  text-align: center;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.doc-preview__title {
+  font-family: var(--doc-serif);
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  letter-spacing: 0.01em;
+}
+
+.doc-preview__entity {
+  font-size: 1rem;
+  margin: 0 0 0.15rem;
+}
+
+.doc-preview__nipc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.doc-preview__subject {
+  font-style: italic;
+  color: var(--text-muted);
+  margin: 0.35rem 0 0;
+}
+
+.doc-block + .doc-block {
+  margin-top: 0.85rem;
+}
+
+.doc-heading {
+  font-family: var(--doc-serif);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.doc-heading--1 {
+  font-size: 1.25rem;
+}
+.doc-heading--2 {
+  font-size: 1.1rem;
+}
+.doc-heading--3 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.doc-heading--4,
+.doc-heading--5,
+.doc-heading--6 {
+  font-size: 0.95rem;
+}
+
+.doc-paragraph {
+  margin: 0;
+  text-align: justify;
+}
+
+/* Key/value definition list — a two-column grid so the values line up. */
+.doc-kv {
+  display: grid;
+  grid-template-columns: minmax(9rem, max-content) 1fr;
+  gap: 0.3rem 1.25rem;
+  margin: 0;
+}
+
+.doc-kv__key {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.doc-kv__value {
+  margin: 0;
+}
+
+/* Vote tally table. */
+.doc-votetable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.doc-votetable th,
+.doc-votetable td {
+  border: 1px solid var(--rule);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+}
+
+.doc-votetable th {
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  font-weight: 600;
+}
+
+.doc-votetable td.doc-votetable__num,
+.doc-votetable th.doc-votetable__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  width: 5.5rem;
+}
+
+/* Signature block — one ruled line per slot, with the role above and the name below. */
+.doc-signatures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem 2.5rem;
+  margin-top: 1rem;
+}
+
+.doc-signature {
+  flex: 1 1 12rem;
+  min-width: 12rem;
+}
+
+.doc-signature__role {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0 0 1.75rem;
+}
+
+.doc-signature__line {
+  border-top: 1px solid var(--text);
+  padding-top: 0.3rem;
+}
+
+.doc-signature__name {
+  font-size: 0.9rem;
+}
+
+.doc-rule {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 1.25rem 0;
+}
+
+/* A page division — a dashed marker on screen; a real page break in print. */
+.doc-pagebreak {
+  border-top: 1px dashed var(--rule);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-family: var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 1.5rem 0;
+  padding-top: 0.4rem;
+}
+
+/* Template picker — a compact list of the models bound to the family × stage. */
+.template-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.template-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.template-item__id {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.template-item__locale {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+}
+
+/* Integrity note under a downloaded document. */
+.doc-integrity {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/*
+ * Browser print of just the document. The print action toggles `body.printing-doc`
+ * (added right before `window.print()`, removed on `afterprint`), so these rules stay
+ * dormant for every other page and every other print. The visibility trick prints only
+ * the `.doc-preview` subtree without needing to know the surrounding chrome's classes.
+ */
+@media print {
+  body.printing-doc {
+    visibility: hidden;
+  }
+  body.printing-doc .doc-preview,
+  body.printing-doc .doc-preview * {
+    visibility: visible;
+  }
+  body.printing-doc .doc-preview {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    max-width: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    background: #fff;
+    color: #000;
+    font-size: 11pt;
+  }
+  body.printing-doc .doc-pagebreak {
+    page-break-after: always;
+    border: none;
+    color: transparent;
+    height: 0;
+    margin: 0;
+    padding: 0;
+  }
+  body.printing-doc .doc-heading,
+  body.printing-doc .doc-signatures {
+    page-break-inside: avoid;
+  }
+}

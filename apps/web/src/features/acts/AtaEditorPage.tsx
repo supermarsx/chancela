@@ -23,6 +23,7 @@ import {
   useArchiveAct,
   useBook,
   useCompliance,
+  useEntity,
   useSealAct,
   useUpdateAct,
 } from '../../api/hooks';
@@ -72,6 +73,7 @@ import {
   useToast,
 } from '../../ui';
 import { CompliancePanel } from './CompliancePanel';
+import { ActDocumentPanel } from '../documents/ActDocumentPanel';
 
 // Working (editable) copy of the mutable act fields. Scalars are held as strings for the
 // inputs (empty ⇒ absent on save); the structured collections are held as their wire
@@ -850,6 +852,7 @@ export function AtaEditorPage() {
   const { id = '' } = useParams();
   const act = useAct(id);
   const book = useBook(act.data?.book_id ?? '');
+  const entity = useEntity(book.data?.entity_id ?? '');
   const compliance = useCompliance(id);
   const update = useUpdateAct(id);
   const advance = useAdvanceAct(id);
@@ -1141,6 +1144,8 @@ export function AtaEditorPage() {
               onChange={(next) => set('attachments', next)}
             />
           </Card>
+
+          <ActDocumentPanel act={a} entityName={entity.data?.name} family={entity.data?.family} />
         </div>
 
         <div className="split__aside stack">

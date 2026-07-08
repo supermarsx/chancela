@@ -935,4 +935,31 @@ export const fiFI: Catalog = {
   'toast.user.deactivated': 'Käyttäjä poistettu käytöstä.',
   'toast.user.updated': 'Käyttäjä päivitetty.',
   'toast.signout.success': 'Kirjauduttu ulos.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Asiakirja',
+  'documents.preview.show': 'Esikatsele asiakirjaa',
+  'documents.preview.hide': 'Piilota esikatselu',
+  'documents.preview.hint':
+    'Esikatselu luotu nykyisestä tietueesta. Voi muuttua sinetöintiin asti.',
+  'documents.preview.empty': 'Asiakirjassa ei ole sisältöä.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Mallia ei ole saatavilla',
+  'documents.preview.noTemplate.body':
+    'Tälle yhteisötyypille ei ole vielä asiakirjamallia. Pöytäkirja voidaan silti sinetöidä; asiakirja tulee saataville, kun malli julkaistaan.',
+  'documents.print': 'Tulosta asiakirja',
+  'documents.pageBreak': 'Sivunvaihto',
+  'documents.vote.label': 'Päätös',
+  'documents.vote.favor': 'Puolesta',
+  'documents.vote.against': 'Vastaan',
+  'documents.vote.abstain': 'Tyhjää',
+  'documents.download': 'Lataa PDF',
+  'documents.download.pending': 'Ladataan…',
+  'documents.download.noneTitle': 'Asiakirjaa ei luotu',
+  'documents.download.noneBody':
+    'Pöytäkirja sinetöitiin, mutta tällä yhteisötyypillä ei ole vielä mallia, joten PDF:ää ei luotu.',
+  'documents.digest.label': 'PDF:n tiiviste:',
+  'documents.template.title': 'Sovellettava malli',
+  'documents.template.none': 'Tälle perheelle ja vaiheelle ei ole mallia.',
+  'documents.template.localeLabel': 'Kieli {locale}',
+  'toast.document.downloaded': 'PDF ladattu.',
 };

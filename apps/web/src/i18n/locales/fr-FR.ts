@@ -940,4 +940,31 @@ export const frFR: Catalog = {
   'toast.user.deactivated': 'Utilisateur désactivé.',
   'toast.user.updated': 'Utilisateur mis à jour.',
   'toast.signout.success': 'Déconnecté.',
+  // --- Generated documents (t48-e6) ----------------------------------------------
+  'documents.title': 'Document',
+  'documents.preview.show': 'Prévisualiser le document',
+  'documents.preview.hide': 'Masquer la prévisualisation',
+  'documents.preview.hint':
+    'Prévisualisation générée à partir de l’enregistrement actuel. Susceptible d’évoluer jusqu’au scellement.',
+  'documents.preview.empty': 'Le document est vide.',
+  'documents.preview.nipc': 'NIPC {nipc}',
+  'documents.preview.noTemplate.title': 'Aucun modèle disponible',
+  'documents.preview.noTemplate.body':
+    'Il n’existe pas encore de modèle de document pour cette famille d’entité. Le procès-verbal peut tout de même être scellé ; le document sera disponible dès qu’un modèle sera publié.',
+  'documents.print': 'Imprimer le document',
+  'documents.pageBreak': 'Saut de page',
+  'documents.vote.label': 'Délibération',
+  'documents.vote.favor': 'Pour',
+  'documents.vote.against': 'Contre',
+  'documents.vote.abstain': 'Abstentions',
+  'documents.download': 'Télécharger le PDF',
+  'documents.download.pending': 'Téléchargement…',
+  'documents.download.noneTitle': 'Document non généré',
+  'documents.download.noneBody':
+    'Le procès-verbal a été scellé, mais cette famille d’entité n’a pas encore de modèle ; aucun PDF n’a donc été généré.',
+  'documents.digest.label': 'Empreinte du PDF :',
+  'documents.template.title': 'Modèle applicable',
+  'documents.template.none': 'Aucun modèle disponible pour cette famille et cette étape.',
+  'documents.template.localeLabel': 'Langue {locale}',
+  'toast.document.downloaded': 'PDF téléchargé.',
 };
