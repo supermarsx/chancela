@@ -6,8 +6,9 @@
 //! restart. The server boots into DEGRADED read-only mode: `/health` reports `integrity:"broken"`
 //! and `degraded:true`, `GET /v1/ledger/integrity` pinpoints the break, an ordinary mutation is
 //! blocked with `503`, but reads and the recovery plane stay open. A `POST
-//! /v1/ledger/recovery/reanchor` (last-resort) repairs the chain, lifts the gate, and mutations flow
-//! again — with the re-anchor permanently disclosed.
+//! /v1/ledger/recovery/reanchor` (last-resort) requires step-up re-auth (a session alone is `403`),
+//! then repairs the chain, lifts the gate, and mutations flow again — with the re-anchor permanently
+//! disclosed.
 //!
 //! **Destructive data-management with step-up re-auth.** A `backend_domain` wipe requires a
 //! type-to-confirm phrase AND step-up re-auth (a session alone is refused with `403`); on success
@@ -47,7 +48,20 @@ async fn seed_domain(h: &ServerHarness, token: &str) -> (String, String) {
 )]
 async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
     let mut h = ServerHarness::start().await;
-    let token = bootstrap_session(&h).await;
+    // A signed-in operator WITH a password, set now (while healthy): the last-resort re-anchor now
+    // requires step-up re-auth, and once the instance boots degraded a domain mutation like setting a
+    // secret is 503-gated — so the credential must exist before the restart. The user (and its
+    // password) persist across the restart in the durable roster.
+    let user_id = create_user(&h, "e2e.operator", "E2E Operator").await;
+    let token = open_session(&h, &user_id).await;
+    let (status, _) = h
+        .post_json_auth(
+            &format!("/v1/users/{user_id}/secret"),
+            json!({ "password": "reanchor-pass-1234" }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 200, "set operator password");
     let (entity_id, _book_id) = seed_domain(&h, &token).await;
 
     // Healthy baseline: the integrity report is clean and not degraded.
@@ -91,10 +105,19 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
         "the integrity report pinpoints the break: {report}"
     );
 
-    // A signed-in session must be minted fresh (the in-memory one was dropped on restart). The
-    // session endpoint stays open even while degraded.
+    // A signed-in session must be minted fresh (the in-memory one was dropped on restart). The user
+    // (and its password) persisted in the durable roster, so we re-authenticate WITH the password —
+    // once a user holds a secret a password-less sign-in is refused. The session endpoint stays open
+    // even while degraded.
     let user_id = create_user_or_signin(&h).await;
-    let token = open_session(&h, &user_id).await;
+    let (status, s) = h
+        .post_json(
+            "/v1/session",
+            json!({ "user_id": user_id, "password": "reanchor-pass-1234" }),
+        )
+        .await;
+    assert_eq!(status, 200, "re-open session with password: {s}");
+    let token = s["token"].as_str().expect("session token").to_owned();
 
     // An ordinary mutation is blocked with 503 + the honest read-only body.
     let (status, body) = h
@@ -112,11 +135,25 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
     let (status, entity) = h.get_json(&format!("/v1/entities/{entity_id}")).await;
     assert_eq!(status, 200, "reads open while degraded: {entity}");
 
-    // Re-anchor (last-resort recovery) repairs the chain and is permanently disclosed.
-    let (status, resp) = h
+    // Re-anchor now requires step-up re-auth (like the destructive wipes): a session alone is 403.
+    let (status, _) = h
         .post_json_auth(
             "/v1/ledger/recovery/reanchor",
             json!({ "reason": "cópia de segurança indisponível — re-ancoragem autorizada" }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 403, "reanchor with a session alone is refused");
+
+    // Re-anchor (last-resort recovery) with valid step-up repairs the chain and is permanently
+    // disclosed.
+    let (status, resp) = h
+        .post_json_auth(
+            "/v1/ledger/recovery/reanchor",
+            json!({
+                "reason": "cópia de segurança indisponível — re-ancoragem autorizada",
+                "reauth": { "password": "reanchor-pass-1234" }
+            }),
             &token,
         )
         .await;

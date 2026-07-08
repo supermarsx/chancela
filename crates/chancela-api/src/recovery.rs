@@ -9,9 +9,12 @@
 //!
 //! - `GET /v1/ledger/integrity` → [`IntegrityReportView`] (per-chain status + precise first break +
 //!   permanent re-anchor disclosure + the live `degraded` flag).
-//! - `POST /v1/ledger/recovery/reanchor` `{ reason, actor? }` → [`ReanchorResponse`]
-//!   (`{ record, integrity }`). `422` empty reason; `409` when the chain already verifies (nothing
-//!   to repair); `422` in-memory (no durable store to persist the rebuild into).
+//! - `POST /v1/ledger/recovery/reanchor` `{ reason, reauth, actor? }` → [`ReanchorResponse`]
+//!   (`{ record, integrity }`). Requires **step-up re-auth** (the acting user's password OR a
+//!   recovery phrase — a valid session alone is `403`), mirroring the destructive wipes: re-anchor
+//!   rebuilds the chain hashes and is the most evidence-sensitive op. `422` empty reason; `409` when
+//!   the chain already verifies (nothing to repair); `422` in-memory (no durable store to persist
+//!   the rebuild into).
 //! - `POST /v1/ledger/recovery/restore` `{ archive }` → [`RestoreOutcomeView`]. `archive` is an
 //!   absolute path or a bare name resolved under `<data_dir>/backups/`. A backup that does not
 //!   verify BEFORE the swap is refused with `422` and the live store is untouched.
@@ -26,6 +29,7 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::AppState;
 use crate::actor::CurrentActor;
+use crate::data::{ReAuth, require_step_up};
 use crate::error::ApiError;
 use crate::hex::hex;
 
@@ -184,6 +188,10 @@ pub async fn get_integrity(State(state): State<AppState>) -> Json<IntegrityRepor
 pub struct ReanchorRequest {
     /// The required, non-empty human reason for this last-resort operation (recorded permanently).
     pub reason: String,
+    /// Step-up re-auth proof (mirrors the destructive wipes) — required; a valid session alone is
+    /// NOT enough.
+    #[serde(default)]
+    pub reauth: ReAuth,
     /// Optional request actor fallback; the session user takes precedence.
     #[serde(default = "default_actor")]
     pub actor: String,
@@ -208,11 +216,18 @@ pub struct ReanchorResponse {
 /// recomputes the degraded signal (a repaired chain lifts the read-only gate). Reachable while
 /// degraded (this IS the repair). The re-anchor is disclosed by a chained `ledger.reanchored` event
 /// that cannot be silently removed — it is not a laundering bypass.
+///
+/// Gated by **step-up re-auth** (the acting user's password OR a valid recovery phrase) exactly like
+/// the destructive wipes (`/v1/data/reset`, `/v1/data/start-over`): a valid session alone is refused
+/// with `403`. Re-anchor rebuilds the chain hashes in place, so it carries the same second-factor bar
+/// as a destructive wipe.
 pub async fn reanchor_ledger(
     State(state): State<AppState>,
     actor: CurrentActor,
     Json(req): Json<ReanchorRequest>,
 ) -> Result<Json<ReanchorResponse>, ApiError> {
+    // Step-up re-auth — a valid session alone is NOT enough (mirrors the destructive wipes).
+    require_step_up(&state, &actor, &req.reauth).await?;
     let actor = actor.resolve(&req.actor);
     // Re-anchor rebuilds the DURABLE chain; refuse in-memory (nothing to persist the rebuild into).
     let Some(store) = state.store.clone() else {

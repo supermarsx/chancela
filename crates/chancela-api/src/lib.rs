@@ -5912,6 +5912,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reanchor_requires_step_up_reauth() {
+        // A signed-in operator WITH a password, so step-up re-auth has a credential to verify against.
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "reanchor-pass-1234").await;
+        seed_entity_and_book(&state, &token).await;
+
+        // A valid session alone (no step-up proof) is refused with 403 — mirrors the destructive wipes.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "reparar cadeia" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "session alone is not enough for reanchor"
+        );
+
+        // A wrong password is likewise refused with a uniform 403.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "reparar cadeia", "reauth": { "password": "WRONG" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "wrong step-up refused");
+
+        // With valid step-up the op PROCEEDS past the gate: the in-memory chain is healthy, so it
+        // reaches the handler and refuses with 409 (already valid — nothing to repair).
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "reparar cadeia", "reauth": { "password": "reanchor-pass-1234" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "valid step-up proceeds; already-valid chain → 409"
+        );
+    }
+
+    #[tokio::test]
     async fn export_import_round_trips_verified_and_a_forged_bundle_quarantines() {
         // Source instance A: a book with a sealed ata.
         let a = persistent_state();
@@ -6289,13 +6348,16 @@ mod tests {
         let (status, _) = send(
             state.clone(),
             with_session(
-                post_json("/v1/ledger/recovery/reanchor", json!({ "reason": "x" })),
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "x", "reauth": { "password": "wipe-pass-1234" } }),
+                ),
                 &token,
             ),
         )
         .await;
-        // The in-memory chain is actually healthy, so reanchor refuses with 409 — proving it was
-        // REACHED (not 503-gated).
+        // The in-memory chain is actually healthy, so reanchor (with valid step-up) refuses with 409 —
+        // proving it was REACHED (not 503-gated).
         assert_eq!(
             status,
             StatusCode::CONFLICT,
