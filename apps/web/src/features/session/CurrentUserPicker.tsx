@@ -12,12 +12,20 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCreateSession, useDeleteSession, useSession, useUsers } from '../../api/hooks';
+import { ApiError } from '../../api/client';
+import type { UserView } from '../../api/types';
 import { useT } from '../../i18n';
+import { useToast } from '../../ui';
 import { SignOut } from '../../ui/icons';
 
 export function CurrentUserPicker() {
   const t = useT();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
+  // The user being switched TO who carries a secret — reveals an inline password prompt.
+  const [pending, setPending] = useState<UserView | null>(null);
+  const [password, setPassword] = useState('');
+  const [wrongPassword, setWrongPassword] = useState(false);
   const session = useSession();
   const users = useUsers();
   const signIn = useCreateSession();
@@ -28,7 +36,7 @@ export function CurrentUserPicker() {
   const initial = label.charAt(0).toUpperCase();
   const activeUsers = (users.data ?? []).filter((u) => u.active);
   const busy = signIn.isPending || signOut.isPending;
-  const actionError = signIn.error ?? signOut.error;
+  const actionError = signOut.error;
 
   // Close on Escape while open.
   useEffect(() => {
@@ -40,12 +48,56 @@ export function CurrentUserPicker() {
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
-  function pick(userId: string) {
-    signIn.mutate(userId, { onSuccess: () => setOpen(false) });
+  function reset() {
+    setPending(null);
+    setPassword('');
+    setWrongPassword(false);
+  }
+
+  function attempt(user: UserView, secret?: string) {
+    setWrongPassword(false);
+    signIn.mutate(
+      { userId: user.id, password: secret },
+      {
+        onSuccess: () => {
+          toast.success(t('toast.signin.success'));
+          reset();
+          setOpen(false);
+        },
+        onError: (e) => {
+          // 401 → wrong/missing password (inline); everything else (429 backoff…) → toast.
+          if (e instanceof ApiError && e.status === 401) {
+            setWrongPassword(true);
+            setPending(user);
+          } else {
+            toast.error(e);
+          }
+        },
+      },
+    );
+  }
+
+  function pick(user: UserView) {
+    if (user.id === currentUser?.id) {
+      setOpen(false);
+      return;
+    }
+    if (user.has_secret) {
+      setPending(user);
+      setPassword('');
+      setWrongPassword(false);
+    } else {
+      attempt(user);
+    }
   }
 
   function out() {
-    signOut.mutate(undefined, { onSuccess: () => setOpen(false) });
+    signOut.mutate(undefined, {
+      onSuccess: () => {
+        reset();
+        setOpen(false);
+      },
+    });
   }
 
   return (
@@ -73,7 +125,10 @@ export function CurrentUserPicker() {
         <>
           <div
             className="session-picker__backdrop"
-            onClick={() => setOpen(false)}
+            onClick={() => {
+              setOpen(false);
+              reset();
+            }}
             aria-hidden="true"
           />
           <div className="session-picker__menu" role="menu">
@@ -88,31 +143,77 @@ export function CurrentUserPicker() {
               )}
             </p>
 
-            <div className="session-picker__list">
-              {users.isLoading ? (
-                <p className="muted session-picker__empty">{t('common.loading')}</p>
-              ) : activeUsers.length === 0 ? (
-                <p className="muted session-picker__empty">{t('session.empty')}</p>
-              ) : (
-                activeUsers.map((u) => {
-                  const isCurrent = currentUser?.id === u.id;
-                  return (
-                    <button
-                      key={u.id}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={isCurrent}
-                      className={`session-picker__item${isCurrent ? ' is-current' : ''}`}
-                      disabled={busy}
-                      onClick={() => pick(u.id)}
-                    >
-                      <span className="session-picker__item-name">{u.display_name}</span>
-                      <code className="mono session-picker__item-user">{u.username}</code>
-                    </button>
-                  );
-                })
-              )}
-            </div>
+            {pending ? (
+              <form
+                className="session-picker__pwform"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  attempt(pending, password);
+                }}
+              >
+                <label className="session-picker__pwlabel" htmlFor="picker-pw">
+                  {t('signin.requiresPassword')} — <strong>{pending.display_name}</strong>
+                </label>
+                <input
+                  id="picker-pw"
+                  className="control"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t('signin.password.placeholder')}
+                  autoComplete="current-password"
+                  autoFocus
+                />
+                {wrongPassword ? (
+                  <p className="session-picker__error" role="alert">
+                    {t('signin.wrongPassword')}
+                  </p>
+                ) : null}
+                <div className="session-picker__pwactions">
+                  <button
+                    type="button"
+                    className="session-picker__pwback"
+                    disabled={busy}
+                    onClick={reset}
+                  >
+                    {t('signin.back')}
+                  </button>
+                  <button
+                    type="submit"
+                    className="session-picker__pwsubmit"
+                    disabled={busy || password.length === 0}
+                  >
+                    {busy ? t('signin.submitting') : t('signin.submit')}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="session-picker__list">
+                {users.isLoading ? (
+                  <p className="muted session-picker__empty">{t('common.loading')}</p>
+                ) : activeUsers.length === 0 ? (
+                  <p className="muted session-picker__empty">{t('session.empty')}</p>
+                ) : (
+                  activeUsers.map((u) => {
+                    const isCurrent = currentUser?.id === u.id;
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isCurrent}
+                        className={`session-picker__item${isCurrent ? ' is-current' : ''}`}
+                        disabled={busy}
+                        onClick={() => pick(u)}
+                      >
+                        <span className="session-picker__item-name">{u.display_name}</span>
+                        <code className="mono session-picker__item-user">{u.username}</code>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
 
             {actionError ? (
               <p className="session-picker__error" role="alert">

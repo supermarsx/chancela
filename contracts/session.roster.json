@@ -1,0 +1,17 @@
+{
+  "onboarding_required": false,
+  "users": [
+    {
+      "id": "6d5e4f00-0000-4000-8000-000000000005",
+      "username": "amelia.marques",
+      "display_name": "Amélia Marques",
+      "has_secret": true
+    },
+    {
+      "id": "7e6f5a00-0000-4000-8000-000000000006",
+      "username": "bruno.dias",
+      "display_name": "Bruno Dias",
+      "has_secret": false
+    }
+  ]
+}

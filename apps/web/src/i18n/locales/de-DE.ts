@@ -36,6 +36,11 @@ export const deDE: Catalog = {
   // --- UI primitives -------------------------------------------------------------
   'ui.digest.copy': 'Vollständigen Wert kopieren',
 
+  // --- Toast notifications (t44) -------------------------------------------------
+  'toast.dismiss': 'Schließen',
+  'toast.regionLabel': 'Benachrichtigungen',
+  'toast.genericError': 'Ein unerwarteter Fehler ist aufgetreten.',
+
   // --- Window controls (desktop) -------------------------------------------------
   'window.minimize': 'Minimieren',
   'window.restore': 'Wiederherstellen',
@@ -783,4 +788,85 @@ export const deDE: Catalog = {
   'entities.nipcUnvalidated.aria': 'NIPC nicht validiert',
   'entities.print.nipcUnvalidated': '(nicht validiert)',
   'settings.subnav.aria': 'Konfigurationsbereiche',
+
+  // --- Onboarding / sign-in / access (t44-onboarding) -----------------------------
+  'onboarding.step': 'Schritt {current} von {total}',
+  'onboarding.welcome.title': 'Willkommen bei Chancela',
+  'onboarding.welcome.body':
+    'Richten wir die App ein: Ihre Organisation, den ersten Benutzer und optional ein Passwort und einen Prüfschlüssel.',
+  'onboarding.welcome.start': 'Loslegen',
+  'onboarding.org.title': 'Ihre Organisation',
+  'onboarding.org.body':
+    'Der Name erscheint auf Dokumenten und in Kopfzeilen. Sie können ihn später in den Einstellungen ändern.',
+  'onboarding.org.label': 'Name der Organisation',
+  'onboarding.org.placeholder': 'z. B. Strategische Holding AG',
+  'onboarding.user.title': 'Erster Benutzer',
+  'onboarding.user.body':
+    'Jedes Ereignis im Prüfprotokoll wird einem Benutzer zugeordnet. Legen Sie den ersten an, um sich anzumelden.',
+  'onboarding.password.title': 'Passwort (optional)',
+  'onboarding.password.body':
+    'Ein Passwort ist eine lokale Manipulationsbremse — keine Verschlüsselung im Ruhezustand. Es gibt kein Zurücksetzen durch Administratoren: geht es verloren, ist der Prüfschlüssel unwiederbringlich.',
+  'onboarding.password.new': 'Passwort',
+  'onboarding.password.confirm': 'Passwort bestätigen',
+  'onboarding.password.hint': 'Zwischen 8 und 256 Zeichen.',
+  'onboarding.password.mismatch': 'Die Passwörter stimmen nicht überein.',
+  'onboarding.key.title': 'Prüfschlüssel (optional)',
+  'onboarding.key.body':
+    'Ein Schlüssel pro Benutzer signiert die Journalereignisse für Nachvollziehbarkeit und Manipulationsnachweis. Es ist eine Attestierung, keine qualifizierte Signatur.',
+  'onboarding.key.generate': 'Prüfschlüssel erzeugen',
+  'onboarding.key.generated': 'Schlüssel erzeugt.',
+  'onboarding.key.requiresPassword':
+    'Erfordert ein Passwort. Gehen Sie zurück, um eines festzulegen.',
+  'onboarding.finish.title': 'Alles bereit',
+  'onboarding.finish.body': 'Die Ersteinrichtung ist abgeschlossen. Melden wir Sie an.',
+  'onboarding.finish.enter': 'Chancela betreten',
+  'onboarding.back': 'Zurück',
+  'onboarding.next': 'Weiter',
+  'onboarding.skip': 'Überspringen',
+  'onboarding.finishing': 'Wird abgeschlossen…',
+  'signin.title': 'Anmelden',
+  'signin.subtitle': 'Wählen Sie Ihren Benutzer, um fortzufahren.',
+  'signin.empty': 'Es gibt noch keine aktiven Benutzer.',
+  'signin.requiresPassword': 'Passwort erforderlich',
+  'signin.password.label': 'Passwort',
+  'signin.password.placeholder': 'Ihr Passwort',
+  'signin.submit': 'Anmelden',
+  'signin.submitting': 'Anmeldung…',
+  'signin.back': 'Anderen Benutzer wählen',
+  'signin.wrongPassword': 'Falsches Passwort.',
+  'session.gate.error': 'Die Sitzung konnte nicht geladen werden.',
+  'session.gate.retry': 'Erneut versuchen',
+  'users.access.title': 'Zugang und Prüfung',
+  'users.access.note':
+    'Ein Passwort ist eine lokale Manipulationsbremse, keine Verschlüsselung im Ruhezustand. Der Prüfschlüssel ist eine Attestierung, keine qualifizierte Signatur.',
+  'users.access.cascadeWarning':
+    'Das Entfernen des Passworts zerstört auch den Prüfschlüssel. Es gibt kein Zurücksetzen durch Administratoren.',
+  'users.secret.label': 'Passwort',
+  'users.secret.has': 'Festgelegt',
+  'users.secret.none': 'Kein Passwort',
+  'users.secret.set': 'Passwort festlegen',
+  'users.secret.change': 'Ändern',
+  'users.secret.remove': 'Entfernen',
+  'users.secret.new': 'Neues Passwort',
+  'users.secret.confirm': 'Passwort bestätigen',
+  'users.secret.current': 'Aktuelles Passwort',
+  'users.secret.currentHint':
+    'Erforderlich, um ein vorhandenes Passwort zu ändern oder zu entfernen.',
+  'users.secret.hint': 'Zwischen 8 und 256 Zeichen.',
+  'users.secret.mismatch': 'Die Passwörter stimmen nicht überein.',
+  'users.key.label': 'Prüfschlüssel',
+  'users.key.has': 'Aktiv',
+  'users.key.none': 'Kein Schlüssel',
+  'users.key.fingerprint': 'Fingerabdruck',
+  'users.key.generate': 'Schlüssel erzeugen',
+  'users.key.rotate': 'Schlüssel wechseln',
+  'users.key.remove': 'Schlüssel entfernen',
+  'users.key.requiresSecret':
+    'Legen Sie ein Passwort fest, bevor Sie einen Prüfschlüssel erzeugen.',
+  'toast.onboarding.completed': 'Ersteinrichtung abgeschlossen.',
+  'toast.signin.success': 'Angemeldet.',
+  'toast.secret.set': 'Passwort festgelegt.',
+  'toast.secret.removed': 'Passwort entfernt.',
+  'toast.key.generated': 'Prüfschlüssel erzeugt.',
+  'toast.key.removed': 'Prüfschlüssel entfernt.',
 };

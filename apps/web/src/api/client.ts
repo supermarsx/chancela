@@ -39,7 +39,11 @@ import type {
   SealResult,
   UpdateEntityBody,
   SessionResult,
+  SessionRoster,
   SessionView,
+  SetSecretBody,
+  RemoveSecretBody,
+  AttestationKeyBody,
   Settings,
   UpdateActBody,
   UpdateUserBody,
@@ -166,7 +170,11 @@ const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const put = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
-const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
+const del = <T>(path: string, body?: unknown) =>
+  request<T>(path, {
+    method: 'DELETE',
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 
 /** Build a query string from defined params only (skips `undefined`). */
 function query(params: Record<string, string | number | undefined>): string {
@@ -245,7 +253,21 @@ export const api = {
   getUser: (id: string) => get<UserView>(`/v1/users/${id}`),
   createUser: (body: CreateUserBody) => post<UserView>('/v1/users', body),
   updateUser: (id: string, body: UpdateUserBody) => patch<UserView>(`/v1/users/${id}`, body),
+  // Sign-in secret + attestation-key management (t29 §4). All echo the updated UserView.
+  // The `current_password` (when a secret already exists) rides in the body; a DELETE
+  // carries it too (the `del` helper JSON-encodes an optional body).
+  setUserSecret: (id: string, body: SetSecretBody) =>
+    post<UserView>(`/v1/users/${id}/secret`, body),
+  removeUserSecret: (id: string, body: RemoveSecretBody = {}) =>
+    del<UserView>(`/v1/users/${id}/secret`, body),
+  createAttestationKey: (id: string, body: AttestationKeyBody = {}) =>
+    post<UserView>(`/v1/users/${id}/attestation-key`, body),
+  removeAttestationKey: (id: string, body: AttestationKeyBody = {}) =>
+    del<UserView>(`/v1/users/${id}/attestation-key`, body),
   getSession: () => get<SessionView>('/v1/session'),
+  // The UNAUTHENTICATED sign-in roster (t45-e1): decides onboarding-vs-sign-in and lists
+  // the signable users while signed out, without the auth-gated `GET /v1/users`.
+  getSessionRoster: () => get<SessionRoster>('/v1/session/roster'),
   createSession: (body: CreateSessionBody) => post<SessionResult>('/v1/session', body),
   deleteSession: () => del<void>('/v1/session'),
 

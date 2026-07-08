@@ -23,9 +23,14 @@ import { SettingsPage } from '../features/settings/SettingsPage';
 import { FerramentasPage } from '../features/ferramentas/FerramentasPage';
 import { CaePage } from '../features/cae/CaePage';
 import { UsersPage } from '../features/users/UsersPage';
+import { OnboardingWizard } from '../features/onboarding/OnboardingWizard';
 import { NotFoundPage } from '../features/NotFoundPage';
 
 export const router = createBrowserRouter([
+  // Full-screen first-run wizard — a SIBLING of the app shell, deliberately OUTSIDE the
+  // `Layout` chrome (no tab bar / picker). The AuthGate inside Layout redirects a fresh
+  // install here; the wizard redirects back once a user exists (plan t44 §3.2).
+  { path: '/bem-vindo', element: <OnboardingWizard /> },
   {
     path: '/',
     element: <Layout />,

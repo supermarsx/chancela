@@ -18,6 +18,7 @@ import { LeatherBackground } from '../theme/LeatherBackground';
 import { AppearanceEffects } from '../theme/AppearanceEffects';
 import { TitleBar } from '../desktop/TitleBar';
 import { CurrentUserPicker } from '../features/session/CurrentUserPicker';
+import { AuthGate } from '../features/session/AuthGate';
 import { PageErrorBoundary, ShellErrorBoundary } from './ErrorBoundary';
 import { SafeModeBanner } from './SafeModeBanner';
 import { isSafeMode } from './safeMode';
@@ -49,41 +50,47 @@ export function Layout() {
       {safe ? null : <LeatherBackground />}
       <TitleBar />
 
-      {/* Fixed secondary tab bar: topmost in the browser, under the custom titlebar
-          in the desktop shell. The brand mark stays left; the tab group is centered
-          in the full bar width; the current-user picker sits at the right. The brand
-          is hidden on desktop (the titlebar already carries the wordmark). */}
-      <nav className="topbar" aria-label={t('nav.aria')}>
-        <span className="topbar__brand">{t('common.brand')}</span>
-        <div className="topbar__nav" data-testid="tab-bar">
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) => (isActive ? 'nav__link is-active' : 'nav__link')}
-            >
-              {t(item.label)}
-            </NavLink>
-          ))}
-        </div>
-        <div className="topbar__session">
-          <CurrentUserPicker />
-        </div>
-      </nav>
+      {/* The auth gate blocks the app chrome until a session exists: a fresh install is
+          redirected to the onboarding wizard, a signed-out visitor sees the sign-in
+          surface, and only a signed-in operator reaches the tab bar + routed content. The
+          safe banner / leather layer above stay independent of it (guard × safe-mode). */}
+      <AuthGate>
+        {/* Fixed secondary tab bar: topmost in the browser, under the custom titlebar
+            in the desktop shell. The brand mark stays left; the tab group is centered
+            in the full bar width; the current-user picker sits at the right. The brand
+            is hidden on desktop (the titlebar already carries the wordmark). */}
+        <nav className="topbar" aria-label={t('nav.aria')}>
+          <span className="topbar__brand">{t('common.brand')}</span>
+          <div className="topbar__nav" data-testid="tab-bar">
+            {NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) => (isActive ? 'nav__link is-active' : 'nav__link')}
+              >
+                {t(item.label)}
+              </NavLink>
+            ))}
+          </div>
+          <div className="topbar__session">
+            <CurrentUserPicker />
+          </div>
+        </nav>
 
-      {/* The single inner scroll container — the window itself never scrolls. */}
-      <div className="app-scroll">
-        <div className="app">
-          <PageErrorBoundary key={pathname}>
-            <main className="route-transition">
-              <Outlet />
-            </main>
-          </PageErrorBoundary>
+        {/* The single inner scroll container — the window itself never scrolls. */}
+        <div className="app-scroll">
+          <div className="app">
+            <PageErrorBoundary key={pathname}>
+              <main className="route-transition">
+                <Outlet />
+              </main>
+            </PageErrorBoundary>
 
-          <footer className="footer">{t('common.footer')}</footer>
+            <footer className="footer">{t('common.footer')}</footer>
+          </div>
         </div>
-      </div>
+      </AuthGate>
     </ShellErrorBoundary>
   );
 }

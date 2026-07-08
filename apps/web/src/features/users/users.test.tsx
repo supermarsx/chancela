@@ -148,3 +148,95 @@ describe('UsersPage', () => {
     expect(patch?.body).toMatchObject({ active: false });
   });
 });
+
+const BRUNO: UserView = {
+  id: 'u2',
+  username: 'bruno.dias',
+  display_name: 'Bruno Dias',
+  created_at: '2026-07-07T12:05:00Z',
+  active: true,
+  has_secret: true,
+  has_attestation_key: false,
+};
+
+describe('UserAccessManager (per-row password + audit key)', () => {
+  it('sets a sign-in password via POST /v1/users/{id}/secret', async () => {
+    const { fn, calls } = recordingFetch((r) =>
+      r.url.includes('/secret') && r.method === 'POST'
+        ? jsonResponse({ ...AMELIA, has_secret: true })
+        : jsonResponse([AMELIA]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<UsersPage />, ['/utilizadores']);
+
+    // Expand the row's access manager.
+    fireEvent.click(await screen.findByRole('button', { name: /Acesso e auditoria/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Definir palavra-passe' }));
+
+    fireEvent.change(await screen.findByLabelText('Nova palavra-passe'), {
+      target: { value: 'password123' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'password123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/secret') && c.method === 'POST')).toBe(true),
+    );
+    const post = calls.find((c) => c.url.includes('/secret') && c.method === 'POST');
+    expect(post?.url).toContain('/v1/users/u1/secret');
+    expect(post?.body).toMatchObject({ password: 'password123' });
+  });
+
+  it('blocks mismatched passwords before hitting the server', async () => {
+    const { fn, calls } = recordingFetch(() => jsonResponse([AMELIA]));
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<UsersPage />, ['/utilizadores']);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Acesso e auditoria/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Definir palavra-passe' }));
+    fireEvent.change(await screen.findByLabelText('Nova palavra-passe'), {
+      target: { value: 'password123' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'different1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    expect(await screen.findByText('As palavras-passe não coincidem.')).toBeTruthy();
+    expect(calls.some((c) => c.url.includes('/secret'))).toBe(false);
+  });
+
+  it('generates an audit key for a user that already has a password', async () => {
+    const { fn, calls } = recordingFetch((r) =>
+      r.url.includes('/attestation-key') && r.method === 'POST'
+        ? jsonResponse({
+            ...BRUNO,
+            has_attestation_key: true,
+            attestation_key_fingerprint: 'ab'.repeat(16),
+          })
+        : jsonResponse([BRUNO]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<UsersPage />, ['/utilizadores']);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Acesso e auditoria/ }));
+    fireEvent.change(await screen.findByLabelText('Palavra-passe atual'), {
+      target: { value: 'current-pw' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Gerar chave' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/attestation-key') && c.method === 'POST')).toBe(
+        true,
+      ),
+    );
+    const post = calls.find((c) => c.url.includes('/attestation-key') && c.method === 'POST');
+    expect(post?.url).toContain('/v1/users/u2/attestation-key');
+    expect(post?.body).toMatchObject({ current_password: 'current-pw' });
+  });
+});

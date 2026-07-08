@@ -661,11 +661,14 @@ export interface LawEntryView {
   retrieved_at: string | null;
 }
 
-// --- Users + session (§2.8, plan t14) -------------------------------------------
+// --- Users + session (§2.8, plan t14; auth t41/t29) -----------------------------
 //
-// User accounts identify the actor behind every ledger mutation. v1 is attribution,
-// not access control: there is no password on the wire and no authorization. A session
-// is a bare in-memory token (`X-Chancela-Session`) that resolves the current user.
+// User accounts identify the actor behind every ledger mutation AND gate access to it:
+// since t41 every mutation requires a session, and since t29 a user may hold an optional
+// sign-in secret (argon2id) and a PKI audit-attestation key. No secret material ever
+// crosses the wire (`UserView` carries only booleans + a key fingerprint). A session is an
+// in-memory token (`X-Chancela-Session`) minted by `POST /v1/session` that resolves the
+// current user; a password is a local tamper speed-bump, not at-rest encryption.
 
 export interface UserView {
   id: string;
@@ -694,6 +697,31 @@ export interface UpdateUserBody {
 /** `GET /v1/session` — the active user, or `null` when signed out. */
 export interface SessionView {
   user: UserView | null;
+}
+
+/**
+ * One sign-in-eligible user in the UNAUTHENTICATED roster (`GET /v1/session/roster`,
+ * t45-e1). Deliberately minimal — EXACTLY these four keys; it never carries secret
+ * material, the attestation fingerprint, `created_at` or `active`. `has_secret` tells the
+ * sign-in surface whether to prompt for a password.
+ */
+export interface RosterUser {
+  id: string;
+  username: string;
+  display_name: string;
+  has_secret: boolean;
+}
+
+/**
+ * `GET /v1/session/roster` (unauthenticated, t45-e1) — the signed-out sign-in roster
+ * that breaks the chicken-and-egg lockout: it lets the UI decide onboarding-vs-sign-in
+ * and list the users it may sign in as WITHOUT the auth-gated `GET /v1/users`.
+ * `onboarding_required` is true iff no user exists at all (the first-run bootstrap is
+ * available → show the wizard). `users` holds active users only.
+ */
+export interface SessionRoster {
+  onboarding_required: boolean;
+  users: RosterUser[];
 }
 
 export interface CreateSessionBody {

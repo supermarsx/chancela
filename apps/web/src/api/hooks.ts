@@ -22,6 +22,9 @@ import type {
   RegistryImportBody,
   SealActBody,
   Settings,
+  SetSecretBody,
+  RemoveSecretBody,
+  AttestationKeyBody,
   UpdateActBody,
   UpdateEntityBody,
   UpdateUserBody,
@@ -53,6 +56,7 @@ export const keys = {
   lawManifest: ['law', 'manifest'] as const,
   users: ['users'] as const,
   session: ['session'] as const,
+  roster: ['session', 'roster'] as const,
 };
 
 // --- Entities -------------------------------------------------------------------
@@ -424,6 +428,73 @@ export function useCreateUser() {
     mutationFn: (body: CreateUserBody) => api.createUser(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.users });
+      // The unauth roster gates onboarding-vs-sign-in; creating a user (the first-run
+      // bootstrap especially) flips `onboarding_required`, so the guard must refetch it.
+      void qc.invalidateQueries({ queryKey: keys.roster });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Set / change a user's sign-in secret (`POST /v1/users/{id}/secret`, t29). Changing an
+ * existing secret requires `current_password` (verified server-side; 401 on mismatch)
+ * and re-wraps any attestation key under the new secret. The updated `UserView`
+ * (`has_secret:true`) primes the caches the sign-in roster and management panel read.
+ */
+export function useSetUserSecret(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SetSecretBody) => api.setUserSecret(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: keys.roster });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Remove a user's sign-in secret (`DELETE /v1/users/{id}/secret`, t29). Cascades: the
+ * attestation key is destroyed with the secret (its KEK is gone). Requires the current
+ * password when one is set (401 on mismatch).
+ */
+export function useRemoveUserSecret(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RemoveSecretBody) => api.removeUserSecret(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: keys.roster });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Generate / rotate a user's PKI audit-attestation key (`POST /v1/users/{id}/attestation-key`,
+ * t29). Requires a sign-in secret first (409 if none) and the current password (401 on
+ * mismatch). Rotating replaces the key; prior attestations still verify (each carries its
+ * own fingerprint).
+ */
+export function useCreateAttestationKey(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AttestationKeyBody) => api.createAttestationKey(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Remove a user's attestation key (`DELETE /v1/users/{id}/attestation-key`, t29). */
+export function useRemoveAttestationKey(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AttestationKeyBody) => api.removeAttestationKey(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.users });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -465,18 +536,47 @@ export function useSession() {
 }
 
 /**
- * Sign in as a user (`POST /v1/session`). The issued token is stored in memory so
+ * The UNAUTHENTICATED sign-in roster (`GET /v1/session/roster`, t45-e1). Readable while
+ * signed out (no session header, never 401s), so the auth guard and the sign-in surface
+ * use it — NOT the auth-gated `GET /v1/users`, which 401s signed-out (the chicken-and-egg
+ * lockout the t43 audit flagged). Kept fresh briefly; `useCreateUser`/`useSetUserSecret`
+ * invalidate it when the roster changes.
+ */
+export function useSessionRoster() {
+  return useQuery({
+    queryKey: keys.roster,
+    queryFn: () => api.getSessionRoster(),
+    staleTime: 15_000,
+    retry: false,
+  });
+}
+
+/** Arguments for {@link useCreateSession}: the user to sign in as and, for a
+ *  password-protected user (`has_secret`), their sign-in secret. */
+export interface SignInArgs {
+  userId: string;
+  password?: string;
+}
+
+/**
+ * Sign in as a user (`POST /v1/session`, t29). The issued token is stored in memory so
  * every subsequent request carries it; the session query is primed with the returned
- * user so the picker updates immediately.
+ * user so the shell updates immediately. A password is sent only for `has_secret` users;
+ * a wrong/missing password is a **401** and too many attempts a **429** (backoff) — the
+ * caller surfaces those distinctly.
  */
 export function useCreateSession() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (userId: string) => api.createSession({ user_id: userId }),
+    mutationFn: ({ userId, password }: SignInArgs) =>
+      api.createSession({ user_id: userId, password }),
     onSuccess: (result) => {
       setSessionToken(result.token);
       qc.setQueryData(keys.session, { user: result.user });
       void qc.invalidateQueries({ queryKey: keys.session });
+      // Now signed in, the auth-gated user list becomes readable — refetch it so the
+      // management page / picker have the full UserView set.
+      void qc.invalidateQueries({ queryKey: keys.users });
     },
   });
 }

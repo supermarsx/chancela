@@ -57,6 +57,8 @@ import {
   type RegistryExtractView,
   type RegistryOfficerView,
   type RegistryProvenanceView,
+  type RosterUser,
+  type SessionRoster,
   type SessionView,
   type Settings,
   type SigningSettings,
@@ -743,6 +745,33 @@ describe('contract fixtures parse through the real client', () => {
     );
     expect(user).not.toHaveProperty('password_hash');
   });
+
+  it('session.roster.json → SessionRoster (GET /v1/session/roster, unauth)', async () => {
+    stubFetch(fixture('session.roster.json'));
+    const roster: SessionRoster = await api.getSessionRoster();
+    assertExactKeys<SessionRoster>(
+      roster,
+      { onboarding_required: true, users: true },
+      'SessionRoster',
+    );
+    expect(typeof roster.onboarding_required).toBe('boolean');
+    expect(Array.isArray(roster.users)).toBe(true);
+    for (const u of roster.users) {
+      // The roster user object is deliberately minimal — EXACTLY these four keys, no
+      // secret material / fingerprint / created_at / active (t45-e1 freeze).
+      const ru = assertExactKeys<RosterUser>(
+        u,
+        { id: true, username: true, display_name: true, has_secret: true },
+        'SessionRoster.users[]',
+      );
+      expect(ru.username).toMatch(/^[a-z0-9._-]+$/);
+      expect(typeof ru.has_secret).toBe('boolean');
+      expect(u).not.toHaveProperty('active');
+      expect(u).not.toHaveProperty('has_attestation_key');
+      expect(u).not.toHaveProperty('attestation_key_fingerprint');
+      expect(u).not.toHaveProperty('created_at');
+    }
+  });
 });
 
 // --- Cross-cutting guards ------------------------------------------------------
@@ -764,6 +793,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'cae.updates.json',
       'user.json',
       'session.json',
+      'session.roster.json',
     ]) {
       expect(names, `contracts/ should include ${expected}`).toContain(expected);
     }

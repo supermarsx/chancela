@@ -1,11 +1,14 @@
 /**
- * Utilizadores (plan t14 §2.8) — manage the accounts that attribute every ledger
+ * Utilizadores (plan t14 §2.8, t44 §5) — manage the accounts that attribute every ledger
  * mutation. Create a user (a lowercase-slug username validated client-side to match the
  * server, plus an optional display name), list all users ordered by creation, and
  * activate/deactivate them (`PATCH` — users are never deleted, so attribution history
  * stays intact). Signing in as a user happens from the picker in the shell.
  *
- * v1 is attribution, not access control: there is no password and no authorization.
+ * Since t41/t29, user profiles serve BOTH attribution AND access control: every mutation
+ * requires a session, and each user may hold an optional sign-in secret (argon2id) and a
+ * PKI audit-attestation key, managed per row by {@link UserAccessManager}. The password is
+ * a local tamper speed-bump, not at-rest encryption; there is no admin reset.
  */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -26,40 +29,60 @@ import {
   Table,
 } from '../../ui';
 import { isValidUsername, usernameError } from './username';
+import { UserAccessManager } from './UserAccessManager';
 import type { UserView } from '../../api/types';
 
 function UserRow({ user }: { user: UserView }) {
   const t = useT();
   const update = useUpdateUser(user.id);
+  const [managing, setManaging] = useState(false);
   return (
-    <tr>
-      <td>
-        <code className="mono">{user.username}</code>
-      </td>
-      <td>{user.display_name}</td>
-      <td>
-        {user.active ? (
-          <Badge tone="ok">{t('users.status.active')}</Badge>
-        ) : (
-          <Badge tone="neutral">{t('users.status.inactive')}</Badge>
-        )}
-      </td>
-      <td>
-        <Button
-          type="button"
-          variant="ghost"
-          icon={user.active ? <Icon.Close /> : <Icon.Check />}
-          disabled={update.isPending}
-          onClick={() => update.mutate({ active: !user.active })}
-        >
-          {update.isPending
-            ? t('common.saving')
-            : user.active
-              ? t('users.action.deactivate')
-              : t('users.action.reactivate')}
-        </Button>
-      </td>
-    </tr>
+    <>
+      <tr>
+        <td>
+          <code className="mono">{user.username}</code>
+        </td>
+        <td>{user.display_name}</td>
+        <td>
+          {user.active ? (
+            <Badge tone="ok">{t('users.status.active')}</Badge>
+          ) : (
+            <Badge tone="neutral">{t('users.status.inactive')}</Badge>
+          )}
+        </td>
+        <td className="users-actions">
+          <Button
+            type="button"
+            variant="ghost"
+            icon={<Icon.Wrench />}
+            aria-expanded={managing}
+            onClick={() => setManaging((m) => !m)}
+          >
+            {t('users.access.title')}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            icon={user.active ? <Icon.Close /> : <Icon.Check />}
+            disabled={update.isPending}
+            onClick={() => update.mutate({ active: !user.active })}
+          >
+            {update.isPending
+              ? t('common.saving')
+              : user.active
+                ? t('users.action.deactivate')
+                : t('users.action.reactivate')}
+          </Button>
+        </td>
+      </tr>
+      {managing ? (
+        <tr className="users-manage-row">
+          <td colSpan={4}>
+            <UserAccessManager user={user} />
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }
 

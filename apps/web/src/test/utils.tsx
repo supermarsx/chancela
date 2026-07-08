@@ -6,6 +6,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { render } from '@testing-library/react';
+import { ToastProvider } from '../ui/toast';
 
 export function makeClient(): QueryClient {
   return new QueryClient({
@@ -23,9 +24,14 @@ export function Wrapper({
   children: ReactNode;
   initialEntries?: string[];
 }) {
+  // ToastProvider is required by any component that calls `useToast()` on mutation, so it
+  // is part of the standard render context (mirrors app/providers) — omitting it would
+  // break every mutation-flow test at once (plan t44 R6).
   return (
     <QueryClientProvider client={makeClient()}>
-      <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

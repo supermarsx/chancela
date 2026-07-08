@@ -1,36 +1,29 @@
 /**
- * The end-to-end journey (plan t15 §2.5): one narrative through the composed system,
+ * The end-to-end journey (plan t15 §2.5, t44): one narrative through the composed system,
  * driven as a user in a real headless browser against the real server binary.
  *
- *   create a user → sign in via the topbar picker → create an entity → open a book →
- *   draft an ata → fill it, advance it to «Em assinatura», watch the compliance panel go
- *   clean, seal it → then confirm the Arquivo shows the hash chain intact with the
- *   signed-in username attributed as the actor on the sealed event.
+ *   onboard the first user + sign in (the app is auth-gated since t41/t44) → create an
+ *   entity → open a book → draft an ata → fill it, advance it to «Em assinatura», watch the
+ *   compliance panel go clean, seal it → then confirm the Arquivo shows the hash chain
+ *   intact with the signed-in username attributed as the actor on the sealed event.
  *
  * After sign-in every navigation is an in-app (client-side) route change, never a full
  * `page.goto` — the session token lives in the SPA's memory and a reload would drop it,
- * sending the ledger actor back to the system "api". Keeping to SPA navigation is what
+ * sending the ledger actor back to the sign-in surface. Keeping to SPA navigation is what
  * proves the `X-Chancela-Session` → actor attribution end to end.
  */
 import { test, expect } from '@playwright/test';
+import { OPERATOR, signInAt } from './auth';
 
-test('user → session → entity → book → ata → seal → Arquivo chain with actor', async ({ page }) => {
-  const stamp = Date.now();
-  const username = `amelia.marques${stamp}`;
-  const displayName = `Amélia Marques ${stamp}`;
-
-  // --- Create a user (no session needed yet) ---------------------------------
-  await page.goto('/utilizadores');
-  await page.getByLabel('Nome de utilizador').fill(username);
-  await page.getByLabel('Nome a apresentar (opcional)').fill(displayName);
-  await page.getByRole('button', { name: 'Criar utilizador' }).click();
-  // The new account shows in the list.
-  await expect(page.getByText(username, { exact: true })).toBeVisible();
-
-  // --- Sign in via the topbar picker -----------------------------------------
-  await page.getByTestId('session-trigger').click();
-  await page.getByRole('menuitemradio', { name: new RegExp(displayName) }).click();
-  await expect(page.getByTestId('session-trigger')).toContainText(displayName);
+test('onboard → session → entity → book → ata → seal → Arquivo chain with actor', async ({
+  page,
+}) => {
+  // --- Onboard the first user + sign in (the app requires a session) ----------
+  // On a fresh server this runs the /bem-vindo wizard (creates the passwordless operator);
+  // it lands signed in at the app home.
+  await signInAt(page, '/');
+  const username = OPERATOR.username;
+  await expect(page.getByTestId('session-trigger')).toContainText(OPERATOR.displayName);
 
   // From here on: in-app navigation only, so the in-memory session token survives.
   const tab = (name: string) =>

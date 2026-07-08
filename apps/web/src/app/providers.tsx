@@ -16,6 +16,7 @@
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { ToastProvider } from '../ui/toast';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,5 +31,12 @@ const queryClient = new QueryClient({
 });
 
 export function Providers({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  // ToastProvider wraps the router (children) so a success toast fired as a handler
+  // navigates away — entity/book/act create, registry import — survives the route change
+  // and renders on the destination page (plan t44 R6) rather than unmounting with it.
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>{children}</ToastProvider>
+    </QueryClientProvider>
+  );
 }

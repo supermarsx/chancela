@@ -5,9 +5,11 @@
  * the journey's mutations, so they run in isolation against a freshly-booted server.
  */
 import { test, expect } from '@playwright/test';
+import { signInAt } from './auth';
 
 test('boots the SPA with the leather background and the six-tab bar', async ({ page }) => {
-  await page.goto('/');
+  // The app is auth-gated (t44): onboard/sign in before the chrome renders.
+  await signInAt(page, '/');
 
   // The fixed leather layer is rendered (settings default the texture on).
   await expect(page.getByTestId('leather-bg')).toBeAttached();
@@ -30,7 +32,7 @@ test('boots the SPA with the leather background and the six-tab bar', async ({ p
 });
 
 test('settings theme flip applies [data-theme] live', async ({ page }) => {
-  await page.goto('/configuracoes');
+  await signInAt(page, '/configuracoes');
   const html = page.locator('html');
   const theme = page.getByLabel('Tema');
 
@@ -46,7 +48,7 @@ test('settings theme flip applies [data-theme] live', async ({ page }) => {
 });
 
 test('Configurações sub-tabs switch sections and deep-link via ?sec=', async ({ page }) => {
-  await page.goto('/configuracoes');
+  await signInAt(page, '/configuracoes');
 
   // Aparência is the default section (its theme control shows). The sub-tab pills use the
   // shared SubNav (gliding indicator, same guarded effect as Ferramentas) — repeated
@@ -80,7 +82,7 @@ test('safe mode (?safe=1) shows the banner and bypasses the appearance layer', a
 });
 
 test('Legislação shelf filters live via search in Ferramentas', async ({ page }) => {
-  await page.goto('/ferramentas?tool=legislacao');
+  await signInAt(page, '/ferramentas?tool=legislacao');
 
   // The law shelf renders (a known theme heading, incl. the new t34 group).
   await expect(page.getByRole('heading', { name: 'Registo e identificação' })).toBeVisible();
@@ -100,7 +102,7 @@ test('Legislação shelf filters live via search in Ferramentas', async ({ page 
 
 test('CAE search returns results from the catalog in Ferramentas', async ({ page }) => {
   // The former /cae page now redirects into the Ferramentas explorer (deep links kept).
-  await page.goto('/cae');
+  await signInAt(page, '/cae');
   await expect(page).toHaveURL(/\/ferramentas/);
 
   await page.getByLabel('Procurar no catálogo CAE').fill('68110');
