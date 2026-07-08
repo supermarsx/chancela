@@ -27,6 +27,7 @@ import {
   PageHeader,
   SkeletonTable,
   Table,
+  useToast,
 } from '../../ui';
 import { isValidUsername, usernameError } from './username';
 import { UserAccessManager } from './UserAccessManager';
@@ -34,8 +35,22 @@ import type { UserView } from '../../api/types';
 
 function UserRow({ user }: { user: UserView }) {
   const t = useT();
+  const toast = useToast();
   const update = useUpdateUser(user.id);
   const [managing, setManaging] = useState(false);
+
+  // Activate/deactivate; distinct toast per action (the target state is `!user.active`).
+  function toggleActive() {
+    const nextActive = !user.active;
+    update.mutate(
+      { active: nextActive },
+      {
+        onSuccess: () =>
+          toast.success(nextActive ? t('toast.user.activated') : t('toast.user.deactivated')),
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
   return (
     <>
       <tr>
@@ -65,7 +80,7 @@ function UserRow({ user }: { user: UserView }) {
             variant="ghost"
             icon={user.active ? <Icon.Close /> : <Icon.Check />}
             disabled={update.isPending}
-            onClick={() => update.mutate({ active: !user.active })}
+            onClick={toggleActive}
           >
             {update.isPending
               ? t('common.saving')
@@ -88,6 +103,7 @@ function UserRow({ user }: { user: UserView }) {
 
 function CreateUserForm() {
   const t = useT();
+  const toast = useToast();
   const create = useCreateUser();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -104,9 +120,12 @@ function CreateUserForm() {
       { username, display_name: displayName.trim() || undefined },
       {
         onSuccess: () => {
+          // R7: the inline 409 duplicate note against the field stays.
+          toast.success(t('toast.user.created'));
           setUsername('');
           setDisplayName('');
         },
+        onError: (e) => toast.error(e),
       },
     );
   }

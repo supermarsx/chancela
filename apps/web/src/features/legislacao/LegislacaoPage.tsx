@@ -39,7 +39,7 @@ import { openExternal } from '../../desktop/openExternal';
 import { ApiError, lawPdfPath } from '../../api/client';
 import { useFetchLawPdf, useLawArchive, type LawArchiveState } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Badge, Button, EmptyState, Input, abbreviateDigest } from '../../ui';
+import { Badge, Button, EmptyState, Input, abbreviateDigest, useToast } from '../../ui';
 import {
   DIPLOMAS,
   LEGISLACAO_TEMAS,
@@ -108,6 +108,7 @@ function PdfActions({
   archive: LawArchiveState | undefined;
 }) {
   const t = useT();
+  const toast = useToast();
   const store = useFetchLawPdf();
 
   const available = archive?.available === true;
@@ -149,7 +150,13 @@ function PdfActions({
           variant="ghost"
           className="leg-store-btn"
           disabled={store.isPending}
-          onClick={() => store.mutate(diploma.id)}
+          onClick={() =>
+            store.mutate(diploma.id, {
+              // R7: the inline storeError note (role=alert) stays for the 409/422/502 detail.
+              onSuccess: () => toast.success(t('toast.law.stored')),
+              onError: (e) => toast.error(e),
+            })
+          }
         >
           {store.isPending ? t('legislacao.pdf.saving') : t('legislacao.pdf.save')}
         </Button>

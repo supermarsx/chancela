@@ -94,9 +94,14 @@ export function CurrentUserPicker() {
   function out() {
     signOut.mutate(undefined, {
       onSuccess: () => {
+        // Sign-in success is toasted in `attempt` (above); sign-out is toasted here — the
+        // two never fire together (t44-retrofit-b partition). R7: the inline `actionError`
+        // note below still renders on a sign-out failure.
+        toast.success(t('toast.signout.success'));
         reset();
         setOpen(false);
       },
+      onError: (e) => toast.error(e),
     });
   }
 

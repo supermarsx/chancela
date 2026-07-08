@@ -112,6 +112,8 @@ describe('UsersPage', () => {
       username: 'amelia.marques',
       display_name: 'Amélia Marques',
     });
+    // A success toast confirms the create (t44 retrofit-b).
+    expect(await screen.findByText('Utilizador criado.')).toBeTruthy();
   });
 
   it('surfaces a duplicate-username 409 inline against the field', async () => {
@@ -129,7 +131,8 @@ describe('UsersPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /criar utilizador/i }));
 
-    expect(await screen.findByText(/already exists/)).toBeTruthy();
+    // The 409 message shows inline against the field and in the error toast (R7).
+    expect((await screen.findAllByText(/already exists/)).length).toBeGreaterThanOrEqual(1);
   });
 
   it('toggles a user active/inactive via PATCH', async () => {
@@ -146,6 +149,8 @@ describe('UsersPage', () => {
     const patch = calls.find((c) => c.method === 'PATCH');
     expect(patch?.url).toContain('/v1/users/u1');
     expect(patch?.body).toMatchObject({ active: false });
+    // Deactivating fires the distinct deactivated toast (t44 retrofit-b).
+    expect(await screen.findByText('Utilizador desativado.')).toBeTruthy();
   });
 });
 

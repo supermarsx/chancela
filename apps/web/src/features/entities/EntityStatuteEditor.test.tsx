@@ -9,6 +9,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { EntityStatuteEditor } from './EntityStatuteEditor';
 import { makeClient } from '../../test/utils';
+import { ToastProvider } from '../../ui/toast';
 import type { Entity } from '../../api/types';
 
 const entity: Entity = {
@@ -57,9 +58,11 @@ function stateful(initial: Entity) {
 function renderEditor(ent: Entity) {
   return render(
     <QueryClientProvider client={makeClient()}>
-      <MemoryRouter>
-        <EntityStatuteEditor entity={ent} />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <EntityStatuteEditor entity={ent} />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -96,6 +99,8 @@ describe('EntityStatuteEditor', () => {
         },
       }),
     );
+    // A success toast fires on save (t44 retrofit-a).
+    expect(await screen.findByText('Estatuto atualizado.')).toBeTruthy();
   });
 
   it('clears the overlay via Repor when a statute exists', async () => {

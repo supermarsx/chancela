@@ -15,7 +15,7 @@ import { Link } from 'react-router-dom';
 import { useCaeCatalog, useRefreshCae } from '../../api/hooks';
 import { ApiError } from '../../api/client';
 import { useT } from '../../i18n';
-import { Badge, Button, Card, ErrorNote, Icon, SkeletonDeflist } from '../../ui';
+import { Badge, Button, Card, ErrorNote, Icon, SkeletonDeflist, useToast } from '../../ui';
 import type { CaeLevelCounts } from '../../api/types';
 
 /** Total nodes across all five levels of a revision. */
@@ -75,8 +75,19 @@ function RefreshOutcome({ refresh }: { refresh: ReturnType<typeof useRefreshCae>
 
 export function CaeCatalogPanel() {
   const t = useT();
+  const toast = useToast();
   const catalog = useCaeCatalog();
   const refresh = useRefreshCae();
+
+  // R7: the inline RefreshOutcome note (role=status, with the 422/502 distinctions) stays;
+  // the toast is additive and keeps the updated-vs-no-op distinction.
+  function onRefresh() {
+    refresh.mutate(undefined, {
+      onSuccess: (result) =>
+        toast.success(result.updated ? t('toast.cae.refreshed') : t('toast.cae.upToDate')),
+      onError: (e) => toast.error(e),
+    });
+  }
 
   return (
     <Card
@@ -87,7 +98,7 @@ export function CaeCatalogPanel() {
           variant="secondary"
           icon={<Icon.Refresh />}
           disabled={refresh.isPending}
-          onClick={() => refresh.mutate()}
+          onClick={onRefresh}
         >
           {refresh.isPending ? t('cae.refresh.button.pending') : t('cae.refresh.button')}
         </Button>

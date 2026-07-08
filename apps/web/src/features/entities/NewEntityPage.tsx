@@ -23,10 +23,12 @@ import {
   PageHeader,
   Select,
   Toggle,
+  useToast,
 } from '../../ui';
 
 export function NewEntityPage() {
   const t = useT();
+  const toast = useToast();
   const navigate = useNavigate();
   const create = useCreateEntity();
   const [name, setName] = useState('');
@@ -48,7 +50,15 @@ export function NewEntityPage() {
     e.preventDefault();
     create.mutate(
       { name, nipc, seat, kind, allow_invalid_nipc: allowInvalidNipc },
-      { onSuccess: (entity) => navigate(`/entidades/${entity.id}`) },
+      {
+        onSuccess: (entity) => {
+          // R6: the success toast fires even though the handler navigates away — the
+          // ToastProvider is above the router. R7: the inline NIPC 422 note stays.
+          toast.success(t('toast.entity.created'));
+          navigate(`/entidades/${entity.id}`);
+        },
+        onError: (e) => toast.error(e),
+      },
     );
   }
 

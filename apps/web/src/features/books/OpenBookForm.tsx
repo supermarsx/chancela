@@ -22,7 +22,7 @@ import {
   type Entity,
   type NumberingScheme,
 } from '../../api/types';
-import { Button, Card, ErrorNote, Field, Icon, Input, Select, TextArea } from '../../ui';
+import { Button, Card, ErrorNote, Field, Icon, Input, Select, TextArea, useToast } from '../../ui';
 
 export function parseLines(text: string): string[] {
   return text
@@ -40,6 +40,7 @@ interface Props {
 
 export function OpenBookForm({ entityId, entities }: Props) {
   const t = useT();
+  const toast = useToast();
   const navigate = useNavigate();
   const open = useOpenBook();
   const settings = useSettings();
@@ -77,7 +78,14 @@ export function OpenBookForm({ entityId, entities }: Props) {
         required_signatories: parseLines(signatories),
         predecessor: predecessor.trim() || undefined,
       },
-      { onSuccess: (book) => navigate(`/livros/${book.id}`) },
+      {
+        // R6: success toast survives the navigate-away; R7: inline ErrorNote stays.
+        onSuccess: (book) => {
+          toast.success(t('toast.book.opened'));
+          navigate(`/livros/${book.id}`);
+        },
+        onError: (e) => toast.error(e),
+      },
     );
   }
 

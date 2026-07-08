@@ -9,10 +9,11 @@ import { useDraftAct } from '../../api/hooks';
 import { meetingChannelLabels, optionsFrom } from '../../api/labels';
 import { useT } from '../../i18n';
 import { MEETING_CHANNELS, type MeetingChannel } from '../../api/types';
-import { Button, ErrorNote, Field, Icon, Input, Select } from '../../ui';
+import { Button, ErrorNote, Field, Icon, Input, Select, useToast } from '../../ui';
 
 export function DraftAtaForm({ bookId }: { bookId: string }) {
   const t = useT();
+  const toast = useToast();
   const navigate = useNavigate();
   const draft = useDraftAct();
   const [title, setTitle] = useState('');
@@ -22,7 +23,13 @@ export function DraftAtaForm({ bookId }: { bookId: string }) {
     e.preventDefault();
     draft.mutate(
       { book_id: bookId, title, channel },
-      { onSuccess: (act) => navigate(`/atas/${act.id}`) },
+      {
+        onSuccess: (act) => {
+          toast.success(t('toast.ata.created'));
+          navigate(`/atas/${act.id}`);
+        },
+        onError: (e) => toast.error(e),
+      },
     );
   }
 

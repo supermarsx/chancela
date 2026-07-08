@@ -17,13 +17,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useImportEntityRegistry } from '../../api/hooks';
 import { registryFieldLabel } from '../../api/labels';
 import { useT } from '../../i18n';
-import { Badge, Button, Card, Field, Icon, Input, InlineWarning, Table } from '../../ui';
+import { Badge, Button, Card, Field, Icon, Input, InlineWarning, Table, useToast } from '../../ui';
 import { CaeRefList } from '../cae/CaeRefList';
 import { AccessCodeField } from './AccessCodeField';
 import { RegistryErrorNote } from './RegistryErrorNote';
 
 export function RegistryImportPanel({ entityId }: { entityId: string }) {
   const t = useT();
+  const toast = useToast();
   const importEntity = useImportEntityRegistry(entityId);
   const [code, setCode] = useState('');
   const [email, setEmail] = useState('');
@@ -45,7 +46,12 @@ export function RegistryImportPanel({ entityId }: { entityId: string }) {
           setCode('');
           // Nothing left to overwrite once there are no conflicts.
           if (report.conflicts.length === 0) pendingCode.current = '';
+          // Toast only when a field actually changed — a report that is all conflicts (or
+          // already conform) leaves the entity untouched, so the inline table/notice below
+          // carries that outcome instead (R7).
+          if (report.applied.length > 0) toast.success(t('toast.registry.enriched'));
         },
+        onError: (e) => toast.error(e),
       },
     );
   }

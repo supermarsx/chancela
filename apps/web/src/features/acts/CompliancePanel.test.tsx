@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AtaEditorPage } from './AtaEditorPage';
 import { makeClient, fetchTable } from '../../test/utils';
+import { ToastProvider } from '../../ui/toast';
 import type { ActView, BookView, ComplianceReport } from '../../api/types';
 
 const baseAct: ActView = {
@@ -59,11 +60,13 @@ function renderEditor(act: ActView, compliance: ComplianceReport) {
   );
   return render(
     <QueryClientProvider client={makeClient()}>
-      <MemoryRouter initialEntries={['/atas/act-1']}>
-        <Routes>
-          <Route path="/atas/:id" element={<AtaEditorPage />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/atas/act-1']}>
+          <Routes>
+            <Route path="/atas/:id" element={<AtaEditorPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }

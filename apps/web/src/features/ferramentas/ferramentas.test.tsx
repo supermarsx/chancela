@@ -155,8 +155,8 @@ describe('Ferramentas — CAE catalog panel', () => {
     // The copy links to Configurações, not the env var.
     const link = screen.getByRole('link', { name: /Configurações/i });
     expect(link.getAttribute('href')).toBe('/configuracoes');
-    // The server's friendly message is rendered verbatim.
-    expect(screen.getByText(/não configurado/)).toBeTruthy();
+    // The server's friendly message is rendered verbatim — inline note + error toast (R7).
+    expect(screen.getAllByText(/não configurado/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('reports a 502 upstream failure distinctly from the 422 config state', async () => {

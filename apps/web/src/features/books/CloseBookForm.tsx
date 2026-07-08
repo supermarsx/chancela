@@ -9,11 +9,12 @@ import { useCloseBook } from '../../api/hooks';
 import { closingReasonLabels, optionsFrom } from '../../api/labels';
 import { useT } from '../../i18n';
 import { CLOSING_REASONS, type ClosingReason } from '../../api/types';
-import { Button, ErrorNote, Field, Icon, Input, Select, TextArea } from '../../ui';
+import { Button, ErrorNote, Field, Icon, Input, Select, TextArea, useToast } from '../../ui';
 import { parseLines } from './OpenBookForm';
 
 export function CloseBookForm({ bookId, onClosed }: { bookId: string; onClosed?: () => void }) {
   const t = useT();
+  const toast = useToast();
   const close = useCloseBook(bookId);
   const [reason, setReason] = useState<ClosingReason>('BookFull');
   const [closingDate, setClosingDate] = useState('');
@@ -27,7 +28,13 @@ export function CloseBookForm({ bookId, onClosed }: { bookId: string; onClosed?:
         closing_date: closingDate,
         required_signatories: parseLines(signatories),
       },
-      { onSuccess: () => onClosed?.() },
+      {
+        onSuccess: () => {
+          toast.success(t('toast.book.closed'));
+          onClosed?.();
+        },
+        onError: (e) => toast.error(e),
+      },
     );
   }
 

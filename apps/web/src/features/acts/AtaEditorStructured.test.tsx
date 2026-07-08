@@ -10,6 +10,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AtaEditorPage } from './AtaEditorPage';
 import { makeClient } from '../../test/utils';
+import { ToastProvider } from '../../ui/toast';
 import type { ActView, BookView, ComplianceReport } from '../../api/types';
 
 const baseAct: ActView = {
@@ -105,11 +106,13 @@ function stateful(initial: ActView) {
 function renderEditor() {
   return render(
     <QueryClientProvider client={makeClient()}>
-      <MemoryRouter initialEntries={['/atas/act-1']}>
-        <Routes>
-          <Route path="/atas/:id" element={<AtaEditorPage />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/atas/act-1']}>
+          <Routes>
+            <Route path="/atas/:id" element={<AtaEditorPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -135,6 +138,9 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
       target: { value: 'Ana Presidente' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    // A success toast fires on save (t44 retrofit-a).
+    expect(await screen.findByText('Ata guardada.')).toBeTruthy();
 
     // Compliance refetches and goes clean.
     await waitFor(() => expect(screen.getByText('Conforme', { exact: true })).toBeTruthy());

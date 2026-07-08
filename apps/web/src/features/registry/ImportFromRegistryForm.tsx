@@ -11,13 +11,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useImportFromRegistry } from '../../api/hooks';
-import { Button, Card, Field, Icon, Input } from '../../ui';
+import { Button, Card, Field, Icon, Input, useToast } from '../../ui';
 import { useT } from '../../i18n';
 import { AccessCodeField } from './AccessCodeField';
 import { RegistryErrorNote } from './RegistryErrorNote';
 
 export function ImportFromRegistryForm() {
   const t = useT();
+  const toast = useToast();
   const navigate = useNavigate();
   const importFromRegistry = useImportFromRegistry();
   const [code, setCode] = useState('');
@@ -30,10 +31,13 @@ export function ImportFromRegistryForm() {
       {
         onSuccess: (report) => {
           // Drop the secret code from state the moment it is used, then follow the new
-          // entity.
+          // entity. R6: the toast survives the navigate-away; R7: the inline
+          // RegistryErrorNote below still handles the 422/502 error cases.
           setCode('');
+          toast.success(t('toast.registry.imported'));
           navigate(`/entidades/${report.entity.id}`);
         },
+        onError: (e) => toast.error(e),
       },
     );
   }

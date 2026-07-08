@@ -64,11 +64,12 @@ import {
   Icon,
   InlineWarning,
   Input,
-  Loading,
   PageHeader,
   Select,
   Skeleton,
+  SkeletonText,
   TextArea,
+  useToast,
 } from '../../ui';
 import { CompliancePanel } from './CompliancePanel';
 
@@ -845,6 +846,7 @@ function draftToPatch(draft: Draft) {
 
 export function AtaEditorPage() {
   const t = useT();
+  const toast = useToast();
   const { id = '' } = useParams();
   const act = useAct(id);
   const book = useBook(act.data?.book_id ?? '');
@@ -885,9 +887,37 @@ export function AtaEditorPage() {
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
 
+  // R7: every lifecycle mutation keeps its inline ErrorNote; the toast is additive.
   function onSave() {
     if (!draft) return;
-    update.mutate(draftToPatch(draft));
+    update.mutate(draftToPatch(draft), {
+      onSuccess: () => toast.success(t('toast.ata.saved')),
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  function onAdvance(to: ActState) {
+    advance.mutate(to, {
+      onSuccess: () => toast.success(t('toast.ata.advanced')),
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  function onSeal() {
+    seal.mutate(
+      { acknowledge_warnings: true },
+      {
+        onSuccess: () => toast.success(t('toast.ata.sealed')),
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
+
+  function onArchive() {
+    archive.mutate(undefined, {
+      onSuccess: () => toast.success(t('toast.ata.archived')),
+      onError: (e) => toast.error(e),
+    });
   }
 
   const sealAllowed = compliance.data?.seal_allowed ?? false;
@@ -1116,16 +1146,12 @@ export function AtaEditorPage() {
         <div className="split__aside stack">
           <Card title={t('acts.lifecycle')}>
             {advance.error ? <ErrorNote error={advance.error} /> : null}
-            <LifecycleStepper
-              current={a.state}
-              pending={advance.isPending}
-              onAdvance={(to) => advance.mutate(to)}
-            />
+            <LifecycleStepper current={a.state} pending={advance.isPending} onAdvance={onAdvance} />
           </Card>
 
           <Card title={t('acts.compliance')}>
             {compliance.isLoading ? (
-              <Loading />
+              <SkeletonText lines={3} />
             ) : compliance.error ? (
               <ErrorNote error={compliance.error} />
             ) : compliance.data ? (
@@ -1155,7 +1181,7 @@ export function AtaEditorPage() {
                   variant="primary"
                   icon={<Icon.Seal />}
                   disabled={!sealAllowed || seal.isPending}
-                  onClick={() => seal.mutate({ acknowledge_warnings: true })}
+                  onClick={onSeal}
                 >
                   {seal.isPending ? t('acts.sealing.sealing') : t('acts.sealing.seal')}
                 </Button>
@@ -1168,7 +1194,7 @@ export function AtaEditorPage() {
                   variant="secondary"
                   icon={<Icon.Archive />}
                   disabled={archive.isPending}
-                  onClick={() => archive.mutate()}
+                  onClick={onArchive}
                 >
                   {archive.isPending ? t('acts.archiving') : t('acts.archive')}
                 </Button>

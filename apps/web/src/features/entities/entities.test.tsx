@@ -89,6 +89,8 @@ describe('NewEntityPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /criar entidade/i }));
 
     expect(await screen.findByText('DETALHE DA ENTIDADE')).toBeTruthy();
+    // The success toast fires even though the handler navigated away (t44 retrofit-a, R6).
+    expect(await screen.findByText('Entidade criada.')).toBeTruthy();
 
     const post = calls.find((c) => c.url.includes('/v1/entities'));
     expect((post?.body as { nipc?: string })?.nipc).toBe('503004642');

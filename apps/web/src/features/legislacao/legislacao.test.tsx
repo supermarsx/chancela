@@ -240,6 +240,8 @@ describe('Legislação — mini law archive (frozen §law-v1 t27 seam)', () => {
         ),
       ).toBe(true),
     );
+    // A success toast confirms the local store (t44 retrofit-b).
+    expect(await screen.findByText('PDF guardado localmente.')).toBeTruthy();
   });
 
   it('shows the stored badge + a local "Abrir PDF" link when stored', async () => {

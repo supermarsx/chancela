@@ -8,7 +8,7 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { useEntities } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Card, EmptyState, Loading, PageHeader } from '../../ui';
+import { Card, EmptyState, PageHeader, Skeleton } from '../../ui';
 import { OpenBookForm } from './OpenBookForm';
 
 export function NewBookPage() {
@@ -31,7 +31,15 @@ export function NewBookPage() {
       {fixedEntity ? (
         <OpenBookForm entityId={fixedEntity} />
       ) : entities.isLoading ? (
-        <Loading />
+        // Mirror the open-book form's shape while the entity list loads (CONVENTIONS: a
+        // content-shaped surface uses Skeleton*, not a bare <Loading>).
+        <Card title={t('books.openBook')}>
+          <div className="form">
+            <Skeleton height="2.4rem" />
+            <Skeleton height="2.4rem" />
+            <Skeleton height="2.4rem" />
+          </div>
+        </Card>
       ) : entities.data && entities.data.length > 0 ? (
         <OpenBookForm entities={entities.data} />
       ) : (

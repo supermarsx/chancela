@@ -1,15 +1,84 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
 import { CaeRefList } from './CaeRefList';
 import { CaePage } from './CaePage';
+import { CaeCatalogPanel } from './CaeCatalogPanel';
 import { FerramentasPage } from '../ferramentas/FerramentasPage';
-import type { CaeRefView } from '../../api/types';
+import type { CaeCatalogView, CaeRefView, CaeRefreshResult } from '../../api/types';
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+
+const ZERO = { seccao: 0, divisao: 0, grupo: 0, classe: 0, subclasse: 0 };
+const CATALOG: CaeCatalogView = {
+  origin: 'Embedded',
+  schema_version: 1,
+  generated_at: '2026-01-01',
+  source_note: '',
+  digest: 'abc',
+  counts: { rev3: ZERO, rev4: ZERO },
+};
+
+describe('CaeCatalogPanel — refresh toast', () => {
+  it('toasts "updated" when the refresh brings a new dataset', async () => {
+    const refreshed: CaeRefreshResult = {
+      updated: true,
+      metadata: CATALOG,
+      note: 'Novo conjunto de dados.',
+      source: 'DR',
+      failures: [],
+    };
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      const body = url.includes('/refresh') && method === 'POST' ? refreshed : CATALOG;
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<CaeCatalogPanel />, ['/ferramentas']);
+
+    fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
+    expect(await screen.findByText('Catálogo CAE atualizado.')).toBeTruthy();
+  });
+
+  it('toasts "up to date" when the refresh is a no-op', async () => {
+    const noop: CaeRefreshResult = {
+      updated: false,
+      metadata: CATALOG,
+      note: '',
+      source: null,
+      failures: [],
+    };
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      const body = url.includes('/refresh') && method === 'POST' ? noop : CATALOG;
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<CaeCatalogPanel />, ['/ferramentas']);
+
+    fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
+    await waitFor(() =>
+      expect(screen.getByText('O catálogo CAE já está atualizado.')).toBeTruthy(),
+    );
+  });
 });
 
 describe('CaeRefList', () => {

@@ -12,7 +12,7 @@ import { useUpdateEntity } from '../../api/hooks';
 import { entityFamilyLabels, meetingChannelLabels, signaturePolicyLabels } from '../../api/labels';
 import type { Entity, StatuteOverrides } from '../../api/types';
 import { useT } from '../../i18n';
-import { Button, Card, ErrorNote, Field, Icon, Input } from '../../ui';
+import { Button, Card, ErrorNote, Field, Icon, Input, useToast } from '../../ui';
 
 // Working copy: every field a plain string so blanks read as "unset". Assembled back into
 // a `StatuteOverrides` on save (a whole facet is null when its inputs are blank).
@@ -54,8 +54,18 @@ function draftToStatute(draft: StatuteDraft): StatuteOverrides {
 
 export function EntityStatuteEditor({ entity }: { entity: Entity }) {
   const t = useT();
+  const toast = useToast();
   const update = useUpdateEntity(entity.id);
   const [draft, setDraft] = useState<StatuteDraft>(() => toStatuteDraft(entity.statute));
+
+  // Save or clear the overlay; both PATCH the statute. R7: the inline ErrorNote above
+  // stays; the toast is additive success/error feedback.
+  function saveStatute(statute: StatuteOverrides | null) {
+    update.mutate(statute === null ? { statute: null } : { statute }, {
+      onSuccess: () => toast.success(t('toast.entity.statuteUpdated')),
+      onError: (e) => toast.error(e),
+    });
+  }
 
   // Re-seed when the persisted statute changes (e.g. after a save round-trips).
   useEffect(() => {
@@ -148,7 +158,7 @@ export function EntityStatuteEditor({ entity }: { entity: Entity }) {
             variant="primary"
             icon={<Icon.Save />}
             disabled={update.isPending}
-            onClick={() => update.mutate({ statute: draftToStatute(draft) })}
+            onClick={() => saveStatute(draftToStatute(draft))}
           >
             {update.isPending ? t('entities.statute.saving') : t('entities.statute.save')}
           </Button>
@@ -157,7 +167,7 @@ export function EntityStatuteEditor({ entity }: { entity: Entity }) {
             variant="ghost"
             icon={<Icon.Trash />}
             disabled={update.isPending || entity.statute == null}
-            onClick={() => update.mutate({ statute: null })}
+            onClick={() => saveStatute(null)}
           >
             {t('entities.statute.clear')}
           </Button>

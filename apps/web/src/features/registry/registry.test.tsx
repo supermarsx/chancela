@@ -176,6 +176,8 @@ describe('ImportFromRegistryForm', () => {
 
     // Navigation intent: we land on the new entity's detail route.
     expect(await screen.findByText('DETALHE DA ENTIDADE')).toBeTruthy();
+    // R6: the success toast survives the navigate-away (t44 retrofit-b).
+    expect(await screen.findByText('Entidade importada do registo.')).toBeTruthy();
 
     // The code was sent transiently in the import body.
     const post = calls.find((c) => c.url.includes('import-from-registry'));
@@ -199,7 +201,8 @@ describe('ImportFromRegistryForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /importar do registo/i }));
 
     expect(await screen.findByText('Não foi possível importar')).toBeTruthy();
-    expect(screen.getByText(/lacked a valid NIPC/)).toBeTruthy();
+    // The message shows both in the inline RegistryErrorNote and the error toast (R7).
+    expect(screen.getAllByText(/lacked a valid NIPC/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders a 502 (upstream) distinctly from a 422', async () => {
@@ -216,7 +219,8 @@ describe('ImportFromRegistryForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /importar do registo/i }));
 
     expect(await screen.findByText('Registo indisponível')).toBeTruthy();
-    expect(screen.getByText(/connection refused/)).toBeTruthy();
+    // Inline note + error toast both carry the server message (R7).
+    expect(screen.getAllByText(/connection refused/).length).toBeGreaterThanOrEqual(1);
     // Not confused with the 422 rendering.
     expect(screen.queryByText('Não foi possível importar')).toBeNull();
   });
@@ -277,6 +281,11 @@ describe('RegistryImportPanel', () => {
     expect(secondPost.body?.overwrite).toBe(true);
     // The same secret code was re-sent transiently for the overwrite.
     expect(secondPost.body?.code).toBe(FULL_CODE);
+    // Each enrich that applied a field fired a success toast (t44 retrofit-b); both the
+    // first (seat) and the overwrite (name) applied, so one or more toasts are present.
+    expect(
+      (await screen.findAllByText('Entidade atualizada a partir da certidão.')).length,
+    ).toBeGreaterThanOrEqual(1);
   });
 });
 

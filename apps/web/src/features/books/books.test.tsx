@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders, fetchTable } from '../../test/utils';
 import { BooksPage } from './BooksPage';
 import { NewBookPage } from './NewBookPage';
+import { OpenBookForm } from './OpenBookForm';
 import { DEFAULT_SETTINGS, type Entity } from '../../api/types';
 
 const ENTITY: Entity = {
@@ -76,5 +77,38 @@ describe('NewBookPage', () => {
     renderAt('/livros/novo');
 
     expect(await screen.findByText('Sem entidades')).toBeTruthy();
+  });
+});
+
+describe('OpenBookForm — toast on success', () => {
+  it('fires a success toast after opening a book (survives navigate-away)', async () => {
+    const book = { id: 'book-9', entity_id: 'ent-1' };
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/books', status: 201, body: book },
+      ]),
+    );
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/entidades/ent-1" element={<OpenBookForm entityId="ent-1" />} />
+        <Route path="/livros/:id" element={<div>DETALHE DO LIVRO</div>} />
+      </Routes>,
+      ['/entidades/ent-1'],
+    );
+
+    fireEvent.change(await screen.findByLabelText('Finalidade'), {
+      target: { value: 'Atas AG' },
+    });
+    fireEvent.change(screen.getByLabelText('Data de abertura'), {
+      target: { value: '2026-01-01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /abrir livro/i }));
+
+    expect(await screen.findByText('DETALHE DO LIVRO')).toBeTruthy();
+    // R6: the toast fired in onSuccess renders even though we navigated to the book.
+    expect(await screen.findByText('Livro aberto.')).toBeTruthy();
   });
 });
