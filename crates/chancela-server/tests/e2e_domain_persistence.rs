@@ -193,7 +193,10 @@ async fn full_domain_survives_restart_and_the_chain_continues() {
     assert_eq!(status, 200);
     assert_eq!(health["persistent"], true);
     assert_eq!(health["ledger_verified"], true);
-    assert_eq!(health["store_schema_version"], 1);
+    assert_eq!(
+        health["store_schema_version"],
+        chancela_store::schema::SCHEMA_VERSION
+    );
     assert_eq!(
         health["ledger_length"].as_u64().expect("ledger_length"),
         length_before

@@ -3,7 +3,7 @@
   "bytes": 12345,
   "created_at": "2026-07-07T12:00:00Z",
   "app_version": "0.1.0",
-  "store_schema_version": 1,
+  "store_schema_version": 2,
   "ledger_length": 42,
   "ledger_head": "0000000000000000000000000000000000000000000000000000000000000000",
   "ledger_verified": true,

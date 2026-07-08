@@ -86,7 +86,10 @@ async fn a_tampered_chain_boots_but_reports_itself_broken() {
         health["ledger_verified"], false,
         "the tampered chain is reported broken, not silently accepted"
     );
-    assert_eq!(health["store_schema_version"], 1);
+    assert_eq!(
+        health["store_schema_version"],
+        chancela_store::schema::SCHEMA_VERSION
+    );
 
     // The on-demand verify agrees: invalid, but the events are all still there.
     let (status, verify) = h.get_json("/v1/ledger/verify").await;

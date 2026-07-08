@@ -101,7 +101,10 @@ async fn backup_manifest_verifies_and_restore_over_a_wiped_dir_round_trips() {
         length_before
     );
     assert_eq!(manifest["ledger_verified"], true);
-    assert_eq!(manifest["store_schema_version"], 1);
+    assert_eq!(
+        manifest["store_schema_version"],
+        chancela_store::schema::SCHEMA_VERSION
+    );
 
     // Recompute every archive member's sha256 and cross-check the manifest's per-file digests.
     // (`manifest.json` itself is the only member NOT listed in `files` — it carries the digests.)
