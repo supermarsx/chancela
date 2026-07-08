@@ -524,6 +524,7 @@ dependencies = [
  "chancela-api",
  "chancela-cae",
  "chancela-store",
+ "lopdf",
  "reqwest",
  "rusqlite",
  "serde_json",

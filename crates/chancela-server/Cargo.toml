@@ -46,3 +46,11 @@ serde_json = { workspace = true }
 zip = { workspace = true }
 sha2 = { workspace = true }
 rusqlite = { workspace = true }
+# t48-e7 acceptance: the document-pipeline journey fetches the server's sealed PDF/A-2u bytes and
+# structurally verifies conformance over the wire (classic xref, no /Encrypt, no /AcroForm,
+# uncompressed XMP with pdfaid part=2/conformance=U, N=3 OutputIntent, embedded fonts + ToUnicode) —
+# a faithful re-implementation of chancela_doc's crate-private `selfcheck`. `lopdf` is already the
+# in-tree PDF object model (workspace dep via chancela-doc/chancela-pades); this direct dev-dep line
+# only exposes its parse API to the test, no extra build, no dep cycle. Dev-deps only (not the
+# chancela-server/src lock).
+lopdf = { workspace = true }
