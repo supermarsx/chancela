@@ -19,6 +19,8 @@
 //! All default tests are offline via [`MockScmdTransport`]. Real preprod/prod calls are behind
 //! the `network-tests` feature + `#[ignore]` (see `TESTING.md`).
 
+#![forbid(unsafe_code)]
+
 pub mod config;
 pub mod error;
 pub mod field_encryption;

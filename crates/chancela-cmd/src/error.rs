@@ -16,6 +16,17 @@ pub enum CmdError {
     #[error("SCMD transport error: {0}")]
     Transport(String),
 
+    /// The SCMD response body exceeded the safety limit (t41-e4 H4). CMD SOAP
+    /// responses are small; a body larger than 1 MiB signals a misbehaving or
+    /// hostile endpoint and is rejected before the full body is buffered.
+    #[error("SCMD response body too large: declared {content_length} bytes (limit {limit} bytes)")]
+    ResponseTooLarge {
+        /// The Content-Length the endpoint advertised (or the buffered byte count), in bytes.
+        content_length: u64,
+        /// The enforced limit, in bytes.
+        limit: u64,
+    },
+
     /// A SOAP request envelope could not be constructed.
     #[error("failed to build SOAP request: {0}")]
     RequestBuild(String),

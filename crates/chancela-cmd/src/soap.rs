@@ -122,38 +122,74 @@ pub(crate) fn validate_otp_envelope(
     )
 }
 
-/// Return the text content of the **first** element whose local name equals `local`
+/// Return the text content of the **shallowest** element whose local name equals `local`
 /// (ignoring namespace prefix), or `None` if absent.
+///
+/// Depth-aware (t41-e4 L8): the original implementation returned the first match in document
+/// order at any depth, which let an element injected inside a free-text field (e.g. a
+/// `<Code>` placed inside `<Message>`) shadow the real top-level `<Code>` of an SCMD result.
+/// We now track element depth and keep the match at the shallowest depth, so a nested
+/// injection (always deeper than the real direct child of the result wrapper) is rejected.
+/// In the SCMD response shape the result fields (`Code`, `ProcessId`, `Message`, `Signature`)
+/// are direct children of the `*Result` wrapper; any `<Code>` nested inside `<Message>` is
+/// strictly deeper and is ignored.
 pub(crate) fn find_text(xml: &str, local: &str) -> Option<String> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
     let target = local.as_bytes();
-    let mut capturing = false;
+    let mut depth: i64 = 0;
+    // Best (shallowest-depth) completed match: (depth, value).
+    let mut best: Option<(i64, String)> = None;
+    // Depth of the candidate currently being captured, if any.
+    let mut capture_depth: Option<i64> = None;
     let mut value = String::new();
     loop {
         match reader.read_event() {
-            Ok(Event::Start(e)) if e.local_name().as_ref() == target => {
-                capturing = true;
-                value.clear();
+            Ok(Event::Start(e)) => {
+                depth += 1;
+                if e.local_name().as_ref() == target
+                    && capture_depth.is_none()
+                    && best.as_ref().is_none_or(|(d, _)| depth < *d)
+                {
+                    capture_depth = Some(depth);
+                    value.clear();
+                }
             }
-            Ok(Event::Text(e)) if capturing => {
+            Ok(Event::End(e)) => {
+                if let Some(cd) = capture_depth {
+                    if e.local_name().as_ref() == target && cd == depth {
+                        let is_best = best.as_ref().is_none_or(|(d, _)| cd < *d);
+                        if is_best {
+                            best = Some((cd, std::mem::take(&mut value)));
+                        }
+                        capture_depth = None;
+                    }
+                }
+                depth -= 1;
+            }
+            // `<local/>` self-closing: a zero-length match at tree-depth `depth + 1`.
+            Ok(Event::Empty(e)) if e.local_name().as_ref() == target => {
+                let d = depth + 1;
+                if best.as_ref().is_none_or(|(bd, _)| d < *bd) {
+                    best = Some((d, String::new()));
+                }
+            }
+            Ok(Event::Text(e)) if capture_depth.is_some() => {
                 if let Ok(t) = e.xml_content(quick_xml::XmlVersion::Implicit1_0) {
                     value.push_str(&t);
                 }
             }
-            Ok(Event::CData(e)) if capturing => {
+            Ok(Event::CData(e)) if capture_depth.is_some() => {
                 if let Ok(s) = std::str::from_utf8(e.as_ref()) {
                     value.push_str(s);
                 }
             }
-            Ok(Event::End(e)) if capturing && e.local_name().as_ref() == target => {
-                return Some(value);
-            }
-            Ok(Event::Eof) => return None,
+            Ok(Event::Eof) => break,
             Err(_) => return None,
             _ => {}
         }
     }
+    best.map(|(_, v)| v)
 }
 
 /// If the response carries a SOAP `Fault`, return its `faultstring` (or a generic message).
@@ -239,6 +275,16 @@ mod tests {
     fn find_text_returns_first_match() {
         let xml = r#"<r><Code>200</Code><Status><Code>500</Code></Status></r>"#;
         assert_eq!(find_text(xml, "Code").as_deref(), Some("200"));
+    }
+
+    #[test]
+    fn find_text_ignores_injected_nested_same_name() {
+        // t41-e4 L8: a <Code> injected inside a free-text <Message> field must not shadow
+        // the real top-level <Code> of the SCMD result. The injected element is deeper, so
+        // the shallowest-depth match (the real one) wins even though it appears later.
+        let xml = r#"<r><Message><Code>EVIL</Code></Message><Code>200</Code></r>"#;
+        assert_eq!(find_text(xml, "Code").as_deref(), Some("200"));
+        assert_ne!(find_text(xml, "Code").as_deref(), Some("EVIL"));
     }
 
     #[test]

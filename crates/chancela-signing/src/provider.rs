@@ -13,6 +13,7 @@ use chancela_cades::RawSignature;
 use chancela_cmd::rand_core::OsRng;
 use chancela_cmd::{CertificateChain, ProcessHandle, ScmdClient, ScmdTransport, SignRequest};
 use chancela_smartcard::{CryptoToken, TokenCertificate, select_signature_certificate};
+use zeroize::Zeroizing;
 
 use crate::{EvidentiaryLevel, SigningError, SigningFamily};
 
@@ -57,14 +58,34 @@ pub const OTP_STEP_LEVEL: EvidentiaryLevel = EvidentiaryLevel::OtpConfirmation;
 /// Wraps any token (the real [`chancela_smartcard::Pkcs11Token`] or a
 /// [`chancela_smartcard::MockToken`]) and always signs with the qualified **signature**
 /// certificate, selected by label — never the authentication certificate (SIG-02).
+///
+/// The card exposes only the leaf certificate, so the issuing-CA certificate used by the
+/// trusted-list policy gate must be supplied out-of-band via [`Self::with_issuer_certificate`]
+/// (t41-e4 M2). If none is supplied, [`SignerProvider::issuer_certificate_der`] returns
+/// `Ok(None)` and a configured TSL gate will fail with [`SigningError::MissingIssuerCertificate`].
 pub struct SmartcardProvider<T: CryptoToken> {
     token: T,
+    issuer_certificate_der: Option<Vec<u8>>,
 }
 
 impl<T: CryptoToken> SmartcardProvider<T> {
-    /// Wrap a token as a Cartão de Cidadão signer.
+    /// Wrap a token as a Cartão de Cidadão signer, with no out-of-band issuer certificate.
     pub fn new(token: T) -> Self {
-        Self { token }
+        Self {
+            token,
+            issuer_certificate_der: None,
+        }
+    }
+
+    /// Supply the issuing-CA certificate (DER) out-of-band (t41-e4 M2).
+    ///
+    /// The Cartão de Cidadão presents only its leaf certificate; the immediate issuing-CA
+    /// certificate is needed by the trusted-list policy gate to resolve the signer's
+    /// qualified status (SIG-11/23). Pass the configured CA bundle's relevant issuer DER
+    /// here so [`SignerProvider::issuer_certificate_der`] can surface it; `None` clears it.
+    pub fn with_issuer_certificate(mut self, issuer_certificate_der: Option<Vec<u8>>) -> Self {
+        self.issuer_certificate_der = issuer_certificate_der;
+        self
     }
 
     /// Borrow the underlying token.
@@ -102,9 +123,9 @@ impl<T: CryptoToken> SignerProvider for SmartcardProvider<T> {
     }
 
     fn issuer_certificate_der(&self) -> Result<Option<Vec<u8>>, SigningError> {
-        // The card exposes the leaf only; the issuing CA cert is resolved out-of-band (a
-        // configured CA bundle), so the policy gate needs it supplied separately.
-        Ok(None)
+        // t41-e4 M2: surface the out-of-band issuer CA if supplied. The card itself exposes
+        // only the leaf; without this the TSL trust gate cannot resolve the signer's status.
+        Ok(self.issuer_certificate_der.clone())
     }
 
     fn sign_signed_attributes(
@@ -128,7 +149,9 @@ impl<T: CryptoToken> SignerProvider for SmartcardProvider<T> {
 pub struct CmdProvider<T: ScmdTransport, F> {
     client: ScmdClient<T>,
     user_id: String,
-    pin: String,
+    /// The CMD signature PIN (knowledge factor). Held as [`Zeroizing<String>`] so the
+    /// PIN is overwritten in memory when the provider is dropped (t41-e4 M1).
+    pin: Zeroizing<String>,
     doc_name: String,
     otp_source: F,
 }
@@ -151,7 +174,7 @@ where
         Self {
             client,
             user_id: user_id.into(),
-            pin: pin.into(),
+            pin: Zeroizing::new(pin.into()),
             doc_name: doc_name.into(),
             otp_source,
         }
@@ -204,7 +227,9 @@ where
                 &mut rng,
                 &SignRequest {
                     user_id: self.user_id.clone(),
-                    pin: self.pin.clone(),
+                    // `SignRequest::pin` is a plain `String` (its `Drop` zeroizes it);
+                    // deref the `Zeroizing` wrapper to copy the PIN out of secure storage.
+                    pin: (*self.pin).clone(),
                     doc_name: self.doc_name.clone(),
                     hash: signed_attrs_digest.to_vec(),
                 },

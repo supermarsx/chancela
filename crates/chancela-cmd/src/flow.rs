@@ -14,6 +14,7 @@ use base64::engine::general_purpose::STANDARD;
 use der::Encode;
 use rsa::rand_core::CryptoRngCore;
 use x509_cert::Certificate;
+use zeroize::{Zeroize, Zeroizing};
 
 use chancela_cades::{RawSignature, SignatureAlgorithm};
 
@@ -24,12 +25,16 @@ use crate::soap;
 use crate::transport::ScmdTransport;
 
 /// SCMD success status code (`CCMovelSign` / `ValidateOtp` `Code`).
+///
+/// t41-e4 L9: SCMD v1.6 reports success exclusively as `"200"`. An earlier revision also
+/// accepted `"0"` ("some deployments report success as 0"); that path was removed because a
+/// malformed or hostile response carrying `Code: 0` would otherwise be treated as success.
+/// If a real SCMD deployment is ever observed returning `"0"`, re-enable it via an explicit
+/// allowlist entry here — do not broaden silently.
 const CODE_OK: &str = "200";
-/// Some SCMD deployments report success as `0`; accept both.
-const CODE_OK_ALT: &str = "0";
 
 fn is_success(code: &str) -> bool {
-    code == CODE_OK || code == CODE_OK_ALT
+    code == CODE_OK
 }
 
 /// Inputs to [`ScmdClient::request_signature`].
@@ -44,6 +49,17 @@ pub struct SignRequest {
     /// The digest to be signed (raw bytes; base64-encoded on the wire). In the CAdES flow
     /// this is the SHA-256 of the SignedAttributes computed by `chancela-cades`.
     pub hash: Vec<u8>,
+}
+
+impl Drop for SignRequest {
+    fn drop(&mut self) {
+        // t41-e4 M1: zeroize the PIN from heap memory when the request is dropped, so the
+        // secret does not linger in freed memory. (`String: Zeroize` overwrites the backing
+        // buffer in place.) `Zeroizing<String>` would be ideal but changing the public field
+        // type would break the struct-literal API used by tests outside this crate; the
+        // security outcome (PIN bytes overwritten on drop) is identical.
+        self.pin.zeroize();
+    }
 }
 
 /// A pending signature process returned by `CCMovelSign`. The OTP has been dispatched to
@@ -187,7 +203,7 @@ impl<T: ScmdTransport> ScmdClient<T> {
         handle: &ProcessHandle,
         otp: &str,
     ) -> Result<RawSignature, CmdError> {
-        let otp_field = self.encryptor.encrypt(rng, otp)?;
+        let otp_field = Zeroizing::new(self.encryptor.encrypt(rng, otp)?);
         let envelope =
             soap::validate_otp_envelope(&self.application_id_b64(), &handle.process_id, &otp_field);
         let response = self.transport.call(soap::ACTION_VALIDATE_OTP, &envelope)?;

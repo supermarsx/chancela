@@ -71,4 +71,26 @@ pub enum CadesError {
     /// A signing-time value was present but could not be interpreted.
     #[error("invalid signing-time attribute")]
     InvalidSigningTime,
+
+    /// The mandatory CAdES-B `signing-certificate-v2` attribute was absent (audit t41/H6).
+    #[error("missing signing-certificate-v2 signed attribute")]
+    MissingSigningCertificateV2,
+
+    /// The `signing-certificate-v2` (ESSCertIDv2) attribute was malformed (audit t41/H6).
+    #[error("malformed signing-certificate-v2 attribute: {0}")]
+    MalformedSigningCertificateV2(#[source] der::Error),
+
+    /// The `signing-certificate-v2` attribute carried no cert references (audit t41/H6).
+    #[error("signing-certificate-v2 attribute carries no ESSCertIDv2 entries")]
+    EmptySigningCertificateV2,
+
+    /// The `signing-certificate-v2` attribute names a hash algorithm other than SHA-256
+    /// (audit t41/H6 — only SHA-256 is accepted).
+    #[error("signing-certificate-v2 uses an unsupported hash algorithm (only SHA-256 is accepted)")]
+    UnsupportedSigningCertHashAlgorithm,
+
+    /// The `signing-certificate-v2` attribute's cert hash does not match SHA-256(signer cert)
+    /// (audit t41/H6 — the attribute did not bind to the actual signing certificate).
+    #[error("signing-certificate-v2 cert hash does not match the signer certificate")]
+    SigningCertificateHashMismatch,
 }

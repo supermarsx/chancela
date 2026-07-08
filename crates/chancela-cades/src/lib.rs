@@ -23,6 +23,8 @@
 //! - `RsaPkcs1Sha256` — RSASSA-PKCS1-v1_5 / SHA-256 (Cartão de Cidadão v1, Chave Móvel Digital).
 //! - `EcdsaP256Sha256` — ECDSA P-256 / SHA-256 (Cartão de Cidadão v2).
 
+#![forbid(unsafe_code)]
+
 mod attrs;
 mod oids;
 

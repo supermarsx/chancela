@@ -22,6 +22,8 @@
 //! `CHANCELA_PTEID_PKCS11_MODULE` (plan §2.3). Real-card and reader-enumeration
 //! tests are `#[ignore]` + `hardware-tests`-gated; see `TESTING.md`.
 
+#![forbid(unsafe_code)]
+
 pub mod crypto;
 pub mod error;
 pub mod mock;

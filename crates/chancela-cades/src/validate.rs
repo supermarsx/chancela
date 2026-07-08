@@ -13,6 +13,7 @@ use der::{Decode, Encode};
 use x509_cert::attr::Attributes;
 use x509_cert::certificate::Certificate;
 
+use crate::attrs::SigningCertificateV2;
 use crate::error::CadesError;
 use crate::oids;
 
@@ -83,13 +84,20 @@ pub fn validate_cades_b(
         return Err(CadesError::MessageDigestMismatch);
     }
 
-    // signing-certificate-v2 presence (CAdES-B requirement).
+    // signing-certificate-v2 (CAdES-B requirement): the attribute must be present, and the cert
+    // hash it carries must match SHA-256(signer_cert_der). Per RFC 5035 the default hash is
+    // SHA-256; we accept either the implicit default (hash_algorithm absent) or an explicit
+    // SHA-256 identifier, and reject any other hash algorithm (audit t41/H6).
     let signing_certificate_v2_present =
         first_attr_value(signed_attrs, oids::ID_AA_SIGNING_CERTIFICATE_V2).is_some();
+    let ess_value = first_attr_value(signed_attrs, oids::ID_AA_SIGNING_CERTIFICATE_V2)
+        .ok_or(CadesError::MissingSigningCertificateV2)?;
 
     // Locate the signing certificate referenced by the SignerInfo sid.
     let signer_cert = find_signer_cert(&signed_data, &signer_info.sid)?;
     let signer_cert_der = signer_cert.to_der()?;
+
+    verify_signing_certificate_v2(&ess_value, &signer_cert_der)?;
 
     // Re-encode the signed attributes as an explicit SET OF for verification (RFC 5652 §5.4).
     let signed_attrs_der = signed_attrs.to_der()?;
@@ -149,6 +157,37 @@ fn find_signer_cert(
         // SubjectKeyIdentifier-based selection is not emitted by this crate; unsupported here.
         SignerIdentifier::SubjectKeyIdentifier(_) => Err(CadesError::SignerCertNotFound),
     }
+}
+
+/// Verify the `signing-certificate-v2` (ESSCertIDv2) attribute against the actual signer cert
+/// (audit t41/H6).
+///
+/// RFC 5035: `hashAlgorithm` is OPTIONAL and defaults to `id-sha256`. We accept that default and
+/// also an explicit `id-sha256` identifier, but reject anything else. The first `certs[].certHash`
+/// must equal SHA-256(`signer_cert_der`).
+fn verify_signing_certificate_v2(
+    ess_value: &Any,
+    signer_cert_der: &[u8],
+) -> Result<(), CadesError> {
+    let ess = SigningCertificateV2::from_der(&ess_value.to_der()?)
+        .map_err(CadesError::MalformedSigningCertificateV2)?;
+    let cert = ess
+        .certs
+        .first()
+        .ok_or(CadesError::EmptySigningCertificateV2)?;
+
+    // Hash algorithm: accept default (None) or explicit SHA-256; reject any other.
+    if let Some(alg) = &cert.hash_algorithm {
+        if alg.oid != oids::ID_SHA256 {
+            return Err(CadesError::UnsupportedSigningCertHashAlgorithm);
+        }
+    }
+
+    let computed = crate::attrs::sha256(signer_cert_der);
+    if cert.cert_hash.as_bytes() != computed.as_slice() {
+        return Err(CadesError::SigningCertificateHashMismatch);
+    }
+    Ok(())
 }
 
 /// Verify the signature value against the signing certificate's public key for the two supported

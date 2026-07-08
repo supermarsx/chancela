@@ -17,6 +17,7 @@ chancela-pades = { workspace = true }
 # CSPRNG (rand_core::OsRng) for PROD CMD field encryption via chancela-cmd's
 # FieldEncryptor::AmaRsa (caller-supplied `&mut R: CryptoRngCore`). See root manifest.
 rand_core = { workspace = true }
+zeroize = "1"
 serde = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }

@@ -24,6 +24,10 @@ const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
 const OID_RSA_ENCRYPTION: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1");
 /// `id-ecPublicKey` — SPKI algorithm OID of a CC v2 EC (P-256) key.
 const OID_EC_PUBLIC_KEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+/// `secp256r1` / `prime256v1` — the **only** EC curve the Cartão de Cidadão v2 carries.
+/// Encoded as the EC parameters field of the SubjectPublicKeyInfo when the algorithm is
+/// `id-ecPublicKey` (RFC 5480 §2.1.1). t41-e4 M10: any other curve MUST be rejected.
+const OID_SECP256R1: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 
 /// Build the SHA-256 `DigestInfo` to feed to `CKM_RSA_PKCS`.
 ///
@@ -108,21 +112,45 @@ fn ecdsa_der_from_p1363(r: &[u8], s: &[u8]) -> Result<Vec<u8>, SmartcardError> {
 /// CC v1 cards carry RSA-2048 keys, CC v2 (June 2024+) carry P-256 EC keys; the
 /// signer must branch on this (plan §1.2, risk #3). We map the SPKI algorithm
 /// OID: `rsaEncryption` → [`SignatureAlgorithm::RsaPkcs1Sha256`],
-/// `id-ecPublicKey` → [`SignatureAlgorithm::EcdsaP256Sha256`].
+/// `id-ecPublicKey` → [`SignatureAlgorithm::EcdsaP256Sha256`] **only after confirming
+/// the curve is `secp256r1`** (t41-e4 M10). Previously any `id-ecPublicKey` key was
+/// labelled P-256 without inspecting the EC parameters; a key on a different curve
+/// (e.g. `secp384r1`, `secp521r1`, or a brainpool curve) would have been silently
+/// signed/hashed as P-256, producing a signature the verifier rejects or — worse — a
+/// mismatched digest that a downstream policy gate might not catch.
 ///
 /// # Errors
-/// [`SmartcardError::CertificateParse`] if the DER is not a valid certificate;
-/// [`SmartcardError::UnsupportedKeyAlgorithm`] for any other key type.
+/// [`SmartcardError::CertificateParse`] if the DER is not a valid certificate, or if an
+/// EC key's `AlgorithmIdentifier.parameters` (the curve OID) is missing/malformed;
+/// [`SmartcardError::UnsupportedKeyAlgorithm`] for any non-RSA/non-EC key, or an EC key
+/// on a curve other than `secp256r1`.
 pub fn algorithm_from_cert_der(cert_der: &[u8]) -> Result<SignatureAlgorithm, SmartcardError> {
     use der::Decode;
     let cert = x509_cert::Certificate::from_der(cert_der)
         .map_err(|e| SmartcardError::CertificateParse(e.to_string()))?;
-    let oid = cert.tbs_certificate.subject_public_key_info.algorithm.oid;
+    let spki = &cert.tbs_certificate.subject_public_key_info;
+    let oid = spki.algorithm.oid;
     if oid == OID_RSA_ENCRYPTION {
         Ok(SignatureAlgorithm::RsaPkcs1Sha256)
     } else if oid == OID_EC_PUBLIC_KEY {
-        // We scope EC to P-256 (the only CC curve); the CMS layer confirms the
-        // curve via the cert's SPKI parameters.
+        // RFC 5480 §2.1.1: for id-ecPublicKey the AlgorithmIdentifier.parameters field
+        // holds the named curve OID. Parse it and require secp256r1.
+        let curve_oid = spki
+            .algorithm
+            .parameters
+            .as_ref()
+            .ok_or_else(|| {
+                SmartcardError::CertificateParse(
+                    "EC key is missing its curve parameters (named curve OID)".to_string(),
+                )
+            })?
+            .decode_as::<ObjectIdentifier>()
+            .map_err(|e| SmartcardError::CertificateParse(format!("invalid EC curve OID: {e}")))?;
+        if curve_oid != OID_SECP256R1 {
+            return Err(SmartcardError::UnsupportedKeyAlgorithm(format!(
+                "EC curve OID {curve_oid}; only secp256r1 (P-256) is supported"
+            )));
+        }
         Ok(SignatureAlgorithm::EcdsaP256Sha256)
     } else {
         Err(SmartcardError::UnsupportedKeyAlgorithm(oid.to_string()))

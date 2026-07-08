@@ -23,6 +23,7 @@
 //! confirmation step *inside* the qualified flow — labelled [`EvidentiaryLevel::OtpConfirmation`]
 //! — and is never produced as a signature artifact (SIG-02).
 
+#![forbid(unsafe_code)]
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
