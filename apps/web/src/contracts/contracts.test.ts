@@ -61,6 +61,7 @@ import {
   type SessionRoster,
   type SessionView,
   type Settings,
+  type SigningCmdSettings,
   type SigningSettings,
   type UserView,
 } from '../api/types';
@@ -459,11 +460,21 @@ describe('contract fixtures parse through the real client', () => {
         tsa_url: true,
         tsl_url: true,
         require_qualified_for_seal: true,
+        cmd: true,
       },
       'Settings.signing',
     );
     inEnum(SIGNATURE_FAMILIES, signing.preferred_family, 'signing.preferred_family');
     expect(typeof signing.require_qualified_for_seal).toBe('boolean');
+    // CMD remote-signing config (t57-S3) — env string, nullable application_id, cert flag.
+    const cmd = assertExactKeys<SigningCmdSettings>(
+      signing.cmd,
+      { env: true, application_id: true, ama_cert_configured: true },
+      'Settings.signing.cmd',
+    );
+    expect(typeof cmd.env).toBe('string');
+    if (cmd.application_id !== null) expect(typeof cmd.application_id).toBe('string');
+    expect(typeof cmd.ama_cert_configured).toBe('boolean');
     const appearance = assertExactKeys<AppearanceSettings>(
       settings.appearance,
       { theme: true, leather_texture: true, texture_intensity: true, button_texture: true },

@@ -32,6 +32,12 @@ import type {
   UpdateEntityBody,
   UpdateUserBody,
   ActState,
+  ReanchorBody,
+  RestoreBody,
+  CollisionPolicy,
+  StartOverBookBody,
+  ResetDataBody,
+  StartOverInstanceBody,
 } from './types';
 import { api } from './client';
 import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
@@ -51,6 +57,7 @@ export const keys = {
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
   ledger: (params: { scope?: string; limit?: number }) => ['ledger', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
+  ledgerIntegrity: ['ledger', 'integrity'] as const,
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
   health: ['health'] as const,
@@ -337,6 +344,117 @@ export function useLedger(params: { scope?: string; limit?: number } = {}) {
 
 export function useLedgerVerify() {
   return useQuery({ queryKey: keys.ledgerVerify, queryFn: () => api.verifyLedger() });
+}
+
+// --- Chain integrity + recovery + data management (t54) --------------------------
+
+/**
+ * The multi-chain integrity report (`GET /v1/ledger/integrity`, t54). Read-only and
+ * always available (even while the instance is degraded). Backs the "Livros &
+ * Integridade" sub-tab's per-chain status, exact break location and re-anchor disclosure.
+ */
+export function useLedgerIntegrity() {
+  return useQuery({ queryKey: keys.ledgerIntegrity, queryFn: () => api.ledgerIntegrity() });
+}
+
+/** Invalidate every read that a recovery / data-management op can change (integrity,
+ *  verify, ledger feed, dashboard, books, entities, health). */
+function invalidateAfterRecovery(qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: keys.ledgerIntegrity });
+  void qc.invalidateQueries({ queryKey: keys.ledgerVerify });
+  void qc.invalidateQueries({ queryKey: ['ledger'] });
+  void qc.invalidateQueries({ queryKey: keys.dashboard });
+  void qc.invalidateQueries({ queryKey: ['books'] });
+  void qc.invalidateQueries({ queryKey: keys.entities });
+  void qc.invalidateQueries({ queryKey: keys.health });
+}
+
+/**
+ * Last-resort chain re-anchor (`POST /v1/ledger/recovery/reanchor`, t54). Rebuilds the
+ * chain hashes from the break forward — permanently disclosed. Requires a non-empty reason
+ * and step-up re-auth (403 without, t54-R1); 409 when the chain already verifies.
+ */
+export function useReanchorLedger() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ReanchorBody) => api.reanchorLedger(body),
+    onSuccess: () => invalidateAfterRecovery(qc),
+  });
+}
+
+/**
+ * Whole-store restore from a verified backup (`POST /v1/ledger/recovery/restore`, t54).
+ * Never rewrites history; a backup that does not verify is refused (422) with the live
+ * store untouched.
+ */
+export function useRestoreLedger() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RestoreBody) => api.restoreLedger(body),
+    onSuccess: () => invalidateAfterRecovery(qc),
+  });
+}
+
+/**
+ * Export one book as a self-verifying bundle (`POST /v1/books/{id}/export`, t54). Returns
+ * the `.zip` blob + response headers (the retained export path / bundle digest); the caller
+ * triggers the browser download. A mutation so the button gets `isPending` + toast for free.
+ */
+export function useExportBook() {
+  return useMutation({ mutationFn: (bookId: string) => api.exportBook(bookId) });
+}
+
+/**
+ * Import a book bundle (`POST /v1/books/import`, t54). Verify-before-trust →
+ * `Verified` (into the live instance) | `Quarantined` (isolated, read-only). Refetches
+ * books + ledger on success (a Quarantined verdict is still a 200 success).
+ */
+export function useImportBook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bytes, policy }: { bytes: ArrayBuffer; policy: CollisionPolicy }) =>
+      api.importBook(bytes, policy),
+    onSuccess: () => invalidateAfterRecovery(qc),
+  });
+}
+
+/**
+ * Per-book start-over (`POST /v1/books/{id}/start-over`, t54). Archives the old book +
+ * chain, records `ledger.reinitialized`, and opens a fresh successor. Non-destructive
+ * (the old events stay append-only); blocked with 503 while degraded.
+ */
+export function useStartOverBook(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: StartOverBookBody) => api.startOverBook(id, body),
+    onSuccess: () => invalidateAfterRecovery(qc),
+  });
+}
+
+/**
+ * Destructive data-management wipe (`POST /v1/data/reset`, t54). `backend_domain`
+ * preserves the ledger (chained `data.wiped`); `backend_factory` blanks everything.
+ * Requires the exact confirm phrase + step-up re-auth + (mandatory) export-first.
+ */
+export function useResetData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ResetDataBody) => api.resetData(body),
+    onSuccess: () => invalidateAfterRecovery(qc),
+  });
+}
+
+/**
+ * Whole-instance start-over (`POST /v1/data/start-over`, t54). Archives the whole store
+ * then re-seeds empty domain data (users/settings preserved). Confirm phrase `RECOMEÇAR`
+ * + step-up re-auth.
+ */
+export function useStartOverInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: StartOverInstanceBody) => api.startOverInstance(body),
+    onSuccess: () => invalidateAfterRecovery(qc),
+  });
 }
 
 export function useDashboard() {
@@ -732,4 +850,20 @@ export function useUpdateSettings() {
 /** Liveness + running server version, for the Configurações “Sobre” section. */
 export function useHealth() {
   return useQuery({ queryKey: keys.health, queryFn: () => api.health(), staleTime: 60_000 });
+}
+
+/**
+ * Poll `/health` for the server-driven degraded signal (t54). Shares the `keys.health`
+ * cache with {@link useHealth} but re-fetches on an interval so the read-only degraded
+ * banner appears/clears without a manual reload. Deliberately never retries into a spin
+ * and stays quiet on transport failure (an unreachable server is not a degraded chain).
+ */
+export function useDegradedHealth() {
+  return useQuery({
+    queryKey: keys.health,
+    queryFn: () => api.health(),
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
 }

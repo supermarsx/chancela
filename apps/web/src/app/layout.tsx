@@ -21,6 +21,7 @@ import { CurrentUserPicker } from '../features/session/CurrentUserPicker';
 import { AuthGate } from '../features/session/AuthGate';
 import { PageErrorBoundary, ShellErrorBoundary } from './ErrorBoundary';
 import { SafeModeBanner } from './SafeModeBanner';
+import { DegradedBanner } from './DegradedBanner';
 import { isSafeMode } from './safeMode';
 import { useT } from '../i18n';
 import type { MessageKey } from '../i18n';
@@ -77,6 +78,10 @@ export function Layout() {
             <CurrentUserPicker />
           </div>
         </nav>
+
+        {/* Server-driven read-only banner: shown whenever the server reports a broken
+            integrity chain (distinct from the client-boot safe-mode banner above). */}
+        <DegradedBanner />
 
         {/* The single inner scroll container — the window itself never scrolls. */}
         <div className="app-scroll">

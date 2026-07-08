@@ -48,6 +48,8 @@ import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { grainStore } from '../../theme/grainStore';
 import { applyAppearance, applyLocale } from '../../theme/appearance';
+import { LivrosIntegridadeSection } from '../recovery/LivrosIntegridadeSection';
+import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
 import {
   Badge,
   Button,
@@ -98,9 +100,17 @@ function toWireBody(draft: Settings): Settings {
   };
 }
 
-/** The sub-tabs, in order. Each label reuses its section card title (identical text). */
+/** The sub-tabs, in order. Each label reuses its section card title (identical text).
+ *  The array is appended cleanly by peers (t60 Utilizadores, t62 Administração). */
 type SettingsSection =
-  'aparencia' | 'identidade' | 'documentos' | 'assinaturas' | 'gestao' | 'sobre';
+  | 'aparencia'
+  | 'identidade'
+  | 'documentos'
+  | 'assinaturas'
+  | 'gestao'
+  | 'integridade'
+  | 'dados'
+  | 'sobre';
 
 const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'aparencia', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
@@ -108,8 +118,14 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNo
   { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
   { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
+  { id: 'integridade', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
+  { id: 'dados', label: 'data.cardTitle', icon: <Icon.Archive /> },
   { id: 'sobre', label: 'settings.about.cardTitle', icon: <Icon.Info /> },
 ];
+
+/** The sub-tabs that manage their OWN data (not the settings working copy), so the
+ *  autosave savebar is not shown for them. */
+const STANDALONE_SECTIONS: readonly SettingsSection[] = ['integridade', 'dados'];
 
 const isSettingsSection = (v: string | null): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
@@ -441,6 +457,12 @@ export function SettingsPage() {
           </Card>
         ) : null}
 
+        {/* Livros & Integridade ---------------------------------------------------- */}
+        {section === 'integridade' ? <LivrosIntegridadeSection /> : null}
+
+        {/* Gestão de Dados --------------------------------------------------------- */}
+        {section === 'dados' ? <GestaoDadosSection /> : null}
+
         {/* Sobre ------------------------------------------------------------------- */}
         {section === 'sobre' ? (
           <Card title={t('settings.about.cardTitle')}>
@@ -491,38 +513,41 @@ export function SettingsPage() {
           PUT). The inline status keeps the operator informed without toast spam; only a
           failed save raises a toast (via the hook's onError) and surfaces an inline note
           plus a "Guardar agora" retry. The button also lets an operator flush a pending
-          debounce immediately. */}
-      <Card>
-        <div className="stack--tight">
-          {autosave.status === 'error' ? <ErrorNote error={autosave.error} /> : null}
-          <div className="row-wrap settings-savebar">
-            <span className="settings-autosave muted" role="status" aria-live="polite">
-              {autosave.status === 'saving' ? (
-                t('common.saving')
-              ) : autosave.status === 'dirty' ? (
-                t('settings.autosave.pending')
-              ) : autosave.status === 'saved' ? (
-                <>
-                  <Icon.Check /> {t('settings.autosave.saved')}
-                </>
-              ) : autosave.status === 'error' ? (
-                t('settings.autosave.error')
-              ) : (
-                ''
-              )}
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              icon={<Icon.Save />}
-              disabled={!autosave.isDirty || autosave.isSaving}
-              onClick={() => autosave.flush()}
-            >
-              {t('settings.saveNow')}
-            </Button>
+          debounce immediately. The standalone sub-tabs (Integridade, Dados) manage their
+          own data and never touch the settings document, so the savebar is hidden there. */}
+      {STANDALONE_SECTIONS.includes(section) ? null : (
+        <Card>
+          <div className="stack--tight">
+            {autosave.status === 'error' ? <ErrorNote error={autosave.error} /> : null}
+            <div className="row-wrap settings-savebar">
+              <span className="settings-autosave muted" role="status" aria-live="polite">
+                {autosave.status === 'saving' ? (
+                  t('common.saving')
+                ) : autosave.status === 'dirty' ? (
+                  t('settings.autosave.pending')
+                ) : autosave.status === 'saved' ? (
+                  <>
+                    <Icon.Check /> {t('settings.autosave.saved')}
+                  </>
+                ) : autosave.status === 'error' ? (
+                  t('settings.autosave.error')
+                ) : (
+                  ''
+                )}
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<Icon.Save />}
+                disabled={!autosave.isDirty || autosave.isSaving}
+                onClick={() => autosave.flush()}
+              >
+                {t('settings.saveNow')}
+              </Button>
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }

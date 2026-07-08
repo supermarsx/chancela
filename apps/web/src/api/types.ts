@@ -1035,11 +1035,25 @@ export interface DocumentSettings {
   numbering_scheme_default: NumberingScheme;
 }
 
+/**
+ * Chave Móvel Digital (CMD) remote-signing configuration (t57-S3). `env` selects the AMA
+ * environment (`preprod`/`prod`); `application_id` is the AMA-issued ApplicationId or `null`
+ * when unset; `ama_cert_configured` reports whether the AMA signing certificate is provisioned.
+ * The full CMD settings UI lands in a later slice — this field is modelled to keep the wire
+ * contract green.
+ */
+export interface SigningCmdSettings {
+  env: string;
+  application_id: string | null;
+  ama_cert_configured: boolean;
+}
+
 export interface SigningSettings {
   preferred_family: SignatureFamily;
   tsa_url: string | null;
   tsl_url: string | null;
   require_qualified_for_seal: boolean;
+  cmd: SigningCmdSettings;
 }
 
 export interface AppearanceSettings {
@@ -1119,6 +1133,7 @@ export const DEFAULT_SETTINGS: Settings = {
     tsa_url: 'https://ts.cartaodecidadao.pt/tsa/server',
     tsl_url: 'https://www.gns.gov.pt/media/TSLPT.xml',
     require_qualified_for_seal: false,
+    cmd: { env: 'preprod', application_id: null, ama_cert_configured: false },
   },
   appearance: {
     theme: 'system',
@@ -1132,4 +1147,196 @@ export const DEFAULT_SETTINGS: Settings = {
 export interface HealthResponse {
   status?: string;
   version?: string;
+  /** Server-driven integrity signal (t54-E3). `"broken"` ⇒ a chain failed to verify. */
+  integrity?: 'ok' | 'broken';
+  /** Whether the instance is in read-only degraded mode (a broken chain, t54-E3). */
+  degraded?: boolean;
 }
+
+// --- Chain integrity + recovery + data management (t54, FROZEN E3 DTOs) ----------
+//
+// The web halves of the frozen `chancela-api` recovery/data-management contract
+// (`.orchestration/logs/t54-E3.md`). Hashes are lowercase-hex strings; timestamps are
+// RFC 3339; chain ids are canonical strings (`"global"` | `"application"` |
+// `"company:{uuid}"` | `"book:{uuid}"`). Every field mirrors the server view byte-for-byte.
+
+/** The precise kind of a chain break (mirrors `chancela-ledger::BreakKind`). */
+export type BreakKind =
+  | 'BadGenesis'
+  | 'SequenceBroken'
+  | 'LinkBroken'
+  | 'HashMismatch'
+  | 'ChainSequenceBroken'
+  | 'ChainLinkBroken'
+  | 'ChainGenesisWrong';
+
+/** The exact location + nature of the first break on a chain. */
+export interface ChainBreakView {
+  chain: string;
+  kind: BreakKind;
+  global_seq: number | null;
+  chain_seq: number | null;
+  event_id: string | null;
+  expected_hash: string | null;
+  actual_hash: string | null;
+  message: string;
+}
+
+/** Per-chain verify status; `first_break` is the exact location when `verified` is false. */
+export interface ChainStatusView {
+  chain: string;
+  genesis_kind: string | null;
+  length: number;
+  head: string | null;
+  verified: boolean;
+  first_break: ChainBreakView | null;
+}
+
+export interface ReanchorSegmentView {
+  chain: string;
+  from_chain_seq: number;
+  to_chain_seq: number;
+}
+
+/** A permanent record of a re-anchor: what was rebuilt, by whom, and the overwritten state. */
+export interface ReanchorRecordView {
+  actor: string;
+  at: string;
+  reason: string;
+  affected: ReanchorSegmentView[];
+  original_global_head: string | null;
+  new_global_head: string;
+  pre_reanchor_digest: string;
+}
+
+/** `GET /v1/ledger/integrity` — the multi-chain integrity report. */
+export interface IntegrityReportView {
+  healthy: boolean;
+  degraded: boolean;
+  global: ChainStatusView;
+  chains: ChainStatusView[];
+  reanchored_segments: ReanchorRecordView[];
+}
+
+/** The step-up re-auth proof carried by every destructive server op (§8-F). One of the
+ *  two proofs is supplied; a valid session token alone is never enough (403). */
+export interface ReAuth {
+  password?: string;
+  recovery_phrase?: string;
+}
+
+/** `POST /v1/ledger/recovery/reanchor` request (reason required; reauth required, t54-R1). */
+export interface ReanchorBody {
+  reason: string;
+  reauth: ReAuth;
+  actor?: string;
+}
+
+/** `POST /v1/ledger/recovery/reanchor` response. */
+export interface ReanchorResult {
+  record: ReanchorRecordView;
+  integrity: IntegrityReportView;
+}
+
+/** `POST /v1/ledger/recovery/restore` request. `archive` is an absolute path or a bare
+ *  name resolved under `<data_dir>/backups/`. */
+export interface RestoreBody {
+  archive: string;
+  actor?: string;
+}
+
+/** `POST /v1/ledger/recovery/restore` response — whole-store restore outcome. */
+export interface RestoreOutcomeView {
+  restored_from: string;
+  ledger_length: number;
+  ledger_head: string | null;
+  chain_verified: boolean;
+  integrity: IntegrityReportView;
+}
+
+/** Import collision policy (§2.5). `refuse` is the safe default. */
+export type CollisionPolicy = 'refuse' | 'quarantine_copy';
+
+/** The verdict of verifying an imported bundle before trusting it. */
+export type ImportVerdictView =
+  { status: 'Verified' } | { status: 'Quarantined'; break?: ChainBreakView };
+
+/** `POST /v1/books/import` response — the honest Verified|Quarantined outcome + provenance. */
+export interface ImportOutcomeView {
+  import_id: string;
+  entity_id: string;
+  book_id: string;
+  verdict: ImportVerdictView;
+  source_instance_id: string;
+  bundle_digest: string;
+  collided: boolean;
+}
+
+/** `POST /v1/books/{id}/start-over` request (forward-writing lifecycle op; reason + a
+ *  fresh-book opening spec). Non-destructive: the old book is archived + chained. */
+export interface StartOverBookBody {
+  reason: string;
+  purpose: string;
+  opening_date: string;
+  required_signatories: string[];
+  numbering_scheme?: NumberingScheme;
+  actor?: string;
+}
+
+export interface ReinitBookView {
+  scope: 'Book';
+  archive_path: string;
+  archived_bundle_digest: string;
+  old_book_id: string;
+  new_book_id: string;
+}
+
+/** `POST /v1/books/{id}/start-over` response — the archived old book + the fresh successor. */
+export interface StartOverBookResult {
+  reinit: ReinitBookView;
+  new_book: BookView;
+}
+
+/** The destructive data-management scope (§2.11). */
+export type ResetScope = 'backend_domain' | 'backend_factory';
+
+/** `POST /v1/data/reset` request. `confirm_phrase` must equal the exact server phrase
+ *  (`LIMPAR DADOS` / `REPOR FÁBRICA`); export-first is mandatory unless factory + an
+ *  explicit `skip_export_confirm`. `reauth` is the step-up proof (§8-F). */
+export interface ResetDataBody {
+  scope: ResetScope;
+  confirm_phrase: string;
+  export_first: boolean;
+  skip_export_confirm?: boolean;
+  reauth: ReAuth;
+  actor?: string;
+}
+
+/** `POST /v1/data/reset` response. `export_archive` is the retained export-first archive. */
+export interface ResetOutcomeView {
+  scope: 'BackendDomain' | 'BackendFactory';
+  export_archive: string | null;
+  cleared: string[];
+}
+
+/** `POST /v1/data/start-over` request (whole-instance archive-then-fresh; phrase `RECOMEÇAR`). */
+export interface StartOverInstanceBody {
+  reason: string;
+  confirm_phrase: string;
+  reauth: ReAuth;
+  actor?: string;
+}
+
+/** `POST /v1/data/start-over` response. */
+export interface StartOverInstanceView {
+  scope: 'Instance';
+  archive_path: string;
+  archived_bundle_digest: string;
+}
+
+/** The exact type-to-confirm phrases the server enforces (frozen, §2.9 / E3). */
+export const RESET_PHRASE = {
+  backend_domain: 'LIMPAR DADOS',
+  backend_factory: 'REPOR FÁBRICA',
+  instance: 'RECOMEÇAR',
+} as const;

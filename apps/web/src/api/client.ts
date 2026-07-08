@@ -57,6 +57,19 @@ import type {
   UserView,
   BookView,
   HealthResponse,
+  IntegrityReportView,
+  ReanchorBody,
+  ReanchorResult,
+  RestoreBody,
+  RestoreOutcomeView,
+  ImportOutcomeView,
+  CollisionPolicy,
+  StartOverBookBody,
+  StartOverBookResult,
+  ResetDataBody,
+  ResetOutcomeView,
+  StartOverInstanceBody,
+  StartOverInstanceView,
 } from './types';
 import { clearSessionToken, getSessionToken } from './session';
 import { t } from '../i18n';
@@ -209,6 +222,49 @@ export async function fetchBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+/**
+ * Fetch a binary body via a non-GET method (e.g. the book-export `.zip`, produced by a
+ * `POST`). Mirrors {@link fetchBlob}: attaches the session token, clears a stale token on
+ * 401, and surfaces a non-2xx as an `ApiError` (parsing the friendly `{error}` body when
+ * the server sent JSON). Returns the `Blob` plus the response headers so a caller can read
+ * the retained export path / bundle digest the server rides in `X-Chancela-*` headers.
+ */
+export async function fetchBlobVia(
+  path: string,
+  method: string,
+): Promise<{ blob: Blob; headers: Headers }> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = {};
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(path, { method, headers });
+  if (res.status === 401) clearSessionToken();
+  if (!res.ok) {
+    let message = t('error.requestFailed', { status: res.status });
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body — keep the generic status message.
+    }
+    throw new ApiError(res.status, { error: message });
+  }
+  return { blob: await res.blob(), headers: res.headers };
+}
+
+/**
+ * POST raw (non-JSON) bytes and parse a JSON response. The book-import endpoint takes the
+ * bundle `.zip` bytes directly as the request body — NOT `application/json` — so it needs
+ * its own path that does not stamp the JSON content-type `request` sets on a body.
+ */
+export async function postBytes<T>(path: string, bytes: ArrayBuffer | Blob): Promise<T> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/zip' };
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(path, { method: 'POST', headers, body: bytes });
+  if (res.status === 401) clearSessionToken();
+  return parseResponse<T>(res, path);
+}
+
 /** Build a query string from defined params only (skips `undefined`). */
 function query(params: Record<string, string | number | undefined>): string {
   const usp = new URLSearchParams();
@@ -325,6 +381,26 @@ export const api = {
   listLedger: (params: { scope?: string; limit?: number } = {}) =>
     get<LedgerEventView[]>(`/v1/ledger/events${query(params)}`),
   verifyLedger: () => get<LedgerVerify>('/v1/ledger/verify'),
+
+  // Chain integrity + recovery + per-book export/import/start-over + data management
+  // (t54, frozen E3 DTOs). Every destructive op carries a step-up `reauth` proof.
+  ledgerIntegrity: () => get<IntegrityReportView>('/v1/ledger/integrity'),
+  reanchorLedger: (body: ReanchorBody) =>
+    post<ReanchorResult>('/v1/ledger/recovery/reanchor', body),
+  restoreLedger: (body: RestoreBody) =>
+    post<RestoreOutcomeView>('/v1/ledger/recovery/restore', body),
+  // Book bundle export: a `POST` that streams `application/zip`; the retained path +
+  // digest ride in `X-Chancela-Export-Path` / `X-Chancela-Bundle-Digest` headers.
+  exportBook: (id: string) => fetchBlobVia(`/v1/books/${id}/export`, 'POST'),
+  // Book import: raw `.zip` bytes in the body; verify-before-trust → Verified|Quarantined.
+  importBook: (bytes: ArrayBuffer | Blob, policy: CollisionPolicy = 'refuse') =>
+    postBytes<ImportOutcomeView>(`/v1/books/import${query({ policy })}`, bytes),
+  startOverBook: (id: string, body: StartOverBookBody) =>
+    post<StartOverBookResult>(`/v1/books/${id}/start-over`, body),
+  // Data management (§2.11). Frontend-reset is client-only — it has NO endpoint here.
+  resetData: (body: ResetDataBody) => post<ResetOutcomeView>('/v1/data/reset', body),
+  startOverInstance: (body: StartOverInstanceBody) =>
+    post<StartOverInstanceView>('/v1/data/start-over', body),
 
   // Dashboard (§2.7)
   dashboard: () => get<Dashboard>('/v1/dashboard'),

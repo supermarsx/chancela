@@ -4400,3 +4400,238 @@ input[type='radio']:disabled {
     transform: none;
   }
 }
+
+/* =====================================================================================
+   t54 — chain integrity + recovery + data management (Livros & Integridade / Gestão de
+   Dados sub-tabs, the shared confirm modal, and the server-driven degraded banner).
+   ===================================================================================== */
+
+/* A destructive action button — red ink/border, distinct from the gilt secondary. Pairs
+   with `.btn--secondary`/`.btn--ghost` (adds the danger tone). */
+.btn--danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+.btn--danger:hover:not(:disabled) {
+  background: var(--error-bg);
+  color: var(--error);
+}
+.btn--primary.btn--danger {
+  background: var(--error);
+  color: var(--on-accent);
+  border-color: var(--error);
+}
+
+/* Server-driven read-only degraded banner. Mirrors `.safe-banner` (same bottom-pinned
+   idiom) but ERROR-toned and above it in the stack, so a broken-chain read-only state is
+   unmistakable and distinct from the client-boot safe mode. */
+.degraded-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1600;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem 1.25rem;
+  padding: 0.55rem clamp(1rem, 4vw, 2rem);
+  background: var(--error-bg);
+  border-top: 2px solid var(--error);
+  font-family: var(--font-sans);
+  color: var(--text);
+}
+.degraded-banner__text {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.degraded-banner__title {
+  color: var(--error);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.degraded-banner__detail {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.degraded-banner__link {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  color: var(--error);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+.degraded-banner__link:hover,
+.degraded-banner__link:focus-visible {
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+}
+
+/* The shared confirm modal (ReAuth + type-to-confirm phrase). */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(1rem, 6vh, 4rem) 1rem;
+  background: rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+}
+.modal {
+  width: min(34rem, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+.modal--danger {
+  border-color: var(--error);
+}
+.modal__head {
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--rule);
+}
+.modal__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+}
+.modal--danger .modal__title {
+  color: var(--error);
+}
+.modal__body {
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.modal__intro {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+.modal__note {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+.checkline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.checkline--warn {
+  color: var(--warn);
+}
+.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}
+.file-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+/* A plain (un-bulleted) list used in the integrity/data panels. */
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.plain-list > li + li {
+  margin-top: 0.3rem;
+}
+
+/* One chain's status row + its expanded break detail. */
+.chainrow {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+.chainrow--broken {
+  border-color: var(--error);
+  background: var(--error-bg);
+}
+.chainrow__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.chainrow__label {
+  font-weight: 600;
+}
+.chainrow__meta {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.chainrow__break {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--error);
+}
+.chainrow__break-title {
+  margin: 0 0 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--error);
+}
+.chainrow__break-msg {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+}
+.deflist--tight dt {
+  font-size: 0.75rem;
+}
+.deflist--tight dd {
+  font-size: 0.8rem;
+}
+
+/* A per-book row with its export / start-over actions. */
+.bookrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+.bookrow__id {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.bookrow__purpose {
+  font-weight: 600;
+}
+.bookrow__actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}

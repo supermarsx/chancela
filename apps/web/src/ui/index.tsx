@@ -24,6 +24,12 @@ export { Tooltip, IconButton, type TooltipPlacement } from './Tooltip';
 export * as Icon from './icons';
 export { Skeleton, SkeletonText, SkeletonTable, SkeletonCards, SkeletonDeflist } from './Skeleton';
 export { ToastProvider, useToast, type ToastHandle, type ToastVariant } from './toast';
+export {
+  ConfirmActionModal,
+  type ConfirmActionModalProps,
+  type ConfirmActionArgs,
+  type ExportFirstMode,
+} from './ConfirmActionModal';
 
 // --- Button ---------------------------------------------------------------------
 
