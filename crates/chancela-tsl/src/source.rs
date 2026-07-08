@@ -109,13 +109,39 @@ impl TslSource for BytesTslSource {
     }
 }
 
-/// **Phase-2 stub (SIG-11).** Validate the Trusted List's own XML-DSig signature against the GNS
-/// scheme-operator certificate.
+/// Validate the Trusted List's own XML-DSig signature (SIG-11, audit t41/C2).
 ///
-/// This is intentionally unimplemented: `chancela-tsl` currently parses, resolves status, caches
-/// and queries the list, but does **not** verify that the list is authentic. Until this lands, a
-/// production deployment MUST obtain the list over an authenticated channel and treat the parsed
-/// result as advisory. Always returns [`TslError::SignatureValidationNotImplemented`].
-pub fn validate_tsl_signature(_xml: &[u8]) -> Result<(), TslError> {
-    Err(TslError::SignatureValidationNotImplemented)
+/// This is a best-effort implementation that parses the `<ds:Signature>` element, extracts the
+/// signer certificate from `<ds:KeyInfo>`, computes the digest of the referenced content, and
+/// verifies the signature value against the signer's public key.
+///
+/// # What is implemented
+///
+/// - Parsing the XML-DSig structure: `Signature`, `SignedInfo`, `SignatureValue`, `Reference`,
+///   `DigestMethod`, `DigestValue`, `SignatureMethod`, `CanonicalizationMethod`, `KeyInfo`,
+///   `X509Data`, `X509Certificate`.
+/// - Extracting the signer certificate (base64 DER from `<ds:X509Certificate>`).
+/// - Computing the digest of the referenced content. For `URI=""` (the whole document), the
+///   signed content is the document with the `<ds:Signature>` element removed. For a specific
+///   `URI="#id"`, the element with that `Id` attribute is the signed content.
+/// - Verifying the signature value using RSA-SHA256 or ECDSA-SHA256.
+///
+/// # What is NOT implemented (limitations documented)
+///
+/// - **XML canonicalization (C14N).** Without a canonicalization library, this implementation
+///   uses the raw bytes of the referenced content (with the Signature element stripped for
+///   `URI=""`). This is correct for TSLs that are already in canonical form (no comments,
+///   consistent attribute ordering, UTF-8 encoding) but MAY fail for TSLs that require
+///   non-trivial canonicalization. The `CanonicalizationMethod` algorithm is checked: if it is
+///   not `http://www.w3.org/TR/2001/REC-xml-c14n-20010315` (inclusive C14N) or
+///   `http://www.w3.org/2001/10/xml-exc-c14n#` (exclusive C14N), an error is returned.
+/// - **Transform chains.** Only the implicit C14N transform is applied; explicit `<ds:Transform>`
+///   elements other than C14N are not supported.
+/// - **Multiple references.** Only the first `<ds:Reference>` is verified.
+///
+/// For real-world Portuguese TSLs, the signature is typically a single enveloped signature over
+/// the whole document (`URI=""`) with exclusive C14N, RSA-SHA256.
+pub fn validate_tsl_signature(xml: &[u8]) -> Result<(), TslError> {
+    let parsed = crate::xmldsig::parse_signature(xml)?;
+    parsed.verify(xml)
 }

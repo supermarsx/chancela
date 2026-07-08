@@ -18,17 +18,21 @@
 //!    (`Granted`/`Withdrawn`/`Unknown`), which `chancela-signing` maps onto its
 //!    `TrustedListStatus`. [`query::TslClient`] ties source + cache + query together.
 //!
-//! # Scope (this phase)
-//! Parsing, status resolution, caching and querying are implemented and covered by
-//! fixture-based offline tests. **Validating the Trusted List's own XML-DSig signature (SIG-11)
-//! is an explicit phase-2 stub** — see [`source::validate_tsl_signature`] and
-//! `crates/chancela-tsl/TESTING.md`.
+//! # XML-DSig signature validation (SIG-11)
+//! The Trusted List's own XML-DSig signature is validated by
+//! [`source::validate_tsl_signature`]. The [`query::TslClient`] calls this on every `refresh`
+//! and refuses to return [`QualifiedStatus::Granted`] when the signature does not verify —
+//! see `crates/chancela-tsl/TESTING.md` for the verification boundary.
+
+#![forbid(unsafe_code)]
 
 pub mod cache;
 pub mod error;
 pub mod parse;
 pub mod query;
 pub mod source;
+
+pub(crate) mod xmldsig;
 
 pub use cache::{CachedTsl, FALLBACK_TTL};
 pub use error::TslError;

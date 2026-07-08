@@ -33,10 +33,22 @@ pub enum TslError {
     #[error("failed to read Trusted List file: {0}")]
     Io(#[from] std::io::Error),
 
-    /// **Phase-2 stub (SIG-11).** Validating the Trusted List's own XML-DSig signature is not yet
-    /// implemented. Parsing, status resolution, caching and querying all work without it, but a
-    /// production deployment MUST NOT trust a list whose signature has not been verified against
-    /// the GNS scheme-operator certificate. See `crates/chancela-tsl/TESTING.md`.
-    #[error("TSL XML-DSig signature validation is not implemented (phase-2, SIG-11)")]
-    SignatureValidationNotImplemented,
+    /// The Trusted List's XML-DSig signature is missing or structurally malformed (SIG-11,
+    /// audit t41/C2). The list MUST NOT be trusted.
+    #[error("TSL XML-DSig signature is missing or malformed: {0}")]
+    SignatureStructure(String),
+
+    /// A digest in the TSL XML-DSig signature did not match the referenced content (SIG-11,
+    /// audit t41/C2). The list has been tampered with in transit.
+    #[error("TSL XML-DSig reference digest mismatch")]
+    SignatureDigestMismatch,
+
+    /// The TSL XML-DSig signature value did not verify against the signer certificate's public
+    /// key (SIG-11, audit t41/C2). The list is not authentic.
+    #[error("TSL XML-DSig signature verification failed")]
+    SignatureVerificationFailed,
+
+    /// The TSL XML-DSig uses an unsupported signature or digest algorithm (audit t41/C2).
+    #[error("unsupported TSL XML-DSig algorithm: {0}")]
+    SignatureUnsupportedAlgorithm(String),
 }

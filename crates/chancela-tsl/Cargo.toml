@@ -13,6 +13,9 @@ quick-xml = { workspace = true }
 reqwest = { workspace = true }
 x509-cert = { workspace = true }
 der = { workspace = true }
+spki = { workspace = true }
+rsa = { workspace = true }
+sha2 = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

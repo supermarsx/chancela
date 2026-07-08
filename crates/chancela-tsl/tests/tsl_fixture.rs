@@ -167,24 +167,51 @@ fn client_caches_and_reports_staleness() {
 }
 
 #[test]
-fn client_resolves_qualified_status_end_to_end() {
+fn client_downgrades_granted_to_unknown_when_signature_does_not_verify() {
+    // Security audit t41/C2: the fixture carries a placeholder <ds:Signature> that does not
+    // verify (no <ds:Reference>, no <ds:KeyInfo>, fake SignatureValue). TslClient MUST NOT
+    // report Granted for an issuer on an unauthenticated list — Granted is downgraded to
+    // Unknown. (resolve_esig_status, the pure function, still returns Granted — the gate lives
+    // in TslClient, not in the status resolver.)
     let source = FileTslSource::new(fixture_dir().join("pt-tsl-sample.xml"));
     let mut client = TslClient::new(source);
-    // Prime the cache to read the certificate straight from the parsed list.
     client.ensure_fresh(NOW).unwrap();
     let cert = issuer_cert(client.cached().unwrap().list(), "MULTICERT");
 
     assert_eq!(
         client.is_qualified_for_esig(&cert, NOW).unwrap(),
+        QualifiedStatus::Unknown,
+        "an unauthenticated list must not vouch for an issuer"
+    );
+    // The pure resolver still returns Granted — the cache carries the raw status for inspection.
+    assert_eq!(
+        resolve_esig_status(client.cached().unwrap().list(), &cert, NOW),
         QualifiedStatus::Granted
+    );
+    assert!(
+        !client.cached().unwrap().signature_valid(),
+        "fixture signature is not valid"
     );
 }
 
 #[test]
-fn tsl_signature_validation_is_a_phase_2_stub() {
+fn tsl_signature_validation_rejects_incomplete_fixture_signature() {
+    // The bundled fixture carries a placeholder <ds:Signature> with only a CanonicalizationMethod,
+    // SignatureMethod, and a fake SignatureValue — no <ds:Reference>, no <ds:KeyInfo>. The
+    // validator MUST detect this and reject it rather than silently accepting the list.
     let xml = std::fs::read(fixture_dir().join("pt-tsl-sample.xml")).unwrap();
-    assert!(matches!(
-        validate_tsl_signature(&xml),
-        Err(TslError::SignatureValidationNotImplemented)
-    ));
+    let err = validate_tsl_signature(&xml).unwrap_err();
+    // The exact variant depends on which structural check trips first (missing Reference, missing
+    // KeyInfo, etc.), but it MUST be a signature-structure/digest/verification error, never the
+    // old `SignatureValidationNotImplemented`.
+    assert!(
+        matches!(
+            err,
+            TslError::SignatureStructure(_)
+                | TslError::SignatureDigestMismatch
+                | TslError::SignatureVerificationFailed
+                | TslError::SignatureUnsupportedAlgorithm(_)
+        ),
+        "got {err:?}"
+    );
 }

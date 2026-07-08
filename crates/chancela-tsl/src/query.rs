@@ -144,10 +144,17 @@ impl<S: TslSource> TslClient<S> {
     }
 
     /// Fetch and parse the list unconditionally, replacing the cache with an entry stamped `now`.
+    ///
+    /// After parsing, the list's XML-DSig signature is validated (SIG-11, audit t41/C2). The
+    /// validation result is stored on the cache entry and consulted by
+    /// [`is_qualified_for_esig`](Self::is_qualified_for_esig). A signature failure does NOT
+    /// error here — the parsed list is still cached so the caller can inspect it; but the
+    /// qualified-status query downgrades `Granted` to `Unknown` when the signature did not verify.
     pub fn refresh(&mut self, now: OffsetDateTime) -> Result<(), TslError> {
         let bytes = self.source.fetch()?;
         let list = parse_tsl(&bytes)?;
-        self.cache = Some(CachedTsl::new(list, now));
+        let signature_valid = crate::source::validate_tsl_signature(&bytes).is_ok();
+        self.cache = Some(CachedTsl::with_signature_valid(list, now, signature_valid));
         Ok(())
     }
 
@@ -162,18 +169,29 @@ impl<S: TslSource> TslClient<S> {
 
     /// Resolve the qualified-for-e-signatures status of `issuer_cert_der` as of `now`, refreshing
     /// the cache first if needed.
+    ///
+    /// **Security (audit t41/C2):** if the list's XML-DSig signature did not verify at fetch
+    /// time, [`QualifiedStatus::Granted`] is downgraded to [`QualifiedStatus::Unknown`]. A list
+    /// whose authenticity cannot be confirmed MUST NOT be the basis for trusting a certificate.
+    /// [`QualifiedStatus::Withdrawn`] is reported as-is (the issuer is on the unverified list but
+    /// not currently qualified — still useful as an advisory).
     pub fn is_qualified_for_esig(
         &mut self,
         issuer_cert_der: &[u8],
         now: OffsetDateTime,
     ) -> Result<QualifiedStatus, TslError> {
         self.ensure_fresh(now)?;
-        let list = self
+        let cache = self
             .cache
             .as_ref()
-            .expect("cache populated by ensure_fresh")
-            .list();
-        Ok(resolve_esig_status(list, issuer_cert_der, now))
+            .expect("cache populated by ensure_fresh");
+        let list = cache.list();
+        let raw = resolve_esig_status(list, issuer_cert_der, now);
+        // Signature gate: refuse to vouch for an issuer when the list is not authenticated.
+        Ok(match (raw, cache.signature_valid()) {
+            (QualifiedStatus::Granted, false) => QualifiedStatus::Unknown,
+            (other, _) => other,
+        })
     }
 }
 

@@ -18,12 +18,34 @@ pub const FALLBACK_TTL: Duration = Duration::hours(24);
 pub struct CachedTsl {
     list: TrustedList,
     fetched_at: OffsetDateTime,
+    /// Whether the list's own XML-DSig signature verified (SIG-11, audit t41/C2). When `false`,
+    /// the parsed list is advisory and [`crate::query::TslClient`] MUST NOT report
+    /// [`crate::query::QualifiedStatus::Granted`] — see `TslClient::is_qualified_for_esig`.
+    signature_valid: bool,
 }
 
 impl CachedTsl {
-    /// Wrap a freshly-parsed list fetched at `fetched_at`.
+    /// Wrap a freshly-parsed list fetched at `fetched_at`, marking the signature as unverified.
+    /// Use [`Self::with_signature_valid`] to record the validation result.
     pub fn new(list: TrustedList, fetched_at: OffsetDateTime) -> Self {
-        Self { list, fetched_at }
+        Self {
+            list,
+            fetched_at,
+            signature_valid: false,
+        }
+    }
+
+    /// Wrap a freshly-parsed list, recording whether its XML-DSig signature verified.
+    pub fn with_signature_valid(
+        list: TrustedList,
+        fetched_at: OffsetDateTime,
+        valid: bool,
+    ) -> Self {
+        Self {
+            list,
+            fetched_at,
+            signature_valid: valid,
+        }
     }
 
     /// The cached list.
@@ -34,6 +56,11 @@ impl CachedTsl {
     /// When the list was fetched.
     pub fn fetched_at(&self) -> OffsetDateTime {
         self.fetched_at
+    }
+
+    /// Whether the list's XML-DSig signature was verified successfully at fetch time.
+    pub fn signature_valid(&self) -> bool {
+        self.signature_valid
     }
 
     /// The instant at which this cache entry becomes stale: the list's `NextUpdate`, or
