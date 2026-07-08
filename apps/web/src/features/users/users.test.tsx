@@ -295,3 +295,193 @@ describe('EditUserPage (/utilizadores/:id) — identity + access manager', () =>
     expect(post?.body).toMatchObject({ current_password: 'current-pw' });
   });
 });
+
+// The signed-in operator, a DIFFERENT user from the one being edited — makes every edit of
+// BRUNO/AMELIA a cross-user op (t51).
+const OPERATOR: UserView = {
+  id: 'u9',
+  username: 'operator',
+  display_name: 'Operador',
+  created_at: '2026-07-07T12:10:00Z',
+  active: true,
+  has_secret: true,
+  has_attestation_key: false,
+  has_recovery_phrase: false,
+};
+
+describe('EditUserPage — cross-user password change proof + 403 (t51)', () => {
+  it('self-service change shows the plain current-password field, not the cross-user proof', async () => {
+    const { fn, calls } = recordingFetch((r) => {
+      if (r.url.endsWith('/v1/session')) return jsonResponse({ user: BRUNO }); // editing yourself
+      if (r.url.includes('/secret') && r.method === 'POST') return jsonResponse({ ...BRUNO });
+      if (r.url.endsWith('/v1/users/u2')) return jsonResponse(BRUNO);
+      return jsonResponse([BRUNO]);
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u2');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Alterar' }));
+    // Self-service keeps the plain "Palavra-passe atual" field and shows NO proof selector.
+    // (The password form's current field precedes the key block's, so [0] is the change field.)
+    expect((await screen.findAllByLabelText('Palavra-passe atual')).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(screen.queryByText('Prova de autorização')).toBeNull();
+
+    fireEvent.change(screen.getAllByLabelText('Palavra-passe atual')[0], {
+      target: { value: 'current-pw' },
+    });
+    fireEvent.change(screen.getByLabelText('Nova palavra-passe'), {
+      target: { value: 'newpassword1' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'newpassword1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/secret') && c.method === 'POST')).toBe(true),
+    );
+    const post = calls.find((c) => c.url.includes('/secret') && c.method === 'POST');
+    expect(post?.body).toMatchObject({ password: 'newpassword1', current_password: 'current-pw' });
+    expect(post?.body).not.toHaveProperty('recovery_phrase');
+  });
+
+  it('cross-user change collects the target current password and sends it as the proof', async () => {
+    const { fn, calls } = recordingFetch((r) => {
+      if (r.url.endsWith('/v1/session')) return jsonResponse({ user: OPERATOR });
+      if (r.url.includes('/secret') && r.method === 'POST') return jsonResponse({ ...BRUNO });
+      if (r.url.endsWith('/v1/users/u2')) return jsonResponse(BRUNO);
+      return jsonResponse([BRUNO]);
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u2');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Alterar' }));
+    // Cross-user: the proof selector + the target's current-password field are shown.
+    expect(await screen.findByText('Prova de autorização')).toBeTruthy();
+    // The proof value field (password block) precedes the key block's current field → [0].
+    fireEvent.change((await screen.findAllByLabelText('Palavra-passe atual do utilizador'))[0], {
+      target: { value: 'target-current' },
+    });
+    fireEvent.change(screen.getByLabelText('Nova palavra-passe'), {
+      target: { value: 'newpassword1' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'newpassword1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/secret') && c.method === 'POST')).toBe(true),
+    );
+    const post = calls.find((c) => c.url.includes('/secret') && c.method === 'POST');
+    expect(post?.body).toMatchObject({
+      password: 'newpassword1',
+      current_password: 'target-current',
+    });
+    expect(post?.body).not.toHaveProperty('recovery_phrase');
+  });
+
+  it('cross-user change can authorize with a recovery phrase instead', async () => {
+    const { fn, calls } = recordingFetch((r) => {
+      if (r.url.endsWith('/v1/session')) return jsonResponse({ user: OPERATOR });
+      if (r.url.includes('/secret') && r.method === 'POST') return jsonResponse({ ...BRUNO });
+      if (r.url.endsWith('/v1/users/u2')) return jsonResponse(BRUNO);
+      return jsonResponse([BRUNO]);
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u2');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Alterar' }));
+    // Switch the proof kind to a recovery phrase.
+    fireEvent.change(await screen.findByLabelText('Prova de autorização'), {
+      target: { value: 'recovery' },
+    });
+    fireEvent.change(screen.getByLabelText('Frase de recuperação do utilizador'), {
+      target: { value: 'ABCD1234-EFGH5678' },
+    });
+    fireEvent.change(screen.getByLabelText('Nova palavra-passe'), {
+      target: { value: 'newpassword1' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'newpassword1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/secret') && c.method === 'POST')).toBe(true),
+    );
+    const post = calls.find((c) => c.url.includes('/secret') && c.method === 'POST');
+    expect(post?.body).toMatchObject({
+      password: 'newpassword1',
+      recovery_phrase: 'ABCD1234-EFGH5678',
+    });
+    expect(post?.body).not.toHaveProperty('current_password');
+  });
+
+  it('renders a 403 refusal inline + toast and keeps the field retryable', async () => {
+    const serverMsg = 'não autorizado a alterar as credenciais de outro utilizador';
+    const { fn } = recordingFetch((r) => {
+      if (r.url.endsWith('/v1/session')) return jsonResponse({ user: OPERATOR });
+      if (r.url.includes('/secret') && r.method === 'POST')
+        return jsonResponse({ error: serverMsg }, 403);
+      if (r.url.endsWith('/v1/users/u2')) return jsonResponse(BRUNO);
+      return jsonResponse([BRUNO]);
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u2');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Alterar' }));
+    fireEvent.change((await screen.findAllByLabelText('Palavra-passe atual do utilizador'))[0], {
+      target: { value: 'wrong' },
+    });
+    fireEvent.change(screen.getByLabelText('Nova palavra-passe'), {
+      target: { value: 'newpassword1' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'newpassword1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    // Honest inline refusal (distinct from the toast) + the field stays present/editable.
+    expect(await screen.findByText(/Não autorizado — precisa da palavra-passe atual/)).toBeTruthy();
+    expect(
+      screen.getAllByLabelText('Palavra-passe atual do utilizador').length,
+    ).toBeGreaterThanOrEqual(1);
+    // The server's PT 403 message surfaces via the error toast.
+    expect(await screen.findByText(new RegExp(serverMsg))).toBeTruthy();
+  });
+
+  it('issues a recovery phrase, shows it once, then clears it on dismissal', async () => {
+    const phrase = 'ABCD1234-EFGH5678-JKMN9012-PQRS3456';
+    const { fn, calls } = recordingFetch((r) => {
+      if (r.url.endsWith('/v1/session')) return jsonResponse({ user: AMELIA }); // self, no secret
+      if (r.url.includes('/recovery') && r.method === 'POST')
+        return jsonResponse({ ...AMELIA, has_recovery_phrase: true, recovery_phrase: phrase });
+      if (r.url.endsWith('/v1/users/u1')) return jsonResponse(AMELIA);
+      return jsonResponse([AMELIA]);
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u1');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Gerar frase de recuperação' }));
+    // Self + passwordless → no proof needed; just submit.
+    fireEvent.click(await screen.findByRole('button', { name: 'Gerar frase' }));
+
+    // The phrase is shown exactly once, prominently.
+    expect(await screen.findByText(phrase)).toBeTruthy();
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/recovery') && c.method === 'POST')).toBe(true),
+    );
+
+    // Dismiss → the phrase is gone from the UI (never retrievable again).
+    fireEvent.click(screen.getByRole('button', { name: 'Concluído' }));
+    await waitFor(() => expect(screen.queryByText(phrase)).toBeNull());
+  });
+});

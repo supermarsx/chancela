@@ -879,6 +879,34 @@ export const fiFI: Catalog = {
   'users.key.rotate': 'Kierrätä avain',
   'users.key.remove': 'Poista avain',
   'users.key.requiresSecret': 'Aseta salasana ennen auditointiavaimen luomista.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'Muokkaat toisen käyttäjän tunnuksia. Jokainen muutos edellyttää kyseisen käyttäjän nykyistä salasanaa tai kelvollista palautuslausetta.',
+  'users.proof.label': 'Valtuutuksen todiste',
+  'users.proof.hint':
+    'Anna käyttäjän nykyinen salasana tai palautuslause valtuuttaaksesi muutoksen.',
+  'users.proof.password': 'Käyttäjän nykyinen salasana',
+  'users.proof.recovery': 'Käyttäjän palautuslause',
+  'users.proof.keyGenNote':
+    'Auditointiavaimen luominen edellyttää käyttäjän nykyistä salasanaa; palautuslause ei riitä.',
+  'users.secret.forbidden':
+    'Ei valtuutettu — tarvitset käyttäjän nykyisen salasanan tai palautuslauseen.',
+  'users.recovery.label': 'Palautuslause',
+  'users.recovery.has': 'Asetettu',
+  'users.recovery.none': 'Ei mitään',
+  'users.recovery.description':
+    'Palautuslause palauttaa pääsyn ilman nykyistä salasanaa. Se tallennetaan vain vahvistimena (ei koskaan selkotekstinä), on kertakäyttöinen ja korvaa aiemman lauseen.',
+  'users.recovery.selfHint': 'Nykyinen salasana vaaditaan palautuslauseen luomiseen.',
+  'users.recovery.generate': 'Luo palautuslause',
+  'users.recovery.rotate': 'Uusi palautuslause',
+  'users.recovery.issueSubmit': 'Luo lause',
+  'users.recovery.shownOnceTitle': 'Tallenna tämä lause nyt',
+  'users.recovery.shownOnceBody':
+    'Tämä lause näytetään vain nyt eikä sitä voi hakea myöhemmin — palvelin säilyttää vain vahvistimen. Kopioi se ja säilytä turvallisessa paikassa ennen sulkemista.',
+  'users.recovery.copy': 'Kopioi',
+  'users.recovery.copied': 'Lause kopioitu.',
+  'users.recovery.done': 'Valmis',
+  'toast.recovery.issued': 'Palautuslause luotu.',
   'toast.onboarding.completed': 'Alkuasennus valmis.',
   'toast.signin.success': 'Kirjauduttu sisään.',
   'toast.signin.bootstrap': 'Ensimmäinen käyttäjä luotu. Olet kirjautunut sisään.',

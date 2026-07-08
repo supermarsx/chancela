@@ -70,6 +70,9 @@ function UserRow({ user }: { user: UserView }) {
             <Badge tone="neutral">{t('users.secret.none')}</Badge>
           )}
           {user.has_attestation_key ? <Badge tone="accent">{t('users.key.label')}</Badge> : null}
+          {user.has_recovery_phrase ? (
+            <Badge tone="accent">{t('users.recovery.label')}</Badge>
+          ) : null}
         </span>
       </td>
       <td className="users-actions">

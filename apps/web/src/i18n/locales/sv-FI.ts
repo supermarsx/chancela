@@ -883,6 +883,34 @@ export const svFI: Catalog = {
   'users.key.rotate': 'Rotera nyckel',
   'users.key.remove': 'Ta bort nyckel',
   'users.key.requiresSecret': 'Ange ett lösenord innan du skapar en revisionsnyckel.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'Du redigerar en annan användares inloggningsuppgifter. Varje ändring kräver den användarens nuvarande lösenord eller en giltig återställningsfras.',
+  'users.proof.label': 'Bevis på behörighet',
+  'users.proof.hint':
+    'Ange användarens nuvarande lösenord eller en återställningsfras för att godkänna ändringen.',
+  'users.proof.password': 'Användarens nuvarande lösenord',
+  'users.proof.recovery': 'Användarens återställningsfras',
+  'users.proof.keyGenNote':
+    'Att skapa en revisionsnyckel kräver användarens nuvarande lösenord; en återställningsfras räcker inte.',
+  'users.secret.forbidden':
+    'Ej behörig — du behöver användarens nuvarande lösenord eller en återställningsfras.',
+  'users.recovery.label': 'Återställningsfras',
+  'users.recovery.has': 'Angiven',
+  'users.recovery.none': 'Ingen',
+  'users.recovery.description':
+    'En återställningsfras återställer åtkomsten utan det nuvarande lösenordet. Den lagras endast som en verifierare (aldrig i klartext), kan användas en gång och ersätter alla tidigare fraser.',
+  'users.recovery.selfHint': 'Det nuvarande lösenordet krävs för att skapa en återställningsfras.',
+  'users.recovery.generate': 'Skapa återställningsfras',
+  'users.recovery.rotate': 'Förnya återställningsfras',
+  'users.recovery.issueSubmit': 'Skapa fras',
+  'users.recovery.shownOnceTitle': 'Spara denna fras nu',
+  'users.recovery.shownOnceBody':
+    'Denna fras visas endast nu och kan inte hämtas senare — servern lagrar endast en verifierare. Kopiera den och förvara den på ett säkert ställe innan du stänger.',
+  'users.recovery.copy': 'Kopiera',
+  'users.recovery.copied': 'Fras kopierad.',
+  'users.recovery.done': 'Klart',
+  'toast.recovery.issued': 'Återställningsfras skapad.',
   'toast.onboarding.completed': 'Grundinställningen klar.',
   'toast.signin.success': 'Inloggad.',
   'toast.signin.bootstrap': 'Första användaren skapad. Du är inloggad.',

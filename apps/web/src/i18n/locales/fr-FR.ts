@@ -883,6 +883,35 @@ export const frFR: Catalog = {
   'users.key.rotate': 'Renouveler la clé',
   'users.key.remove': 'Supprimer la clé',
   'users.key.requiresSecret': 'Définissez un mot de passe avant de générer une clé d’audit.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'Vous modifiez les identifiants d’un autre utilisateur. Chaque changement nécessite le mot de passe actuel de cet utilisateur ou une phrase de récupération valide.',
+  'users.proof.label': 'Preuve d’autorisation',
+  'users.proof.hint':
+    'Indiquez le mot de passe actuel de l’utilisateur ou une phrase de récupération pour autoriser le changement.',
+  'users.proof.password': 'Mot de passe actuel de l’utilisateur',
+  'users.proof.recovery': 'Phrase de récupération de l’utilisateur',
+  'users.proof.keyGenNote':
+    'Générer une clé d’audit nécessite le mot de passe actuel de l’utilisateur ; une phrase de récupération ne suffit pas.',
+  'users.secret.forbidden':
+    'Non autorisé — vous avez besoin du mot de passe actuel ou d’une phrase de récupération de l’utilisateur.',
+  'users.recovery.label': 'Phrase de récupération',
+  'users.recovery.has': 'Définie',
+  'users.recovery.none': 'Aucune',
+  'users.recovery.description':
+    'Une phrase de récupération rétablit l’accès sans le mot de passe actuel. Elle n’est conservée que comme vérificateur (jamais en clair), est à usage unique et remplace toute phrase précédente.',
+  'users.recovery.selfHint':
+    'Le mot de passe actuel est nécessaire pour générer une phrase de récupération.',
+  'users.recovery.generate': 'Générer une phrase de récupération',
+  'users.recovery.rotate': 'Renouveler la phrase de récupération',
+  'users.recovery.issueSubmit': 'Générer la phrase',
+  'users.recovery.shownOnceTitle': 'Enregistrez cette phrase maintenant',
+  'users.recovery.shownOnceBody':
+    'Cette phrase n’est affichée que maintenant et ne pourra pas être récupérée plus tard — le serveur ne conserve qu’un vérificateur. Copiez-la et conservez-la en lieu sûr avant de fermer.',
+  'users.recovery.copy': 'Copier',
+  'users.recovery.copied': 'Phrase copiée.',
+  'users.recovery.done': 'Terminé',
+  'toast.recovery.issued': 'Phrase de récupération générée.',
   'toast.onboarding.completed': 'Configuration initiale terminée.',
   'toast.signin.success': 'Connecté.',
   'toast.signin.bootstrap': 'Premier utilisateur créé. Vous êtes connecté.',

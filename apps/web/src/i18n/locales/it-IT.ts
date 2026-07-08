@@ -883,6 +883,34 @@ export const itIT: Catalog = {
   'users.key.rotate': 'Ruota chiave',
   'users.key.remove': 'Rimuovi chiave',
   'users.key.requiresSecret': 'Impostate una password prima di generare una chiave di audit.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'Stai modificando le credenziali di un altro utente. Ogni modifica richiede la password attuale dell’utente o una frase di recupero valida.',
+  'users.proof.label': 'Prova di autorizzazione',
+  'users.proof.hint':
+    'Fornisci la password attuale dell’utente o una frase di recupero per autorizzare la modifica.',
+  'users.proof.password': 'Password attuale dell’utente',
+  'users.proof.recovery': 'Frase di recupero dell’utente',
+  'users.proof.keyGenNote':
+    'Generare una chiave di audit richiede la password attuale dell’utente; una frase di recupero non è sufficiente.',
+  'users.secret.forbidden':
+    'Non autorizzato — occorre la password attuale o una frase di recupero dell’utente.',
+  'users.recovery.label': 'Frase di recupero',
+  'users.recovery.has': 'Impostata',
+  'users.recovery.none': 'Nessuna',
+  'users.recovery.description':
+    'Una frase di recupero ripristina l’accesso senza la password attuale. È conservata solo come verificatore (mai in chiaro), è monouso e sostituisce qualsiasi frase precedente.',
+  'users.recovery.selfHint': 'La password attuale è necessaria per generare una frase di recupero.',
+  'users.recovery.generate': 'Genera frase di recupero',
+  'users.recovery.rotate': 'Ruota frase di recupero',
+  'users.recovery.issueSubmit': 'Genera frase',
+  'users.recovery.shownOnceTitle': 'Salva questa frase ora',
+  'users.recovery.shownOnceBody':
+    'Questa frase è mostrata solo ora e non potrà essere recuperata in seguito — il server conserva solo un verificatore. Copiala e conservala in un luogo sicuro prima di chiudere.',
+  'users.recovery.copy': 'Copia',
+  'users.recovery.copied': 'Frase copiata.',
+  'users.recovery.done': 'Fatto',
+  'toast.recovery.issued': 'Frase di recupero generata.',
   'toast.onboarding.completed': 'Configurazione iniziale completata.',
   'toast.signin.success': 'Accesso effettuato.',
   'toast.signin.bootstrap': 'Primo utente creato. Sei connesso.',

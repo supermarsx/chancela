@@ -881,6 +881,35 @@ export const daDK: Catalog = {
   'users.key.rotate': 'Rotér nøgle',
   'users.key.remove': 'Fjern nøgle',
   'users.key.requiresSecret': 'Angiv en adgangskode, før du genererer en revisionsnøgle.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'Du redigerer en anden brugers legitimationsoplysninger. Hver ændring kræver den pågældende brugers nuværende adgangskode eller en gyldig gendannelsessætning.',
+  'users.proof.label': 'Bevis for autorisation',
+  'users.proof.hint':
+    'Angiv brugerens nuværende adgangskode eller en gendannelsessætning for at autorisere ændringen.',
+  'users.proof.password': 'Brugerens nuværende adgangskode',
+  'users.proof.recovery': 'Brugerens gendannelsessætning',
+  'users.proof.keyGenNote':
+    'Generering af en revisionsnøgle kræver brugerens nuværende adgangskode; en gendannelsessætning er ikke nok.',
+  'users.secret.forbidden':
+    'Ikke autoriseret — du har brug for brugerens nuværende adgangskode eller en gendannelsessætning.',
+  'users.recovery.label': 'Gendannelsessætning',
+  'users.recovery.has': 'Angivet',
+  'users.recovery.none': 'Ingen',
+  'users.recovery.description':
+    'En gendannelsessætning genopretter adgang uden den nuværende adgangskode. Den gemmes kun som en verifikator (aldrig i klartekst), kan kun bruges én gang og erstatter enhver tidligere sætning.',
+  'users.recovery.selfHint':
+    'Den nuværende adgangskode kræves for at generere en gendannelsessætning.',
+  'users.recovery.generate': 'Generér gendannelsessætning',
+  'users.recovery.rotate': 'Forny gendannelsessætning',
+  'users.recovery.issueSubmit': 'Generér sætning',
+  'users.recovery.shownOnceTitle': 'Gem denne sætning nu',
+  'users.recovery.shownOnceBody':
+    'Denne sætning vises kun nu og kan ikke hentes senere — serveren gemmer kun en verifikator. Kopiér den, og opbevar den et sikkert sted, før du lukker.',
+  'users.recovery.copy': 'Kopiér',
+  'users.recovery.copied': 'Sætning kopieret.',
+  'users.recovery.done': 'Færdig',
+  'toast.recovery.issued': 'Gendannelsessætning genereret.',
   'toast.onboarding.completed': 'Indledende opsætning fuldført.',
   'toast.signin.success': 'Logget ind.',
   'toast.signin.bootstrap': 'Første bruger oprettet. Du er logget ind.',

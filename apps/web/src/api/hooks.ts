@@ -25,6 +25,7 @@ import type {
   SetSecretBody,
   RemoveSecretBody,
   AttestationKeyBody,
+  IssueRecoveryBody,
   UpdateActBody,
   UpdateEntityBody,
   UpdateUserBody,
@@ -505,6 +506,25 @@ export function useRemoveAttestationKey(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: AttestationKeyBody) => api.removeAttestationKey(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Issue / rotate a user's one-time recovery phrase (`POST /v1/users/{id}/recovery`, t51).
+ * Subject to the same cross-user proof rules as the secret ops (the target's current
+ * password OR an existing recovery phrase; 403 on absent/wrong proof). The returned phrase
+ * is shown ONCE by the caller and never persisted — this hook only invalidates the caches
+ * so `has_recovery_phrase` flips to `true` (invalidating `keys.users` also refetches the
+ * open `['users', id]` detail view). The plaintext phrase never enters any cache.
+ */
+export function useIssueRecovery(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: IssueRecoveryBody) => api.issueRecovery(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.users });
       void qc.invalidateQueries({ queryKey: ['ledger'] });

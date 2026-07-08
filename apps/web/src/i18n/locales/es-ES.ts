@@ -882,6 +882,35 @@ export const esES: Catalog = {
   'users.key.rotate': 'Rotar clave',
   'users.key.remove': 'Quitar clave',
   'users.key.requiresSecret': 'Defina una contraseña antes de generar una clave de auditoría.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'Está editando las credenciales de otro usuario. Cada cambio requiere la contraseña actual del usuario o una frase de recuperación válida.',
+  'users.proof.label': 'Prueba de autorización',
+  'users.proof.hint':
+    'Indique la contraseña actual del usuario o una frase de recuperación para autorizar el cambio.',
+  'users.proof.password': 'Contraseña actual del usuario',
+  'users.proof.recovery': 'Frase de recuperación del usuario',
+  'users.proof.keyGenNote':
+    'Generar una clave de auditoría requiere la contraseña actual del usuario; una frase de recuperación no sirve.',
+  'users.secret.forbidden':
+    'No autorizado: necesita la contraseña actual o una frase de recuperación del usuario.',
+  'users.recovery.label': 'Frase de recuperación',
+  'users.recovery.has': 'Definida',
+  'users.recovery.none': 'Sin frase',
+  'users.recovery.description':
+    'Una frase de recuperación restablece el acceso sin la contraseña actual. Se guarda solo como verificador (nunca en texto plano), es de un solo uso y sustituye cualquier frase anterior.',
+  'users.recovery.selfHint':
+    'Se requiere la contraseña actual para generar una frase de recuperación.',
+  'users.recovery.generate': 'Generar frase de recuperación',
+  'users.recovery.rotate': 'Rotar frase de recuperación',
+  'users.recovery.issueSubmit': 'Generar frase',
+  'users.recovery.shownOnceTitle': 'Guarde esta frase ahora',
+  'users.recovery.shownOnceBody':
+    'Esta frase se muestra solo ahora y no se puede recuperar más tarde: el servidor guarda únicamente un verificador. Cópiela y guárdela en un lugar seguro antes de cerrar.',
+  'users.recovery.copy': 'Copiar',
+  'users.recovery.copied': 'Frase copiada.',
+  'users.recovery.done': 'Hecho',
+  'toast.recovery.issued': 'Frase de recuperación generada.',
   'toast.onboarding.completed': 'Configuración inicial completada.',
   'toast.signin.success': 'Sesión iniciada.',
   'toast.signin.bootstrap': 'Primer usuario creado. Sesión iniciada.',

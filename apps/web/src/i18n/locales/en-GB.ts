@@ -859,6 +859,34 @@ export const enGB: Catalog = {
   'users.key.rotate': 'Rotate key',
   'users.key.remove': 'Remove key',
   'users.key.requiresSecret': 'Set a password before generating an audit key.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'You are editing another user’s credentials. Every change requires that user’s current password or a valid recovery phrase.',
+  'users.proof.label': 'Proof of authority',
+  'users.proof.hint':
+    'Provide the user’s current password or a recovery phrase to authorise the change.',
+  'users.proof.password': 'User’s current password',
+  'users.proof.recovery': 'User’s recovery phrase',
+  'users.proof.keyGenNote':
+    'Generating an audit key requires the user’s current password; a recovery phrase will not do.',
+  'users.secret.forbidden':
+    'Not authorised — you need the user’s current password or a recovery phrase.',
+  'users.recovery.label': 'Recovery phrase',
+  'users.recovery.has': 'Set',
+  'users.recovery.none': 'None',
+  'users.recovery.description':
+    'A recovery phrase restores access without the current password. It is stored only as a verifier (never in plain text), is single-use, and replaces any previous phrase.',
+  'users.recovery.selfHint': 'Your current password is required to generate a recovery phrase.',
+  'users.recovery.generate': 'Generate recovery phrase',
+  'users.recovery.rotate': 'Rotate recovery phrase',
+  'users.recovery.issueSubmit': 'Generate phrase',
+  'users.recovery.shownOnceTitle': 'Save this phrase now',
+  'users.recovery.shownOnceBody':
+    'This phrase is shown only now and cannot be retrieved later — the server keeps only a verifier. Copy it and store it somewhere safe before closing.',
+  'users.recovery.copy': 'Copy',
+  'users.recovery.copied': 'Phrase copied.',
+  'users.recovery.done': 'Done',
+  'toast.recovery.issued': 'Recovery phrase generated.',
   'toast.onboarding.completed': 'Initial setup complete.',
   'toast.signin.success': 'Signed in.',
   'toast.signin.bootstrap': 'First user created. You are signed in.',

@@ -882,6 +882,34 @@ export const nlNL: Catalog = {
   'users.key.rotate': 'Sleutel roteren',
   'users.key.remove': 'Sleutel verwijderen',
   'users.key.requiresSecret': 'Stel een wachtwoord in voordat u een auditsleutel genereert.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'U bewerkt de inloggegevens van een andere gebruiker. Elke wijziging vereist het huidige wachtwoord van die gebruiker of een geldige herstelzin.',
+  'users.proof.label': 'Bewijs van autorisatie',
+  'users.proof.hint':
+    'Geef het huidige wachtwoord van de gebruiker of een herstelzin op om de wijziging te autoriseren.',
+  'users.proof.password': 'Huidig wachtwoord van de gebruiker',
+  'users.proof.recovery': 'Herstelzin van de gebruiker',
+  'users.proof.keyGenNote':
+    'Een auditsleutel genereren vereist het huidige wachtwoord van de gebruiker; een herstelzin volstaat niet.',
+  'users.secret.forbidden':
+    'Niet geautoriseerd — u hebt het huidige wachtwoord of een herstelzin van de gebruiker nodig.',
+  'users.recovery.label': 'Herstelzin',
+  'users.recovery.has': 'Ingesteld',
+  'users.recovery.none': 'Geen',
+  'users.recovery.description':
+    'Een herstelzin herstelt de toegang zonder het huidige wachtwoord. Ze wordt alleen als verificatie opgeslagen (nooit in platte tekst), is eenmalig te gebruiken en vervangt elke eerdere zin.',
+  'users.recovery.selfHint': 'Het huidige wachtwoord is vereist om een herstelzin te genereren.',
+  'users.recovery.generate': 'Herstelzin genereren',
+  'users.recovery.rotate': 'Herstelzin vernieuwen',
+  'users.recovery.issueSubmit': 'Zin genereren',
+  'users.recovery.shownOnceTitle': 'Bewaar deze zin nu',
+  'users.recovery.shownOnceBody':
+    'Deze zin wordt alleen nu getoond en kan later niet meer worden opgehaald — de server bewaart alleen een verificatie. Kopieer ze en bewaar ze op een veilige plek voordat u sluit.',
+  'users.recovery.copy': 'Kopiëren',
+  'users.recovery.copied': 'Zin gekopieerd.',
+  'users.recovery.done': 'Klaar',
+  'toast.recovery.issued': 'Herstelzin gegenereerd.',
   'toast.onboarding.completed': 'Eerste installatie voltooid.',
   'toast.signin.success': 'Ingelogd.',
   'toast.signin.bootstrap': 'Eerste gebruiker aangemaakt. U bent aangemeld.',

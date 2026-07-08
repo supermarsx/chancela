@@ -44,6 +44,8 @@ import type {
   SetSecretBody,
   RemoveSecretBody,
   AttestationKeyBody,
+  IssueRecoveryBody,
+  RecoveryIssued,
   Settings,
   UpdateActBody,
   UpdateUserBody,
@@ -264,6 +266,10 @@ export const api = {
     post<UserView>(`/v1/users/${id}/attestation-key`, body),
   removeAttestationKey: (id: string, body: AttestationKeyBody = {}) =>
     del<UserView>(`/v1/users/${id}/attestation-key`, body),
+  // Issue/rotate a one-time recovery phrase (t51). The returned phrase is shown ONCE and
+  // never crosses the wire again (stored only as a verifier) — callers must not persist it.
+  issueRecovery: (id: string, body: IssueRecoveryBody = {}) =>
+    post<RecoveryIssued>(`/v1/users/${id}/recovery`, body),
   getSession: () => get<SessionView>('/v1/session'),
   // The UNAUTHENTICATED sign-in roster (t45-e1): decides onboarding-vs-sign-in and lists
   // the signable users while signed out, without the auth-gated `GET /v1/users`.

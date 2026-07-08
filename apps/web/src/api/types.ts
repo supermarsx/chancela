@@ -734,17 +734,48 @@ export interface CreateSessionBody {
 
 // Sign-in secret + attestation-key management bodies (t29). `current_password` is
 // required only when a secret already exists (verified server-side, 401 on mismatch).
+//
+// Cross-user authorization (t51): mutating ANOTHER user's secret/key requires a proof of
+// authority — EITHER the target's verified `current_password` OR a valid one-time
+// `recovery_phrase`. Both are additive optional fields; self-service (editing your own
+// account) leaves them unset exactly as before. A missing/wrong cross-user proof is a
+// **403** (distinct from the 401 session/self-service-wrong-password errors).
 export interface SetSecretBody {
   password: string;
   current_password?: string;
+  /** Cross-user reset proof: a valid one-time recovery phrase (t51). */
+  recovery_phrase?: string;
 }
 
 export interface RemoveSecretBody {
   current_password?: string;
+  recovery_phrase?: string;
 }
 
 export interface AttestationKeyBody {
   current_password?: string;
+  /** Accepted for cross-user *remove*; recovery cannot *generate* a key (403, t51). */
+  recovery_phrase?: string;
+}
+
+/**
+ * `POST /v1/users/{id}/recovery` (t51) — issue/rotate a 160-bit recovery phrase. Subject to
+ * the same cross-user proof rules: self-service proves the current password when one is set;
+ * a cross-user caller proves the target's current password OR an existing recovery phrase.
+ */
+export interface IssueRecoveryBody {
+  current_password?: string;
+  recovery_phrase?: string;
+}
+
+/**
+ * The response of `POST /v1/users/{id}/recovery`: the updated `UserView` PLUS the freshly
+ * generated `recovery_phrase`, returned **exactly once**. The phrase is stored server-side
+ * only as an argon2id verifier — it can never be retrieved again, so the UI must show it
+ * once and never persist it.
+ */
+export interface RecoveryIssued extends UserView {
+  recovery_phrase: string;
 }
 
 /** `GET /v1/ledger/attestations/{seq}` — a server-verified attestation, or 404. */

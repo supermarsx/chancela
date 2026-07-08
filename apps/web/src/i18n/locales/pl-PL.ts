@@ -880,6 +880,34 @@ export const plPL: Catalog = {
   'users.key.rotate': 'Wymień klucz',
   'users.key.remove': 'Usuń klucz',
   'users.key.requiresSecret': 'Ustaw hasło przed wygenerowaniem klucza audytu.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'Edytujesz dane logowania innego użytkownika. Każda zmiana wymaga aktualnego hasła tego użytkownika lub prawidłowej frazy odzyskiwania.',
+  'users.proof.label': 'Dowód uprawnień',
+  'users.proof.hint':
+    'Podaj aktualne hasło użytkownika lub frazę odzyskiwania, aby autoryzować zmianę.',
+  'users.proof.password': 'Aktualne hasło użytkownika',
+  'users.proof.recovery': 'Fraza odzyskiwania użytkownika',
+  'users.proof.keyGenNote':
+    'Wygenerowanie klucza audytu wymaga aktualnego hasła użytkownika; fraza odzyskiwania nie wystarczy.',
+  'users.secret.forbidden':
+    'Brak autoryzacji — potrzebujesz aktualnego hasła lub frazy odzyskiwania użytkownika.',
+  'users.recovery.label': 'Fraza odzyskiwania',
+  'users.recovery.has': 'Ustawiona',
+  'users.recovery.none': 'Brak',
+  'users.recovery.description':
+    'Fraza odzyskiwania przywraca dostęp bez aktualnego hasła. Jest przechowywana tylko jako weryfikator (nigdy w postaci jawnej), jest jednorazowa i zastępuje wszelkie poprzednie frazy.',
+  'users.recovery.selfHint': 'Aktualne hasło jest wymagane do wygenerowania frazy odzyskiwania.',
+  'users.recovery.generate': 'Wygeneruj frazę odzyskiwania',
+  'users.recovery.rotate': 'Odśwież frazę odzyskiwania',
+  'users.recovery.issueSubmit': 'Wygeneruj frazę',
+  'users.recovery.shownOnceTitle': 'Zapisz tę frazę teraz',
+  'users.recovery.shownOnceBody':
+    'Ta fraza jest pokazywana tylko teraz i nie można jej później odzyskać — serwer przechowuje wyłącznie weryfikator. Skopiuj ją i przechowaj w bezpiecznym miejscu przed zamknięciem.',
+  'users.recovery.copy': 'Kopiuj',
+  'users.recovery.copied': 'Fraza skopiowana.',
+  'users.recovery.done': 'Gotowe',
+  'toast.recovery.issued': 'Fraza odzyskiwania wygenerowana.',
   'toast.onboarding.completed': 'Wstępna konfiguracja zakończona.',
   'toast.signin.success': 'Zalogowano.',
   'toast.signin.bootstrap': 'Utworzono pierwszego użytkownika. Zalogowano.',

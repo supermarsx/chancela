@@ -891,6 +891,35 @@ export const deDE: Catalog = {
   'users.key.remove': 'Schlüssel entfernen',
   'users.key.requiresSecret':
     'Legen Sie ein Passwort fest, bevor Sie einen Prüfschlüssel erzeugen.',
+  // Cross-user authorization + recovery phrase (t51)
+  'users.access.crossUserNote':
+    'Sie bearbeiten die Anmeldedaten eines anderen Benutzers. Jede Änderung erfordert das aktuelle Passwort dieses Benutzers oder eine gültige Wiederherstellungsphrase.',
+  'users.proof.label': 'Autorisierungsnachweis',
+  'users.proof.hint':
+    'Geben Sie das aktuelle Passwort des Benutzers oder eine Wiederherstellungsphrase an, um die Änderung zu autorisieren.',
+  'users.proof.password': 'Aktuelles Passwort des Benutzers',
+  'users.proof.recovery': 'Wiederherstellungsphrase des Benutzers',
+  'users.proof.keyGenNote':
+    'Das Erzeugen eines Prüfschlüssels erfordert das aktuelle Passwort des Benutzers; eine Wiederherstellungsphrase genügt nicht.',
+  'users.secret.forbidden':
+    'Nicht autorisiert — Sie benötigen das aktuelle Passwort oder eine Wiederherstellungsphrase des Benutzers.',
+  'users.recovery.label': 'Wiederherstellungsphrase',
+  'users.recovery.has': 'Festgelegt',
+  'users.recovery.none': 'Keine',
+  'users.recovery.description':
+    'Eine Wiederherstellungsphrase stellt den Zugang ohne das aktuelle Passwort wieder her. Sie wird nur als Prüfwert gespeichert (nie im Klartext), ist einmalig verwendbar und ersetzt jede frühere Phrase.',
+  'users.recovery.selfHint':
+    'Zum Erzeugen einer Wiederherstellungsphrase ist das aktuelle Passwort erforderlich.',
+  'users.recovery.generate': 'Wiederherstellungsphrase erzeugen',
+  'users.recovery.rotate': 'Wiederherstellungsphrase erneuern',
+  'users.recovery.issueSubmit': 'Phrase erzeugen',
+  'users.recovery.shownOnceTitle': 'Speichern Sie diese Phrase jetzt',
+  'users.recovery.shownOnceBody':
+    'Diese Phrase wird nur jetzt angezeigt und kann später nicht abgerufen werden — der Server speichert nur einen Prüfwert. Kopieren Sie sie und bewahren Sie sie sicher auf, bevor Sie schließen.',
+  'users.recovery.copy': 'Kopieren',
+  'users.recovery.copied': 'Phrase kopiert.',
+  'users.recovery.done': 'Fertig',
+  'toast.recovery.issued': 'Wiederherstellungsphrase erzeugt.',
   'toast.onboarding.completed': 'Ersteinrichtung abgeschlossen.',
   'toast.signin.success': 'Angemeldet.',
   'toast.signin.bootstrap': 'Erster Benutzer erstellt. Sie sind angemeldet.',
