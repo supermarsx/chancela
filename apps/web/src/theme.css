@@ -4023,6 +4023,17 @@ input[type='radio']:disabled {
   justify-content: space-between;
 }
 
+/* The entry-screen "criar novo utilizador" affordance — a hairline-separated row below
+   the roster list (or empty note). No motion of its own; the global reduced-motion and
+   safe-mode kill-switches already blanket every transition. */
+.signin__alt {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+}
+
 /* --- Auth-gate boot / retry panel ----------------------------------------- */
 .gate-boot {
   min-height: calc(100vh - var(--titlebar-h, 0) - 3rem);

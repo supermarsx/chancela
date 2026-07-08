@@ -20,6 +20,7 @@ const USER: UserView = {
   active: true,
   has_secret: false,
   has_attestation_key: false,
+  has_recovery_phrase: false,
 };
 
 interface Recorded {

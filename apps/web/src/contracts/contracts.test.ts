@@ -709,6 +709,7 @@ describe('contract fixtures parse through the real client', () => {
         active: true,
         has_secret: true,
         has_attestation_key: true,
+        has_recovery_phrase: true,
       },
       'UserView',
       // Fingerprint is emitted only when an attestation key is set (t29).
@@ -739,6 +740,7 @@ describe('contract fixtures parse through the real client', () => {
         active: true,
         has_secret: true,
         has_attestation_key: true,
+        has_recovery_phrase: true,
       },
       'SessionView.user',
       ['attestation_key_fingerprint'],

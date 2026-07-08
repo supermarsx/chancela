@@ -680,6 +680,8 @@ export interface UserView {
   has_secret: boolean;
   /** Whether a PKI audit-attestation key is provisioned (t29). */
   has_attestation_key: boolean;
+  /** Whether a recovery phrase is set (t51). No phrase material ever crosses the wire. */
+  has_recovery_phrase: boolean;
   /** 32-hex fingerprint of the attestation key; omitted when none (t29). */
   attestation_key_fingerprint?: string;
 }

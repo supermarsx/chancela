@@ -22,6 +22,7 @@ const AMELIA: UserView = {
   active: true,
   has_secret: false,
   has_attestation_key: false,
+  has_recovery_phrase: false,
 };
 const BRUNO_ROSTER: RosterUser = {
   id: 'u2',
@@ -37,6 +38,7 @@ const BRUNO: UserView = {
   active: true,
   has_secret: true,
   has_attestation_key: false,
+  has_recovery_phrase: false,
 };
 
 interface Recorded {
@@ -58,6 +60,10 @@ function serverStub(opts: {
   wrongPassword?: string; // if the POST password equals this, answer 401
   users?: UserView[];
   startSignedIn?: boolean;
+  // The user `POST /v1/users` returns when created unauthenticated — allowed ONLY while the
+  // roster is empty (t41 bootstrap rule). Mirrors the real server: with users present a
+  // signed-out create 401s "sessão requerida".
+  bootstrapUser?: UserView;
 }): { fn: typeof fetch; calls: Recorded[] } {
   const calls: Recorded[] = [];
   let signedIn = opts.startSignedIn ?? false;
@@ -81,6 +87,19 @@ function serverStub(opts: {
 
     if (url.includes('/v1/session/roster')) return json(opts.roster);
     if (url.includes('/v1/users')) {
+      // Bootstrap create: `POST /v1/users` is allowed unauthenticated ONLY while the roster
+      // is empty; otherwise (like every signed-out mutation) it 401s.
+      if (method === 'POST') {
+        if (
+          !headers['X-Chancela-Session'] &&
+          opts.roster.users.length === 0 &&
+          opts.bootstrapUser
+        ) {
+          return json(opts.bootstrapUser, 201);
+        }
+        if (!headers['X-Chancela-Session']) return json({ error: 'sessão requerida' }, 401);
+        return json(opts.bootstrapUser ?? AMELIA, 201);
+      }
       if (!headers['X-Chancela-Session']) return json({ error: 'sessão requerida' }, 401);
       return json(opts.users ?? [AMELIA]);
     }
@@ -206,6 +225,68 @@ describe('AuthGate', () => {
     expect(await screen.findByText('APP CHROME')).toBeTruthy();
     const post = calls.find((c) => c.url.includes('/v1/session') && c.method === 'POST');
     expect(post?.body).toMatchObject({ user_id: 'u2', password: 'correct-horse' });
+  });
+
+  it('bootstrap: empty roster → create a user unauthenticated → passwordless sign-in lands in the app', async () => {
+    const NEW: UserView = {
+      id: 'u9',
+      username: 'amelia.marques',
+      display_name: 'Amélia Marques',
+      created_at: '2026-07-08T09:00:00Z',
+      active: true,
+      has_secret: false,
+      has_attestation_key: false,
+      has_recovery_phrase: false,
+    };
+    const { fn, calls } = serverStub({
+      // onboarding_required is false so the AuthGate shows SignIn (not the wizard); the roster
+      // is empty, so SignIn offers the genuine bootstrap create.
+      roster: { onboarding_required: false, users: [] },
+      bootstrapUser: NEW,
+      postUser: NEW,
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+
+    // The empty-roster entry screen offers the create affordance (no dead-end).
+    fireEvent.click(await screen.findByRole('button', { name: 'Criar novo utilizador' }));
+    // Fill the reused UserCreateForm and submit with the bootstrap label.
+    fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
+      target: { value: 'amelia.marques' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar e entrar' }));
+
+    // The passwordless bootstrap sign-in lands the new operator straight in the app.
+    expect(await screen.findByText('APP CHROME')).toBeTruthy();
+    // `POST /v1/users` went out with NO session header — a genuinely unauthenticated create.
+    const postUser = calls.find((c) => c.url.includes('/v1/users') && c.method === 'POST');
+    expect(postUser?.session).toBeNull();
+    // …then the wizard's passwordless handshake (`POST /v1/session`, no password).
+    const postSession = calls.find((c) => c.url.includes('/v1/session') && c.method === 'POST');
+    expect(postSession?.body).toMatchObject({ user_id: 'u9' });
+    expect(postSession?.body?.password).toBeUndefined();
+  });
+
+  it('roster present: "criar novo utilizador" routes back to sign-in — never a raw 401', async () => {
+    const { fn, calls } = serverStub({
+      roster: { onboarding_required: false, users: [{ ...AMELIA }] },
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderGate();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Criar novo utilizador' }));
+
+    // Honest copy explains a session is required — no faked create, no app chrome.
+    expect(await screen.findByText('Iniciar sessão primeiro')).toBeTruthy();
+    expect(screen.queryByText('APP CHROME')).toBeNull();
+    // Crucially: no signed-out `POST /v1/users` was attempted (it would 401).
+    expect(calls.some((c) => c.url.includes('/v1/users') && c.method === 'POST')).toBe(false);
+
+    // The operator is routed back to the sign-in roster, not left at a dead-end.
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao início de sessão' }));
+    expect(await screen.findByText('Amélia Marques')).toBeTruthy();
   });
 });
 
