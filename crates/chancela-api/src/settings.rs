@@ -30,8 +30,11 @@ use chancela_core::NumberingScheme;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use chancela_authz::{Permission, Scope};
+
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::require_permission;
 use crate::error::ApiError;
 
 /// The current schema version of the settings document. Bumped only on a breaking shape
@@ -533,8 +536,13 @@ pub struct SettingsActorQuery {
 }
 
 /// `GET /v1/settings` — the current settings document (defaults if never set).
-pub async fn get_settings(State(state): State<AppState>) -> Json<Settings> {
-    Json(state.settings.read().await.clone())
+pub async fn get_settings(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Settings>, ApiError> {
+    // RBAC (t64-E3): reading settings is `settings.read` at Global.
+    require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
+    Ok(Json(state.settings.read().await.clone()))
 }
 
 /// `PUT /v1/settings` — replace the whole settings document.
@@ -551,6 +559,14 @@ pub async fn put_settings(
     attestor: CurrentAttestor,
     body: Bytes,
 ) -> Result<Json<Settings>, ApiError> {
+    // RBAC (t64-E3): replacing settings is `settings.manage` at Global.
+    require_permission(
+        &state,
+        &current_actor,
+        Permission::SettingsManage,
+        Scope::Global,
+    )
+    .await?;
     // Parse by hand (rather than via the `Json` extractor) so every rejection — malformed
     // JSON, a bad enum, a bad locale — renders through `ApiError` as the standard body.
     let mut settings: Settings = serde_json::from_slice(&body)

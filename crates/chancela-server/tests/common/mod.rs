@@ -92,6 +92,14 @@ pub struct ServerHarness {
     pub data_dir: PathBuf,
     opts: HarnessOptions,
     client: reqwest::Client,
+    /// The session token **GET** reads are auto-authenticated with (t64-E3): under the RBAC gate a
+    /// read (`GET /v1/entities`, `/ledger/*`, `/dashboard`, …) now requires a permission, so an
+    /// unauthenticated read is `401`. [`open_session`] records the operator's token here so a
+    /// journey's existing `get_json`/`get_text` reads carry it without threading a token through every
+    /// call. Mutations are unaffected (they still use the explicit `*_auth` helpers, and the one
+    /// unauthenticated-mutation-is-401 assertion keeps using `post_json`). Interior mutability so the
+    /// `&self` helpers can set it; reset by `restart`/`start_again` (the in-memory session is dropped).
+    default_token: std::sync::Mutex<Option<String>>,
 }
 
 impl ServerHarness {
@@ -122,9 +130,30 @@ impl ServerHarness {
             data_dir,
             opts,
             client,
+            default_token: std::sync::Mutex::new(None),
         };
         harness.wait_ready().await;
         harness
+    }
+
+    /// Record the session token that GET reads are auto-authenticated with (t64-E3). Called by
+    /// [`open_session`]; a journey rarely needs to call it directly.
+    pub fn set_default_token(&self, token: &str) {
+        *self.default_token.lock().expect("default_token lock") = Some(token.to_owned());
+    }
+
+    /// The current auto-auth token, if a session has been opened.
+    fn default_token(&self) -> Option<String> {
+        self.default_token
+            .lock()
+            .expect("default_token lock")
+            .clone()
+    }
+
+    /// The current auto-auth token (public: for journeys' own byte-reading helpers that build their
+    /// own client and must carry the operator session on RBAC-gated reads, t64-E3).
+    pub fn current_token(&self) -> Option<String> {
+        self.default_token()
     }
 
     /// Kill the current child and start a fresh one over the **same** data dir (proving
@@ -148,10 +177,51 @@ impl ServerHarness {
     /// [`stop`](ServerHarness::stop); [`restart`](ServerHarness::restart) is exactly the two in
     /// sequence.
     pub async fn start_again(&mut self) {
+        // The in-memory session table is dropped on restart, so the recorded auto-auth token is now
+        // stale. Clear it, and — if the journey had an operator session before the restart —
+        // transparently re-sign-in as the earliest active user (the bootstrap Owner), exactly as a
+        // real operator would after a restart, so the journey's permission-gated reads keep working
+        // (t64-E3). Journeys still signed out before the restart get no session.
+        let had_session = self.default_token().is_some();
+        *self.default_token.lock().expect("default_token lock") = None;
         let (child, base_url) = spawn_child(&self.data_dir, &self.opts);
         self.child = child;
         self.base_url = base_url;
         self.wait_ready().await;
+        if had_session {
+            self.reopen_default_session().await;
+        }
+    }
+
+    /// Re-establish the auto-auth session by signing in as the earliest active **passwordless** user
+    /// (the bootstrap Owner, in journeys that never set a secret) from the unauthenticated roster.
+    /// Used after a restart drops the in-memory session (t64-E3). Skips users that hold a secret — it
+    /// cannot know their password, and a failed passwordless attempt would trip the sign-in backoff;
+    /// those journeys re-authenticate explicitly (with the password) themselves. A no-op if no
+    /// passwordless active user exists.
+    pub async fn reopen_default_session(&self) {
+        let (_s, roster) = self.get_json_noauth("/v1/session/roster").await;
+        let Some(uid) = roster["users"].as_array().and_then(|users| {
+            users
+                .iter()
+                .find(|u| u["has_secret"] == serde_json::Value::Bool(false))
+                .and_then(|u| u["id"].as_str())
+        }) else {
+            return;
+        };
+        let (status, s) = self
+            .post_json("/v1/session", json!({ "user_id": uid }))
+            .await;
+        if status == 200 {
+            if let Some(t) = s["token"].as_str() {
+                self.set_default_token(t);
+            }
+        }
+    }
+
+    /// `GET path` with **no** auto-auth (for the unauthenticated surface: health, roster, session).
+    pub async fn get_json_noauth(&self, path: &str) -> (u16, Value) {
+        self.exec(reqwest::Method::GET, path, None, None).await
     }
 
     /// Drop `CHANCELA_CAE_URL` from the options a future [`restart`](ServerHarness::restart) uses,
@@ -186,9 +256,13 @@ impl ServerHarness {
 
     // --- HTTP helpers ---------------------------------------------------------------------
 
-    /// `GET path` → (status, JSON body).
+    /// `GET path` → (status, JSON body). Auto-authenticated with the operator session recorded by
+    /// [`open_session`] (t64-E3): reads are permission-gated, so a journey's reads carry the token
+    /// without threading it through every call. Falls back to unauthenticated before any session.
     pub async fn get_json(&self, path: &str) -> (u16, Value) {
-        self.exec(reqwest::Method::GET, path, None, None).await
+        let tok = self.default_token();
+        self.exec(reqwest::Method::GET, path, None, tok.as_deref())
+            .await
     }
 
     /// `GET path` with a session token → (status, JSON body).
@@ -242,9 +316,11 @@ impl ServerHarness {
     /// `GET path` → (status, raw body text, content-type). For the static/SPA journey, where the
     /// body is HTML/JS rather than JSON and the content-type is itself under test.
     pub async fn get_text(&self, path: &str) -> (u16, String, String) {
-        let resp = self
-            .client
-            .get(format!("{}{}", self.base_url, path))
+        let mut req = self.client.get(format!("{}{}", self.base_url, path));
+        if let Some(t) = self.default_token() {
+            req = req.header(SESSION_HEADER, t);
+        }
+        let resp = req
             .send()
             .await
             .unwrap_or_else(|e| panic!("GET {path} failed: {e}"));
@@ -684,13 +760,16 @@ pub async fn create_user(h: &ServerHarness, username: &str, display_name: &str) 
     user["id"].as_str().expect("user id").to_owned()
 }
 
-/// Open a session for a user id and return its token.
+/// Open a session for a user id and return its token. Also records the token as the harness'
+/// auto-auth session for GET reads (t64-E3), so the journey's permission-gated reads carry it.
 pub async fn open_session(h: &ServerHarness, user_id: &str) -> String {
     let (status, s) = h
         .post_json("/v1/session", json!({ "user_id": user_id }))
         .await;
     assert_eq!(status, 200, "open session: {s}");
-    s["token"].as_str().expect("session token").to_owned()
+    let token = s["token"].as_str().expect("session token").to_owned();
+    h.set_default_token(&token);
+    token
 }
 
 /// Every actor recorded across the whole ledger dump.

@@ -4,12 +4,14 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use chancela_authz::{Permission, Scope};
 use chancela_core::{Entity, EntityId, EntityKind, Nipc, StatuteOverrides};
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{require_permission, scope_of_entity};
 use crate::dto::EntityView;
 use crate::error::ApiError;
 
@@ -47,6 +49,8 @@ pub async fn create_entity(
     attestor: CurrentAttestor,
     Json(req): Json<CreateEntity>,
 ) -> Result<(StatusCode, Json<EntityView>), ApiError> {
+    // RBAC (t64-E3): creating an entity is a Global op (no entity exists yet to scope to).
+    require_permission(&state, &actor, Permission::EntityCreate, Scope::Global).await?;
     // A parseable NIPC is always stored validated; the override only rescues a parse failure.
     let nipc = match Nipc::parse(&req.nipc) {
         Ok(nipc) => nipc,
@@ -102,6 +106,14 @@ pub async fn patch_entity(
     attestor: CurrentAttestor,
     Json(req): Json<PatchEntity>,
 ) -> Result<Json<EntityView>, ApiError> {
+    // RBAC (t64-E3): editing an entity is scoped to that entity.
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityUpdate,
+        scope_of_entity(EntityId(id)),
+    )
+    .await?;
     let actor = actor.resolve("api");
     // entities → ledger (the global lock order); attestation sidecar acquired last.
     let mut entities = state.entities.write().await;
@@ -132,17 +144,37 @@ pub async fn patch_entity(
     Ok(Json(EntityView::from(&*entity)))
 }
 
-/// List every entity currently in memory (unordered).
-pub async fn list_entities(State(state): State<AppState>) -> Json<Vec<EntityView>> {
+/// List entities the caller may read (contract §2.3; RBAC list-filtering, plan §3.3 note²): requires
+/// a valid session and returns only rows the caller holds `entity.read` at (a Global reader sees all;
+/// an entity-scoped reader only their entity). No enumeration of unreadable rows — a caller with no
+/// read authority gets an empty list, never a status that reveals what exists.
+pub async fn list_entities(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<EntityView>>, ApiError> {
+    let authz = crate::authz::authorizer(&state, &actor).await?;
     let entities = state.entities.read().await;
-    Json(entities.values().map(EntityView::from).collect())
+    let out = entities
+        .values()
+        .filter(|e| authz.permits(Permission::EntityRead, scope_of_entity(e.id)))
+        .map(EntityView::from)
+        .collect();
+    Ok(Json(out))
 }
 
-/// Fetch one entity by id, or return `404`.
+/// Fetch one entity by id, or return `404`. RBAC (t64-E3): `entity.read` scoped to the entity.
 pub async fn get_entity(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Json<EntityView>, ApiError> {
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityRead,
+        scope_of_entity(EntityId(id)),
+    )
+    .await?;
     let entities = state.entities.read().await;
     entities
         .get(&EntityId(id))

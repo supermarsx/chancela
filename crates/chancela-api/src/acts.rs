@@ -14,8 +14,11 @@ use axum::response::{IntoResponse, Response};
 use chancela_core::{Act, ActError, ActId, BookId, Severity, rule_pack_for, seal_act};
 use uuid::Uuid;
 
+use chancela_authz::Permission;
+
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{require_permission, scope_of_act, scope_of_book};
 use crate::dto::{
     ActView, AdvanceAct, ArchiveAct, ComplianceResponse, DraftAct, IssueView, PatchAct, SealAct,
     SealResponse,
@@ -29,8 +32,10 @@ pub async fn draft_act(
     attestor: CurrentAttestor,
     Json(req): Json<DraftAct>,
 ) -> Result<(StatusCode, Json<ActView>), ApiError> {
-    let actor = actor.resolve(&req.actor);
     let book_id = BookId(req.book_id);
+    // RBAC (t64-E3): drafting an act is scoped to the target book (resolved from the body).
+    require_permission(&state, &actor, Permission::ActDraft, scope_of_book(book_id)).await?;
+    let actor = actor.resolve(&req.actor);
     // books → acts → ledger.
     let books = state.books.read().await;
     let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
@@ -65,7 +70,11 @@ pub async fn draft_act(
 pub async fn get_act(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Json<ActView>, ApiError> {
+    // RBAC (t64-E3): `act.read` scoped to the act's owning book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
     let acts = state.acts.read().await;
     acts.get(&ActId(id))
         .map(|a| Json(ActView::from(a)))
@@ -77,8 +86,12 @@ pub async fn get_act(
 pub async fn patch_act(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
     Json(req): Json<PatchAct>,
 ) -> Result<Json<ActView>, ApiError> {
+    // RBAC (t64-E3): editing an act's working content is `act.edit` scoped to its book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActEdit, scope).await?;
     let mut acts = state.acts.write().await;
     let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
 
@@ -157,6 +170,9 @@ pub async fn advance_act(
     attestor: CurrentAttestor,
     Json(req): Json<AdvanceAct>,
 ) -> Result<Json<ActView>, ApiError> {
+    // RBAC (t64-E3): advancing an act is `act.advance` scoped to its book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActAdvance, scope).await?;
     let actor = actor.resolve(&req.actor);
     // books → acts → ledger (books only to resolve the entity id for the event scope).
     let books = state.books.read().await;
@@ -197,7 +213,11 @@ pub async fn advance_act(
 pub async fn get_compliance(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Json<ComplianceResponse>, ApiError> {
+    // RBAC (t64-E3): the compliance report is `act.read` scoped to the act's book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
     // entities → books → acts.
     let entities = state.entities.read().await;
     let books = state.books.read().await;
@@ -241,6 +261,9 @@ pub async fn seal_act_handler(
     attestor: CurrentAttestor,
     body: Option<Json<SealAct>>,
 ) -> Result<Response, ApiError> {
+    // RBAC (t64-E3): sealing an act requires `signing.perform` scoped to its book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
     let req = body.map(|Json(b)| b).unwrap_or_default();
     let actor = actor.resolve(&req.actor);
 
@@ -392,6 +415,9 @@ pub async fn archive_act(
     attestor: CurrentAttestor,
     body: Option<Json<ArchiveAct>>,
 ) -> Result<Json<ActView>, ApiError> {
+    // RBAC (t64-E3): archiving an act is `act.archive` scoped to its book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActArchive, scope).await?;
     let req = body.map(|Json(b)| b).unwrap_or_default();
     let actor = actor.resolve(&req.actor);
 

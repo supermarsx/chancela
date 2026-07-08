@@ -91,6 +91,22 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
     }
     h.start_again().await;
 
+    // Re-authenticate BEFORE the gated reads below: the in-memory session dropped on restart, and the
+    // operator holds a password so the harness' passwordless auto-reopen cannot sign in — do it
+    // explicitly WITH the password (the session endpoint stays open even while degraded). RBAC
+    // (t64-E3): the integrity report and entity reads below are permission-gated (`ledger.read` /
+    // `entity.read`), so the operator must be signed in.
+    let user_id = create_user_or_signin(&h).await;
+    let (status, s) = h
+        .post_json(
+            "/v1/session",
+            json!({ "user_id": user_id, "password": "reanchor-pass-1234" }),
+        )
+        .await;
+    assert_eq!(status, 200, "re-open session with password: {s}");
+    let token = s["token"].as_str().expect("session token").to_owned();
+    h.set_default_token(&token);
+
     // /health + the integrity report both report the broken, degraded chain.
     let (_, health) = h.get_json("/health").await;
     assert_eq!(health["persistent"], true);
@@ -104,20 +120,6 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
         report["global"]["first_break"].is_object(),
         "the integrity report pinpoints the break: {report}"
     );
-
-    // A signed-in session must be minted fresh (the in-memory one was dropped on restart). The user
-    // (and its password) persisted in the durable roster, so we re-authenticate WITH the password —
-    // once a user holds a secret a password-less sign-in is refused. The session endpoint stays open
-    // even while degraded.
-    let user_id = create_user_or_signin(&h).await;
-    let (status, s) = h
-        .post_json(
-            "/v1/session",
-            json!({ "user_id": user_id, "password": "reanchor-pass-1234" }),
-        )
-        .await;
-    assert_eq!(status, 200, "re-open session with password: {s}");
-    let token = s["token"].as_str().expect("session token").to_owned();
 
     // An ordinary mutation is blocked with 503 + the honest read-only body.
     let (status, body) = h

@@ -28,9 +28,12 @@ use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
+use chancela_authz::{Permission, Scope};
+
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor, resolve_session_actor};
 use crate::attestation::{self, AttestationKeyBlob, MAX_SECRET_LEN, MIN_SECRET_LEN, verify_secret};
+use crate::authz::require_permission;
 use crate::error::ApiError;
 use crate::session::{Backoff, backoff_secs};
 
@@ -273,22 +276,30 @@ pub async fn create_user(
         .filter(|d| !d.is_empty())
         .unwrap_or_else(|| username.clone());
 
-    let session_username = {
+    let (session_username, is_bootstrap) = {
         let user_count = state.users.read().await.len();
         if user_count == 0 {
-            None
+            (None, true)
         } else {
             let token = parts
                 .get(crate::actor::SESSION_HEADER)
                 .and_then(|v| v.to_str().ok())
                 .map(str::trim)
                 .filter(|t| !t.is_empty());
-            match token {
+            let username = match token {
                 Some(t) => resolve_session_actor(&state, t).await?,
                 None => return Err(ApiError::Unauthorized("sessão requerida".to_owned())),
-            }
+            };
+            (username, false)
         }
     };
+    // RBAC (t64-E3): first-run bootstrap (zero users) stays unauthenticated; every subsequent create
+    // requires `user.manage` at Global. Resolve the manually-extracted session into an actor so the
+    // gate composes with the same principal seam as every other endpoint.
+    if !is_bootstrap {
+        let actor = CurrentActor::from_session_username(session_username.clone());
+        require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    }
     let request_actor = session_username.unwrap_or_else(|| "api".to_owned());
 
     let user = {
@@ -680,6 +691,11 @@ pub async fn set_secret(
         req.recovery_phrase.as_deref(),
     )
     .await?;
+    // RBAC (t64-E3): a CROSS-USER credential reset additionally requires `user.manage` (self-service
+    // is unaffected — a user always manages their own credential; the t51 proof still applies on top).
+    if let SecretAuthz::CrossUser(_) = decision {
+        require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    }
     // Authorized. For self the requester *is* the target and exists; for cross-user the authorize
     // step already returned a uniform 403 for a missing target, so a snapshot is present here.
     let snapshot = snapshot.ok_or(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))?;
@@ -793,6 +809,10 @@ pub async fn remove_secret(
         req.recovery_phrase.as_deref(),
     )
     .await?;
+    // RBAC (t64-E3): a CROSS-USER credential reset additionally requires `user.manage`.
+    if let SecretAuthz::CrossUser(_) = decision {
+        require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    }
 
     match decision {
         SecretAuthz::SelfService => {
@@ -876,6 +896,10 @@ pub async fn generate_attestation_key(
         req.recovery_phrase.as_deref(),
     )
     .await?;
+    // RBAC (t64-E3): a CROSS-USER attestation-key generation additionally requires `user.manage`.
+    if let SecretAuthz::CrossUser(_) = decision {
+        require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    }
 
     // The new key is wrapped under a password. Determine the wrapping secret per authorization path.
     let (wrapping_secret, cross_user) = match decision {
@@ -943,6 +967,10 @@ pub async fn remove_attestation_key(
         req.recovery_phrase.as_deref(),
     )
     .await?;
+    // RBAC (t64-E3): a CROSS-USER attestation-key removal additionally requires `user.manage`.
+    if let SecretAuthz::CrossUser(_) = decision {
+        require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    }
 
     match decision {
         SecretAuthz::SelfService => {
@@ -1006,6 +1034,10 @@ pub async fn issue_recovery(
         req.recovery_phrase.as_deref(),
     )
     .await?;
+    // RBAC (t64-E3): a CROSS-USER recovery issuance additionally requires `user.manage`.
+    if let SecretAuthz::CrossUser(_) = decision {
+        require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    }
 
     if let SecretAuthz::SelfService = decision {
         // Self-service: prove the current password when the account has one (no-op if passwordless).
@@ -1049,19 +1081,24 @@ pub async fn issue_recovery(
 /// `GET /v1/users` — every profile. Requires a valid session (t41 C1).
 pub async fn list_users(
     State(state): State<AppState>,
-    _actor: CurrentActor,
-) -> Json<Vec<UserView>> {
+    actor: CurrentActor,
+) -> Result<Json<Vec<UserView>>, ApiError> {
+    // RBAC (t64-E3): the full user roster is `user.read` at Global (the unauth sign-in picker uses
+    // the minimal `GET /v1/session/roster` instead).
+    require_permission(&state, &actor, Permission::UserRead, Scope::Global).await?;
     let users = state.users.read().await;
     let mut list: Vec<&User> = users.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
-    Json(list.into_iter().map(UserView::from).collect())
+    Ok(Json(list.into_iter().map(UserView::from).collect()))
 }
 
-/// `GET /v1/users/{id}` — one profile, or `404`.
+/// `GET /v1/users/{id}` — one profile, or `404`. RBAC (t64-E3): `user.read` at Global.
 pub async fn get_user(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Json<UserView>, ApiError> {
+    require_permission(&state, &actor, Permission::UserRead, Scope::Global).await?;
     let users = state.users.read().await;
     users
         .get(&UserId(id))
@@ -1086,6 +1123,8 @@ pub async fn patch_user(
     attestor: CurrentAttestor,
     Json(req): Json<PatchUser>,
 ) -> Result<Json<UserView>, ApiError> {
+    // RBAC (t64-E3): editing a profile (rename / (de)activate) is `user.manage` at Global.
+    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
     let user = {
         let mut users = state.users.write().await;
         // Last-active-user guard: reject deactivating the final active user (checked under the

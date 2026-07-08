@@ -68,6 +68,85 @@ pub struct SessionCreated {
 #[derive(Serialize)]
 pub struct SessionView {
     pub user: Option<UserView>,
+    /// The signed-in user's effective `(permission, scope)` grants, embedded for the web's first
+    /// paint so it can gate its UI without a second round-trip (t64-E3 / E5). Empty when signed out.
+    /// The authoritative, fuller shape is `GET /v1/session/permissions`.
+    pub permissions: Vec<PermissionGrantView>,
+}
+
+/// A [`chancela_authz::Scope`] rendered for the web (t64-E3, FROZEN for E5). A tagged union so the
+/// client can switch on `kind` and read the id: `{"kind":"global"}` / `{"kind":"entity","id":..}` /
+/// `{"kind":"book","id":..}`.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ScopeView {
+    Global,
+    Entity { id: String },
+    Book { id: String },
+}
+
+impl From<chancela_authz::Scope> for ScopeView {
+    fn from(s: chancela_authz::Scope) -> Self {
+        match s {
+            chancela_authz::Scope::Global => ScopeView::Global,
+            chancela_authz::Scope::Entity(e) => ScopeView::Entity {
+                id: e.0.to_string(),
+            },
+            chancela_authz::Scope::Book(b) => ScopeView::Book {
+                id: b.0.to_string(),
+            },
+        }
+    }
+}
+
+/// One effective grant: a permission verb, the scope it is held at, and whether it arrived via a
+/// role assignment or a delegation (t64-E3, FROZEN for E5).
+#[derive(Serialize)]
+pub struct PermissionGrantView {
+    /// The dotted permission id, e.g. `"entity.read"`.
+    pub permission: String,
+    pub scope: ScopeView,
+    /// `"role"` or `"delegation"`.
+    pub source: &'static str,
+}
+
+/// One role assignment the user holds: the role id and the scope it is held at (t64-E3, FROZEN).
+#[derive(Serialize)]
+pub struct RoleAssignmentView {
+    pub role_id: String,
+    pub scope: ScopeView,
+}
+
+/// Response of `GET /v1/session/permissions` (t64-E3, FROZEN for E5's web permissions context): the
+/// current principal's identity, the role assignments they hold (with scopes), and the flattened
+/// effective `(permission, scope)` grants (role ∪ delegation, each tagged by `source`).
+#[derive(Serialize)]
+pub struct PermissionsView {
+    pub user_id: String,
+    pub username: String,
+    pub role_assignments: Vec<RoleAssignmentView>,
+    pub permissions: Vec<PermissionGrantView>,
+}
+
+/// Flatten a [`ScopedPermissionSet`](chancela_authz::ScopedPermissionSet) into the wire grants,
+/// tagging each with whether it is a role grant or a delegated grant.
+pub(crate) fn grant_views(eff: &chancela_authz::ScopedPermissionSet) -> Vec<PermissionGrantView> {
+    let mut out: Vec<PermissionGrantView> = eff
+        .role_grants()
+        .map(|(p, s)| PermissionGrantView {
+            permission: p.as_str().to_owned(),
+            scope: ScopeView::from(s),
+            source: "role",
+        })
+        .chain(eff.delegated_grants().map(|(p, s)| PermissionGrantView {
+            permission: p.as_str().to_owned(),
+            scope: ScopeView::from(s),
+            source: "delegation",
+        }))
+        .collect();
+    // Deterministic order for stable responses / snapshot tests.
+    out.sort_by(|a, b| a.permission.cmp(&b.permission).then(a.source.cmp(b.source)));
+    out
 }
 
 /// One entry in the signed-out sign-in roster: the minimum a sign-in picker needs, and nothing
@@ -195,7 +274,7 @@ pub async fn get_session(
     State(state): State<AppState>,
     parts: axum::http::HeaderMap,
 ) -> Json<SessionView> {
-    let user = match parts
+    let resolved: Option<(UserView, UserId)> = match parts
         .get(SESSION_HEADER)
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
@@ -207,13 +286,61 @@ pub async fn get_session(
                 users
                     .values()
                     .find(|u| u.username == username)
-                    .map(UserView::from)
+                    .map(|u| (UserView::from(u), u.id))
             }
             _ => None,
         },
         None => None,
     };
-    Json(SessionView { user })
+
+    let (user, permissions) = match resolved {
+        Some((view, uid)) => {
+            let eff =
+                crate::roles::effective_permissions_for(&state, uid, OffsetDateTime::now_utc())
+                    .await;
+            (Some(view), grant_views(&eff))
+        }
+        None => (None, Vec::new()),
+    };
+    Json(SessionView { user, permissions })
+}
+
+/// `GET /v1/session/permissions` — the current principal's role assignments (with scopes) and
+/// flattened effective `(permission, scope)` grants (t64-E3, FROZEN for the web permissions context
+/// in E5). Requires a valid session (`401` without one, via [`CurrentActor`]); `403` if the session
+/// no longer names an active user. Never a specific permission — introspecting one's own authority
+/// is always allowed.
+pub async fn session_permissions(
+    State(state): State<AppState>,
+    actor: crate::actor::CurrentActor,
+) -> Result<Json<PermissionsView>, ApiError> {
+    let now = OffsetDateTime::now_utc();
+    let (uid, eff) = crate::roles::effective_permissions_for_actor(&state, &actor, now).await?;
+
+    let (username, role_assignments) = {
+        let users = state.users.read().await;
+        match users.get(&uid) {
+            Some(u) => (
+                u.username.clone(),
+                u.role_assignments
+                    .iter()
+                    .map(|a| RoleAssignmentView {
+                        role_id: a.role_id.0.to_string(),
+                        scope: ScopeView::from(a.scope),
+                    })
+                    .collect(),
+            ),
+            // The resolve step already proved the user active; a race that removed them → empty.
+            None => (String::new(), Vec::new()),
+        }
+    };
+
+    Ok(Json(PermissionsView {
+        user_id: uid.0.to_string(),
+        username,
+        role_assignments,
+        permissions: grant_views(&eff),
+    }))
 }
 
 /// `DELETE /v1/session` — drop the presented token (idempotent; always `204`).

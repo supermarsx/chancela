@@ -51,8 +51,12 @@ use sha2::{Digest, Sha256};
 /// JSON helpers would panic trying to parse PDF bytes, so the PDF endpoints use their own client.
 async fn get_bytes(h: &ServerHarness, path: &str) -> (u16, String, Vec<u8>) {
     let client = reqwest::Client::new();
-    let resp = client
-        .get(format!("{}{}", h.base_url, path))
+    let mut req = client.get(format!("{}{}", h.base_url, path));
+    // RBAC (t64-E3): document reads are `act.read` — carry the harness operator session.
+    if let Some(t) = h.current_token() {
+        req = req.header("x-chancela-session", t);
+    }
+    let resp = req
         .send()
         .await
         .unwrap_or_else(|e| panic!("GET {path} failed: {e}"));

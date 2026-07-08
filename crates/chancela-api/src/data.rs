@@ -18,6 +18,7 @@
 
 use axum::Json;
 use axum::extract::State;
+use chancela_authz::{Permission, Scope};
 use chancela_store::recovery::ResetScope;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -25,6 +26,7 @@ use time::OffsetDateTime;
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::attestation::verify_secret;
+use crate::authz::require_permission;
 use crate::error::ApiError;
 use crate::recovery::map_store_error;
 
@@ -152,6 +154,9 @@ pub async fn reset_data(
         )));
     }
 
+    // RBAC (t64-E3): a destructive wipe / factory reset requires `data.wipe` at Global — AND the
+    // existing step-up re-auth (RBAC = who-may, step-up = confirm-now; both kept).
+    require_permission(&state, &actor, Permission::DataWipe, Scope::Global).await?;
     // Step-up re-auth — a valid session alone is NOT enough (§8-F).
     require_step_up(&state, &actor, &req.reauth).await?;
     let actor = actor.resolve(&req.actor);
@@ -254,6 +259,8 @@ pub async fn start_over_instance(
             "frase de confirmação incorreta; escreva exatamente {INSTANCE_STARTOVER_PHRASE:?} para confirmar"
         )));
     }
+    // RBAC (t64-E3): a whole-instance start-over requires `data.start_over` at Global — AND step-up.
+    require_permission(&state, &actor, Permission::DataStartOver, Scope::Global).await?;
     require_step_up(&state, &actor, &req.reauth).await?;
     let actor = actor.resolve(&req.actor);
 

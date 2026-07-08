@@ -56,6 +56,16 @@ impl CurrentActor {
     pub fn session_username(&self) -> Option<&str> {
         self.session_username.as_deref()
     }
+
+    /// Build a [`CurrentActor`] from an already-resolved session username. Used where the session is
+    /// resolved manually rather than via the extractor — the bootstrap-capable `create_user`, which
+    /// must stay callable signed-out at zero users yet still gate `user.manage` once a session is
+    /// present (t64-E3).
+    pub(crate) fn from_session_username(username: Option<String>) -> Self {
+        CurrentActor {
+            session_username: username,
+        }
+    }
 }
 
 impl FromRequestParts<AppState> for CurrentActor {

@@ -27,8 +27,11 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+use chancela_authz::{Permission, Scope};
+
 use crate::AppState;
 use crate::actor::CurrentActor;
+use crate::authz::require_permission;
 use crate::data::{ReAuth, require_step_up};
 use crate::error::ApiError;
 use crate::hex::hex;
@@ -175,8 +178,13 @@ async fn current_integrity(state: &AppState) -> IntegrityReportView {
 
 /// `GET /v1/ledger/integrity` — the full [`IntegrityReportView`] (per-chain status + first break +
 /// re-anchor disclosure). Read-only, always available (degraded or not, in-memory or persistent).
-pub async fn get_integrity(State(state): State<AppState>) -> Json<IntegrityReportView> {
-    Json(current_integrity(&state).await)
+pub async fn get_integrity(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<IntegrityReportView>, ApiError> {
+    // RBAC (t64-E3): the integrity report is `ledger.read` at Global.
+    require_permission(&state, &actor, Permission::LedgerRead, Scope::Global).await?;
+    Ok(Json(current_integrity(&state).await))
 }
 
 // =================================================================================================
@@ -226,6 +234,9 @@ pub async fn reanchor_ledger(
     actor: CurrentActor,
     Json(req): Json<ReanchorRequest>,
 ) -> Result<Json<ReanchorResponse>, ApiError> {
+    // RBAC (t64-E3): re-anchoring the chain requires `ledger.recover` at Global — AND the existing
+    // step-up re-auth (RBAC = who-may, step-up = confirm-now; both are kept).
+    require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
     // Step-up re-auth — a valid session alone is NOT enough (mirrors the destructive wipes).
     require_step_up(&state, &actor, &req.reauth).await?;
     let actor = actor.resolve(&req.actor);
@@ -304,6 +315,8 @@ pub async fn restore_store(
     actor: CurrentActor,
     Json(req): Json<RestoreRequest>,
 ) -> Result<Json<RestoreOutcomeView>, ApiError> {
+    // RBAC (t64-E3): a whole-store restore requires `ledger.recover` at Global.
+    require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
     let actor = actor.resolve(&req.actor);
     let Some(store) = state.store.clone() else {
         return Err(ApiError::Unprocessable(

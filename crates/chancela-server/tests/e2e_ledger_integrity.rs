@@ -23,15 +23,17 @@ async fn ledger_integrity_and_secret_sweeps() {
         ServerHarness::start_with(HarnessOptions::default().with_registry(registry.url.clone()))
             .await;
 
-    // Empty ledger verifies.
+    // A user + session so mutations are attributed to a real person — AND so the ledger probe is
+    // authorized (RBAC t64-E3: `/v1/ledger/verify` is `ledger.read`, so it needs a signed-in
+    // operator; there is no readable state before the first user exists).
+    let user_id = create_user(&h, "amelia.marques", "Amélia Marques").await;
+    let token = open_session(&h, &user_id).await;
+
+    // The chain verifies from the outset — only the bootstrap `user.created` event so far.
     let (status, verify) = h.get_json("/v1/ledger/verify").await;
     assert_eq!(status, 200);
     assert_eq!(verify["valid"], true);
-    assert_eq!(verify["length"], 0);
-
-    // A user + session so mutations are attributed to a real person.
-    let user_id = create_user(&h, "amelia.marques", "Amélia Marques").await;
-    let token = open_session(&h, &user_id).await;
+    assert_eq!(verify["length"], 1);
 
     // A registry import (masked-code ledger event) and a full seal lifecycle.
     let (status, report) = h

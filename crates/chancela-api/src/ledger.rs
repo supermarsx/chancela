@@ -3,10 +3,13 @@
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use chancela_authz::{Permission, Scope};
 use serde::Serialize;
 
 use crate::AppState;
+use crate::actor::CurrentActor;
 use crate::attestation::{self, Attestation};
+use crate::authz::require_permission;
 use crate::dto::{AttestationSummary, LedgerEventView, LedgerQuery};
 use crate::error::ApiError;
 
@@ -19,8 +22,11 @@ const MAX_LEDGER_LIMIT: usize = 1000;
 /// Each event carries its `attestation` summary (joined from the in-memory sidecar by `seq`).
 pub async fn list_ledger_events(
     State(state): State<AppState>,
+    actor: CurrentActor,
     Query(q): Query<LedgerQuery>,
-) -> Json<Vec<LedgerEventView>> {
+) -> Result<Json<Vec<LedgerEventView>>, ApiError> {
+    // RBAC (t64-E3): the audit feed is `ledger.read` at Global.
+    require_permission(&state, &actor, Permission::LedgerRead, Scope::Global).await?;
     let ledger = state.ledger.read().await;
     let attestations = state.attestations.read().await;
     let mut events: Vec<&_> = ledger.events().iter().collect();
@@ -33,7 +39,7 @@ pub async fn list_ledger_events(
         .min(MAX_LEDGER_LIMIT);
     let start = events.len().saturating_sub(limit);
     events.drain(..start);
-    Json(
+    Ok(Json(
         events
             .into_iter()
             .map(|e| {
@@ -42,7 +48,7 @@ pub async fn list_ledger_events(
                 view
             })
             .collect(),
-    )
+    ))
 }
 
 /// Result of `GET /v1/ledger/verify`.
@@ -58,9 +64,14 @@ pub struct VerifyResponse {
 }
 
 /// `GET /v1/ledger/verify` — recompute the in-memory ledger's hash chain (ARC-11/12).
-pub async fn verify_ledger(State(state): State<AppState>) -> Json<VerifyResponse> {
+pub async fn verify_ledger(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<VerifyResponse>, ApiError> {
+    // RBAC (t64-E3): the chain-verify probe is `ledger.read` at Global.
+    require_permission(&state, &actor, Permission::LedgerRead, Scope::Global).await?;
     let ledger = state.ledger.read().await;
-    match ledger.verify() {
+    Ok(match ledger.verify() {
         Ok(length) => Json(VerifyResponse {
             valid: true,
             length,
@@ -71,7 +82,7 @@ pub async fn verify_ledger(State(state): State<AppState>) -> Json<VerifyResponse
             length: ledger.len() as u64,
             error: Some(e.to_string()),
         }),
-    }
+    })
 }
 
 /// Response of `GET /v1/ledger/attestations/{seq}` (plan t29 §4.6): the full attestation plus the
@@ -95,7 +106,10 @@ pub struct AttestationVerifyResponse {
 pub async fn get_attestation(
     State(state): State<AppState>,
     Path(seq): Path<u64>,
+    actor: CurrentActor,
 ) -> Result<Json<AttestationVerifyResponse>, ApiError> {
+    // RBAC (t64-E3): reading an attestation is `ledger.read` at Global.
+    require_permission(&state, &actor, Permission::LedgerRead, Scope::Global).await?;
     let attestation = {
         let attestations = state.attestations.read().await;
         attestations.get(&seq).cloned().ok_or(ApiError::NotFound)?

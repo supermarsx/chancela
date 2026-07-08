@@ -26,8 +26,11 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use chancela_authz::{Permission, Scope};
+
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{require_permission, scope_of_book};
 use crate::dto::{BookView, parse_date};
 use crate::error::ApiError;
 use crate::recovery::{ChainBreakView, map_store_error};
@@ -52,6 +55,14 @@ pub async fn export_book(
     Path(id): Path<Uuid>,
     actor: CurrentActor,
 ) -> Result<Response, ApiError> {
+    // RBAC (t64-E3): exporting a book is `book.export` scoped to the book.
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookExport,
+        scope_of_book(BookId(id)),
+    )
+    .await?;
     let actor = actor.resolve("api");
     let Some(store) = state.store.clone() else {
         return Err(ApiError::Unprocessable(
@@ -137,6 +148,10 @@ pub async fn import_book(
     actor: CurrentActor,
     body: axum::body::Bytes,
 ) -> Result<Json<ImportOutcomeView>, ApiError> {
+    // RBAC (t64-E3): importing a book bundle requires `book.import` at Global (the target entity is
+    // only known after verifying the bundle, and a fresh-id import creates a new spine; gating at
+    // Global is the safe, non-under-restricting choice per §3.3 "Entity(target) or Global if new").
+    require_permission(&state, &actor, Permission::BookImport, Scope::Global).await?;
     let actor = actor.resolve("api");
     let policy = parse_policy(q.policy.as_deref())?;
     let Some(store) = state.store.clone() else {
@@ -249,6 +264,14 @@ pub async fn start_over_book(
     attestor: CurrentAttestor,
     Json(req): Json<StartOverBookRequest>,
 ) -> Result<Json<StartOverBookResponse>, ApiError> {
+    // RBAC (t64-E3): per-book start-over is `book.start_over` scoped to the book.
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookStartOver,
+        scope_of_book(BookId(id)),
+    )
+    .await?;
     // Fail fast on a bad date before any lock or archive.
     let opening_date = parse_date(&req.opening_date)?;
     let actor = actor.resolve(&req.actor);

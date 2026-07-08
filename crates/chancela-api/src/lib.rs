@@ -37,6 +37,7 @@
 mod actor;
 mod acts;
 mod attestation;
+mod authz;
 mod backup;
 mod books;
 mod bundles;
@@ -85,6 +86,10 @@ use tokio::sync::RwLock;
 use tower_http::services::{ServeDir, ServeFile};
 
 pub use actor::{CurrentActor, CurrentAttestor};
+pub use authz::{
+    Authorizer, authorizer, require_permission, require_permission_with, scope_of_act,
+    scope_of_book, scope_of_entity,
+};
 pub use delegations::{DelegationId, StoredDelegation};
 pub use error::ApiError;
 pub use law::{LawEntry, LawEntryView, LawStore, StoredLawInfo};
@@ -520,7 +525,18 @@ impl AppState {
     pub fn from_env() -> Self {
         match Self::resolve_data_dir() {
             Some(dir) => Self::with_data_dir(dir),
-            None => Self::default(),
+            // Pure in-memory (no data dir): seed the RBAC catalog so the bootstrap first user's
+            // Owner\@Global assignment resolves to real authority. Without this a fresh in-memory
+            // instance would hold an Owner assignment against an EMPTY catalog (fail-closed →
+            // no permissions anywhere), locking the operator out of their own instance (t64-E3).
+            None => {
+                let state = Self::default();
+                let seeded = Arc::new(RwLock::new(chancela_authz::RoleCatalog::seeded_defaults()));
+                AppState {
+                    roles: seeded,
+                    ..state
+                }
+            }
         }
     }
 
@@ -666,6 +682,7 @@ pub fn router(state: AppState) -> Router {
             get(ledger::get_attestation),
         )
         .route("/v1/session/roster", get(session::session_roster))
+        .route("/v1/session/permissions", get(session::session_permissions))
         .route(
             "/v1/session",
             get(session::get_session)
@@ -977,7 +994,18 @@ mod tests {
     /// recorded. The user is passwordless and active.
     async fn auth_token(state: &AppState) -> String {
         use crate::users::{User, UserId};
+        use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
         use time::format_description::well_known::Rfc3339;
+        // RBAC (t64-E3): every gated endpoint resolves the acting user's scoped permissions against
+        // the role catalog. A pure in-memory `AppState::default()` has an EMPTY catalog, so seed the
+        // defaults and make the test actor **Owner\@Global** — the bootstrap-first-user identity every
+        // in-crate test implicitly acts as (an admin operating its own instance). Idempotent.
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
         let uid = UserId(Uuid::new_v4());
         let user = User {
             id: uid,
@@ -991,7 +1019,7 @@ mod tests {
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
-            role_assignments: Vec::new(),
+            role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
         };
         state.users.write().await.insert(uid, user);
         let token = Uuid::new_v4().to_string();
@@ -1005,6 +1033,17 @@ mod tests {
             },
         );
         token
+    }
+
+    /// A fresh in-memory state with the RBAC catalog seeded — the in-memory equivalent of a real
+    /// first-run install (mirrors [`AppState::from_env`]'s in-memory seeding). Used by the tests that
+    /// bootstrap the first user through the API and then act AS that Owner: without a seeded catalog
+    /// the bootstrap Owner\@Global assignment would resolve against an empty catalog and grant nothing
+    /// (fail-closed), which is precisely the in-memory lockout `from_env` now prevents (t64-E3).
+    async fn fresh_state() -> AppState {
+        let state = AppState::default();
+        *state.roles.write().await = chancela_authz::RoleCatalog::seeded_defaults();
+        state
     }
 
     /// Create an entity and an open book for it; returns (state, entity_id, book_id).
@@ -2174,9 +2213,11 @@ mod tests {
     #[tokio::test]
     async fn known_v1_route_still_wins_over_the_catch_all() {
         // The catch-all is low priority: a real endpoint keeps serving its own response.
+        let state = AppState::default();
+        let token = auth_token(&state).await; // RBAC (t64-E3): the gated list needs a session.
         let web = TempWeb::new("SPA-SHELL-MARKER");
-        let app = app(AppState::default(), Some(web.dir.clone()));
-        let (status, body) = send_text(app, get("/v1/entities")).await;
+        let app = app(state, Some(web.dir.clone()));
+        let (status, body) = send_text(app, with_session(get("/v1/entities"), &token)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, "[]", "the entities list, not a 404 or the SPA shell");
     }
@@ -3593,9 +3634,15 @@ mod tests {
         let tmp = TempDir::new();
         let base = spawn_pdf_fixture(PDF_BODY).await;
         let state = law_state(tmp.dir.clone(), base);
+        // RBAC (t64-E3): serving/reading an archived PDF is `law.read`; carry an Owner session.
+        let token = auth_token(&state).await;
 
         // Not yet fetched → serving is a 404.
-        let (status, _, _) = send_raw_bytes(state.clone(), get("/v1/law/dl-9-2025/pdf")).await;
+        let (status, _, _) = send_raw_bytes(
+            state.clone(),
+            with_session(get("/v1/law/dl-9-2025/pdf"), &token),
+        )
+        .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
 
         let (status, _) = send(
@@ -3605,7 +3652,8 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
 
-        let (status, headers, bytes) = send_raw_bytes(state, get("/v1/law/dl-9-2025/pdf")).await;
+        let (status, headers, bytes) =
+            send_raw_bytes(state, with_session(get("/v1/law/dl-9-2025/pdf"), &token)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(headers.get("content-type").unwrap(), "application/pdf");
         assert!(
@@ -3624,6 +3672,7 @@ mod tests {
         let tmp = TempDir::new();
         let base = spawn_pdf_fixture(PDF_BODY).await;
         let state = law_state(tmp.dir.clone(), base);
+        let token = auth_token(&state).await; // RBAC (t64-E3): the pdf read is `law.read`.
         send(
             state.clone(),
             post_json("/v1/law/dl-9-2025/fetch", json!({})),
@@ -3636,7 +3685,11 @@ mod tests {
         assert!(!tmp.dir.join("laws").join("dl-9-2025.pdf").exists());
 
         // Serving is now a 404, and a `law.removed` event was appended.
-        let (status, _, _) = send_raw_bytes(state.clone(), get("/v1/law/dl-9-2025/pdf")).await;
+        let (status, _, _) = send_raw_bytes(
+            state.clone(),
+            with_session(get("/v1/law/dl-9-2025/pdf"), &token),
+        )
+        .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
         assert!(
@@ -3716,8 +3769,8 @@ mod tests {
         assert!(user.get("password_hash").is_none());
         let id = user["id"].as_str().expect("id").to_owned();
 
-        // GET by id (no auth needed for get_user).
-        let (status, got) = send_raw(state.clone(), get(&format!("/v1/users/{id}"))).await;
+        // GET by id (RBAC t64-E3: `user.read`; the auto-seeded Owner session satisfies it).
+        let (status, got) = send(state.clone(), get(&format!("/v1/users/{id}"))).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(got["username"], "amelia.marques");
 
@@ -4555,7 +4608,22 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
-        u["id"].as_str().expect("user id").to_owned()
+        let id = u["id"].as_str().expect("user id").to_owned();
+        // RBAC (t64-E3): the API assigns a subsequent user Gestor\@Global, but these pre-t64 tests act
+        // AS this user for full-authority operations (destructive ops, cross-user credential resets,
+        // user administration). Promote them to Owner\@Global so those journeys authorize exactly as
+        // they did before RBAC. Tests that assert a *restricted* role use `seed_user` with an explicit
+        // assignment instead (e.g. the new non-Owner-403 journeys).
+        {
+            use crate::users::UserId;
+            use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, Scope};
+            let uid = UserId(Uuid::parse_str(&id).expect("uuid"));
+            let mut users = state.users.write().await;
+            if let Some(user) = users.get_mut(&uid) {
+                user.role_assignments = vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)];
+            }
+        }
+        id
     }
 
     /// Give a user a secret + attestation key, sign in with the password, and create one attested
@@ -5116,7 +5184,7 @@ mod tests {
 
     #[tokio::test]
     async fn session_roster_is_unauthenticated_and_signals_onboarding() {
-        let state = AppState::default();
+        let state = fresh_state().await;
 
         // No users yet → onboarding required, empty roster, and NO session on the request.
         let (status, roster) = send_raw(state.clone(), get("/v1/session/roster")).await;
@@ -5195,7 +5263,7 @@ mod tests {
 
     #[tokio::test]
     async fn session_roster_omits_inactive_users() {
-        let state = AppState::default();
+        let state = fresh_state().await;
         let (status, u) = send_raw(
             state.clone(),
             post_json("/v1/users", json!({ "username": "amelia.marques" })),
@@ -5240,7 +5308,7 @@ mod tests {
 
     #[tokio::test]
     async fn patch_user_refuses_deactivating_the_last_active_user() {
-        let state = AppState::default();
+        let state = fresh_state().await;
         let (status, u) = send_raw(
             state.clone(),
             post_json("/v1/users", json!({ "username": "amelia.marques" })),
@@ -5410,6 +5478,150 @@ mod tests {
             },
         );
         token
+    }
+
+    // --- t64-E3: fail-closed RBAC enforcement (non-Owner 403; scoped role in/out of scope) --------
+
+    #[tokio::test]
+    async fn rbac_non_owner_leitor_reads_but_cannot_write() {
+        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        let state = fresh_state().await;
+        // An Owner (auto-seeded session) creates one entity.
+        let (status, _e) = send(
+            state.clone(),
+            post_json(
+                "/v1/entities",
+                json!({
+                    "name": "Encosto Estratégico Lda",
+                    "nipc": "503004642",
+                    "seat": "Lisboa",
+                    "kind": "SociedadeAnonima",
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        // A Leitor\@Global (read-only role).
+        let leitor = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &leitor.to_string()).await;
+
+        // READ → 200, and the row is visible (Leitor holds entity.read\@Global).
+        let (status, list) = send_raw(state.clone(), with_session(get("/v1/entities"), &tok)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(list.as_array().expect("list").len(), 1);
+
+        // WRITE → 403 with the generic, non-enumerating message (no "valor probatório").
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Outra Sociedade Lda",
+                        "nipc": "503004642",
+                        "seat": "Porto",
+                        "kind": "SociedadeAnonima",
+                    }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(
+            body["error"].as_str().expect("error").contains("permissão"),
+            "honest permission refusal: {body}"
+        );
+
+        // An admin-plane write is likewise refused for a Leitor.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(get("/v1/users"), &tok), // user.read — Leitor lacks it
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn rbac_scoped_gestor_acts_within_scope_but_not_outside() {
+        use chancela_authz::{EntityId as AuthzEntityId, GESTOR_ROLE_ID, RoleAssignment, Scope};
+        let state = fresh_state().await;
+        let mk = |name: &str| {
+            json!({
+                "name": name, "nipc": "503004642", "seat": "Lisboa", "kind": "SociedadeAnonima",
+            })
+        };
+        // Owner creates two entities.
+        let (_, e1) = send(
+            state.clone(),
+            post_json("/v1/entities", mk("Encosto Estratégico Lda")),
+        )
+        .await;
+        let (_, e2) = send(
+            state.clone(),
+            post_json("/v1/entities", mk("Outra Sociedade Lda")),
+        )
+        .await;
+        let e1_id = e1["id"].as_str().expect("e1 id").to_owned();
+        let e2_id = e2["id"].as_str().expect("e2 id").to_owned();
+
+        // A Gestor scoped to entity 1 ONLY.
+        let e1_uuid = Uuid::parse_str(&e1_id).expect("uuid");
+        let gestor = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(
+                GESTOR_ROLE_ID,
+                Scope::Entity(AuthzEntityId(e1_uuid)),
+            )],
+        )
+        .await;
+        let tok = seed_session(&state, &gestor.to_string()).await;
+
+        let open = |eid: &str| {
+            post_json(
+                "/v1/books",
+                json!({
+                    "entity_id": eid,
+                    "kind": "AssembleiaGeral",
+                    "purpose": "livro de atas",
+                    "opening_date": "2026-01-15",
+                    "required_signatories": ["Administrador"],
+                }),
+            )
+        };
+        // WITHIN scope (entity 1) → 201.
+        let (status, _) = send_raw(state.clone(), with_session(open(&e1_id), &tok)).await;
+        assert_eq!(
+            status,
+            StatusCode::CREATED,
+            "opening a book within the granted entity"
+        );
+        // OUTSIDE scope (entity 2) → 403 (a scoped grant never reaches another entity).
+        let (status, _) = send_raw(state.clone(), with_session(open(&e2_id), &tok)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "opening a book outside the granted entity is refused"
+        );
+        // Scope-escape upward is structurally impossible: the Gestor holds ledger.read, but only at
+        // Entity(1) — a **Global** integrity read is NOT satisfied by an entity-scoped grant → 403.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(get("/v1/ledger/integrity"), &tok),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "an entity-scoped grant can never satisfy a Global-scoped check"
+        );
     }
 
     /// Set `target`'s first password as a self-service op (open a session as the target).

@@ -22,6 +22,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use chancela_authz::{Permission, Scope};
 use chancela_core::{Entity, EntityId, EntityKind, Nipc};
 use chancela_registry::{
     AccessCode, HttpRegistryTransport, LegalForm, RegistryExtract, RegistryTransport,
@@ -35,6 +36,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{require_permission, scope_of_entity};
 use crate::dto::{
     EntityView, RegistryConflict, RegistryExtractView, RegistryImportReport, compute_expired,
 };
@@ -314,8 +316,11 @@ fn check_text_field(
 /// `POST /v1/registry/lookup` — preview only: consult + parse, **no storage, no ledger event**.
 pub async fn registry_lookup(
     State(state): State<AppState>,
+    actor: CurrentActor,
     Json(req): Json<RegistryLookupRequest>,
 ) -> Result<Json<RegistryExtractView>, ApiError> {
+    // RBAC (t64-E3): a registry preview is an entity read, Global (no entity yet).
+    require_permission(&state, &actor, Permission::EntityRead, Scope::Global).await?;
     let extract = consult(&state, &req.code, req.email.as_deref()).await?;
     let cae = state.cae.read().await;
     Ok(Json(RegistryExtractView::build(&extract, &cae)))
@@ -326,8 +331,15 @@ pub async fn registry_lookup(
 pub async fn get_entity_registry(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    _actor: CurrentActor,
+    actor: CurrentActor,
 ) -> Result<Json<RegistryExtractView>, ApiError> {
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityRead,
+        scope_of_entity(EntityId(id)),
+    )
+    .await?;
     let extracts = state.registry_extracts.read().await;
     let extract = extracts.get(&EntityId(id)).ok_or(ApiError::NotFound)?;
     let cae = state.cae.read().await;
@@ -344,6 +356,14 @@ pub async fn import_into_entity(
     Json(req): Json<RegistryImportRequest>,
 ) -> Result<Json<RegistryImportReport>, ApiError> {
     let eid = EntityId(id);
+    // RBAC (t64-E3): importing registry data into an entity is scoped to that entity.
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityRegistryImport,
+        scope_of_entity(eid),
+    )
+    .await?;
     // Consult BEFORE taking any lock — the fetch is blocking and runs off the runtime.
     let extract = consult(&state, &req.code, req.email.as_deref()).await?;
 
@@ -398,6 +418,8 @@ pub async fn import_from_registry(
     attestor: CurrentAttestor,
     Json(req): Json<RegistryCreateRequest>,
 ) -> Result<(StatusCode, Json<RegistryImportReport>), ApiError> {
+    // RBAC (t64-E3): creating an entity from the registry is a Global entity.create.
+    require_permission(&state, &actor, Permission::EntityCreate, Scope::Global).await?;
     let extract = consult(&state, &req.code, req.email.as_deref()).await?;
 
     // Collect everything the certidão lacked so the 422 explains exactly what was missing.
@@ -592,7 +614,15 @@ mod tests {
 
     async fn auth_token(state: &AppState) -> String {
         use crate::users::{User, UserId};
+        use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
         use time::format_description::well_known::Rfc3339;
+        // RBAC (t64-E3): seed the catalog + make the test actor Owner\@Global so gated endpoints pass.
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
         let uid = UserId(uuid::Uuid::new_v4());
         let user = User {
             id: uid,
@@ -606,7 +636,7 @@ mod tests {
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
-            role_assignments: Vec::new(),
+            role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
         };
         state.users.write().await.insert(uid, user);
         let token = uuid::Uuid::new_v4().to_string();

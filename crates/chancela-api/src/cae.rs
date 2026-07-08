@@ -48,8 +48,11 @@ use serde_json::json;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+use chancela_authz::{Permission, Scope};
+
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::require_permission;
 use crate::error::ApiError;
 use crate::settings::CatalogSettings;
 
@@ -234,8 +237,11 @@ const MAX_SEARCH_LIMIT: usize = 500;
 pub async fn get_cae(
     State(state): State<AppState>,
     Path(code): Path<String>,
+    actor: CurrentActor,
     Query(query): Query<CaeLookupQuery>,
 ) -> Result<Json<CaeEntryView>, ApiError> {
+    // RBAC (t64-E3): the CAE reference is `cae.read` at Global.
+    require_permission(&state, &actor, Permission::CaeRead, Scope::Global).await?;
     let cae = state.cae.read().await;
     let entry = cae
         .lookup(&code, query.revision)
@@ -252,8 +258,13 @@ pub async fn get_cae(
 /// nodes (no hierarchy); without it, the active catalog's metadata ([`CaeCatalogView`]).
 pub async fn list_cae(
     State(state): State<AppState>,
+    actor: CurrentActor,
     Query(query): Query<CaeListQuery>,
 ) -> Response {
+    // RBAC (t64-E3): the CAE reference is `cae.read` at Global.
+    if let Err(e) = require_permission(&state, &actor, Permission::CaeRead, Scope::Global).await {
+        return e.into_response();
+    }
     let cae = state.cae.read().await;
     match query.search.as_deref().map(str::trim) {
         Some(search) if !search.is_empty() => {
@@ -277,8 +288,11 @@ pub async fn list_cae(
 /// [`CaeNodeView`] (`code`, `designation`, `level`, `revision`).
 pub async fn list_sections(
     State(state): State<AppState>,
+    actor: CurrentActor,
     Query(query): Query<CaeRevisionQuery>,
-) -> Json<Vec<CaeNodeView>> {
+) -> Result<Json<Vec<CaeNodeView>>, ApiError> {
+    // RBAC (t64-E3): the CAE reference is `cae.read` at Global.
+    require_permission(&state, &actor, Permission::CaeRead, Scope::Global).await?;
     let cae = state.cae.read().await;
     let revision = query.revision.unwrap_or(CaeRevision::Rev4);
     // Secções are exactly the single-letter top-level codes (A..V in Rev.4, A..U in Rev.3); walk the
@@ -288,7 +302,7 @@ pub async fn list_sections(
         .filter(|e| e.level == CaeLevel::Seccao)
         .map(CaeNodeView::from)
         .collect();
-    Json(sections)
+    Ok(Json(sections))
 }
 
 /// `GET /v1/cae/{code}/children` `?revision=Rev3|Rev4` — the direct children of a code within a
@@ -297,8 +311,11 @@ pub async fn list_sections(
 pub async fn list_children(
     State(state): State<AppState>,
     Path(code): Path<String>,
+    actor: CurrentActor,
     Query(query): Query<CaeRevisionQuery>,
 ) -> Result<Json<Vec<CaeNodeView>>, ApiError> {
+    // RBAC (t64-E3): the CAE reference is `cae.read` at Global.
+    require_permission(&state, &actor, Permission::CaeRead, Scope::Global).await?;
     let cae = state.cae.read().await;
     let revision = query.revision.unwrap_or(CaeRevision::Rev4);
     // 404 only when the code itself is unknown in this revision; a known leaf has [] children.
@@ -340,6 +357,8 @@ pub async fn refresh_cae(
     actor: CurrentActor,
     attestor: CurrentAttestor,
 ) -> Result<Response, ApiError> {
+    // RBAC (t64-E3): forcing a CAE refresh is `cae.refresh` at Global.
+    require_permission(&state, &actor, Permission::CaeRefresh, Scope::Global).await?;
     let data_dir = state.data_dir();
 
     // Legacy injected single-source seam (back-compat): an injected `CaeSource` runs the original
@@ -434,7 +453,12 @@ async fn run_chain(
 /// compares against the embedded dataset from the Ferramentas panel. Not cached.
 ///
 /// SMI unreachable / unparseable, or a catalog missing either current CAE revision, is a `502`.
-pub async fn cae_updates(State(state): State<AppState>) -> Result<Json<CaeUpdatesView>, ApiError> {
+pub async fn cae_updates(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<CaeUpdatesView>, ApiError> {
+    // RBAC (t64-E3): the CAE update signal is `cae.read` at Global.
+    require_permission(&state, &actor, Permission::CaeRead, Scope::Global).await?;
     // Point at the test fixture server when injected, else the official INE SMI host.
     let source = match &state.smi_base_override {
         Some(base) => SmiSource::with_base_url(base.as_str()),

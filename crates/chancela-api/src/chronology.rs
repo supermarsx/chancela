@@ -15,8 +15,11 @@ use chancela_registry::chronology::{Chronology, ChronologyEvent, ChronologyKind}
 use serde::Serialize;
 use uuid::Uuid;
 
+use chancela_authz::Permission;
+
 use crate::AppState;
 use crate::actor::CurrentActor;
+use crate::authz::{require_permission, scope_of_entity};
 use crate::error::ApiError;
 
 /// Wire view of one normalized timeline event. `kind` is the bare [`ChronologyKind`] variant name
@@ -102,8 +105,15 @@ fn kind_name(kind: ChronologyKind) -> &'static str {
 pub async fn get_entity_chronology(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    _actor: CurrentActor,
+    actor: CurrentActor,
 ) -> Result<Json<ChronologyView>, ApiError> {
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityRead,
+        scope_of_entity(EntityId(id)),
+    )
+    .await?;
     let extracts = state.registry_extracts.read().await;
     let extract = extracts.get(&EntityId(id)).ok_or(ApiError::NotFound)?;
     Ok(Json(ChronologyView::build(extract)))
@@ -148,7 +158,15 @@ mod tests {
 
     async fn auth_token(state: &AppState) -> String {
         use crate::users::{User, UserId};
+        use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
         use time::format_description::well_known::Rfc3339;
+        // RBAC (t64-E3): seed the catalog + make the test actor Owner\@Global so gated endpoints pass.
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
         let uid = UserId(uuid::Uuid::new_v4());
         let user = User {
             id: uid,
@@ -162,7 +180,7 @@ mod tests {
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
-            role_assignments: Vec::new(),
+            role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
         };
         state.users.write().await.insert(uid, user);
         let token = uuid::Uuid::new_v4().to_string();

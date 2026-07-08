@@ -10,11 +10,13 @@
 
 use axum::Json;
 use axum::extract::State;
+use chancela_authz::{Permission, Scope};
 use chancela_store::{BackupManifest, StoreError};
 use serde_json::json;
 
 use crate::AppState;
 use crate::actor::CurrentActor;
+use crate::authz::require_permission;
 use crate::error::ApiError;
 
 /// The `422` body when a backup is requested without on-disk persistence (frozen §3.2).
@@ -25,6 +27,8 @@ pub async fn create_backup(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<BackupManifest>, ApiError> {
+    // RBAC (t64-E3): taking a hot backup is `data.backup` at Global.
+    require_permission(&state, &actor, Permission::DataBackup, Scope::Global).await?;
     // In-memory mode: nothing durable to snapshot → 422 (mirrors `law.rs`'s no-data-dir 422).
     let Some(store) = state.store.clone() else {
         return Err(ApiError::Unprocessable(NOT_PERSISTENT_MSG.to_owned()));

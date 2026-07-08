@@ -15,8 +15,11 @@ use chancela_core::{
 };
 use uuid::Uuid;
 
+use chancela_authz::Permission;
+
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{require_permission, scope_of_book, scope_of_entity};
 use crate::dto::{ActView, BookView, BooksQuery, CloseBook, CreateBook};
 use crate::error::ApiError;
 
@@ -29,8 +32,16 @@ pub async fn create_book(
 ) -> Result<(StatusCode, Json<BookView>), ApiError> {
     // Fail fast on a bad date before taking any lock or minting a book.
     let opening_date = crate::dto::parse_date(&req.opening_date)?;
-    let actor = actor.resolve(&req.actor);
     let entity_id = EntityId(req.entity_id);
+    // RBAC (t64-E3): opening a book is scoped to the owning entity (resolved from the body).
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookOpen,
+        scope_of_entity(entity_id),
+    )
+    .await?;
+    let actor = actor.resolve(&req.actor);
 
     // entities → books → ledger.
     let entities = state.entities.read().await;
@@ -110,26 +121,40 @@ pub async fn create_book(
     Ok((StatusCode::CREATED, Json(view)))
 }
 
-/// `GET /v1/books?entity_id=` — list books, optionally filtered to one entity.
+/// `GET /v1/books?entity_id=` — list books the caller may read (RBAC list-filtering, plan §3.3
+/// note²): requires a valid session and returns only rows the caller holds `book.read` at (a Global
+/// reader sees all; a scoped reader only their entity/book), in addition to the optional `entity_id`
+/// query filter. No enumeration of unreadable rows.
 pub async fn list_books(
     State(state): State<AppState>,
     Query(q): Query<BooksQuery>,
-) -> Json<Vec<BookView>> {
+    actor: CurrentActor,
+) -> Result<Json<Vec<BookView>>, ApiError> {
+    let authz = crate::authz::authorizer(&state, &actor).await?;
     let books = state.books.read().await;
     let filter = q.entity_id.map(EntityId);
     let views = books
         .values()
         .filter(|b| filter.is_none_or(|eid| b.entity_id == eid))
+        .filter(|b| authz.permits(Permission::BookRead, scope_of_book(b.id)))
         .map(BookView::from)
         .collect();
-    Json(views)
+    Ok(Json(views))
 }
 
-/// `GET /v1/books/{id}` — one book, or `404`.
+/// `GET /v1/books/{id}` — one book, or `404`. RBAC (t64-E3): `book.read` scoped to the book.
 pub async fn get_book(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Json<BookView>, ApiError> {
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookRead,
+        scope_of_book(BookId(id)),
+    )
+    .await?;
     let books = state.books.read().await;
     books
         .get(&BookId(id))
@@ -145,6 +170,14 @@ pub async fn close_book(
     attestor: CurrentAttestor,
     Json(req): Json<CloseBook>,
 ) -> Result<Json<BookView>, ApiError> {
+    // RBAC (t64-E3): closing a book is scoped to the book.
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookClose,
+        scope_of_book(BookId(id)),
+    )
+    .await?;
     let closing_date = crate::dto::parse_date(&req.closing_date)?;
     let actor = actor.resolve(&req.actor);
 
@@ -233,8 +266,11 @@ pub async fn close_book(
 pub async fn list_book_acts(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Json<Vec<ActView>>, ApiError> {
     let book_id = BookId(id);
+    // RBAC (t64-E3): reading a book's acts is `book.read` scoped to the book.
+    require_permission(&state, &actor, Permission::BookRead, scope_of_book(book_id)).await?;
     // books → acts.
     let books = state.books.read().await;
     if !books.contains_key(&book_id) {

@@ -8,5 +8,8 @@
     "has_secret": false,
     "has_attestation_key": false,
     "has_recovery_phrase": false
-  }
+  },
+  "permissions": [
+    { "permission": "act.advance", "scope": { "kind": "global" }, "source": "role" }
+  ]
 }

@@ -60,11 +60,13 @@ use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+use chancela_authz::Permission;
 use chancela_core::ActId;
 
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::actor::CurrentAttestor;
+use crate::authz::{require_permission, scope_of_act};
 use crate::error::ApiError;
 
 /// The signing family this module produces (v1 is CMD-only; t57 ruling 2).
@@ -198,6 +200,9 @@ pub async fn initiate_cmd_signature(
     actor: CurrentActor,
     Json(req): Json<CmdInitiateRequest>,
 ) -> Result<Json<CmdInitiateResponse>, ApiError> {
+    // RBAC (t64-E3): a qualified signature is `signing.perform` scoped to the act's book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
     let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
     // Hold the PIN transiently: consumed by cmd_initiate, then zeroized on drop. Never stored/logged.
     let pin = Zeroizing::new(req.pin);
@@ -334,6 +339,9 @@ pub async fn confirm_cmd_signature(
     attestor: CurrentAttestor,
     Json(req): Json<CmdConfirmRequest>,
 ) -> Result<Json<CmdConfirmResponse>, ApiError> {
+    // RBAC (t64-E3): confirming a qualified signature is `signing.perform` scoped to the act's book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
     let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
     let otp = Zeroizing::new(req.otp);
     let act_id = ActId(id);
@@ -481,7 +489,11 @@ pub async fn confirm_cmd_signature(
 pub async fn get_signature_status(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Json<SignatureStatusView>, ApiError> {
+    // RBAC (t64-E3): reading signature status is `act.read` scoped to the act's book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
     let act_id = ActId(id);
     let sealed = {
         let acts = state.acts.read().await;
@@ -546,7 +558,11 @@ pub async fn get_signature_status(
 pub async fn get_signed_document_pdf(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Response, ApiError> {
+    // RBAC (t64-E3): reading the signed PDF is `act.read` scoped to the act's book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
     let signed = load_signed(&state, ActId(id))
         .await?
         .ok_or(ApiError::NotFound)?;

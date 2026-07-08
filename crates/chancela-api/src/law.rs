@@ -41,8 +41,11 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
+use chancela_authz::{Permission, Scope};
+
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::require_permission;
 use crate::error::ApiError;
 
 // --- Manifest -----------------------------------------------------------------------------
@@ -302,13 +305,18 @@ impl LawEntryView {
 /// `GET /v1/law` — the curated manifest merged with the archive state (per entry: `stored`,
 /// `stored_digest`, `stored_bytes`, `retrieved_at`). Works with or without persistence; in memory
 /// every entry reports `stored: false`.
-pub async fn list_law(State(state): State<AppState>) -> Json<Vec<LawEntryView>> {
+pub async fn list_law(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<LawEntryView>>, ApiError> {
+    // RBAC (t64-E3): the law archive is `law.read` at Global.
+    require_permission(&state, &actor, Permission::LawRead, Scope::Global).await?;
     let store = state.law_store.read().await;
     let views = LAW_MANIFEST
         .iter()
         .map(|e| LawEntryView::new(e, store.entries.get(e.id)))
         .collect();
-    Json(views)
+    Ok(Json(views))
 }
 
 /// `POST /v1/law/{id}/fetch` — download the entry's pinned PDF into the archive.
@@ -324,6 +332,8 @@ pub async fn fetch_law(
     actor: CurrentActor,
     attestor: CurrentAttestor,
 ) -> Result<Json<LawEntryView>, ApiError> {
+    // RBAC (t64-E3): fetching a diploma PDF into the archive is `law.manage` at Global.
+    require_permission(&state, &actor, Permission::LawManage, Scope::Global).await?;
     let entry = manifest_entry(&id).ok_or(ApiError::NotFound)?;
     // The 409 gate is a manifest property: this diploma has no pinned official PDF to archive.
     if entry.pdf_url.is_none() {
@@ -405,7 +415,10 @@ pub async fn fetch_law(
 pub async fn get_law_pdf(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    actor: CurrentActor,
 ) -> Result<Response, ApiError> {
+    // RBAC (t64-E3): reading an archived diploma PDF is `law.read` at Global.
+    require_permission(&state, &actor, Permission::LawRead, Scope::Global).await?;
     let entry = manifest_entry(&id).ok_or(ApiError::NotFound)?;
     let laws_dir = state.laws_dir.as_ref().ok_or(ApiError::NotFound)?;
     // Only serve what the state records as stored (guards against a stray file).
@@ -432,6 +445,8 @@ pub async fn delete_law_pdf(
     actor: CurrentActor,
     attestor: CurrentAttestor,
 ) -> Result<Json<LawEntryView>, ApiError> {
+    // RBAC (t64-E3): removing an archived diploma PDF is `law.manage` at Global.
+    require_permission(&state, &actor, Permission::LawManage, Scope::Global).await?;
     let entry = manifest_entry(&id).ok_or(ApiError::NotFound)?;
     let laws_dir = state
         .laws_dir

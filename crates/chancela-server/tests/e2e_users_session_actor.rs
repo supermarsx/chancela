@@ -20,8 +20,10 @@ use serde_json::{Value, json};
 async fn users_session_actor_and_persistence_across_restart() {
     let mut h = ServerHarness::start().await;
 
-    // A user profile, fetchable by id.
+    // A user profile, fetchable by id. RBAC (t64-E3): reading a profile is `user.read`, so sign in
+    // first (the bootstrap first user is Owner\@Global; open_session records the auto-auth token).
     let user_id = create_user(&h, "amelia.marques", "Amélia Marques").await;
+    let token = open_session(&h, &user_id).await;
     let (status, got) = h.get_json(&format!("/v1/users/{user_id}")).await;
     assert_eq!(status, 200);
     assert_eq!(got["username"], "amelia.marques");
@@ -31,11 +33,10 @@ async fn users_session_actor_and_persistence_across_restart() {
     );
 
     // A session resolves the user behind the header; without it the current user is null.
-    let token = open_session(&h, &user_id).await;
     let (status, sess) = h.get_json_auth("/v1/session", &token).await;
     assert_eq!(status, 200);
     assert_eq!(sess["user"]["username"], "amelia.marques");
-    let (status, anon) = h.get_json("/v1/session").await;
+    let (status, anon) = h.get_json_noauth("/v1/session").await;
     assert_eq!(status, 200);
     assert_eq!(anon["user"], Value::Null);
 

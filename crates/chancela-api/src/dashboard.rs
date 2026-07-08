@@ -2,13 +2,22 @@
 
 use axum::Json;
 use axum::extract::State;
+use chancela_authz::{Permission, Scope};
 use chancela_core::{ActState, BookState, Severity, rule_pack_for};
 
 use crate::AppState;
+use crate::actor::CurrentActor;
+use crate::authz::require_permission;
 use crate::dto::{DashboardResponse, LedgerEventView};
+use crate::error::ApiError;
 
 /// `GET /v1/dashboard` — aggregate counts and the last ten ledger events.
-pub async fn dashboard(State(state): State<AppState>) -> Json<DashboardResponse> {
+pub async fn dashboard(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<DashboardResponse>, ApiError> {
+    // RBAC (t64-E3): the dashboard aggregates act data → `act.read` at Global.
+    require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
     // entities → books → acts → ledger (read locks; the global order).
     let entities = state.entities.read().await;
     let books = state.books.read().await;
@@ -61,7 +70,7 @@ pub async fn dashboard(State(state): State<AppState>) -> Json<DashboardResponse>
     let start = events.len().saturating_sub(10);
     let recent_events = events[start..].iter().map(LedgerEventView::from).collect();
 
-    Json(DashboardResponse {
+    Ok(Json(DashboardResponse {
         entities: entities.len(),
         books_open,
         books_total: books.len(),
@@ -73,5 +82,5 @@ pub async fn dashboard(State(state): State<AppState>) -> Json<DashboardResponse>
         ledger_length,
         ledger_valid,
         recent_events,
-    })
+    }))
 }

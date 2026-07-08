@@ -33,8 +33,11 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
+use chancela_authz::{Permission, Scope};
+
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{require_permission, scope_of_act};
 use crate::dto::{format_date, format_time};
 use crate::error::ApiError;
 
@@ -425,8 +428,12 @@ pub struct PreviewQuery {
 pub async fn preview_document(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
     Query(q): Query<PreviewQuery>,
 ) -> Result<Json<DocumentModel>, ApiError> {
+    // RBAC (t64-E3): previewing an act's document is `act.read` scoped to its book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
     // entities → books → acts (read order prefix).
     let entities = state.entities.read().await;
     let books = state.books.read().await;
@@ -504,6 +511,9 @@ pub async fn generate_document(
     attestor: CurrentAttestor,
     Query(q): Query<GenerateQuery>,
 ) -> Result<Response, ApiError> {
+    // RBAC (t64-E3): generating a document is `document.generate` scoped to the act's book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::DocumentGenerate, scope).await?;
     let actor = actor.resolve("api");
     // Unknown template id → 404 before touching any lock.
     let spec = registry().get(&q.template_id).ok_or(ApiError::NotFound)?;
@@ -572,7 +582,11 @@ pub async fn generate_document(
 pub async fn get_document_pdf(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Response, ApiError> {
+    // RBAC (t64-E3): reading an act's document is `act.read` scoped to its book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
     let doc = load_document(&state, ActId(id))
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -639,8 +653,12 @@ pub struct BundleAttachment {
 pub async fn get_document_bundle(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    actor: CurrentActor,
 ) -> Result<Json<DocumentBundle>, ApiError> {
     let act_id = ActId(id);
+    // RBAC (t64-E3): reading an act's preservation bundle is `act.read` scoped to its book.
+    let scope = scope_of_act(&state, act_id).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
     let doc = load_document(&state, act_id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -711,7 +729,13 @@ impl From<&TemplateSpec> for TemplateSummary {
 
 /// `GET /v1/templates?family=&stage=` — available template summaries (id/family/stage/locale) for
 /// the picker. Both filters optional.
-pub async fn list_templates(Query(q): Query<TemplatesQuery>) -> Json<Vec<TemplateSummary>> {
+pub async fn list_templates(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Query(q): Query<TemplatesQuery>,
+) -> Result<Json<Vec<TemplateSummary>>, ApiError> {
+    // RBAC (t64-E3): the template catalog is `act.read` at Global (drives ata drafting).
+    require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
     let reg = registry();
     let summaries: Vec<TemplateSummary> = match (q.family, q.stage) {
         (Some(family), Some(stage)) => reg
@@ -727,7 +751,7 @@ pub async fn list_templates(Query(q): Query<TemplatesQuery>) -> Json<Vec<Templat
             .map(TemplateSummary::from)
             .collect(),
     };
-    Json(summaries)
+    Ok(Json(summaries))
 }
 
 #[cfg(test)]
