@@ -152,6 +152,8 @@ export const itIT: Catalog = {
   'window.restore': 'Ripristina',
   'window.maximize': 'Ingrandisci',
   'window.close': 'Chiudi',
+  'window.alwaysOnTop': 'Mantieni sempre in primo piano',
+  'window.alwaysOnTop.active': 'Sempre in primo piano: attivo',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Si è verificato un errore',

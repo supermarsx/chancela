@@ -151,6 +151,8 @@ export const fiFI: Catalog = {
   'window.restore': 'Palauta',
   'window.maximize': 'Suurenna',
   'window.close': 'Sulje',
+  'window.alwaysOnTop': 'Pidä aina päällimmäisenä',
+  'window.alwaysOnTop.active': 'Aina päällimmäisenä: käytössä',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Tapahtui virhe',

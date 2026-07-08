@@ -150,6 +150,8 @@ export const daDK: Catalog = {
   'window.restore': 'Gendan',
   'window.maximize': 'Maksimér',
   'window.close': 'Luk',
+  'window.alwaysOnTop': 'Behold altid øverst',
+  'window.alwaysOnTop.active': 'Altid øverst: til',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Der opstod en fejl',

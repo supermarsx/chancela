@@ -151,6 +151,8 @@ export const plPL: Catalog = {
   'window.restore': 'Przywróć',
   'window.maximize': 'Maksymalizuj',
   'window.close': 'Zamknij',
+  'window.alwaysOnTop': 'Zawsze na wierzchu',
+  'window.alwaysOnTop.active': 'Zawsze na wierzchu: wł.',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Coś poszło nie tak',

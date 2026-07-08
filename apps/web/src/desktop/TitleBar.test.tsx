@@ -10,6 +10,7 @@ vi.mock('@tauri-apps/api/window', () => ({
     minimize: vi.fn(),
     toggleMaximize: vi.fn(),
     close: vi.fn(),
+    setAlwaysOnTop: vi.fn(),
   }),
 }));
 
@@ -42,10 +43,10 @@ describe('TitleBar', () => {
     // drag instead of swallowing the gesture.
     expect(bar?.getAttribute('data-tauri-drag-region')).toBe('deep');
 
-    // The min/max/close controls must NOT carry the attribute — Tauri
+    // The always-on-top / min / max / close controls must NOT carry the attribute — Tauri
     // auto-excludes clickable elements so their clicks are never hijacked.
     const buttons = container.querySelectorAll('button');
-    expect(buttons.length).toBe(3);
+    expect(buttons.length).toBe(4);
     buttons.forEach((b) => expect(b.hasAttribute('data-tauri-drag-region')).toBe(false));
   });
 });

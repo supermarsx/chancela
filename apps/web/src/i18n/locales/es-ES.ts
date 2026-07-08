@@ -151,6 +151,8 @@ export const esES: Catalog = {
   'window.restore': 'Restaurar',
   'window.maximize': 'Maximizar',
   'window.close': 'Cerrar',
+  'window.alwaysOnTop': 'Mantener siempre visible',
+  'window.alwaysOnTop.active': 'Siempre visible: activado',
 
   // --- Pantalla de error ---------------------------------------------------------
   'crash.title': 'Se ha producido un error',

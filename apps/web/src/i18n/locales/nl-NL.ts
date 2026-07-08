@@ -149,6 +149,8 @@ export const nlNL: Catalog = {
   'window.restore': 'Herstellen',
   'window.maximize': 'Maximaliseren',
   'window.close': 'Sluiten',
+  'window.alwaysOnTop': 'Altijd op de voorgrond',
+  'window.alwaysOnTop.active': 'Altijd op de voorgrond: aan',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Er is iets misgegaan',

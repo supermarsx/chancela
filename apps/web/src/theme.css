@@ -688,7 +688,15 @@ a.btn.btn--icon {
   position: fixed;
   z-index: 2200;
   pointer-events: none;
-  white-space: nowrap;
+  /* Wrap long labels instead of running off-screen on one line (t73 regression fix): after
+     t71 portaled the bubble to <body> as position:fixed, a `nowrap` label had nothing to
+     bound it, so multi-word tooltips overflowed the viewport. Cap the width to the viewport
+     (minus a small margin) and let text wrap; short labels still shrink-to-fit onto one
+     line. The JS in Tooltip.tsx measures this wrapped box and clamps its centred edge into
+     view, so a wide bubble near a screen edge stays fully visible. */
+  white-space: normal;
+  max-width: min(20rem, calc(100vw - 2rem));
+  overflow-wrap: anywhere;
   font-family: var(--font-sans);
   font-size: 0.68rem;
   letter-spacing: 0.06em;
@@ -1422,6 +1430,17 @@ body {
 .titlebar__btn--close:hover {
   background: #c42b1c;
   color: #fff;
+}
+
+/* Active state for the always-on-top toggle: accent the glyph + a soft gilt wash so the
+   "pinned above" mode reads at a glance (pairs with `aria-pressed` for assistive tech). */
+.titlebar__btn[aria-pressed='true'] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.titlebar__btn[aria-pressed='true']:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 /* ============================================================================
@@ -4030,6 +4049,12 @@ input[type='radio']:disabled {
 
 .onboarding__card {
   width: min(34rem, 100%);
+  /* Vertically centred in the scroll viewport via auto margins rather than the parent's
+     `align-items` — auto margins centre when the card fits AND collapse to zero (falling
+     back to the container's flex-start, i.e. top-anchored + scrollable) when it is taller
+     than the viewport, so a short window scrolls the whole card into reach instead of
+     clipping its head. The parent keeps `align-items: flex-start` for exactly this reason. */
+  margin: auto;
   padding: clamp(1.5rem, 4vw, 2.5rem);
   border: 1px solid var(--border);
   border-top: 3px solid var(--accent-strong);

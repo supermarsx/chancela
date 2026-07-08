@@ -151,6 +151,8 @@ export const enUS: Catalog = {
   'window.restore': 'Restore',
   'window.maximize': 'Maximize',
   'window.close': 'Close',
+  'window.alwaysOnTop': 'Keep on top',
+  'window.alwaysOnTop.active': 'Always on top: on',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Something went wrong',

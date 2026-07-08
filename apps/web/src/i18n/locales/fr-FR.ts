@@ -152,6 +152,8 @@ export const frFR: Catalog = {
   'window.restore': 'Restaurer',
   'window.maximize': 'Agrandir',
   'window.close': 'Fermer',
+  'window.alwaysOnTop': 'Toujours au premier plan',
+  'window.alwaysOnTop.active': 'Toujours au premier plan : activé',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Une erreur est survenue',

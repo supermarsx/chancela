@@ -86,16 +86,38 @@ export function Tooltip({ label, placement = 'top', variant = 'label', children 
   const id = useId();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLSpanElement>(null);
+  const bubbleRef = useRef<HTMLSpanElement>(null);
   const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
 
   const show = () => setOpen(true);
   const hide = () => setOpen(false);
 
-  // Pin the fixed bubble to the trigger's current viewport box.
+  // Pin the fixed bubble to the trigger's current viewport box, then clamp its CENTRED axis
+  // so a wide/tall wrapped bubble near a screen edge stays fully in view. The CSS transform
+  // centres the bubble on this anchor point (translate(-50%) on the placement's cross axis),
+  // so we measure the bubble's REAL post-wrap box — width capped by the `max-width` set in
+  // `.tooltip__bubble` — and slide the anchor in by any overflow. Only the centred axis is
+  // clamped; the leading axis carries the trigger gap and must not move onto the trigger.
   const reposition = useCallback(() => {
     const el = anchorRef.current;
     if (!el) return;
     const next = anchorPoint(el.getBoundingClientRect(), placement);
+    const bubble = bubbleRef.current;
+    if (bubble) {
+      const box = bubble.getBoundingClientRect();
+      const margin = 8;
+      if (placement === 'top' || placement === 'bottom') {
+        const half = box.width / 2;
+        const min = margin + half;
+        const max = window.innerWidth - margin - half;
+        if (min <= max) next.left = Math.min(Math.max(next.left, min), max);
+      } else {
+        const half = box.height / 2;
+        const min = margin + half;
+        const max = window.innerHeight - margin - half;
+        if (min <= max) next.top = Math.min(Math.max(next.top, min), max);
+      }
+    }
     setCoords((prev) => (prev && prev.left === next.left && prev.top === next.top ? prev : next));
   }, [placement]);
 
@@ -142,6 +164,7 @@ export function Tooltip({ label, placement = 'top', variant = 'label', children 
   const bubble = (
     <span
       id={id}
+      ref={bubbleRef}
       role="tooltip"
       style={bubbleStyle}
       className={`tooltip__bubble tooltip__bubble--${placement}${

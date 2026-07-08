@@ -150,6 +150,8 @@ export const enGB: Catalog = {
   'window.restore': 'Restore',
   'window.maximize': 'Maximise',
   'window.close': 'Close',
+  'window.alwaysOnTop': 'Keep on top',
+  'window.alwaysOnTop.active': 'Always on top: on',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Something went wrong',

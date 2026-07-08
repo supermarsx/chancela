@@ -106,6 +106,38 @@ describe('Tooltip', () => {
     );
   });
 
+  it('clamps a wide wrapped bubble so its centred edge stays within the viewport', () => {
+    render(
+      <Tooltip label="Uma etiqueta muito comprida que deveria quebrar em várias linhas">
+        <button type="button">alvo</button>
+      </Tooltip>,
+    );
+    const trigger = screen.getByRole('button');
+    const bubble = screen.getByRole('tooltip');
+    const wrapper = document.querySelector('.tooltip') as HTMLElement;
+
+    const origWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 });
+    const rect = (r: Partial<DOMRect>) => () => ({ toJSON: () => ({}), ...r }) as DOMRect;
+    // Trigger hugging the right edge; its centre is at 1000 (980 + 40/2). A 320px-wide
+    // wrapped bubble centred there would spill off-screen (right edge at 1160).
+    wrapper.getBoundingClientRect = rect({
+      left: 980,
+      right: 1020,
+      width: 40,
+      top: 40,
+      height: 20,
+    });
+    bubble.getBoundingClientRect = rect({ left: 0, right: 320, width: 320, top: 0, height: 40 });
+
+    fireEvent.focus(trigger);
+
+    // Clamped to innerWidth - margin(8) - halfWidth(160) = 832, so the box's right edge lands
+    // at 992 (< 1000) — fully visible instead of overflowing.
+    expect(bubble.style.left).toBe('832px');
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: origWidth });
+  });
+
   it('adds the prose modifier for the wrapping-sentence variant (FieldHelp)', () => {
     render(
       <Tooltip label="Explicação longa" variant="prose">

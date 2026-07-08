@@ -151,6 +151,8 @@ export const ptBR: Catalog = {
   'window.restore': 'Restaurar',
   'window.maximize': 'Maximizar',
   'window.close': 'Fechar',
+  'window.alwaysOnTop': 'Manter sempre à frente',
+  'window.alwaysOnTop.active': 'Sempre à frente: ativado',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Ocorreu um erro',

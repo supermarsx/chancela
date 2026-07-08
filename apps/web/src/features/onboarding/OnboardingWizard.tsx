@@ -213,7 +213,10 @@ export function OnboardingWizard() {
                 <Button type="button" variant="ghost" onClick={() => setStep('welcome')}>
                   {t('onboarding.back')}
                 </Button>
-                <Button type="submit" variant="primary" disabled={org.trim().length === 0}>
+                {/* Org is optional (t73): the operator may advance — and finish onboarding —
+                    without naming an organisation. A blank org round-trips to the settings
+                    default (`organization.name: null`), so no validation gate here. */}
+                <Button type="submit" variant="primary">
                   {t('onboarding.next')}
                 </Button>
               </div>

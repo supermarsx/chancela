@@ -133,6 +133,36 @@ describe('OnboardingWizard', () => {
     });
   });
 
+  it('finishes onboarding with a blank organisation (org is optional, t73)', async () => {
+    const { fn, calls } = wizardStub();
+    vi.stubGlobal('fetch', fn);
+
+    renderWizard();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Começar' }));
+
+    // Org step: leave the field blank — "Seguinte" must be enabled and advance anyway.
+    const next = await screen.findByRole('button', { name: 'Seguinte' });
+    expect(next.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(next);
+
+    fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
+      target: { value: 'operador' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
+
+    // Skip the optional password → finish.
+    fireEvent.click(await screen.findByRole('button', { name: 'Ignorar' }));
+
+    expect(await screen.findByText('APP HOME')).toBeTruthy();
+
+    // The finish PUT still marks onboarding complete; the org falls back to the settings
+    // default (`null`) rather than blocking completion.
+    const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/v1/settings'));
+    expect(put?.body).toMatchObject({ onboarding: { completed: true } });
+    expect((put?.body as { organization: { name: unknown } }).organization.name).toBeNull();
+  });
+
   it('skips the optional password and still completes onboarding', async () => {
     const { fn, calls } = wizardStub();
     vi.stubGlobal('fetch', fn);

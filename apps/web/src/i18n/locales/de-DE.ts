@@ -153,6 +153,8 @@ export const deDE: Catalog = {
   'window.restore': 'Wiederherstellen',
   'window.maximize': 'Maximieren',
   'window.close': 'Schließen',
+  'window.alwaysOnTop': 'Immer im Vordergrund',
+  'window.alwaysOnTop.active': 'Immer im Vordergrund: an',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Ein Fehler ist aufgetreten',

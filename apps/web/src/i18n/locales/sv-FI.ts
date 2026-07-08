@@ -154,6 +154,8 @@ export const svFI: Catalog = {
   'window.restore': 'Återställ',
   'window.maximize': 'Maximera',
   'window.close': 'Stäng',
+  'window.alwaysOnTop': 'Håll alltid överst',
+  'window.alwaysOnTop.active': 'Alltid överst: på',
 
   // --- Crash screen --------------------------------------------------------------
   'crash.title': 'Något gick fel',
