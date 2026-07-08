@@ -23,3 +23,4 @@ apps/web/dist/
 *.log
 .DS_Store
 Thumbs.db
+SPEC-COVERAGE.md
