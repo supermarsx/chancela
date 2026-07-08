@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { Layout } from './layout';
 import { EntitiesPage } from '../features/entities/EntitiesPage';
@@ -61,6 +61,60 @@ describe('Layout', () => {
     ]) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy();
     }
+  });
+
+  it('re-keys the route-transition wrapper on navigation and gates it via the class', async () => {
+    // The page-enter motion is a single CSS animation on `.route-transition`; both
+    // kill-switches (prefers-reduced-motion + [data-safe-mode]) zero `animation` on that
+    // class, so asserting the class + the per-route re-key proves the structure without
+    // touching pixels: navigation swaps the keyed node (fresh mount ⇒ the enter replays),
+    // and the collapse is CSS-governed off the same class.
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/session/roster', body: { onboarding_required: false, users: [] } },
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        {
+          match: '/v1/session',
+          body: {
+            user: {
+              id: 'u1',
+              username: 'operador',
+              display_name: 'Operador',
+              created_at: '2026-07-08T00:00:00Z',
+              active: true,
+              has_secret: false,
+              has_attestation_key: false,
+            },
+          },
+        },
+        { match: '/v1', body: [] },
+      ]),
+    );
+    const { container } = renderWithProviders(
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<div>painel</div>} />
+          <Route path="entidades" element={<div>entidades</div>} />
+        </Route>
+      </Routes>,
+      ['/'],
+    );
+
+    await screen.findByText('painel');
+    const before = container.querySelector('.route-transition');
+    expect(before).not.toBeNull();
+    // The wrapper is keyed on the pathname (exposed as data-route-key for this assertion).
+    expect(before?.getAttribute('data-route-key')).toBe('/');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Entidades' }));
+    await screen.findByText('entidades');
+
+    const after = container.querySelector('.route-transition');
+    // Same class (the gating hook survives), new key ⇒ a fresh node that replays the enter.
+    expect(after?.classList.contains('route-transition')).toBe(true);
+    expect(after?.getAttribute('data-route-key')).toBe('/entidades');
+    expect(after).not.toBe(before);
   });
 });
 

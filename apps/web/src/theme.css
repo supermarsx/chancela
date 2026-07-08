@@ -1356,21 +1356,33 @@ body {
  * All of it collapses under prefers-reduced-motion.
  * ========================================================================== */
 
-/* Routed content fades + slides up briefly on each navigation (keyed on pathname
-   in Layout). ~220ms, editorial ease-out. */
+/* Routed content cross-fades + gently rises and settles on each navigation. The
+   wrapper is keyed on the pathname in Layout (and on the active id in the sub-tabbed
+   Configurações / Ferramentas panels), so it remounts and replays this enter on every
+   change. Tuned for a *perceptible-but-tasteful* read: 300ms — a touch longer than the
+   old 220ms so it registers as a deliberate settle rather than a pop — a 16px rise, and
+   a soft expo ease-out (fast to appear, a long decelerating settle). GPU-only: opacity
+   + `translate3d` (compositor-driven, no layout/reflow), Y-axis only so no horizontal
+   scrollbar can flash. `both` holds the `from` frame before start and the `to` frame
+   after, so there is no unstyled first paint and it rests cleanly at full opacity.
+
+   Collapses to instant under BOTH kill-switches: the global
+   `@media (prefers-reduced-motion: reduce)` block forces `animation-duration: 0.01ms`
+   (settles on the `to` frame immediately), and `:root[data-safe-mode='on']` forces
+   `animation: none` (renders at the natural resting state) — no motion escapes either. */
 .route-transition {
-  animation: route-enter 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation: route-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: opacity, transform;
 }
 
 @keyframes route-enter {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translate3d(0, 16px, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 

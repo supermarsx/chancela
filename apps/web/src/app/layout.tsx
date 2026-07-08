@@ -82,7 +82,11 @@ export function Layout() {
         <div className="app-scroll">
           <div className="app">
             <PageErrorBoundary key={pathname}>
-              <main className="route-transition">
+              {/* Keyed on the pathname so the routed content remounts and replays the
+                  `.route-transition` enter on every navigation. The key is set here on the
+                  wrapper itself (not left implicit in the boundary's remount) so the
+                  re-trigger is explicit; `data-route-key` exposes it for tests. */}
+              <main className="route-transition" key={pathname} data-route-key={pathname}>
                 <Outlet />
               </main>
             </PageErrorBoundary>
