@@ -216,6 +216,128 @@ pub struct DeliberationItem {
     pub statements: Vec<MemberStatement>,
 }
 
+/// The channel through which a convocatória (meeting notice) was dispatched — part of the
+/// TPL-20 dispatch-proof evidence. The statutory *minimum* antecedence for each channel is a
+/// legal threshold owned by the templates registry, **not** modelled here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DispatchChannel {
+    /// Carta registada.
+    RegisteredLetter,
+    /// Carta registada com aviso de receção.
+    RegisteredLetterAR,
+    /// Correio eletrónico.
+    Email,
+    /// Entrega em mão (contra recibo).
+    HandDelivery,
+    /// Publicação (e.g. site das publicações do MJ / imprensa).
+    Publication,
+    /// Portal / plataforma eletrónica da entidade.
+    Portal,
+}
+
+/// One recipient of the convocatória, with the individual dispatch proof (TPL-20).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConveningRecipient {
+    /// Recipient name.
+    pub name: String,
+    /// Channel this recipient was reached through, when it differs from the convening default.
+    #[serde(default)]
+    pub channel: Option<DispatchChannel>,
+    /// Dispatch reference (registered-letter tracking number, email id, receipt number, …).
+    #[serde(default)]
+    pub reference: Option<String>,
+    /// When the notice was dispatched to this recipient.
+    #[serde(default)]
+    pub dispatched_at: Option<Date>,
+}
+
+/// The **second convocation** of a meeting (condominium reduced-quorum 2.ª convocatória, CC
+/// art. 1432.º/4): the fallback session that may deliberate on a reduced quorum when the first
+/// call fails to gather one.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SecondCall {
+    /// Date of the second convocation.
+    #[serde(default)]
+    pub date: Option<Date>,
+    /// Time of the second convocation.
+    #[serde(default)]
+    pub time: Option<Time>,
+    /// Whether the second call deliberates on the statutory reduced quorum.
+    #[serde(default)]
+    pub reduced_quorum: bool,
+}
+
+/// The **convening** (convocatória) record: metadata about how the meeting the [`Act`]
+/// represents was called (spec gap G1). `antecedence_days` is the **actual** notice given —
+/// the statutory **minimum** is a legal threshold in the templates registry, never hardcoded
+/// here. Additive metadata; every field defaults so an act without a convening record (or with
+/// a partial one) round-trips unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Convening {
+    /// Who convened the meeting (the competent organ / person).
+    #[serde(default)]
+    pub convener: Option<String>,
+    /// The capacity in which the convener acted.
+    #[serde(default)]
+    pub convener_capacity: Option<SignatoryCapacity>,
+    /// When the notice was dispatched.
+    #[serde(default)]
+    pub dispatch_date: Option<Date>,
+    /// The **actual** notice given, in days (not the statutory minimum — that is a threshold).
+    #[serde(default)]
+    pub antecedence_days: Option<u16>,
+    /// The default dispatch channel for the convocatória.
+    #[serde(default)]
+    pub channel: Option<DispatchChannel>,
+    /// Per-recipient dispatch proof (TPL-20).
+    #[serde(default)]
+    pub recipients: Vec<ConveningRecipient>,
+    /// The reduced-quorum second convocation, when one was set (condominium).
+    #[serde(default)]
+    pub second_call: Option<SecondCall>,
+}
+
+/// How an attendee took part in the meeting (spec gap G2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PresenceMode {
+    /// Present in person.
+    InPerson,
+    /// Represented by a proxy / mandatário.
+    Represented,
+    /// Absent (recorded for the lista and for absent-owner communications, TPL-41).
+    Absent,
+}
+
+/// The voting weight an attendee carries. Companies weight by **capital**; condominiums weight
+/// by **permilagem** (millésimos). Weighted tallies themselves stay deferred (ENT-D6) — this
+/// carries the row datum, not the arithmetic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AttendanceWeight {
+    /// Represented capital, in minor units (e.g. cents).
+    Capital(u64),
+    /// Permilagem (‰), 0..=1000.
+    Permilage(u32),
+}
+
+/// One row of the structured **lista de presenças** (spec gap G2). Coexists with the
+/// [`Act::members_present`] / [`Act::members_represented`] counts, which remain the fallback;
+/// when `attendees` is non-empty a per-row list can be rendered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Attendee {
+    /// Attendee name.
+    pub name: String,
+    /// The capacity in which they attend (reuses the signatory capacity vocabulary).
+    pub quality: SignatoryCapacity,
+    /// Whether they were present in person, represented, or absent.
+    pub presence: PresenceMode,
+    /// When [`PresenceMode::Represented`], the proxy who stood in for them.
+    #[serde(default)]
+    pub represented_by: Option<String>,
+    /// The capital / permilagem this attendee carries, when weighted.
+    #[serde(default)]
+    pub weight: Option<AttendanceWeight>,
+}
+
 /// An **ata**. Mutable through the pre-seal states; frozen at sealing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Act {
@@ -274,6 +396,14 @@ pub struct Act {
     pub seal_event_seq: Option<u64>,
     /// When this act corrects an earlier sealed one, the retificação chain link (WFL-21).
     pub retifies: Option<ActId>,
+    /// The convening (convocatória) record for this meeting (spec gap G1). Additive and
+    /// **append-only**: defaults to `None` so acts predating this field round-trip unchanged.
+    #[serde(default)]
+    pub convening: Option<Convening>,
+    /// The structured lista de presenças (spec gap G2). Additive and **append-only**: defaults
+    /// to empty so acts predating this field round-trip unchanged.
+    #[serde(default)]
+    pub attendees: Vec<Attendee>,
 }
 
 impl Act {
@@ -303,6 +433,8 @@ impl Act {
             payload_digest: None,
             seal_event_seq: None,
             retifies: None,
+            convening: None,
+            attendees: Vec::new(),
         }
     }
 
@@ -514,5 +646,75 @@ mod tests {
         act.mark_sealed(1, [0u8; 32], 0).unwrap();
         act.archive().unwrap();
         assert_eq!(act.state, ActState::Archived);
+    }
+
+    #[test]
+    fn old_shape_act_without_convening_or_attendees_deserializes_to_defaults() {
+        // An act serialized before G1/G2 existed carries no `convening`/`attendees` keys.
+        // Simulate that by stripping the keys, then prove they deserialize to empty defaults
+        // and the value is otherwise unchanged (backward-compatible storage).
+        let act = draft();
+        let mut value = serde_json::to_value(&act).unwrap();
+        let obj = value.as_object_mut().unwrap();
+        obj.remove("convening");
+        obj.remove("attendees");
+        assert!(!obj.contains_key("convening"));
+        assert!(!obj.contains_key("attendees"));
+
+        let restored: Act = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.convening, None);
+        assert!(restored.attendees.is_empty());
+        // Everything round-trips: the defaulted act equals the original, and re-serializes
+        // identically.
+        assert_eq!(restored, act);
+        assert_eq!(
+            serde_json::to_string(&restored).unwrap(),
+            serde_json::to_string(&act).unwrap()
+        );
+    }
+
+    #[test]
+    fn act_with_convening_and_attendees_round_trips() {
+        use time::macros::{date, time};
+
+        let mut act = draft();
+        act.convening = Some(Convening {
+            convener: Some("Amélia Marques".into()),
+            convener_capacity: Some(SignatoryCapacity::Chair),
+            dispatch_date: Some(date!(2026 - 03 - 10)),
+            antecedence_days: Some(15),
+            channel: Some(DispatchChannel::RegisteredLetterAR),
+            recipients: vec![ConveningRecipient {
+                name: "Encosto Estratégico Lda".into(),
+                channel: Some(DispatchChannel::Email),
+                reference: Some("RR123456789PT".into()),
+                dispatched_at: Some(date!(2026 - 03 - 10)),
+            }],
+            second_call: Some(SecondCall {
+                date: Some(date!(2026 - 03 - 30)),
+                time: Some(time!(10:30)),
+                reduced_quorum: true,
+            }),
+        });
+        act.attendees = vec![
+            Attendee {
+                name: "Amélia Marques".into(),
+                quality: SignatoryCapacity::Member,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Capital(500_000)),
+            },
+            Attendee {
+                name: "Encosto Estratégico Lda".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Represented,
+                represented_by: Some("Amélia Marques".into()),
+                weight: Some(AttendanceWeight::Permilage(250)),
+            },
+        ];
+
+        let json = serde_json::to_string(&act).unwrap();
+        let restored: Act = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, act);
     }
 }

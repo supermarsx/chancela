@@ -15,8 +15,8 @@ use serde::Serialize;
 use chancela_ledger::Ledger;
 
 use crate::act::{
-    Act, ActState, AgendaItem, Attachment, DeliberationItem, DocumentReference, MeetingChannel,
-    Mesa, SignatorySlot,
+    Act, ActState, AgendaItem, Attachment, Attendee, Convening, DeliberationItem,
+    DocumentReference, MeetingChannel, Mesa, SignatorySlot,
 };
 use crate::book::{Book, TermoDeAbertura};
 use crate::entity::Entity;
@@ -66,6 +66,14 @@ struct ActPayload<'a> {
     deliberation_items: &'a [DeliberationItem],
     members_present: Option<u32>,
     members_represented: Option<u32>,
+    // G1/G2 (append-only). These are skipped from the preimage when empty — a convening of
+    // `None` and no attendees emit no bytes — so the digest of a pre-existing act (one carrying
+    // neither) is **byte-identical** to what it was before these fields existed. When either is
+    // populated it serializes and binds into the new seal's digest (R8).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    convening: Option<&'a Convening>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attendees: Option<&'a [Attendee]>,
 }
 
 impl<'a> ActPayload<'a> {
@@ -90,6 +98,8 @@ impl<'a> ActPayload<'a> {
             deliberation_items: &act.deliberation_items,
             members_present: act.members_present,
             members_represented: act.members_represented,
+            convening: act.convening.as_ref(),
+            attendees: (!act.attendees.is_empty()).then_some(act.attendees.as_slice()),
         }
     }
 }
@@ -580,5 +590,112 @@ mod tests {
         let mut counts_changed = base.clone();
         counts_changed.members_present = Some(7);
         assert_ne!(bytes(&base), bytes(&counts_changed), "counts must bind");
+    }
+
+    #[test]
+    fn g1_g2_bind_into_the_seal_digest_when_present() {
+        // R8: a populated convening record or attendance list must change the sealed preimage,
+        // so it is bound into the new seal's digest.
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let base = ready_act(&book);
+        let bytes = |a: &Act| serde_json::to_vec(&ActPayload::of(a)).unwrap();
+
+        let mut with_convening = base.clone();
+        with_convening.convening = Some(crate::act::Convening {
+            convener: Some("Amélia Marques".into()),
+            antecedence_days: Some(15),
+            ..Default::default()
+        });
+        assert_ne!(bytes(&base), bytes(&with_convening), "convening must bind");
+
+        let mut with_attendees = base.clone();
+        with_attendees.attendees = vec![crate::act::Attendee {
+            name: "Amélia Marques".into(),
+            quality: crate::act::SignatoryCapacity::Member,
+            presence: crate::act::PresenceMode::InPerson,
+            represented_by: None,
+            weight: Some(crate::act::AttendanceWeight::Permilage(250)),
+        }];
+        assert_ne!(bytes(&base), bytes(&with_attendees), "attendees must bind");
+    }
+
+    #[test]
+    fn digest_of_pre_existing_act_is_unchanged_by_g1_g2_fields() {
+        // The critical backward-compat guarantee: an act carrying neither a convening record
+        // nor structured attendees (i.e. one that predates G1/G2) must produce a preimage —
+        // and therefore a digest — **byte-identical** to what it produced before the fields
+        // were appended. Already-sealed acts thus stay chain-valid.
+        use sha2::{Digest, Sha256};
+
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let act = ready_act(&book);
+        assert!(act.convening.is_none() && act.attendees.is_empty());
+
+        // Faithful reconstruction of the ActPayload shape *before* G1/G2 were appended: the
+        // same fields, same declaration order, up to `members_represented`.
+        #[derive(Serialize)]
+        struct OldActPayload<'a> {
+            act_id: String,
+            book_id: String,
+            title: &'a str,
+            channel: MeetingChannel,
+            meeting_date: Option<time::Date>,
+            place: Option<&'a str>,
+            attendance_reference: Option<&'a str>,
+            deliberations: &'a str,
+            telematic_evidence: Option<&'a str>,
+            attachments: &'a [Attachment],
+            signatories: &'a [SignatorySlot],
+            retifies: Option<String>,
+            meeting_time: Option<time::Time>,
+            mesa: &'a Mesa,
+            agenda: &'a [AgendaItem],
+            referenced_documents: &'a [DocumentReference],
+            deliberation_items: &'a [DeliberationItem],
+            members_present: Option<u32>,
+            members_represented: Option<u32>,
+        }
+        let old = OldActPayload {
+            act_id: act.id.to_string(),
+            book_id: act.book_id.to_string(),
+            title: &act.title,
+            channel: act.channel,
+            meeting_date: act.meeting_date,
+            place: act.place.as_deref(),
+            attendance_reference: act.attendance_reference.as_deref(),
+            deliberations: &act.deliberations,
+            telematic_evidence: act.telematic_evidence.as_deref(),
+            attachments: &act.attachments,
+            signatories: &act.signatories,
+            retifies: act.retifies.map(|id| id.to_string()),
+            meeting_time: act.meeting_time,
+            mesa: &act.mesa,
+            agenda: &act.agenda,
+            referenced_documents: &act.referenced_documents,
+            deliberation_items: &act.deliberation_items,
+            members_present: act.members_present,
+            members_represented: act.members_represented,
+        };
+
+        let new_bytes = serde_json::to_vec(&ActPayload::of(&act)).unwrap();
+        let old_bytes = serde_json::to_vec(&old).unwrap();
+
+        // Preimage is byte-unchanged, and the empty G1/G2 fields emit nothing at all.
+        assert_eq!(new_bytes, old_bytes);
+        let json = String::from_utf8(new_bytes.clone()).unwrap();
+        assert!(
+            !json.contains("convening"),
+            "empty convening must not serialize"
+        );
+        assert!(
+            !json.contains("attendees"),
+            "empty attendees must not serialize"
+        );
+
+        // Byte-identical preimage ⇒ identical sha-256 digest (chain-valid).
+        assert_eq!(
+            Sha256::digest(&new_bytes).as_slice(),
+            Sha256::digest(&old_bytes).as_slice(),
+        );
     }
 }

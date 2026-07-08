@@ -34,9 +34,10 @@ pub mod rules;
 pub mod seal;
 
 pub use act::{
-    Act, ActId, ActState, AgendaItem, Attachment, AttachmentKind, DeliberationItem,
-    DocumentReference, MeetingChannel, MemberStatement, Mesa, SignatoryCapacity, SignatorySlot,
-    VoteResult,
+    Act, ActId, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
+    Convening, ConveningRecipient, DeliberationItem, DispatchChannel, DocumentReference,
+    MeetingChannel, MemberStatement, Mesa, PresenceMode, SecondCall, SignatoryCapacity,
+    SignatorySlot, VoteResult,
 };
 pub use book::{
     Book, BookId, BookKind, BookState, NumberingScheme, TermoDeAbertura, TermoDeEncerramento,
