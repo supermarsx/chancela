@@ -5946,6 +5946,80 @@ mod tests {
         );
     }
 
+    /// t64-E8 regression: deactivating the last **active** Owner\@Global is refused (409), even when
+    /// other active non-Owner users keep the last-active-user guard satisfied — otherwise the
+    /// instance would reach a no-super-user lockout (inactive Owners confer no authority and cannot
+    /// sign in to recover). Guards both `PATCH /v1/users/{id}` deactivation and the active-holder
+    /// count used by the unassign guard.
+    #[tokio::test]
+    async fn e8_deactivating_the_last_active_owner_is_refused() {
+        use chancela_authz::{LEITOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
+        let state = fresh_state().await;
+
+        let owner_a = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let owner_b = seed_user(
+            &state,
+            "bruno.dias",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        // A non-Owner active user keeps the last-ACTIVE-user guard from masking the Owner guard.
+        let _reader = seed_user(
+            &state,
+            "carla.nunes",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok_a = seed_session(&state, &owner_a.to_string()).await;
+
+        // Two active Owners ⇒ deactivating one is allowed (one active Owner remains).
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                patch_json(&format!("/v1/users/{owner_b}"), json!({ "active": false })),
+                &tok_a,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Now Amélia is the sole ACTIVE Owner; deactivating her (self) → 409, no lockout.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                patch_json(&format!("/v1/users/{owner_a}"), json!({ "active": false })),
+                &tok_a,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("err")
+                .contains("Proprietário")
+        );
+
+        // And unassigning her Owner@Global assignment is likewise refused (inactive Owner B must
+        // not satisfy the guard).
+        let owner_body =
+            json!({ "role_id": OWNER_ROLE_ID.0.to_string(), "scope": { "kind": "global" } });
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                body_json("DELETE", &format!("/v1/users/{owner_a}/roles"), owner_body),
+                &tok_a,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+
     #[tokio::test]
     async fn e4_delegation_grant_revoke_meta_and_redelegation_blocked() {
         use crate::delegations::{DelegationId, StoredDelegation};

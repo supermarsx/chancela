@@ -28,7 +28,10 @@ use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use chancela_authz::{Permission, Scope};
+use chancela_authz::{
+    Permission, RoleAssignment, Scope, UserId as AuthzUserId, count_owner_admin_holders,
+    last_owner_guard,
+};
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor, resolve_session_actor};
@@ -1135,6 +1138,28 @@ pub async fn patch_user(
                 return Err(ApiError::Conflict(
                     "não pode desativar o último utilizador ativo".to_owned(),
                 ));
+            }
+            // Last-Owner guard (t64 §5): deactivating the last ACTIVE administrative Owner
+            // (Owner@Global) would strip the instance of any super-user — an inactive user confers
+            // no authority and cannot sign in to recover, so the instance would be permanently
+            // un-administrable. Refuse (mirrors the unassign-Owner guard). Only active Owner holders
+            // count; the target is still active here, so being the sole active holder ⇒ blocked.
+            if target.active
+                && target
+                    .role_assignments
+                    .iter()
+                    .any(RoleAssignment::is_owner_admin)
+            {
+                let active_owner_holders =
+                    count_owner_admin_holders(users.values().filter(|u| u.active).flat_map(|u| {
+                        let uid = AuthzUserId(u.id.0);
+                        u.role_assignments.iter().map(move |a| (uid, a))
+                    }));
+                if !last_owner_guard(active_owner_holders) {
+                    return Err(ApiError::Conflict(
+                        "não pode desativar o último Proprietário".to_owned(),
+                    ));
+                }
             }
         }
         let user = users.get_mut(&UserId(id)).ok_or(ApiError::NotFound)?;

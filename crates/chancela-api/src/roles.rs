@@ -271,10 +271,14 @@ pub async fn effective_permissions_for_actor(
 // =================================================================================================
 
 /// Count the principals holding an **administrative Owner** assignment (Owner role @ `Global`)
-/// across all users. Deduplicates by principal. The input to [`last_owner_guard`].
+/// across all **active** users. Deduplicates by principal. The input to [`last_owner_guard`].
+///
+/// Only active users count: an inactive user confers no authority
+/// ([`effective_permissions_for`] returns an empty set for them), so an inactive Owner does not
+/// keep the instance administrable and must not satisfy the last-Owner guard.
 pub async fn count_owner_admins(state: &AppState) -> usize {
     let users = state.users.read().await;
-    let pairs = users.values().flat_map(|u| {
+    let pairs = users.values().filter(|u| u.active).flat_map(|u| {
         let uid = AuthzUserId(u.id.0);
         u.role_assignments.iter().map(move |a| (uid, a))
     });
@@ -705,12 +709,15 @@ pub async fn unassign_role(
             .ok_or(ApiError::NotFound)?
             .role_assignments
             .contains(&assignment);
-        // Last-Owner guard (checked under the write lock so two concurrent removals cannot both pass).
+        // Last-Owner guard (checked under the write lock so two concurrent removals cannot both
+        // pass). Only ACTIVE Owner@Global holders count — an inactive Owner confers no authority,
+        // so it must not satisfy the guard and let the last active Owner be removed.
         if holds && assignment.is_owner_admin() {
-            let holders = count_owner_admin_holders(users.values().flat_map(|u| {
-                let uid = AuthzUserId(u.id.0);
-                u.role_assignments.iter().map(move |a| (uid, a))
-            }));
+            let holders =
+                count_owner_admin_holders(users.values().filter(|u| u.active).flat_map(|u| {
+                    let uid = AuthzUserId(u.id.0);
+                    u.role_assignments.iter().map(move |a| (uid, a))
+                }));
             if !last_owner_guard(holders) {
                 return Err(ApiError::Conflict(
                     "não pode remover o último Proprietário".to_owned(),
