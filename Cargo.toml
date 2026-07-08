@@ -34,6 +34,12 @@ chancela-cae = { path = "crates/chancela-cae" }
 # crates and chancela-api in the DAG (core, ledger, registry → chancela-store → chancela-api);
 # must NOT depend on chancela-api (no cycle). See .orchestration/plans/t30.md §2.
 chancela-store = { path = "crates/chancela-store" }
+# Template catalog engine + document/PDF-A generation (t48, Wave C). `chancela-templates` renders
+# records → DocumentModel via minijinja; `chancela-doc` writes DocumentModel → PDF/A-2u over lopdf.
+# The shared DocumentModel/LifecycleStage seam lives in chancela-core so both are truly parallel.
+# DAG (no cycles): core → templates → api; templates → doc → api. See .orchestration/plans/t48.md §2.
+chancela-templates = { path = "crates/chancela-templates" }
+chancela-doc = { path = "crates/chancela-doc" }
 
 # Third-party (conservative, declared once so every crate inherits identical versions).
 serde = { version = "1", features = ["derive"] }
@@ -46,6 +52,11 @@ axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs"] }
+# minijinja (t48 D1): runtime text-interpolation for the template catalog. Templates are shippable,
+# per-locale *content* (not compile-time askama structs); minijinja renders directly from any
+# serde::Serialize record. Apache-2.0, serde-only (no new transitive-dep risk to the der-0.7 pins).
+# Pinned per plan §1-D1. See .orchestration/plans/t48.md §1.
+minijinja = "2.21.0"
 
 # --- Signature middleware (t4) ---------------------------------------------------------
 # RustCrypto ASN.1 stack is mid-migration; these der-0.7-family pins are LOAD-BEARING.

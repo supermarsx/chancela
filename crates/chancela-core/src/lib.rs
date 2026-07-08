@@ -26,6 +26,7 @@
 
 pub mod act;
 pub mod book;
+pub mod document_model;
 pub mod entity;
 pub mod error;
 pub mod profile;
@@ -39,6 +40,9 @@ pub use act::{
 };
 pub use book::{
     Book, BookId, BookKind, BookState, NumberingScheme, TermoDeAbertura, TermoDeEncerramento,
+};
+pub use document_model::{
+    Block, DocumentModel, KvRow, LifecycleStage, Run, SignatureSlot, VoteRow,
 };
 pub use entity::{
     Entity, EntityFamily, EntityId, EntityKind, Majority, Nipc, Quorum, StatuteOverrides,

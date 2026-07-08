@@ -454,6 +454,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-doc"
+version = "0.1.0"
+dependencies = [
+ "chancela-core",
+ "lopdf",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "chancela-ledger"
 version = "0.1.0"
 dependencies = [
@@ -566,6 +576,17 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "zip",
+]
+
+[[package]]
+name = "chancela-templates"
+version = "0.1.0"
+dependencies = [
+ "chancela-core",
+ "minijinja",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1942,6 +1963,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
+name = "memo-map"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38d1115007560874e373613744c6fba374c17688327a71c1476d1a5954cc857b"
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1955,6 +1982,16 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
+]
+
+[[package]]
+name = "minijinja"
+version = "2.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb3d648e68cea56d9858d535ee28f9538404e2dd8cb08ed0bd05dca379477f39"
+dependencies = [
+ "memo-map",
+ "serde",
 ]
 
 [[package]]

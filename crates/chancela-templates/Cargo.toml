@@ -1,0 +1,16 @@
+[package]
+name = "chancela-templates"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Template catalog engine for Chancela: registry-as-data + minijinja prose rendering of records into a DocumentModel (t48 / TPL-*)."
+
+[dependencies]
+chancela-core = { workspace = true }
+minijinja = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,15 @@
+[package]
+name = "chancela-doc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "PDF/A-2u writer for Chancela: lays a DocumentModel out into deterministic, PAdES-ready PDF bytes over lopdf (t48 / DOC-01)."
+
+[dependencies]
+chancela-core = { workspace = true }
+lopdf = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
