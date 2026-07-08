@@ -27,7 +27,7 @@ use crate::AppState;
 use crate::actor::{SESSION_HEADER, SESSION_TTL_SECS, resolve_session_actor};
 use crate::attestation::verify_secret;
 use crate::error::ApiError;
-use crate::users::{UserId, UserView};
+use crate::users::{User, UserId, UserView};
 
 /// A live session: the user it authenticates, plus the optional in-memory attestation signing key
 /// unlocked at sign-in (plan t29 §4.4) and the expiry timestamp (t41 M3).
@@ -67,6 +67,57 @@ pub struct SessionCreated {
 #[derive(Serialize)]
 pub struct SessionView {
     pub user: Option<UserView>,
+}
+
+/// One entry in the signed-out sign-in roster: the minimum a sign-in picker needs, and nothing
+/// sensitive. **No** attestation fingerprint, **no** `created_at`, **no** secret material.
+#[derive(Serialize)]
+pub struct RosterUser {
+    pub id: String,
+    pub username: String,
+    pub display_name: String,
+    /// Whether the user holds a sign-in secret, so the UI knows to prompt for a password.
+    pub has_secret: bool,
+}
+
+impl From<&User> for RosterUser {
+    fn from(u: &User) -> Self {
+        RosterUser {
+            id: u.id.to_string(),
+            username: u.username.clone(),
+            display_name: u.display_name.clone(),
+            has_secret: u.password_hash.is_some(),
+        }
+    }
+}
+
+/// Response of `GET /v1/session/roster`.
+#[derive(Serialize)]
+pub struct SessionRoster {
+    /// `true` when no user exists at all — the first-run bootstrap create is available and the UI
+    /// should show the onboarding wizard instead of a sign-in picker.
+    pub onboarding_required: bool,
+    /// The **active** users a signed-out operator may sign in as (an inactive user can never mint a
+    /// session), each reduced to the minimal, non-sensitive picker fields.
+    pub users: Vec<RosterUser>,
+}
+
+/// `GET /v1/session/roster` — the **unauthenticated** minimal sign-in roster (t45).
+///
+/// The signed-out sign-in UI needs, without a session, to (a) decide onboarding-vs-sign-in and
+/// (b) list the users it may sign in as. `GET /v1/users` stays auth-gated (it returns the full
+/// [`UserView`], including attestation fingerprints, for signed-in management); this endpoint
+/// deliberately exposes only `{ id, username, display_name, has_secret }` for active users so no
+/// sensitive material leaks to an anonymous caller.
+pub async fn session_roster(State(state): State<AppState>) -> Json<SessionRoster> {
+    let users = state.users.read().await;
+    let onboarding_required = users.is_empty();
+    let mut active: Vec<&User> = users.values().filter(|u| u.active).collect();
+    active.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    Json(SessionRoster {
+        onboarding_required,
+        users: active.into_iter().map(RosterUser::from).collect(),
+    })
 }
 
 /// `POST /v1/session` — mint a token for a user. **t41 H1:** unknown user, inactive user, and

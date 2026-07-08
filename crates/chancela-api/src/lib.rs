@@ -430,6 +430,7 @@ pub fn router(state: AppState) -> Router {
             "/v1/ledger/attestations/{seq}",
             get(ledger::get_attestation),
         )
+        .route("/v1/session/roster", get(session::session_roster))
         .route(
             "/v1/session",
             get(session::get_session)
@@ -3957,5 +3958,274 @@ mod tests {
         assert!(!dump.contains("$argon2"), "no PHC hash: {dump}");
         assert!(!dump.contains("ciphertext"), "no wrapped key: {dump}");
         assert!(!dump.contains("kdf_salt"), "no KDF material: {dump}");
+    }
+
+    // --- t45: signed-out sign-in roster (GET /v1/session/roster) --------------------------
+
+    #[tokio::test]
+    async fn session_roster_is_unauthenticated_and_signals_onboarding() {
+        let state = AppState::default();
+
+        // No users yet → onboarding required, empty roster, and NO session on the request.
+        let (status, roster) = send_raw(state.clone(), get("/v1/session/roster")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(roster["onboarding_required"], true);
+        assert_eq!(roster["users"].as_array().expect("users").len(), 0);
+
+        // Bootstrap amelia (no session), sign in, create bruno with that session — no auto-seeded
+        // "test.actor" pollutes the roster this way.
+        let (status, amelia) = send_raw(
+            state.clone(),
+            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let id = amelia["id"].as_str().expect("id").to_owned();
+        let token = open_session(&state, &id).await;
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/users", json!({ "username": "bruno" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        // Give amelia a secret so has_secret is exercised on both true and false.
+        send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "correct horse" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+
+        // Still signed out on this call → onboarding no longer required, both users listed.
+        let (status, roster) = send_raw(state.clone(), get("/v1/session/roster")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(roster["onboarding_required"], false);
+        let users = roster["users"].as_array().expect("users");
+        assert_eq!(users.len(), 2);
+
+        let amelia = users
+            .iter()
+            .find(|u| u["username"] == "amelia.marques")
+            .expect("amelia in roster");
+        assert_eq!(amelia["has_secret"], true);
+        assert_eq!(amelia["display_name"], "amelia.marques");
+        assert!(amelia["id"].is_string());
+        // NOTHING sensitive leaks to an anonymous caller: no fingerprint, no created_at, no
+        // has_attestation_key, no hash or wrapped-key material, not even `active`.
+        for forbidden in [
+            "attestation_key_fingerprint",
+            "has_attestation_key",
+            "created_at",
+            "active",
+            "password_hash",
+            "attestation_key",
+        ] {
+            assert!(
+                amelia.get(forbidden).is_none(),
+                "roster user must not carry {forbidden}: {amelia}"
+            );
+        }
+        // A passwordless user reads has_secret:false so the UI knows not to prompt.
+        let bruno = users
+            .iter()
+            .find(|u| u["username"] == "bruno")
+            .expect("bruno in roster");
+        assert_eq!(bruno["has_secret"], false);
+    }
+
+    #[tokio::test]
+    async fn session_roster_omits_inactive_users() {
+        let state = AppState::default();
+        let (status, u) = send_raw(
+            state.clone(),
+            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let id = u["id"].as_str().expect("id").to_owned();
+        let token = open_session(&state, &id).await;
+        let (status, bruno) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/users", json!({ "username": "bruno" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let bruno_id = bruno["id"].as_str().expect("id").to_owned();
+
+        // Deactivate bruno (amelia stays active, so the last-active guard allows it).
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                patch_json(&format!("/v1/users/{bruno_id}"), json!({ "active": false })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (_, roster) = send_raw(state.clone(), get("/v1/session/roster")).await;
+        let users = roster["users"].as_array().expect("users");
+        assert_eq!(
+            users.len(),
+            1,
+            "inactive bruno is not sign-in-able: {roster}"
+        );
+        assert_eq!(users[0]["username"], "amelia.marques");
+    }
+
+    // --- t45: last-active-user deactivation guard -----------------------------------------
+
+    #[tokio::test]
+    async fn patch_user_refuses_deactivating_the_last_active_user() {
+        let state = AppState::default();
+        let (status, u) = send_raw(
+            state.clone(),
+            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let id = u["id"].as_str().expect("id").to_owned();
+        let token = open_session(&state, &id).await;
+
+        // She is the only active user → deactivating her is a 409 with the PT message.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                patch_json(&format!("/v1/users/{id}"), json!({ "active": false })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("último utilizador ativo"),
+            "PT last-active message: {body}"
+        );
+
+        // Add a second active user; now deactivating one of the two is allowed.
+        let (status, u2) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/users", json!({ "username": "bruno" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let id2 = u2["id"].as_str().expect("id").to_owned();
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                patch_json(&format!("/v1/users/{id2}"), json!({ "active": false })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // With only amelia active again, she is once more the last active → 409.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                patch_json(&format!("/v1/users/{id}"), json!({ "active": false })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    // --- t45: patch_user ledger payload carries no secret material ------------------------
+
+    #[tokio::test]
+    async fn patch_user_ledger_payload_carries_no_secret_material() {
+        use crate::users::{UserId, UserView};
+        let state = AppState::default();
+        let id = make_user(&state, "hugo").await;
+        // Give hugo a secret + attestation key so the full `User` carries the argon2 PHC and the
+        // AEAD-wrapped key — exactly the material that must never reach the ledger payload.
+        send(
+            state.clone(),
+            post_json(
+                &format!("/v1/users/{id}/secret"),
+                json!({ "password": "s3cret-pass" }),
+            ),
+        )
+        .await;
+        send(
+            state.clone(),
+            post_json(
+                &format!("/v1/users/{id}/attestation-key"),
+                json!({ "current_password": "s3cret-pass" }),
+            ),
+        )
+        .await;
+
+        // Rename him — this patch is the final mutation, so its `user.updated` event is the tail.
+        let (status, _) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/users/{id}"),
+                json!({ "display_name": "Hugo P." }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // The stored `User` (unchanged since the patch) reproduces exactly what was digested.
+        let uid = UserId(Uuid::parse_str(&id).expect("uuid"));
+        let user = state
+            .users
+            .read()
+            .await
+            .get(&uid)
+            .cloned()
+            .expect("hugo present");
+        assert!(
+            user.password_hash.is_some() && user.attestation_key.is_some(),
+            "hugo holds secret material for the test to be meaningful"
+        );
+        let view_digest = crate::hex::hex(&chancela_ledger::digest(
+            &serde_json::to_vec(&UserView::from(&user)).expect("view serializes"),
+        ));
+        let full_digest = crate::hex::hex(&chancela_ledger::digest(
+            &serde_json::to_vec(&user).expect("user serializes"),
+        ));
+        assert_ne!(
+            view_digest, full_digest,
+            "UserView and full User digest differently — the guard below is meaningful"
+        );
+
+        // The patch's `user.updated` payload digest must be the UserView digest, never the full User.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let patch_ev = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .rev()
+            .find(|e| e["kind"] == "user.updated" && e["justification"] == "user updated")
+            .expect("patch user.updated event present");
+        assert_eq!(
+            patch_ev["payload_digest"], view_digest,
+            "patch payload is the UserView (no hash/key material)"
+        );
+        assert_ne!(
+            patch_ev["payload_digest"], full_digest,
+            "patch payload is NOT the full User"
+        );
     }
 }

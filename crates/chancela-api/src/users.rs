@@ -1,8 +1,11 @@
 //! Named user profiles + actor attribution (contract §2.8).
 //!
-//! Chancela is a local-first, single-operator / small-office app on loopback. The goal here is
-//! **attribution**, not access control (DAT-10): identify *who* performed each mutation so the
-//! audit ledger names a real person instead of the fixed `"api"` fallback.
+//! Chancela is a local-first, single-operator / small-office app on loopback. User profiles serve
+//! two purposes: **attribution** (DAT-10 — identify *who* performed each mutation so the audit
+//! ledger names a real person instead of the fixed `"api"` fallback) and, since t41,
+//! **access control** — every domain mutation requires a valid session, and users may hold an
+//! optional argon2id sign-in secret (t29). This is no longer a passwordless, authorization-free
+//! surface: an operator signs in before doing any work.
 //!
 //! **Security (t41):** all user-mutation endpoints require a valid session via the fallible
 //! [`CurrentActor`] extractor. `create_user` is the one exception: it allows a **bootstrap** call
@@ -492,6 +495,15 @@ pub async fn get_user(
 }
 
 /// `PATCH /v1/users/{id}` — rename and/or (de)activate a profile. Appends `user.updated`.
+///
+/// **Last-active-user guard:** deactivating (`active:false`) the only remaining active user is
+/// refused with `409`. With no active user left, no session can ever be minted again
+/// (`create_session` rejects inactive users) and the bootstrap-create only fires at *zero* users,
+/// so the instance would be permanently bricked for mutations.
+///
+/// The `user.updated` payload is a [`UserView`] (via [`record_user_update`]), never the full
+/// [`User`] — no argon2 hash or wrapped attestation key is fed into the audit event, matching
+/// every other user handler.
 pub async fn patch_user(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -501,6 +513,16 @@ pub async fn patch_user(
 ) -> Result<Json<UserView>, ApiError> {
     let user = {
         let mut users = state.users.write().await;
+        // Last-active-user guard: reject deactivating the final active user (checked under the
+        // write lock so two concurrent deactivations can't both pass).
+        if req.active == Some(false) {
+            let target = users.get(&UserId(id)).ok_or(ApiError::NotFound)?;
+            if target.active && users.values().filter(|u| u.active).count() <= 1 {
+                return Err(ApiError::Conflict(
+                    "não pode desativar o último utilizador ativo".to_owned(),
+                ));
+            }
+        }
         let user = users.get_mut(&UserId(id)).ok_or(ApiError::NotFound)?;
         if let Some(display_name) = req.display_name {
             let trimmed = display_name.trim();
@@ -514,22 +536,6 @@ pub async fn patch_user(
         user.clone()
     };
 
-    persist(&state).await?;
-
-    let payload = serde_json::to_vec(&user)?;
-    let actor = actor.resolve("api");
-    {
-        let mut ledger = state.ledger.write().await;
-        ledger.append(
-            &actor,
-            "user",
-            "user.updated",
-            Some("user updated"),
-            &payload,
-        );
-        state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
-        state.attest_latest(&attestor, &ledger).await;
-    }
-
+    record_user_update(&state, &user, "user updated", &actor, &attestor).await?;
     Ok(Json(UserView::from(&user)))
 }
