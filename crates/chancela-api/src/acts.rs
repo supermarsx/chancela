@@ -51,7 +51,8 @@ pub async fn draft_act(
 
     let scope = format!("entity:{}/book:{}/act:{}", entity_id, act.book_id, act.id);
     let payload = serde_json::to_vec(&act)?;
-    ledger.append(&actor, &scope, "act.drafted", None, &payload);
+    // Validating append (t54): reject a chain-breaking append before mutating the ledger.
+    crate::try_append_event(&mut ledger, &actor, &scope, "act.drafted", None, &payload)?;
     state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&act))?;
     state.attest_latest(&attestor, &ledger).await;
 
@@ -177,13 +178,14 @@ pub async fn advance_act(
     };
     let justification = format!("advance to {:?}", req.to);
     let payload = serde_json::to_vec(&next)?;
-    ledger.append(
+    crate::try_append_event(
+        &mut ledger,
         &actor,
         &scope,
         "act.advanced",
         Some(&justification),
         &payload,
-    );
+    )?;
     state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;
@@ -301,7 +303,19 @@ pub async fn seal_act_handler(
                         entity.id, act_next.book_id, act_next.id
                     );
                     let payload = serde_json::to_vec(&made.event_payload)?;
-                    ledger.append(&actor, &scope, "document.generated", None, &payload);
+                    // Validating append (t54); a rejection rolls back the just-appended `act.sealed`
+                    // (core) event so a failed seal leaves no trace (the seal transaction is atomic).
+                    if let Err(e) = crate::try_append_event(
+                        &mut ledger,
+                        &actor,
+                        &scope,
+                        "document.generated",
+                        None,
+                        &payload,
+                    ) {
+                        AppState::rollback_ledger_events(&mut ledger, 1);
+                        return Err(e);
+                    }
                     state.persist_write_through(&mut ledger, 2, |tx| {
                         tx.upsert_book(&book_next)?;
                         tx.upsert_act(&act_next)?;
@@ -400,7 +414,7 @@ pub async fn archive_act(
         None => format!("book:{}/act:{}", next.book_id, next.id),
     };
     let payload = serde_json::to_vec(&next)?;
-    ledger.append(&actor, &scope, "act.archived", None, &payload);
+    crate::try_append_event(&mut ledger, &actor, &scope, "act.archived", None, &payload)?;
     state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
     state.attest_latest(&attestor, &ledger).await;
     *act = next;

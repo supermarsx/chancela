@@ -75,7 +75,19 @@ pub async fn create_book(
         Some(made) => {
             let scope = format!("entity:{}/book:{}", book.entity_id, book.id);
             let payload = serde_json::to_vec(&made.event_payload)?;
-            ledger.append(&actor, &scope, "document.generated", None, &payload);
+            // Validating append (t54); a rejection rolls back the just-appended `book.opened`
+            // genesis so a failed open leaves no trace.
+            if let Err(e) = crate::try_append_event(
+                &mut ledger,
+                &actor,
+                &scope,
+                "document.generated",
+                None,
+                &payload,
+            ) {
+                AppState::rollback_ledger_events(&mut ledger, 1);
+                return Err(e);
+            }
             state.persist_write_through(&mut ledger, 2, |tx| {
                 tx.upsert_book(&book)?;
                 tx.upsert_document(&made.stored)
@@ -159,7 +171,7 @@ pub async fn close_book(
             .as_ref()
             .expect("termo present immediately after close"),
     )?;
-    ledger.append(&actor, &scope, "book.closed", None, &payload);
+    crate::try_append_event(&mut ledger, &actor, &scope, "book.closed", None, &payload)?;
 
     // Termo de encerramento document (t53): closing a book produces the family's preserved
     // encerramento PDF/A + a `document.generated` event in the SAME durable commit as `book.closed`
@@ -185,7 +197,18 @@ pub async fn close_book(
     match generated {
         Some(made) => {
             let doc_payload = serde_json::to_vec(&made.event_payload)?;
-            ledger.append(&actor, &scope, "document.generated", None, &doc_payload);
+            // Validating append (t54); a rejection rolls back the just-appended `book.closed`.
+            if let Err(e) = crate::try_append_event(
+                &mut ledger,
+                &actor,
+                &scope,
+                "document.generated",
+                None,
+                &doc_payload,
+            ) {
+                AppState::rollback_ledger_events(&mut ledger, 1);
+                return Err(e);
+            }
             state.persist_write_through(&mut ledger, 2, |tx| {
                 tx.upsert_book(&next)?;
                 tx.upsert_document(&made.stored)

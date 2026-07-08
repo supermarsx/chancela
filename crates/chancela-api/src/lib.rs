@@ -39,9 +39,11 @@ mod acts;
 mod attestation;
 mod backup;
 mod books;
+mod bundles;
 mod cae;
 mod chronology;
 mod dashboard;
+mod data;
 mod documents;
 mod dto;
 mod entities;
@@ -49,6 +51,7 @@ mod error;
 mod hex;
 mod law;
 mod ledger;
+mod recovery;
 mod registry;
 mod session;
 mod settings;
@@ -199,6 +202,14 @@ pub struct AppState {
     /// for a broken one (surfaced on `/health` + the startup banner), `None` in-memory. Shared via
     /// `Arc` so cloning the state stays cheap.
     pub chain_status: Option<Arc<Result<u64, LedgerError>>>,
+    /// The **degraded read-only signal** (t54 §3.1). `true` when the ledger's integrity report is
+    /// unhealthy (a broken chain) — set at boot from the rehydrated [`IntegrityReport`], and
+    /// recomputed after every recovery op (restore / re-anchor / factory reset). While set, the
+    /// [`degraded_gate`] middleware fails **loud** with `503` on ordinary mutations (create / patch /
+    /// advance / seal / open / close / start-over / import-into-live), leaving reads, the integrity
+    /// report, and the recovery/reset/export/quarantine-import endpoints open so the operator can see
+    /// and repair. `Default` is healthy (`false`); pure in-memory state never enters degraded.
+    pub degraded: Arc<RwLock<bool>>,
 }
 
 impl AppState {
@@ -237,10 +248,16 @@ impl AppState {
         match Store::open(&dir) {
             Ok(store) => match store.load() {
                 Ok(loaded) => {
+                    // Fail-loud gate (t54 §3.1): a broken boot chain enters DEGRADED read-only mode
+                    // instead of silently booting as if healthy. Reads + recovery stay open; ordinary
+                    // mutations return 503 until a restore / re-anchor / factory reset repairs it.
+                    let healthy = loaded.integrity.healthy;
                     if let Err(e) = &loaded.chain_status {
                         eprintln!(
                             "chancela-store: ledger chain integrity check FAILED on boot ({e}) — \
-                             starting anyway so the operator can inspect and restore from backup"
+                             entering DEGRADED read-only mode: reads and the recovery endpoints \
+                             (restore / re-anchor / factory reset) stay open so the operator can \
+                             inspect and repair; ordinary mutations are blocked with 503"
                         );
                     }
                     state.entities = Arc::new(RwLock::new(loaded.entities));
@@ -249,6 +266,7 @@ impl AppState {
                     state.registry_extracts = Arc::new(RwLock::new(loaded.registry_extracts));
                     state.ledger = Arc::new(RwLock::new(loaded.ledger));
                     state.chain_status = Some(Arc::new(loaded.chain_status));
+                    state.degraded = Arc::new(RwLock::new(!healthy));
                     state.store = Some(store);
                 }
                 Err(e) => eprintln!(
@@ -350,6 +368,63 @@ impl AppState {
             .and_then(|p| p.parent().map(PathBuf::from))
     }
 
+    /// The whole-instance sidecar files bundled alongside the SQLite snapshot in a backup / export
+    /// archive and removed on a factory reset (t54 §2.11): `settings.json`, `users.json`, the CAE
+    /// cache, and the `laws/` archive. Mirrors [`backup::create_backup`]'s list. Empty when in-memory.
+    pub(crate) fn instance_sidecars(&self) -> Vec<PathBuf> {
+        match self.data_dir() {
+            Some(dir) => vec![
+                dir.join(crate::settings::SETTINGS_FILE),
+                dir.join(crate::users::USERS_FILE),
+                dir.join(chancela_cae::CACHE_FILE),
+                dir.join(crate::law::LAWS_DIR),
+            ],
+            None => Vec::new(),
+        }
+    }
+
+    /// Reload the domain read-models (entities / books / acts / registry extracts) from the durable
+    /// store into memory and drop the cached documents map (GETs fall back to the store), after a
+    /// whole-store restore so reads reflect the swapped-in state. A no-op when in-memory. Does NOT
+    /// touch the ledger — the restore path already replaced it in lock-step.
+    pub(crate) async fn reload_domain_memory(&self) -> Result<(), ApiError> {
+        let Some(store) = &self.store else {
+            return Ok(());
+        };
+        let loaded = store
+            .load()
+            .map_err(|e| ApiError::Internal(format!("reload after restore failed: {e}")))?;
+        *self.entities.write().await = loaded.entities;
+        *self.books.write().await = loaded.books;
+        *self.acts.write().await = loaded.acts;
+        *self.registry_extracts.write().await = loaded.registry_extracts;
+        self.documents.write().await.clear();
+        Ok(())
+    }
+
+    /// Clear the in-memory domain read-models (entities / books / acts / registry extracts /
+    /// documents) to match a `BackendDomain` wipe or a whole-instance start-over (the ledger is
+    /// preserved / re-seeded by the store, never touched here).
+    pub(crate) async fn clear_domain_memory(&self) {
+        self.entities.write().await.clear();
+        self.books.write().await.clear();
+        self.acts.write().await.clear();
+        self.registry_extracts.write().await.clear();
+        self.documents.write().await.clear();
+    }
+
+    /// Clear ALL in-memory state to a blank first-run instance, to match a `BackendFactory` reset
+    /// (which also blanked the ledger + removed the sidecar files on disk): the domain read-models,
+    /// the user profiles, every live session + unlocked key, the attestation sidecar, and the
+    /// settings document (reset to defaults). The acting session is invalidated by design.
+    pub(crate) async fn clear_all_memory(&self) {
+        self.clear_domain_memory().await;
+        self.users.write().await.clear();
+        self.sessions.write().await.clear();
+        self.attestations.write().await.clear();
+        *self.settings.write().await = settings::Settings::default();
+    }
+
     /// Resolve on-disk persistence from the environment, mirroring how `chancela-server` finds
     /// the web build: honour `CHANCELA_DATA_DIR` first, else walk up from the current directory
     /// for an existing `chancela-data/` directory, else run purely in memory.
@@ -440,6 +515,17 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/templates", get(documents::list_templates))
         .route("/v1/ledger/events", get(ledger::list_ledger_events))
         .route("/v1/ledger/verify", get(ledger::verify_ledger))
+        .route("/v1/ledger/integrity", get(recovery::get_integrity))
+        .route(
+            "/v1/ledger/recovery/reanchor",
+            post(recovery::reanchor_ledger),
+        )
+        .route("/v1/ledger/recovery/restore", post(recovery::restore_store))
+        .route("/v1/books/{id}/export", post(bundles::export_book))
+        .route("/v1/books/import", post(bundles::import_book))
+        .route("/v1/books/{id}/start-over", post(bundles::start_over_book))
+        .route("/v1/data/reset", post(data::reset_data))
+        .route("/v1/data/start-over", post(data::start_over_instance))
         .route("/v1/dashboard", get(dashboard::dashboard))
         .route("/v1/backup", post(backup::create_backup))
         .route(
@@ -491,9 +577,83 @@ pub fn router(state: AppState) -> Router {
         .route("/v1", any(unknown_api_route))
         .route("/v1/{*rest}", any(unknown_api_route))
         .route("/health/{*rest}", any(unknown_api_route))
+        // Degraded read-only gate (t54 §3.1): block ordinary mutations with 503 when the chain is
+        // broken, leaving reads + the recovery/reset/export/quarantine-import endpoints open. Layered
+        // BELOW `security_headers` (added after) so a 503 still carries the security headers.
+        .layer(middleware::from_fn_with_state(state.clone(), degraded_gate))
         // Security response headers (t41 M2).
         .layer(middleware::from_fn(security_headers))
         .with_state(state)
+}
+
+/// Whether a request is exempt from the degraded (read-only) mutation gate (t54 §3.1).
+///
+/// Reads (`GET`/`HEAD`/`OPTIONS`) are always allowed. Among mutations, only the **recovery** plane
+/// stays reachable in a broken-chain instance — a restore / re-anchor / factory reset is the
+/// legitimate last-resort repair, an export lets the operator archive first, a quarantine-import is
+/// isolated and never merged into a live chain, and the session endpoints must work so the operator
+/// can authenticate to run any of these. Every other mutation is blocked with `503` while degraded.
+fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
+    use axum::http::Method;
+    if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
+        return true;
+    }
+    path == "/v1/ledger/recovery/reanchor"
+        || path == "/v1/ledger/recovery/restore"
+        || path == "/v1/data/reset"
+        || path == "/v1/data/start-over"
+        || path == "/v1/books/import"
+        || path.starts_with("/v1/session")
+        || (path.starts_with("/v1/books/") && path.ends_with("/export"))
+}
+
+/// Middleware enforcing the degraded read-only gate. When [`AppState::degraded`] is set, an ordinary
+/// mutation (not [`degraded_gate_exempt`]) is refused with a **loud** honest-PT `503` naming the
+/// read-only mode; reads and the recovery/reset endpoints pass through unchanged.
+async fn degraded_gate(
+    State(state): State<AppState>,
+    request: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    if !degraded_gate_exempt(request.method(), request.uri().path()) && *state.degraded.read().await
+    {
+        let body = serde_json::json!({
+            "error": "sistema em modo só-leitura: a cadeia de integridade está quebrada. \
+                      Restaure a partir de uma cópia de segurança, faça a re-ancoragem, ou uma \
+                      reposição de fábrica antes de continuar a escrever.",
+            "read_only": true,
+            "integrity": "broken",
+        });
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response();
+    }
+    next.run(request).await
+}
+
+/// Recompute the degraded (read-only) signal from a ledger's live integrity report and store it on
+/// `state` (t54 §3.1). Called after a recovery op (restore / re-anchor / factory reset) so a repaired
+/// chain lifts the gate — and a still-broken one keeps it. Runs a full `integrity_report()`; it is
+/// only invoked on the rare recovery paths, never on the hot mutation path.
+pub(crate) async fn refresh_degraded(state: &AppState, ledger: &Ledger) {
+    let healthy = ledger.integrity_report().healthy;
+    *state.degraded.write().await = !healthy;
+}
+
+/// Route a user-driven ledger append through the validating [`Ledger::try_append`] (t54 deliverable
+/// #6): an append that would break a chain (wrong genesis kind, or onto a broken tail) is rejected
+/// **before** the ledger is mutated, so nothing is persisted and the surrounding transaction is safe
+/// to abort. Replaces the infallible `append` on the api's domain mutation paths.
+pub(crate) fn try_append_event(
+    ledger: &mut Ledger,
+    actor: &str,
+    scope: &str,
+    kind: &str,
+    justification: Option<&str>,
+    payload: &[u8],
+) -> Result<(), ApiError> {
+    ledger
+        .try_append(actor, scope, kind, justification, payload)
+        .map(|_| ())
+        .map_err(|e| ApiError::Conflict(format!("appending {kind} would break a chain: {e}")))
 }
 
 /// Middleware that sets security response headers on every response (t41 M2).
@@ -602,6 +762,12 @@ struct HealthResponse {
     /// The store schema version, present only when persistent.
     #[serde(skip_serializing_if = "Option::is_none")]
     store_schema_version: Option<i64>,
+    /// The live integrity signal (t54 §3.1): `"broken"` when the instance is in degraded read-only
+    /// mode (a broken chain — mutations are gated with `503`), else `"ok"`. The web reads this to
+    /// raise the server-driven degraded banner.
+    integrity: &'static str,
+    /// Whether the instance is in degraded read-only mode (mirrors `integrity == "broken"`).
+    degraded: bool,
 }
 
 /// Liveness probe; also reports the running crate version (used by the Docker healthcheck) and,
@@ -611,6 +777,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     let ledger_length = state.ledger.read().await.len() as u64;
     let ledger_verified = state.chain_status.as_ref().map(|status| status.is_ok());
     let store_schema_version = persistent.then_some(chancela_store::schema::SCHEMA_VERSION);
+    let degraded = *state.degraded.read().await;
     Json(HealthResponse {
         status: "ok",
         version: env!("CARGO_PKG_VERSION"),
@@ -618,6 +785,8 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         ledger_length,
         ledger_verified,
         store_schema_version,
+        integrity: if degraded { "broken" } else { "ok" },
+        degraded,
     })
 }
 
@@ -5556,5 +5725,629 @@ mod tests {
             "the victim's own self-service is not collateral-throttled"
         );
         assert_eq!(view["has_secret"], true);
+    }
+
+    // =============================================================================================
+    // t54-E3: chain-recovery + per-book export/import/start-over + data management
+    // =============================================================================================
+
+    /// A fresh **persistent** state backed by a unique temp data dir (opens a real SQLite store, so
+    /// the recovery/export/import/reset endpoints — which require durability — are exercisable). The
+    /// dir lives under the OS temp dir; it is left in place (the open sqlite handle makes an eager
+    /// remove flaky on Windows), which is fine for a hermetic per-test dir.
+    fn persistent_state() -> AppState {
+        let dir = std::env::temp_dir().join(format!("chancela-api-t54-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp data dir");
+        AppState::with_data_dir(dir)
+    }
+
+    /// Create an entity + open a book on `state` using `token`; returns `(entity_id, book_id)`.
+    async fn seed_entity_and_book(state: &AppState, token: &str) -> (String, String) {
+        let (status, entity) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Encosto Estratégico, S.A.",
+                        "nipc": "503004642",
+                        "seat": "Lisboa",
+                        "kind": "SociedadeAnonima",
+                    }),
+                ),
+                token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "seed entity: {entity}");
+        let entity_id = entity["id"].as_str().expect("entity id").to_owned();
+
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": ["Administrador"],
+                    }),
+                ),
+                token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "seed book: {book}");
+        let book_id = book["id"].as_str().expect("book id").to_owned();
+        (entity_id, book_id)
+    }
+
+    /// Draft, fill, advance, and SEAL an ata into `book_id` on `state` with `token`.
+    async fn seal_one_act(state: &AppState, book_id: &str, token: &str) {
+        let (_, act) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/acts",
+                    json!({ "book_id": book_id, "title": "Ata da AG anual", "channel": "Physical" }),
+                ),
+                token,
+            ),
+        )
+        .await;
+        let act_id = act["id"].as_str().expect("act id").to_owned();
+        send(
+            state.clone(),
+            with_session(
+                patch_json(
+                    &format!("/v1/acts/{act_id}"),
+                    json!({
+                        "meeting_date": "2026-03-30",
+                        "meeting_time": "10:00",
+                        "place": "Sede social",
+                        "mesa": { "presidente": "Ana Presidente", "secretarios": ["Rui Secretário"] },
+                        "agenda": [{ "number": 1, "text": "Aprovação das contas do exercício" }],
+                        "attendance_reference": "Lista de presenças",
+                        "deliberations": "Aprovadas as contas do exercício.",
+                    }),
+                ),
+                token,
+            ),
+        )
+        .await;
+        for to in [
+            "Review",
+            "Convened",
+            "Deliberated",
+            "TextApproved",
+            "Signing",
+        ] {
+            send(
+                state.clone(),
+                with_session(
+                    post_json(&format!("/v1/acts/{act_id}/advance"), json!({ "to": to })),
+                    token,
+                ),
+            )
+            .await;
+        }
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal one act");
+    }
+
+    /// Seed a signed-in user WITH a password (for step-up re-auth), returning `(user_id, token)`.
+    /// The session is seeded directly (bypassing the password) so `require_step_up`'s re-auth is
+    /// what actually proves the password — mirroring the real UI (a live session + a fresh re-auth).
+    async fn user_with_password(state: &AppState, username: &str, password: &str) -> String {
+        let uid = make_user(state, username).await;
+        give_target_password(state, &uid, password).await;
+        seed_session(state, &uid).await
+    }
+
+    /// POST a raw body (e.g. bundle bytes) with a session token.
+    fn post_raw(uri: &str, bytes: Vec<u8>) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .body(Body::from(bytes))
+            .expect("request builds")
+    }
+
+    /// Re-zip a book bundle with a corrupted `events.jsonl` member (its sha256 no longer matches the
+    /// unchanged manifest), so verify-before-trust quarantines it. Proves an api-level forgery is
+    /// caught and isolated, never merged as a live chain.
+    fn tamper_bundle(zip_bytes: &[u8]) -> Vec<u8> {
+        use std::io::{Read, Write};
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).expect("valid bundle zip");
+        let mut members: Vec<(String, Vec<u8>)> = Vec::new();
+        for i in 0..archive.len() {
+            let mut f = archive.by_index(i).expect("zip member");
+            let name = f.name().to_owned();
+            let mut buf = Vec::new();
+            f.read_to_end(&mut buf).expect("read member");
+            members.push((name, buf));
+        }
+        for (name, bytes) in members.iter_mut() {
+            if name == "events.jsonl" && !bytes.is_empty() {
+                bytes[0] ^= 0xff; // corrupt → member digest mismatch → Quarantined
+            }
+        }
+        let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        for (name, bytes) in &members {
+            out.start_file(name.as_str(), opts).expect("start file");
+            out.write_all(bytes).expect("write member");
+        }
+        out.finish().expect("finish zip").into_inner()
+    }
+
+    #[tokio::test]
+    async fn integrity_endpoint_reports_a_healthy_chain() {
+        let state = persistent_state();
+        let token = seed_session(&state, &make_user(&state, "amelia.marques").await).await;
+        seed_entity_and_book(&state, &token).await;
+
+        let (status, report) = send(state.clone(), get("/v1/ledger/integrity")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(report["healthy"], true);
+        assert_eq!(report["degraded"], false);
+        assert_eq!(report["global"]["verified"], true);
+        assert!(report["global"]["length"].as_u64().expect("length") >= 1);
+        assert!(
+            report["reanchored_segments"]
+                .as_array()
+                .expect("segments")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn export_import_round_trips_verified_and_a_forged_bundle_quarantines() {
+        // Source instance A: a book with a sealed ata.
+        let a = persistent_state();
+        let a_tok = seed_session(&a, &make_user(&a, "amelia.marques").await).await;
+        let (_eid, book_id) = seed_entity_and_book(&a, &a_tok).await;
+        seal_one_act(&a, &book_id, &a_tok).await;
+
+        // Export the book bundle (application/zip download, retained under exports/).
+        let (status, ctype, bundle) = send_bytes(
+            a.clone(),
+            with_session(
+                post_raw(&format!("/v1/books/{book_id}/export"), Vec::new()),
+                &a_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "export book");
+        assert!(ctype.starts_with("application/zip"), "ctype={ctype}");
+        assert!(!bundle.is_empty(), "bundle has bytes");
+
+        // Fresh instance B: importing the clean bundle VERIFIES (no collision on a fresh instance).
+        let b = persistent_state();
+        let b_tok = seed_session(&b, &make_user(&b, "bruno").await).await;
+        let (status, outcome) = send(
+            b.clone(),
+            with_session(post_raw("/v1/books/import", bundle.clone()), &b_tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "import verified: {outcome}");
+        assert_eq!(outcome["verdict"]["status"], "Verified");
+        assert_eq!(outcome["collided"], false);
+        assert_eq!(outcome["book_id"], book_id);
+
+        // A forged bundle (tampered member) is QUARANTINED, never trusted as valid.
+        let c = persistent_state();
+        let c_tok = seed_session(&c, &make_user(&c, "carla").await).await;
+        let forged = tamper_bundle(&bundle);
+        let (status, outcome) = send(
+            c.clone(),
+            with_session(post_raw("/v1/books/import", forged), &c_tok),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "forged import handled: {outcome}");
+        assert_eq!(outcome["verdict"]["status"], "Quarantined");
+        assert!(
+            outcome["verdict"]["break"].is_object(),
+            "break detail present"
+        );
+    }
+
+    #[tokio::test]
+    async fn per_book_start_over_archives_and_opens_a_fresh_successor() {
+        let state = persistent_state();
+        let token = seed_session(&state, &make_user(&state, "amelia.marques").await).await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
+        seal_one_act(&state, &book_id, &token).await;
+
+        let (status, resp) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/start-over"),
+                    json!({
+                        "reason": "livro esgotado — recomeçar",
+                        "purpose": "livro de atas da assembleia geral (sucessor)",
+                        "opening_date": "2026-07-08",
+                        "required_signatories": ["Administrador"],
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "start-over: {resp}");
+        assert_eq!(resp["reinit"]["old_book_id"], book_id);
+        assert_eq!(resp["new_book"]["state"], "Open");
+        assert!(resp["reinit"]["archived_bundle_digest"].is_string());
+        let new_book_id = resp["new_book"]["id"].as_str().expect("new id").to_owned();
+        assert_ne!(new_book_id, book_id);
+
+        // The old book still exists (append-only; nothing erased); both books are queryable.
+        let (status, _) = send(state.clone(), get(&format!("/v1/books/{book_id}"))).await;
+        assert_eq!(status, StatusCode::OK, "old book preserved");
+        let (status, _) = send(state.clone(), get(&format!("/v1/books/{new_book_id}"))).await;
+        assert_eq!(status, StatusCode::OK, "successor opened");
+
+        // The lifecycle events are chained (exported + reinitialized), and the chain still verifies.
+        let (_, events) = send(state.clone(), get("/v1/ledger/events?limit=1000")).await;
+        let kinds: Vec<&str> = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .map(|e| e["kind"].as_str().unwrap_or_default())
+            .collect();
+        assert!(
+            kinds.contains(&"ledger.exported"),
+            "exported chained: {kinds:?}"
+        );
+        assert!(kinds.contains(&"ledger.reinitialized"), "reinit chained");
+        let (_, verify) = send(state.clone(), get("/v1/ledger/verify")).await;
+        assert_eq!(
+            verify["valid"], true,
+            "chain still verifies after start-over"
+        );
+    }
+
+    #[tokio::test]
+    async fn whole_instance_start_over_requires_confirm_and_reauth_then_reseeds_empty() {
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        seed_entity_and_book(&state, &token).await;
+
+        // Wrong confirm phrase → 422 (reaches the handler; nothing destroyed).
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/start-over",
+                    json!({ "reason": "x", "confirm_phrase": "nope",
+                            "reauth": { "password": "wipe-pass-1234" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong phrase refused"
+        );
+
+        // Right phrase but NO step-up re-auth → 403 (a session alone is not enough).
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/start-over",
+                    json!({ "reason": "x", "confirm_phrase": "RECOMEÇAR" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "no step-up refused");
+
+        // Confirm + re-auth → archives, then re-seeds a fresh (nearly empty) ledger.
+        let (status, resp) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/start-over",
+                    json!({ "reason": "recomeçar a instância", "confirm_phrase": "RECOMEÇAR",
+                            "reauth": { "password": "wipe-pass-1234" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "instance start-over: {resp}");
+        assert!(resp["archive_path"].is_string());
+
+        // Domain is cleared; the fresh ledger's genesis is the reinitialization, and it verifies.
+        let (_, entities) = send(state.clone(), get("/v1/entities")).await;
+        assert!(
+            entities.as_array().expect("entities").is_empty(),
+            "domain cleared"
+        );
+        let (_, verify) = send(state.clone(), get("/v1/ledger/verify")).await;
+        assert_eq!(verify["valid"], true);
+        assert_eq!(
+            verify["length"], 1,
+            "fresh ledger holds only the reinit genesis"
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_backend_domain_preserves_the_ledger_and_emits_data_wiped() {
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
+        seal_one_act(&state, &book_id, &token).await;
+        let (_, verify_before) = send(state.clone(), get("/v1/ledger/verify")).await;
+        let len_before = verify_before["length"].as_u64().expect("len");
+
+        let (status, resp) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_domain", "confirm_phrase": "LIMPAR DADOS",
+                            "export_first": true, "reauth": { "password": "wipe-pass-1234" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "domain wipe: {resp}");
+        assert!(
+            resp["export_archive"].is_string(),
+            "export-first archive taken"
+        );
+
+        // Domain data cleared, but the append-only ledger is PRESERVED + grew a data.wiped event.
+        let (_, entities) = send(state.clone(), get("/v1/entities")).await;
+        assert!(
+            entities.as_array().expect("entities").is_empty(),
+            "domain cleared"
+        );
+        let (_, verify) = send(state.clone(), get("/v1/ledger/verify")).await;
+        assert_eq!(verify["valid"], true, "ledger still verifies");
+        assert!(
+            verify["length"].as_u64().expect("len") > len_before,
+            "ledger preserved and grew (data.wiped + export)"
+        );
+        let (_, events) = send(state.clone(), get("/v1/ledger/events?limit=1000")).await;
+        assert!(
+            events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "data.wiped"),
+            "a data.wiped event was chained"
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_backend_factory_blanks_everything_after_export_first() {
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
+        seal_one_act(&state, &book_id, &token).await;
+
+        let (status, resp) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_factory", "confirm_phrase": "REPOR FÁBRICA",
+                            "export_first": true, "reauth": { "password": "wipe-pass-1234" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "factory reset: {resp}");
+        assert!(
+            resp["export_archive"].is_string(),
+            "export-first archive taken"
+        );
+
+        // Blank first-run: the ledger is gone (empty) — the retained archive IS the record.
+        let (_, verify) = send(state.clone(), get("/v1/ledger/verify")).await;
+        assert_eq!(verify["length"], 0, "ledger blanked");
+        let (_, entities) = send(state.clone(), get("/v1/entities")).await;
+        assert!(
+            entities.as_array().expect("entities").is_empty(),
+            "domain blanked"
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_requires_step_up_reauth_and_the_confirm_phrase() {
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        seed_entity_and_book(&state, &token).await;
+
+        // No re-auth (session only) → 403.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_domain", "confirm_phrase": "LIMPAR DADOS",
+                            "export_first": true }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "session alone is not enough");
+
+        // Wrong password → 403.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_domain", "confirm_phrase": "LIMPAR DADOS",
+                            "export_first": true, "reauth": { "password": "WRONG" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "wrong step-up refused");
+
+        // Right re-auth but wrong confirm phrase → 422; the domain is untouched throughout.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_domain", "confirm_phrase": "wrong",
+                            "export_first": true, "reauth": { "password": "wipe-pass-1234" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "wrong phrase refused"
+        );
+        let (_, entities) = send(state.clone(), get("/v1/entities")).await;
+        assert_eq!(
+            entities.as_array().expect("entities").len(),
+            1,
+            "domain intact"
+        );
+    }
+
+    #[tokio::test]
+    async fn degraded_gate_blocks_mutations_but_leaves_reads_and_recovery_open() {
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
+
+        // Force the degraded (read-only) signal (as a broken boot chain would).
+        *state.degraded.write().await = true;
+
+        // An ordinary mutation is blocked with 503 + the honest read-only body.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({ "name": "X, S.A.", "nipc": "500000000", "seat": "Porto", "kind": "SociedadeAnonima" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "mutation gated");
+        assert_eq!(body["read_only"], true);
+        assert_eq!(body["integrity"], "broken");
+
+        // Reads stay open.
+        let (status, _) = send(state.clone(), get("/v1/entities")).await;
+        assert_eq!(status, StatusCode::OK, "reads open while degraded");
+        let (status, report) = send(state.clone(), get("/v1/ledger/integrity")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(report["degraded"], true);
+
+        // The recovery/reset plane stays reachable (NOT 503): each reaches its handler and returns a
+        // handler-level status, never the gate's 503.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_domain", "confirm_phrase": "wrong",
+                            "reauth": { "password": "wipe-pass-1234" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "reset reachable while degraded"
+        );
+
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json("/v1/ledger/recovery/reanchor", json!({ "reason": "x" })),
+                &token,
+            ),
+        )
+        .await;
+        // The in-memory chain is actually healthy, so reanchor refuses with 409 — proving it was
+        // REACHED (not 503-gated).
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "reanchor reachable while degraded"
+        );
+
+        // Export stays open (archive-first before a repair).
+        let (status, _, _) = send_bytes(
+            state.clone(),
+            with_session(
+                post_raw(&format!("/v1/books/{book_id}/export"), Vec::new()),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "export reachable while degraded");
+    }
+
+    #[tokio::test]
+    async fn try_append_rejects_a_chain_breaking_mutation() {
+        // In-memory state: an entity + open book, then corrupt the ledger's global tail so any
+        // further append onto that chain must be rejected by the validating try_append (t54 #6).
+        let (state, _eid, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        {
+            let mut events = state.ledger.read().await.events().to_vec();
+            let n = events.len();
+            events[n - 1].hash[0] ^= 0xff; // break the tail's self-hash
+            let (broken, _) = Ledger::try_from_events(events);
+            *state.ledger.write().await = broken;
+        }
+
+        // Drafting an act joins the (now broken-tailed) chain → try_append rejects it → 409, and
+        // nothing is persisted.
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({ "book_id": book_id, "title": "Ata", "channel": "Physical" }),
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "chain-breaking append rejected: {body}"
+        );
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("break a chain"),
+            "the refusal names the chain-break cause: {body}"
+        );
     }
 }
