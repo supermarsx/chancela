@@ -9,6 +9,7 @@ repository.workspace = true
 description = "Axum HTTP layer for Chancela: in-memory entity CRUD and ledger verification over the domain core (ARC-02, thin API)."
 
 [dependencies]
+chancela-authz = { workspace = true }
 chancela-core = { workspace = true }
 chancela-ledger = { workspace = true }
 chancela-registry = { workspace = true }

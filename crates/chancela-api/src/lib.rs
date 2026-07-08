@@ -44,6 +44,7 @@ mod cae;
 mod chronology;
 mod dashboard;
 mod data;
+mod delegations;
 mod documents;
 mod dto;
 mod entities;
@@ -53,6 +54,7 @@ mod law;
 mod ledger;
 mod recovery;
 mod registry;
+mod roles;
 mod session;
 mod settings;
 mod signature;
@@ -83,8 +85,13 @@ use tokio::sync::RwLock;
 use tower_http::services::{ServeDir, ServeFile};
 
 pub use actor::{CurrentActor, CurrentAttestor};
+pub use delegations::{DelegationId, StoredDelegation};
 pub use error::ApiError;
 pub use law::{LawEntry, LawEntryView, LawStore, StoredLawInfo};
+pub use roles::{
+    count_owner_admins, effective_permissions_for, effective_permissions_for_actor,
+    last_owner_guard_ok, resolve_principal_id,
+};
 pub use settings::{
     AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting, DocumentSettings, Locale,
     OnboardingSettings, OrganizationSettings, Settings, SignatureFamily, SigningCmdSettings,
@@ -160,6 +167,17 @@ pub struct AppState {
     pub users: Arc<RwLock<HashMap<UserId, User>>>,
     /// Where `users.json` is persisted, or `None` for in-memory profiles. Mirrors `persist_path`.
     pub users_path: Option<Arc<PathBuf>>,
+    /// The scoped RBAC role catalog (t64): the seeded defaults + any custom roles. `Default` empty;
+    /// [`AppState::with_data_dir`] loads `roles.json` and **ensures the seeded defaults are present**
+    /// (Owner forced canonical/locked). Mirrors `users`.
+    pub roles: Arc<RwLock<chancela_authz::RoleCatalog>>,
+    /// Where `roles.json` is persisted, or `None` for in-memory. Mirrors `users_path`.
+    pub roles_path: Option<Arc<PathBuf>>,
+    /// The scoped delegation table (t64): active **and** revoked delegations, keyed by
+    /// [`DelegationId`]. `Default` empty; [`AppState::with_data_dir`] loads `delegations.json`.
+    pub delegations: Arc<RwLock<HashMap<DelegationId, delegations::StoredDelegation>>>,
+    /// Where `delegations.json` is persisted, or `None` for in-memory. Mirrors `users_path`.
+    pub delegations_path: Option<Arc<PathBuf>>,
     /// In-memory session tokens → the [`SessionEntry`](session::SessionEntry) they open: the
     /// user, plus (when the user signed in with a password and holds an attestation key) the
     /// decrypted signing key held for the life of the session. Reset on restart; the unlocked key
@@ -249,7 +267,30 @@ impl AppState {
         let settings_path = dir.join(settings::SETTINGS_FILE);
         let loaded = settings::load_settings(&settings_path).unwrap_or_default();
         let users_path = dir.join(users::USERS_FILE);
-        let loaded_users = users::load_users(&users_path).unwrap_or_default();
+        let mut loaded_users = users::load_users(&users_path).unwrap_or_default();
+
+        // Scoped RBAC stores (t64): the role catalog + the delegation table, mirroring `users.json`.
+        // The catalog seeds the four defaults if absent (Owner forced canonical/locked); the users
+        // are brought forward by the one-time, idempotent, anti-lockout role migration. Each is
+        // rewritten to disk exactly once, only when the load actually changed it.
+        let roles_path = dir.join(roles::ROLES_FILE);
+        let mut roles_catalog = roles::load_roles(&roles_path).unwrap_or_default();
+        if roles::ensure_seeded_defaults(&mut roles_catalog) {
+            if let Err(e) = roles::write_roles_atomic(&roles_path, &roles_catalog) {
+                eprintln!("warning: failed to seed {} ({e})", roles_path.display());
+            }
+        }
+        if roles::migrate_roles(&mut loaded_users) {
+            if let Err(e) = users::write_users_atomic(&users_path, &loaded_users) {
+                eprintln!(
+                    "warning: failed to persist the role migration to {} ({e})",
+                    users_path.display()
+                );
+            }
+        }
+        let delegations_path = dir.join(delegations::DELEGATIONS_FILE);
+        let loaded_delegations =
+            delegations::load_delegations(&delegations_path).unwrap_or_default();
         // Prefer a valid, newer `cae-catalog.json` cache over the embedded catalog (never errors).
         let catalog = chancela_cae::load_catalog(Some(&dir));
         // Law archive: the `laws/` subdir plus its state file (missing/malformed → empty archive).
@@ -260,6 +301,10 @@ impl AppState {
             persist_path: Some(Arc::new(settings_path)),
             users: Arc::new(RwLock::new(loaded_users)),
             users_path: Some(Arc::new(users_path)),
+            roles: Arc::new(RwLock::new(roles_catalog)),
+            roles_path: Some(Arc::new(roles_path)),
+            delegations: Arc::new(RwLock::new(loaded_delegations)),
+            delegations_path: Some(Arc::new(delegations_path)),
             cae: Arc::new(RwLock::new(catalog)),
             laws_dir: Some(Arc::new(laws_dir)),
             law_store: Arc::new(RwLock::new(law_store)),
@@ -412,6 +457,8 @@ impl AppState {
             Some(dir) => vec![
                 dir.join(crate::settings::SETTINGS_FILE),
                 dir.join(crate::users::USERS_FILE),
+                dir.join(crate::roles::ROLES_FILE),
+                dir.join(crate::delegations::DELEGATIONS_FILE),
                 dir.join(chancela_cae::CACHE_FILE),
                 dir.join(crate::law::LAWS_DIR),
             ],
@@ -458,6 +505,10 @@ impl AppState {
         self.users.write().await.clear();
         self.sessions.write().await.clear();
         self.attestations.write().await.clear();
+        // A blank first-run instance has the seeded default roles and no delegations (t64), matching
+        // what a subsequent load of the wiped data dir would reseed.
+        *self.roles.write().await = chancela_authz::RoleCatalog::seeded_defaults();
+        self.delegations.write().await.clear();
         *self.settings.write().await = settings::Settings::default();
     }
 
@@ -940,6 +991,7 @@ mod tests {
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
+            role_assignments: Vec::new(),
         };
         state.users.write().await.insert(uid, user);
         let token = Uuid::new_v4().to_string();
@@ -2517,6 +2569,343 @@ mod tests {
         let (status, got) = send(second, get("/v1/settings")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(got, sample_settings());
+    }
+
+    // --- Scoped RBAC stores + migration + bootstrap + resolution seam (t64-E2) ------------
+
+    /// Insert an active user with the given role assignments directly into the state (bypassing the
+    /// API + migration), returning its id. For the store/seam tests below.
+    async fn seed_user(
+        state: &AppState,
+        username: &str,
+        assignments: Vec<chancela_authz::RoleAssignment>,
+    ) -> crate::users::UserId {
+        use crate::users::{User, UserId};
+        use time::format_description::well_known::Rfc3339;
+        let uid = UserId(Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: username.to_owned(),
+            display_name: username.to_owned(),
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: assignments,
+        };
+        state.users.write().await.insert(uid, user);
+        uid
+    }
+
+    #[tokio::test]
+    async fn legacy_users_json_migrates_on_load_and_is_idempotent() {
+        use chancela_authz::{GESTOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
+        let tmp = TempDir::new();
+        // A pre-t64 users.json: two users, with NO `role_assignments` field at all (back-compat).
+        let legacy = json!([
+            { "id": "00000000-0000-0000-0000-000000000001", "username": "amelia.marques",
+              "display_name": "Amélia Marques", "created_at": "2026-01-01T00:00:00Z", "active": true },
+            { "id": "00000000-0000-0000-0000-000000000002", "username": "bruno.dias",
+              "display_name": "Bruno Dias", "created_at": "2026-02-01T00:00:00Z", "active": true }
+        ]);
+        std::fs::write(
+            tmp.dir.join("users.json"),
+            serde_json::to_vec_pretty(&legacy).unwrap(),
+        )
+        .unwrap();
+
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        {
+            let users = state.users.read().await;
+            let amelia = users
+                .values()
+                .find(|u| u.username == "amelia.marques")
+                .unwrap();
+            let bruno = users.values().find(|u| u.username == "bruno.dias").unwrap();
+            // Earliest user ⇒ Owner@Global; the rest ⇒ Gestor@Global (no lockout, one Owner).
+            assert_eq!(
+                amelia.role_assignments,
+                vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)]
+            );
+            assert_eq!(
+                bruno.role_assignments,
+                vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)]
+            );
+        }
+        // Rewritten to disk (now carries role_assignments), and roles.json was seeded.
+        let on_disk = std::fs::read_to_string(tmp.dir.join("users.json")).unwrap();
+        assert!(on_disk.contains("role_assignments"));
+        assert!(tmp.dir.join("roles.json").is_file());
+
+        // Idempotent: a second load rewrites nothing (already-migrated ⇒ no-op).
+        let before = std::fs::read(tmp.dir.join("users.json")).unwrap();
+        let _second = AppState::with_data_dir(tmp.dir.clone());
+        let after = std::fs::read(tmp.dir.join("users.json")).unwrap();
+        assert_eq!(before, after, "second load is a no-op");
+    }
+
+    #[tokio::test]
+    async fn bootstrap_first_user_owner_second_user_gestor() {
+        use chancela_authz::{GESTOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+
+        // Fresh install, zero users: the bootstrap create needs no session.
+        let (status, first) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/users",
+                json!({ "username": "amelia.marques", "display_name": "Amélia Marques" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let first_id = first["id"].as_str().unwrap().to_owned();
+
+        // Sign in as the (passwordless) first user to get a session, then create a second user.
+        let (status, sess) = send_raw(
+            state.clone(),
+            post_json("/v1/session", json!({ "user_id": first_id })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let token = sess["token"].as_str().unwrap().to_owned();
+
+        let (status, _second) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/users", json!({ "username": "bruno.dias" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+
+        let users = state.users.read().await;
+        let amelia = users
+            .values()
+            .find(|u| u.username == "amelia.marques")
+            .unwrap();
+        let bruno = users.values().find(|u| u.username == "bruno.dias").unwrap();
+        assert_eq!(
+            amelia.role_assignments,
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            "the first user is Owner"
+        );
+        assert_eq!(
+            bruno.role_assignments,
+            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+            "subsequent users are Gestor"
+        );
+    }
+
+    #[tokio::test]
+    async fn principal_resolution_yields_correct_effective_permissions() {
+        use chancela_authz::{
+            GESTOR_ROLE_ID, NoBooks, OWNER_ROLE_ID, Permission, RoleAssignment, Scope,
+            has_permission,
+        };
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let now = time::OffsetDateTime::now_utc();
+
+        let owner_id = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let gestor_id = seed_user(
+            &state,
+            "bruno.dias",
+            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+
+        let owner_eff = crate::roles::effective_permissions_for(&state, owner_id, now).await;
+        assert!(has_permission(
+            &owner_eff,
+            Permission::DataWipe,
+            Scope::Global,
+            &NoBooks
+        ));
+        assert!(has_permission(
+            &owner_eff,
+            Permission::RoleManage,
+            Scope::Global,
+            &NoBooks
+        ));
+
+        let gestor_eff = crate::roles::effective_permissions_for(&state, gestor_id, now).await;
+        assert!(has_permission(
+            &gestor_eff,
+            Permission::BookOpen,
+            Scope::Global,
+            &NoBooks
+        ));
+        // Gestor lacks the destructive + meta verbs.
+        assert!(!has_permission(
+            &gestor_eff,
+            Permission::DataWipe,
+            Scope::Global,
+            &NoBooks
+        ));
+        assert!(!has_permission(
+            &gestor_eff,
+            Permission::RoleManage,
+            Scope::Global,
+            &NoBooks
+        ));
+
+        // Unknown principal ⇒ empty authority (fail-closed).
+        let ghost = crate::users::UserId(Uuid::new_v4());
+        assert!(
+            crate::roles::effective_permissions_for(&state, ghost, now)
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn delegation_contributes_to_effective_permissions() {
+        use chancela_authz::{
+            Delegation, LEITOR_ROLE_ID, NoBooks, Permission, RoleAssignment, Scope, has_permission,
+        };
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let now = time::OffsetDateTime::UNIX_EPOCH;
+
+        // A Leitor (read-only) who receives a delegated act.advance.
+        let leitor_id = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let did = crate::delegations::DelegationId(Uuid::from_u128(1));
+        {
+            let mut table = state.delegations.write().await;
+            table.insert(
+                did,
+                crate::delegations::StoredDelegation::new(
+                    did,
+                    now.format(&time::format_description::well_known::Rfc3339)
+                        .unwrap(),
+                    Delegation::new(
+                        chancela_authz::UserId(Uuid::from_u128(9)),
+                        chancela_authz::UserId(leitor_id.0),
+                        Permission::ActAdvance,
+                        Scope::Global,
+                    ),
+                ),
+            );
+        }
+
+        let eff = crate::roles::effective_permissions_for(&state, leitor_id, now).await;
+        // Base read stays; the delegated act.advance is present; a non-granted verb is not.
+        assert!(has_permission(
+            &eff,
+            Permission::ActRead,
+            Scope::Global,
+            &NoBooks
+        ));
+        assert!(has_permission(
+            &eff,
+            Permission::ActAdvance,
+            Scope::Global,
+            &NoBooks
+        ));
+        assert!(!has_permission(
+            &eff,
+            Permission::DataWipe,
+            Scope::Global,
+            &NoBooks
+        ));
+    }
+
+    #[tokio::test]
+    async fn last_owner_guard_tracks_admin_owner_count() {
+        use chancela_authz::{GESTOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, Scope};
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+
+        seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        seed_user(
+            &state,
+            "bruno.dias",
+            vec![RoleAssignment::new(GESTOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        // One Owner ⇒ removing it is unsafe (guard false).
+        assert_eq!(crate::roles::count_owner_admins(&state).await, 1);
+        assert!(!crate::roles::last_owner_guard_ok(&state).await);
+
+        // A second Owner ⇒ safe to remove one.
+        seed_user(
+            &state,
+            "carla.nunes",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        assert_eq!(crate::roles::count_owner_admins(&state).await, 2);
+        assert!(crate::roles::last_owner_guard_ok(&state).await);
+    }
+
+    #[tokio::test]
+    async fn roles_and_delegations_persist_through_state() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+
+        // Add a custom role + a delegation, persist both, reload from disk.
+        let custom_id = chancela_authz::RoleId(Uuid::from_u128(0xABCD));
+        {
+            let mut roles = state.roles.write().await;
+            roles.insert(chancela_authz::Role {
+                id: custom_id,
+                name: "Auditor".to_owned(),
+                permission_set: [chancela_authz::Permission::LedgerRead]
+                    .into_iter()
+                    .collect(),
+                protected: false,
+            });
+        }
+        crate::roles::persist_roles(&state).await.unwrap();
+
+        let did = crate::delegations::DelegationId(Uuid::from_u128(1));
+        {
+            let mut table = state.delegations.write().await;
+            table.insert(
+                did,
+                crate::delegations::StoredDelegation::new(
+                    did,
+                    time::OffsetDateTime::UNIX_EPOCH
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap(),
+                    chancela_authz::Delegation::new(
+                        chancela_authz::UserId(Uuid::from_u128(1)),
+                        chancela_authz::UserId(Uuid::from_u128(2)),
+                        chancela_authz::Permission::ActAdvance,
+                        chancela_authz::Scope::Global,
+                    ),
+                ),
+            );
+        }
+        crate::delegations::persist_delegations(&state)
+            .await
+            .unwrap();
+
+        let reloaded = AppState::with_data_dir(tmp.dir.clone());
+        assert!(reloaded.roles.read().await.get(custom_id).is_some());
+        assert_eq!(reloaded.delegations.read().await.len(), 1);
     }
 
     // --- CAE library (§2.7) --------------------------------------------------------------

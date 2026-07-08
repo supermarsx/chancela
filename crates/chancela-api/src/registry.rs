@@ -606,6 +606,7 @@ mod tests {
             attestation_key: None,
             secret_source: Default::default(),
             recovery_hash: None,
+            role_assignments: Vec::new(),
         };
         state.users.write().await.insert(uid, user);
         let token = uuid::Uuid::new_v4().to_string();

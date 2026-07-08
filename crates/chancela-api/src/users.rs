@@ -84,6 +84,12 @@ pub struct User {
     /// proof. Consumed (set back to `None`) after a successful recovery-authorized reset (single-use).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_hash: Option<String>,
+    /// The user's scoped RBAC role assignments (t64). **Additive** — `#[serde(default)]` keeps every
+    /// pre-t64 `users.json` loadable (an absent value reads as an empty vec), which the one-time
+    /// [`crate::roles::migrate_roles`] pass then brings forward (sole/first user ⇒ Owner\@Global,
+    /// the rest ⇒ Gestor\@Global). A freshly bootstrapped user is assigned here at creation.
+    #[serde(default)]
+    pub role_assignments: Vec<chancela_authz::RoleAssignment>,
 }
 
 #[derive(Debug, Serialize)]
@@ -211,7 +217,10 @@ pub(crate) fn load_users(path: &Path) -> Option<HashMap<UserId, User>> {
     }
 }
 
-fn write_users_atomic(path: &Path, users: &HashMap<UserId, User>) -> std::io::Result<()> {
+pub(crate) fn write_users_atomic(
+    path: &Path,
+    users: &HashMap<UserId, User>,
+) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
@@ -292,6 +301,10 @@ pub async fn create_user(
                 "a user named {username:?} already exists"
             )));
         }
+        // Bootstrap rule (t64 §5): the first user on a fresh install (no users existed yet) is
+        // Owner@Global; every subsequent user is Gestor@Global. Determined under the write lock so
+        // exactly one bootstrap Owner can ever be minted.
+        let bootstrap = users.is_empty();
         let user = User {
             id: UserId(Uuid::new_v4()),
             username,
@@ -304,6 +317,7 @@ pub async fn create_user(
             attestation_key: None,
             secret_source: SecretSource::default(),
             recovery_hash: None,
+            role_assignments: vec![crate::roles::bootstrap_assignment(bootstrap)],
         };
         users.insert(user.id, user.clone());
         user

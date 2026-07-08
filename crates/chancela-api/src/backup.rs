@@ -1,7 +1,8 @@
 //! Hot-backup endpoint (contract §3.2, t30 §D6): `POST /v1/backup`.
 //!
 //! Snapshots the durable store with `VACUUM INTO` (transactionally consistent, no downtime),
-//! bundles it with the JSON sidecars (`settings.json`, `users.json`, `cae-catalog.json`, `laws/`)
+//! bundles it with the JSON sidecars (`settings.json`, `users.json`, `roles.json`,
+//! `delegations.json`, `cae-catalog.json`, `laws/`)
 //! and a `manifest.json` into a single zip under `<data_dir>/backups/`, and returns the manifest.
 //! In-memory mode (no durable store) → `422`, mirroring the no-data-dir precedents. The backup is
 //! itself recorded in the chain via a `backup.created` event (which is then persisted too, so the
@@ -37,6 +38,8 @@ pub async fn create_backup(
     let sidecars = vec![
         data_dir.join(crate::settings::SETTINGS_FILE),
         data_dir.join(crate::users::USERS_FILE),
+        data_dir.join(crate::roles::ROLES_FILE),
+        data_dir.join(crate::delegations::DELEGATIONS_FILE),
         data_dir.join(chancela_cae::CACHE_FILE),
         data_dir.join(crate::law::LAWS_DIR),
     ];
