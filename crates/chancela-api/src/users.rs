@@ -704,6 +704,19 @@ pub async fn set_secret(
     let snapshot = snapshot.ok_or(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))?;
     let changing = snapshot.password_hash.is_some();
 
+    // Strength policy (t68). Enforced AFTER authorization so a cross-user caller without a valid proof
+    // gets the uniform 403 first (anti-enumeration, t51) — the policy never becomes an oracle — and so
+    // the username rule can validate against the *target's* real username. `validate_secret` above
+    // already rejected an empty/over-long candidate (422); this adds the composition/denylist/run
+    // rules (relaxable via `ALLOW_WEAK_PASSWORDS`, presence excepted). Login (`create_session`) and the
+    // recovery/data-reset re-auth paths deliberately do NOT run this — they verify an existing secret,
+    // and strength-checking them would lock out an account whose password predates the policy.
+    crate::password_policy::enforce(
+        &req.password,
+        &snapshot.username,
+        crate::password_policy::ALLOW_WEAK_PASSWORDS,
+    )?;
+
     // Self-service keeps the exact prior contract: prove the current password when changing.
     if matches!(decision, SecretAuthz::SelfService) && changing {
         verify_current(&snapshot, req.current_password.as_deref())?;

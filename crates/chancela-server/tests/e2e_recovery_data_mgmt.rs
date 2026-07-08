@@ -57,7 +57,7 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
     let (status, _) = h
         .post_json_auth(
             &format!("/v1/users/{user_id}/secret"),
-            json!({ "password": "reanchor-pass-1234" }),
+            json!({ "password": "Reancorar-Cadeia5!" }),
             &token,
         )
         .await;
@@ -100,7 +100,7 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
     let (status, s) = h
         .post_json(
             "/v1/session",
-            json!({ "user_id": user_id, "password": "reanchor-pass-1234" }),
+            json!({ "user_id": user_id, "password": "Reancorar-Cadeia5!" }),
         )
         .await;
     assert_eq!(status, 200, "re-open session with password: {s}");
@@ -154,7 +154,7 @@ async fn a_broken_chain_gates_mutations_then_reanchor_repairs_and_reopens() {
             "/v1/ledger/recovery/reanchor",
             json!({
                 "reason": "cópia de segurança indisponível — re-ancoragem autorizada",
-                "reauth": { "password": "reanchor-pass-1234" }
+                "reauth": { "password": "Reancorar-Cadeia5!" }
             }),
             &token,
         )
@@ -306,7 +306,7 @@ async fn backend_domain_wipe_requires_step_up_reauth_and_preserves_the_ledger() 
     let (status, _) = h
         .post_json_auth(
             &format!("/v1/users/{user_id}/secret"),
-            json!({ "password": "wipe-pass-1234" }),
+            json!({ "password": "Limpar-Dados6!X" }),
             &token,
         )
         .await;
@@ -334,7 +334,7 @@ async fn backend_domain_wipe_requires_step_up_reauth_and_preserves_the_ledger() 
                 "scope": "backend_domain",
                 "confirm_phrase": "LIMPAR DADOS",
                 "export_first": true,
-                "reauth": { "password": "wipe-pass-1234" }
+                "reauth": { "password": "Limpar-Dados6!X" }
             }),
             &token,
         )

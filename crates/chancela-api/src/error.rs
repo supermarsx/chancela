@@ -47,6 +47,16 @@ pub enum ApiError {
     /// The request was well-formed but semantically invalid, e.g. a malformed date or a
     /// compliance-blocked seal (422).
     Unprocessable(String),
+    /// A candidate password failed the strength policy (422, t68). Carries the per-rule failures so
+    /// the client can point at exactly which requirements were not met. **Additive + self-contained:**
+    /// no `contracts/**` fixture describes this body — the base `error` field is preserved and a
+    /// `failed_rules` array is added alongside it.
+    PasswordPolicy {
+        /// Human-readable summary (mirrors the base `error` field).
+        message: String,
+        /// The requirements the candidate did not satisfy.
+        failures: Vec<crate::password_policy::PasswordRuleFailure>,
+    },
     /// Sealing was blocked by `Error`-severity compliance issues (422). The offending issues
     /// are returned as a structured `issues` array so the UI can cite each legal basis.
     ComplianceBlocked {
@@ -92,11 +102,20 @@ struct ErrorWithWarnings<'a> {
     warnings: &'a [IssueView],
 }
 
+/// Error body with a structured `failed_rules` array (password strength policy, t68). Additive: the
+/// base `error` field is preserved so a plain-envelope client still reads a message.
+#[derive(Serialize)]
+struct ErrorWithPasswordFailures<'a> {
+    error: &'a str,
+    failed_rules: &'a [crate::password_policy::PasswordRuleFailure],
+}
+
 impl ApiError {
     fn status(&self) -> StatusCode {
         match self {
             ApiError::InvalidNipc(_)
             | ApiError::Unprocessable(_)
+            | ApiError::PasswordPolicy { .. }
             | ApiError::ComplianceBlocked { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
@@ -124,7 +143,8 @@ impl ApiError {
             | ApiError::Internal(msg)
             | ApiError::Upstream(msg) => msg.clone(),
             ApiError::ComplianceBlocked { message, .. }
-            | ApiError::WarningsNotAcknowledged { message, .. } => message.clone(),
+            | ApiError::WarningsNotAcknowledged { message, .. }
+            | ApiError::PasswordPolicy { message, .. } => message.clone(),
         }
     }
 }
@@ -159,6 +179,14 @@ impl IntoResponse for ApiError {
                 Json(ErrorWithWarnings {
                     error: message,
                     warnings,
+                }),
+            )
+                .into_response(),
+            ApiError::PasswordPolicy { message, failures } => (
+                status,
+                Json(ErrorWithPasswordFailures {
+                    error: message,
+                    failed_rules: failures,
                 }),
             )
                 .into_response(),

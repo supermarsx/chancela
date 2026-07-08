@@ -53,6 +53,7 @@ mod error;
 mod hex;
 mod law;
 mod ledger;
+mod password_policy;
 mod recovery;
 mod registry;
 mod roles;
@@ -779,6 +780,7 @@ pub fn router(state: AppState) -> Router {
             delete(delegations::revoke_delegation),
         )
         .route("/v1/session/roster", get(session::session_roster))
+        .route("/v1/session/password-policy", get(session::password_policy))
         .route("/v1/session/permissions", get(session::session_permissions))
         .route(
             "/v1/session",
@@ -5006,7 +5008,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "s3cret-pass" }),
+                    json!({ "password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5017,7 +5019,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/attestation-key"),
-                    json!({ "current_password": "s3cret-pass" }),
+                    json!({ "current_password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5027,7 +5029,7 @@ mod tests {
             state.clone(),
             post_json(
                 "/v1/session",
-                json!({ "user_id": id, "password": "s3cret-pass" }),
+                json!({ "user_id": id, "password": "Segur0-Chave7!" }),
             ),
         )
         .await;
@@ -5082,7 +5084,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "correct horse" }),
+                    json!({ "password": "Cavalo-Certo9!" }),
                 ),
                 &self_tok,
             ),
@@ -5106,7 +5108,7 @@ mod tests {
             state.clone(),
             post_json(
                 "/v1/session",
-                json!({ "user_id": id, "password": "correct horse" }),
+                json!({ "user_id": id, "password": "Cavalo-Certo9!" }),
             ),
         )
         .await;
@@ -5123,7 +5125,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "s3cret-pass" }),
+                    json!({ "password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5142,7 +5144,7 @@ mod tests {
             state.clone(),
             post_json(
                 "/v1/session",
-                json!({ "user_id": id, "password": "s3cret-pass" }),
+                json!({ "user_id": id, "password": "Segur0-Chave7!" }),
             ),
         )
         .await;
@@ -5176,7 +5178,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "s3cret-pass" }),
+                    json!({ "password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5201,7 +5203,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/attestation-key"),
-                    json!({ "current_password": "s3cret-pass" }),
+                    json!({ "current_password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5285,7 +5287,7 @@ mod tests {
                 body_json(
                     "DELETE",
                     &format!("/v1/users/{id}/attestation-key"),
-                    json!({ "current_password": "s3cret-pass" }),
+                    json!({ "current_password": "Segur0-Chave7!" }),
                 ),
                 &token,
             ),
@@ -5346,7 +5348,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "s3cret-pass" }),
+                    json!({ "password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5357,7 +5359,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/attestation-key"),
-                    json!({ "current_password": "s3cret-pass" }),
+                    json!({ "current_password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5384,7 +5386,7 @@ mod tests {
                 body_json(
                     "DELETE",
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "current_password": "s3cret-pass" }),
+                    json!({ "current_password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5405,7 +5407,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "old-secret" }),
+                    json!({ "password": "Velho-Codigo3!" }),
                 ),
                 &self_tok,
             ),
@@ -5416,7 +5418,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/attestation-key"),
-                    json!({ "current_password": "old-secret" }),
+                    json!({ "current_password": "Velho-Codigo3!" }),
                 ),
                 &self_tok,
             ),
@@ -5428,7 +5430,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "new-secret", "current_password": "old-secret" }),
+                    json!({ "password": "Novo-Codigo8!", "current_password": "Velho-Codigo3!" }),
                 ),
                 &self_tok,
             ),
@@ -5440,7 +5442,7 @@ mod tests {
             state.clone(),
             post_json(
                 "/v1/session",
-                json!({ "user_id": id, "password": "old-secret" }),
+                json!({ "user_id": id, "password": "Velho-Codigo3!" }),
             ),
         )
         .await;
@@ -5451,7 +5453,7 @@ mod tests {
             state.clone(),
             post_json(
                 "/v1/session",
-                json!({ "user_id": id, "password": "new-secret" }),
+                json!({ "user_id": id, "password": "Novo-Codigo8!" }),
             ),
         )
         .await;
@@ -5523,7 +5525,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "s3cret-pass" }),
+                    json!({ "password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5534,7 +5536,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/attestation-key"),
-                    json!({ "current_password": "s3cret-pass" }),
+                    json!({ "current_password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5546,6 +5548,181 @@ mod tests {
         assert!(!dump.contains("$argon2"), "no PHC hash: {dump}");
         assert!(!dump.contains("ciphertext"), "no wrapped key: {dump}");
         assert!(!dump.contains("kdf_salt"), "no KDF material: {dump}");
+    }
+
+    // --- t68: password strength policy (mandatory + strength on set_secret; policy endpoint) ------
+
+    #[tokio::test]
+    async fn password_policy_endpoint_is_unauthenticated_and_reports_the_ruleset() {
+        let state = AppState::default();
+        // No session header: the onboarding checklist reads this before any user/session exists.
+        let (status, body) = send(state, get("/v1/session/password-policy")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["min_length"], 10);
+        assert_eq!(body["require_lowercase"], true);
+        assert_eq!(body["require_uppercase"], true);
+        assert_eq!(body["require_digit"], true);
+        assert_eq!(body["require_special"], true);
+        assert_eq!(body["forbid_username"], true);
+        assert_eq!(body["forbid_common"], true);
+        // Default enforces strong passwords (the settings toggle is deferred to t68-web).
+        assert_eq!(body["allow_weak_passwords"], false);
+        assert!(
+            body["rules"].as_array().expect("rules").len() >= 8,
+            "a checklist row per strength rule: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_secret_rejects_a_weak_password_with_structured_failures() {
+        let state = AppState::default();
+        let id = make_user(&state, "amelia.marques").await;
+        let tok = open_session(&state, &id).await; // self-service credential op.
+        // Lowercase-only, below the strong-length floor, no upper/digit/special.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "abcdefgh" }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body["error"].is_string());
+        let codes: Vec<&str> = body["failed_rules"]
+            .as_array()
+            .expect("failed_rules array")
+            .iter()
+            .map(|f| f["code"].as_str().expect("code"))
+            .collect();
+        for expected in ["length", "uppercase", "digit", "special"] {
+            assert!(
+                codes.contains(&expected),
+                "expected {expected} in {codes:?}"
+            );
+        }
+        // The account is untouched — no weak secret was set.
+        let (_, view) = send(state, get(&format!("/v1/users/{id}"))).await;
+        assert_eq!(view["has_secret"], false);
+    }
+
+    #[tokio::test]
+    async fn set_secret_rejects_an_empty_password() {
+        let state = AppState::default();
+        let id = make_user(&state, "amelia.marques").await;
+        let tok = open_session(&state, &id).await;
+        let (status, _) = send(
+            state,
+            with_session(
+                post_json(&format!("/v1/users/{id}/secret"), json!({ "password": "" })),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn set_secret_rejects_a_password_containing_the_username() {
+        let state = AppState::default();
+        let id = make_user(&state, "amelia.marques").await;
+        let tok = open_session(&state, &id).await;
+        // Otherwise strong, but embeds the username (case-insensitive) → the not_username rule fails.
+        let (status, body) = send(
+            state,
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "Amelia.Marques-9!" }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let codes: Vec<&str> = body["failed_rules"]
+            .as_array()
+            .expect("failed_rules array")
+            .iter()
+            .map(|f| f["code"].as_str().expect("code"))
+            .collect();
+        assert!(codes.contains(&"not_username"), "codes: {codes:?}");
+    }
+
+    #[tokio::test]
+    async fn set_secret_accepts_a_compliant_password() {
+        let state = AppState::default();
+        let id = make_user(&state, "amelia.marques").await;
+        let tok = open_session(&state, &id).await;
+        let (status, view) = send(
+            state,
+            with_session(
+                post_json(
+                    &format!("/v1/users/{id}/secret"),
+                    json!({ "password": "Segur0-Chave7!" }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["has_secret"], true);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_user_can_be_issued_the_mandatory_recovery_phrase() {
+        // t68 item 3: the audit/recovery key (recovery phrase) is the recovery credential the
+        // onboarding flow issues. The API mechanism is `POST /v1/users/{id}/recovery`, which returns
+        // the plaintext EXACTLY ONCE and thereafter exposes only `has_recovery_phrase`. Making it a
+        // non-skippable onboarding STEP is enforced client-side (t68-web); folding the once-shown
+        // phrase into create_user's response would drift contracts/user.json (a response fixture).
+        let state = AppState::default();
+        let id = make_user(&state, "amelia.marques").await; // first (bootstrap) user
+        let tok = open_session(&state, &id).await;
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/users/{id}/recovery"), json!({})),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            body["recovery_phrase"].as_str().expect("phrase").len() >= 32,
+            "the phrase is returned once, in full: {body}"
+        );
+        assert_eq!(body["has_recovery_phrase"], true);
+        // Only the verifier persists — a re-read exposes the boolean, never the plaintext.
+        let (_, view) = send(state, get(&format!("/v1/users/{id}"))).await;
+        assert_eq!(view["has_recovery_phrase"], true);
+    }
+
+    #[tokio::test]
+    async fn cross_user_no_proof_is_403_before_strength_is_checked() {
+        // Anti-enumeration: an unauthorized cross-user caller gets the uniform 403 FIRST, so the
+        // policy can never become an oracle for "this target exists". Strength is validated only once
+        // the caller is authorized (a self-service or a proof-backed cross-user reset).
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await;
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+        let (status, _) = send(
+            state,
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/secret"),
+                    // Weak, but ≥ the 8-char floor so it clears validate_secret and reaches authz.
+                    json!({ "password": "weakpassword" }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
     // --- t45: signed-out sign-in roster (GET /v1/session/roster) --------------------------
@@ -5585,7 +5762,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "correct horse" }),
+                    json!({ "password": "Cavalo-Certo9!" }),
                 ),
                 &token,
             ),
@@ -5752,7 +5929,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/secret"),
-                    json!({ "password": "s3cret-pass" }),
+                    json!({ "password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -5763,7 +5940,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{id}/attestation-key"),
-                    json!({ "current_password": "s3cret-pass" }),
+                    json!({ "current_password": "Segur0-Chave7!" }),
                 ),
                 &self_tok,
             ),
@@ -6534,7 +6711,7 @@ mod tests {
         // `user.secret.reset` event attributed to the requester (honest actor).
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "target-current-pass").await;
+        give_target_password(&state, &target, "Corrente-Ok3!X").await;
         let bruno = make_user(&state, "bruno").await;
         let bruno_tok = open_session(&state, &bruno).await;
 
@@ -6543,7 +6720,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/secret"),
-                    json!({ "password": "reset-by-bruno", "current_password": "target-current-pass" }),
+                    json!({ "password": "Repor-Chave4!", "current_password": "Corrente-Ok3!X" }),
                 ),
                 &bruno_tok,
             ),
@@ -6568,7 +6745,7 @@ mod tests {
                 .contains("palavra-passe atual")
         );
         let dump = reset.to_string().to_lowercase();
-        assert!(!dump.contains("reset-by-bruno") && !dump.contains("$argon2"));
+        assert!(!dump.contains("Repor-Chave4!") && !dump.contains("$argon2"));
 
         // Provenance stays Password (a known-password reset is not a recovery).
         assert_eq!(
@@ -6583,7 +6760,7 @@ mod tests {
         // all return the SAME 403 body — no status/message difference reveals target state.
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "target-current-pass").await;
+        give_target_password(&state, &target, "Corrente-Ok3!X").await;
         let bruno = make_user(&state, "bruno").await;
         let bruno_tok = open_session(&state, &bruno).await;
 
@@ -6606,15 +6783,16 @@ mod tests {
         // 429 the second one, masking the uniformity under test, so clear it between attempts. Each
         // remains a fresh, un-throttled, constant-work 403 — exactly what this test compares.
         let (s_wrong, b_wrong) = attempt(
-            json!({ "password": "x-new-pass", "current_password": "WRONG" }),
+            json!({ "password": "Xnova-Chave9!", "current_password": "WRONG" }),
             target.clone(),
         )
         .await;
         clear_secret_backoff(&state).await;
-        let (s_none, b_none) = attempt(json!({ "password": "x-new-pass" }), target.clone()).await;
+        let (s_none, b_none) =
+            attempt(json!({ "password": "Xnova-Chave9!" }), target.clone()).await;
         clear_secret_backoff(&state).await;
         let (s_ghost, b_ghost) = attempt(
-            json!({ "password": "x-new-pass", "current_password": "whatever" }),
+            json!({ "password": "Xnova-Chave9!", "current_password": "whatever" }),
             Uuid::new_v4().to_string(),
         )
         .await;
@@ -6633,14 +6811,14 @@ mod tests {
         // unauthorized cross-user reset is 403 with a different message.
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "target-current-pass").await;
+        give_target_password(&state, &target, "Corrente-Ok3!X").await;
 
         // No session → 401.
         let (s401, b401) = send_raw(
             state.clone(),
             post_json(
                 &format!("/v1/users/{target}/secret"),
-                json!({ "password": "x-new-pass" }),
+                json!({ "password": "Xnova-Chave9!" }),
             ),
         )
         .await;
@@ -6655,7 +6833,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/secret"),
-                    json!({ "password": "x-new-pass" }),
+                    json!({ "password": "Xnova-Chave9!" }),
                 ),
                 &bruno_tok,
             ),
@@ -6671,7 +6849,7 @@ mod tests {
         // no-proof cross-user caller (matrix #10/#12), and accept a correct-password one (#9/#11).
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "target-current-pass").await;
+        give_target_password(&state, &target, "Corrente-Ok3!X").await;
         // Give the target an attestation key too (self-service).
         let self_tok = seed_session(&state, &target).await;
         send(
@@ -6679,7 +6857,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/attestation-key"),
-                    json!({ "current_password": "target-current-pass" }),
+                    json!({ "current_password": "Corrente-Ok3!X" }),
                 ),
                 &self_tok,
             ),
@@ -6727,7 +6905,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/attestation-key"),
-                    json!({ "current_password": "target-current-pass" }),
+                    json!({ "current_password": "Corrente-Ok3!X" }),
                 ),
                 &bruno_tok,
             ),
@@ -6742,7 +6920,7 @@ mod tests {
                 body_json(
                     "DELETE",
                     &format!("/v1/users/{target}/secret"),
-                    json!({ "current_password": "target-current-pass" }),
+                    json!({ "current_password": "Corrente-Ok3!X" }),
                 ),
                 &bruno_tok,
             ),
@@ -6759,7 +6937,7 @@ mod tests {
         // with it cross-user, and prove it is single-use and drops the password-locked key.
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "forgotten-pass").await;
+        give_target_password(&state, &target, "Esquecida-Ok8!X").await;
         // Target holds an attestation key (wrapped under the forgotten password).
         let self_tok = seed_session(&state, &target).await;
         send(
@@ -6767,7 +6945,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/attestation-key"),
-                    json!({ "current_password": "forgotten-pass" }),
+                    json!({ "current_password": "Esquecida-Ok8!X" }),
                 ),
                 &self_tok,
             ),
@@ -6780,7 +6958,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/recovery"),
-                    json!({ "current_password": "forgotten-pass" }),
+                    json!({ "current_password": "Esquecida-Ok8!X" }),
                 ),
                 &self_tok,
             ),
@@ -6812,7 +6990,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/secret"),
-                    json!({ "password": "recovered-pass", "recovery_phrase": phrase }),
+                    json!({ "password": "Recuperar-Ok5!", "recovery_phrase": phrase }),
                 ),
                 &bruno_tok,
             ),
@@ -6832,7 +7010,7 @@ mod tests {
             state.clone(),
             post_json(
                 "/v1/session",
-                json!({ "user_id": target, "password": "recovered-pass" }),
+                json!({ "user_id": target, "password": "Recuperar-Ok5!" }),
             ),
         )
         .await;
@@ -6844,7 +7022,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/secret"),
-                    json!({ "password": "second-try", "recovery_phrase": phrase }),
+                    json!({ "password": "Segunda-Vez6!", "recovery_phrase": phrase }),
                 ),
                 &bruno_tok,
             ),
@@ -6875,14 +7053,14 @@ mod tests {
         // to derive the KEK) — that specific cross-user op is refused with 403.
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "target-pass").await;
+        give_target_password(&state, &target, "Alvo-Chave2!X").await;
         let self_tok = seed_session(&state, &target).await;
         let (_, issued) = send(
             state.clone(),
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/recovery"),
-                    json!({ "current_password": "target-pass" }),
+                    json!({ "current_password": "Alvo-Chave2!X" }),
                 ),
                 &self_tok,
             ),
@@ -7009,7 +7187,7 @@ mod tests {
         // correct password is throttled.
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "target-current-pass").await;
+        give_target_password(&state, &target, "Corrente-Ok3!X").await;
         let bruno = make_user(&state, "bruno").await;
         let bruno_tok = open_session(&state, &bruno).await;
 
@@ -7018,7 +7196,7 @@ mod tests {
             &state,
             &bruno_tok,
             &target,
-            json!({ "password": "x-new-pass", "current_password": "WRONG" }),
+            json!({ "password": "Xnova-Chave9!", "current_password": "WRONG" }),
         )
         .await;
         assert_eq!(s1, StatusCode::FORBIDDEN);
@@ -7035,7 +7213,7 @@ mod tests {
             &state,
             &bruno_tok,
             &target,
-            json!({ "password": "x-new-pass", "current_password": "target-current-pass" }),
+            json!({ "password": "Xnova-Chave9!", "current_password": "Corrente-Ok3!X" }),
         )
         .await;
         assert_eq!(
@@ -7059,7 +7237,7 @@ mod tests {
         // enumeration oracle. Both keys are pushed to the same window so the 429 bodies must match.
         let state = AppState::default();
         let real = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &real, "target-current-pass").await;
+        give_target_password(&state, &real, "Corrente-Ok3!X").await;
         let ghost = Uuid::new_v4().to_string(); // no such user
         let bruno = make_user(&state, "bruno").await;
         let bruno_tok = open_session(&state, &bruno).await;
@@ -7070,14 +7248,14 @@ mod tests {
             &state,
             &bruno_tok,
             &real,
-            json!({ "password": "x-new-pass" }),
+            json!({ "password": "Xnova-Chave9!" }),
         )
         .await;
         let (gs1, gb1) = cross_user_set(
             &state,
             &bruno_tok,
             &ghost,
-            json!({ "password": "x-new-pass" }),
+            json!({ "password": "Xnova-Chave9!" }),
         )
         .await;
         assert_eq!(rs1, StatusCode::FORBIDDEN);
@@ -7106,14 +7284,14 @@ mod tests {
             &state,
             &bruno_tok,
             &real,
-            json!({ "password": "x-new-pass" }),
+            json!({ "password": "Xnova-Chave9!" }),
         )
         .await;
         let (gs2, gb2) = cross_user_set(
             &state,
             &bruno_tok,
             &ghost,
-            json!({ "password": "x-new-pass" }),
+            json!({ "password": "Xnova-Chave9!" }),
         )
         .await;
         assert_eq!(rs2, StatusCode::TOO_MANY_REQUESTS);
@@ -7131,7 +7309,7 @@ mod tests {
         // operation, and the attempted proof kind — and NO secret material.
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "target-current-pass").await;
+        give_target_password(&state, &target, "Corrente-Ok3!X").await;
         let bruno = make_user(&state, "bruno").await;
         let bruno_tok = open_session(&state, &bruno).await;
 
@@ -7139,7 +7317,7 @@ mod tests {
             &state,
             &bruno_tok,
             &target,
-            json!({ "password": "x-new-pass", "current_password": "WRONG" }),
+            json!({ "password": "Xnova-Chave9!", "current_password": "WRONG" }),
         )
         .await;
         assert_eq!(s, StatusCode::FORBIDDEN);
@@ -7177,7 +7355,7 @@ mod tests {
         // (a different key, `(victim,victim)`, which is never throttled at all).
         let state = AppState::default();
         let target = make_user(&state, "amelia.marques").await;
-        give_target_password(&state, &target, "amelia-pass").await;
+        give_target_password(&state, &target, "Atual-Chave1!X").await;
         let bruno = make_user(&state, "bruno").await;
         let bruno_tok = open_session(&state, &bruno).await;
 
@@ -7187,7 +7365,7 @@ mod tests {
             &state,
             &bruno_tok,
             &target,
-            json!({ "password": "x-new-pass" }),
+            json!({ "password": "Xnova-Chave9!" }),
         )
         .await;
         assert_eq!(s1, StatusCode::FORBIDDEN);
@@ -7196,7 +7374,7 @@ mod tests {
             &state,
             &bruno_tok,
             &target,
-            json!({ "password": "x-new-pass" }),
+            json!({ "password": "Xnova-Chave9!" }),
         )
         .await;
         assert_eq!(
@@ -7212,7 +7390,7 @@ mod tests {
             with_session(
                 post_json(
                     &format!("/v1/users/{target}/secret"),
-                    json!({ "password": "amelia-new-pass", "current_password": "amelia-pass" }),
+                    json!({ "password": "Nova-Chave2!X", "current_password": "Atual-Chave1!X" }),
                 ),
                 &self_tok,
             ),
@@ -7689,7 +7867,7 @@ mod tests {
     async fn reanchor_requires_step_up_reauth() {
         // A signed-in operator WITH a password, so step-up re-auth has a credential to verify against.
         let state = persistent_state();
-        let token = user_with_password(&state, "amelia.marques", "reanchor-pass-1234").await;
+        let token = user_with_password(&state, "amelia.marques", "Reancorar-Cadeia5!").await;
         seed_entity_and_book(&state, &token).await;
 
         // A valid session alone (no step-up proof) is refused with 403 — mirrors the destructive wipes.
@@ -7731,7 +7909,7 @@ mod tests {
             with_session(
                 post_json(
                     "/v1/ledger/recovery/reanchor",
-                    json!({ "reason": "reparar cadeia", "reauth": { "password": "reanchor-pass-1234" } }),
+                    json!({ "reason": "reparar cadeia", "reauth": { "password": "Reancorar-Cadeia5!" } }),
                 ),
                 &token,
             ),
@@ -7854,7 +8032,7 @@ mod tests {
     #[tokio::test]
     async fn whole_instance_start_over_requires_confirm_and_reauth_then_reseeds_empty() {
         let state = persistent_state();
-        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        let token = user_with_password(&state, "amelia.marques", "Limpar-Dados6!X").await;
         seed_entity_and_book(&state, &token).await;
 
         // Wrong confirm phrase → 422 (reaches the handler; nothing destroyed).
@@ -7864,7 +8042,7 @@ mod tests {
                 post_json(
                     "/v1/data/start-over",
                     json!({ "reason": "x", "confirm_phrase": "nope",
-                            "reauth": { "password": "wipe-pass-1234" } }),
+                            "reauth": { "password": "Limpar-Dados6!X" } }),
                 ),
                 &token,
             ),
@@ -7897,7 +8075,7 @@ mod tests {
                 post_json(
                     "/v1/data/start-over",
                     json!({ "reason": "recomeçar a instância", "confirm_phrase": "RECOMEÇAR",
-                            "reauth": { "password": "wipe-pass-1234" } }),
+                            "reauth": { "password": "Limpar-Dados6!X" } }),
                 ),
                 &token,
             ),
@@ -7923,7 +8101,7 @@ mod tests {
     #[tokio::test]
     async fn reset_backend_domain_preserves_the_ledger_and_emits_data_wiped() {
         let state = persistent_state();
-        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        let token = user_with_password(&state, "amelia.marques", "Limpar-Dados6!X").await;
         let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
         seal_one_act(&state, &book_id, &token).await;
         let (_, verify_before) = send(state.clone(), get("/v1/ledger/verify")).await;
@@ -7935,7 +8113,7 @@ mod tests {
                 post_json(
                     "/v1/data/reset",
                     json!({ "scope": "backend_domain", "confirm_phrase": "LIMPAR DADOS",
-                            "export_first": true, "reauth": { "password": "wipe-pass-1234" } }),
+                            "export_first": true, "reauth": { "password": "Limpar-Dados6!X" } }),
                 ),
                 &token,
             ),
@@ -7973,7 +8151,7 @@ mod tests {
     #[tokio::test]
     async fn reset_backend_factory_blanks_everything_after_export_first() {
         let state = persistent_state();
-        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        let token = user_with_password(&state, "amelia.marques", "Limpar-Dados6!X").await;
         let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
         seal_one_act(&state, &book_id, &token).await;
 
@@ -7983,7 +8161,7 @@ mod tests {
                 post_json(
                     "/v1/data/reset",
                     json!({ "scope": "backend_factory", "confirm_phrase": "REPOR FÁBRICA",
-                            "export_first": true, "reauth": { "password": "wipe-pass-1234" } }),
+                            "export_first": true, "reauth": { "password": "Limpar-Dados6!X" } }),
                 ),
                 &token,
             ),
@@ -8008,7 +8186,7 @@ mod tests {
     #[tokio::test]
     async fn reset_requires_step_up_reauth_and_the_confirm_phrase() {
         let state = persistent_state();
-        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        let token = user_with_password(&state, "amelia.marques", "Limpar-Dados6!X").await;
         seed_entity_and_book(&state, &token).await;
 
         // No re-auth (session only) → 403.
@@ -8048,7 +8226,7 @@ mod tests {
                 post_json(
                     "/v1/data/reset",
                     json!({ "scope": "backend_domain", "confirm_phrase": "wrong",
-                            "export_first": true, "reauth": { "password": "wipe-pass-1234" } }),
+                            "export_first": true, "reauth": { "password": "Limpar-Dados6!X" } }),
                 ),
                 &token,
             ),
@@ -8070,7 +8248,7 @@ mod tests {
     #[tokio::test]
     async fn degraded_gate_blocks_mutations_but_leaves_reads_and_recovery_open() {
         let state = persistent_state();
-        let token = user_with_password(&state, "amelia.marques", "wipe-pass-1234").await;
+        let token = user_with_password(&state, "amelia.marques", "Limpar-Dados6!X").await;
         let (_eid, book_id) = seed_entity_and_book(&state, &token).await;
 
         // Force the degraded (read-only) signal (as a broken boot chain would).
@@ -8107,7 +8285,7 @@ mod tests {
                 post_json(
                     "/v1/data/reset",
                     json!({ "scope": "backend_domain", "confirm_phrase": "wrong",
-                            "reauth": { "password": "wipe-pass-1234" } }),
+                            "reauth": { "password": "Limpar-Dados6!X" } }),
                 ),
                 &token,
             ),
@@ -8124,7 +8302,7 @@ mod tests {
             with_session(
                 post_json(
                     "/v1/ledger/recovery/reanchor",
-                    json!({ "reason": "x", "reauth": { "password": "wipe-pass-1234" } }),
+                    json!({ "reason": "x", "reauth": { "password": "Limpar-Dados6!X" } }),
                 ),
                 &token,
             ),
@@ -8348,7 +8526,7 @@ mod tests {
         // prove it: session-only and wrong-password both 403; the correct password proceeds (here to
         // a real 200 repair). Guards against the passwordless relaxation leaking to credentialed users.
         let state = persistent_state();
-        let token = user_with_password(&state, "amelia.marques", "recover-pass-1234").await;
+        let token = user_with_password(&state, "amelia.marques", "Recuperar-Base7!").await;
         seed_entity_and_book(&state, &token).await;
         break_ledger_tail(&state).await;
         *state.degraded.write().await = true;
@@ -8395,7 +8573,7 @@ mod tests {
             with_session(
                 post_json(
                     "/v1/ledger/recovery/reanchor",
-                    json!({ "reason": "reparar", "reauth": { "password": "recover-pass-1234" } }),
+                    json!({ "reason": "reparar", "reauth": { "password": "Recuperar-Base7!" } }),
                 ),
                 &token,
             ),

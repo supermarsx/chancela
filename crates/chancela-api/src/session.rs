@@ -343,6 +343,19 @@ pub async fn session_permissions(
     }))
 }
 
+/// `GET /v1/session/password-policy` — the active password strength ruleset (t68).
+///
+/// **Unauthenticated by design** (classified `Exempt`, like `/v1/session/roster`): the first-run
+/// onboarding surface must render the requirement checklist while the operator is still setting up,
+/// and the rules are public knowledge the web mirrors exactly. Returns the same parameters the server
+/// enforces on every password-setting path (see [`crate::password_policy`]), so a client checklist can
+/// never drift from server enforcement. Carries `allow_weak_passwords` (currently a constant default
+/// = `false`); the settings-document toggle that will drive it is deferred to the coordinated web
+/// slice to avoid drifting the settings contract.
+pub async fn password_policy() -> Json<crate::password_policy::PasswordPolicyView> {
+    Json(crate::password_policy::policy_view())
+}
+
 /// `DELETE /v1/session` — drop the presented token (idempotent; always `204`).
 pub async fn delete_session(
     State(state): State<AppState>,

@@ -243,6 +243,9 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/health", RouteClass::Exempt),
     ("/v1/session", RouteClass::Exempt),
     ("/v1/session/roster", RouteClass::Exempt),
+    // The password strength ruleset — public knowledge the onboarding checklist renders before any
+    // session exists (t68). Read-only, no secrets; mirrors the roster's unauth-onboarding rationale.
+    ("/v1/session/password-policy", RouteClass::Exempt),
     ("/v1", RouteClass::Exempt),
     ("/v1/{*rest}", RouteClass::Exempt),
     ("/health/{*rest}", RouteClass::Exempt),
