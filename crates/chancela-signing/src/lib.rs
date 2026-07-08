@@ -35,10 +35,13 @@ pub mod mock;
 pub mod pipeline;
 pub mod policy;
 pub mod provider;
+pub mod remote;
 pub mod validate;
 
 pub use cc::{CcSignedPdf, sign_pdf_cc};
-pub use cmd_session::{CmdInitiate, CmdSignSession, cmd_confirm, cmd_initiate};
+pub use cmd_session::{
+    CMD_PROVIDER_ID, CmdInitiate, CmdRemoteSource, CmdSignSession, cmd_confirm, cmd_initiate,
+};
 pub use envelope::{
     DocumentInput, SigningJob, is_complete, pending_slots, record_manual_signature, sign_slot,
 };
@@ -46,6 +49,7 @@ pub use mock::MockProvider;
 pub use pipeline::{TimestampProvider, sign_detached_cades, sign_pdf_pades};
 pub use policy::{StaticTrustPolicy, TrustPolicy, TslTrustPolicy};
 pub use provider::{CmdProvider, SignerProvider, SmartcardProvider};
+pub use remote::{RemoteInitiate, RemoteSignSession, RemoteSigningSource};
 pub use validate::{SignatureValidationReport, validate_signature};
 
 // Re-export the pieces of the underlying stack callers most often name through this crate.
