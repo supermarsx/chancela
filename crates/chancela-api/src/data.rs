@@ -1,7 +1,8 @@
 //! Destructive **data-management** endpoints (t54-E3, plan §2.11): the server side of the "Gestão de
 //! Dados" settings area. Two operations, each gated by a **type-to-confirm phrase** AND **step-up
-//! re-auth** (a session alone is never enough) — the two independent confirmations that make these
-//! the highest-bar operations in the app:
+//! re-auth** (for a credentialed acting user a session alone is never enough; a passwordless user
+//! with no recovery phrase has nothing stronger than their self session — see [`require_step_up`])
+//! — the two independent confirmations that make these the highest-bar operations in the app:
 //!
 //! - `POST /v1/data/reset` `{ scope, confirm_phrase, export_first, skip_export_confirm?, reauth }` —
 //!   `scope` = `backend_domain` (clears domain data, PRESERVES the ledger, emits `data.wiped`) |
@@ -47,8 +48,10 @@ fn default_actor() -> String {
 }
 
 /// The step-up re-auth proof carried on a destructive request (mirrors the t51/t52 secret-op
-/// posture): the acting user's current **password** OR a valid **recovery phrase**. A valid session
-/// alone is NOT enough (§8-F).
+/// posture): the acting user's current **password** OR a valid **recovery phrase**. For a
+/// credentialed acting user a valid session alone is NOT enough (§8-F); a user who holds neither a
+/// password nor a recovery phrase can leave both fields empty — their self session is the proof (see
+/// [`require_step_up`]).
 #[derive(Deserialize, Default)]
 pub struct ReAuth {
     #[serde(default)]
@@ -57,11 +60,27 @@ pub struct ReAuth {
     pub recovery_phrase: Option<String>,
 }
 
-/// Enforce step-up re-authentication for a destructive server op (§8-F). Resolves the acting user
-/// from the session, then verifies the supplied password OR recovery phrase against that user's
-/// stored argon2id verifiers (the same [`verify_secret`] path t51/t52 use). A session with no proof,
-/// a wrong proof, or an acting user that holds no credential at all is refused with a uniform `403`
-/// — the destructive op cannot proceed on the session token alone.
+/// Enforce step-up re-authentication for a destructive server op (§8-F) — **SELF re-auth only**.
+/// Step-up means *the strongest proof the acting user CAN provide*:
+///
+/// - The acting user HAS a password → they must supply+pass it (or a valid recovery phrase).
+/// - The acting user has NO password but HAS a recovery phrase → they must supply+pass the phrase.
+/// - The acting user has NEITHER a password NOR a recovery phrase → a valid **authenticated self
+///   session** already IS the strongest proof they can offer; there is nothing further to prove, so
+///   the session satisfies step-up and this returns `Ok`. This is the t69 lockout fix: a
+///   passwordless operator with no recovery phrase must never be `403`'d for lacking a credential
+///   they never set, or a passwordless-only instance whose chain breaks could never be recovered
+///   (the degraded gate exempts recovery, but step-up would otherwise block it).
+///
+/// A session with a wrong proof, or a *credentialed* acting user who supplies no proof, is still
+/// refused with a uniform `403` — the destructive op cannot proceed on the session token alone when
+/// the user actually holds a credential. Uses the same [`verify_secret`] argon2id path t51/t52 use.
+///
+/// **Scope:** this only relaxes the acting user's OWN self re-auth. It does NOT touch the cross-user
+/// authorization path ([`crate::users`] `authorize_secret_op` / `verify_cross_user_proof`): resetting
+/// ANOTHER user's credential when the target is passwordless stays refused (t52 hole stays closed).
+/// RBAC (`require_permission`) at each call site remains the primary who-may gate — step-up is
+/// defense-in-depth layered on top of it, never a substitute.
 pub(crate) async fn require_step_up(
     state: &AppState,
     actor: &CurrentActor,
@@ -74,10 +93,21 @@ pub(crate) async fn require_step_up(
         let users = state.users.read().await;
         match users.values().find(|u| u.username == username) {
             Some(u) => (u.password_hash.clone(), u.recovery_hash.clone()),
-            None => (None, None),
+            // A valid session that no longer maps to a user should not happen (the `CurrentActor`
+            // extractor resolves only existing, active users) — refuse rather than treat a phantom
+            // acting user as credential-less-and-therefore-exempt.
+            None => return Err(ApiError::Forbidden(STEP_UP_REQUIRED.to_owned())),
         }
     };
 
+    // t69: the acting user holds NEITHER a password NOR a recovery phrase. A valid authenticated
+    // self session is the strongest proof they can provide (there is nothing stronger to demand), so
+    // it satisfies step-up. SELF only — the cross-user path is untouched.
+    if password_hash.is_none() && recovery_hash.is_none() {
+        return Ok(());
+    }
+
+    // The acting user HAS at least one credential — they must actually prove it (unchanged).
     // Prove the current password …
     if let (Some(pw), Some(phc)) = (reauth.password.as_deref(), password_hash.as_deref()) {
         if verify_secret(pw, phc) {

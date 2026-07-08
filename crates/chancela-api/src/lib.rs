@@ -7453,6 +7453,300 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "export reachable while degraded");
     }
 
+    // --- t69: passwordless self-step-up (the lockout fix) -----------------------------------------
+
+    /// Corrupt the in-memory ledger's tail self-hash so the chain no longer verifies (mirrors the
+    /// `try_append` test's break). Used to drive a *real* re-anchor repair (→ 200) rather than the
+    /// already-valid 409.
+    async fn break_ledger_tail(state: &AppState) {
+        let mut events = state.ledger.read().await.events().to_vec();
+        let n = events.len();
+        assert!(n > 0, "need at least one event to break");
+        events[n - 1].hash[0] ^= 0xff;
+        let (broken, _) = Ledger::try_from_events(events);
+        *state.ledger.write().await = broken;
+        assert!(
+            !state.ledger.read().await.integrity_report().healthy,
+            "chain is broken after tampering"
+        );
+    }
+
+    #[tokio::test]
+    async fn t69_passwordless_owner_recovers_while_degraded_without_stepup() {
+        // t69 lockout fix: a PASSWORDLESS Owner (no password, no recovery phrase) on a DEGRADED
+        // instance can still drive the recovery/destructive plane with a session ONLY — a valid self
+        // session IS the strongest proof they can offer, so step-up must not 403 them. Without this
+        // fix an all-passwordless instance whose chain breaks could never be recovered by anyone.
+        let state = persistent_state();
+        let owner = make_user(&state, "amelia.marques").await; // Owner@Global, passwordless
+        let token = seed_session(&state, &owner).await;
+        seed_entity_and_book(&state, &token).await;
+
+        // Enter degraded (read-only) mode, as a broken boot chain would.
+        *state.degraded.write().await = true;
+
+        // Re-anchor with NO reauth: the in-memory chain is healthy so it reaches the handler and
+        // returns 409 (already valid) — crucially NOT the 403 a missing step-up used to produce.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "reparar cadeia" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "passwordless Owner reaches reanchor (no step-up 403): {body}"
+        );
+
+        // Data reset (backend_domain) with the correct confirm phrase and NO reauth → 200. Step-up
+        // is satisfied by the self session; the type-to-confirm phrase is still required.
+        let (status, resp) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_domain", "confirm_phrase": "LIMPAR DADOS",
+                            "export_first": true }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "passwordless Owner completes a domain reset without step-up: {resp}"
+        );
+
+        // The type-to-confirm phrase is STILL enforced (a passwordless user is not waved through the
+        // second confirmation): a wrong phrase is a 422, never a silent wipe.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_domain", "confirm_phrase": "errado",
+                            "export_first": true }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "type-to-confirm phrase still required for a passwordless user"
+        );
+    }
+
+    #[tokio::test]
+    async fn t69_passwordless_owner_reanchors_a_broken_chain_and_discloses() {
+        // The real repair: a passwordless Owner with a genuinely broken chain re-anchors it with a
+        // session only (no step-up) → 200; the disclosure is recorded and the chain verifies again.
+        let state = persistent_state();
+        let owner = make_user(&state, "amelia.marques").await;
+        let token = seed_session(&state, &owner).await;
+        seed_entity_and_book(&state, &token).await;
+
+        break_ledger_tail(&state).await;
+        *state.degraded.write().await = true;
+
+        let (status, resp) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "reparar cadeia partida" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "passwordless Owner re-anchors a broken chain without step-up: {resp}"
+        );
+        // Re-anchor DISCLOSES (never erases): the permanent, chained disclosure is present.
+        assert!(
+            resp["record"]["pre_reanchor_digest"].is_string(),
+            "re-anchor disclosure (pre_reanchor_digest) recorded: {resp}"
+        );
+        // The chain verifies again — recovery actually succeeded.
+        let (_, report) = send(state.clone(), get("/v1/ledger/integrity")).await;
+        assert_eq!(report["healthy"], true, "chain repaired");
+    }
+
+    #[tokio::test]
+    async fn t69_passwordless_leitor_is_403_by_rbac_not_a_stepup_bypass() {
+        // The relaxation is SELF-step-up ONLY; RBAC stays the primary gate. A PASSWORDLESS Leitor
+        // (lacks ledger.recover / data.wipe) is refused with a PERMISSION 403 — never waved through
+        // by the passwordless step-up carve-out. (`require_permission` runs before `require_step_up`.)
+        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+        let state = persistent_state();
+        let leitor = seed_user(
+            &state,
+            "amelia.marques",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let token = seed_session(&state, &leitor.to_string()).await;
+        *state.degraded.write().await = true;
+
+        // Re-anchor → 403 on the permission gate (not a step-up bypass).
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "tentativa sem permissão" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "Leitor cannot re-anchor: {body}"
+        );
+        assert!(
+            body["error"].as_str().expect("error").contains("permissão"),
+            "refused by RBAC (permission), not a step-up bypass: {body}"
+        );
+
+        // Data reset (correct phrase, so the phrase check passes) → 403 on the permission gate too.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/data/reset",
+                    json!({ "scope": "backend_domain", "confirm_phrase": "LIMPAR DADOS",
+                            "export_first": true }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "Leitor cannot reset data: {body}"
+        );
+        assert!(
+            body["error"].as_str().expect("error").contains("permissão"),
+            "refused by RBAC (permission): {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn t69_credentialed_user_step_up_is_unchanged() {
+        // The carve-out is ONLY for a user who holds NO credential. A user WITH a password must still
+        // prove it: session-only and wrong-password both 403; the correct password proceeds (here to
+        // a real 200 repair). Guards against the passwordless relaxation leaking to credentialed users.
+        let state = persistent_state();
+        let token = user_with_password(&state, "amelia.marques", "recover-pass-1234").await;
+        seed_entity_and_book(&state, &token).await;
+        break_ledger_tail(&state).await;
+        *state.degraded.write().await = true;
+
+        // Session only → 403 (has a password, must supply it).
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "reparar" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "credentialed session-only still 403"
+        );
+
+        // Wrong password → 403.
+        let (status, _) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "reparar", "reauth": { "password": "WRONG" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "credentialed wrong password still 403"
+        );
+
+        // Correct password → proceeds and repairs → 200.
+        let (status, resp) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/ledger/recovery/reanchor",
+                    json!({ "reason": "reparar", "reauth": { "password": "recover-pass-1234" } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "correct password repairs: {resp}");
+    }
+
+    #[tokio::test]
+    async fn t69_cross_user_passwordless_target_stays_refused() {
+        // The t52 hole stays CLOSED: the self-step-up relaxation must NOT be mistaken for reopening
+        // cross-user resets against a passwordless TARGET. A signed-in operator setting a first
+        // password on ANOTHER passwordless user is still a uniform 403, and the target is untouched.
+        let state = AppState::default();
+        let target = make_user(&state, "amelia.marques").await; // passwordless target
+        let bruno = make_user(&state, "bruno").await;
+        let bruno_tok = open_session(&state, &bruno).await;
+
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{target}/secret"),
+                    json!({ "password": "escolhida-pelo-atacante" }),
+                ),
+                &bruno_tok,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "cross-user passwordless-target still refused: {body}"
+        );
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("não autorizado"),
+            "uniform cross-user refusal (t52 intact): {body}"
+        );
+        let (_, view) = send(state.clone(), get(&format!("/v1/users/{target}"))).await;
+        assert_eq!(
+            view["has_secret"], false,
+            "target untouched (still passwordless)"
+        );
+    }
+
     #[tokio::test]
     async fn try_append_rejects_a_chain_breaking_mutation() {
         // In-memory state: an entity + open book, then corrupt the ledger's global tail so any
