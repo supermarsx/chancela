@@ -367,6 +367,13 @@ pub struct ChainStatus {
     pub head: Option<[u8; 32]>,
     /// Whether the chain re-verifies cleanly ([`Ledger::verify_chain`]).
     pub verified: bool,
+    /// The precise first break in this chain, or `None` when it verifies cleanly (additive t54).
+    ///
+    /// This is the rich counterpart of `verified`: when `verified` is `false`, `first_break`
+    /// pinpoints the chain/seq/event-id/expected-vs-actual hash of the failure. Defaulted for
+    /// serde so previously-persisted [`ChainStatus`] JSON (which predates this field) still loads.
+    #[serde(default)]
+    pub first_break: Option<ChainBreak>,
 }
 
 /// Compute the sha256 digest of an arbitrary payload (the DAT-10 payload digest).
@@ -520,9 +527,30 @@ impl Ledger {
         justification: Option<&str>,
         payload: &[u8],
     ) -> &Event {
+        // Behaviour is byte-identical to the original single-argument era: capture `now` here and
+        // delegate to the timestamp-supplied core. The frozen preimage and every produced hash are
+        // unchanged — this is a pure internal refactor so clock-free callers (`reanchor`) can reuse
+        // the same append core with a caller-supplied instant.
+        let timestamp = OffsetDateTime::now_utc();
+        self.append_at(actor, scope, kind, justification, payload, timestamp)
+    }
+
+    /// The append core, parameterised on the event `timestamp` (see [`Ledger::append`]).
+    ///
+    /// [`Ledger::append`] passes `OffsetDateTime::now_utc()`; clock-free internal callers pass a
+    /// caller-supplied instant. The resulting event, hash preimage, per-chain links, and every
+    /// stored field are identical to what `append` produced before this refactor existed.
+    fn append_at(
+        &mut self,
+        actor: &str,
+        scope: &str,
+        kind: &str,
+        justification: Option<&str>,
+        payload: &[u8],
+        timestamp: OffsetDateTime,
+    ) -> &Event {
         let seq = self.events.len() as u64;
         let prev_hash = self.events.last().map(|e| e.hash).unwrap_or([0u8; 32]);
-        let timestamp = OffsetDateTime::now_utc();
         let payload_digest = digest(payload);
 
         // Per-chain heads, derived from the log, give each new link its seq + backward hash.
@@ -725,24 +753,28 @@ impl Ledger {
     /// [`ChainId::Global`] always yields a status (empty ledger → length 0, head `None`).
     pub fn chain_status(&self, chain: &ChainId) -> Option<ChainStatus> {
         if chain.is_global() {
+            let first_break = self.locate_break(chain);
             return Some(ChainStatus {
                 chain: chain.clone(),
                 genesis_kind: self.events.first().map(|e| e.kind.clone()),
                 length: self.events.len() as u64,
                 head: self.head(),
-                verified: self.verify_chain(chain).is_ok(),
+                verified: first_break.is_none(),
+                first_break,
             });
         }
         let members: Vec<&Event> = self.events_in_chain(chain);
         if members.is_empty() {
             return None;
         }
+        let first_break = self.locate_break(chain);
         Some(ChainStatus {
             chain: chain.clone(),
             genesis_kind: members.first().map(|e| e.kind.clone()),
             length: members.len() as u64,
             head: members.last().map(|e| e.hash),
-            verified: self.verify_chain(chain).is_ok(),
+            verified: first_break.is_none(),
+            first_break,
         })
     }
 
@@ -860,6 +892,776 @@ fn check_chain_genesis(
         }
     }
     Ok(())
+}
+
+// =============================================================================================
+// t54 — chain integrity RECOVERY + ENFORCEMENT + per-book portability (ADDITIVE).
+//
+// Everything below is strictly additive. The frozen hash preimage (`compute_hash`), the
+// `verify()`/`verify_chain()` contracts, `LedgerError`, `Event`'s fields + serialization, the
+// genesis rules, and `try_from_events` are all UNCHANGED — these are new types + new methods that
+// layer richer break-location, a validating append, an audited re-anchor, and a standalone bundle
+// verifier on top of the existing tamper-evident core.
+// =============================================================================================
+
+/// The classification of a chain break — the rich, machine-readable counterpart of the
+/// [`LedgerError`] variants (which stay the byte-frozen `verify()` contract).
+///
+/// Each variant corresponds 1:1 to a way [`Ledger::verify`]/[`Ledger::verify_chain`] can fail, so
+/// a [`ChainBreak`] is always derivable from the same walk without changing the old error type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BreakKind {
+    /// The global genesis event (seq 0) did not carry an all-zero `prev_hash`.
+    BadGenesis,
+    /// The global `seq` run was not the expected strictly-increasing 0,1,2,….
+    SequenceBroken,
+    /// An event's global `prev_hash` did not match the previous event's `hash`.
+    LinkBroken,
+    /// An event's stored `hash` did not match a recomputation of its own contents.
+    HashMismatch,
+    /// A per-chain `seq` run (within one non-global chain) was not the expected 0,1,2,….
+    ChainSequenceBroken,
+    /// A per-chain backward link did not match the previous member's `hash`.
+    ChainLinkBroken,
+    /// A chain's genesis member did not carry that chain's required event kind (WFL-11).
+    ChainGenesisWrong,
+}
+
+/// The precise first break located in a chain: which chain, what kind, where (global + chain seq,
+/// event id), and — for a link/hash failure — the expected-vs-actual 32-byte hashes.
+///
+/// This is a snapshot, never persisted into the frozen event log; it is the single detail type the
+/// api/store/web surfaces surface (via [`Ledger::locate_break`] / [`Ledger::integrity_report`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChainBreak {
+    /// The chain the break was found in.
+    pub chain: ChainId,
+    /// The classification of the break.
+    pub kind: BreakKind,
+    /// The global `seq` of the offending event, when a specific event is implicated.
+    pub global_seq: Option<u64>,
+    /// The per-chain seq of the offending link, for a per-chain (non-global) break.
+    pub chain_seq: Option<u64>,
+    /// The id of the offending event, when a specific event is implicated.
+    pub event_id: Option<EventId>,
+    /// The hash the chain required at this point (the previous member's hash, or the recomputed
+    /// self-hash), for a link/hash break.
+    pub expected_hash: Option<[u8; 32]>,
+    /// The hash actually found (the stored `prev_hash`, or the stored `hash`), for a link/hash
+    /// break.
+    pub actual_hash: Option<[u8; 32]>,
+    /// A human-readable description (mirrors the corresponding [`LedgerError`] `Display`).
+    pub message: String,
+}
+
+/// A whole-ledger integrity snapshot: the global spine's status, every non-global chain's status
+/// (each carrying its own [`ChainBreak`] when broken), an overall `healthy` flag, and the
+/// permanent re-anchor disclosure derived from the audit chain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IntegrityReport {
+    /// The global spine's status (always present, even for an empty ledger).
+    pub global: ChainStatus,
+    /// One status per non-global chain, canonically ordered by chain id.
+    pub chains: Vec<ChainStatus>,
+    /// `true` iff the global spine and every non-global chain verify cleanly.
+    pub healthy: bool,
+    /// The re-anchor records disclosed by the audit chain (permanent; empty when none).
+    pub reanchored_segments: Vec<ReanchorRecord>,
+}
+
+/// Why a [`Ledger::try_append`] was rejected before mutating the ledger.
+///
+/// A rejection means nothing was appended: the caller can safely retry, roll back a surrounding
+/// transaction, or surface the break — the ledger is untouched.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AppendError {
+    /// The new event would be a chain's genesis, but its `kind` is not that chain's required
+    /// genesis kind (WFL-11: `book.opened` for a `book:` chain, `entity.created` for `company:`).
+    #[error("chain {chain} genesis kind wrong: expected {expected:?}, found {found:?}")]
+    ChainGenesisWrong {
+        /// The chain whose genesis kind would be wrong.
+        chain: ChainId,
+        /// The kind the chain's genesis must carry.
+        expected: String,
+        /// The kind actually supplied.
+        found: String,
+    },
+    /// A chain the new event would join already has a broken tail (its head event no longer
+    /// self-verifies), so appending onto it would perpetuate a break. The ledger is not mutated.
+    #[error("chain {chain} tail is broken; refusing to append onto a broken chain")]
+    BrokenChainTail {
+        /// The chain whose current tail is broken.
+        chain: ChainId,
+        /// The break detected at the tail.
+        break_: ChainBreak,
+    },
+}
+
+/// A record of one re-anchor operation, disclosed permanently via a chained `ledger.reanchored`
+/// audit event (never a forgeable out-of-preimage flag). See [`Ledger::reanchor`].
+///
+/// The record is committed into the tamper-evident chain: its canonical JSON is the payload the
+/// `ledger.reanchored` event digests (`payload_digest`), and the same JSON is retained in the
+/// event's `justification` so [`Ledger::reanchored_segments`] can reconstruct it. Tampering with
+/// the retained JSON is detectable (its digest would no longer match `payload_digest`, which is in
+/// the frozen hash preimage), so the disclosure cannot be silently altered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReanchorRecord {
+    /// Who performed the re-anchor.
+    pub actor: String,
+    /// When it was performed (caller-supplied; the core takes no clock).
+    #[serde(with = "time::serde::rfc3339")]
+    pub at: OffsetDateTime,
+    /// The required, non-empty human reason for the last-resort operation.
+    pub reason: String,
+    /// The chains (and their chain-seq ranges) whose hashes were rebuilt.
+    pub affected: Vec<ReanchorSegment>,
+    /// The global head hash before the rebuild (the broken head), or `None` for an empty ledger.
+    pub original_global_head: Option<[u8; 32]>,
+    /// The global head hash after the rebuild (before the audit event was appended).
+    pub new_global_head: [u8; 32],
+    /// sha256 over the concatenation of every event's overwritten `hash` (in global order),
+    /// preserving what the rebuild replaced so the original (broken) state stays provable.
+    pub pre_reanchor_digest: [u8; 32],
+}
+
+/// One chain's rebuilt range within a [`ReanchorRecord`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReanchorSegment {
+    /// The affected chain.
+    pub chain: ChainId,
+    /// The lowest chain-seq whose hash changed in the rebuild.
+    pub from_chain_seq: u64,
+    /// The highest chain-seq whose hash changed in the rebuild.
+    pub to_chain_seq: u64,
+}
+
+/// Why a [`Ledger::reanchor`] was refused.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ReanchorError {
+    /// The ledger already verifies cleanly — a re-anchor would needlessly rewrite sound hashes.
+    #[error("ledger already verifies; re-anchor refused (nothing to repair)")]
+    AlreadyValid,
+    /// The required human reason was empty or whitespace-only.
+    #[error("re-anchor requires a non-empty reason")]
+    EmptyReason,
+    /// The rebuild did not produce a cleanly-verifying ledger (should never happen; defensive).
+    #[error("re-anchor failed to produce a verifying ledger: {0}")]
+    VerificationFailed(LedgerError),
+}
+
+/// The verdict of the standalone bundle-chain verifier ([`Ledger::verify_bundle_chain_verdict`]).
+///
+/// This is the ergonomic enum form of the frozen [`Ledger::verify_bundle_chain`] primitive
+/// (`Result<u64, ChainBreak>`), for callers that prefer a match over a `Result`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BundleVerdict {
+    /// The isolated chain verified end-to-end; carries its length.
+    Verified {
+        /// The number of members verified in the isolated chain.
+        length: u64,
+    },
+    /// The isolated chain is broken; carries the precise first break.
+    Broken(ChainBreak),
+}
+
+/// The kind stamped on the chained audit event a [`Ledger::reanchor`] appends.
+pub const REANCHOR_EVENT_KIND: &str = "ledger.reanchored";
+/// The scope stamped on the chained audit event a [`Ledger::reanchor`] appends (⇒ Application).
+pub const RECOVERY_SCOPE: &str = "recovery";
+
+impl Ledger {
+    // ---- §2.1 break location -----------------------------------------------------------------
+
+    /// Locate the precise first break in `chain`, or `None` when it verifies cleanly.
+    ///
+    /// This walks exactly the same checks as [`Ledger::verify`] (for [`ChainId::Global`]) or
+    /// [`Ledger::verify_chain`] (for a non-global chain) — so `locate_break(c).is_none()` is
+    /// equivalent to `verify_chain(c).is_ok()` — but returns the rich [`ChainBreak`] (event id,
+    /// global + chain seq, expected-vs-actual hash bytes) instead of a bool/[`LedgerError`].
+    pub fn locate_break(&self, chain: &ChainId) -> Option<ChainBreak> {
+        if chain.is_global() {
+            return self.locate_global_break();
+        }
+        let mut state: Option<(u64, [u8; 32])> = None;
+        for event in &self.events {
+            let Some(link) = event.links.iter().find(|l| &l.chain == chain) else {
+                continue;
+            };
+            let recomputed = event.compute_hash(&event.prev_hash);
+            if recomputed != event.hash {
+                return Some(ChainBreak {
+                    chain: chain.clone(),
+                    kind: BreakKind::HashMismatch,
+                    global_seq: Some(event.seq),
+                    chain_seq: Some(link.seq),
+                    event_id: Some(event.id),
+                    expected_hash: Some(recomputed),
+                    actual_hash: Some(event.hash),
+                    message: format!(
+                        "event hash mismatch at seq {}: contents were altered after sealing",
+                        event.seq
+                    ),
+                });
+            }
+            match state {
+                None => {
+                    if let Some(b) = genesis_break(chain, event, link) {
+                        return Some(b);
+                    }
+                }
+                Some((last_seq, last_hash)) => {
+                    let expected = last_seq + 1;
+                    if link.seq != expected {
+                        return Some(ChainBreak {
+                            chain: chain.clone(),
+                            kind: BreakKind::ChainSequenceBroken,
+                            global_seq: Some(event.seq),
+                            chain_seq: Some(link.seq),
+                            event_id: Some(event.id),
+                            expected_hash: None,
+                            actual_hash: None,
+                            message: format!(
+                                "chain {chain} sequence broken: expected chain-seq {expected}, \
+                                 found {}",
+                                link.seq
+                            ),
+                        });
+                    }
+                    if link.prev_hash != last_hash {
+                        return Some(ChainBreak {
+                            chain: chain.clone(),
+                            kind: BreakKind::ChainLinkBroken,
+                            global_seq: Some(event.seq),
+                            chain_seq: Some(link.seq),
+                            event_id: Some(event.id),
+                            expected_hash: Some(last_hash),
+                            actual_hash: Some(link.prev_hash),
+                            message: format!(
+                                "chain {chain} link broken at chain-seq {}: prev_hash does not \
+                                 match preceding member",
+                                link.seq
+                            ),
+                        });
+                    }
+                }
+            }
+            state = Some((link.seq, event.hash));
+        }
+        None
+    }
+
+    /// Locate the first break on the global spine, or `None` when it verifies cleanly.
+    fn locate_global_break(&self) -> Option<ChainBreak> {
+        let mut global_prev = [0u8; 32];
+        for (index, event) in self.events.iter().enumerate() {
+            let expected_seq = index as u64;
+            if event.seq != expected_seq {
+                return Some(ChainBreak {
+                    chain: ChainId::Global,
+                    kind: BreakKind::SequenceBroken,
+                    global_seq: Some(event.seq),
+                    chain_seq: None,
+                    event_id: Some(event.id),
+                    expected_hash: None,
+                    actual_hash: None,
+                    message: format!(
+                        "sequence broken at index {index}: expected seq {expected_seq}, found {}",
+                        event.seq
+                    ),
+                });
+            }
+            if index == 0 && event.prev_hash != [0u8; 32] {
+                return Some(ChainBreak {
+                    chain: ChainId::Global,
+                    kind: BreakKind::BadGenesis,
+                    global_seq: Some(event.seq),
+                    chain_seq: None,
+                    event_id: Some(event.id),
+                    expected_hash: Some([0u8; 32]),
+                    actual_hash: Some(event.prev_hash),
+                    message: "genesis event (seq 0) must have an all-zero prev_hash".to_owned(),
+                });
+            }
+            if event.prev_hash != global_prev {
+                return Some(ChainBreak {
+                    chain: ChainId::Global,
+                    kind: BreakKind::LinkBroken,
+                    global_seq: Some(event.seq),
+                    chain_seq: None,
+                    event_id: Some(event.id),
+                    expected_hash: Some(global_prev),
+                    actual_hash: Some(event.prev_hash),
+                    message: format!(
+                        "chain link broken at seq {}: prev_hash does not match preceding event",
+                        event.seq
+                    ),
+                });
+            }
+            let recomputed = event.compute_hash(&event.prev_hash);
+            if recomputed != event.hash {
+                return Some(ChainBreak {
+                    chain: ChainId::Global,
+                    kind: BreakKind::HashMismatch,
+                    global_seq: Some(event.seq),
+                    chain_seq: None,
+                    event_id: Some(event.id),
+                    expected_hash: Some(recomputed),
+                    actual_hash: Some(event.hash),
+                    message: format!(
+                        "event hash mismatch at seq {}: contents were altered after sealing",
+                        event.seq
+                    ),
+                });
+            }
+            global_prev = event.hash;
+        }
+        None
+    }
+
+    /// The rich first break on the global spine, or `None` — the detailed twin of `verify()`.
+    pub fn first_break(&self) -> Option<ChainBreak> {
+        self.locate_global_break()
+    }
+
+    /// A full [`IntegrityReport`]: the global status, every non-global chain's status (each with
+    /// its [`ChainBreak`] when broken), the overall `healthy` flag, and the permanent re-anchor
+    /// disclosure. This is the rich, structured verifier the api/store/web surface — `verify()`
+    /// (the frozen `bool`/`Result` contract) stays exactly as-is alongside it.
+    pub fn integrity_report(&self) -> IntegrityReport {
+        let global = self
+            .chain_status(&ChainId::Global)
+            .expect("global chain always has a status");
+        let chains = self.chains();
+        let healthy =
+            global.first_break.is_none() && chains.iter().all(|c| c.first_break.is_none());
+        IntegrityReport {
+            global,
+            chains,
+            healthy,
+            reanchored_segments: self.reanchored_segments(),
+        }
+    }
+
+    /// Alias for [`Ledger::integrity_report`] under the deliverable's `verify_detailed` name.
+    pub fn verify_detailed(&self) -> IntegrityReport {
+        self.integrity_report()
+    }
+
+    // ---- §2.3 validating append --------------------------------------------------------------
+
+    /// A **validating** append: check the new event's would-be [`ChainLink`]s against the current
+    /// head of every chain it joins (genesis-kind rules + a broken-tail guard) BEFORE mutating,
+    /// then append exactly as [`Ledger::append`] would. On `Err` nothing is appended.
+    ///
+    /// **Perf (frozen):** this is `O(links)` hash work — it recomputes only the *head* event of
+    /// each joined chain (plus the global tail) to detect a broken tail, and derives genesis rules
+    /// from membership. It is deliberately **not** a whole-ledger re-verify (which is `O(n)` hash
+    /// work and stays on load + [`Ledger::integrity_report`]). A break buried mid-chain that does
+    /// not affect a joined chain's head is therefore not this method's job to catch — full verify
+    /// on load owns that.
+    // The `AppendError` size is intentional: `BrokenChainTail` carries a full `ChainBreak` (the
+    // FROZEN contract §2.3 shape E2/E3 code against). Boxing would deviate from the frozen API.
+    #[allow(clippy::result_large_err)]
+    pub fn try_append(
+        &mut self,
+        actor: &str,
+        scope: &str,
+        kind: &str,
+        justification: Option<&str>,
+        payload: &[u8],
+    ) -> Result<&Event, AppendError> {
+        let memberships = Ledger::memberships(scope, kind);
+        // Head event index per chain (one O(n) pointer scan, no hashing — as `append` already
+        // does to build heads). The hashing below is bounded by O(links).
+        let head_idx = self.head_event_indices();
+
+        for chain in &memberships {
+            match head_idx.get(chain) {
+                // Empty chain ⇒ this event is its genesis: enforce the genesis-kind rule.
+                None => {
+                    if let Some(expected) = chain.expected_genesis_kind() {
+                        if kind != expected {
+                            return Err(AppendError::ChainGenesisWrong {
+                                chain: chain.clone(),
+                                expected: expected.to_owned(),
+                                found: kind.to_owned(),
+                            });
+                        }
+                    }
+                }
+                // Non-empty chain ⇒ its tail must self-verify, else we'd extend a broken chain.
+                Some(&idx) => {
+                    if let Some(b) = self.tail_break(chain, idx) {
+                        return Err(AppendError::BrokenChainTail {
+                            chain: chain.clone(),
+                            break_: b,
+                        });
+                    }
+                }
+            }
+        }
+        // The global tail must also self-verify before we link a new event onto it.
+        if let Some(idx) = self.events.len().checked_sub(1) {
+            if let Some(b) = self.tail_break(&ChainId::Global, idx) {
+                return Err(AppendError::BrokenChainTail {
+                    chain: ChainId::Global,
+                    break_: b,
+                });
+            }
+        }
+
+        let timestamp = OffsetDateTime::now_utc();
+        Ok(self.append_at(actor, scope, kind, justification, payload, timestamp))
+    }
+
+    /// The head event index of every chain (global-order scan; no hashing). Used by
+    /// [`Ledger::try_append`] to bound its tail check to `O(links)` hashes.
+    fn head_event_indices(&self) -> HashMap<ChainId, usize> {
+        let mut heads: HashMap<ChainId, usize> = HashMap::new();
+        for (i, event) in self.events.iter().enumerate() {
+            for link in &event.links {
+                heads.insert(link.chain.clone(), i);
+            }
+        }
+        heads
+    }
+
+    /// If the event at `idx` (the tail/head of `chain`) does not self-verify, return the break;
+    /// else `None`. `O(1)` hash work — a single self-hash recomputation.
+    fn tail_break(&self, chain: &ChainId, idx: usize) -> Option<ChainBreak> {
+        let event = &self.events[idx];
+        let recomputed = event.compute_hash(&event.prev_hash);
+        if recomputed == event.hash {
+            return None;
+        }
+        let chain_seq = event
+            .links
+            .iter()
+            .find(|l| &l.chain == chain)
+            .map(|l| l.seq);
+        Some(ChainBreak {
+            chain: chain.clone(),
+            kind: BreakKind::HashMismatch,
+            global_seq: Some(event.seq),
+            chain_seq,
+            event_id: Some(event.id),
+            expected_hash: Some(recomputed),
+            actual_hash: Some(event.hash),
+            message: format!(
+                "event hash mismatch at seq {}: contents were altered after sealing",
+                event.seq
+            ),
+        })
+    }
+
+    // ---- §2.2 re-anchor ----------------------------------------------------------------------
+
+    /// Re-anchor: rebuild every event's hashes IN PLACE from current event **content**, cascading
+    /// the whole global spine so every affected chain is re-linked, then append a chained
+    /// `ledger.reanchored` audit event disclosing it. Returns the [`ReanchorRecord`].
+    ///
+    /// This is the last-resort recovery primitive. It never drops, reorders, inserts, or edits
+    /// event *content* (actor/scope/kind/timestamp/payload_digest are untouched) — it only
+    /// recomputes the derivable linkage (global seq/prev_hash and each per-chain link) and the
+    /// `hash`. Because the global spine threads every event, the rebuild cascades from the first
+    /// divergence forward; all chains with a rebuilt member are named in `affected`.
+    ///
+    /// It is **never automatic** and refuses when the ledger already verifies
+    /// ([`ReanchorError::AlreadyValid`]) or the `reason` is empty ([`ReanchorError::EmptyReason`]).
+    /// `at` is caller-supplied (the core takes no clock). The disclosure is a chained audit event
+    /// plus `pre_reanchor_digest` (a sha256 of the overwritten hashes), so the original broken
+    /// state stays provable and the re-anchor can never silently erase evidence.
+    pub fn reanchor(
+        &mut self,
+        actor: &str,
+        reason: &str,
+        at: OffsetDateTime,
+    ) -> Result<ReanchorRecord, ReanchorError> {
+        if reason.trim().is_empty() {
+            return Err(ReanchorError::EmptyReason);
+        }
+        if self.verify().is_ok() {
+            return Err(ReanchorError::AlreadyValid);
+        }
+
+        let original_global_head = self.head();
+        // Snapshot the hashes about to be overwritten (proves what the rebuild replaced).
+        let old_hashes: Vec<[u8; 32]> = self.events.iter().map(|e| e.hash).collect();
+
+        // Rebuild the whole spine deterministically from content, exactly as append would derive
+        // linkage — recompute global seq/prev_hash, canonical per-chain links, and the hash.
+        let mut global_prev = [0u8; 32];
+        let mut heads: HashMap<ChainId, (u64, [u8; 32])> = HashMap::new();
+        for (index, event) in self.events.iter_mut().enumerate() {
+            let seq = index as u64;
+            let mut links: Vec<ChainLink> = Ledger::memberships(&event.scope, &event.kind)
+                .into_iter()
+                .map(|chain| {
+                    let (link_seq, link_prev) = match heads.get(&chain) {
+                        Some(&(head_seq, head_hash)) => (head_seq + 1, head_hash),
+                        None => (0, [0u8; 32]),
+                    };
+                    ChainLink {
+                        chain,
+                        seq: link_seq,
+                        prev_hash: link_prev,
+                    }
+                })
+                .collect();
+            links.sort_by(|a, b| a.chain.cmp(&b.chain));
+            let hash = compute_hash(
+                &global_prev,
+                seq,
+                &event.actor,
+                &event.scope,
+                &event.kind,
+                event.timestamp,
+                &event.payload_digest,
+                &links,
+            );
+            for link in &links {
+                heads.insert(link.chain.clone(), (link.seq, hash));
+            }
+            event.seq = seq;
+            event.prev_hash = global_prev;
+            event.links = links;
+            event.hash = hash;
+            global_prev = hash;
+        }
+
+        // Which chains changed, and over which chain-seq range (only rebuilt-and-changed members).
+        let mut ranges: std::collections::BTreeMap<ChainId, (u64, u64)> =
+            std::collections::BTreeMap::new();
+        for (index, event) in self.events.iter().enumerate() {
+            if old_hashes.get(index) == Some(&event.hash) {
+                continue; // hash unchanged ⇒ this event was before the divergence.
+            }
+            for link in &event.links {
+                let entry = ranges
+                    .entry(link.chain.clone())
+                    .or_insert((link.seq, link.seq));
+                entry.0 = entry.0.min(link.seq);
+                entry.1 = entry.1.max(link.seq);
+            }
+        }
+        let affected: Vec<ReanchorSegment> = ranges
+            .into_iter()
+            .map(|(chain, (from, to))| ReanchorSegment {
+                chain,
+                from_chain_seq: from,
+                to_chain_seq: to,
+            })
+            .collect();
+
+        let new_global_head = self.head().expect("non-empty ledger after rebuild");
+        let pre_reanchor_digest = {
+            let mut hasher = Sha256::new();
+            for h in &old_hashes {
+                hasher.update(h);
+            }
+            hasher.finalize().into()
+        };
+
+        let record = ReanchorRecord {
+            actor: actor.to_owned(),
+            at,
+            reason: reason.to_owned(),
+            affected,
+            original_global_head,
+            new_global_head,
+            pre_reanchor_digest,
+        };
+
+        // Disclose via a CHAINED audit event: digest the canonical record into `payload_digest`
+        // (in the frozen preimage ⇒ tamper-evident) and retain the same JSON in `justification`
+        // so `reanchored_segments()` can reconstruct the record permanently.
+        let record_json =
+            serde_json::to_string(&record).expect("ReanchorRecord serializes to JSON");
+        self.append_at(
+            actor,
+            RECOVERY_SCOPE,
+            REANCHOR_EVENT_KIND,
+            Some(&record_json),
+            record_json.as_bytes(),
+            at,
+        );
+
+        // The rebuilt ledger + the appended disclosure must now verify cleanly.
+        match self.verify() {
+            Ok(_) => Ok(record),
+            Err(e) => Err(ReanchorError::VerificationFailed(e)),
+        }
+    }
+
+    /// The re-anchor records disclosed by the audit chain — permanent, derived from the chained
+    /// `ledger.reanchored` events (never a separate mutable flag). A book appearing here is
+    /// permanently distinguishable from an untouched one (contract §2.2 / §2.10).
+    ///
+    /// Each record is reconstructed from the event's retained `justification` JSON; its integrity
+    /// is anchored because `payload_digest == digest(justification)` is committed in the frozen
+    /// hash preimage, so a forged disclosure is detectable by [`Ledger::verify`].
+    pub fn reanchored_segments(&self) -> Vec<ReanchorRecord> {
+        self.events
+            .iter()
+            .filter(|e| e.kind == REANCHOR_EVENT_KIND && e.scope == RECOVERY_SCOPE)
+            .filter_map(|e| {
+                let json = e.justification.as_deref()?;
+                // Only trust a disclosure whose retained JSON matches the committed digest.
+                if digest(json.as_bytes()) != e.payload_digest {
+                    return None;
+                }
+                serde_json::from_str::<ReanchorRecord>(json).ok()
+            })
+            .collect()
+    }
+
+    // ---- §2.6 standalone bundle-chain verification -------------------------------------------
+
+    /// Verify a SINGLE `chain` over an isolated set of `events` (a per-book export bundle),
+    /// checking each member's self-hash + that chain's seq/link/genesis — WITHOUT assuming
+    /// global-spine seq continuity. Returns the chain length, or the precise first [`ChainBreak`].
+    ///
+    /// This is the import/export trust core: because a bundle carries only one chain's members
+    /// (not the global spine), a recipient can independently verify it end-to-end. It is a free
+    /// function over borrowed events (no `Ledger` needed).
+    // `Result<u64, ChainBreak>` is the FROZEN contract §2.6 signature (import trusts on it);
+    // boxing the `Err` would change the API E2 codes against.
+    #[allow(clippy::result_large_err)]
+    pub fn verify_bundle_chain(events: &[Event], chain: &ChainId) -> Result<u64, ChainBreak> {
+        let mut state: Option<(u64, [u8; 32])> = None;
+        let mut count = 0u64;
+        for event in events {
+            // A bundle carries one chain's members; the global chain (every event a member) is
+            // supported for completeness by treating each event as its own member.
+            let link = match event.links.iter().find(|l| &l.chain == chain) {
+                Some(l) => l,
+                None => continue,
+            };
+            let recomputed = event.compute_hash(&event.prev_hash);
+            if recomputed != event.hash {
+                return Err(ChainBreak {
+                    chain: chain.clone(),
+                    kind: BreakKind::HashMismatch,
+                    global_seq: Some(event.seq),
+                    chain_seq: Some(link.seq),
+                    event_id: Some(event.id),
+                    expected_hash: Some(recomputed),
+                    actual_hash: Some(event.hash),
+                    message: format!(
+                        "event hash mismatch at seq {}: contents were altered after sealing",
+                        event.seq
+                    ),
+                });
+            }
+            match state {
+                None => {
+                    if let Some(b) = genesis_break(chain, event, link) {
+                        return Err(b);
+                    }
+                }
+                Some((last_seq, last_hash)) => {
+                    let expected = last_seq + 1;
+                    if link.seq != expected {
+                        return Err(ChainBreak {
+                            chain: chain.clone(),
+                            kind: BreakKind::ChainSequenceBroken,
+                            global_seq: Some(event.seq),
+                            chain_seq: Some(link.seq),
+                            event_id: Some(event.id),
+                            expected_hash: None,
+                            actual_hash: None,
+                            message: format!(
+                                "chain {chain} sequence broken: expected chain-seq {expected}, \
+                                 found {}",
+                                link.seq
+                            ),
+                        });
+                    }
+                    if link.prev_hash != last_hash {
+                        return Err(ChainBreak {
+                            chain: chain.clone(),
+                            kind: BreakKind::ChainLinkBroken,
+                            global_seq: Some(event.seq),
+                            chain_seq: Some(link.seq),
+                            event_id: Some(event.id),
+                            expected_hash: Some(last_hash),
+                            actual_hash: Some(link.prev_hash),
+                            message: format!(
+                                "chain {chain} link broken at chain-seq {}: prev_hash does not \
+                                 match preceding member",
+                                link.seq
+                            ),
+                        });
+                    }
+                }
+            }
+            state = Some((link.seq, event.hash));
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    /// [`Ledger::verify_bundle_chain`] as an ergonomic [`BundleVerdict`] enum.
+    pub fn verify_bundle_chain_verdict(events: &[Event], chain: &ChainId) -> BundleVerdict {
+        match Ledger::verify_bundle_chain(events, chain) {
+            Ok(length) => BundleVerdict::Verified { length },
+            Err(break_) => BundleVerdict::Broken(break_),
+        }
+    }
+}
+
+/// The genesis-member break for `chain`, mirroring [`check_chain_genesis`] as a [`ChainBreak`].
+///
+/// Returns `None` when the (seq-0) genesis member is well-formed for the chain.
+fn genesis_break(chain: &ChainId, event: &Event, link: &ChainLink) -> Option<ChainBreak> {
+    if link.seq != 0 {
+        return Some(ChainBreak {
+            chain: chain.clone(),
+            kind: BreakKind::ChainSequenceBroken,
+            global_seq: Some(event.seq),
+            chain_seq: Some(link.seq),
+            event_id: Some(event.id),
+            expected_hash: None,
+            actual_hash: None,
+            message: format!(
+                "chain {chain} sequence broken: expected chain-seq 0, found {}",
+                link.seq
+            ),
+        });
+    }
+    if link.prev_hash != [0u8; 32] {
+        return Some(ChainBreak {
+            chain: chain.clone(),
+            kind: BreakKind::ChainLinkBroken,
+            global_seq: Some(event.seq),
+            chain_seq: Some(link.seq),
+            event_id: Some(event.id),
+            expected_hash: Some([0u8; 32]),
+            actual_hash: Some(link.prev_hash),
+            message: format!(
+                "chain {chain} link broken at chain-seq 0: genesis prev_hash must be all-zero"
+            ),
+        });
+    }
+    if let Some(expected) = chain.expected_genesis_kind() {
+        if event.kind != expected {
+            return Some(ChainBreak {
+                chain: chain.clone(),
+                kind: BreakKind::ChainGenesisWrong,
+                global_seq: Some(event.seq),
+                chain_seq: Some(link.seq),
+                event_id: Some(event.id),
+                expected_hash: None,
+                actual_hash: None,
+                message: format!(
+                    "chain {chain} genesis kind wrong: expected {expected:?}, found {:?}",
+                    event.kind
+                ),
+            });
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1569,5 +2371,390 @@ mod tests {
                 found: "act.sealed".to_owned(),
             })
         );
+    }
+
+    // =========================================================================================
+    // t54 — break-location / try_append / reanchor / verify_bundle_chain (ADDITIVE).
+    // =========================================================================================
+
+    fn fixed_time() -> OffsetDateTime {
+        // A stable, caller-supplied instant (no core clock) for deterministic recovery tests.
+        OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap()
+    }
+
+    // --- §2.1 break location (verify_detailed / locate_break) --------------------------------
+
+    #[test]
+    fn healthy_ledger_reports_no_break() {
+        let l = sample_ledger();
+        assert!(l.locate_break(&ChainId::Global).is_none());
+        assert!(l.first_break().is_none());
+        let report = l.verify_detailed();
+        assert!(report.healthy);
+        assert!(report.global.first_break.is_none());
+        assert!(report.chains.iter().all(|c| c.first_break.is_none()));
+        assert!(report.reanchored_segments.is_empty());
+        // The detailed report agrees with the frozen bool contract.
+        assert_eq!(report.healthy, l.verify().is_ok());
+    }
+
+    #[test]
+    fn verify_detailed_pinpoints_a_synthesized_break() {
+        let mut l = sample_ledger();
+        // Tamper the sealed act (global seq 2), which belongs to book, company and global chains.
+        let victim_id = l.events[2].id;
+        let stored_hash = l.events[2].hash;
+        l.events[2].payload_digest = digest(b"forged");
+        let expected_recompute = l.events[2].compute_hash(&l.events[2].prev_hash);
+
+        // Global spine: exact chain / seq / event-id / expected-vs-actual hash.
+        let gb = l.locate_break(&ChainId::Global).expect("global break");
+        assert_eq!(gb.chain, ChainId::Global);
+        assert_eq!(gb.kind, BreakKind::HashMismatch);
+        assert_eq!(gb.global_seq, Some(2));
+        assert_eq!(gb.event_id, Some(victim_id));
+        assert_eq!(gb.expected_hash, Some(expected_recompute));
+        assert_eq!(gb.actual_hash, Some(stored_hash));
+
+        // Book chain pinpoints the same event at its chain-seq 1.
+        let bb = l.locate_break(&book(B1)).expect("book break");
+        assert_eq!(bb.kind, BreakKind::HashMismatch);
+        assert_eq!(bb.global_seq, Some(2));
+        assert_eq!(bb.chain_seq, Some(1));
+        assert_eq!(bb.event_id, Some(victim_id));
+
+        // The whole report is unhealthy; the untouched application chain has no break.
+        let report = l.verify_detailed();
+        assert!(!report.healthy);
+        assert!(report.global.first_break.is_some());
+        let app = report
+            .chains
+            .iter()
+            .find(|c| c.chain == ChainId::Application)
+            .unwrap();
+        assert!(app.first_break.is_none());
+        let bk = report.chains.iter().find(|c| c.chain == book(B1)).unwrap();
+        assert_eq!(
+            bk.first_break.as_ref().map(|b| b.kind),
+            Some(BreakKind::HashMismatch)
+        );
+    }
+
+    #[test]
+    fn locate_break_matches_verify_chain_across_break_kinds() {
+        // For each kind of break, locate_break(chain).is_none() == verify_chain(chain).is_ok().
+        // (a) sequence break on the global spine
+        {
+            let mut l = Ledger::new();
+            l.append("a", "settings", "settings.updated", None, b"a");
+            l.append("a", "user", "user.created", None, b"b");
+            l.events.swap(0, 1);
+            assert_eq!(
+                l.locate_break(&ChainId::Global).map(|b| b.kind),
+                Some(BreakKind::SequenceBroken)
+            );
+            assert!(l.verify().is_err());
+        }
+        // (b) bad genesis prev_hash
+        {
+            let mut l = Ledger::new();
+            l.append("a", &entity_scope(E1), "entity.created", None, b"e");
+            let forged = [7u8; 32];
+            l.events[0].prev_hash = forged;
+            l.events[0].hash = l.events[0].compute_hash(&forged);
+            let b = l.locate_break(&ChainId::Global).unwrap();
+            assert_eq!(b.kind, BreakKind::BadGenesis);
+        }
+        // (c) per-chain link break (self-hash kept consistent)
+        {
+            let mut l = sample_ledger();
+            let idx = 2;
+            let pos = l.events[idx]
+                .links
+                .iter()
+                .position(|link| link.chain == book(B1))
+                .unwrap();
+            l.events[idx].links[pos].prev_hash = [0xCD; 32];
+            let prev = l.events[idx].prev_hash;
+            l.events[idx].hash = l.events[idx].compute_hash(&prev);
+            let b = l.locate_break(&book(B1)).unwrap();
+            assert_eq!(b.kind, BreakKind::ChainLinkBroken);
+            assert_eq!(b.chain_seq, Some(1));
+            assert_eq!(b.actual_hash, Some([0xCD; 32]));
+        }
+    }
+
+    // --- §2.3 try_append ---------------------------------------------------------------------
+
+    #[test]
+    fn try_append_accepts_a_valid_link_and_matches_append() {
+        let mut l = Ledger::new();
+        l.append("mgr", &entity_scope(E1), "entity.created", None, b"e");
+        let ev = l
+            .try_append("mgr", &book_scope(E1, B1), "book.opened", None, b"termo")
+            .expect("valid append accepted");
+        assert_eq!(ev.seq, 1);
+        // Book before Company canonical order, correct genesis linkage.
+        assert_eq!(ev.links.len(), 2);
+        assert_eq!(ev.links[0].chain, book(B1));
+        assert_eq!(ev.links[0].seq, 0);
+        assert_eq!(ev.links[0].prev_hash, [0u8; 32]);
+        assert_eq!(l.verify(), Ok(2));
+    }
+
+    #[test]
+    fn try_append_rejects_genesis_kind_violation() {
+        let mut l = Ledger::new();
+        // A book chain whose first event is not `book.opened` — rejected before mutating.
+        let err = l
+            .try_append(
+                "sec",
+                &format!("book:{B1}/act:{A1}"),
+                "act.sealed",
+                None,
+                b"a",
+            )
+            .unwrap_err();
+        assert_eq!(
+            err,
+            AppendError::ChainGenesisWrong {
+                chain: book(B1),
+                expected: "book.opened".to_owned(),
+                found: "act.sealed".to_owned(),
+            }
+        );
+        // Nothing was appended.
+        assert!(l.is_empty());
+        assert_eq!(l.verify(), Ok(0));
+    }
+
+    #[test]
+    fn try_append_rejects_company_genesis_kind_violation() {
+        let mut l = Ledger::new();
+        let err = l
+            .try_append("mgr", &entity_scope(E1), "entity.updated", None, b"e")
+            .unwrap_err();
+        assert!(matches!(err, AppendError::ChainGenesisWrong { .. }));
+        assert!(l.is_empty());
+    }
+
+    #[test]
+    fn try_append_rejects_appending_onto_a_broken_tail() {
+        let mut l = Ledger::new();
+        l.append("a", "settings", "settings.updated", None, b"a");
+        l.append("a", "user", "user.created", None, b"b");
+        // Corrupt the current application tail (its stored hash no longer matches its content).
+        l.events[1].payload_digest = digest(b"forged");
+        let err = l
+            .try_append("a", "cae", "cae.updated", None, b"c")
+            .unwrap_err();
+        match err {
+            AppendError::BrokenChainTail { chain, break_ } => {
+                // The application chain (or the global tail) is named with the broken event.
+                assert!(chain == ChainId::Application || chain == ChainId::Global);
+                assert_eq!(break_.kind, BreakKind::HashMismatch);
+                assert_eq!(break_.global_seq, Some(1));
+            }
+            other => panic!("expected BrokenChainTail, got {other:?}"),
+        }
+        // Rejected pre-commit: still only the two (one corrupt) events, no third appended.
+        assert_eq!(l.len(), 2);
+    }
+
+    #[test]
+    fn try_append_is_a_tail_check_not_a_full_reverify() {
+        // Structural proof of O(links): a break buried BEFORE the tail of the chain being joined
+        // is NOT caught by try_append (a full O(n) re-verify would catch it). This pins the
+        // perf-frozen tail-only semantics without any wall-clock timing.
+        let mut l = sample_ledger(); // seqs: 0 entity,1 book.opened,2 act,3 settings,4 user
+        // Tamper an event that is NOT the head of the chain we will append onto (application).
+        // The application head is event 4 (intact); event 0 is the company E1 genesis.
+        l.events[0].payload_digest = digest(b"forged-but-buried");
+        // A full verify sees the break at seq 0; try_append onto the application chain does not,
+        // because that chain's tail (event 4) still self-verifies.
+        assert!(l.verify().is_err());
+        let ev = l
+            .try_append("admin", "settings", "settings.updated", None, b"cfg2")
+            .expect("tail-only check accepts append onto an intact application tail");
+        assert_eq!(ev.seq, 5);
+        // Proof it was O(links): the buried break is still present (try_append did not scan it).
+        assert!(l.verify().is_err());
+    }
+
+    // --- §2.2 reanchor -----------------------------------------------------------------------
+
+    #[test]
+    fn reanchor_errors_on_an_already_valid_ledger() {
+        let mut l = sample_ledger();
+        assert_eq!(
+            l.reanchor("amelia.marques", "no reason", fixed_time()),
+            Err(ReanchorError::AlreadyValid)
+        );
+    }
+
+    #[test]
+    fn reanchor_errors_on_empty_reason() {
+        let mut l = sample_ledger();
+        l.events[2].payload_digest = digest(b"forged"); // break it first
+        assert_eq!(
+            l.reanchor("amelia.marques", "   ", fixed_time()),
+            Err(ReanchorError::EmptyReason)
+        );
+    }
+
+    #[test]
+    fn reanchor_repairs_a_broken_chain_and_discloses_it() {
+        let mut l = sample_ledger();
+        // Preserve the original content we must NOT lose.
+        let original_content: Vec<(String, String)> = l
+            .events()
+            .iter()
+            .map(|e| (e.actor.clone(), e.scope.clone()))
+            .collect();
+        // Break the sealed act (content forged, hash left stale ⇒ HashMismatch).
+        l.events[2].payload_digest = digest(b"forged");
+        let broken_head = l.head();
+        assert!(l.verify().is_err());
+
+        let record = l
+            .reanchor(
+                "amelia.marques",
+                "backup unavailable; last resort",
+                fixed_time(),
+            )
+            .expect("re-anchor succeeds on a broken ledger");
+
+        // The ledger now verifies cleanly (rebuild + the appended disclosure event).
+        assert!(l.verify().is_ok());
+        assert!(l.verify_detailed().healthy);
+
+        // Content preserved for the original 5 events: re-anchor rebuilds hashes/links, never
+        // content — actor/scope survive verbatim and the sealed act still carries the content it
+        // had (nothing silently erased).
+        for (i, (actor, scope)) in original_content.iter().enumerate() {
+            assert_eq!(&l.events()[i].actor, actor);
+            assert_eq!(&l.events()[i].scope, scope);
+        }
+        assert_eq!(l.events()[2].payload_digest, digest(b"forged"));
+
+        // Record fields.
+        assert_eq!(record.actor, "amelia.marques");
+        assert_eq!(record.at, fixed_time());
+        assert_eq!(record.original_global_head, broken_head);
+        assert_ne!(record.pre_reanchor_digest, [0u8; 32]);
+        assert!(!record.affected.is_empty());
+        // The book chain (which contained the broken act) is disclosed as affected.
+        assert!(record.affected.iter().any(|s| s.chain == book(B1)));
+
+        // A chained `ledger.reanchored` audit event now exists on the application chain.
+        let audit = l
+            .events()
+            .iter()
+            .find(|e| e.kind == REANCHOR_EVENT_KIND)
+            .expect("reanchored audit event appended");
+        assert_eq!(audit.scope, RECOVERY_SCOPE);
+        assert!(
+            audit
+                .links
+                .iter()
+                .any(|link| link.chain == ChainId::Application)
+        );
+
+        // reanchored_segments() derives the permanent disclosure from the chained event.
+        let segments = l.reanchored_segments();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0], record);
+
+        // The disclosure survives a serialize/reload round-trip (permanent).
+        let (reloaded, status) = Ledger::try_from_events(l.events().to_vec());
+        assert!(status.is_ok());
+        assert_eq!(reloaded.reanchored_segments(), vec![record]);
+    }
+
+    #[test]
+    fn reanchor_never_automatic_requires_explicit_call() {
+        // A break does NOT self-heal: only an explicit reanchor() repairs it.
+        let mut l = sample_ledger();
+        l.events[3].payload_digest = digest(b"forged");
+        assert!(l.verify().is_err());
+        // try_append does not repair; it validates against the (intact) tail and appends normally.
+        let _ = l.try_append("admin", "user", "user.created", None, b"u");
+        assert!(l.verify().is_err(), "no operation silently re-anchored");
+    }
+
+    // --- §2.6 verify_bundle_chain ------------------------------------------------------------
+
+    #[test]
+    fn verify_bundle_chain_verifies_an_isolated_good_book_chain() {
+        let l = sample_ledger();
+        // Export ONLY the book chain's members (as a per-book bundle would).
+        let members: Vec<Event> = l.events_in_chain(&book(B1)).into_iter().cloned().collect();
+        assert_eq!(members.len(), 2);
+        // Independently verifiable WITHOUT the global spine / other chains.
+        assert_eq!(Ledger::verify_bundle_chain(&members, &book(B1)), Ok(2));
+        assert_eq!(
+            Ledger::verify_bundle_chain_verdict(&members, &book(B1)),
+            BundleVerdict::Verified { length: 2 }
+        );
+    }
+
+    #[test]
+    fn verify_bundle_chain_flags_a_tampered_bundle() {
+        let l = sample_ledger();
+        let mut members: Vec<Event> = l.events_in_chain(&book(B1)).into_iter().cloned().collect();
+        // Forge the act's content in the bundle (leave its stored hash) ⇒ self-hash mismatch.
+        members[1].payload_digest = digest(b"forged-in-transit");
+        match Ledger::verify_bundle_chain(&members, &book(B1)) {
+            Err(b) => {
+                assert_eq!(b.chain, book(B1));
+                assert_eq!(b.kind, BreakKind::HashMismatch);
+                assert_eq!(b.chain_seq, Some(1));
+                assert_eq!(b.event_id, Some(members[1].id));
+            }
+            Ok(_) => panic!("tampered bundle must not verify"),
+        }
+        assert!(matches!(
+            Ledger::verify_bundle_chain_verdict(&members, &book(B1)),
+            BundleVerdict::Broken(_)
+        ));
+    }
+
+    #[test]
+    fn verify_bundle_chain_flags_a_wrong_genesis_bundle() {
+        // A bundle whose first book member is not `book.opened` is rejected as a bad genesis.
+        let mut l = Ledger::new();
+        l.append(
+            "sec",
+            &format!("book:{B1}/act:{A1}"),
+            "act.sealed",
+            None,
+            b"a",
+        );
+        let members: Vec<Event> = l.events().to_vec();
+        match Ledger::verify_bundle_chain(&members, &book(B1)) {
+            Err(b) => assert_eq!(b.kind, BreakKind::ChainGenesisWrong),
+            Ok(_) => panic!("wrong-genesis bundle must not verify"),
+        }
+    }
+
+    // --- preservation: additive types serde round-trip ---------------------------------------
+
+    #[test]
+    fn chain_break_and_report_serde_round_trip() {
+        let mut l = sample_ledger();
+        l.events[2].payload_digest = digest(b"forged");
+        let report = l.integrity_report();
+        let json = serde_json::to_string(&report).unwrap();
+        let back: IntegrityReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, report);
+    }
+
+    #[test]
+    fn chain_status_without_first_break_deserializes_via_default() {
+        // Back-compat: a persisted ChainStatus predating `first_break` still loads.
+        let legacy = r#"{"chain":"application","genesis_kind":"settings.updated","length":2,"head":null,"verified":true}"#;
+        let status: ChainStatus = serde_json::from_str(legacy).unwrap();
+        assert!(status.verified);
+        assert!(status.first_break.is_none());
     }
 }
