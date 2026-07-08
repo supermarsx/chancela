@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
 import { Providers } from './app/providers';
+import { BootSplash } from './app/BootSplash';
 import { router } from './app/router';
 import { checkServerVersion } from './api/versionCheck';
 import { isTauri } from './desktop/tauri';
@@ -22,6 +23,11 @@ if (!rootEl) {
 createRoot(rootEl).render(
   <StrictMode>
     <Providers>
+      {/* A brief, decorative boot overlay ABOVE the router. It is never a gate: the router
+          (and the AuthGate / safe-mode banner within it) render and become interactive
+          underneath, and the splash fades + unmounts on its own short timer. It is skipped
+          entirely under reduced-motion / safe-mode (renders nothing). */}
+      <BootSplash />
       <RouterProvider router={router} />
     </Providers>
   </StrictMode>,

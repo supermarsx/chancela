@@ -23,6 +23,7 @@ export const svFI: Catalog = {
   'nav.settings': 'Inställningar',
   'nav.aria': 'Huvudnavigering',
   'common.brand': 'Chancela',
+  'splash.aria': 'Startar Chancela',
   'common.footer': 'Chancela · Gränssnittsprototyp · Följer portugisisk rätt (CSC, GDPR, eIDAS)',
 
   // --- Shared chrome -------------------------------------------------------------

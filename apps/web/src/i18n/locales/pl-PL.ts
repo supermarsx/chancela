@@ -19,6 +19,7 @@ export const plPL: Catalog = {
   'nav.settings': 'Ustawienia',
   'nav.aria': 'Nawigacja główna',
   'common.brand': 'Chancela',
+  'splash.aria': 'Uruchamianie Chancela',
   'common.footer':
     'Chancela · Prototyp interfejsu · Zgodny z prawem portugalskim (CSC, GDPR, eIDAS)',
 

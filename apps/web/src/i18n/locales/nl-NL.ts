@@ -17,6 +17,7 @@ export const nlNL: Catalog = {
   'nav.settings': 'Instellingen',
   'nav.aria': 'Hoofdnavigatie',
   'common.brand': 'Chancela',
+  'splash.aria': 'Chancela wordt gestart',
   'common.footer': 'Chancela · Interface-prototype · Conform het Portugese recht (CSC, AVG, eIDAS)',
 
   // --- Shared chrome -------------------------------------------------------------

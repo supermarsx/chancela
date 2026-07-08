@@ -18,6 +18,7 @@ export const frFR: Catalog = {
   'nav.settings': 'Paramètres',
   'nav.aria': 'Navigation principale',
   'common.brand': 'Chancela',
+  'splash.aria': 'Démarrage de Chancela',
   'common.footer':
     'Chancela · Prototype d’interface · Conforme au droit portugais (CSC, RGPD, eIDAS)',
 

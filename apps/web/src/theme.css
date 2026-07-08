@@ -1182,6 +1182,26 @@ body {
   background-size: 520px 520px;
   mix-blend-mode: soft-light;
   opacity: var(--leather-grain-opacity, 0.6);
+  /* A very slow, very subtle "breathing" pulse (t50 W4): the grain's opacity and scale
+     drift a hair over an 11s ease-in-out loop so the hide feels alive rather than a static
+     print — felt, not seen. Opacity + transform only (GPU-cheap); the base opacity is the
+     resting frame. It STOPS DEAD under both kill-switches: `prefers-reduced-motion` snaps
+     the animation to its resting frame (base opacity, no scale), and safe mode both zeroes
+     `animation` on `*` AND hides `.leather-bg` entirely — so no motion ever escapes. */
+  animation: leather-breathe 11s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+@keyframes leather-breathe {
+  0%,
+  100% {
+    opacity: var(--leather-grain-opacity, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    opacity: calc(var(--leather-grain-opacity, 0.6) * 0.86);
+    transform: scale(1.008);
+  }
 }
 
 /* Themed scrollbars — one editorial look in both engines/themes. */
@@ -4176,5 +4196,175 @@ input[type='radio']:disabled {
 @media (max-width: 40rem) {
   .access-manager {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================================
+ * Startup splash + entrance choreography (t50 W4).
+ *
+ * A brief boot overlay plus tasteful entrance motion for the sign-in / onboarding
+ * surfaces and app-wide form fields. Everything here is opacity/transform only — GPU
+ * cheap, no layout animation — and every keyframe/transition lives under the two global
+ * kill-switches already in this file: `@media (prefers-reduced-motion: reduce)` and
+ * `:root[data-safe-mode='on']` each zero `animation`/`transition` on `*`. The `BootSplash`
+ * component ALSO refuses to mount under either signal, so its motion is doubly gated.
+ * ========================================================================== */
+
+/* --- Boot splash ---------------------------------------------------------- */
+/* A full-viewport gilt-on-leather cover that fades its crest in, then fades itself out and
+   unmounts. `pointer-events: none` guarantees it is never a gate — clicks reach the app
+   readying underneath. Sits above the app chrome but below the safe-mode banner (z 1500);
+   moot in practice since the splash never mounts in safe mode. */
+.boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: var(--leather-base);
+  opacity: 1;
+  transition: opacity 320ms ease;
+}
+
+.boot-splash.is-leaving {
+  opacity: 0;
+}
+
+.boot-splash__mark {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  animation: boot-splash-in 460ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+.boot-splash__crest {
+  width: 3rem;
+  height: 3rem;
+}
+
+.boot-splash__crest circle {
+  fill: none;
+  stroke: var(--accent-strong);
+  stroke-width: 1.5;
+}
+
+.boot-splash__crest text {
+  fill: var(--accent-strong);
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.boot-splash__word {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  letter-spacing: 0.12em;
+  color: var(--accent-strong);
+}
+
+@keyframes boot-splash-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- Sign-in / onboarding entrance ---------------------------------------- */
+/* The card fades + rises in on mount; its rows cascade a touch behind it for a gentle,
+   professional stagger. */
+.signin__card,
+.onboarding__card {
+  animation: surface-enter 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.signin__form > *,
+.onboarding__body > * {
+  animation: row-rise 300ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.signin__form > *:nth-child(1),
+.onboarding__body > *:nth-child(1) {
+  animation-delay: 60ms;
+}
+.signin__form > *:nth-child(2),
+.onboarding__body > *:nth-child(2) {
+  animation-delay: 110ms;
+}
+.signin__form > *:nth-child(3),
+.onboarding__body > *:nth-child(3) {
+  animation-delay: 160ms;
+}
+.signin__form > *:nth-child(4),
+.onboarding__body > *:nth-child(4) {
+  animation-delay: 210ms;
+}
+.signin__form > *:nth-child(5),
+.onboarding__body > *:nth-child(5) {
+  animation-delay: 260ms;
+}
+.signin__form > *:nth-child(n + 6),
+.onboarding__body > *:nth-child(n + 6) {
+  animation-delay: 300ms;
+}
+
+/* A gentle gilt focus glow on the auth surfaces' inputs — rides the existing `.control`
+   box-shadow transition, so it eases in on focus and collapses instantly under the
+   kill-switches (a focus ring is an indicator, not motion, so an instant ring is fine). */
+.signin .control:focus-visible,
+.onboarding .control:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+@keyframes surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes row-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- Form validation micro-motion (app-wide) ------------------------------ */
+/* A validation message eases in with a subtle one-shot shake so a new `role="alert"` error
+   draws the eye without being flashy. Gated by the two global kill-switches. */
+.field__error {
+  animation: field-error-in 240ms ease both;
+}
+
+@keyframes field-error-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-3px);
+  }
+  40% {
+    transform: translateX(2px);
+  }
+  70% {
+    transform: translateX(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
   }
 }

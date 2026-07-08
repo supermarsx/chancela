@@ -18,6 +18,7 @@ export const ptBR: Catalog = {
   'nav.settings': 'Configurações',
   'nav.aria': 'Navegação principal',
   'common.brand': 'Chancela',
+  'splash.aria': 'Iniciando o Chancela',
   'common.footer':
     'Chancela · Protótipo de interface · Conforme o direito português (CSC, RGPD, eIDAS)',
 

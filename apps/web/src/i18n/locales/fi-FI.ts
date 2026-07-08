@@ -19,6 +19,7 @@ export const fiFI: Catalog = {
   'nav.settings': 'Asetukset',
   'nav.aria': 'Päänavigointi',
   'common.brand': 'Chancela',
+  'splash.aria': 'Käynnistetään Chancela',
   'common.footer':
     'Chancela · Käyttöliittymän prototyyppi · Portugalin lain mukainen (CSC, GDPR, eIDAS)',
 

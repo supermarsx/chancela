@@ -19,6 +19,7 @@ export const itIT: Catalog = {
   'nav.settings': 'Impostazioni',
   'nav.aria': 'Navigazione principale',
   'common.brand': 'Chancela',
+  'splash.aria': 'Avvio di Chancela',
   'common.footer':
     'Chancela · Prototipo di interfaccia · Conforme al diritto portoghese (CSC, RGPD, eIDAS)',
 

@@ -19,6 +19,7 @@ export const daDK: Catalog = {
   'nav.settings': 'Indstillinger',
   'nav.aria': 'Hovednavigation',
   'common.brand': 'Chancela',
+  'splash.aria': 'Starter Chancela',
   'common.footer':
     'Chancela · Interface-prototype · I overensstemmelse med portugisisk ret (CSC, GDPR, eIDAS)',
 

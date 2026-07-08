@@ -24,6 +24,7 @@ export const ptPT = {
   'nav.settings': 'Configurações',
   'nav.aria': 'Navegação principal',
   'common.brand': 'Chancela',
+  'splash.aria': 'A iniciar o Chancela',
   'common.footer':
     'Chancela · Protótipo de interface · Conforme o direito português (CSC, RGPD, eIDAS)',
 
