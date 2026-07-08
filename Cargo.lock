@@ -531,6 +531,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-mcp"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "chancela-pades"
 version = "0.1.0"
 dependencies = [

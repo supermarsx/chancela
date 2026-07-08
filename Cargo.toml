@@ -54,6 +54,12 @@ chancela-authz = { path = "crates/chancela-authz" }
 # chancela-authz + sha2/rand_core/serde/time/uuid — must NOT depend on chancela-api/store. See
 # .orchestration/plans/t65.md §3.1/§3.2.
 chancela-apikey = { path = "crates/chancela-apikey" }
+# MCP server (t65-E2): exposes platform ops as permission-gated MCP tools over stdio, authenticating
+# to the integration API (/api/v1) with an API key (one RBAC path — authz is server-side). Binary +
+# library crate; OFF by default. Deps: serde/serde_json/reqwest/thiserror (all workspace-inherited) —
+# no MCP SDK pinned (hand-rolled JSON-RPC 2.0 over stdio). Must NOT depend on chancela-api (it is an
+# HTTP client of it). Consumed by t65-E5 (server/desktop launcher). See .orchestration/plans/t65.md §2.4.
+chancela-mcp = { path = "crates/chancela-mcp" }
 
 # Third-party (conservative, declared once so every crate inherits identical versions).
 serde = { version = "1", features = ["derive"] }
