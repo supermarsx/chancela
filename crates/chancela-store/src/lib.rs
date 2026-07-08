@@ -149,6 +149,33 @@ pub struct BackupFile {
     pub bytes: u64,
 }
 
+/// A generated PDF/A document preserved alongside its sealed act (the `documents` table, schema v2;
+/// plan t48 §3.4/D4). Used symmetrically as the argument to [`Tx::upsert_document`] (write) and the
+/// return of [`Store::document_for_act`] / [`Store::document_by_id`] (read), so the api's
+/// render→write→persist path and its `GET /v1/acts/{id}/document` + seal-response fields code
+/// against one shape.
+///
+/// The PDF is a deterministic function of the frozen record + pinned `template_id`, so the record
+/// remains the source of truth (plan D4 "regeneration, not storage-of-truth"); this row preserves
+/// the produced bytes and the metadata that binds them (`pdf_digest`, `template_id`, `profile`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredDocument {
+    /// The document id (primary key; the upsert is idempotent on it).
+    pub id: String,
+    /// The owning act — the indexed scope column, keyed as its plain uuid text (mirrors `acts`).
+    pub act_id: ActId,
+    /// The versioned template spec id recorded verbatim (e.g. `csc-ata-ag/v1`).
+    pub template_id: String,
+    /// Lowercase-hex sha-256 of [`Self::pdf_bytes`] (the digest bound in the `document.generated` event).
+    pub pdf_digest: String,
+    /// The rule-pack / profile string the document was produced under.
+    pub profile: String,
+    /// When the document was generated (UTC); the inscription-ordering field for the by-act read.
+    pub created_at: OffsetDateTime,
+    /// The PDF/A-2u bytes themselves.
+    pub pdf_bytes: Vec<u8>,
+}
+
 impl Store {
     /// Open (creating if absent) `<data_dir>/chancela.db`, set `journal_mode=WAL` and
     /// `foreign_keys=ON`, run the idempotent [`schema::ALL`] migration, and record/read
@@ -201,6 +228,16 @@ impl Store {
                     found: v,
                     supported: schema::SCHEMA_VERSION,
                 });
+            }
+            // Forward-only upgrade: a database written by an older build has already had the new,
+            // additive DDL applied above (idempotent `CREATE TABLE IF NOT EXISTS` — e.g. the v2
+            // `documents` table), so advancing the stamp is the whole migration. No column of an
+            // existing table is dropped or retyped, so the upgrade is safe and one-way.
+            Some(v) if v < schema::SCHEMA_VERSION => {
+                conn.execute(
+                    "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+                    params![schema::SCHEMA_VERSION.to_string()],
+                )?;
             }
             Some(_) => {}
             None => {
@@ -310,6 +347,33 @@ impl Store {
             ledger,
             chain_status,
         })
+    }
+
+    /// Fetch the document generated for `act_id`, returning its bytes + metadata, or `None` if the
+    /// act has no persisted document yet (the api maps `None` to the `GET /v1/acts/{id}/document`
+    /// 404-until-sealed). If an act was regenerated more than once, the most recently created row
+    /// wins (ordered by `created_at`, then the physical `rowid` as a stable tie-break).
+    pub fn document_for_act(&self, act_id: ActId) -> Result<Option<StoredDocument>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+             FROM documents WHERE act_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        )?;
+        stmt.query_row(params![act_id.to_string()], row_to_document)
+            .optional()?
+            .transpose()
+    }
+
+    /// Fetch a document by its own id (bytes + metadata), or `None` if unknown.
+    pub fn document_by_id(&self, id: &str) -> Result<Option<StoredDocument>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+             FROM documents WHERE id = ?1",
+        )?;
+        stmt.query_row(params![id], row_to_document)
+            .optional()?
+            .transpose()
     }
 
     /// Run a single transaction: append exactly one event row and upsert zero or more changed
@@ -520,6 +584,36 @@ impl Tx<'_> {
         )?;
         Ok(())
     }
+
+    /// Upsert a generated PDF/A document bound to an act (`documents`, with the indexed `act_id`
+    /// scope column). Idempotent on the document id (`INSERT OR REPLACE`), mirroring the aggregate
+    /// writers.
+    ///
+    /// This is a [`Tx`] method precisely so the api can call it **inside the seal transaction** —
+    /// alongside `append_event(act.sealed)`, `append_event(document.generated)` and `upsert_act` —
+    /// so the document, its digest event, and the act all land in one durable commit and roll back
+    /// together on any failure (plan t48 §3.4 "one durable commit").
+    pub fn upsert_document(&self, doc: &StoredDocument) -> Result<(), StoreError> {
+        let created_at = doc
+            .created_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        self.txn.execute(
+            "INSERT OR REPLACE INTO documents \
+             (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                doc.id,
+                doc.act_id.to_string(),
+                doc.template_id,
+                doc.pdf_digest,
+                doc.profile,
+                created_at,
+                doc.pdf_bytes,
+            ],
+        )?;
+        Ok(())
+    }
 }
 
 /// One row of the `events` table read back as raw primitives (the shape rusqlite's row closure can
@@ -556,6 +650,33 @@ impl RawEventRow {
             hash: blob32(self.hash, "hash")?,
         })
     }
+}
+
+/// Map one `documents` row to a [`StoredDocument`]. The rusqlite closure must yield a
+/// `rusqlite::Result`, so the `act_id` / `created_at` conversions (which surface as [`StoreError`])
+/// are deferred into an inner `Result` the caller unwraps with `.transpose()`.
+#[allow(clippy::type_complexity)]
+fn row_to_document(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredDocument, StoreError>> {
+    let id: String = row.get(0)?;
+    let act_id_raw: String = row.get(1)?;
+    let template_id: String = row.get(2)?;
+    let pdf_digest: String = row.get(3)?;
+    let profile: String = row.get(4)?;
+    let created_at_raw: String = row.get(5)?;
+    let pdf_bytes: Vec<u8> = row.get(6)?;
+    Ok((|| {
+        Ok(StoredDocument {
+            id,
+            act_id: parse_uuid_newtype::<ActId>(&act_id_raw)?,
+            template_id,
+            pdf_digest,
+            profile,
+            created_at: parse_rfc3339(&created_at_raw)?,
+            pdf_bytes,
+        })
+    })())
 }
 
 /// Reconstruct a uuid newtype id (e.g. [`EntityId`], [`EventId`]) stored as its plain uuid text.

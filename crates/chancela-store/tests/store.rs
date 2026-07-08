@@ -11,11 +11,12 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chancela_core::{Act, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
+use chancela_core::{Act, ActId, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
-use chancela_store::{Store, StoreError};
+use chancela_store::{Store, StoreError, StoredDocument};
 use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
 
 // --- std-only tempdir (the crate's Cargo.toml is frozen; no `tempfile` dev-dep) -----------------
 
@@ -89,6 +90,23 @@ fn sample_extract(nipc: &str) -> RegistryExtract {
             subscribed_on: None,
             valid_until: None,
         },
+    }
+}
+
+/// A small fake PDF/A-2u byte blob (not a real PDF — the store crate does not depend on the
+/// document writer; it preserves whatever bytes it is handed).
+const FAKE_PDF: &[u8] = b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\nfake ata de Encosto Estrategico Lda\n%%EOF";
+
+/// Build a [`StoredDocument`] for `act_id` with `bytes`, computing its hex sha-256 digest.
+fn sample_document(id: &str, act_id: ActId, bytes: &[u8]) -> StoredDocument {
+    StoredDocument {
+        id: id.to_string(),
+        act_id,
+        template_id: "csc-ata-ag/v1".to_string(),
+        pdf_digest: hex(&Sha256::digest(bytes)),
+        profile: "csc/sq".to_string(),
+        created_at: OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap(),
+        pdf_bytes: bytes.to_vec(),
     }
 }
 
@@ -385,7 +403,7 @@ fn a_newer_schema_version_is_rejected() {
     match Store::open(dir.path()) {
         Err(StoreError::UnsupportedSchemaVersion { found, supported }) => {
             assert_eq!(found, 999);
-            assert_eq!(supported, 1);
+            assert_eq!(supported, chancela_store::schema::SCHEMA_VERSION);
         }
         other => panic!("expected UnsupportedSchemaVersion, got {other:?}"),
     }
@@ -436,7 +454,10 @@ fn backup_bundles_a_verifiable_snapshot_and_sidecars() {
     );
     assert_eq!(manifest.ledger_length, 2);
     assert!(manifest.ledger_verified);
-    assert_eq!(manifest.store_schema_version, 1);
+    assert_eq!(
+        manifest.store_schema_version,
+        chancela_store::schema::SCHEMA_VERSION
+    );
     assert!(manifest.ledger_head.is_some());
 
     // The manifest lists the db + both sidecar files (dir recursed), never the missing path.
@@ -504,6 +525,217 @@ fn backup_reflects_a_broken_chain_without_failing() {
         "a broken chain reports unverified"
     );
     assert_eq!(manifest.ledger_length, 2);
+}
+
+// --- documents table (schema v2, t48-e4) --------------------------------------------------------
+
+#[test]
+fn schema_version_is_two() {
+    // The documents table landed as schema v2; a fresh DB is stamped with it.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 2);
+    let dir = TempDir::new();
+    Store::open(dir.path()).expect("open fresh");
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let stamped: String = raw
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped, "2");
+}
+
+#[test]
+fn upsert_document_round_trips_bytes_and_metadata() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut ledger = Ledger::new();
+
+    // Compose the write exactly as the seal transaction will: the act, its `act.sealed` event, the
+    // `document.generated` event, and the document row all land in one durable commit.
+    let entity = sample_entity("Encosto Estrategico Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata n.o 1", MeetingChannel::Physical);
+    let doc = sample_document("doc-1", act.id, FAKE_PDF);
+
+    let sealed = ledger
+        .append("amelia.marques", "act:1", "act.sealed", None, b"act")
+        .clone();
+    let generated = ledger
+        .append(
+            "amelia.marques",
+            "act:1",
+            "document.generated",
+            None,
+            doc.pdf_digest.as_bytes(),
+        )
+        .clone();
+    store
+        .persist(|tx| {
+            tx.append_event(&sealed)?;
+            tx.append_event(&generated)?;
+            tx.upsert_act(&act)?;
+            tx.upsert_document(&doc)?;
+            Ok(())
+        })
+        .expect("persist seal + document in one commit");
+
+    // Read back by act id (the GET /v1/acts/{id}/document path) — bytes + metadata round-trip.
+    let by_act = store
+        .document_for_act(act.id)
+        .expect("read by act")
+        .expect("document present");
+    assert_eq!(by_act, doc);
+    assert_eq!(by_act.pdf_bytes, FAKE_PDF);
+    assert_eq!(by_act.pdf_digest, hex(&Sha256::digest(FAKE_PDF)));
+    assert_eq!(by_act.template_id, "csc-ata-ag/v1");
+
+    // Read back by document id (the seal-response additive field path).
+    let by_id = store
+        .document_by_id("doc-1")
+        .expect("read by id")
+        .expect("document present");
+    assert_eq!(by_id, doc);
+
+    // Unknown lookups are a clean None (the api's 404-until-sealed).
+    let other_act = Act::draft(book.id, "Ata n.o 2", MeetingChannel::Physical);
+    assert!(store.document_for_act(other_act.id).unwrap().is_none());
+    assert!(store.document_by_id("nope").unwrap().is_none());
+}
+
+#[test]
+fn upsert_document_is_idempotent_on_id() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let act = Act::draft(
+        Book::new(
+            sample_entity("Encosto Estrategico Lda").id,
+            BookKind::AssembleiaGeral,
+        )
+        .id,
+        "Ata n.o 1",
+        MeetingChannel::Physical,
+    );
+
+    let first = sample_document("doc-1", act.id, b"%PDF-1.7 first%%EOF");
+    store
+        .persist(|tx| tx.upsert_document(&first))
+        .expect("first upsert");
+
+    // Re-generate under the same document id: the row is replaced, not duplicated.
+    let mut second = sample_document("doc-1", act.id, b"%PDF-1.7 regenerated%%EOF");
+    second.template_id = "csc-ata-ag/v1".to_string();
+    store
+        .persist(|tx| tx.upsert_document(&second))
+        .expect("idempotent re-upsert");
+
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let count: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM documents WHERE act_id = ?1",
+            [act.id.to_string()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1, "same id replaces, never duplicates");
+    let read = store.document_by_id("doc-1").unwrap().unwrap();
+    assert_eq!(read, second);
+}
+
+#[test]
+fn an_older_schema_version_upgrades_forward_cleanly() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Encosto Estrategico Lda");
+
+    // Land some real data at the current version, then simulate a database written by the old v1
+    // build: roll the stamp back and drop the table v1 never had.
+    {
+        let store = Store::open(dir.path()).expect("open at v2");
+        let mut ledger = Ledger::new();
+        let e0 = ledger
+            .append("amelia.marques", "entity:e", "entity.created", None, b"e")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e0)?;
+                tx.upsert_entity(&entity)
+            })
+            .unwrap();
+    }
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute(
+            "UPDATE meta SET value = '1' WHERE key = 'schema_version'",
+            [],
+        )
+        .unwrap();
+        raw.execute("DROP TABLE documents", []).unwrap();
+    }
+
+    // Reopening upgrades forward: the additive DDL recreates `documents`, the stamp advances to 2,
+    // and the pre-existing entity row is untouched.
+    let store = Store::open(dir.path()).expect("reopen upgrades v1 -> v2");
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        let stamped: String = raw
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stamped, "2", "stamp advanced forward");
+    }
+    let loaded = store.load().expect("load after upgrade");
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+
+    // The recreated table is empty and usable.
+    let act = Act::draft(
+        Book::new(entity.id, BookKind::AssembleiaGeral).id,
+        "Ata n.o 1",
+        MeetingChannel::Physical,
+    );
+    assert!(store.document_for_act(act.id).unwrap().is_none());
+    let doc = sample_document("doc-1", act.id, FAKE_PDF);
+    store.persist(|tx| tx.upsert_document(&doc)).unwrap();
+    assert_eq!(store.document_by_id("doc-1").unwrap().unwrap(), doc);
+}
+
+#[test]
+fn a_document_survives_backup_and_restore() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let act = Act::draft(
+        Book::new(
+            sample_entity("Encosto Estrategico Lda").id,
+            BookKind::AssembleiaGeral,
+        )
+        .id,
+        "Ata n.o 1",
+        MeetingChannel::Physical,
+    );
+    let doc = sample_document("doc-1", act.id, FAKE_PDF);
+    store.persist(|tx| tx.upsert_document(&doc)).unwrap();
+
+    // Whole-file VACUUM INTO snapshot carries the documents table along automatically.
+    let manifest = store.backup(dir.path(), &[]).expect("backup");
+    let restore = TempDir::new();
+    {
+        let file = std::fs::File::open(&manifest.path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut db_member = archive.by_name("chancela.db").unwrap();
+        let mut db_bytes = Vec::new();
+        db_member.read_to_end(&mut db_bytes).unwrap();
+        std::fs::write(restore.path().join("chancela.db"), &db_bytes).unwrap();
+    }
+    let restored = Store::open(restore.path()).expect("open restored snapshot");
+    let read = restored
+        .document_for_act(act.id)
+        .expect("read restored")
+        .expect("document survived backup/restore");
+    assert_eq!(read, doc);
+    assert_eq!(read.pdf_bytes, FAKE_PDF);
 }
 
 #[test]

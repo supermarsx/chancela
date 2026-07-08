@@ -16,8 +16,12 @@
 
 /// The schema version recorded in `meta` and asserted by [`crate::Store::open`].
 ///
-/// Bump this only alongside a real migration step; v1 is the initial durable layout.
-pub const SCHEMA_VERSION: i64 = 1;
+/// Bump this only alongside a real migration step.
+/// - **v1** — the initial durable layout (meta/events/entities/books/acts/registry_extracts).
+/// - **v2** — adds the `documents` table (Wave C, t48-e4): generated PDF/A documents preserved
+///   alongside their sealed act (plan t48 §3.3/§3.4/D4). Forward-only: an existing v1 database
+///   gains the table via the idempotent [`ALL`] DDL and has its stamp advanced on next open.
+pub const SCHEMA_VERSION: i64 = 2;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -91,6 +95,35 @@ CREATE TABLE IF NOT EXISTS registry_extracts (
     json      TEXT NOT NULL
 ) STRICT;";
 
+/// `documents` — one row per generated PDF/A document bound to a sealed act (schema v2, Wave C,
+/// plan t48 §3.4/D4). Unlike the four aggregate tables this is **not** document-in-relational JSON:
+/// the payload is opaque PDF bytes (`pdf_bytes` BLOB), so the metadata that the api's endpoints and
+/// the seal response need is broken out into typed columns rather than a serde `json` blob.
+///
+/// - `id` — the document id (primary key; the upsert is idempotent on it).
+/// - `act_id` — the owning act, indexed for the `GET /v1/acts/{id}/document` lookup (mirrors how
+///   `acts.book_id` is the indexed scope column — one indexed scope column per table).
+/// - `template_id` — the versioned spec id recorded verbatim (e.g. `csc-ata-ag/v1`).
+/// - `pdf_digest` — lowercase-hex sha-256 of `pdf_bytes` (bound into the `document.generated` event).
+/// - `profile` — the rule-pack / profile string the document was produced under.
+/// - `created_at` — RFC 3339 text, the inscription-ordering field (mirrors `events.timestamp`);
+///   the by-act read returns the most recent row.
+/// - `pdf_bytes` — the PDF/A-2u bytes themselves.
+pub const CREATE_DOCUMENTS: &str = "\
+CREATE TABLE IF NOT EXISTS documents (
+    id          TEXT PRIMARY KEY,
+    act_id      TEXT NOT NULL,
+    template_id TEXT NOT NULL,
+    pdf_digest  TEXT NOT NULL,
+    profile     TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    pdf_bytes   BLOB NOT NULL
+) STRICT;";
+
+/// Index over `documents.act_id` — feeds the by-act document retrieval (one act → its documents).
+pub const CREATE_DOCUMENTS_ACT_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_documents_act ON documents (act_id);";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -103,4 +136,6 @@ pub const ALL: &[&str] = &[
     CREATE_ACTS,
     CREATE_ACTS_BOOK_IDX,
     CREATE_REGISTRY_EXTRACTS,
+    CREATE_DOCUMENTS,
+    CREATE_DOCUMENTS_ACT_IDX,
 ];
