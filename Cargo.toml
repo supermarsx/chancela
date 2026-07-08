@@ -49,6 +49,11 @@ chancela-doc = { path = "crates/chancela-doc" }
 # scoped delegation + the escalation invariants. Pure leaf (serde/uuid/time only); must NOT depend on
 # chancela-api. See .orchestration/plans/t64.md §3.
 chancela-authz = { path = "crates/chancela-authz" }
+# API-key model + key→RBAC-principal seam (t65): sha256-hashed shown-once keys, per-key rate limiting,
+# and the attenuation invariant (a key's authority ⊆ its creator's). Pure leaf; depends on
+# chancela-authz + sha2/rand_core/serde/time/uuid — must NOT depend on chancela-api/store. See
+# .orchestration/plans/t65.md §3.1/§3.2.
+chancela-apikey = { path = "crates/chancela-apikey" }
 
 # Third-party (conservative, declared once so every crate inherits identical versions).
 serde = { version = "1", features = ["derive"] }
