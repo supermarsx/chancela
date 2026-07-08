@@ -21,10 +21,15 @@
     "preferred_official_source": "Ine"
   },
   "signing": {
-    "preferred_family": "CartaoCidadao",
+    "preferred_family": "ChaveMovelDigital",
     "tsa_url": "http://ts.cartaodecidadao.pt/tsa/server",
     "tsl_url": "https://www.gns.gov.pt/media/TSLPT.xml",
-    "require_qualified_for_seal": false
+    "require_qualified_for_seal": false,
+    "cmd": {
+      "env": "preprod",
+      "application_id": null,
+      "ama_cert_configured": false
+    }
   },
   "appearance": {
     "theme": "system",

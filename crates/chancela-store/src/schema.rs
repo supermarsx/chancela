@@ -25,7 +25,13 @@
 ///   held here (verdict + provenance + the retained, read-only bundle bytes) so a foreign book
 ///   chain is **never merged into the live global spine** (which would require re-hashing and
 ///   destroy tamper-evidence). Forward-only, additive: existing databases gain the table via [`ALL`].
-pub const SCHEMA_VERSION: i64 = 3;
+/// - **v4** — adds the qualified-signing tables (t57-S3): `signed_documents` preserves the SIGNED
+///   PDF variant + signature metadata for an act's sealed document (alongside the unsigned
+///   `documents` row), and `pending_cmd_sessions` holds an in-flight two-phase Chave Móvel Digital
+///   signing session (the non-secret `CmdSignSession` + `PreparedSignature` serde blobs) across the
+///   `initiate`→`confirm` request pair. **Neither table ever stores a PIN or an OTP.** Forward-only,
+///   additive: existing databases gain the tables via [`ALL`] and advance their stamp on next open.
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -166,6 +172,83 @@ CREATE TABLE IF NOT EXISTS imported_books (
 pub const CREATE_IMPORTED_BOOKS_BOOK_IDX: &str =
     "CREATE INDEX IF NOT EXISTS idx_imported_books_book ON imported_books (book_id);";
 
+/// `signed_documents` — the SIGNED PDF variant + qualified-signature metadata for a sealed act's
+/// document (schema v4, t57-S3).
+///
+/// One row per act (`act_id` primary key): the qualified signature is a single post-seal artifact
+/// over the act's unsigned PDF/A. It lives **alongside** the unsigned `documents` row (never
+/// replacing it) so both variants are retrievable. Like `documents`, the payload is opaque PDF bytes
+/// (`signed_pdf_bytes` BLOB) so the metadata is broken out into typed columns rather than a serde
+/// `json` blob.
+///
+/// **This table never stores a PIN or an OTP** — only public signature material (the signer
+/// certificate DER, the produced signed PDF, the CMS-derived metadata).
+///
+/// - `act_id` — the owning act (primary key; the upsert is idempotent on it).
+/// - `document_id` — the source unsigned `documents` row this signature covers.
+/// - `signed_pdf_digest` — lowercase-hex sha-256 of `signed_pdf_bytes` (bound into `document.signed`).
+/// - `signature_family` — the signing family (e.g. `ChaveMovelDigital`).
+/// - `evidentiary_level` — the evidentiary weight actually carried (e.g. `Qualified`; SIG-01).
+/// - `trusted_list_status` — the signer issuer's TSL status at signing time, or NULL.
+/// - `signer_cert_subject` — the signer leaf certificate subject DN, or NULL.
+/// - `signing_time` — RFC 3339, the authoritative CAdES signed-attributes signing time.
+/// - `signed_at` — RFC 3339, when the api completed the signature (storage metadata).
+/// - `signer_cert_der` — the signer leaf certificate (DER).
+/// - `timestamp_token_der` — an optional RFC 3161 timestamp token (DER), or NULL (B-B has none).
+/// - `signed_pdf_bytes` — the signed PDF/A bytes.
+pub const CREATE_SIGNED_DOCUMENTS: &str = "\
+CREATE TABLE IF NOT EXISTS signed_documents (
+    act_id              TEXT PRIMARY KEY,
+    document_id         TEXT NOT NULL,
+    signed_pdf_digest   TEXT NOT NULL,
+    signature_family    TEXT NOT NULL,
+    evidentiary_level   TEXT NOT NULL,
+    trusted_list_status TEXT,
+    signer_cert_subject TEXT,
+    signing_time        TEXT NOT NULL,
+    signed_at           TEXT NOT NULL,
+    signer_cert_der     BLOB NOT NULL,
+    timestamp_token_der BLOB,
+    signed_pdf_bytes    BLOB NOT NULL
+) STRICT;";
+
+/// `pending_cmd_sessions` — an in-flight two-phase Chave Móvel Digital signing session (schema v4,
+/// t57-S3), persisted so the `initiate`→`confirm` request pair survives across the two stateless
+/// requests (and a restart).
+///
+/// **This table never stores a PIN or an OTP.** `session_json` is the serde form of the non-secret
+/// `chancela_signing::CmdSignSession` (SCMD process id, public account id, signer cert + chain,
+/// trusted-list status, ByteRange digest, signing time); `prepared_json` is the serde form of the
+/// non-secret `chancela_pades::PreparedSignature` (prepared PDF bytes + ByteRange digest). Both are
+/// opaque JSON to the store (the crypto types live above it in the DAG).
+///
+/// - `session_id` — a fresh uuid minted at initiate (primary key).
+/// - `act_id` — the act being signed, indexed for the by-act pending lookup.
+/// - `actor` — the acting username that initiated (session gating: only it may confirm).
+/// - `status` — `'otp_pending'` while awaiting the OTP.
+/// - `masked_phone` — the citizen phone with the middle digits masked (non-secret, for the UI).
+/// - `doc_name` — the human-readable document label used at initiate.
+/// - `session_json` — the non-secret `CmdSignSession` serde blob.
+/// - `prepared_json` — the non-secret `PreparedSignature` serde blob.
+/// - `created_at` / `expires_at` — RFC 3339 (single-use, TTL-bounded).
+pub const CREATE_PENDING_CMD_SESSIONS: &str = "\
+CREATE TABLE IF NOT EXISTS pending_cmd_sessions (
+    session_id   TEXT PRIMARY KEY,
+    act_id       TEXT NOT NULL,
+    actor        TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    masked_phone TEXT NOT NULL,
+    doc_name     TEXT NOT NULL,
+    session_json TEXT NOT NULL,
+    prepared_json TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    expires_at   TEXT NOT NULL
+) STRICT;";
+
+/// Index over `pending_cmd_sessions.act_id` — feeds the by-act pending-session lookup.
+pub const CREATE_PENDING_CMD_SESSIONS_ACT_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_pending_cmd_sessions_act ON pending_cmd_sessions (act_id);";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -182,4 +265,7 @@ pub const ALL: &[&str] = &[
     CREATE_DOCUMENTS_ACT_IDX,
     CREATE_IMPORTED_BOOKS,
     CREATE_IMPORTED_BOOKS_BOOK_IDX,
+    CREATE_SIGNED_DOCUMENTS,
+    CREATE_PENDING_CMD_SESSIONS,
+    CREATE_PENDING_CMD_SESSIONS_ACT_IDX,
 ];

@@ -24,7 +24,12 @@ fn sample_settings() -> Value {
             "preferred_family": "ChaveMovelDigital",
             "tsa_url": "https://tsa.example.pt/tsr",
             "tsl_url": "https://tsl.example.pt/tsl.xml",
-            "require_qualified_for_seal": true
+            "require_qualified_for_seal": true,
+            "cmd": {
+                "env": "preprod",
+                "application_id": null,
+                "ama_cert_configured": false
+            }
         },
         "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
         "onboarding": { "completed": false, "completed_at": null }

@@ -209,6 +209,71 @@ pub struct StoredDocument {
     pub pdf_bytes: Vec<u8>,
 }
 
+/// The SIGNED PDF variant + qualified-signature metadata for a sealed act's document (the
+/// `signed_documents` table, schema v4; t57-S3). Argument to [`Tx::upsert_signed_document`] (write)
+/// and return of [`Store::signed_document_for_act`] (read).
+///
+/// **Never carries a PIN or an OTP** — only public signature material. The unsigned
+/// [`StoredDocument`] it augments is left in place; this is the post-seal qualified artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredSignedDocument {
+    /// The owning act (primary key; the upsert is idempotent on it).
+    pub act_id: ActId,
+    /// The source unsigned `documents` row this signature covers.
+    pub document_id: String,
+    /// Lowercase-hex sha-256 of [`Self::signed_pdf_bytes`] (bound into the `document.signed` event).
+    pub signed_pdf_digest: String,
+    /// The signing family (e.g. `ChaveMovelDigital`).
+    pub signature_family: String,
+    /// The evidentiary weight actually carried (e.g. `Qualified`; SIG-01).
+    pub evidentiary_level: String,
+    /// The signer issuer's trusted-list status at signing time, or `None`.
+    pub trusted_list_status: Option<String>,
+    /// The signer leaf certificate subject DN, or `None`.
+    pub signer_cert_subject: Option<String>,
+    /// The authoritative CAdES signed-attributes signing time (UTC).
+    pub signing_time: OffsetDateTime,
+    /// When the api completed the signature (UTC; storage metadata).
+    pub signed_at: OffsetDateTime,
+    /// The signer leaf certificate (DER).
+    pub signer_cert_der: Vec<u8>,
+    /// An optional RFC 3161 timestamp token (DER), or `None` (a B-B signature has none).
+    pub timestamp_token_der: Option<Vec<u8>>,
+    /// The signed PDF/A bytes.
+    pub signed_pdf_bytes: Vec<u8>,
+}
+
+/// An in-flight two-phase Chave Móvel Digital signing session (the `pending_cmd_sessions` table,
+/// schema v4; t57-S3), persisted so the `initiate`→`confirm` request pair survives across the two
+/// stateless requests (and a restart).
+///
+/// **Never carries a PIN or an OTP.** `session_json` / `prepared_json` are opaque serde blobs of the
+/// non-secret `chancela_signing::CmdSignSession` / `chancela_pades::PreparedSignature` (the crypto
+/// types live above the store in the DAG, so the store treats them as text).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingCmdSession {
+    /// A fresh uuid minted at initiate (primary key).
+    pub session_id: String,
+    /// The act being signed.
+    pub act_id: ActId,
+    /// The acting username that initiated (session gating: only it may confirm).
+    pub actor: String,
+    /// `"otp_pending"` while awaiting the OTP.
+    pub status: String,
+    /// The citizen phone with the middle digits masked (non-secret, for the UI).
+    pub masked_phone: String,
+    /// The human-readable document label used at initiate.
+    pub doc_name: String,
+    /// The non-secret `CmdSignSession` serde blob (opaque to the store).
+    pub session_json: String,
+    /// The non-secret `PreparedSignature` serde blob (opaque to the store).
+    pub prepared_json: String,
+    /// When the session was created (UTC).
+    pub created_at: OffsetDateTime,
+    /// When the session expires (UTC; single-use, TTL-bounded).
+    pub expires_at: OffsetDateTime,
+}
+
 impl Store {
     /// Open (creating if absent) `<data_dir>/chancela.db`, set `journal_mode=WAL` and
     /// `foreign_keys=ON`, run the idempotent [`schema::ALL`] migration, and record/read
@@ -364,6 +429,76 @@ impl Store {
         stmt.query_row(params![id], row_to_document)
             .optional()?
             .transpose()
+    }
+
+    /// Fetch the SIGNED PDF variant for `act_id` (bytes + metadata), or `None` if the act has no
+    /// qualified signature yet (the api maps `None` to `GET /v1/acts/{id}/document/signed` 404).
+    pub fn signed_document_for_act(
+        &self,
+        act_id: ActId,
+    ) -> Result<Option<StoredSignedDocument>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
+             trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
+             timestamp_token_der, signed_pdf_bytes FROM signed_documents WHERE act_id = ?1",
+        )?;
+        stmt.query_row(params![act_id.to_string()], row_to_signed_document)
+            .optional()?
+            .transpose()
+    }
+
+    /// Load every SIGNED PDF variant (metadata + bytes), keyed by act id — used to rehydrate the
+    /// in-memory read model on boot.
+    pub fn all_signed_documents(&self) -> Result<HashMap<ActId, StoredSignedDocument>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
+             trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
+             timestamp_token_der, signed_pdf_bytes FROM signed_documents",
+        )?;
+        let rows = stmt.query_map([], row_to_signed_document)?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let doc = row??;
+            out.insert(doc.act_id, doc);
+        }
+        Ok(out)
+    }
+
+    /// Fetch one pending CMD signing session by id, or `None` if unknown/consumed. The api falls back
+    /// to this after a restart drops the in-memory pending-session map.
+    pub fn pending_cmd_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<PendingCmdSession>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
+             prepared_json, created_at, expires_at FROM pending_cmd_sessions WHERE session_id = ?1",
+        )?;
+        stmt.query_row(params![session_id], row_to_pending_session)
+            .optional()?
+            .transpose()
+    }
+
+    /// Load every pending CMD signing session, keyed by session id — used to rehydrate the in-memory
+    /// read model on boot (deliverable #2: sessions survive a restart).
+    pub fn all_pending_cmd_sessions(
+        &self,
+    ) -> Result<HashMap<String, PendingCmdSession>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
+             prepared_json, created_at, expires_at FROM pending_cmd_sessions",
+        )?;
+        let rows = stmt.query_map([], row_to_pending_session)?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let session = row??;
+            out.insert(session.session_id.clone(), session);
+        }
+        Ok(out)
     }
 
     /// Run a single transaction: append exactly one event row and upsert zero or more changed
@@ -613,6 +748,90 @@ impl Tx<'_> {
         )?;
         Ok(())
     }
+
+    /// Upsert the SIGNED PDF variant for an act (`signed_documents`, keyed by `act_id`, schema v4).
+    /// Idempotent on the act id. Called inside the confirm transaction alongside the `document.signed`
+    /// event append (t57-S3), so the signed variant and its ledger event land in one durable commit.
+    ///
+    /// **Never persists a PIN or an OTP** — only the public signed PDF + signature metadata.
+    pub fn upsert_signed_document(&self, doc: &StoredSignedDocument) -> Result<(), StoreError> {
+        let signing_time = doc
+            .signing_time
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let signed_at = doc
+            .signed_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        self.txn.execute(
+            "INSERT OR REPLACE INTO signed_documents \
+             (act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
+              trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
+              timestamp_token_der, signed_pdf_bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                doc.act_id.to_string(),
+                doc.document_id,
+                doc.signed_pdf_digest,
+                doc.signature_family,
+                doc.evidentiary_level,
+                doc.trusted_list_status,
+                doc.signer_cert_subject,
+                signing_time,
+                signed_at,
+                doc.signer_cert_der,
+                doc.timestamp_token_der,
+                doc.signed_pdf_bytes,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Upsert a pending CMD signing session (`pending_cmd_sessions`, schema v4). Idempotent on the
+    /// session id. **Never persists a PIN or an OTP** — `session_json` / `prepared_json` are the
+    /// non-secret resumable blobs (t57-S3 secret-discipline invariant).
+    pub fn upsert_pending_cmd_session(
+        &self,
+        session: &PendingCmdSession,
+    ) -> Result<(), StoreError> {
+        let created_at = session
+            .created_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let expires_at = session
+            .expires_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        self.txn.execute(
+            "INSERT OR REPLACE INTO pending_cmd_sessions \
+             (session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
+              prepared_json, created_at, expires_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                session.session_id,
+                session.act_id.to_string(),
+                session.actor,
+                session.status,
+                session.masked_phone,
+                session.doc_name,
+                session.session_json,
+                session.prepared_json,
+                created_at,
+                expires_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a pending CMD signing session by id (single-use: consumed on a successful confirm, or
+    /// cancelled/expired). A no-op if it is already gone.
+    pub fn delete_pending_cmd_session(&self, session_id: &str) -> Result<(), StoreError> {
+        self.txn.execute(
+            "DELETE FROM pending_cmd_sessions WHERE session_id = ?1",
+            params![session_id],
+        )?;
+        Ok(())
+    }
 }
 
 /// One row of the `events` table read back as raw primitives (the shape rusqlite's row closure can
@@ -674,6 +893,74 @@ fn row_to_document(
             profile,
             created_at: parse_rfc3339(&created_at_raw)?,
             pdf_bytes,
+        })
+    })())
+}
+
+/// Map one `signed_documents` row to a [`StoredSignedDocument`]. Deferred inner `Result` (the
+/// `act_id` / timestamp conversions surface as [`StoreError`]) unwrapped by the caller's `.transpose()`.
+#[allow(clippy::type_complexity)]
+fn row_to_signed_document(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredSignedDocument, StoreError>> {
+    let act_id_raw: String = row.get(0)?;
+    let document_id: String = row.get(1)?;
+    let signed_pdf_digest: String = row.get(2)?;
+    let signature_family: String = row.get(3)?;
+    let evidentiary_level: String = row.get(4)?;
+    let trusted_list_status: Option<String> = row.get(5)?;
+    let signer_cert_subject: Option<String> = row.get(6)?;
+    let signing_time_raw: String = row.get(7)?;
+    let signed_at_raw: String = row.get(8)?;
+    let signer_cert_der: Vec<u8> = row.get(9)?;
+    let timestamp_token_der: Option<Vec<u8>> = row.get(10)?;
+    let signed_pdf_bytes: Vec<u8> = row.get(11)?;
+    Ok((|| {
+        Ok(StoredSignedDocument {
+            act_id: parse_uuid_newtype::<ActId>(&act_id_raw)?,
+            document_id,
+            signed_pdf_digest,
+            signature_family,
+            evidentiary_level,
+            trusted_list_status,
+            signer_cert_subject,
+            signing_time: parse_rfc3339(&signing_time_raw)?,
+            signed_at: parse_rfc3339(&signed_at_raw)?,
+            signer_cert_der,
+            timestamp_token_der,
+            signed_pdf_bytes,
+        })
+    })())
+}
+
+/// Map one `pending_cmd_sessions` row to a [`PendingCmdSession`]. Deferred inner `Result` (the
+/// `act_id` / timestamp conversions surface as [`StoreError`]) unwrapped by the caller's `.transpose()`.
+#[allow(clippy::type_complexity)]
+fn row_to_pending_session(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<PendingCmdSession, StoreError>> {
+    let session_id: String = row.get(0)?;
+    let act_id_raw: String = row.get(1)?;
+    let actor: String = row.get(2)?;
+    let status: String = row.get(3)?;
+    let masked_phone: String = row.get(4)?;
+    let doc_name: String = row.get(5)?;
+    let session_json: String = row.get(6)?;
+    let prepared_json: String = row.get(7)?;
+    let created_at_raw: String = row.get(8)?;
+    let expires_at_raw: String = row.get(9)?;
+    Ok((|| {
+        Ok(PendingCmdSession {
+            session_id,
+            act_id: parse_uuid_newtype::<ActId>(&act_id_raw)?,
+            actor,
+            status,
+            masked_phone,
+            doc_name,
+            session_json,
+            prepared_json,
+            created_at: parse_rfc3339(&created_at_raw)?,
+            expires_at: parse_rfc3339(&expires_at_raw)?,
         })
     })())
 }

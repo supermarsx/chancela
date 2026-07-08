@@ -55,6 +55,7 @@ mod recovery;
 mod registry;
 mod session;
 mod settings;
+mod signature;
 mod users;
 
 use std::collections::HashMap;
@@ -69,10 +70,14 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
+use chancela_cmd::ScmdTransport;
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryTransport};
-use chancela_store::{Store, StoreError, StoredDocument, Tx};
+use chancela_signing::TrustPolicy;
+use chancela_store::{
+    PendingCmdSession, Store, StoreError, StoredDocument, StoredSignedDocument, Tx,
+};
 use serde::Serialize;
 use tokio::sync::RwLock;
 use tower_http::services::{ServeDir, ServeFile};
@@ -81,9 +86,9 @@ pub use actor::{CurrentActor, CurrentAttestor};
 pub use error::ApiError;
 pub use law::{LawEntry, LawEntryView, LawStore, StoredLawInfo};
 pub use settings::{
-    AppearanceSettings, CaeSourceEntry, CatalogSettings, DocumentSettings, Locale,
-    OnboardingSettings, OrganizationSettings, Settings, SignatureFamily, SigningSettings,
-    ThemeMode,
+    AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting, DocumentSettings, Locale,
+    OnboardingSettings, OrganizationSettings, Settings, SignatureFamily, SigningCmdSettings,
+    SigningSettings, ThemeMode,
 };
 pub use users::{User, UserId};
 
@@ -210,6 +215,27 @@ pub struct AppState {
     /// report, and the recovery/reset/export/quarantine-import endpoints open so the operator can see
     /// and repair. `Default` is healthy (`false`); pure in-memory state never enters degraded.
     pub degraded: Arc<RwLock<bool>>,
+    /// The live SIGNED-document read model (t57-S3): the qualified signed PDF variant + metadata per
+    /// act, keyed by [`ActId`]. Mirrors `documents`: an in-memory read model backed by the durable
+    /// `signed_documents` table, with the read endpoints falling back to the store on a miss.
+    pub signed_documents: Arc<RwLock<HashMap<ActId, StoredSignedDocument>>>,
+    /// In-flight two-phase Chave Móvel Digital signing sessions (t57-S3), keyed by session id. The
+    /// non-secret resumable handle between `initiate` and `confirm`; **never holds a PIN or OTP**.
+    /// Backed by the durable `pending_cmd_sessions` table (rehydrated on boot), so a session survives
+    /// a restart.
+    pub pending_signatures: Arc<RwLock<HashMap<String, PendingCmdSession>>>,
+    /// Test/DI seam (t57-S3): an injected SCMD transport. `None` in production, where the signing
+    /// handlers build a real `chancela_cmd::HttpScmdTransport` from the resolved [`CmdConfig`] and run
+    /// it off the async runtime. Tests inject a `MockScmdTransport`-backed transport here so the
+    /// initiate/confirm round-trip runs offline (no live SCMD). Must be `Send + Sync` for the shared
+    /// state; the mock used in tests wraps its recorder so it satisfies that.
+    pub cmd_transport: Option<Arc<dyn ScmdTransport + Send + Sync>>,
+    /// Test/DI seam (t57-S3): an injected trusted-list policy factory (SIG-11/23). `None` in
+    /// production, where the qualified path builds a `TslTrustPolicy` over the settings `tsl_url`
+    /// (network-gated, run during the actual sign). Tests inject a `StaticTrustPolicy` factory to
+    /// drive the gate offline (granted / withdrawn) without fetching the live TSL.
+    #[allow(clippy::type_complexity)]
+    pub cmd_trust_policy: Option<Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync>>,
 }
 
 impl AppState {
@@ -267,6 +293,16 @@ impl AppState {
                     state.ledger = Arc::new(RwLock::new(loaded.ledger));
                     state.chain_status = Some(Arc::new(loaded.chain_status));
                     state.degraded = Arc::new(RwLock::new(!healthy));
+                    // Rehydrate the qualified-signing read models (t57-S3): the signed variants and
+                    // any in-flight pending CMD sessions, so a session survives a restart and the
+                    // signed-PDF/status reads serve from memory. A read failure is non-fatal (the
+                    // endpoints fall back to the store on a miss).
+                    if let Ok(signed) = store.all_signed_documents() {
+                        state.signed_documents = Arc::new(RwLock::new(signed));
+                    }
+                    if let Ok(pending) = store.all_pending_cmd_sessions() {
+                        state.pending_signatures = Arc::new(RwLock::new(pending));
+                    }
                     state.store = Some(store);
                 }
                 Err(e) => eprintln!(
@@ -511,6 +547,22 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/acts/{id}/document/bundle",
             get(documents::get_document_bundle),
+        )
+        .route(
+            "/v1/acts/{id}/signature/cmd/initiate",
+            post(signature::initiate_cmd_signature),
+        )
+        .route(
+            "/v1/acts/{id}/signature/cmd/confirm",
+            post(signature::confirm_cmd_signature),
+        )
+        .route(
+            "/v1/acts/{id}/signature",
+            get(signature::get_signature_status),
+        )
+        .route(
+            "/v1/acts/{id}/document/signed",
+            get(signature::get_signed_document_pdf),
         )
         .route("/v1/templates", get(documents::list_templates))
         .route("/v1/ledger/events", get(ledger::list_ledger_events))
@@ -2153,7 +2205,12 @@ mod tests {
                 "preferred_family": "ChaveMovelDigital",
                 "tsa_url": "https://tsa.example.pt/tsr",
                 "tsl_url": "https://tsl.example.pt/tsl.xml",
-                "require_qualified_for_seal": true
+                "require_qualified_for_seal": true,
+                "cmd": {
+                    "env": "prod",
+                    "application_id": "AMA-APP-0001",
+                    "ama_cert_configured": true
+                }
             },
             "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
             "onboarding": { "completed": false, "completed_at": null }
@@ -2174,7 +2231,13 @@ mod tests {
         assert_eq!(body["catalog"]["cae_update_url"], Value::Null);
         assert_eq!(body["catalog"]["cae_sources"], json!([]));
         assert_eq!(body["catalog"]["cae_official_source"], false);
-        assert_eq!(body["signing"]["preferred_family"], "CartaoCidadao");
+        // t57 Slice 1: the default preferred family is now Chave Móvel Digital (the family wired
+        // end-to-end), not Cartão de Cidadão.
+        assert_eq!(body["signing"]["preferred_family"], "ChaveMovelDigital");
+        // CMD config surface defaults: preprod env, no ApplicationId, AMA cert not configured.
+        assert_eq!(body["signing"]["cmd"]["env"], "preprod");
+        assert_eq!(body["signing"]["cmd"]["application_id"], Value::Null);
+        assert_eq!(body["signing"]["cmd"]["ama_cert_configured"], false);
         // Trust-service URLs now default to the official Portuguese endpoints (not null).
         assert_eq!(
             body["signing"]["tsa_url"],

@@ -40,6 +40,10 @@ pub enum ApiError {
     /// A precondition on the resource's state was not met, e.g. drafting into a non-open
     /// book or sealing an act that is not `Signing` (409).
     Conflict(String),
+    /// The addressed resource existed but is no longer available — a single-use, TTL-bounded
+    /// pending signing session that has expired or been consumed (410, t57-S3). Distinct from a
+    /// [`NotFound`](ApiError::NotFound) so the client can tell "never existed" from "expired".
+    Gone(String),
     /// The request was well-formed but semantically invalid, e.g. a malformed date or a
     /// compliance-blocked seal (422).
     Unprocessable(String),
@@ -101,6 +105,7 @@ impl ApiError {
             ApiError::Conflict(_) | ApiError::WarningsNotAcknowledged { .. } => {
                 StatusCode::CONFLICT
             }
+            ApiError::Gone(_) => StatusCode::GONE,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Upstream(_) => StatusCode::BAD_GATEWAY,
         }
@@ -111,6 +116,7 @@ impl ApiError {
             ApiError::InvalidNipc(e) => e.to_string(),
             ApiError::NotFound => "resource not found".to_owned(),
             ApiError::Conflict(msg)
+            | ApiError::Gone(msg)
             | ApiError::Unprocessable(msg)
             | ApiError::Unauthorized(msg)
             | ApiError::Forbidden(msg)

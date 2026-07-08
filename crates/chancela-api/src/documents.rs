@@ -581,7 +581,7 @@ pub async fn get_document_pdf(
 
 /// Fetch the persisted document for an act, preferring the live in-memory read model and falling
 /// back to the durable store (so a document survives a restart even before its map is rehydrated).
-async fn load_document(
+pub(crate) async fn load_document(
     state: &AppState,
     act_id: ActId,
 ) -> Result<Option<StoredDocument>, ApiError> {

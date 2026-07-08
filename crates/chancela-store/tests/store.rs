@@ -534,10 +534,11 @@ fn backup_reflects_a_broken_chain_without_failing() {
 // --- documents table (schema v2, t48-e4) --------------------------------------------------------
 
 #[test]
-fn schema_version_is_three() {
+fn schema_version_is_current() {
     // The documents table landed as schema v2; the `imported_books` isolation namespace (t54-E2)
-    // landed as schema v3. A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 3);
+    // landed as schema v3; the qualified-signing tables (`signed_documents` + `pending_cmd_sessions`,
+    // t57-S3) landed as schema v4. A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 4);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -548,7 +549,7 @@ fn schema_version_is_three() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "3");
+    assert_eq!(stamped, "4");
 }
 
 #[test]
@@ -690,7 +691,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "3", "stamp advanced forward");
+        assert_eq!(stamped, "4", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -868,7 +869,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         let store = Store::open(dir.path()).expect("open");
         assert_eq!(
             stamp(dir.path()),
-            "3",
+            "4",
             "fresh db stamped at current version"
         );
         let mut ledger = Ledger::new();
@@ -905,7 +906,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         // Store dropped here — the process "restarts". No migration ran; no DDL touched acts.
         assert_eq!(
             stamp(dir.path()),
-            "3",
+            "4",
             "no schema bump after writing G1/G2 acts"
         );
     }
@@ -914,7 +915,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     let store = Store::open(dir.path()).expect("reopen");
     assert_eq!(
         stamp(dir.path()),
-        "3",
+        "4",
         "reopen did not bump the schema version"
     );
     let loaded = store.load().expect("reload");
@@ -950,4 +951,102 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     );
     assert_eq!(reloaded_bare.convening, None);
     assert!(reloaded_bare.attendees.is_empty());
+}
+
+// --- signed documents + pending CMD sessions (schema v4, t57-S3) ---------------------------------
+
+use chancela_store::{PendingCmdSession, StoredSignedDocument};
+
+fn sample_signed(act_id: ActId) -> StoredSignedDocument {
+    StoredSignedDocument {
+        act_id,
+        document_id: "doc-1".to_string(),
+        signed_pdf_digest: "abc123".to_string(),
+        signature_family: "ChaveMovelDigital".to_string(),
+        evidentiary_level: "Qualified".to_string(),
+        trusted_list_status: Some("Granted".to_string()),
+        signer_cert_subject: Some("CN=Amélia Marques".to_string()),
+        signing_time: OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap(),
+        signed_at: OffsetDateTime::from_unix_timestamp(1_750_000_050).unwrap(),
+        signer_cert_der: vec![0x30, 0x82, 0x01, 0x02],
+        timestamp_token_der: None,
+        signed_pdf_bytes: b"%PDF-1.7 signed".to_vec(),
+    }
+}
+
+fn sample_pending(session_id: &str, act_id: ActId) -> PendingCmdSession {
+    PendingCmdSession {
+        session_id: session_id.to_string(),
+        act_id,
+        actor: "amelia.marques".to_string(),
+        status: "otp_pending".to_string(),
+        masked_phone: "+351 9•••••678".to_string(),
+        doc_name: "ata.pdf".to_string(),
+        session_json: r#"{"process_id":"p1"}"#.to_string(),
+        prepared_json: r#"{"prepared":true}"#.to_string(),
+        created_at: OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap(),
+        expires_at: OffsetDateTime::from_unix_timestamp(1_750_000_300).unwrap(),
+    }
+}
+
+#[test]
+fn signed_document_round_trips_and_is_keyed_by_act() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let doc = sample_signed(act_id);
+    store.persist(|tx| tx.upsert_signed_document(&doc)).unwrap();
+
+    let back = store.signed_document_for_act(act_id).unwrap().unwrap();
+    assert_eq!(back, doc);
+    // Unknown act → None.
+    assert!(
+        store
+            .signed_document_for_act(ActId(uuid::Uuid::new_v4()))
+            .unwrap()
+            .is_none()
+    );
+    // Loads into the boot map.
+    let all = store.all_signed_documents().unwrap();
+    assert_eq!(all.get(&act_id), Some(&doc));
+
+    // Survives a reopen (durable).
+    drop(store);
+    let store = Store::open(dir.path()).unwrap();
+    assert_eq!(
+        store.signed_document_for_act(act_id).unwrap().as_ref(),
+        Some(&doc)
+    );
+}
+
+#[test]
+fn pending_cmd_session_round_trips_persists_and_deletes() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).unwrap();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    let pending = sample_pending("sess-1", act_id);
+    store
+        .persist(|tx| tx.upsert_pending_cmd_session(&pending))
+        .unwrap();
+
+    // Fetch by id + load-all both see it (survives a simulated restart via reopen).
+    drop(store);
+    let store = Store::open(dir.path()).unwrap();
+    assert_eq!(
+        store.pending_cmd_session("sess-1").unwrap().as_ref(),
+        Some(&pending)
+    );
+    assert_eq!(store.all_pending_cmd_sessions().unwrap().len(), 1);
+
+    // The persisted blobs carry NO secret material (structural: only the non-secret json blobs).
+    let loaded = store.pending_cmd_session("sess-1").unwrap().unwrap();
+    assert!(!loaded.session_json.contains("pin"));
+    assert!(!loaded.prepared_json.contains("otp"));
+
+    // Delete consumes it (single-use).
+    store
+        .persist(|tx| tx.delete_pending_cmd_session("sess-1"))
+        .unwrap();
+    assert!(store.pending_cmd_session("sess-1").unwrap().is_none());
+    assert!(store.all_pending_cmd_sessions().unwrap().is_empty());
 }

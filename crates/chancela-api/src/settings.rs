@@ -236,8 +236,15 @@ pub struct SigningSettings {
     /// Trusted-list (TSL) URL used for qualified-status checks. Defaults to
     /// [`DEFAULT_PT_TSL_URL`]; `null` clears it.
     pub tsl_url: Option<String>,
-    /// When true, a seal requires a qualified signature (wiring lands with the signing work).
+    /// When true, an act cannot reach the finalized-**qualified** status until a valid qualified
+    /// signature is present (t57 ruling 6 / deliverable D). This gates the STATUS, **not** the seal:
+    /// sealing still succeeds and the unsigned PDF/A still exists; the async OTP signing flow is a
+    /// distinct post-seal step. With it `false`, the non-qualified finalized path stays fully usable.
     pub require_qualified_for_seal: bool,
+    /// Chave Móvel Digital signing configuration (t57 Slice 1). Non-secret selectors only — the AMA
+    /// ApplicationId secret material and the field-encryption certificate PEM come from the
+    /// environment (`CHANCELA_CMD_*`), never this echoed settings document.
+    pub cmd: SigningCmdSettings,
 }
 
 impl Default for SigningSettings {
@@ -247,8 +254,41 @@ impl Default for SigningSettings {
             tsa_url: Some(DEFAULT_PT_TSA_URL.to_owned()),
             tsl_url: Some(DEFAULT_PT_TSL_URL.to_owned()),
             require_qualified_for_seal: false,
+            cmd: SigningCmdSettings::default(),
         }
     }
+}
+
+/// Chave Móvel Digital signing configuration surfaced in the settings document (t57 F1).
+///
+/// **Secrets never live here.** The AMA field-encryption certificate PEM and the ApplicationId are
+/// read from the environment (`CHANCELA_CMD_ENV` / `CHANCELA_CMD_APPLICATION_ID` /
+/// `CHANCELA_CMD_AMA_CERT_PEM`) by `chancela_cmd::CmdConfig::from_env`. This sub-object carries only
+/// the non-secret selectors an operator sees: which environment, the (non-secret) ApplicationId
+/// echo, and a read-only "is the AMA cert configured?" indicator.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SigningCmdSettings {
+    /// Which AMA SCMD environment to talk to. Defaults to `Preprod` (t57 ruling 5): ship pointing at
+    /// pre-production until real prod credentials + AMA onboarding are in place.
+    pub env: CmdEnvSetting,
+    /// The AMA-assigned ApplicationId, or `null` if not set. Non-secret opaque identifier; required
+    /// (from env in production) before a signature can be started.
+    pub application_id: Option<String>,
+    /// Read-only surface: whether the AMA field-encryption certificate is configured (the PEM itself
+    /// comes from `CHANCELA_CMD_AMA_CERT_PEM`, never this document). PROD requires it.
+    pub ama_cert_configured: bool,
+}
+
+/// The AMA SCMD environment selector (mirrors `chancela_cmd::CmdEnv`, serialized lowercase).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CmdEnvSetting {
+    /// AMA pre-production — the default (cleartext fields allowed).
+    #[default]
+    Preprod,
+    /// AMA production (field encryption required).
+    Prod,
 }
 
 /// Cosmetic front-end preferences.
@@ -332,10 +372,12 @@ pub enum Locale {
 /// Preferred qualified-signature family. Variant names match the domain vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SignatureFamily {
-    /// Cartão de Cidadão (smart card) — the default.
-    #[default]
+    /// Cartão de Cidadão (smart card).
     CartaoCidadao,
-    /// Chave Móvel Digital.
+    /// Chave Móvel Digital (remote qualified signing) — the default (t57 Slice 1). CMD is the
+    /// family the product wires end-to-end (two-phase OTP flow); it needs no local card reader, so
+    /// it is the sensible default offered first in the UI.
+    #[default]
     ChaveMovelDigital,
     /// Any other qualified certificate.
     OtherQualified,
