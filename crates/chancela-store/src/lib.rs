@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
-use chancela_ledger::{Event, EventId, Ledger, LedgerError};
+use chancela_ledger::{ChainLink, Event, EventId, Ledger, LedgerError};
 use chancela_registry::RegistryExtract;
 use rusqlite::{OptionalExtension, params};
 use serde::de::DeserializeOwned;
@@ -174,6 +174,17 @@ impl Store {
             conn.execute_batch(stmt)?;
         }
 
+        // Additive migration: the `links` column (multi-chain event links) was added after the
+        // initial schema v1. `ALTER TABLE ... ADD COLUMN` is idempotent-safe via this guard.
+        let has_links: bool = conn
+            .prepare("SELECT COUNT(*) FROM pragma_table_info('events') WHERE name='links'")?
+            .query_row([], |row| row.get::<_, i64>(0))
+            .map(|n| n > 0)
+            .unwrap_or(false);
+        if !has_links {
+            conn.execute_batch("ALTER TABLE events ADD COLUMN links TEXT NOT NULL DEFAULT '[]';")?;
+        }
+
         // schema_version gate: reject a file written by a *newer* build (we don't know its layout);
         // stamp a fresh DB with our version. Older versions would key future real migrations.
         let found: Option<i64> = conn
@@ -209,7 +220,7 @@ impl Store {
     /// [`Ledger`] via `chancela_ledger::Ledger::try_from_events` (added by t30-e1a), then return
     /// the maps, the ledger, and the boot-verify outcome as [`LoadedState`].
     pub fn load(&self) -> Result<LoadedState, StoreError> {
-        let guard = self.conn.lock().expect("store connection mutex poisoned");
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         // Aggregates: the `json` column is the full serde value; its own `id` field is the map key,
         // so the scope columns (entity_id/book_id) never need re-parsing on load.
@@ -264,7 +275,7 @@ impl Store {
         {
             let mut stmt = guard.prepare(
                 "SELECT seq, id, actor, justification, timestamp, scope, kind, \
-                 payload_digest, prev_hash, hash FROM events ORDER BY seq",
+                 payload_digest, prev_hash, hash, links FROM events ORDER BY seq",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok(RawEventRow {
@@ -278,6 +289,7 @@ impl Store {
                     payload_digest: row.get(7)?,
                     prev_hash: row.get(8)?,
                     hash: row.get(9)?,
+                    links: row.get(10)?,
                 })
             })?;
             for row in rows {
@@ -308,7 +320,7 @@ impl Store {
     where
         F: FnOnce(&Tx<'_>) -> Result<(), StoreError>,
     {
-        let mut guard = self.conn.lock().expect("store connection mutex poisoned");
+        let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         // rusqlite's `Transaction` rolls back on drop by default, so any early return from `f`
         // (its `?`) or a mid-closure `Err` discards every statement already issued — nothing is
         // persisted unless the whole closure succeeds and we reach `commit`.
@@ -333,7 +345,7 @@ impl Store {
         // In-memory / anonymous databases have no on-disk snapshot to bundle → NotPersistent
         // (the api maps this to the §3.2 422). A real file store reports its path here.
         {
-            let guard = self.conn.lock().expect("store connection mutex poisoned");
+            let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             match guard.path() {
                 Some(p) if !p.is_empty() && p != ":memory:" => {}
                 _ => return Err(StoreError::NotPersistent),
@@ -349,7 +361,7 @@ impl Store {
         //    target must not pre-exist; the per-run stamp keeps it unique. Cleaned up after zipping.
         let snapshot = backups_dir.join(format!(".snapshot-{stamp}.db"));
         {
-            let guard = self.conn.lock().expect("store connection mutex poisoned");
+            let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             guard.execute(
                 "VACUUM INTO ?1",
                 params![snapshot.to_string_lossy().as_ref()],
@@ -442,11 +454,12 @@ impl Tx<'_> {
         let timestamp = event
             .timestamp
             .format(&Rfc3339)
-            .expect("OffsetDateTime always formats as RFC 3339");
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let links_json = serde_json::to_string(&event.links)?;
         self.txn.execute(
             "INSERT INTO events \
-             (seq, id, actor, justification, timestamp, scope, kind, payload_digest, prev_hash, hash) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             (seq, id, actor, justification, timestamp, scope, kind, payload_digest, prev_hash, hash, links) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 event.seq as i64,
                 event.id.to_string(),
@@ -458,6 +471,7 @@ impl Tx<'_> {
                 &event.payload_digest[..],
                 &event.prev_hash[..],
                 &event.hash[..],
+                links_json,
             ],
         )?;
         Ok(())
@@ -522,10 +536,12 @@ struct RawEventRow {
     payload_digest: Vec<u8>,
     prev_hash: Vec<u8>,
     hash: Vec<u8>,
+    links: String,
 }
 
 impl RawEventRow {
     fn into_event(self) -> Result<Event, StoreError> {
+        let links: Vec<ChainLink> = serde_json::from_str(&self.links).unwrap_or_default();
         Ok(Event {
             id: parse_uuid_newtype::<EventId>(&self.id)?,
             seq: self.seq as u64,
@@ -536,6 +552,7 @@ impl RawEventRow {
             kind: self.kind,
             payload_digest: blob32(self.payload_digest, "payload_digest")?,
             prev_hash: blob32(self.prev_hash, "prev_hash")?,
+            links,
             hash: blob32(self.hash, "hash")?,
         })
     }
@@ -602,6 +619,10 @@ fn add_file_to_zip<W: Write + std::io::Seek>(
     opts: zip::write::SimpleFileOptions,
     files: &mut Vec<BackupFile>,
 ) -> Result<(), StoreError> {
+    // Zip-slip defense: reject member names containing path-traversal sequences.
+    if name.contains("..") {
+        return Ok(());
+    }
     let bytes = std::fs::read(path)?;
     let digest = Sha256::digest(&bytes);
     zip.start_file(name, opts)?;
@@ -615,7 +636,8 @@ fn add_file_to_zip<W: Write + std::io::Seek>(
 }
 
 /// Add a sidecar path to the zip: a file directly, a directory recursively (member names carry the
-/// relative sub-path), and a missing path is skipped (tolerated per the plan).
+/// relative sub-path), and a missing path is skipped (tolerated per the plan). Symlinks are skipped
+/// and member names containing `..` are rejected (zip-slip defense, ZIP-01).
 fn add_path_to_zip<W: Write + std::io::Seek>(
     zip: &mut zip::ZipWriter<W>,
     name: &str,
@@ -623,13 +645,27 @@ fn add_path_to_zip<W: Write + std::io::Seek>(
     opts: zip::write::SimpleFileOptions,
     files: &mut Vec<BackupFile>,
 ) -> Result<(), StoreError> {
-    if path.is_dir() {
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(m) => m,
+        // Skip missing paths (tolerated per the plan, mirrors the original is_dir/is_file behavior).
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(StoreError::Io(e)),
+    };
+    // Skip symlinks — they could point outside the intended directory tree (zip-slip).
+    if meta.file_type().is_symlink() {
+        return Ok(());
+    }
+    // Reject path-traversal sequences in the member name.
+    if name.contains("..") {
+        return Ok(());
+    }
+    if meta.is_dir() {
         for entry in std::fs::read_dir(path)? {
             let entry = entry?;
             let child_name = format!("{name}/{}", entry.file_name().to_string_lossy());
             add_path_to_zip(zip, &child_name, &entry.path(), opts, files)?;
         }
-    } else if path.is_file() {
+    } else if meta.is_file() {
         add_file_to_zip(zip, name, path, opts, files)?;
     }
     Ok(())

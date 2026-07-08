@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS meta (
 
 /// `events` — the append-only, hash-chained ledger (ARC-14). `seq` is the chain order and the
 /// primary key; the chaining fields (`prev_hash`, `hash`, `payload_digest`) are stored as BLOBs.
+/// `links` holds the serialized `Vec<ChainLink>` (multi-chain membership, t41).
 pub const CREATE_EVENTS: &str = "\
 CREATE TABLE IF NOT EXISTS events (
     seq            INTEGER PRIMARY KEY,
@@ -39,7 +40,8 @@ CREATE TABLE IF NOT EXISTS events (
     kind           TEXT NOT NULL,
     payload_digest BLOB NOT NULL,
     prev_hash      BLOB NOT NULL,
-    hash           BLOB NOT NULL
+    hash           BLOB NOT NULL,
+    links          TEXT NOT NULL DEFAULT '[]'
 ) STRICT;";
 
 /// Index over `events.scope` — enables per-scope retrieval and verification-by-filter (D5: the
