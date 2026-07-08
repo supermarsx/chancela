@@ -696,9 +696,9 @@ export const svFI: Catalog = {
   'settings.about.schemaVersion': 'Version av konfigurationsschema',
   'settings.save': 'Spara inställningar',
   'settings.saved': 'Inställningarna är sparade.',
+  'toast.settings.saved': 'Inställningarna är sparade.',
   'settings.saveNow': 'Spara nu',
   'settings.autosave.pending': 'Osparade ändringar…',
-  'settings.autosave.saved': 'Sparat',
   'settings.autosave.error':
     'Det gick inte att spara automatiskt. Dina ändringar behålls och kan försökas igen.',
 

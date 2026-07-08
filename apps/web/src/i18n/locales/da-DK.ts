@@ -693,9 +693,9 @@ export const daDK: Catalog = {
   'settings.about.schemaVersion': 'Version af konfigurationsskema',
   'settings.save': 'Gem indstillinger',
   'settings.saved': 'Indstillingerne er gemt.',
+  'toast.settings.saved': 'Indstillingerne er gemt.',
   'settings.saveNow': 'Gem nu',
   'settings.autosave.pending': 'Ugemte ændringer…',
-  'settings.autosave.saved': 'Gemt',
   'settings.autosave.error':
     'Kunne ikke gemme automatisk. Dine ændringer bevares og kan forsøges igen.',
 

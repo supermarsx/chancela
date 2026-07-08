@@ -699,9 +699,9 @@ export const frFR: Catalog = {
   'settings.about.schemaVersion': 'Version du schéma de configuration',
   'settings.save': 'Enregistrer les paramètres',
   'settings.saved': 'Paramètres enregistrés.',
+  'toast.settings.saved': 'Paramètres enregistrés.',
   'settings.saveNow': 'Enregistrer maintenant',
   'settings.autosave.pending': 'Modifications non enregistrées…',
-  'settings.autosave.saved': 'Enregistré',
   'settings.autosave.error':
     'Enregistrement automatique impossible. Vos modifications sont conservées et peuvent être réessayées.',
 

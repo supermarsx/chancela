@@ -694,9 +694,9 @@ export const ptBR: Catalog = {
   'settings.about.schemaVersion': 'Versão do esquema de configuração',
   'settings.save': 'Salvar configurações',
   'settings.saved': 'Configurações salvas.',
+  'toast.settings.saved': 'Configurações salvas.',
   'settings.saveNow': 'Salvar agora',
   'settings.autosave.pending': 'Alterações não salvas…',
-  'settings.autosave.saved': 'Salvo',
   'settings.autosave.error':
     'Não foi possível salvar automaticamente. As alterações são mantidas e podem ser repetidas.',
 

@@ -161,7 +161,7 @@ describe('SettingsPage', () => {
     expect(sent.catalog.cae_update_url).toBe('https://catalog.example.pt/cae_dataset.json');
   });
 
-  it('autosaves an edit after the debounce (no explicit save) and shows an inline "Guardado"', async () => {
+  it('autosaves an edit after the debounce (no explicit save) and confirms with a success toast', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -178,8 +178,12 @@ describe('SettingsPage', () => {
     const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
     expect(sent.organization.name).toBe('Encosto Estratégico, Lda.');
 
-    // A subtle inline confirmation appears (no toast for the happy path).
-    expect(await screen.findByText('Guardado')).toBeTruthy();
+    // Success is a normal toast (not an inline block message).
+    expect(await screen.findByText('Configurações guardadas.')).toBeTruthy();
+    // The old inline "Guardado" affordance is gone and the save bar collapses on a clean
+    // form (nothing left to save → no block, no leftover status text).
+    await waitFor(() => expect(screen.queryByText('Guardado')).toBeNull());
+    expect(screen.queryByText('Alterações por guardar…')).toBeNull();
   });
 
   it('raises a toast and keeps an inline error when an autosave fails', async () => {
@@ -222,12 +226,15 @@ describe('SettingsPage', () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
+    const { container } = renderWithProviders(<SettingsPage />, ['/configuracoes?sec=identidade']);
 
     // The section loaded (its field is present) but the manual flush button is not shown —
     // autosave is always-on today.
     await screen.findByLabelText('Nome da organização');
     expect(screen.queryByRole('button', { name: 'Guardar agora' })).toBeNull();
+    // On a clean (untouched) form there is no save bar block at all — it appears only to
+    // report a failed save while autosave is enabled.
+    expect(container.querySelector('.settings-savebar')).toBeNull();
   });
 
   it('shows a FieldHelp affordance on config fields (Aparência by default)', async () => {

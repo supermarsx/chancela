@@ -702,9 +702,9 @@ export const deDE: Catalog = {
   'settings.about.schemaVersion': 'Version des Konfigurationsschemas',
   'settings.save': 'Einstellungen speichern',
   'settings.saved': 'Einstellungen gespeichert.',
+  'toast.settings.saved': 'Einstellungen gespeichert.',
   'settings.saveNow': 'Jetzt speichern',
   'settings.autosave.pending': 'Ungespeicherte Änderungen…',
-  'settings.autosave.saved': 'Gespeichert',
   'settings.autosave.error':
     'Automatisches Speichern nicht möglich. Ihre Änderungen bleiben erhalten und können erneut versucht werden.',
 

@@ -699,9 +699,9 @@ export const ptPT = {
   'settings.about.schemaVersion': 'Versão do esquema de configuração',
   'settings.save': 'Guardar configurações',
   'settings.saved': 'Configurações guardadas.',
+  'toast.settings.saved': 'Configurações guardadas.',
   'settings.saveNow': 'Guardar agora',
   'settings.autosave.pending': 'Alterações por guardar…',
-  'settings.autosave.saved': 'Guardado',
   'settings.autosave.error':
     'Não foi possível guardar automaticamente. As alterações mantêm-se e podem ser repetidas.',
 

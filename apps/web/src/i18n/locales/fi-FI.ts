@@ -691,9 +691,9 @@ export const fiFI: Catalog = {
   'settings.about.schemaVersion': 'Kokoonpanon skeemaversio',
   'settings.save': 'Tallenna asetukset',
   'settings.saved': 'Asetukset tallennettu.',
+  'toast.settings.saved': 'Asetukset tallennettu.',
   'settings.saveNow': 'Tallenna nyt',
   'settings.autosave.pending': 'Tallentamattomia muutoksia…',
-  'settings.autosave.saved': 'Tallennettu',
   'settings.autosave.error':
     'Automaattinen tallennus epäonnistui. Muutokset säilyvät ja ne voidaan yrittää uudelleen.',
 

@@ -226,15 +226,16 @@ export function SettingsPage() {
   // The normalised wire document the operator's edits currently amount to. Autosave
   // debounces every edit across all sub-tabs and PUTs this whole document (the §2.8
   // contract is a single whole-document PUT); the optimistic `useUpdateSettings` keeps
-  // the shared cache — and thus the global appearance layer — in step. Success shows a
-  // subtle inline "Guardado" (no toast — autosave is high-frequency); only an error
-  // raises a toast, and the fields stay editable so it self-heals on the next edit or a
-  // "Guardar agora" retry.
+  // the shared cache — and thus the global appearance layer — in step. A committed save
+  // raises a normal success toast (no inline "Guardado" — the save bar stays hidden on a
+  // clean form); a failure raises an error toast AND keeps an inline error + retry, and
+  // the fields stay editable so it self-heals on the next edit or a manual retry.
   const body = useMemo(() => (draft ? toWireBody(draft) : null), [draft]);
   const autosave = useAutosave<Settings | null>({
     value: body,
     enabled: !!draft && canManageSettings,
     onSave: (b) => (b ? save.mutateAsync(b) : Promise.resolve()),
+    onSuccess: () => toast.success(t('toast.settings.saved')),
     onError: (e) => toast.error(e),
   });
 
@@ -636,33 +637,36 @@ export function SettingsPage() {
         </div>
       </fieldset>
 
-      {/* Autosave status bar ------------------------------------------------------- */}
-      {/* Edits across every sub-tab persist automatically (debounced whole-document
-          PUT). The inline status keeps the operator informed without toast spam; only a
-          failed save raises a toast (via the hook's onError) and surfaces an inline note
-          plus a "Guardar agora" retry. The button also lets an operator flush a pending
-          debounce immediately. The standalone sub-tabs (Integridade, Dados) manage their
-          own data and never touch the settings document, so the savebar is hidden there. */}
-      {STANDALONE_SECTIONS.includes(section) ? null : (
+      {/* Save bar ------------------------------------------------------------------ */}
+      {/* Edits across every sub-tab persist automatically (debounced whole-document PUT).
+          A committed save confirms with a normal success toast (not an inline block), so
+          there is no persistent status block to clutter a clean form. The bar therefore
+          renders ONLY when it has something to act on:
+            • Autosave ON (today): a *failed* save — an inline error plus a retry. Success
+              is the toast; a clean or in-flight form shows nothing (no "Guardar agora").
+            • Autosave OFF (a future toggle): whenever there are unsaved changes, to host
+              the "Guardar agora" flush; a clean form shows nothing.
+          The standalone sub-tabs (Utilizadores, Integridade, Dados…) manage their own data
+          and never touch the settings document, so the bar is hidden there entirely. */}
+      {!STANDALONE_SECTIONS.includes(section) &&
+      (AUTOSAVE_ENABLED ? autosave.status === 'error' : autosave.isDirty) ? (
         <Card>
           <div className="stack--tight">
             {autosave.status === 'error' ? <ErrorNote error={autosave.error} /> : null}
             <div className="row-wrap settings-savebar">
-              <span className="settings-autosave muted" role="status" aria-live="polite">
-                {autosave.status === 'saving' ? (
-                  t('common.saving')
-                ) : autosave.status === 'dirty' ? (
-                  t('settings.autosave.pending')
-                ) : autosave.status === 'saved' ? (
-                  <>
-                    <Icon.Check /> {t('settings.autosave.saved')}
-                  </>
-                ) : autosave.status === 'error' ? (
-                  t('settings.autosave.error')
-                ) : (
-                  ''
-                )}
-              </span>
+              {/* In manual mode the bar carries a live status beside the flush button;
+                  success never shows inline (it is a toast), so there is no "Guardado". */}
+              {!AUTOSAVE_ENABLED ? (
+                <span className="settings-autosave muted" role="status" aria-live="polite">
+                  {autosave.status === 'saving'
+                    ? t('common.saving')
+                    : autosave.status === 'dirty'
+                      ? t('settings.autosave.pending')
+                      : autosave.status === 'error'
+                        ? t('settings.autosave.error')
+                        : ''}
+                </span>
+              ) : null}
               {/* Persistent manual flush only when autosave is OFF (never today). When it is
                   ON, the only manual control is an error-state retry, so a failed save is
                   always recoverable without a standing "Guardar agora" button. */}
@@ -676,7 +680,7 @@ export function SettingsPage() {
                 >
                   {t('settings.saveNow')}
                 </Button>
-              ) : autosave.status === 'error' ? (
+              ) : (
                 <Button
                   type="button"
                   variant="secondary"
@@ -686,11 +690,11 @@ export function SettingsPage() {
                 >
                   {t('settings.autosave.retry')}
                 </Button>
-              ) : null}
+              )}
             </div>
           </div>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }
