@@ -313,6 +313,13 @@ impl ServerHarness {
             .await
     }
 
+    /// `DELETE path` with a JSON body and a session token → (status, JSON body). Used by the RBAC
+    /// role-unassign / delegation-revoke endpoints (t64-E4), which carry a `{role_id, scope}` body.
+    pub async fn delete_auth_json(&self, path: &str, body: Value, token: &str) -> (u16, Value) {
+        self.exec(reqwest::Method::DELETE, path, Some(body), Some(token))
+            .await
+    }
+
     /// `GET path` → (status, raw body text, content-type). For the static/SPA journey, where the
     /// body is HTML/JS rather than JSON and the content-type is itself under test.
     pub async fn get_text(&self, path: &str) -> (u16, String, String) {
