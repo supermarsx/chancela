@@ -728,6 +728,13 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/cae/{code}", get(cae::get_cae))
         .route("/v1/cae/{code}/children", get(cae::list_children))
         .route("/v1/law", get(law::list_law))
+        .route("/v1/law/corpus", get(law::list_law_corpus))
+        .route("/v1/law/corpus/search", get(law::search_law_corpus))
+        .route("/v1/law/corpus/{diploma}", get(law::get_law_diploma))
+        .route(
+            "/v1/law/corpus/{diploma}/{article}",
+            get(law::get_law_article),
+        )
         .route("/v1/law/{id}/fetch", post(law::fetch_law))
         .route(
             "/v1/law/{id}/pdf",
@@ -3814,6 +3821,277 @@ mod tests {
             .unwrap();
         assert_eq!(e["stored"], true);
         assert_eq!(e["stored_digest"].as_str().unwrap().len(), 64);
+    }
+
+    // --- Law corpus reader: GET /v1/law/corpus[...] + search (t55-E2) ---------------------
+
+    /// Seed an ACTIVE user with **no** role assignments (zero authority) plus a session, returning
+    /// its token — for asserting an authenticated-but-unauthorised `403` on the gated reads.
+    async fn powerless_token(state: &AppState) -> String {
+        use crate::users::{User, UserId};
+        use time::format_description::well_known::Rfc3339;
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = chancela_authz::RoleCatalog::seeded_defaults();
+            }
+        }
+        let uid = UserId(Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: "no.perms".to_owned(),
+            display_name: "No Perms".to_owned(),
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: vec![],
+        };
+        state.users.write().await.insert(uid, user);
+        let token = Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc();
+        state.sessions.write().await.insert(
+            token.clone(),
+            crate::session::SessionEntry {
+                user_id: uid,
+                unlocked_key: None,
+                expires_at: now + time::Duration::seconds(crate::actor::SESSION_TTL_SECS),
+            },
+        );
+        token
+    }
+
+    #[tokio::test]
+    async fn law_corpus_lists_diplomas_with_authenticity_counts() {
+        let (status, body) = send(AppState::default(), get("/v1/law/corpus")).await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+
+        // Corpus-level provenance/integrity metadata.
+        assert_eq!(body["schema_version"], 1);
+        assert_eq!(body["origin"], "Embedded");
+        assert_eq!(
+            body["digest"].as_str().expect("digest").len(),
+            64,
+            "sha256 hex"
+        );
+        // The committed corpus (t55-E1): 9 diplomas, 153 Verified + 40 Pending = 193 articles.
+        assert_eq!(body["counts"]["diplomas"], 9);
+        assert_eq!(body["counts"]["articles"], 193);
+        assert_eq!(body["counts"]["verified"], 153);
+        assert_eq!(body["counts"]["pending"], 40);
+
+        let diplomas = body["diplomas"].as_array().expect("diplomas array");
+        assert_eq!(diplomas.len(), 9);
+
+        // eIDAS is fully Verified (EU-regulation text vendored from EUR-Lex).
+        let eidas = diplomas
+            .iter()
+            .find(|d| d["id"] == "eidas-910-2014")
+            .expect("eidas diploma");
+        assert_eq!(eidas["kind"], "RegulamentoUe");
+        assert_eq!(eidas["article_count"], 52);
+        assert_eq!(eidas["verified_count"], 52);
+        assert_eq!(eidas["pending_count"], 0);
+
+        // CSC is still Pending (DRE text awaits E1b) — every article unverified, none presented.
+        let csc = diplomas
+            .iter()
+            .find(|d| d["id"] == "csc")
+            .expect("csc diploma");
+        assert_eq!(csc["verified_count"], 0);
+        assert_eq!(csc["pending_count"], 15);
+    }
+
+    #[tokio::test]
+    async fn law_corpus_diploma_returns_full_verbatim_articles() {
+        let (status, body) = send(AppState::default(), get("/v1/law/corpus/eidas-910-2014")).await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        // The flattened summary header travels with the detail.
+        assert_eq!(body["id"], "eidas-910-2014");
+        assert_eq!(body["article_count"], 52);
+
+        let articles = body["articles"].as_array().expect("articles");
+        assert_eq!(articles.len(), 52);
+
+        let art1 = &articles[0];
+        assert_eq!(art1["number"], "1");
+        assert_eq!(art1["label"], "Artigo 1.º");
+        assert_eq!(art1["heading"], "Objeto");
+        assert_eq!(art1["verified"], true);
+        assert_eq!(art1["verification"], "Verified");
+        // Full verbatim body, not an extract, with complete citation metadata.
+        assert!(
+            art1["body"]
+                .as_str()
+                .expect("body")
+                .contains("mercado interno"),
+            "verbatim body present"
+        );
+        assert_eq!(art1["source"]["complete"], true);
+        assert!(art1["source"]["url"].is_string());
+        assert!(art1["source"]["dr_reference"].is_string());
+    }
+
+    #[tokio::test]
+    async fn law_corpus_pending_diploma_never_leaks_a_body() {
+        // A Pending diploma (csc) renders the loud marker for every article — never a raw body.
+        let (status, body) = send(AppState::default(), get("/v1/law/corpus/csc")).await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        let articles = body["articles"].as_array().expect("articles");
+        assert!(!articles.is_empty());
+        for a in articles {
+            assert_eq!(a["verified"], false);
+            assert_eq!(a["verification"], "Pending");
+            assert_eq!(a["body"], chancela_law::UNVERIFIED_MARKER);
+            assert_eq!(a["source"]["complete"], false);
+        }
+    }
+
+    #[tokio::test]
+    async fn law_corpus_single_article_carries_citation() {
+        let (status, body) =
+            send(AppState::default(), get("/v1/law/corpus/eidas-910-2014/1")).await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["number"], "1");
+        assert_eq!(body["label"], "Artigo 1.º");
+        assert_eq!(body["verified"], true);
+        assert!(!body["body"].as_str().expect("body").is_empty());
+        assert!(body["source"]["dr_reference"].is_string());
+        assert_eq!(body["source"]["complete"], true);
+    }
+
+    #[tokio::test]
+    async fn law_corpus_404_on_unknown_diploma_and_article() {
+        let (status, _) = send(AppState::default(), get("/v1/law/corpus/nope")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        // Known diploma, unknown article number.
+        let (status, _) = send(
+            AppState::default(),
+            get("/v1/law/corpus/eidas-910-2014/9999"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        // Unknown diploma, any article.
+        let (status, _) = send(AppState::default(), get("/v1/law/corpus/nope/1")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn law_corpus_search_returns_hits_with_snippets() {
+        let (status, body) = send(
+            AppState::default(),
+            get("/v1/law/corpus/search?q=mercado%20interno"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["query"], "mercado interno");
+        let results = body["results"].as_array().expect("results");
+        assert!(!results.is_empty(), "the phrase occurs in the corpus");
+        assert_eq!(body["count"], results.len());
+
+        // At least one hit is the fully-verified eIDAS text, with a non-empty context snippet and
+        // its authenticity status surfaced.
+        let hit = results
+            .iter()
+            .find(|r| r["diploma_id"] == "eidas-910-2014")
+            .expect("an eIDAS hit");
+        assert!(hit["diploma_title"].is_string());
+        assert!(
+            !hit["snippet"].as_str().expect("snippet").is_empty(),
+            "a context snippet is extracted"
+        );
+        assert!(hit["verification"].is_string(), "authenticity surfaced");
+        assert_eq!(hit["verified"], true);
+    }
+
+    #[tokio::test]
+    async fn law_corpus_search_is_diacritic_and_case_insensitive() {
+        // Folded search: "eletronica" (no accent) must match "eletrónica"; case must not matter.
+        let (_, folded) = send(
+            AppState::default(),
+            get("/v1/law/corpus/search?q=eletronica"),
+        )
+        .await;
+        let (_, accented) = send(
+            AppState::default(),
+            get("/v1/law/corpus/search?q=eletr%C3%B3nica"),
+        )
+        .await;
+        let (_, upper) = send(
+            AppState::default(),
+            get("/v1/law/corpus/search?q=ELETRONICA"),
+        )
+        .await;
+
+        let n_folded = folded["results"].as_array().expect("results").len();
+        assert!(n_folded > 0, "accent-folded query finds the accented term");
+        assert_eq!(
+            n_folded,
+            accented["results"].as_array().unwrap().len(),
+            "diacritic-insensitive: same hits with/without the accent"
+        );
+        assert_eq!(
+            n_folded,
+            upper["results"].as_array().unwrap().len(),
+            "case-insensitive: uppercase yields the same hits"
+        );
+    }
+
+    #[tokio::test]
+    async fn law_corpus_search_blank_query_is_empty() {
+        let (status, body) = send(AppState::default(), get("/v1/law/corpus/search?q=%20%20")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["count"], 0);
+        assert_eq!(body["results"].as_array().expect("results").len(), 0);
+
+        // An absent query is likewise empty (not an error).
+        let (status, body) = send(AppState::default(), get("/v1/law/corpus/search")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["count"], 0);
+    }
+
+    #[tokio::test]
+    async fn law_corpus_search_honours_limit() {
+        let (_, capped) = send(
+            AppState::default(),
+            get("/v1/law/corpus/search?q=artigo&limit=3"),
+        )
+        .await;
+        assert!(capped["results"].as_array().expect("results").len() <= 3);
+    }
+
+    #[tokio::test]
+    async fn law_corpus_reads_require_an_authenticated_session() {
+        // No session → 401 (the CurrentActor extractor), across every corpus read.
+        for uri in [
+            "/v1/law/corpus",
+            "/v1/law/corpus/search?q=mercado",
+            "/v1/law/corpus/eidas-910-2014",
+            "/v1/law/corpus/eidas-910-2014/1",
+        ] {
+            let (status, _) = send_raw(AppState::default(), get(uri)).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "no session on {uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn law_corpus_reads_are_forbidden_without_law_read() {
+        // A valid session whose user holds no permissions → 403 (Gated on law.read@Global).
+        let state = AppState::default();
+        let token = powerless_token(&state).await;
+        let (status, _) =
+            send_raw(state.clone(), with_session(get("/v1/law/corpus"), &token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = send_raw(
+            state,
+            with_session(get("/v1/law/corpus/search?q=mercado"), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
     // --- Users + session + actor attribution (§2.8) --------------------------------------

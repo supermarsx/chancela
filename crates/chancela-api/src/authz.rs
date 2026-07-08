@@ -314,6 +314,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/cae/{code}", RouteClass::Gated),   // GET cae.read@Global
     ("/v1/cae/{code}/children", RouteClass::Gated), // GET cae.read@Global
     ("/v1/law", RouteClass::Gated),          // GET law.read@Global
+    ("/v1/law/corpus", RouteClass::Gated),   // GET law.read@Global (corpus reader)
+    ("/v1/law/corpus/search", RouteClass::Gated), // GET law.read@Global (full-text search)
+    ("/v1/law/corpus/{diploma}", RouteClass::Gated), // GET law.read@Global
+    ("/v1/law/corpus/{diploma}/{article}", RouteClass::Gated), // GET law.read@Global
     ("/v1/law/{id}/fetch", RouteClass::Gated), // POST law.manage@Global
     ("/v1/law/{id}/pdf", RouteClass::Gated), // GET law.read@Global · DELETE law.manage@Global
     // --- Users ----------------------------------------------------------------------------------

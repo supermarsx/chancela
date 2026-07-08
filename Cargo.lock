@@ -417,6 +417,7 @@ dependencies = [
  "chancela-core",
  "chancela-csc",
  "chancela-doc",
+ "chancela-law",
  "chancela-ledger",
  "chancela-pades",
  "chancela-registry",

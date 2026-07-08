@@ -31,7 +31,7 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::response::Response;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,10 @@ use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
 use chancela_authz::{Permission, Scope};
+use chancela_law::{
+    DiplomaKind, LawArticle, LawCatalog, LawCounts, LawDiploma, LawOrigin, LawProvenance,
+    LawSource, Verification,
+};
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
@@ -572,4 +576,368 @@ fn tmp_path(path: &FsPath) -> PathBuf {
         .unwrap_or_else(|| LAW_STATE_FILE.into());
     name.push(format!(".{}.tmp", Uuid::new_v4()));
     path.with_file_name(name)
+}
+
+// =============================================================================================
+// The law corpus reader (t55-E2)
+// =============================================================================================
+//
+// Read-only, full-text access to the embedded [`chancela_law`] corpus: list the diplomas, read a
+// diploma's / a single article's full verbatim text, and full-text search across everything. This
+// is distinct from the PDF archive above — that shelf pins official PDFs; this surfaces the
+// article-by-article statute text committed in `chancela-law`, with the **authenticity status**
+// ([`Verification`]) on every result so the reader can badge Verified vs Pending honestly and never
+// presents an unverified/empty body as law (a `Pending` article always renders the loud
+// `UNVERIFIED_MARKER`, via [`LawArticle::display_body`], never a raw un-sourced body).
+//
+// The corpus is immutable and compiled in ([`LawCatalog::embedded`], parsed once), so — unlike the
+// refreshable CAE catalog — it needs no `AppState` slot; handlers read the static catalog directly.
+// Routes are namespaced under `/v1/law/corpus` to sit cleanly beside the `/v1/law` PDF archive with
+// no path/param collision, and are gated `law.read@Global` like the rest of the law shelf.
+
+/// Default and maximum number of hits returned by `GET /v1/law/corpus/search`.
+const DEFAULT_LAW_SEARCH_LIMIT: usize = 50;
+const MAX_LAW_SEARCH_LIMIT: usize = 500;
+/// Characters of context included on each side of a search match in a snippet.
+const SNIPPET_CONTEXT: usize = 90;
+
+// --- Corpus views -----------------------------------------------------------------------------
+
+/// One article's provenance/citation — a self-contained mirror of the corpus' [`LawSource`], with
+/// `complete` surfacing whether it cites a full authentic origin (the `Verified` precondition).
+#[derive(Debug, Serialize)]
+pub struct LawSourceView {
+    pub diploma: String,
+    pub article: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dr_reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dr_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retrieved_at: Option<String>,
+    /// Whether this source cites a complete authentic origin.
+    pub complete: bool,
+}
+
+impl LawSourceView {
+    fn from_source(s: &LawSource) -> Self {
+        LawSourceView {
+            diploma: s.diploma.clone(),
+            article: s.article.clone(),
+            dr_reference: s.dr_reference.clone(),
+            dr_date: s.dr_date.clone(),
+            url: s.url.clone(),
+            source_digest: s.source_digest.clone(),
+            retrieved_at: s.retrieved_at.clone(),
+            complete: s.is_complete(),
+        }
+    }
+}
+
+/// One article with its full (display) text + authenticity + citation metadata. `body` is the
+/// verbatim text once `Verified`, or the loud unverified marker while `Pending` — via
+/// [`LawArticle::display_body`], so an un-sourced body is never returned as if it were law.
+#[derive(Debug, Serialize)]
+pub struct LawArticleView {
+    pub diploma_id: String,
+    pub number: String,
+    pub label: String,
+    pub heading: String,
+    pub body: String,
+    pub verification: Verification,
+    pub verified: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cross_refs: Vec<String>,
+    pub source: LawSourceView,
+}
+
+impl LawArticleView {
+    fn from_article(a: &LawArticle) -> Self {
+        LawArticleView {
+            diploma_id: a.diploma_id.clone(),
+            number: a.number.clone(),
+            label: a.label.clone(),
+            heading: a.heading.clone(),
+            body: a.display_body().to_owned(),
+            verification: a.verification,
+            verified: a.is_verified(),
+            cross_refs: a.cross_refs.clone(),
+            source: LawSourceView::from_source(&a.source),
+        }
+    }
+}
+
+/// A diploma summary (no article bodies): the element of `GET /v1/law/corpus` and the header of a
+/// diploma detail. Carries per-diploma authenticity counts so the reader can badge coverage.
+#[derive(Debug, Serialize)]
+pub struct LawDiplomaSummaryView {
+    pub id: String,
+    pub kind: DiplomaKind,
+    pub number: String,
+    pub title: String,
+    #[serde(rename = "ref")]
+    pub reference: String,
+    pub official_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eli: Option<String>,
+    pub article_count: usize,
+    pub verified_count: usize,
+    pub pending_count: usize,
+}
+
+impl LawDiplomaSummaryView {
+    fn from_diploma(d: &LawDiploma) -> Self {
+        let verified = d.articles.iter().filter(|a| a.is_verified()).count();
+        LawDiplomaSummaryView {
+            id: d.id.clone(),
+            kind: d.kind,
+            number: d.number.clone(),
+            title: d.title.clone(),
+            reference: d.reference.clone(),
+            official_url: d.official_url.clone(),
+            eli: d.eli.clone(),
+            article_count: d.articles.len(),
+            verified_count: verified,
+            pending_count: d.articles.len() - verified,
+        }
+    }
+}
+
+/// The embedded corpus' provenance/integrity metadata plus a per-diploma summary list: the body of
+/// `GET /v1/law/corpus`.
+#[derive(Debug, Serialize)]
+pub struct LawCorpusView {
+    pub schema_version: u32,
+    pub generated_at: String,
+    pub source_note: String,
+    pub digest: String,
+    pub origin: LawOrigin,
+    pub counts: LawCounts,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<LawProvenance>,
+    pub diplomas: Vec<LawDiplomaSummaryView>,
+}
+
+/// A diploma with its full article set: the body of `GET /v1/law/corpus/{diploma}`.
+#[derive(Debug, Serialize)]
+pub struct LawDiplomaDetailView {
+    #[serde(flatten)]
+    pub summary: LawDiplomaSummaryView,
+    pub articles: Vec<LawArticleView>,
+}
+
+/// One search hit: the matched article, its owning diploma, a context snippet, and authenticity.
+#[derive(Debug, Serialize)]
+pub struct LawSearchHitView {
+    pub diploma_id: String,
+    pub diploma_title: String,
+    pub number: String,
+    pub label: String,
+    pub heading: String,
+    /// A context window around the first match (accent/case-insensitive), with `…` elision.
+    pub snippet: String,
+    pub verification: Verification,
+    pub verified: bool,
+}
+
+/// The body of `GET /v1/law/corpus/search`: the (echoed) query, hit count, and ranked hits.
+#[derive(Debug, Serialize)]
+pub struct LawSearchView {
+    pub query: String,
+    pub count: usize,
+    pub results: Vec<LawSearchHitView>,
+}
+
+/// Query for `GET /v1/law/corpus/search`: the search text `q` and an optional result cap.
+#[derive(Debug, Deserialize)]
+pub struct LawSearchQuery {
+    pub q: Option<String>,
+    pub limit: Option<usize>,
+}
+
+// --- Corpus handlers --------------------------------------------------------------------------
+
+/// `GET /v1/law/corpus` — the embedded law corpus: its provenance/integrity metadata plus a
+/// per-diploma summary (article/verified/pending counts). Read-only reference (`law.read@Global`).
+pub async fn list_law_corpus(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<LawCorpusView>, ApiError> {
+    // RBAC (t64-E3): the law corpus is reference material — `law.read` at Global, like `/v1/law`.
+    require_permission(&state, &actor, Permission::LawRead, Scope::Global).await?;
+    let catalog = LawCatalog::embedded();
+    let m = catalog.metadata();
+    let diplomas = catalog
+        .diplomas()
+        .iter()
+        .map(LawDiplomaSummaryView::from_diploma)
+        .collect();
+    Ok(Json(LawCorpusView {
+        schema_version: m.schema_version,
+        generated_at: m.generated_at.clone(),
+        source_note: m.source_note.clone(),
+        digest: m.digest.clone(),
+        origin: m.origin,
+        counts: m.counts,
+        provenance: m.provenance.clone(),
+        diplomas,
+    }))
+}
+
+/// `GET /v1/law/corpus/{diploma}` — one diploma with its full article set (verbatim text for
+/// `Verified` articles; the unverified marker for `Pending`). Unknown diploma → `404`.
+pub async fn get_law_diploma(
+    State(state): State<AppState>,
+    Path(diploma): Path<String>,
+    actor: CurrentActor,
+) -> Result<Json<LawDiplomaDetailView>, ApiError> {
+    require_permission(&state, &actor, Permission::LawRead, Scope::Global).await?;
+    let catalog = LawCatalog::embedded();
+    let d = catalog.diploma(&diploma).ok_or(ApiError::NotFound)?;
+    let articles = d
+        .articles
+        .iter()
+        .map(LawArticleView::from_article)
+        .collect();
+    Ok(Json(LawDiplomaDetailView {
+        summary: LawDiplomaSummaryView::from_diploma(d),
+        articles,
+    }))
+}
+
+/// `GET /v1/law/corpus/{diploma}/{article}` — a single article's full text + citation metadata,
+/// keyed by diploma slug + canonical article number (`"63"`, `"270-A"`). Unknown diploma or article
+/// → `404`.
+pub async fn get_law_article(
+    State(state): State<AppState>,
+    Path((diploma, article)): Path<(String, String)>,
+    actor: CurrentActor,
+) -> Result<Json<LawArticleView>, ApiError> {
+    require_permission(&state, &actor, Permission::LawRead, Scope::Global).await?;
+    let catalog = LawCatalog::embedded();
+    let a = catalog
+        .article(&diploma, &article)
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(LawArticleView::from_article(a)))
+}
+
+/// `GET /v1/law/corpus/search?q=&limit=` — accent/case-insensitive full-text search across every
+/// article (label + heading + body + diploma title/reference), in corpus order, each hit carrying a
+/// context snippet and its authenticity status. Blank/absent `q` → an empty result set. Matching is
+/// delegated to [`LawCatalog::search`] (the authoritative fold); the snippet re-locates the match
+/// with the same fold so its window is consistent.
+pub async fn search_law_corpus(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Query(query): Query<LawSearchQuery>,
+) -> Result<Json<LawSearchView>, ApiError> {
+    require_permission(&state, &actor, Permission::LawRead, Scope::Global).await?;
+    let catalog = LawCatalog::embedded();
+    let q = query.q.as_deref().map(str::trim).unwrap_or_default();
+    let limit = query
+        .limit
+        .unwrap_or(DEFAULT_LAW_SEARCH_LIMIT)
+        .min(MAX_LAW_SEARCH_LIMIT);
+    let needle = fold_law(q);
+
+    let mut results = Vec::new();
+    if !needle.is_empty() {
+        for a in catalog.search(q).into_iter().take(limit) {
+            let diploma_title = catalog
+                .diploma(&a.diploma_id)
+                .map(|d| d.title.clone())
+                .unwrap_or_default();
+            results.push(LawSearchHitView {
+                diploma_id: a.diploma_id.clone(),
+                diploma_title,
+                number: a.number.clone(),
+                label: a.label.clone(),
+                heading: a.heading.clone(),
+                snippet: build_snippet(a, &needle),
+                verification: a.verification,
+                verified: a.is_verified(),
+            });
+        }
+    }
+    Ok(Json(LawSearchView {
+        query: q.to_owned(),
+        count: results.len(),
+        results,
+    }))
+}
+
+// --- Search folding + snippet extraction ------------------------------------------------------
+
+/// Accent+case fold mirroring `chancela_law`'s internal `fold` (and `diplomas.ts::foldForSearch`):
+/// strip diacritics + lowercase, **1:1 per character**, so a folded char index maps back to the
+/// original text for snippet windowing. Kept in sync with the corpus' fold so the snippet locates
+/// exactly what [`LawCatalog::search`] matched.
+fn fold_char(c: char) -> char {
+    match c {
+        'á' | 'à' | 'â' | 'ã' | 'ä' | 'Á' | 'À' | 'Â' | 'Ã' | 'Ä' => 'a',
+        'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'e',
+        'í' | 'ì' | 'î' | 'ï' | 'Í' | 'Ì' | 'Î' | 'Ï' => 'i',
+        'ó' | 'ò' | 'ô' | 'õ' | 'ö' | 'Ó' | 'Ò' | 'Ô' | 'Õ' | 'Ö' => 'o',
+        'ú' | 'ù' | 'û' | 'ü' | 'Ú' | 'Ù' | 'Û' | 'Ü' => 'u',
+        'ç' | 'Ç' => 'c',
+        other => other.to_ascii_lowercase(),
+    }
+}
+
+/// Fold a query into a char vector for subslice matching against folded article text.
+fn fold_law(s: &str) -> Vec<char> {
+    s.trim().chars().map(fold_char).collect()
+}
+
+/// The first index at which `needle` occurs as a contiguous subslice of `hay`, or `None`.
+fn find_subslice(hay: &[char], needle: &[char]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > hay.len() {
+        return None;
+    }
+    (0..=hay.len() - needle.len()).find(|&i| hay[i..i + needle.len()] == *needle)
+}
+
+/// A `…`-elided context window of `orig` around the `[match_start, match_start+match_len)` span.
+fn window(orig: &[char], match_start: usize, match_len: usize) -> String {
+    let start = match_start.saturating_sub(SNIPPET_CONTEXT);
+    let end = (match_start + match_len + SNIPPET_CONTEXT).min(orig.len());
+    let mut s = String::new();
+    if start > 0 {
+        s.push('…');
+    }
+    s.extend(orig[start..end].iter());
+    if end < orig.len() {
+        s.push('…');
+    }
+    s.trim().to_owned()
+}
+
+/// Build a context snippet for a search hit: locate the folded `needle` in the article's **display**
+/// text (body → heading → label, in priority order) and window around the first match. When the
+/// match lay only in the diploma context (title/reference), fall back to the heading (else the head
+/// of the display body). Uses [`LawArticle::display_body`], so a `Pending` article's snippet is
+/// drawn from its marker/heading — never from an un-sourced body.
+fn build_snippet(article: &LawArticle, needle: &[char]) -> String {
+    let body = article.display_body();
+    for cand in [body, article.heading.as_str(), article.label.as_str()] {
+        if cand.is_empty() {
+            continue;
+        }
+        let orig: Vec<char> = cand.chars().collect();
+        let folded: Vec<char> = orig.iter().map(|&c| fold_char(c)).collect();
+        if let Some(i) = find_subslice(&folded, needle) {
+            return window(&orig, i, needle.len());
+        }
+    }
+    // Matched only on diploma context: show the heading (else the head of the display body).
+    let fallback = if article.heading.is_empty() {
+        body
+    } else {
+        article.heading.as_str()
+    };
+    window(&fallback.chars().collect::<Vec<_>>(), 0, 0)
 }
