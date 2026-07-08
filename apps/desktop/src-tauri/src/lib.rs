@@ -131,6 +131,28 @@ fn center_main_window_on_first_run(app: &tauri::App) {
     }
 }
 
+/// Runtime capability signal (process env var) marking the embedded API server as
+/// **co-located** with the end user's machine, where a Cartão de Cidadão smartcard
+/// reader + Autenticação.gov PKCS#11 middleware are locally reachable.
+///
+/// This is the DESKTOP HALF of the CC co-location gate (plan t58, decision CC-B).
+/// The desktop shell ALWAYS runs `chancela_api::app` in-process on the user's own
+/// machine (ARC-03), so the card, reader and middleware live on the same host as
+/// the API — server-side CC signing there IS the local side. Advertising that via
+/// the process env (mirroring how the API already reads `CHANCELA_DATA_DIR` and how
+/// the CAE refresh is wired) lets the CC endpoints know PKCS#11/PC/SC is in reach.
+///
+/// In server / browser mode (`chancela-server` on a remote host) this signal is
+/// simply ABSENT — that binary never sets it — because the card sits on the
+/// client's machine, unreachable by the server's PKCS#11. There the CC endpoints
+/// must refuse (409).
+///
+/// This executor (t58-e3) only SETS the desktop signal. The API HALF — reading it
+/// and returning 409 when it is absent — is t58-e2 (in `chancela-api`), gated on
+/// the chancela-api lane; nothing is enforced here.
+#[cfg(feature = "embedded-server")]
+const LOCAL_SIGNING_ENV: &str = "CHANCELA_LOCAL_SIGNING";
+
 /// Environment variable naming the fixed `host:port` the dev-mode embedded server
 /// binds. Mirrors `chancela-server`'s `CHANCELA_ADDR` so both honour the same knob.
 #[cfg(feature = "embedded-server")]
@@ -154,6 +176,19 @@ const DEV_DEFAULT_ADDR: &str = "127.0.0.1:8080";
 #[cfg(feature = "embedded-server")]
 fn start_embedded_server_if_enabled(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::Manager;
+
+    // DESKTOP HALF of the Cartão de Cidadão co-location gate (plan t58, CC-B).
+    // The embedded server always runs on the end user's own machine (ARC-03), so a
+    // CC smartcard / PKCS#11 middleware is locally reachable — advertise that to the
+    // (future, t58-e2) CC endpoints via the process env BEFORE the server is built
+    // and spawned, so the API sees it however it chooses to read it. `chancela-server`
+    // (browser mode) never sets this, so CC signing 409s there. Covers both the dev
+    // and release paths below (both run the API in-process, co-located).
+    //
+    // Setting a process env var is sound here: `setup` runs before we spawn the
+    // embedded-server thread or `build_app_state`'s CAE-refresh threads, and this is
+    // edition 2021 (`std::env::set_var` is safe, not yet `unsafe`).
+    std::env::set_var(LOCAL_SIGNING_ENV, "1");
 
     // Dev mode keeps the WebView on Vite's devUrl for hot-reload; start the API on
     // the fixed address the Vite proxy targets, but do NOT navigate the window.
