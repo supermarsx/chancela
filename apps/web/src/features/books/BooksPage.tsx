@@ -5,7 +5,8 @@
  */
 import { useBooks } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { ButtonLink, Card, ErrorNote, Icon, PageHeader, SkeletonTable } from '../../ui';
+import { Card, ErrorNote, Icon, PageHeader, SkeletonTable } from '../../ui';
+import { GateButtonLink } from '../session/permissions';
 import { BooksTable } from './BooksTable';
 
 export function BooksPage() {
@@ -17,9 +18,15 @@ export function BooksPage() {
       <PageHeader
         title={t('books.title')}
         actions={
-          <ButtonLink to="/livros/novo" variant="primary" icon={<Icon.BookPlus />}>
+          <GateButtonLink
+            perm="book.open"
+            anyScope
+            to="/livros/novo"
+            variant="primary"
+            icon={<Icon.BookPlus />}
+          >
             {t('books.openBook')}
-          </ButtonLink>
+          </GateButtonLink>
         }
       />
 

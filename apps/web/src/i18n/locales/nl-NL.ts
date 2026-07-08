@@ -8,6 +8,10 @@
 import type { Catalog } from '../types';
 
 export const nlNL: Catalog = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'Je hebt geen toestemming voor deze actie',
+  'perm.denied.title': 'Geen toestemming',
+  'perm.denied.body': 'Je hebt geen toestemming om deze bewerking uit te voeren.',
   // --- Navigation / shell --------------------------------------------------------
   'nav.dashboard': 'Dashboard',
   'nav.entities': 'Entiteiten',

@@ -10,6 +10,10 @@
 import type { Catalog } from '../types';
 
 export const daDK: Catalog = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'Du har ikke tilladelse til denne handling',
+  'perm.denied.title': 'Ingen tilladelse',
+  'perm.denied.body': 'Du har ikke tilladelse til at udføre denne handling.',
   // --- Navigation / shell --------------------------------------------------------
   'nav.dashboard': 'Panel',
   'nav.entities': 'Enheder',

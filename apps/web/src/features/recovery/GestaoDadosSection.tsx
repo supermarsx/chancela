@@ -34,6 +34,7 @@ import {
   TextArea,
   useToast,
 } from '../../ui';
+import { GateButton } from '../session/permissions';
 import { resetFrontend } from './frontendReset';
 
 type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
@@ -74,7 +75,8 @@ export function GestaoDadosSection() {
         <div className="stack--tight">
           <p className="field__hint">{t('data.startOver.body')}</p>
           <div className="row-wrap">
-            <Button
+            <GateButton
+              perm="data.start_over"
               type="button"
               variant="secondary"
               icon={<Icon.BookPlus />}
@@ -84,7 +86,7 @@ export function GestaoDadosSection() {
               }}
             >
               {t('data.startOver.button')}
-            </Button>
+            </GateButton>
           </div>
         </div>
       </Card>
@@ -96,7 +98,8 @@ export function GestaoDadosSection() {
             {t('data.destructive.warnBody')}
           </InlineWarning>
           <div className="row-wrap">
-            <Button
+            <GateButton
+              perm="data.wipe"
               type="button"
               variant="secondary"
               className="btn--danger"
@@ -104,8 +107,9 @@ export function GestaoDadosSection() {
               onClick={() => setDialog('domain')}
             >
               {t('data.wipe.button')}
-            </Button>
-            <Button
+            </GateButton>
+            <GateButton
+              perm="data.wipe"
               type="button"
               variant="secondary"
               className="btn--danger"
@@ -113,8 +117,9 @@ export function GestaoDadosSection() {
               onClick={() => setDialog('factory')}
             >
               {t('data.factory.button')}
-            </Button>
-            <Button
+            </GateButton>
+            <GateButton
+              perm="data.wipe"
               type="button"
               variant="secondary"
               className="btn--danger"
@@ -122,7 +127,7 @@ export function GestaoDadosSection() {
               onClick={() => setDialog('full')}
             >
               {t('data.full.button')}
-            </Button>
+            </GateButton>
           </div>
           {lastOutcome ? (
             <InlineWarning tone="info" title={t('data.wipe.doneTitle')}>

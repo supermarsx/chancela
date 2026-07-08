@@ -12,6 +12,7 @@ import type {
   TextareaHTMLAttributes,
 } from 'react';
 import { useT } from '../i18n';
+import { ApiError } from '../api/client';
 import { FieldHelp } from './FieldHelp';
 
 // Presentational primitives kept in their own files (they carry a little local state or
@@ -249,6 +250,16 @@ export function Loading({ label }: { label?: string }) {
 
 export function ErrorNote({ error }: { error: unknown }) {
   const t = useT();
+  // Honest 403 handling (t64-E5): a server permission denial (distinct from a 401 session,
+  // which the client resolves by clearing the token → sign-in) reads as "sem permissão",
+  // never a raw error. Applies app-wide since every inline error renders through here.
+  if (error instanceof ApiError && error.status === 403) {
+    return (
+      <InlineWarning tone="error" title={t('perm.denied.title')}>
+        {t('perm.denied.body')}
+      </InlineWarning>
+    );
+  }
   const message = error instanceof Error ? error.message : String(error);
   return (
     <InlineWarning tone="error" title={t('common.error')}>

@@ -17,17 +17,16 @@ import { useUpdateUser, useUsers } from '../../api/hooks';
 import { useT } from '../../i18n';
 import {
   Badge,
-  ButtonLink,
   Card,
   EmptyState,
   ErrorNote,
   Icon,
-  IconButton,
   PageHeader,
   SkeletonTable,
   Table,
   useToast,
 } from '../../ui';
+import { GateButtonLink, GateIconButton } from '../session/permissions';
 import type { UserView } from '../../api/types';
 
 function UserRow({ user }: { user: UserView }) {
@@ -76,18 +75,21 @@ function UserRow({ user }: { user: UserView }) {
         </span>
       </td>
       <td className="users-actions">
-        <IconButton
+        <GateIconButton
+          perm="user.manage"
           icon={<Icon.Pencil />}
           label={t('users.action.edit')}
           onClick={() => navigate(`/utilizadores/${user.id}`)}
         />
-        <IconButton
+        <GateIconButton
+          perm="user.manage"
           icon={<Icon.Power />}
           label={user.active ? t('users.action.deactivate') : t('users.action.reactivate')}
           disabled={update.isPending}
           onClick={toggleActive}
         />
-        <IconButton
+        <GateIconButton
+          perm="user.manage"
           icon={<Icon.Wrench />}
           label={t('users.access.title')}
           onClick={() => navigate(`/utilizadores/${user.id}#acesso`)}
@@ -112,9 +114,14 @@ export function UsersList() {
     <Card
       title={t('users.list.cardTitle')}
       actions={
-        <ButtonLink to="/utilizadores/novo" variant="primary" icon={<Icon.Plus />}>
+        <GateButtonLink
+          perm="user.manage"
+          to="/utilizadores/novo"
+          variant="primary"
+          icon={<Icon.Plus />}
+        >
           {t('users.list.newButton')}
-        </ButtonLink>
+        </GateButtonLink>
       }
     >
       {users.isLoading ? (

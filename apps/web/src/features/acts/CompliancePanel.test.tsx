@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AtaEditorPage } from './AtaEditorPage';
 import { makeClient, fetchTable } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
+import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
 import type { ActView, BookView, ComplianceReport } from '../../api/types';
 
 const baseAct: ActView = {
@@ -61,11 +62,13 @@ function renderEditor(act: ActView, compliance: ComplianceReport) {
   return render(
     <QueryClientProvider client={makeClient()}>
       <ToastProvider>
-        <MemoryRouter initialEntries={['/atas/act-1']}>
-          <Routes>
-            <Route path="/atas/:id" element={<AtaEditorPage />} />
-          </Routes>
-        </MemoryRouter>
+        <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
+          <MemoryRouter initialEntries={['/atas/act-1']}>
+            <Routes>
+              <Route path="/atas/:id" element={<AtaEditorPage />} />
+            </Routes>
+          </MemoryRouter>
+        </StaticPermissionsProvider>
       </ToastProvider>
     </QueryClientProvider>,
   );

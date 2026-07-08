@@ -15,6 +15,10 @@
  * they are rendered verbatim as received. Only client-authored UI chrome lives here.
  */
 export const ptPT = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'Sem permissão para esta ação',
+  'perm.denied.title': 'Sem permissão',
+  'perm.denied.body': 'Não tem permissão para realizar esta operação.',
   // --- Navigation / shell --------------------------------------------------------
   'nav.dashboard': 'Painel',
   'nav.entities': 'Entidades',

@@ -17,6 +17,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ToastProvider } from '../ui/toast';
+import { PermissionsProvider } from '../features/session/permissions';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,9 +35,14 @@ export function Providers({ children }: { children: ReactNode }) {
   // ToastProvider wraps the router (children) so a success toast fired as a handler
   // navigates away — entity/book/act create, registry import — survives the route change
   // and renders on the destination page (plan t44 R6) rather than unmounting with it.
+  // PermissionsProvider is mounted inside the QueryClient (it reads the `['session']`
+  // query's embedded permissions) and wraps the router so `useCan` gates every feature's
+  // affordances (t64-E5). It needs no toast, so it nests cleanly under ToastProvider.
   return (
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>{children}</ToastProvider>
+      <ToastProvider>
+        <PermissionsProvider>{children}</PermissionsProvider>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

@@ -10,6 +10,10 @@
 import type { Catalog } from '../types';
 
 export const fiFI: Catalog = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'Sinulla ei ole oikeutta tähän toimintoon',
+  'perm.denied.title': 'Ei oikeutta',
+  'perm.denied.body': 'Sinulla ei ole oikeutta suorittaa tätä toimintoa.',
   // --- Navigation / shell --------------------------------------------------------
   'nav.dashboard': 'Paneeli',
   'nav.entities': 'Yksiköt',

@@ -12,7 +12,8 @@ import { useUpdateEntity } from '../../api/hooks';
 import { entityFamilyLabels, meetingChannelLabels, signaturePolicyLabels } from '../../api/labels';
 import type { Entity, StatuteOverrides } from '../../api/types';
 import { useT } from '../../i18n';
-import { Button, Card, ErrorNote, Field, Icon, Input, useToast } from '../../ui';
+import { Card, ErrorNote, Field, Icon, Input, useToast } from '../../ui';
+import { GateButton, scopeEntity } from '../session/permissions';
 
 // Working copy: every field a plain string so blanks read as "unset". Assembled back into
 // a `StatuteOverrides` on save (a whole facet is null when its inputs are blank).
@@ -153,7 +154,9 @@ export function EntityStatuteEditor({ entity }: { entity: Entity }) {
           />
         </Field>
         <div className="form__actions">
-          <Button
+          <GateButton
+            perm="entity.update"
+            scope={scopeEntity(entity.id)}
             type="button"
             variant="primary"
             icon={<Icon.Save />}
@@ -161,8 +164,10 @@ export function EntityStatuteEditor({ entity }: { entity: Entity }) {
             onClick={() => saveStatute(draftToStatute(draft))}
           >
             {update.isPending ? t('entities.statute.saving') : t('entities.statute.save')}
-          </Button>
-          <Button
+          </GateButton>
+          <GateButton
+            perm="entity.update"
+            scope={scopeEntity(entity.id)}
             type="button"
             variant="ghost"
             icon={<Icon.Trash />}
@@ -170,7 +175,7 @@ export function EntityStatuteEditor({ entity }: { entity: Entity }) {
             onClick={() => saveStatute(null)}
           >
             {t('entities.statute.clear')}
-          </Button>
+          </GateButton>
         </div>
         {entity.statute == null ? <p className="muted">{t('entities.statute.none')}</p> : null}
       </div>

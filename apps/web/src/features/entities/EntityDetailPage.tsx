@@ -9,7 +9,6 @@ import { useBooks, useEntity } from '../../api/hooks';
 import { entityFamilyLabels, entityKindLabels } from '../../api/labels';
 import { useT } from '../../i18n';
 import {
-  ButtonLink,
   Card,
   ErrorNote,
   Icon,
@@ -18,6 +17,7 @@ import {
   SkeletonDeflist,
   SkeletonTable,
 } from '../../ui';
+import { GateButtonLink, scopeEntity } from '../session/permissions';
 import { BooksTable } from '../books/BooksTable';
 import { RegistryProvenance } from '../registry/RegistryProvenance';
 import { EntityStatuteEditor } from './EntityStatuteEditor';
@@ -92,9 +92,14 @@ export function EntityDetailPage() {
       <section className="stack">
         <div className="section-head">
           <h3 className="section-subtitle">{t('entities.registrySection')}</h3>
-          <ButtonLink to={`/entidades/${ent.id}/importar`} icon={<Icon.Tray />}>
+          <GateButtonLink
+            perm="entity.registry.import"
+            scope={scopeEntity(ent.id)}
+            to={`/entidades/${ent.id}/importar`}
+            icon={<Icon.Tray />}
+          >
             {t('entities.importButton')}
-          </ButtonLink>
+          </GateButtonLink>
         </div>
         <RegistryProvenance entityId={ent.id} />
       </section>
@@ -102,13 +107,15 @@ export function EntityDetailPage() {
       <Card
         title={t('entities.booksCard')}
         actions={
-          <ButtonLink
+          <GateButtonLink
+            perm="book.open"
+            scope={scopeEntity(ent.id)}
             to={`/livros/novo?entidade=${ent.id}`}
             variant="primary"
             icon={<Icon.BookPlus />}
           >
             {t('entities.openBookButton')}
-          </ButtonLink>
+          </GateButtonLink>
         }
       >
         {books.isLoading ? (

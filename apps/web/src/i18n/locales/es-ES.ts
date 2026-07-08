@@ -9,6 +9,10 @@
 import type { Catalog } from '../types';
 
 export const esES: Catalog = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'No tiene permiso para esta acción',
+  'perm.denied.title': 'Sin permiso',
+  'perm.denied.body': 'No tiene permiso para realizar esta operación.',
   // --- Navegación / estructura ---------------------------------------------------
   'nav.dashboard': 'Panel',
   'nav.entities': 'Entidades',

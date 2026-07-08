@@ -75,6 +75,7 @@ import {
 import { CompliancePanel } from './CompliancePanel';
 import { ActDocumentPanel } from '../documents/ActDocumentPanel';
 import { SigningPanel } from '../signing/SigningPanel';
+import { GateButton, scopeBook, type CanScope } from '../session/permissions';
 
 // Working (editable) copy of the mutable act fields. Scalars are held as strings for the
 // inputs (empty ⇒ absent on save); the structured collections are held as their wire
@@ -787,10 +788,12 @@ function LifecycleStepper({
   current,
   onAdvance,
   pending,
+  scope,
 }: {
   current: ActState;
   onAdvance: (to: ActState) => void;
   pending: boolean;
+  scope: CanScope;
 }) {
   const t = useT();
   const currentIdx = ACT_STATES.indexOf(current);
@@ -811,7 +814,9 @@ function LifecycleStepper({
         ))}
       </ol>
       {next ? (
-        <Button
+        <GateButton
+          perm="act.advance"
+          scope={scope}
           type="button"
           variant="primary"
           icon={<Icon.ArrowRight />}
@@ -819,7 +824,7 @@ function LifecycleStepper({
           onClick={() => onAdvance(next)}
         >
           {pending ? t('acts.advancing') : t('acts.advanceTo', { state: actStateLabels[next] })}
-        </Button>
+        </GateButton>
       ) : null}
     </div>
   );
@@ -888,6 +893,9 @@ export function AtaEditorPage() {
 
   const a = act.data;
   const readOnly = a.state === 'Sealed' || a.state === 'Archived';
+  // Every act lifecycle mutation is gated at the act's BOOK scope (the server resolves the
+  // same scope from the act's book_id, t64-E3).
+  const bookScope = scopeBook(a.book_id);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
 
@@ -969,7 +977,9 @@ export function AtaEditorPage() {
             title={t('acts.reuniao')}
             actions={
               !readOnly ? (
-                <Button
+                <GateButton
+                  perm="act.edit"
+                  scope={bookScope}
                   type="button"
                   variant="primary"
                   icon={<Icon.Save />}
@@ -977,7 +987,7 @@ export function AtaEditorPage() {
                   onClick={onSave}
                 >
                   {update.isPending ? t('acts.saving') : t('common.save')}
-                </Button>
+                </GateButton>
               ) : null
             }
           >
@@ -1155,7 +1165,12 @@ export function AtaEditorPage() {
         <div className="split__aside stack">
           <Card title={t('acts.lifecycle')}>
             {advance.error ? <ErrorNote error={advance.error} /> : null}
-            <LifecycleStepper current={a.state} pending={advance.isPending} onAdvance={onAdvance} />
+            <LifecycleStepper
+              current={a.state}
+              pending={advance.isPending}
+              onAdvance={onAdvance}
+              scope={bookScope}
+            />
           </Card>
 
           <Card title={t('acts.compliance')}>
@@ -1185,7 +1200,9 @@ export function AtaEditorPage() {
                       ? t('acts.sealing.unavailableState')
                       : t('acts.sealing.fixErrors')}
                 </p>
-                <Button
+                <GateButton
+                  perm="signing.perform"
+                  scope={bookScope}
                   type="button"
                   variant="primary"
                   icon={<Icon.Seal />}
@@ -1193,12 +1210,14 @@ export function AtaEditorPage() {
                   onClick={onSeal}
                 >
                   {seal.isPending ? t('acts.sealing.sealing') : t('acts.sealing.seal')}
-                </Button>
+                </GateButton>
               </div>
             ) : a.state === 'Sealed' ? (
               <div className="stack--tight">
                 <p className="muted">{t('acts.sealed.archiveHint')}</p>
-                <Button
+                <GateButton
+                  perm="act.archive"
+                  scope={bookScope}
                   type="button"
                   variant="secondary"
                   icon={<Icon.Archive />}
@@ -1206,7 +1225,7 @@ export function AtaEditorPage() {
                   onClick={onArchive}
                 >
                   {archive.isPending ? t('acts.archiving') : t('acts.archive')}
-                </Button>
+                </GateButton>
                 {archive.error ? <ErrorNote error={archive.error} /> : null}
               </div>
             ) : (

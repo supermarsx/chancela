@@ -11,6 +11,10 @@
 import type { Catalog } from '../types';
 
 export const svSE: Catalog = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'Du har inte behörighet för den här åtgärden',
+  'perm.denied.title': 'Ingen behörighet',
+  'perm.denied.body': 'Du har inte behörighet att utföra den här åtgärden.',
   // --- Navigation / shell --------------------------------------------------------
   'nav.dashboard': 'Panel',
   'nav.entities': 'Enheter',

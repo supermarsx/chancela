@@ -9,6 +9,10 @@
 import type { Catalog } from '../types';
 
 export const enGB: Catalog = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'You do not have permission for this action',
+  'perm.denied.title': 'No permission',
+  'perm.denied.body': 'You do not have permission to perform this operation.',
   // --- Navigation / shell --------------------------------------------------------
   'nav.dashboard': 'Dashboard',
   'nav.entities': 'Entities',

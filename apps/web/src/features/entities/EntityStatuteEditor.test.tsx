@@ -10,6 +10,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { EntityStatuteEditor } from './EntityStatuteEditor';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
+import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
 import type { Entity } from '../../api/types';
 
 const entity: Entity = {
@@ -59,9 +60,11 @@ function renderEditor(ent: Entity) {
   return render(
     <QueryClientProvider client={makeClient()}>
       <ToastProvider>
-        <MemoryRouter>
-          <EntityStatuteEditor entity={ent} />
-        </MemoryRouter>
+        <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
+          <MemoryRouter>
+            <EntityStatuteEditor entity={ent} />
+          </MemoryRouter>
+        </StaticPermissionsProvider>
       </ToastProvider>
     </QueryClientProvider>,
   );

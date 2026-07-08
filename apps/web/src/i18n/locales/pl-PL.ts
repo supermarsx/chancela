@@ -10,6 +10,10 @@
 import type { Catalog } from '../types';
 
 export const plPL: Catalog = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'Nie masz uprawnień do tej czynności',
+  'perm.denied.title': 'Brak uprawnień',
+  'perm.denied.body': 'Nie masz uprawnień do wykonania tej operacji.',
   // --- Navigation / shell --------------------------------------------------------
   'nav.dashboard': 'Panel',
   'nav.entities': 'Podmioty',

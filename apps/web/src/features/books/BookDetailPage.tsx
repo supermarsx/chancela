@@ -18,7 +18,6 @@ import {
 import { useT } from '../../i18n';
 import {
   Badge,
-  ButtonLink,
   Card,
   EmptyState,
   ErrorNote,
@@ -29,6 +28,7 @@ import {
   SkeletonTable,
   Table,
 } from '../../ui';
+import { GateButtonLink, scopeBook } from '../session/permissions';
 
 export function BookDetailPage() {
   const t = useT();
@@ -117,12 +117,23 @@ export function BookDetailPage() {
         actions={
           isOpen ? (
             <div className="row-wrap">
-              <ButtonLink to={`/livros/${b.id}/encerrar`} icon={<Icon.BookClosed />}>
+              <GateButtonLink
+                perm="book.close"
+                scope={scopeBook(b.id)}
+                to={`/livros/${b.id}/encerrar`}
+                icon={<Icon.BookClosed />}
+              >
                 {t('books.closeBook')}
-              </ButtonLink>
-              <ButtonLink to={`/livros/${b.id}/nova-ata`} variant="primary" icon={<Icon.Plus />}>
+              </GateButtonLink>
+              <GateButtonLink
+                perm="act.draft"
+                scope={scopeBook(b.id)}
+                to={`/livros/${b.id}/nova-ata`}
+                variant="primary"
+                icon={<Icon.Plus />}
+              >
                 {t('books.newAta')}
-              </ButtonLink>
+              </GateButtonLink>
             </div>
           ) : null
         }

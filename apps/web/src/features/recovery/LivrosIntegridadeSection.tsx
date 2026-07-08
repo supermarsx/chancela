@@ -32,7 +32,6 @@ import { useT } from '../../i18n';
 import { bookStateLabels } from '../../api/labels';
 import {
   Badge,
-  Button,
   Card,
   ConfirmActionModal,
   Digest,
@@ -47,6 +46,7 @@ import {
   TextArea,
   useToast,
 } from '../../ui';
+import { GateButton, scopeBook } from '../session/permissions';
 import { StartOverBookModal } from './StartOverBookModal';
 
 /** Trigger a browser download of a Blob with an explicit filename (mirrors ActDocumentPanel). */
@@ -255,7 +255,8 @@ export function LivrosIntegridadeSection() {
         <div className="stack--tight">
           <p className="field__hint">{t('integrity.recovery.note')}</p>
           <div className="row-wrap">
-            <Button
+            <GateButton
+              perm="ledger.recover"
               type="button"
               variant="secondary"
               icon={<Icon.Refresh />}
@@ -265,8 +266,9 @@ export function LivrosIntegridadeSection() {
               }}
             >
               {t('integrity.restore.title')}
-            </Button>
-            <Button
+            </GateButton>
+            <GateButton
+              perm="ledger.recover"
               type="button"
               variant="secondary"
               className="btn--danger"
@@ -278,7 +280,7 @@ export function LivrosIntegridadeSection() {
               }}
             >
               {t('integrity.reanchor.title')}
-            </Button>
+            </GateButton>
           </div>
           {!broken ? <p className="field__hint">{t('integrity.reanchor.onlyWhenBroken')}</p> : null}
         </div>
@@ -303,7 +305,9 @@ export function LivrosIntegridadeSection() {
                   </Badge>
                 </div>
                 <div className="bookrow__actions">
-                  <Button
+                  <GateButton
+                    perm="book.export"
+                    scope={scopeBook(book.id)}
                     type="button"
                     variant="ghost"
                     icon={<Icon.Archive />}
@@ -313,15 +317,17 @@ export function LivrosIntegridadeSection() {
                     {exportBook.isPending
                       ? t('integrity.books.exporting')
                       : t('integrity.books.export')}
-                  </Button>
-                  <Button
+                  </GateButton>
+                  <GateButton
+                    perm="book.start_over"
+                    scope={scopeBook(book.id)}
                     type="button"
                     variant="ghost"
                     icon={<Icon.BookPlus />}
                     onClick={() => setStartOverBook(book)}
                   >
                     {t('integrity.books.startOver')}
-                  </Button>
+                  </GateButton>
                 </div>
               </li>
             ))}

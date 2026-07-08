@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { render } from '@testing-library/react';
 import { ToastProvider } from '../ui/toast';
+import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../features/session/permissions';
 
 export function makeClient(): QueryClient {
   return new QueryClient({
@@ -27,10 +28,16 @@ export function Wrapper({
   // ToastProvider is required by any component that calls `useToast()` on mutation, so it
   // is part of the standard render context (mirrors app/providers) — omitting it would
   // break every mutation-flow test at once (plan t44 R6).
+  // The standard render context grants ALL permissions (an Owner), so existing
+  // affordance/mutation tests see enabled controls exactly as before t64-E5. Tests that
+  // exercise gating (a Leitor, a scoped Gestor) wrap their subject in their own
+  // <StaticPermissionsProvider> with a narrower value.
   return (
     <QueryClientProvider client={makeClient()}>
       <ToastProvider>
-        <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
+        <StaticPermissionsProvider value={ALLOW_ALL_PERMISSIONS}>
+          <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
+        </StaticPermissionsProvider>
       </ToastProvider>
     </QueryClientProvider>
   );

@@ -10,7 +10,6 @@ import { entityFamilyLabels } from '../../api/labels';
 import { useT } from '../../i18n';
 import {
   Badge,
-  ButtonLink,
   Card,
   EmptyState,
   ErrorNote,
@@ -20,6 +19,7 @@ import {
   SkeletonTable,
   Table,
 } from '../../ui';
+import { GateButtonLink } from '../session/permissions';
 import { NipcBadge } from './NipcBadge';
 
 export function EntitiesPage() {
@@ -33,12 +33,17 @@ export function EntitiesPage() {
         title={t('entities.title')}
         actions={
           <>
-            <ButtonLink to="/entidades/importar" icon={<Icon.Tray />}>
+            <GateButtonLink perm="entity.create" to="/entidades/importar" icon={<Icon.Tray />}>
               {t('entities.importButton')}
-            </ButtonLink>
-            <ButtonLink to="/entidades/nova" variant="primary" icon={<Icon.Plus />}>
+            </GateButtonLink>
+            <GateButtonLink
+              perm="entity.create"
+              to="/entidades/nova"
+              variant="primary"
+              icon={<Icon.Plus />}
+            >
               {t('entities.newButton')}
-            </ButtonLink>
+            </GateButtonLink>
           </>
         }
       />

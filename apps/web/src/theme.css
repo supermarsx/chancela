@@ -526,6 +526,28 @@ a:focus-visible {
   border-color: color-mix(in srgb, var(--text-muted) 80%, transparent);
 }
 
+/* Permission-gated buttons (t64-E5): rendered disabled-with-explanation. They stay a
+   REAL focusable/hoverable button (so the honest tooltip is reachable by hover AND
+   keyboard — a native `:disabled` element fires no pointer/focus events), inerted via
+   `aria-disabled` + a swallowed click. Mirror the `:disabled` muted chrome exactly, and
+   greys a gated primary consistently too. */
+.btn[aria-disabled='true'] {
+  cursor: not-allowed;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  border-color: color-mix(in srgb, var(--text-muted) 80%, transparent);
+}
+
+/* The settings working-copy wrapper (t64-E5) is a bare <fieldset> used only to inert its
+   controls when the user lacks `settings.manage` — strip the UA border/padding/margin so it
+   is layout-invisible and the sections render exactly as before. */
+.settings-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
 .btn--primary {
   background: var(--accent-strong);
   color: var(--on-accent);

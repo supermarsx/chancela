@@ -10,6 +10,10 @@
 import type { Catalog } from '../types';
 
 export const deDE: Catalog = {
+  // --- Permissions / RBAC gating (t64) ------------------------------------------
+  'perm.denied.action': 'Keine Berechtigung für diese Aktion',
+  'perm.denied.title': 'Keine Berechtigung',
+  'perm.denied.body': 'Sie haben keine Berechtigung, diesen Vorgang auszuführen.',
   // --- Navigation / shell --------------------------------------------------------
   'nav.dashboard': 'Übersicht',
   'nav.entities': 'Rechtsträger',
