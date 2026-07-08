@@ -30,6 +30,7 @@
 //! let manifest = store.backup(data_dir, &sidecars)?; // VACUUM INTO + zip + manifest
 //! ```
 
+pub mod recovery;
 pub mod schema;
 
 use std::collections::HashMap;
@@ -38,7 +39,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
-use chancela_ledger::{ChainLink, Event, EventId, Ledger, LedgerError};
+use chancela_ledger::{ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError};
 use chancela_registry::RegistryExtract;
 use rusqlite::{OptionalExtension, params};
 use serde::de::DeserializeOwned;
@@ -76,6 +77,29 @@ pub enum StoreError {
     /// A backup was requested but the store has no on-disk location to snapshot (in-memory mode).
     #[error("backup requires on-disk persistence")]
     NotPersistent,
+    /// A per-book import was refused because its book id already exists (live or imported) and the
+    /// [`recovery::CollisionPolicy`] is `Refuse` — the safe default. Ids cannot be renamed on import
+    /// without re-hashing (which would destroy the chain's tamper-evidence), so the only choices are
+    /// refuse or quarantine-copy under the original ids (t54 §2.5).
+    #[error("import refused: book id {book_id} already exists (collision policy = Refuse)")]
+    ImportCollision {
+        /// The colliding book id (the bundle's original id).
+        book_id: String,
+    },
+    /// A bundle could not even be parsed enough to record provenance (not a zip, no `manifest.json`,
+    /// or a wrong `format`). Distinct from a *tampered* bundle whose manifest parses but whose member
+    /// digests / book chain fail verification — that is quarantined (not trusted), never merged.
+    #[error("invalid bundle: {0}")]
+    InvalidBundle(String),
+    /// A whole-store restore refused a backup archive that did not verify **before** the swap: a
+    /// member sha256 did not match the manifest, or the snapshot's ledger did not verify `Ok`. A bad
+    /// backup is never trusted; the live store is left untouched (t54 §2.5 / §4.1(6)).
+    #[error("bad backup: {0}")]
+    BadBackup(String),
+    /// A recovery/lifecycle operation could not locate a required aggregate (e.g. the book to
+    /// export/start-over was not found in the store).
+    #[error("not found: {0}")]
+    NotFound(String),
 }
 
 /// A handle to the durable store. Cheap to clone (shares one connection via `Arc`) and lives in
@@ -86,8 +110,9 @@ pub enum StoreError {
 #[derive(Debug, Clone)]
 pub struct Store {
     /// The one SQLite connection, shared and mutex-guarded. rusqlite is synchronous, so a mutation
-    /// takes this lock for the (tiny, local) duration of its transaction.
-    conn: Arc<Mutex<rusqlite::Connection>>,
+    /// takes this lock for the (tiny, local) duration of its transaction. `pub(crate)` so the
+    /// [`recovery`] module can swap the whole connection during a whole-store restore.
+    pub(crate) conn: Arc<Mutex<rusqlite::Connection>>,
 }
 
 /// Everything [`Store::load`] reconstructs from disk on boot: the four aggregate read-models, the
@@ -109,8 +134,16 @@ pub struct LoadedState {
     pub registry_extracts: HashMap<EntityId, RegistryExtract>,
     /// The rehydrated hash-chained ledger (events in `seq` order).
     pub ledger: Ledger,
-    /// The boot-time `verify()` outcome of the rehydrated chain (§D-boot).
+    /// The boot-time `verify()` outcome of the rehydrated chain (§D-boot). Retained for back-compat;
+    /// [`integrity`](LoadedState::integrity) is the richer surface E3 serves.
     pub chain_status: Result<u64, LedgerError>,
+    /// The full boot-time [`IntegrityReport`] of the rehydrated ledger (t54 deliverable #6): the
+    /// global spine + every non-global chain's status, each carrying the precise first
+    /// [`ChainBreak`](chancela_ledger::ChainBreak) when broken, the overall `healthy` flag, and the
+    /// permanent re-anchor disclosure. This **replaces the silent boot `eprintln!`-and-continue**:
+    /// the api (E3) queries this to serve `GET /v1/ledger/integrity` and enter its degraded state.
+    /// Open still never blocks on a break — the degraded 503 gate is E3's decision.
+    pub integrity: IntegrityReport,
 }
 
 /// A description of one backup archive, returned by [`Store::backup`] and by `POST /v1/backup`
@@ -139,7 +172,7 @@ pub struct BackupManifest {
 }
 
 /// One member file inside a [`BackupManifest`], with its sha256 for integrity checking on restore.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupFile {
     /// The archive member name (e.g. `chancela.db`, `settings.json`).
     pub name: String,
@@ -184,73 +217,25 @@ impl Store {
     /// `data_dir` is the directory; the database file name is [`DB_FILE`]. (At-rest encryption,
     /// A3, issues `PRAGMA key` here behind a build feature — no signature change.)
     pub fn open(data_dir: &Path) -> Result<Store, StoreError> {
-        std::fs::create_dir_all(data_dir)?;
-        let conn = rusqlite::Connection::open(data_dir.join(DB_FILE))?;
-
-        // WAL gives crash-safety on partial writes; foreign_keys keeps referential intent honest;
-        // busy_timeout lets a concurrent reader wait out a writer instead of erroring immediately.
-        // `execute_batch` tolerates the row `PRAGMA journal_mode=WAL` returns (`execute` would not).
-        conn.execute_batch(
-            "PRAGMA journal_mode=WAL;\n\
-             PRAGMA foreign_keys=ON;\n\
-             PRAGMA busy_timeout=5000;",
-        )?;
-
-        // Idempotent migration: a fresh DB is created, an existing one left untouched.
-        for stmt in schema::ALL {
-            conn.execute_batch(stmt)?;
-        }
-
-        // Additive migration: the `links` column (multi-chain event links) was added after the
-        // initial schema v1. `ALTER TABLE ... ADD COLUMN` is idempotent-safe via this guard.
-        let has_links: bool = conn
-            .prepare("SELECT COUNT(*) FROM pragma_table_info('events') WHERE name='links'")?
-            .query_row([], |row| row.get::<_, i64>(0))
-            .map(|n| n > 0)
-            .unwrap_or(false);
-        if !has_links {
-            conn.execute_batch("ALTER TABLE events ADD COLUMN links TEXT NOT NULL DEFAULT '[]';")?;
-        }
-
-        // schema_version gate: reject a file written by a *newer* build (we don't know its layout);
-        // stamp a fresh DB with our version. Older versions would key future real migrations.
-        let found: Option<i64> = conn
-            .query_row(
-                "SELECT value FROM meta WHERE key = 'schema_version'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
-            .and_then(|s| s.parse::<i64>().ok());
-        match found {
-            Some(v) if v > schema::SCHEMA_VERSION => {
-                return Err(StoreError::UnsupportedSchemaVersion {
-                    found: v,
-                    supported: schema::SCHEMA_VERSION,
-                });
-            }
-            // Forward-only upgrade: a database written by an older build has already had the new,
-            // additive DDL applied above (idempotent `CREATE TABLE IF NOT EXISTS` — e.g. the v2
-            // `documents` table), so advancing the stamp is the whole migration. No column of an
-            // existing table is dropped or retyped, so the upgrade is safe and one-way.
-            Some(v) if v < schema::SCHEMA_VERSION => {
-                conn.execute(
-                    "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
-                    params![schema::SCHEMA_VERSION.to_string()],
-                )?;
-            }
-            Some(_) => {}
-            None => {
-                conn.execute(
-                    "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)",
-                    params![schema::SCHEMA_VERSION.to_string()],
-                )?;
-            }
-        }
-
+        let conn = open_connection(data_dir)?;
         Ok(Store {
             conn: Arc::new(Mutex::new(conn)),
         })
+    }
+
+    /// The stable per-install `instance_id` stamped into `meta` on first open (t54): bundle
+    /// provenance (`BundleManifest.source_instance_id`) and the import feed both read it. A restored
+    /// backup keeps the *source* instance's id (the stamp is only minted when absent).
+    pub fn instance_id(&self) -> Result<String, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        read_instance_id(&guard)
+    }
+
+    /// Load the ledger and return its full [`IntegrityReport`] (t54 deliverable #6) — the queryable
+    /// integrity status E3 serves and gates its degraded state on, without holding onto a
+    /// [`LoadedState`]. A convenience over `self.load()?.integrity`.
+    pub fn integrity_report(&self) -> Result<IntegrityReport, StoreError> {
+        Ok(self.load()?.integrity)
     }
 
     /// Read all aggregate rows into their maps and all event rows (ordered by `seq`) into a
@@ -339,6 +324,10 @@ impl Store {
         }
 
         let (ledger, chain_status) = Ledger::try_from_events(events);
+        // Surface the rich, per-chain integrity picture on every load (t54 #6): the api enters its
+        // degraded state and serves the exact break location from this, instead of the old silent
+        // boot log. Computing it here (once, on load) keeps the source of truth in the store.
+        let integrity = ledger.integrity_report();
         Ok(LoadedState {
             entities,
             books,
@@ -346,6 +335,7 @@ impl Store {
             registry_extracts,
             ledger,
             chain_status,
+            integrity,
         })
     }
 
@@ -507,6 +497,15 @@ pub struct Tx<'conn> {
     /// closure commits (or, on any `Err`, rolls back) in [`Store::persist`]. Internal — not part of
     /// the frozen §3.1 API.
     txn: rusqlite::Transaction<'conn>,
+}
+
+impl<'conn> Tx<'conn> {
+    /// Internal: borrow the raw transaction so the [`recovery`] paths can run their bespoke
+    /// DELETE / INSERT SQL (domain-wipe, factory-blank, imported-book upsert) inside the same
+    /// atomic commit as an `append_event`. Not part of the public API surface.
+    pub(crate) fn raw(&self) -> &rusqlite::Transaction<'conn> {
+        &self.txn
+    }
 }
 
 impl Tx<'_> {
@@ -710,7 +709,7 @@ fn blob32(bytes: Vec<u8>, what: &str) -> Result<[u8; 32], StoreError> {
 }
 
 /// Lowercase-hex encoding of a byte slice (sha256 digests and the ledger head hash).
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
         s.push_str(&format!("{b:02x}"));
@@ -718,9 +717,120 @@ fn hex(bytes: &[u8]) -> String {
     s
 }
 
+/// Open (creating if absent) `<data_dir>/chancela.db`, apply the PRAGMAs + idempotent migration,
+/// gate the schema version, and ensure the `instance_id` stamp. Factored out of [`Store::open`] so
+/// the whole-store [`recovery`] restore can rebuild a fresh connection after swapping the db file.
+pub(crate) fn open_connection(data_dir: &Path) -> Result<rusqlite::Connection, StoreError> {
+    std::fs::create_dir_all(data_dir)?;
+    let conn = rusqlite::Connection::open(data_dir.join(DB_FILE))?;
+    configure_and_migrate(&conn)?;
+    Ok(conn)
+}
+
+/// Apply WAL/foreign-keys/busy-timeout PRAGMAs, run the idempotent [`schema::ALL`] DDL + the
+/// additive `links` column guard, gate the `schema_version` (rejecting a newer file, advancing an
+/// older stamp forward), and ensure a stable `instance_id`. Shared by open + restore.
+pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), StoreError> {
+    // WAL gives crash-safety on partial writes; foreign_keys keeps referential intent honest;
+    // busy_timeout lets a concurrent reader wait out a writer instead of erroring immediately.
+    // `execute_batch` tolerates the row `PRAGMA journal_mode=WAL` returns (`execute` would not).
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;\n\
+         PRAGMA foreign_keys=ON;\n\
+         PRAGMA busy_timeout=5000;",
+    )?;
+
+    // Idempotent migration: a fresh DB is created, an existing one left untouched.
+    for stmt in schema::ALL {
+        conn.execute_batch(stmt)?;
+    }
+
+    // Additive migration: the `links` column (multi-chain event links) was added after the
+    // initial schema v1. `ALTER TABLE ... ADD COLUMN` is idempotent-safe via this guard.
+    let has_links: bool = conn
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('events') WHERE name='links'")?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .map(|n| n > 0)
+        .unwrap_or(false);
+    if !has_links {
+        conn.execute_batch("ALTER TABLE events ADD COLUMN links TEXT NOT NULL DEFAULT '[]';")?;
+    }
+
+    // schema_version gate: reject a file written by a *newer* build (we don't know its layout);
+    // stamp a fresh DB with our version. Older versions would key future real migrations.
+    let found: Option<i64> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|s| s.parse::<i64>().ok());
+    match found {
+        Some(v) if v > schema::SCHEMA_VERSION => {
+            return Err(StoreError::UnsupportedSchemaVersion {
+                found: v,
+                supported: schema::SCHEMA_VERSION,
+            });
+        }
+        // Forward-only upgrade: a database written by an older build has already had the new,
+        // additive DDL applied above (idempotent `CREATE TABLE IF NOT EXISTS` — e.g. the v2
+        // `documents` table, the v3 `imported_books` table), so advancing the stamp is the whole
+        // migration. No column of an existing table is dropped or retyped, so it is safe and one-way.
+        Some(v) if v < schema::SCHEMA_VERSION => {
+            conn.execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+                params![schema::SCHEMA_VERSION.to_string()],
+            )?;
+        }
+        Some(_) => {}
+        None => {
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)",
+                params![schema::SCHEMA_VERSION.to_string()],
+            )?;
+        }
+    }
+
+    // Stable per-install id (t54): minted once, on first open, then immutable. A restored backup
+    // already carries one, so this preserves the source instance's identity across a restore.
+    if conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'instance_id'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .is_none()
+    {
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('instance_id', ?1)",
+            params![uuid::Uuid::new_v4().to_string()],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Read the stable `instance_id` from `meta` (present after [`configure_and_migrate`]).
+pub(crate) fn read_instance_id(conn: &rusqlite::Connection) -> Result<String, StoreError> {
+    conn.query_row(
+        "SELECT value FROM meta WHERE key = 'instance_id'",
+        [],
+        |row| row.get::<_, String>(0),
+    )
+    .optional()?
+    .ok_or_else(|| {
+        StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "instance_id missing from meta",
+        ))
+    })
+}
+
 /// A filesystem-safe compact UTC stamp (`YYYYMMDDTHHMMSSZ`) for backup archive names — no colons,
 /// which Windows forbids in paths.
-fn utc_stamp(t: OffsetDateTime) -> String {
+pub(crate) fn utc_stamp(t: OffsetDateTime) -> String {
     format!(
         "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
         t.year(),

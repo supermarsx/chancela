@@ -21,7 +21,11 @@
 /// - **v2** — adds the `documents` table (Wave C, t48-e4): generated PDF/A documents preserved
 ///   alongside their sealed act (plan t48 §3.3/§3.4/D4). Forward-only: an existing v1 database
 ///   gains the table via the idempotent [`ALL`] DDL and has its stamp advanced on next open.
-pub const SCHEMA_VERSION: i64 = 2;
+/// - **v3** — adds the `imported_books` isolation namespace (t54-E2): per-book bundle imports are
+///   held here (verdict + provenance + the retained, read-only bundle bytes) so a foreign book
+///   chain is **never merged into the live global spine** (which would require re-hashing and
+///   destroy tamper-evidence). Forward-only, additive: existing databases gain the table via [`ALL`].
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -124,6 +128,44 @@ CREATE TABLE IF NOT EXISTS documents (
 pub const CREATE_DOCUMENTS_ACT_IDX: &str =
     "CREATE INDEX IF NOT EXISTS idx_documents_act ON documents (act_id);";
 
+/// `imported_books` — the per-book **import isolation namespace** (schema v3, t54-E2).
+///
+/// A per-book bundle (`chancela-book-bundle/v1`) imported via `Store::import_book` is recorded here
+/// with its verify-before-trust verdict and provenance. The whole bundle's bytes are retained in
+/// `bundle_bytes` as a **read-only** copy under the bundle's **ORIGINAL** entity/book ids — it is
+/// deliberately **not** re-inserted into the live `events`/aggregate tables: a foreign book chain
+/// carries its own global `seq`/`prev_hash`, and forcing it onto this instance's global spine would
+/// require re-hashing every event (destroying the tamper-evidence — the same reason id-rename/merge
+/// is forbidden). So an import is an isolated, self-verifying holding record, never a live-spine merge.
+///
+/// - `import_id` — a fresh uuid minted for this import (primary key).
+/// - `entity_id` / `book_id` — the bundle's ORIGINAL ids (never renamed).
+/// - `source_instance_id` — the exporting install's stable id (provenance).
+/// - `bundle_digest` — the manifest's self-digest (lowercase hex).
+/// - `verdict` — `'verified'` (book chain re-verified clean) or `'quarantined'` (a broken/forged
+///   chain or a tampered member — isolated, never trusted as valid).
+/// - `break_json` — the serialized `ChainBreak` when quarantined, else NULL.
+/// - `collided` — 1 when `book_id` already existed live/imported at import time.
+/// - `imported_at` — RFC 3339 text.
+/// - `bundle_bytes` — the retained, read-only `.zip` bundle (the isolation vehicle).
+pub const CREATE_IMPORTED_BOOKS: &str = "\
+CREATE TABLE IF NOT EXISTS imported_books (
+    import_id          TEXT PRIMARY KEY,
+    entity_id          TEXT NOT NULL,
+    book_id            TEXT NOT NULL,
+    source_instance_id TEXT NOT NULL,
+    bundle_digest      TEXT NOT NULL,
+    verdict            TEXT NOT NULL,
+    break_json         TEXT,
+    collided           INTEGER NOT NULL,
+    imported_at        TEXT NOT NULL,
+    bundle_bytes       BLOB NOT NULL
+) STRICT;";
+
+/// Index over `imported_books.book_id` — feeds the collision check and the per-book import feed.
+pub const CREATE_IMPORTED_BOOKS_BOOK_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_imported_books_book ON imported_books (book_id);";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -138,4 +180,6 @@ pub const ALL: &[&str] = &[
     CREATE_REGISTRY_EXTRACTS,
     CREATE_DOCUMENTS,
     CREATE_DOCUMENTS_ACT_IDX,
+    CREATE_IMPORTED_BOOKS,
+    CREATE_IMPORTED_BOOKS_BOOK_IDX,
 ];

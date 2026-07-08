@@ -16,6 +16,9 @@ chancela-core = { workspace = true }
 chancela-ledger = { workspace = true }
 chancela-registry = { workspace = true }
 serde = { workspace = true }
+# Stable per-install `instance_id` (bundle provenance) + per-import ids (t54-E2). The workspace
+# already pins uuid with the `v4` feature (used by chancela-core) — features are unified.
+uuid = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 time = { workspace = true }

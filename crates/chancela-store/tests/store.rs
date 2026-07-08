@@ -534,9 +534,10 @@ fn backup_reflects_a_broken_chain_without_failing() {
 // --- documents table (schema v2, t48-e4) --------------------------------------------------------
 
 #[test]
-fn schema_version_is_two() {
-    // The documents table landed as schema v2; a fresh DB is stamped with it.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 2);
+fn schema_version_is_three() {
+    // The documents table landed as schema v2; the `imported_books` isolation namespace (t54-E2)
+    // landed as schema v3. A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 3);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -547,7 +548,7 @@ fn schema_version_is_two() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "2");
+    assert_eq!(stamped, "3");
 }
 
 #[test]
@@ -655,7 +656,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
     // Land some real data at the current version, then simulate a database written by the old v1
     // build: roll the stamp back and drop the table v1 never had.
     {
-        let store = Store::open(dir.path()).expect("open at v2");
+        let store = Store::open(dir.path()).expect("open at current version");
         let mut ledger = Ledger::new();
         let e0 = ledger
             .append("amelia.marques", "entity:e", "entity.created", None, b"e")
@@ -677,9 +678,9 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
         raw.execute("DROP TABLE documents", []).unwrap();
     }
 
-    // Reopening upgrades forward: the additive DDL recreates `documents`, the stamp advances to 2,
-    // and the pre-existing entity row is untouched.
-    let store = Store::open(dir.path()).expect("reopen upgrades v1 -> v2");
+    // Reopening upgrades forward: the additive DDL recreates `documents` (+ `imported_books`), the
+    // stamp advances to the current version, and the pre-existing entity row is untouched.
+    let store = Store::open(dir.path()).expect("reopen upgrades v1 -> current");
     {
         let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
         let stamped: String = raw
@@ -689,7 +690,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "2", "stamp advanced forward");
+        assert_eq!(stamped, "3", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -865,7 +866,11 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
 
     {
         let store = Store::open(dir.path()).expect("open");
-        assert_eq!(stamp(dir.path()), "2", "fresh db stamped at v2");
+        assert_eq!(
+            stamp(dir.path()),
+            "3",
+            "fresh db stamped at current version"
+        );
         let mut ledger = Ledger::new();
 
         let e0 = ledger
@@ -900,7 +905,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         // Store dropped here — the process "restarts". No migration ran; no DDL touched acts.
         assert_eq!(
             stamp(dir.path()),
-            "2",
+            "3",
             "no schema bump after writing G1/G2 acts"
         );
     }
@@ -909,7 +914,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     let store = Store::open(dir.path()).expect("reopen");
     assert_eq!(
         stamp(dir.path()),
-        "2",
+        "3",
         "reopen did not bump the schema version"
     );
     let loaded = store.load().expect("reload");
