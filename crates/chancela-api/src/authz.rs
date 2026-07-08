@@ -278,9 +278,19 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cc/sign", RouteClass::Gated), // POST signing.perform@Book (co-located)
-    ("/v1/acts/{id}/signature", RouteClass::Gated),         // GET act.read@Book
-    ("/v1/acts/{id}/document/signed", RouteClass::Gated),   // GET act.read@Book
-    ("/v1/templates", RouteClass::Gated),                   // GET act.read@Global
+    // Generic provider-parameterized remote signing (t59-s3): CMD + any configured CSC QTSP.
+    (
+        "/v1/acts/{id}/signature/remote/{provider}/initiate",
+        RouteClass::Gated,
+    ), // POST signing.perform@Book
+    (
+        "/v1/acts/{id}/signature/remote/{provider}/confirm",
+        RouteClass::Gated,
+    ), // POST signing.perform@Book
+    ("/v1/signature/providers", RouteClass::Gated), // GET signing.perform@Global (the picker)
+    ("/v1/acts/{id}/signature", RouteClass::Gated), // GET act.read@Book
+    ("/v1/acts/{id}/document/signed", RouteClass::Gated), // GET act.read@Book
+    ("/v1/templates", RouteClass::Gated),           // GET act.read@Global
     // --- Ledger ---------------------------------------------------------------------------------
     ("/v1/ledger/events", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/verify", RouteClass::Gated), // GET ledger.read@Global

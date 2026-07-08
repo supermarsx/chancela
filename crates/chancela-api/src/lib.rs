@@ -75,6 +75,7 @@ use axum::routing::{any, delete, get, patch, post};
 use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
 use chancela_cmd::ScmdTransport;
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
+use chancela_csc::{CscConfig, CscTransport};
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryTransport};
 use chancela_signing::{SignerProvider, SigningError, TrustPolicy};
@@ -280,6 +281,23 @@ pub struct AppState {
     #[allow(clippy::type_complexity)]
     pub cc_provider:
         Option<Arc<dyn Fn() -> Result<Box<dyn SignerProvider>, SigningError> + Send + Sync>>,
+    /// Configured Cloud Signature Consortium (CSC) remote-signing providers (t59-s3): one
+    /// non-secret [`CscConfig`] per external QTSP (Multicert / DigitalSign / …). **Loaded from the
+    /// ENVIRONMENT, never the web-asserted `/v1/settings` document** (drift-safe: adding a CSC
+    /// provider does not change any web-asserted settings fixture). Empty by default → only Chave
+    /// Móvel Digital is offered. The per-provider OAuth secrets live in
+    /// `CHANCELA_CSC_<PROVIDER>_*` env vars (never here); this holds only the non-secret selectors
+    /// (base URL, id, authorization model, sandbox flag) surfaced by `GET /v1/signature/providers`.
+    /// Populated by [`signature::load_csc_providers_from_env`] at construction.
+    pub csc_providers: Arc<Vec<CscConfig>>,
+    /// Test/DI seam (t59-s3): an injected CSC transport factory. `None` in production, where the
+    /// generic remote-signing handlers build a real `chancela_csc::HttpCscTransport` per provider
+    /// and run it off the async runtime (`spawn_blocking`). Tests inject a factory returning a
+    /// `MockCscTransport` so the generic initiate/confirm round-trip runs offline (no live QTSP).
+    /// Mirrors [`Self::cmd_transport`]. Called fresh per request with the resolved provider config.
+    #[allow(clippy::type_complexity)]
+    pub csc_transport:
+        Option<Arc<dyn Fn(&CscConfig) -> Box<dyn CscTransport + Send> + Send + Sync>>,
 }
 
 impl AppState {
@@ -392,6 +410,10 @@ impl AppState {
         // Resolve the CC co-location signal (t58-e2 / CC-B) from the environment the desktop shell
         // set before it spawned this embedded server (t58-e3). Absent (a remote server) ⇒ `false`.
         state.local_signing = signature::local_signing_from_env();
+        // Resolve the configured CSC remote-signing providers from the environment (t59-s3): the
+        // provider LIST + non-secret selectors come from `CHANCELA_CSC_*` env vars, NOT the
+        // web-asserted settings document (drift-safe). Empty when none are configured.
+        state.csc_providers = Arc::new(signature::load_csc_providers_from_env());
         state
     }
 
@@ -560,6 +582,8 @@ impl AppState {
                     roles: seeded,
                     // Honour the CC co-location signal even in the pure in-memory desktop dev path.
                     local_signing: signature::local_signing_from_env(),
+                    // Resolve CSC providers from the environment (t59-s3) even in-memory.
+                    csc_providers: Arc::new(signature::load_csc_providers_from_env()),
                     ..state
                 }
             }
@@ -652,6 +676,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/acts/{id}/signature/cc/sign",
             post(signature::sign_cc_signature),
+        )
+        .route(
+            "/v1/acts/{id}/signature/remote/{provider}/initiate",
+            post(signature::initiate_remote_signature),
+        )
+        .route(
+            "/v1/acts/{id}/signature/remote/{provider}/confirm",
+            post(signature::confirm_remote_signature),
+        )
+        .route(
+            "/v1/signature/providers",
+            get(signature::list_signature_providers),
         )
         .route(
             "/v1/acts/{id}/signature",

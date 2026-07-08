@@ -365,6 +365,7 @@ dependencies = [
  "chancela-cae",
  "chancela-cmd",
  "chancela-core",
+ "chancela-csc",
  "chancela-doc",
  "chancela-ledger",
  "chancela-pades",

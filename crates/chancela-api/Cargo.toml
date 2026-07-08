@@ -20,6 +20,7 @@ chancela-doc = { workspace = true }
 chancela-signing = { workspace = true }
 chancela-pades = { workspace = true }
 chancela-cmd = { workspace = true }
+chancela-csc = { workspace = true }
 chancela-smartcard = { workspace = true }
 chancela-tsl = { workspace = true }
 argon2 = { workspace = true }

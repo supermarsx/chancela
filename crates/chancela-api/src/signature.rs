@@ -44,9 +44,15 @@ use axum::extract::{Path, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use chancela_cmd::{CmdConfig, CmdEnv, HttpScmdTransport, ScmdClient, ScmdTransport};
+use chancela_csc::rest::Authorization as CscAuthHeader;
+use chancela_csc::{
+    CscAuthorization, CscClient, CscConfig, CscError, CscRemoteSource, CscSecrets, CscTransport,
+    HttpCscTransport,
+};
 use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_signature};
 use chancela_signing::{
-    CcSignedPdf, CmdInitiate, CmdSignSession, SignerProvider, SmartcardProvider, TrustPolicy,
+    CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession, RemoteInitiate,
+    RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider, TrustPolicy,
     TrustedListStatus, TslTrustPolicy, cmd_confirm, cmd_initiate, sign_pdf_cc,
 };
 use chancela_smartcard::Pkcs11Token;
@@ -61,7 +67,7 @@ use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use chancela_authz::Permission;
+use chancela_authz::{Permission, Scope};
 use chancela_core::ActId;
 
 use crate::AppState;
@@ -72,6 +78,9 @@ use crate::error::ApiError;
 
 /// The signing family this module produces (v1 is CMD-only; t57 ruling 2).
 const FAMILY_CMD: &str = "ChaveMovelDigital";
+/// The signing family an external CSC-standard QTSP produces (t59 ruling 4:
+/// `SigningFamily::QualifiedCertificate` + a separate `provider_id`, never a per-vendor family).
+const FAMILY_QUALIFIED: &str = "QualifiedCertificate";
 /// The evidentiary level a successful CMD signature carries (SIG-01).
 const EVIDENTIARY_QUALIFIED: &str = "Qualified";
 /// The signed-PDF profile string bound into the `document.signed` event.
@@ -794,6 +803,827 @@ fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiError {
         }
         other => ApiError::Upstream(format!("falha no serviço de assinatura: {other}")),
     }
+}
+
+// =================================================================================================
+// Generic provider-parameterized remote signing (t59-s3): CMD + any configured CSC QTSP behind one
+// `RemoteSigningSource` seam.
+// =================================================================================================
+//
+// t57's `/signature/cmd/*` endpoints (above) stay wired and byte-identical (the committed web
+// consumes them). These provider-generic endpoints add ONE two-phase family that dispatches to a
+// registry of `dyn RemoteSigningSource` — Chave Móvel Digital as the built-in provider `"cmd"`
+// (`CmdRemoteSource`, byte-identical to the façade per t59-s1) plus one `CscRemoteSource` per
+// configured external QTSP (Multicert / DigitalSign / …, provider id = its CSC config id). They
+// reuse t57-S3's pending-session store, `document.signed` event, signed-variant persist, derived
+// `require_qualified_for_seal` status, and TSL gate UNCHANGED — a CSC signature reports the same
+// `SignatureStatusView`/`SignedInfo` shape with `family = "QualifiedCertificate"`, so there is no
+// new web-asserted type and no contract drift.
+//
+// **Secrets (t59 ruling 5):** the signer's transient credential (PIN) / activation (OTP/SAD) are
+// held in `Zeroizing`, consumed by the single call, and dropped — never persisted, logged, or
+// echoed. A CSC provider's OAuth client secret comes from `CHANCELA_CSC_<PROVIDER>_*` env only, and
+// only ever rides the transport's `Authorization` header; it never enters the session, the store,
+// or an error message.
+
+/// The status string a successful generic `initiate` returns (an activation is pending: an OTP was
+/// dispatched, or the signer must authorize out-of-band at the provider).
+const STATUS_ACTIVATION_PENDING: &str = "activation_pending";
+
+// --- request / response DTOs (generic) --------------------------------------------------------
+
+/// Body of `POST /v1/acts/{id}/signature/remote/{provider}/initiate`.
+#[derive(Deserialize)]
+pub struct RemoteInitiateRequest {
+    /// The signer's public account reference at the provider (CMD: the citizen mobile in SCMD
+    /// format `+351 XXXXXXXXX`; a CSC QTSP: the user / credential reference). Non-secret.
+    pub user_ref: String,
+    /// The signer's transient credential / PIN. **Consumed, never persisted/logged.** May be empty
+    /// for a provider that carries no PIN (e.g. a user-OAuth CSC flow where activation is out-of-band).
+    #[serde(default)]
+    pub credential: String,
+    /// The capacity in which the signer acts (optional, informational — mirrors the CMD body).
+    #[serde(default)]
+    pub capacity: Option<String>,
+    /// Actor override for attribution when no session names one.
+    #[serde(default)]
+    pub actor: Option<String>,
+}
+
+/// Response of a successful generic initiate — **carries no secret** (no PIN, no OTP, no token).
+#[derive(Serialize)]
+pub struct RemoteInitiateResponse {
+    /// The opaque pending-session id to submit with the activation at confirm.
+    pub session_id: String,
+    /// The resolved provider id that opened the session (`"cmd"`, `"multicert"`, …).
+    pub provider_id: String,
+    /// The signing family being produced (`ChaveMovelDigital` for CMD; `QualifiedCertificate` for CSC).
+    pub family: String,
+    /// The evidentiary level the produced signature will carry (`Qualified`).
+    pub evidentiary_level: &'static str,
+    /// Always [`STATUS_ACTIVATION_PENDING`] here (the activation has been dispatched / is pending).
+    pub status: &'static str,
+    /// A non-secret hint for the UI (a masked phone for CMD, or how to authorize for a CSC provider).
+    pub activation_hint: String,
+    /// When the pending session expires (RFC 3339).
+    pub expires_at: String,
+}
+
+/// Body of `POST /v1/acts/{id}/signature/remote/{provider}/confirm`.
+#[derive(Deserialize)]
+pub struct RemoteConfirmRequest {
+    /// The pending-session id returned by initiate.
+    pub session_id: String,
+    /// The signer's transient activation credential (the SMS OTP for CMD; the OTP/SAD for a CSC
+    /// QTSP). **Consumed, never persisted/logged.**
+    pub activation: String,
+    /// Actor override for attribution when no session names one.
+    #[serde(default)]
+    pub actor: Option<String>,
+}
+
+/// Response of a successful generic confirm — the **same shape** as the CMD confirm response, plus
+/// the resolved `provider_id`; `family` is a `String` so a CSC signature reports
+/// `"QualifiedCertificate"` without a new web-asserted type.
+#[derive(Serialize)]
+pub struct RemoteConfirmResponse {
+    /// The signed document's source (unsigned) document id.
+    pub document_id: String,
+    /// The owning act id.
+    pub act_id: String,
+    /// The resolved provider id (`"cmd"`, `"multicert"`, …).
+    pub provider_id: String,
+    /// The signing family (`ChaveMovelDigital` | `QualifiedCertificate`).
+    pub family: String,
+    /// The evidentiary level (`Qualified`).
+    pub evidentiary_level: &'static str,
+    /// The signer issuer's trusted-list status at signing time, if a policy was consulted.
+    pub trusted_list_status: Option<String>,
+    /// When the signature completed (RFC 3339).
+    pub signed_at: String,
+    /// Lowercase-hex sha-256 of the signed PDF bytes.
+    pub signed_pdf_digest: String,
+    /// Whether an RFC 3161 signature timestamp is present (B-T); always `false` for B-B.
+    pub timestamp_token: bool,
+    /// The derived finalization status (`finalizado_qualificado`).
+    pub finalization: &'static str,
+}
+
+/// One entry in `GET /v1/signature/providers` — a non-secret picker row (t59 F4).
+#[derive(Serialize)]
+pub struct SignatureProviderView {
+    /// The stable provider id (`"cmd"`, `"multicert"`, …) — the `{provider}` path segment.
+    pub id: String,
+    /// The signing family (`ChaveMovelDigital` | `QualifiedCertificate`).
+    pub family: String,
+    /// A human-readable label for the picker.
+    pub label: String,
+    /// The evidentiary level a signature from this provider carries (`Qualified`).
+    pub evidentiary_level: &'static str,
+    /// Whether the provider is configured (CMD: an ApplicationId resolves; CSC: its
+    /// `CHANCELA_CSC_<PROVIDER>_*` credentials are present). **Never the secret itself.**
+    pub configured: bool,
+}
+
+/// A resolved, configured remote-signing provider (carries its non-secret config).
+enum ResolvedProvider {
+    /// Chave Móvel Digital (the built-in provider `"cmd"`), with its resolved [`CmdConfig`].
+    Cmd(CmdConfig),
+    /// An external CSC-standard QTSP, with its non-secret [`CscConfig`].
+    Csc(CscConfig),
+}
+
+// --- GET /v1/signature/providers --------------------------------------------------------------
+
+/// `GET /v1/signature/providers` — the non-secret provider list for the signing picker (t59 F4).
+///
+/// Lists Chave Móvel Digital (always offered) plus every configured CSC QTSP, with a read-only
+/// `configured` flag; **never** a secret. Gated with `signing.perform` at Global (the same signing
+/// authority the initiate/confirm endpoints require) so a role without signing authority cannot
+/// enumerate the providers.
+pub async fn list_signature_providers(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<SignatureProviderView>>, ApiError> {
+    require_permission(&state, &actor, Permission::SigningPerform, Scope::Global).await?;
+
+    let mut out = Vec::new();
+    // Chave Móvel Digital — always offered; configured when an ApplicationId resolves (env/settings).
+    out.push(SignatureProviderView {
+        id: CMD_PROVIDER_ID.to_owned(),
+        family: FAMILY_CMD.to_owned(),
+        label: "Chave Móvel Digital".to_owned(),
+        evidentiary_level: EVIDENTIARY_QUALIFIED,
+        configured: resolve_cmd_config(&state).await.is_ok(),
+    });
+    // Every configured CSC QTSP. In tests the injected transport seam stands in for real creds.
+    let di = state.csc_transport.is_some();
+    for cfg in state.csc_providers.iter() {
+        out.push(SignatureProviderView {
+            id: cfg.provider_id.clone(),
+            family: FAMILY_QUALIFIED.to_owned(),
+            label: cfg.display_name.clone(),
+            evidentiary_level: EVIDENTIARY_QUALIFIED,
+            configured: di || CscSecrets::is_configured(&cfg.provider_id),
+        });
+    }
+    Ok(Json(out))
+}
+
+// --- generic initiate -------------------------------------------------------------------------
+
+/// `POST /v1/acts/{id}/signature/remote/{provider}/initiate` — phase 1 of a provider-generic
+/// two-phase remote signature (CMD or a CSC QTSP). Mirrors [`initiate_cmd_signature`] but resolves
+/// the provider from the `{provider}` path segment and drives it through `dyn RemoteSigningSource`.
+pub async fn initiate_remote_signature(
+    State(state): State<AppState>,
+    Path((id, provider)): Path<(Uuid, String)>,
+    actor: CurrentActor,
+    Json(req): Json<RemoteInitiateRequest>,
+) -> Result<Json<RemoteInitiateResponse>, ApiError> {
+    // RBAC (t64): a qualified signature is `signing.perform` scoped to the act's book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
+    // Hold the credential (PIN) transiently: consumed by initiate, zeroized on drop. Never stored.
+    let credential = Zeroizing::new(req.credential);
+    let user_ref = req.user_ref.trim().to_string();
+    let act_id = ActId(id);
+
+    // Resolve + configuration-check the provider (422 for unknown / unconfigured / disabled).
+    let resolved = resolve_provider(&state, &provider).await?;
+
+    // CMD: reject an obviously-wrong phone early (the SCMD service is authoritative otherwise).
+    if matches!(resolved, ResolvedProvider::Cmd(_)) && !looks_like_scmd_phone(&user_ref) {
+        return Err(ApiError::Unprocessable(
+            "número de telemóvel inválido para a Chave Móvel Digital (formato +351 XXXXXXXXX)"
+                .to_owned(),
+        ));
+    }
+
+    // Resolve the act's sealed unsigned document, refusing a not-sealed act (signing is post-seal).
+    {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        if act.ata_number.is_none() {
+            return Err(ApiError::Conflict(
+                "o ato ainda não foi selado; a assinatura qualificada é um passo posterior ao selo"
+                    .to_owned(),
+            ));
+        }
+    }
+    let unsigned = crate::documents::load_document(&state, act_id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
+        })?;
+
+    // One qualified artifact per act (whether produced by CMD, CC, or a CSC QTSP).
+    if load_signed(&state, act_id).await?.is_some() {
+        return Err(ApiError::Conflict(
+            "o ato já tem uma assinatura qualificada".to_owned(),
+        ));
+    }
+
+    let tsl_url = { state.settings.read().await.signing.tsl_url.clone() };
+
+    // Prepare the PAdES incremental update (fixed whole-second signing time, carried into confirm).
+    let signing_time = OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let reason = match req
+        .capacity
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+    {
+        Some(capacity) => format!("Assinatura qualificada da ata ({capacity})"),
+        None => "Assinatura qualificada da ata".to_owned(),
+    };
+    let opts = SignOptions {
+        field_name: Some("Assinatura".to_owned()),
+        signing_time: Some(pdf_time(signing_time)),
+        reason: Some(reason),
+        location: None,
+        contact_info: None,
+    };
+    let prepared = prepare_signature(&unsigned.pdf_bytes, &opts).map_err(|e| {
+        ApiError::Unprocessable(format!(
+            "não foi possível preparar o PDF para assinatura: {e}"
+        ))
+    })?;
+
+    let doc_name = format!("ata-{}.pdf", act_id);
+    // The non-secret display hint (a masked phone for CMD; how to authorize for a CSC provider).
+    let activation_hint = match &resolved {
+        ResolvedProvider::Cmd(_) => mask_phone(&user_ref),
+        ResolvedProvider::Csc(cfg) => match cfg.authorization {
+            CscAuthorization::User => "autorize a assinatura na aplicação do prestador".to_owned(),
+            _ => "confirme com o código de ativação enviado".to_owned(),
+        },
+    };
+
+    // Drive the provider's phase-1 (authenticate → cert → TSL gate → dispatch activation).
+    let session = run_remote_initiate(
+        &state,
+        &resolved,
+        user_ref,
+        credential,
+        doc_name.clone(),
+        signing_time,
+        prepared.clone(),
+        tsl_url,
+    )
+    .await?;
+
+    // Persist the non-secret pending session (durable + in-memory) so confirm survives the two
+    // requests and a restart. The session blob is the serde `RemoteSignSession` (never a secret).
+    let session_id = Uuid::new_v4().to_string();
+    let expires_at = signing_time + time::Duration::seconds(SESSION_TTL_SECS);
+    let provider_id = session.provider_id.clone();
+    let family = family_label(&provider_id).to_owned();
+    let pending = PendingCmdSession {
+        session_id: session_id.clone(),
+        act_id,
+        actor,
+        status: STATUS_ACTIVATION_PENDING.to_owned(),
+        masked_phone: activation_hint.clone(),
+        doc_name,
+        session_json: serde_json::to_string(&session)?,
+        prepared_json: serde_json::to_string(&prepared)?,
+        created_at: signing_time,
+        expires_at,
+    };
+    if let Some(store) = &state.store {
+        store
+            .persist(|tx| tx.upsert_pending_cmd_session(&pending))
+            .map_err(|e| ApiError::Internal(format!("failed to persist pending session: {e}")))?;
+    }
+    state
+        .pending_signatures
+        .write()
+        .await
+        .insert(session_id.clone(), pending);
+
+    Ok(Json(RemoteInitiateResponse {
+        session_id,
+        provider_id,
+        family,
+        evidentiary_level: EVIDENTIARY_QUALIFIED,
+        status: STATUS_ACTIVATION_PENDING,
+        activation_hint,
+        expires_at: rfc3339(expires_at),
+    }))
+}
+
+// --- generic confirm --------------------------------------------------------------------------
+
+/// `POST /v1/acts/{id}/signature/remote/{provider}/confirm` — phase 2 of a provider-generic remote
+/// signature. Mirrors [`confirm_cmd_signature`] but routes the confirm back to the provider that
+/// opened the session (via `session.provider_id`) through `dyn RemoteSigningSource`, and reuses
+/// t57-S3's signed-variant store + `document.signed` event + status enforcement UNCHANGED.
+pub async fn confirm_remote_signature(
+    State(state): State<AppState>,
+    Path((id, _provider)): Path<(Uuid, String)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<RemoteConfirmRequest>,
+) -> Result<Json<RemoteConfirmResponse>, ApiError> {
+    // RBAC (t64): confirming a qualified signature is `signing.perform` scoped to the act's book.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
+    // The activation (OTP/SAD) is transient: consumed by confirm, zeroized on drop. Never stored.
+    let activation = Zeroizing::new(req.activation);
+    let act_id = ActId(id);
+
+    let pending = load_pending(&state, &req.session_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    // Session safety: single-use, act-scoped, gated to the initiating actor, TTL-bounded.
+    if pending.act_id != act_id {
+        return Err(ApiError::Conflict(
+            "a sessão de assinatura não pertence a este ato".to_owned(),
+        ));
+    }
+    if pending.actor != actor {
+        return Err(ApiError::Forbidden(
+            "apenas quem iniciou a assinatura a pode confirmar".to_owned(),
+        ));
+    }
+    if OffsetDateTime::now_utc() >= pending.expires_at {
+        consume_pending(&state, &pending.session_id).await;
+        return Err(ApiError::Gone(
+            "a sessão de assinatura expirou; reinicie a assinatura".to_owned(),
+        ));
+    }
+
+    // The generic pending session persists a `RemoteSignSession` (not a `CmdSignSession`).
+    let session: RemoteSignSession = serde_json::from_str(&pending.session_json)
+        .map_err(|e| ApiError::Internal(format!("corrupt pending session: {e}")))?;
+    let prepared: PreparedSignature = serde_json::from_str(&pending.prepared_json)
+        .map_err(|e| ApiError::Internal(format!("corrupt prepared signature: {e}")))?;
+
+    // Route the confirm back to the provider that opened the session (never client-asserted).
+    let resolved = resolve_provider(&state, &session.provider_id).await?;
+    let provider_id = session.provider_id.clone();
+    let family = family_label(&provider_id);
+
+    // Submit the activation → detached CAdES-B CMS. The activation is consumed here.
+    let cms = run_remote_confirm(&state, &resolved, &session, activation).await?;
+
+    // Embed the CMS into the reserved placeholder → the final signed PDF.
+    let signed_pdf = embed_signature(&prepared, &cms)
+        .map_err(|e| ApiError::Internal(format!("failed to embed the CMS signature: {e}")))?;
+
+    // Validate the produced PDF (SIG-24): ByteRange covers the whole file, and the embedded signer
+    // certificate matches the session's leaf (no substitution across providers).
+    let report = chancela_pades::validate_pdf_signature(&signed_pdf)
+        .map_err(|e| ApiError::Internal(format!("signed PDF failed validation: {e}")))?;
+    if !report.covers_whole_file_except_contents {
+        return Err(ApiError::Internal(
+            "signed PDF ByteRange does not cover the whole file".to_owned(),
+        ));
+    }
+    if report.cades.signer_cert_der != session.signing_cert_der {
+        return Err(ApiError::Internal(
+            "signed PDF signer certificate does not match the pending session".to_owned(),
+        ));
+    }
+
+    // Resolve the ledger scope from the live act (re-checking presence).
+    let scope = {
+        let entities = state.entities.read().await;
+        let books = state.books.read().await;
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+        let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+        format!("entity:{}/book:{}/act:{}", entity.id, act.book_id, act.id)
+    };
+
+    let digest: [u8; 32] = Sha256::digest(&signed_pdf).into();
+    let signed_pdf_digest = crate::hex::hex(&digest);
+    let signed_at = OffsetDateTime::now_utc();
+    let trusted_list_status = session.trusted_list_status.map(status_label);
+    let document_id = crate::documents::load_document(&state, act_id)
+        .await?
+        .map(|d| d.id)
+        .unwrap_or_default();
+    // Reuse t57-S3's family-agnostic signed-document store row unchanged.
+    let stored = StoredSignedDocument {
+        act_id,
+        document_id: document_id.clone(),
+        signed_pdf_digest: signed_pdf_digest.clone(),
+        signature_family: family.to_owned(),
+        evidentiary_level: EVIDENTIARY_QUALIFIED.to_owned(),
+        trusted_list_status: trusted_list_status.clone(),
+        signer_cert_subject: subject_dn(&session.signing_cert_der),
+        signing_time: session.signing_time,
+        signed_at,
+        signer_cert_der: session.signing_cert_der.clone(),
+        timestamp_token_der: None,
+        signed_pdf_bytes: signed_pdf,
+    };
+
+    // Persist the signed variant + a chained `document.signed` event, and consume the pending
+    // session — one durable commit, the SAME event/store path CMD/CC use (t57-S3). The event
+    // records the resolved `provider_id` for provenance (additive, not a web-asserted field).
+    let event_payload = json!({
+        "act_id": act_id.to_string(),
+        "document_id": document_id,
+        "signed_pdf_digest": signed_pdf_digest,
+        "family": family,
+        "provider_id": provider_id,
+        "evidentiary_level": EVIDENTIARY_QUALIFIED,
+        "trusted_list_status": trusted_list_status,
+        "profile": PADES_PROFILE,
+    });
+    let payload = serde_json::to_vec(&event_payload)?;
+    let session_id = pending.session_id.clone();
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &scope,
+            "document.signed",
+            None,
+            &payload,
+        )?;
+        state.persist_write_through(&mut ledger, 1, |tx| {
+            tx.upsert_signed_document(&stored)?;
+            tx.delete_pending_cmd_session(&session_id)
+        })?;
+        state.attest_latest(&attestor, &ledger).await;
+    }
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(act_id, stored.clone());
+    state.pending_signatures.write().await.remove(&session_id);
+
+    Ok(Json(RemoteConfirmResponse {
+        document_id,
+        act_id: act_id.to_string(),
+        provider_id,
+        family: family.to_owned(),
+        evidentiary_level: EVIDENTIARY_QUALIFIED,
+        trusted_list_status,
+        signed_at: rfc3339(signed_at),
+        signed_pdf_digest,
+        timestamp_token: report.has_signature_timestamp,
+        finalization: "finalizado_qualificado",
+    }))
+}
+
+// --- provider registry + generic drivers ------------------------------------------------------
+
+/// Resolve a `{provider}` id to a configured [`ResolvedProvider`], or a client-actionable 422 when
+/// the provider is unknown or not configured/enabled (t59 F4). CMD is the built-in provider `"cmd"`;
+/// every other id must match a configured CSC provider with credentials present.
+async fn resolve_provider(
+    state: &AppState,
+    provider_id: &str,
+) -> Result<ResolvedProvider, ApiError> {
+    if provider_id == CMD_PROVIDER_ID {
+        // A missing ApplicationId / a prod config without the AMA cert is a 422 (never a 500).
+        let cfg = resolve_cmd_config(state).await?;
+        return Ok(ResolvedProvider::Cmd(cfg));
+    }
+    let cfg = state
+        .csc_providers
+        .iter()
+        .find(|c| c.provider_id == provider_id)
+        .cloned()
+        .ok_or_else(|| {
+            ApiError::Unprocessable(format!(
+                "prestador de assinatura desconhecido: '{provider_id}'"
+            ))
+        })?;
+    // Configured? The injected transport seam stands in for real creds in tests; else env secrets.
+    let configured = state.csc_transport.is_some() || CscSecrets::is_configured(&cfg.provider_id);
+    if !configured {
+        return Err(ApiError::Unprocessable(format!(
+            "o prestador '{provider_id}' não está configurado (faltam as credenciais no ambiente)"
+        )));
+    }
+    Ok(ResolvedProvider::Csc(cfg))
+}
+
+/// The signing-family label for a resolved provider id (CMD → `ChaveMovelDigital`; any CSC QTSP →
+/// `QualifiedCertificate`).
+fn family_label(provider_id: &str) -> &'static str {
+    if provider_id == CMD_PROVIDER_ID {
+        FAMILY_CMD
+    } else {
+        FAMILY_QUALIFIED
+    }
+}
+
+/// Phase-1 driver: build the resolved provider's [`RemoteSigningSource`] and run `initiate` — inline
+/// over an injected mock transport (tests, no network), or on `spawn_blocking` over a real HTTP
+/// transport (production; the SCMD/CSC/TSL calls block and must not stall the async runtime).
+#[allow(clippy::too_many_arguments)]
+async fn run_remote_initiate(
+    state: &AppState,
+    resolved: &ResolvedProvider,
+    user_ref: String,
+    credential: Zeroizing<String>,
+    doc_name: String,
+    signing_time: OffsetDateTime,
+    prepared: PreparedSignature,
+    tsl_url: Option<String>,
+) -> Result<RemoteSignSession, ApiError> {
+    let policy_factory = state.cmd_trust_policy.clone();
+    match resolved {
+        ResolvedProvider::Cmd(cmd_cfg) => {
+            if let Some(transport) = &state.cmd_transport {
+                let client =
+                    ScmdClient::from_config(SharedScmdTransport(transport.clone()), cmd_cfg)
+                        .map_err(cmd_config_err)?;
+                let source = CmdRemoteSource::new(client);
+                let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+                let init = RemoteInitiate {
+                    user_ref: &user_ref,
+                    credential: &credential,
+                    doc_name: &doc_name,
+                    signing_time,
+                };
+                source
+                    .initiate(&init, &prepared, Some(policy.as_mut()))
+                    .map_err(map_remote_error)
+            } else {
+                let cmd_cfg = cmd_cfg.clone();
+                tokio::task::spawn_blocking(move || {
+                    let transport =
+                        HttpScmdTransport::from_config(&cmd_cfg).map_err(cmd_config_err)?;
+                    let client =
+                        ScmdClient::from_config(transport, &cmd_cfg).map_err(cmd_config_err)?;
+                    let source = CmdRemoteSource::new(client);
+                    let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+                    let init = RemoteInitiate {
+                        user_ref: &user_ref,
+                        credential: &credential,
+                        doc_name: &doc_name,
+                        signing_time,
+                    };
+                    source
+                        .initiate(&init, &prepared, Some(policy.as_mut()))
+                        .map_err(map_remote_error)
+                })
+                .await
+                .map_err(|e| ApiError::Internal(format!("remote initiate task failed: {e}")))?
+            }
+        }
+        ResolvedProvider::Csc(config) => {
+            if let Some(factory) = &state.csc_transport {
+                let client = CscClient::new(
+                    BoxedCscTransport(factory(config)),
+                    config.clone(),
+                    di_secrets(),
+                );
+                let source = CscRemoteSource::new(client);
+                let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+                let init = RemoteInitiate {
+                    user_ref: &user_ref,
+                    credential: &credential,
+                    doc_name: &doc_name,
+                    signing_time,
+                };
+                source
+                    .initiate(&init, &prepared, Some(policy.as_mut()))
+                    .map_err(map_remote_error)
+            } else {
+                // Production: env secrets (never persisted), real HTTP transport off the runtime.
+                let secrets = CscSecrets::from_env(&config.provider_id).map_err(csc_config_err)?;
+                let config = config.clone();
+                tokio::task::spawn_blocking(move || {
+                    let transport =
+                        HttpCscTransport::new(&config.base_url).map_err(csc_config_err)?;
+                    let client = CscClient::new(transport, config, secrets);
+                    let source = CscRemoteSource::new(client);
+                    let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+                    let init = RemoteInitiate {
+                        user_ref: &user_ref,
+                        credential: &credential,
+                        doc_name: &doc_name,
+                        signing_time,
+                    };
+                    source
+                        .initiate(&init, &prepared, Some(policy.as_mut()))
+                        .map_err(map_remote_error)
+                })
+                .await
+                .map_err(|e| ApiError::Internal(format!("remote initiate task failed: {e}")))?
+            }
+        }
+    }
+}
+
+/// Phase-2 driver: build the resolved provider's [`RemoteSigningSource`] and run `confirm` — inline
+/// over an injected mock transport (tests), or on `spawn_blocking` over a real HTTP transport
+/// (production).
+async fn run_remote_confirm(
+    state: &AppState,
+    resolved: &ResolvedProvider,
+    session: &RemoteSignSession,
+    activation: Zeroizing<String>,
+) -> Result<Vec<u8>, ApiError> {
+    match resolved {
+        ResolvedProvider::Cmd(cmd_cfg) => {
+            if let Some(transport) = &state.cmd_transport {
+                let client =
+                    ScmdClient::from_config(SharedScmdTransport(transport.clone()), cmd_cfg)
+                        .map_err(cmd_config_err)?;
+                let source = CmdRemoteSource::new(client);
+                source
+                    .confirm(session, &activation)
+                    .map_err(map_remote_error)
+            } else {
+                let cmd_cfg = cmd_cfg.clone();
+                let session = session.clone();
+                tokio::task::spawn_blocking(move || {
+                    let transport =
+                        HttpScmdTransport::from_config(&cmd_cfg).map_err(cmd_config_err)?;
+                    let client =
+                        ScmdClient::from_config(transport, &cmd_cfg).map_err(cmd_config_err)?;
+                    let source = CmdRemoteSource::new(client);
+                    source
+                        .confirm(&session, &activation)
+                        .map_err(map_remote_error)
+                })
+                .await
+                .map_err(|e| ApiError::Internal(format!("remote confirm task failed: {e}")))?
+            }
+        }
+        ResolvedProvider::Csc(config) => {
+            if let Some(factory) = &state.csc_transport {
+                let client = CscClient::new(
+                    BoxedCscTransport(factory(config)),
+                    config.clone(),
+                    di_secrets(),
+                );
+                let source = CscRemoteSource::new(client);
+                source
+                    .confirm(session, &activation)
+                    .map_err(map_remote_error)
+            } else {
+                let secrets = CscSecrets::from_env(&config.provider_id).map_err(csc_config_err)?;
+                let config = config.clone();
+                let session = session.clone();
+                tokio::task::spawn_blocking(move || {
+                    let transport =
+                        HttpCscTransport::new(&config.base_url).map_err(csc_config_err)?;
+                    let client = CscClient::new(transport, config, secrets);
+                    let source = CscRemoteSource::new(client);
+                    source
+                        .confirm(&session, &activation)
+                        .map_err(map_remote_error)
+                })
+                .await
+                .map_err(|e| ApiError::Internal(format!("remote confirm task failed: {e}")))?
+            }
+        }
+    }
+}
+
+/// A local newtype so an injected boxed `dyn CscTransport` can be handed to [`CscClient`] (which
+/// needs a concrete `T: CscTransport`). Delegates every call. Mirrors [`SharedScmdTransport`].
+struct BoxedCscTransport(Box<dyn CscTransport + Send>);
+
+impl CscTransport for BoxedCscTransport {
+    fn post_json(
+        &self,
+        path: &str,
+        auth: CscAuthHeader<'_>,
+        body: &str,
+    ) -> Result<String, CscError> {
+        self.0.post_json(path, auth, body)
+    }
+}
+
+/// Placeholder CSC secrets used ONLY when the DI transport seam is injected (tests): a
+/// [`MockCscTransport`](chancela_csc::MockCscTransport) ignores the client secret (it never reaches
+/// a real endpoint), so no real credential is needed to exercise the handler flow. Production loads
+/// the real secrets from `CHANCELA_CSC_<PROVIDER>_*` env vars via [`CscSecrets::from_env`].
+fn di_secrets() -> CscSecrets {
+    CscSecrets::new("chancela-di-client", "chancela-di-secret")
+}
+
+/// A CSC configuration/transport failure is a client-actionable 422, never echoing a secret.
+fn csc_config_err(e: CscError) -> ApiError {
+    ApiError::Unprocessable(format!(
+        "configuração do prestador de assinatura inválida: {e}"
+    ))
+}
+
+/// Map a [`chancela_signing::SigningError`] from a **generic** remote provider (CMD or a CSC QTSP)
+/// to an [`ApiError`], never echoing a secret. A provider rejection (wrong OTP/SAD, service refusal)
+/// is a clean 422; an untrusted issuer / missing issuer is a client-actionable 422; a CMS/PDF
+/// assembly fault is a 500.
+fn map_remote_error(e: chancela_signing::SigningError) -> ApiError {
+    use chancela_signing::SigningError as S;
+    match e {
+        S::UntrustedService { status } => ApiError::Unprocessable(format!(
+            "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
+            status_label(status)
+        )),
+        S::MissingIssuerCertificate => ApiError::Unprocessable(
+            "não foi possível resolver o emissor do certificado do signatário".to_owned(),
+        ),
+        S::Provider(msg) => {
+            ApiError::Unprocessable(format!("o prestador de assinatura recusou o pedido: {msg}"))
+        }
+        S::Cades(msg) | S::Pades(msg) => {
+            ApiError::Internal(format!("falha ao montar a assinatura: {msg}"))
+        }
+        other => ApiError::Upstream(format!("falha no serviço de assinatura: {other}")),
+    }
+}
+
+/// Load the configured CSC remote-signing providers from the environment (t59-s3 / drift-safe env
+/// config shape). The provider LIST + non-secret selectors come from `CHANCELA_CSC_*` env vars —
+/// **never** the web-asserted `/v1/settings` document — so adding a provider never drifts a web
+/// contract fixture. Secrets stay in `CHANCELA_CSC_<PROVIDER>_{CLIENT_ID,CLIENT_SECRET,ACCESS_TOKEN}`
+/// (loaded separately by [`CscSecrets::from_env`]), never here.
+///
+/// Env shape (`<P>` = the upper-cased, non-alphanumeric-sanitized provider id):
+/// - `CHANCELA_CSC_PROVIDERS` — comma/space/`;`-separated provider ids to enable (unset → none).
+/// - `CHANCELA_CSC_<P>_BASE_URL` — the provider's CSC v2 base URL (**required**; a provider missing
+///   it, or failing [`CscConfig::validate`], is skipped with a warning).
+/// - `CHANCELA_CSC_<P>_DISPLAY_NAME` — the UI picker label (default: the provider id).
+/// - `CHANCELA_CSC_<P>_AUTHORIZATION` — `service` (default) | `user`.
+/// - `CHANCELA_CSC_<P>_SANDBOX` — truthy/falsey (default `true`).
+/// - `CHANCELA_CSC_<P>_CREDENTIAL_ID` — a pre-selected credential id (optional).
+/// - `CHANCELA_CSC_<P>_SCOPE` — the OAuth2 scope (default `service`).
+pub(crate) fn load_csc_providers_from_env() -> Vec<CscConfig> {
+    let list = match std::env::var("CHANCELA_CSC_PROVIDERS") {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for id in list
+        .split([',', ' ', ';'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let prefix = csc_env_prefix(id);
+        let var = |suffix: &str| -> Option<String> {
+            std::env::var(format!("{prefix}_{suffix}"))
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+        };
+        let Some(base_url) = var("BASE_URL") else {
+            eprintln!("chancela-csc: provider '{id}' has no {prefix}_BASE_URL; skipping");
+            continue;
+        };
+        let authorization = var("AUTHORIZATION")
+            .and_then(|s| CscAuthorization::parse(s.trim()).ok())
+            .unwrap_or(CscAuthorization::Service);
+        let sandbox = var("SANDBOX")
+            .map(|s| {
+                !matches!(
+                    s.trim().to_ascii_lowercase().as_str(),
+                    "0" | "false" | "off" | "no"
+                )
+            })
+            .unwrap_or(true);
+        let cfg = CscConfig {
+            provider_id: id.to_owned(),
+            display_name: var("DISPLAY_NAME").unwrap_or_else(|| id.to_owned()),
+            base_url,
+            authorization,
+            sandbox,
+            credential_id: var("CREDENTIAL_ID"),
+            scope: var("SCOPE").unwrap_or_else(|| chancela_csc::DEFAULT_SCOPE.to_owned()),
+        };
+        if let Err(e) = cfg.validate() {
+            eprintln!("chancela-csc: provider '{id}' config invalid ({e}); skipping");
+            continue;
+        }
+        out.push(cfg);
+    }
+    out
+}
+
+/// The `CHANCELA_CSC_<PROVIDER>` env-var prefix for a provider id (upper-cased; non-alphanumeric →
+/// `_`). Kept in sync with `chancela_csc::CscConfig::env_prefix` (a small duplication so the api need
+/// not construct a config just to read the prefix).
+fn csc_env_prefix(provider_id: &str) -> String {
+    let sanitized: String = provider_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("CHANCELA_CSC_{sanitized}")
 }
 
 // --- status / read ----------------------------------------------------------------------------
