@@ -11,24 +11,20 @@
 //! reason a purpose-built writer wins over typst/printpdf. e3 proves it with a generate→sign
 //! round-trip.
 //!
-//! **Status: seam + signature only.** The real writer (layout, fonts, OutputIntent, XMP,
-//! self-check) is **t48-e2**; the bundled OFL/SIL serif asset under `assets/fonts/` is **t48-e2a**.
-//! [`pdfa::write`]'s body is `todo!()`.
+//! **Implemented by t48-e2 / e2a.** The writer lowers the model through a bounded layout engine
+//! (`layout`), embeds the bundled Noto Serif face (`font`, `assets/fonts/`) as a Type0 / Identity-H
+//! font with a `/ToUnicode` CMap, attaches the sRGB OutputIntent (`assets/icc/`) and the XMP
+//! metadata packet (`xmp`), forces a classic cross-reference table, and structurally self-verifies
+//! (`selfcheck`) — all deterministically (no clock/RNG), so the same model reproduces identical
+//! bytes and a stable `pdf_digest`.
 
-/// The PDF/A-2u writer. Takes the PDF-agnostic [`chancela_core::DocumentModel`] and emits the
-/// conformant bytes.
-pub mod pdfa {
-    use super::DocError;
-    use chancela_core::DocumentModel;
-
-    /// Write `doc` as PDF/A-2u bytes: classic-xref, no AcroForm, all fonts embedded with
-    /// ToUnicode, sRGB OutputIntent + XMP part/conformance markers, structurally self-verified.
-    /// The output is the exact byte-shape `chancela-pades` accepts. **Implemented by t48-e2.**
-    pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
-        let _ = doc;
-        todo!("t48-e2: lay out DocumentModel → PDF/A-2u bytes (classic xref, embedded fonts, XMP)")
-    }
-}
+mod font;
+mod layout;
+pub mod pdfa;
+mod selfcheck;
+#[cfg(test)]
+mod tests;
+mod xmp;
 
 /// Errors from generating a PDF/A document.
 #[derive(Debug, thiserror::Error)]
