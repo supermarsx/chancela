@@ -23,7 +23,7 @@
     "test": "npm run test:rust && npm run test:web",
     "test:rust": "cargo test --workspace --locked",
     "test:web": "npm run test --workspace apps/web",
-    "test:validator-corpus": "node scripts/validate-validator-corpus.mjs",
+    "test:validator-corpus": "node scripts/validate-validator-corpus.mjs && node --test scripts/validator-corpus-sidecar.test.mjs",
     "test:e2e": "cargo test -p chancela-server --features e2e --locked",
     "test:browser": "npm run test:browser --workspace apps/web",
     "test:desktop:rust": "npm run test:rust --prefix apps/desktop",
