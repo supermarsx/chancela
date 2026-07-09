@@ -228,21 +228,21 @@ const STANDALONE_SECTIONS: readonly SettingsSection[] = [
  */
 const AUTOSAVE_ENABLED = true;
 
-const ENTITY_COLUMN_LABELS: Record<RegisteredEntityColumn, string> = {
-  Name: 'Denominação',
-  Nipc: 'NIPC',
-  Seat: 'Sede',
-  Type: 'Tipo',
-  Matricula: 'Matrícula',
-  Constitution: 'Constituição',
-  Capital: 'Capital',
-  Cae: 'CAE',
-  Registry: 'Registo',
-  LastRegistryChange: 'Últ. registo',
-  FiscalYearEnd: 'Fecho fiscal',
-  LastBook: 'Último livro',
-  LastActivity: 'Última atividade',
-  Actions: 'Actions',
+const ENTITY_COLUMN_LABEL_KEYS: Record<RegisteredEntityColumn, MessageKey> = {
+  Name: 'entities.columns.name',
+  Nipc: 'entities.columns.nipc',
+  Seat: 'entities.columns.seat',
+  Type: 'entities.columns.type',
+  Matricula: 'entities.columns.matricula',
+  Constitution: 'entities.columns.constitution',
+  Capital: 'entities.columns.capital',
+  Cae: 'entities.columns.cae',
+  Registry: 'entities.columns.registry',
+  LastRegistryChange: 'entities.columns.lastRegistryChange',
+  FiscalYearEnd: 'entities.columns.fiscalYearEnd',
+  LastBook: 'entities.columns.lastBook',
+  LastActivity: 'entities.columns.lastActivity',
+  Actions: 'entities.columns.actions',
 };
 
 const isSettingsSection = (v: string | null): v is SettingsSection =>
@@ -766,20 +766,18 @@ export function SettingsPage() {
                 value={draft.registry_auto_update}
                 onChange={setRegistryAutoUpdate}
               />
-              <Card title="Tabela de entidades">
+              <Card title={t('settings.entityTable.title')}>
                 <div className="form">
-                  <p className="field__hint">
-                    Escolha as colunas visíveis na lista de entidades registadas.
-                  </p>
+                  <p className="field__hint">{t('settings.entityTable.hint')}</p>
                   <div
                     className="checkbox-grid"
                     role="group"
-                    aria-label="Colunas da tabela de entidades"
+                    aria-label={t('settings.entityTable.columns.aria')}
                   >
                     {REGISTERED_ENTITY_COLUMNS.map((column) => (
                       <Toggle
                         key={column}
-                        label={ENTITY_COLUMN_LABELS[column]}
+                        label={t(ENTITY_COLUMN_LABEL_KEYS[column])}
                         checked={draft.ui.registered_entity_columns.includes(column)}
                         onChange={(checked) => toggleEntityColumn(column, checked)}
                       />

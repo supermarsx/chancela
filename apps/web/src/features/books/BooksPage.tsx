@@ -7,7 +7,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { useBooks } from '../../api/hooks';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
 import { BOOK_KINDS, type BookKind, type BookState, type BookView } from '../../api/types';
-import { useT } from '../../i18n';
+import { useT, type MessageKey } from '../../i18n';
 import {
   Badge,
   Button,
@@ -28,24 +28,24 @@ type BookStateFilter = 'all' | BookState;
 type BookKindFilter = 'all' | BookKind;
 type AdvancedFilter = 'all' | 'has-acts' | 'no-acts' | 'successor' | 'origin';
 
-const STATE_FILTER_OPTIONS: { value: BookStateFilter; label: string }[] = [
-  { value: 'all', label: 'Todos os estados' },
+const STATE_FILTER_OPTIONS: { value: BookStateFilter; labelKey?: MessageKey; label?: string }[] = [
+  { value: 'all', labelKey: 'books.filters.state.all' },
   { value: 'Open', label: bookStateLabels.Open },
   { value: 'Created', label: bookStateLabels.Created },
   { value: 'Closed', label: bookStateLabels.Closed },
 ];
 
-const KIND_FILTER_OPTIONS: { value: BookKindFilter; label: string }[] = [
-  { value: 'all', label: 'Todos os tipos' },
+const KIND_FILTER_OPTIONS: { value: BookKindFilter; labelKey?: MessageKey; label?: string }[] = [
+  { value: 'all', labelKey: 'books.filters.kind.all' },
   ...BOOK_KINDS.map((value) => ({ value, label: bookKindLabels[value] })),
 ];
 
-const ADVANCED_FILTER_OPTIONS: { value: AdvancedFilter; label: string }[] = [
-  { value: 'all', label: 'Qualquer atividade' },
-  { value: 'has-acts', label: 'Com atas' },
-  { value: 'no-acts', label: 'Sem atas' },
-  { value: 'successor', label: 'Reiniciado / sucessor' },
-  { value: 'origin', label: 'Livro inicial' },
+const ADVANCED_FILTER_OPTIONS: { value: AdvancedFilter; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: 'books.filters.activity.all' },
+  { value: 'has-acts', labelKey: 'books.filters.activity.hasActs' },
+  { value: 'no-acts', labelKey: 'books.filters.activity.noActs' },
+  { value: 'successor', labelKey: 'books.filters.activity.successor' },
+  { value: 'origin', labelKey: 'books.filters.activity.origin' },
 ];
 
 function normalizeSearch(value: string): string {
@@ -126,6 +126,19 @@ export function BooksPage() {
     setOpenedTo('');
   }
 
+  const stateFilterOptions = STATE_FILTER_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.labelKey ? t(option.labelKey) : (option.label ?? ''),
+  }));
+  const kindFilterOptions = KIND_FILTER_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.labelKey ? t(option.labelKey) : (option.label ?? ''),
+  }));
+  const advancedFilterOptions = ADVANCED_FILTER_OPTIONS.map((option) => ({
+    value: option.value,
+    label: t(option.labelKey),
+  }));
+
   return (
     <div className="stack">
       <PageHeader
@@ -147,9 +160,14 @@ export function BooksPage() {
         title={t('books.allBooks')}
         actions={
           books.data && books.data.length > 0 ? (
-            <span aria-label={`A mostrar ${visibleBooks.length} de ${books.data.length} livros`}>
+            <span
+              aria-label={t('books.filters.count.aria', {
+                shown: visibleBooks.length,
+                total: books.data.length,
+              })}
+            >
               <Badge>
-                {visibleBooks.length} de {books.data.length}
+                {t('books.filters.count', { shown: visibleBooks.length, total: books.data.length })}
               </Badge>
             </span>
           ) : null
@@ -166,32 +184,32 @@ export function BooksPage() {
             <div
               className="row-wrap filter"
               role="search"
-              aria-label="Pesquisar e filtrar livros"
+              aria-label={t('books.filters.aria')}
               style={{ alignItems: 'flex-end' }}
             >
-              <Field label="Pesquisar" htmlFor="books-search">
+              <Field label={t('books.filters.search.label')} htmlFor="books-search">
                 <Input
                   id="books-search"
                   type="search"
                   value={search}
-                  placeholder="Finalidade, entidade, identificador, data ou signatário"
+                  placeholder={t('books.filters.search.placeholder')}
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </Field>
-              <Field label="Estado" htmlFor="books-state-filter">
+              <Field label={t('books.filters.state.label')} htmlFor="books-state-filter">
                 <Select
                   id="books-state-filter"
                   value={stateFilter}
                   onChange={(e) => setStateFilter(e.target.value as BookStateFilter)}
-                  options={STATE_FILTER_OPTIONS}
+                  options={stateFilterOptions}
                 />
               </Field>
-              <Field label="Tipo" htmlFor="books-kind-filter">
+              <Field label={t('books.filters.kind.label')} htmlFor="books-kind-filter">
                 <Select
                   id="books-kind-filter"
                   value={kindFilter}
                   onChange={(e) => setKindFilter(e.target.value as BookKindFilter)}
-                  options={KIND_FILTER_OPTIONS}
+                  options={kindFilterOptions}
                 />
               </Field>
               <Button
@@ -199,25 +217,25 @@ export function BooksPage() {
                 variant="ghost"
                 icon={<Icon.Close />}
                 disabled={!hasFilters}
-                aria-label="Limpar filtros de livros"
+                aria-label={t('books.filters.clear.aria')}
                 onClick={clearFilters}
               >
-                Limpar
+                {t('books.filters.clear')}
               </Button>
             </div>
 
             <details className="filter-advanced">
-              <summary>Filtros avançados</summary>
+              <summary>{t('books.filters.advanced')}</summary>
               <div className="row-wrap filter filter-advanced__body">
-                <Field label="Atividade" htmlFor="books-activity-filter">
+                <Field label={t('books.filters.activity.label')} htmlFor="books-activity-filter">
                   <Select
                     id="books-activity-filter"
                     value={advancedFilter}
                     onChange={(e) => setAdvancedFilter(e.target.value as AdvancedFilter)}
-                    options={ADVANCED_FILTER_OPTIONS}
+                    options={advancedFilterOptions}
                   />
                 </Field>
-                <Field label="Aberto desde" htmlFor="books-opened-from-filter">
+                <Field label={t('books.filters.openedFrom')} htmlFor="books-opened-from-filter">
                   <Input
                     id="books-opened-from-filter"
                     type="date"
@@ -225,7 +243,7 @@ export function BooksPage() {
                     onChange={(e) => setOpenedFrom(e.target.value)}
                   />
                 </Field>
-                <Field label="Aberto até" htmlFor="books-opened-to-filter">
+                <Field label={t('books.filters.openedTo')} htmlFor="books-opened-to-filter">
                   <Input
                     id="books-opened-to-filter"
                     type="date"
@@ -237,8 +255,8 @@ export function BooksPage() {
             </details>
 
             {visibleBooks.length === 0 ? (
-              <EmptyState title="Sem resultados">
-                <p>Altere a pesquisa ou os filtros para voltar a ver livros.</p>
+              <EmptyState title={t('books.filters.empty.title')}>
+                <p>{t('books.filters.empty.body')}</p>
               </EmptyState>
             ) : (
               <BooksTable books={visibleBooks} />

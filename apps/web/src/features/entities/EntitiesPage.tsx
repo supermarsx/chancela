@@ -28,7 +28,7 @@ import {
   type LedgerEventView,
   type RegisteredEntityColumn,
 } from '../../api/types';
-import { useLocale, useT } from '../../i18n';
+import { useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
   Button,
@@ -73,72 +73,77 @@ const SUMMARY_STACK_STYLE = {
   gap: '0.35rem',
 } as const;
 
-const BOOK_FILTER_OPTIONS: { value: BookFilter; label: string }[] = [
-  { value: 'all', label: 'Todos os livros' },
-  { value: 'open', label: 'Com livro aberto' },
-  { value: 'created', label: 'Em preparação' },
-  { value: 'closed', label: 'Com livro encerrado' },
-  { value: 'no-open', label: 'Sem livro aberto' },
-  { value: 'none', label: 'Sem livros' },
+const BOOK_FILTER_OPTIONS: { value: BookFilter; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: 'entities.filters.books.all' },
+  { value: 'open', labelKey: 'entities.filters.books.open' },
+  { value: 'created', labelKey: 'entities.filters.books.created' },
+  { value: 'closed', labelKey: 'entities.filters.books.closed' },
+  { value: 'no-open', labelKey: 'entities.filters.books.noOpen' },
+  { value: 'none', labelKey: 'entities.filters.books.none' },
 ];
 
-const BOOK_KIND_FILTER_OPTIONS: { value: BookKindFilter; label: string }[] = [
-  { value: 'all', label: 'Todos os tipos' },
-  ...BOOK_KINDS.map((value) => ({ value, label: bookKindLabels[value] })),
+const BOOK_KIND_FILTER_OPTIONS: { value: BookKindFilter; labelKey?: MessageKey; label?: string }[] =
+  [
+    { value: 'all', labelKey: 'entities.filters.bookKind.all' },
+    ...BOOK_KINDS.map((value) => ({ value, label: bookKindLabels[value] })),
+  ];
+
+const LAST_BOOK_FILTER_OPTIONS: { value: LastBookFilter; labelKey?: MessageKey; label?: string }[] =
+  [
+    { value: 'all', labelKey: 'entities.filters.lastBook.all' },
+    { value: 'Open', label: bookStateLabels.Open },
+    { value: 'Created', label: bookStateLabels.Created },
+    { value: 'Closed', label: bookStateLabels.Closed },
+    { value: 'none', labelKey: 'entities.filters.lastBook.none' },
+  ];
+
+const ACTIVITY_FILTER_OPTIONS: { value: ActivityFilter; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: 'entities.filters.activity.all' },
+  { value: 'registry', labelKey: 'entities.filters.activity.registry' },
+  { value: 'entity', labelKey: 'entities.filters.activity.entity' },
+  { value: 'book', labelKey: 'entities.filters.activity.book' },
+  { value: 'act', labelKey: 'entities.filters.activity.act' },
+  { value: 'document', labelKey: 'entities.filters.activity.document' },
+  { value: 'none', labelKey: 'entities.filters.activity.none' },
 ];
 
-const LAST_BOOK_FILTER_OPTIONS: { value: LastBookFilter; label: string }[] = [
-  { value: 'all', label: 'Qualquer estado' },
-  { value: 'Open', label: bookStateLabels.Open },
-  { value: 'Created', label: bookStateLabels.Created },
-  { value: 'Closed', label: bookStateLabels.Closed },
-  { value: 'none', label: 'Sem último livro' },
+const VALIDATION_FILTER_OPTIONS: { value: ValidationFilter; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: 'entities.filters.nipc.all' },
+  { value: 'validated', labelKey: 'entities.filters.nipc.validated' },
+  { value: 'unvalidated', labelKey: 'entities.filters.nipc.unvalidated' },
 ];
 
-const ACTIVITY_FILTER_OPTIONS: { value: ActivityFilter; label: string }[] = [
-  { value: 'all', label: 'Toda a atividade' },
-  { value: 'registry', label: 'Registo importado' },
-  { value: 'entity', label: 'Alteração da entidade' },
-  { value: 'book', label: 'Livros' },
-  { value: 'act', label: 'Atas e convocatórias' },
-  { value: 'document', label: 'Documentos e assinaturas' },
-  { value: 'none', label: 'Sem atividade' },
+const REGISTRY_IMPORT_FILTER_OPTIONS: { value: RegistryImportFilter; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: 'entities.filters.registry.all' },
+  { value: 'imported', labelKey: 'entities.filters.registry.imported' },
+  { value: 'not-imported', labelKey: 'entities.filters.registry.notImported' },
 ];
 
-const VALIDATION_FILTER_OPTIONS: { value: ValidationFilter; label: string }[] = [
-  { value: 'all', label: 'Todos os NIPC' },
-  { value: 'validated', label: 'NIPC validado' },
-  { value: 'unvalidated', label: 'NIPC por validar' },
+const REGISTRY_FRESHNESS_FILTER_OPTIONS: {
+  value: RegistryFreshnessFilter;
+  labelKey: MessageKey;
+}[] = [
+  { value: 'all', labelKey: 'entities.filters.freshness.all' },
+  { value: 'fresh', labelKey: 'entities.filters.freshness.fresh' },
+  { value: 'expired', labelKey: 'entities.filters.freshness.expired' },
+  { value: 'no-expiry', labelKey: 'entities.filters.freshness.noExpiry' },
 ];
 
-const REGISTRY_IMPORT_FILTER_OPTIONS: { value: RegistryImportFilter; label: string }[] = [
-  { value: 'all', label: 'Todo o registo' },
-  { value: 'imported', label: 'Importado' },
-  { value: 'not-imported', label: 'Não importado' },
-];
-
-const REGISTRY_FRESHNESS_FILTER_OPTIONS: { value: RegistryFreshnessFilter; label: string }[] = [
-  { value: 'all', label: 'Qualquer validade' },
-  { value: 'fresh', label: 'Dentro da validade' },
-  { value: 'expired', label: 'Expirado' },
-  { value: 'no-expiry', label: 'Sem validade' },
-];
-
-const ENTITY_COLUMN_LABELS: Record<RegisteredEntityColumn, string> = {
-  Name: 'Denominação',
-  Nipc: 'NIPC',
-  Seat: 'Sede',
-  Type: 'Tipo',
-  Matricula: 'Matrícula',
-  Constitution: 'Constituição',
-  Capital: 'Capital',
-  Cae: 'CAE',
-  Registry: 'Registo',
-  LastRegistryChange: 'Últ. registo',
-  FiscalYearEnd: 'Fecho fiscal',
-  LastBook: 'Último livro',
-  LastActivity: 'Última atividade',
-  Actions: 'Actions',
+const ENTITY_COLUMN_LABEL_KEYS: Record<RegisteredEntityColumn, MessageKey> = {
+  Name: 'entities.columns.name',
+  Nipc: 'entities.columns.nipc',
+  Seat: 'entities.columns.seat',
+  Type: 'entities.columns.type',
+  Matricula: 'entities.columns.matricula',
+  Constitution: 'entities.columns.constitution',
+  Capital: 'entities.columns.capital',
+  Cae: 'entities.columns.cae',
+  Registry: 'entities.columns.registry',
+  LastRegistryChange: 'entities.columns.lastRegistryChange',
+  FiscalYearEnd: 'entities.columns.fiscalYearEnd',
+  LastBook: 'entities.columns.lastBook',
+  LastActivity: 'entities.columns.lastActivity',
+  Actions: 'entities.columns.actions',
 };
 
 function normalizeSearch(value: string): string {
@@ -431,35 +436,54 @@ function entityMatchesRegistryFreshnessFilter(
   return registry.valid_until === null || registry.expired === null;
 }
 
-function familyFilterOptions(entities: Entity[] | undefined): { value: string; label: string }[] {
+function optionLabels<T extends string>(
+  options: { value: T; labelKey?: MessageKey; label?: string }[],
+  t: TFunction,
+): { value: T; label: string }[] {
+  return options.map((option) => ({
+    value: option.value,
+    label: option.labelKey ? t(option.labelKey) : (option.label ?? ''),
+  }));
+}
+
+function familyFilterOptions(
+  entities: Entity[] | undefined,
+  t: TFunction,
+): { value: string; label: string }[] {
   const seen = new Set<EntityFamily>();
   for (const entity of entities ?? []) seen.add(entity.family);
   return [
-    { value: 'all', label: 'Todas as famílias' },
+    { value: 'all', label: t('entities.filters.family.all') },
     ...Array.from(seen).map((value) => ({ value, label: entityFamilyLabels[value] })),
   ];
 }
 
-function kindFilterOptions(entities: Entity[] | undefined): { value: string; label: string }[] {
+function kindFilterOptions(
+  entities: Entity[] | undefined,
+  t: TFunction,
+): { value: string; label: string }[] {
   const seen = new Set<EntityKind>();
   for (const entity of entities ?? []) seen.add(entity.kind);
   return [
-    { value: 'all', label: 'Todas as formas' },
+    { value: 'all', label: t('entities.filters.kind.all') },
     ...Array.from(seen).map((value) => ({ value, label: entityKindLabels[value] })),
   ];
 }
 
-function activityKindFilterOptions(rows: EnrichedEntityRow[]): { value: string; label: string }[] {
+function activityKindFilterOptions(
+  rows: EnrichedEntityRow[],
+  t: TFunction,
+): { value: string; label: string }[] {
   const kinds = new Set<string>();
   for (const row of rows) {
     if (row.activity) kinds.add(row.activity.kind);
   }
   return [
-    { value: 'all', label: 'Qualquer alteração' },
+    { value: 'all', label: t('entities.filters.activityKind.all') },
     ...Array.from(kinds)
       .sort((a, b) => activityLabel(a).localeCompare(activityLabel(b)))
       .map((kind) => ({ value: kind, label: activityLabel(kind) })),
-    { value: 'none', label: 'Sem alteração' },
+    { value: 'none', label: t('entities.filters.activityKind.none') },
   ];
 }
 
@@ -805,9 +829,16 @@ export function EntitiesPage() {
     validationFilter,
   ]);
 
-  const familyOptions = familyFilterOptions(data);
-  const kindOptions = kindFilterOptions(data);
-  const activityKindOptions = activityKindFilterOptions(enrichedRows);
+  const familyOptions = familyFilterOptions(data, t);
+  const kindOptions = kindFilterOptions(data, t);
+  const activityKindOptions = activityKindFilterOptions(enrichedRows, t);
+  const validationFilterOptions = optionLabels(VALIDATION_FILTER_OPTIONS, t);
+  const registryImportFilterOptions = optionLabels(REGISTRY_IMPORT_FILTER_OPTIONS, t);
+  const registryFreshnessFilterOptions = optionLabels(REGISTRY_FRESHNESS_FILTER_OPTIONS, t);
+  const bookFilterOptions = optionLabels(BOOK_FILTER_OPTIONS, t);
+  const bookKindFilterOptions = optionLabels(BOOK_KIND_FILTER_OPTIONS, t);
+  const lastBookFilterOptions = optionLabels(LAST_BOOK_FILTER_OPTIONS, t);
+  const activityFilterOptions = optionLabels(ACTIVITY_FILTER_OPTIONS, t);
   const visibleColumns = normalizeVisibleColumns(
     settings.data?.ui?.registered_entity_columns ?? DEFAULT_SETTINGS.ui.registered_entity_columns,
   );
@@ -864,9 +895,14 @@ export function EntitiesPage() {
         title={t('entities.registeredCard')}
         actions={
           data && data.length > 0 ? (
-            <span aria-label={`A mostrar ${rows.length} de ${data.length} entidades`}>
+            <span
+              aria-label={t('entities.filters.count.aria', {
+                shown: rows.length,
+                total: data.length,
+              })}
+            >
               <Badge>
-                {rows.length} de {data.length}
+                {t('entities.filters.count', { shown: rows.length, total: data.length })}
               </Badge>
             </span>
           ) : null
@@ -886,18 +922,18 @@ export function EntitiesPage() {
           </EmptyState>
         ) : (
           <div className="stack">
-            <div className="stack--tight" role="search" aria-label="Pesquisar e filtrar entidades">
+            <div className="stack--tight" role="search" aria-label={t('entities.filters.aria')}>
               <div className="entities-filterbar filter">
-                <Field label="Pesquisar" htmlFor="entities-search">
+                <Field label={t('entities.filters.search.label')} htmlFor="entities-search">
                   <Input
                     id="entities-search"
                     type="search"
                     value={search}
-                    placeholder="Nome, NIPC, sede, forma, livro ou atividade"
+                    placeholder={t('entities.filters.search.placeholder')}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </Field>
-                <Field label="Família" htmlFor="entities-family-filter">
+                <Field label={t('entities.filters.family.label')} htmlFor="entities-family-filter">
                   <Select
                     id="entities-family-filter"
                     value={family}
@@ -905,7 +941,7 @@ export function EntitiesPage() {
                     options={familyOptions}
                   />
                 </Field>
-                <Field label="Forma" htmlFor="entities-kind-filter">
+                <Field label={t('entities.filters.kind.label')} htmlFor="entities-kind-filter">
                   <Select
                     id="entities-kind-filter"
                     value={kind}
@@ -913,22 +949,25 @@ export function EntitiesPage() {
                     options={kindOptions}
                   />
                 </Field>
-                <Field label="NIPC" htmlFor="entities-nipc-filter">
+                <Field label={t('entities.filters.nipc.label')} htmlFor="entities-nipc-filter">
                   <Select
                     id="entities-nipc-filter"
                     value={validationFilter}
                     onChange={(e) => setValidationFilter(e.target.value as ValidationFilter)}
-                    options={VALIDATION_FILTER_OPTIONS}
+                    options={validationFilterOptions}
                   />
                 </Field>
-                <Field label="Registo" htmlFor="entities-registry-import-filter">
+                <Field
+                  label={t('entities.filters.registry.label')}
+                  htmlFor="entities-registry-import-filter"
+                >
                   <Select
                     id="entities-registry-import-filter"
                     value={registryImportFilter}
                     onChange={(e) =>
                       setRegistryImportFilter(e.target.value as RegistryImportFilter)
                     }
-                    options={REGISTRY_IMPORT_FILTER_OPTIONS}
+                    options={registryImportFilterOptions}
                   />
                 </Field>
                 <Button
@@ -936,58 +975,73 @@ export function EntitiesPage() {
                   variant="ghost"
                   icon={<Icon.Close />}
                   disabled={!hasFilters}
-                  aria-label="Limpar filtros de entidades"
+                  aria-label={t('entities.filters.clear.aria')}
                   onClick={clearFilters}
                 >
-                  Limpar
+                  {t('entities.filters.clear')}
                 </Button>
               </div>
               <details className="entities-advanced-filters">
-                <summary>Filtros avançados</summary>
+                <summary>{t('entities.filters.advanced')}</summary>
                 <div className="row-wrap filter" style={{ alignItems: 'flex-end' }}>
-                  <Field label="Validade" htmlFor="entities-registry-freshness-filter">
+                  <Field
+                    label={t('entities.filters.freshness.label')}
+                    htmlFor="entities-registry-freshness-filter"
+                  >
                     <Select
                       id="entities-registry-freshness-filter"
                       value={registryFreshnessFilter}
                       onChange={(e) =>
                         setRegistryFreshnessFilter(e.target.value as RegistryFreshnessFilter)
                       }
-                      options={REGISTRY_FRESHNESS_FILTER_OPTIONS}
+                      options={registryFreshnessFilterOptions}
                     />
                   </Field>
-                  <Field label="Livros" htmlFor="entities-book-filter">
+                  <Field label={t('entities.filters.books.label')} htmlFor="entities-book-filter">
                     <Select
                       id="entities-book-filter"
                       value={bookFilter}
                       onChange={(e) => setBookFilter(e.target.value as BookFilter)}
-                      options={BOOK_FILTER_OPTIONS}
+                      options={bookFilterOptions}
                     />
                   </Field>
-                  <Field label="Tipo de livro" htmlFor="entities-book-kind-filter">
+                  <Field
+                    label={t('entities.filters.bookKind.label')}
+                    htmlFor="entities-book-kind-filter"
+                  >
                     <Select
                       id="entities-book-kind-filter"
                       value={bookKindFilter}
                       onChange={(e) => setBookKindFilter(e.target.value as BookKindFilter)}
-                      options={BOOK_KIND_FILTER_OPTIONS}
+                      options={bookKindFilterOptions}
                     />
                   </Field>
-                  <Field label="Último livro" htmlFor="entities-last-book-filter">
+                  <Field
+                    label={t('entities.filters.lastBook.label')}
+                    htmlFor="entities-last-book-filter"
+                  >
                     <Select
                       id="entities-last-book-filter"
                       value={lastBookFilter}
                       onChange={(e) => setLastBookFilter(e.target.value as LastBookFilter)}
-                      options={LAST_BOOK_FILTER_OPTIONS}
+                      options={lastBookFilterOptions}
                     />
                   </Field>
-                  <Field label="Atividade" htmlFor="entities-activity-filter">
+                  <Field
+                    label={t('entities.filters.activity.label')}
+                    htmlFor="entities-activity-filter"
+                  >
                     <Select
                       id="entities-activity-filter"
                       value={activityFilter}
                       onChange={(e) => setActivityFilter(e.target.value as ActivityFilter)}
-                      options={ACTIVITY_FILTER_OPTIONS}
+                      options={activityFilterOptions}
                     />
                   </Field>
-                  <Field label="Última alteração" htmlFor="entities-activity-kind-filter">
+                  <Field
+                    label={t('entities.filters.activityKind.label')}
+                    htmlFor="entities-activity-kind-filter"
+                  >
                     <Select
                       id="entities-activity-kind-filter"
                       value={activityKindFilter}
@@ -1000,15 +1054,15 @@ export function EntitiesPage() {
             </div>
 
             {rows.length === 0 ? (
-              <EmptyState title="Sem resultados">
-                <p>Altere a pesquisa ou os filtros para voltar a ver entidades.</p>
+              <EmptyState title={t('entities.filters.empty.title')}>
+                <p>{t('entities.filters.empty.body')}</p>
               </EmptyState>
             ) : (
               <Table
                 head={
                   <tr>
                     {visibleColumns.map((column) => (
-                      <th key={column}>{ENTITY_COLUMN_LABELS[column]}</th>
+                      <th key={column}>{t(ENTITY_COLUMN_LABEL_KEYS[column])}</th>
                     ))}
                   </tr>
                 }
