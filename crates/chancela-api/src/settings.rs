@@ -20,6 +20,7 @@
 //! Each successful `PUT` also appends a `settings.updated` event to the audit ledger (DAT-10),
 //! so a configuration change is as auditable as any domain mutation.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use axum::Json;
@@ -70,6 +71,8 @@ pub struct Settings {
     pub registry_auto_update: RegistryAutoUpdateSettings,
     /// Tenant-level AI/MCP controls. Defaults off so older settings documents do not enable AI.
     pub ai: AiSettings,
+    /// Platform operations controls: service desired state, logging levels, and audit metadata.
+    pub platform: PlatformSettings,
     /// Purely cosmetic front-end preferences (theme, leather texture).
     pub appearance: AppearanceSettings,
     /// Front-end layout preferences that are safe to persist server-side.
@@ -88,6 +91,7 @@ impl Default for Settings {
             signing: SigningSettings::default(),
             registry_auto_update: RegistryAutoUpdateSettings::default(),
             ai: AiSettings::default(),
+            platform: PlatformSettings::default(),
             appearance: AppearanceSettings::default(),
             ui: UiSettings::default(),
             onboarding: OnboardingSettings::default(),
@@ -261,6 +265,231 @@ pub struct RegistryAutoUpdateEntityDefaults {
 pub struct AiSettings {
     /// Whether tenant-level AI/MCP functionality is enabled. Default `false`.
     pub enabled: bool,
+}
+
+/// Stable platform-service id for the currently running API process.
+pub const PLATFORM_API_SERVICE_ID: &str = "api";
+/// Stable platform-service id for the external stdio MCP process.
+pub const PLATFORM_MCP_STDIO_SERVICE_ID: &str = "mcp_stdio";
+/// Stable logging id for the application shell as a whole.
+pub const PLATFORM_APP_SERVICE_ID: &str = "app";
+
+const PLATFORM_AUDIT_LIMIT: usize = 100;
+
+/// Platform operations settings.
+///
+/// This is intentionally desired-state metadata only. It does not grant the API process an OS
+/// supervisor, spawn processes, or store secrets. External launchers/supervisors may read this
+/// section and decide how to reconcile it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlatformSettings {
+    /// Logging levels by platform area and service override.
+    pub logging: PlatformLoggingSettings,
+    /// Desired state for the API server represented by the current process.
+    pub api_server: PlatformServiceControlSettings,
+    /// Desired state for the external stdio MCP server.
+    pub mcp_stdio_server: PlatformServiceControlSettings,
+    /// Settings-backed audit tail for platform operations controls.
+    pub audit: Vec<PlatformAuditEvent>,
+}
+
+impl Default for PlatformSettings {
+    fn default() -> Self {
+        Self {
+            logging: PlatformLoggingSettings::default(),
+            api_server: PlatformServiceControlSettings {
+                enabled: true,
+                desired_state: PlatformServiceDesiredState::Running,
+                last_action: None,
+            },
+            mcp_stdio_server: PlatformServiceControlSettings::default(),
+            audit: Vec::new(),
+        }
+    }
+}
+
+impl PlatformSettings {
+    pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        self.logging.validate()?;
+        for event in &self.audit {
+            validate_platform_service_id(&event.service_id)?;
+            if event.requested_by.trim().is_empty() {
+                return Err(ApiError::Unprocessable(
+                    "platform.audit[].requested_by must not be blank".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn control_settings_mut(
+        &mut self,
+        service_id: &str,
+    ) -> Result<&mut PlatformServiceControlSettings, ApiError> {
+        match service_id {
+            PLATFORM_API_SERVICE_ID => Ok(&mut self.api_server),
+            PLATFORM_MCP_STDIO_SERVICE_ID => Ok(&mut self.mcp_stdio_server),
+            _ => Err(ApiError::Unprocessable(format!(
+                "unknown platform service id {service_id:?}"
+            ))),
+        }
+    }
+
+    pub(crate) fn append_audit(&mut self, event: PlatformAuditEvent) {
+        self.audit.push(event);
+        let overflow = self.audit.len().saturating_sub(PLATFORM_AUDIT_LIMIT);
+        if overflow > 0 {
+            self.audit.drain(0..overflow);
+        }
+    }
+}
+
+/// Logging level controls. The service overrides are keyed by stable service id: `app`, `api`,
+/// and `mcp_stdio`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlatformLoggingSettings {
+    pub global: PlatformLogLevel,
+    pub app: PlatformLogLevel,
+    pub api: PlatformLogLevel,
+    pub mcp: PlatformLogLevel,
+    pub service_overrides: BTreeMap<String, PlatformLogLevel>,
+}
+
+impl Default for PlatformLoggingSettings {
+    fn default() -> Self {
+        Self {
+            global: PlatformLogLevel::Info,
+            app: PlatformLogLevel::Info,
+            api: PlatformLogLevel::Info,
+            mcp: PlatformLogLevel::Info,
+            service_overrides: BTreeMap::new(),
+        }
+    }
+}
+
+impl PlatformLoggingSettings {
+    fn validate(&self) -> Result<(), ApiError> {
+        for service_id in self.service_overrides.keys() {
+            validate_platform_service_id(service_id)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn effective_for(&self, service_id: &str) -> PlatformLogLevel {
+        if let Some(level) = self.service_overrides.get(service_id) {
+            return *level;
+        }
+        match service_id {
+            PLATFORM_APP_SERVICE_ID => self.app,
+            PLATFORM_API_SERVICE_ID => self.api,
+            PLATFORM_MCP_STDIO_SERVICE_ID => self.mcp,
+            _ => self.global,
+        }
+    }
+}
+
+/// Strict logging levels accepted by the platform settings wire shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlatformLogLevel {
+    Trace,
+    Debug,
+    #[default]
+    Info,
+    Warn,
+    Error,
+    Off,
+}
+
+/// Desired-state controls for one platform service.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlatformServiceControlSettings {
+    pub enabled: bool,
+    pub desired_state: PlatformServiceDesiredState,
+    pub last_action: Option<PlatformServiceLastAction>,
+}
+
+impl Default for PlatformServiceControlSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            desired_state: PlatformServiceDesiredState::Stopped,
+            last_action: None,
+        }
+    }
+}
+
+/// Desired service state stored in settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlatformServiceDesiredState {
+    Running,
+    #[default]
+    Stopped,
+}
+
+/// Operator action stored in service-control metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlatformServiceAction {
+    Start,
+    Stop,
+    Restart,
+}
+
+/// Outcome kind for a platform control action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlatformControlOutcomeKind {
+    Unsupported,
+    RestartRequired,
+    SupervisorRequired,
+}
+
+/// Last control action recorded for a platform service.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlatformServiceLastAction {
+    pub action: PlatformServiceAction,
+    pub requested_at: String,
+    pub requested_by: String,
+    pub outcome: PlatformControlOutcomeKind,
+    pub message: String,
+}
+
+/// Settings-backed audit record for platform operations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlatformAuditEvent {
+    pub service_id: String,
+    pub action: PlatformServiceAction,
+    pub requested_at: String,
+    pub requested_by: String,
+    pub outcome: PlatformControlOutcomeKind,
+    pub desired_state: PlatformServiceDesiredState,
+    pub message: String,
+}
+
+pub(crate) fn validate_platform_service_id(service_id: &str) -> Result<(), ApiError> {
+    if service_id.trim().is_empty() {
+        return Err(ApiError::Unprocessable(
+            "platform service id must not be blank".to_owned(),
+        ));
+    }
+    if !is_known_platform_service_id(service_id) {
+        return Err(ApiError::Unprocessable(format!(
+            "unknown platform service id {service_id:?}; expected app, api, or mcp_stdio"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn is_known_platform_service_id(service_id: &str) -> bool {
+    matches!(
+        service_id,
+        PLATFORM_APP_SERVICE_ID | PLATFORM_API_SERVICE_ID | PLATFORM_MCP_STDIO_SERVICE_ID
+    )
 }
 
 /// First-use onboarding flag (plan t29 §4.1). Additive, serde-defaulted, no `schema_version`
@@ -757,6 +986,7 @@ impl Settings {
             }
         }
         self.registry_auto_update.validate()?;
+        self.platform.validate()?;
         Ok(())
     }
 }
@@ -895,7 +1125,7 @@ pub(crate) fn load_settings(path: &Path) -> Option<Settings> {
 /// Atomically write `settings` to `path`: serialize to a uniquely-named temp file in the same
 /// directory, then rename it over the destination (an atomic replace on both Windows and
 /// Unix). The parent directory is created if missing.
-fn write_settings_atomic(path: &Path, settings: &Settings) -> std::io::Result<()> {
+pub(crate) fn write_settings_atomic(path: &Path, settings: &Settings) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;

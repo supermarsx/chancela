@@ -90,5 +90,25 @@
   },
   "ai": {
     "enabled": false
+  },
+  "platform": {
+    "logging": {
+      "global": "info",
+      "app": "info",
+      "api": "info",
+      "mcp": "info",
+      "service_overrides": {}
+    },
+    "api_server": {
+      "enabled": true,
+      "desired_state": "running",
+      "last_action": null
+    },
+    "mcp_stdio_server": {
+      "enabled": false,
+      "desired_state": "stopped",
+      "last_action": null
+    },
+    "audit": []
   }
 }

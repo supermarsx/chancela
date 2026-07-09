@@ -29,6 +29,8 @@
 //! - `GET /v1/ledger/archive/document` — on-demand PDF/A archive export.
 //! - `GET /v1/dashboard` — WFL-40 counts and recent events (§2.7).
 //! - `GET|PUT /v1/settings` — the typed, versioned application settings document (§2.8).
+//! - `GET /v1/platform/services`, `POST /v1/platform/services/{id}/actions/{action}` —
+//!   read-only API/MCP service status plus settings-backed desired-state controls.
 //! - `POST /v1/registry/lookup`, `GET /v1/registry/lookup`,
 //!   `GET|POST /v1/entities/{id}/registry`,
 //!   `POST /v1/entities/{id}/registry/import`, `POST /v1/entities/import-from-registry` —
@@ -83,6 +85,7 @@ mod ledger;
 mod notifications;
 mod paper_import;
 mod password_policy;
+mod platform_ops;
 mod privacy;
 mod recovery;
 mod registry;
@@ -137,9 +140,12 @@ pub use roles::{
 };
 pub use settings::{
     AiSettings, AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
-    DocumentSettings, Locale, OnboardingSettings, OrganizationSettings, RegistryAutoUpdateCadence,
-    RegistryAutoUpdateEntityDefaults, RegistryAutoUpdateSettings, RegistryAutoUpdateWeekday,
-    Settings, SignatureFamily, SigningCmdSettings, SigningSettings, ThemeMode,
+    DocumentSettings, Locale, OnboardingSettings, OrganizationSettings, PlatformAuditEvent,
+    PlatformControlOutcomeKind, PlatformLogLevel, PlatformLoggingSettings, PlatformServiceAction,
+    PlatformServiceControlSettings, PlatformServiceDesiredState, PlatformServiceLastAction,
+    PlatformSettings, RegistryAutoUpdateCadence, RegistryAutoUpdateEntityDefaults,
+    RegistryAutoUpdateSettings, RegistryAutoUpdateWeekday, Settings, SignatureFamily,
+    SigningCmdSettings, SigningSettings, ThemeMode,
 };
 pub use users::{User, UserId};
 
@@ -1140,6 +1146,11 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/settings",
             get(settings::get_settings).put(settings::put_settings),
+        )
+        .route("/v1/platform/services", get(platform_ops::list_services))
+        .route(
+            "/v1/platform/services/{id}/actions/{action}",
+            post(platform_ops::control_service),
         )
         .route("/v1/cae", get(cae::list_cae))
         .route("/v1/cae/refresh", post(cae::refresh_cae))
@@ -3800,6 +3811,30 @@ mod tests {
                 }
             },
             "ai": { "enabled": true },
+            "platform": {
+                "logging": {
+                    "global": "warn",
+                    "app": "debug",
+                    "api": "info",
+                    "mcp": "error",
+                    "service_overrides": {
+                        "app": "off",
+                        "api": "trace",
+                        "mcp_stdio": "debug"
+                    }
+                },
+                "api_server": {
+                    "enabled": true,
+                    "desired_state": "running",
+                    "last_action": null
+                },
+                "mcp_stdio_server": {
+                    "enabled": true,
+                    "desired_state": "running",
+                    "last_action": null
+                },
+                "audit": []
+            },
             "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
             "ui": {
                 "registered_entity_columns": ["Name", "Nipc", "Type", "LastActivity", "Actions"]
@@ -3846,6 +3881,24 @@ mod tests {
         );
         assert_eq!(body["signing"]["require_qualified_for_seal"], false);
         assert_eq!(body["ai"]["enabled"], false);
+        assert_eq!(body["platform"]["logging"]["global"], "info");
+        assert_eq!(body["platform"]["logging"]["app"], "info");
+        assert_eq!(body["platform"]["logging"]["api"], "info");
+        assert_eq!(body["platform"]["logging"]["mcp"], "info");
+        assert_eq!(body["platform"]["logging"]["service_overrides"], json!({}));
+        assert_eq!(body["platform"]["api_server"]["enabled"], true);
+        assert_eq!(body["platform"]["api_server"]["desired_state"], "running");
+        assert_eq!(body["platform"]["api_server"]["last_action"], Value::Null);
+        assert_eq!(body["platform"]["mcp_stdio_server"]["enabled"], false);
+        assert_eq!(
+            body["platform"]["mcp_stdio_server"]["desired_state"],
+            "stopped"
+        );
+        assert_eq!(
+            body["platform"]["mcp_stdio_server"]["last_action"],
+            Value::Null
+        );
+        assert_eq!(body["platform"]["audit"], json!([]));
         assert_eq!(body["appearance"]["theme"], "system");
         assert_eq!(body["appearance"]["leather_texture"], true);
         assert_eq!(body["appearance"]["texture_intensity"], 60);
@@ -3884,6 +3937,12 @@ mod tests {
         assert_eq!(stored["organization"]["default_actor"], "api");
         assert_eq!(stored["documents"]["locale"], "pt-PT");
         assert_eq!(stored["ai"]["enabled"], false);
+        assert_eq!(stored["platform"]["logging"]["api"], "info");
+        assert_eq!(stored["platform"]["api_server"]["desired_state"], "running");
+        assert_eq!(
+            stored["platform"]["mcp_stdio_server"]["desired_state"],
+            "stopped"
+        );
         assert_eq!(stored["appearance"]["texture_intensity"], 60);
         // Omitted trust URLs and button_texture inherit the official/textured defaults.
         assert_eq!(
@@ -3936,6 +3995,13 @@ mod tests {
         assert!(parsed.appearance.button_texture);
         // Omitted tenant AI/MCP controls default off.
         assert!(!parsed.ai.enabled);
+        // Omitted platform operations/logging controls inherit safe defaults.
+        assert_eq!(parsed.platform.logging.global, PlatformLogLevel::Info);
+        assert_eq!(
+            parsed.platform.api_server.desired_state,
+            PlatformServiceDesiredState::Running
+        );
+        assert!(!parsed.platform.mcp_stdio_server.enabled);
         // Omitted registry auto-update policy defaults fail-closed.
         assert!(!parsed.registry_auto_update.enabled);
         assert!(!parsed.registry_auto_update.entity_defaults.enabled);
@@ -4002,6 +4068,40 @@ mod tests {
                 .as_str()
                 .expect("error")
                 .contains("min_backoff_minutes")
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_put_invalid_platform_log_level_is_422() {
+        let mut bad = sample_settings();
+        bad["platform"]["logging"]["api"] = json!("verbose");
+        let (status, body) = send(AppState::default(), put_json("/v1/settings", bad)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn settings_put_invalid_platform_service_ids_are_422() {
+        let mut unknown = sample_settings();
+        unknown["platform"]["logging"]["service_overrides"] = json!({ "mystery": "info" });
+        let (status, body) = send(AppState::default(), put_json("/v1/settings", unknown)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("unknown platform service id")
+        );
+
+        let mut blank = sample_settings();
+        blank["platform"]["logging"]["service_overrides"] = json!({ "": "info" });
+        let (status, body) = send(AppState::default(), put_json("/v1/settings", blank)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("must not be blank")
         );
     }
 
@@ -4148,6 +4248,167 @@ mod tests {
         let (status, got) = send(second, get("/v1/settings")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(got, sample_settings());
+    }
+
+    #[tokio::test]
+    async fn platform_services_status_exposes_api_and_mcp_records() {
+        let state = AppState::default();
+        state
+            .settings
+            .write()
+            .await
+            .platform
+            .logging
+            .service_overrides
+            .insert("api".to_owned(), PlatformLogLevel::Debug);
+
+        let (status, body) = send(state, get("/v1/platform/services")).await;
+        assert_eq!(status, StatusCode::OK);
+        let services = body["services"].as_array().expect("services array");
+        assert_eq!(services.len(), 2);
+
+        let api = services
+            .iter()
+            .find(|service| service["id"] == "api")
+            .expect("api service");
+        assert_eq!(api["kind"], "api");
+        assert_eq!(api["configured"], true);
+        assert_eq!(api["enabled"], true);
+        assert_eq!(api["desired_state"], "running");
+        assert_eq!(api["actual_runtime_status"], "running");
+        assert_eq!(api["logging_level"], "debug");
+        assert!(
+            api["limitations"]
+                .as_array()
+                .expect("api limitations")
+                .len()
+                >= 2
+        );
+        assert!(
+            api["controllable_actions"]
+                .as_array()
+                .expect("api actions")
+                .iter()
+                .any(|action| {
+                    action["action"] == "restart"
+                        && action["supported"] == false
+                        && action["outcome"] == "restart_required"
+                })
+        );
+
+        let mcp = services
+            .iter()
+            .find(|service| service["id"] == "mcp_stdio")
+            .expect("mcp stdio service");
+        assert_eq!(mcp["kind"], "mcp");
+        assert_eq!(mcp["enabled"], false);
+        assert_eq!(mcp["desired_state"], "stopped");
+        assert_eq!(mcp["actual_runtime_status"], "unknown");
+        assert_eq!(mcp["logging_level"], "info");
+        assert!(
+            mcp["controllable_actions"]
+                .as_array()
+                .expect("mcp actions")
+                .iter()
+                .all(|action| action["supported"] == false)
+        );
+        assert!(
+            mcp["limitations"]
+                .as_array()
+                .expect("mcp limitations")
+                .iter()
+                .any(|item| item
+                    .as_str()
+                    .expect("limitation text")
+                    .contains("cannot observe or spawn"))
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_api_restart_records_unsupported_result_and_audit() {
+        let state = AppState::default();
+        let (status, body) = send(
+            state.clone(),
+            post_json("/v1/platform/services/api/actions/restart", json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "control response: {body}");
+        assert_eq!(body["action"], "restart");
+        assert_eq!(body["result"]["kind"], "restart_required");
+        assert_eq!(body["result"]["supported"], false);
+        assert_eq!(body["result"]["applied_to_settings"], true);
+        assert_eq!(body["result"]["desired_state"], "running");
+        assert_eq!(body["result"]["actual_runtime_status"], "running");
+        assert_eq!(body["service"]["last_action"]["action"], "restart");
+        assert_eq!(
+            body["service"]["last_action"]["outcome"],
+            "restart_required"
+        );
+
+        let settings = state.settings.read().await.clone();
+        assert_eq!(
+            settings.platform.api_server.desired_state,
+            PlatformServiceDesiredState::Running
+        );
+        let last = settings
+            .platform
+            .api_server
+            .last_action
+            .expect("last api action");
+        assert_eq!(last.action, PlatformServiceAction::Restart);
+        assert_eq!(last.outcome, PlatformControlOutcomeKind::RestartRequired);
+        assert_eq!(settings.platform.audit.len(), 1);
+        assert_eq!(settings.platform.audit[0].service_id, "api");
+
+        let (status, events) = send(state, get("/v1/ledger/events")).await;
+        assert_eq!(status, StatusCode::OK);
+        let arr = events.as_array().expect("events array");
+        let event = arr
+            .iter()
+            .find(|event| event["kind"] == "platform.service.control")
+            .expect("platform control event");
+        assert_eq!(event["scope"], "platform");
+        assert_eq!(event["justification"], "platform service control requested");
+    }
+
+    #[tokio::test]
+    async fn platform_mcp_start_records_supervisor_required_result() {
+        let state = AppState::default();
+        let (status, body) = send(
+            state.clone(),
+            post_json("/v1/platform/services/mcp_stdio/actions/start", json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "control response: {body}");
+        assert_eq!(body["action"], "start");
+        assert_eq!(body["result"]["kind"], "supervisor_required");
+        assert_eq!(body["result"]["supported"], false);
+        assert_eq!(body["result"]["desired_state"], "running");
+        assert_eq!(body["result"]["actual_runtime_status"], "unknown");
+        assert_eq!(body["service"]["enabled"], true);
+        assert_eq!(body["service"]["desired_state"], "running");
+        assert_eq!(
+            body["service"]["last_action"]["outcome"],
+            "supervisor_required"
+        );
+
+        let (status, status_body) = send(state.clone(), get("/v1/platform/services")).await;
+        assert_eq!(status, StatusCode::OK);
+        let mcp = status_body["services"]
+            .as_array()
+            .expect("services array")
+            .iter()
+            .find(|service| service["id"] == "mcp_stdio")
+            .expect("mcp stdio service");
+        assert_eq!(mcp["enabled"], true);
+        assert_eq!(mcp["desired_state"], "running");
+
+        let settings = state.settings.read().await.clone();
+        assert_eq!(
+            settings.platform.mcp_stdio_server.desired_state,
+            PlatformServiceDesiredState::Running
+        );
+        assert_eq!(settings.platform.audit[0].service_id, "mcp_stdio");
     }
 
     // --- Scoped RBAC stores + migration + bootstrap + resolution seam (t64-E2) ------------
