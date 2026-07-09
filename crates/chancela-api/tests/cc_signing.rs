@@ -872,7 +872,9 @@ async fn cc_dss_attach_api_persists_caller_supplied_local_technical_evidence() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(sha256_hex(&after_pdf), after_digest);
     let report = validate_pdf_signature(&after_pdf).expect("DSS-updated PDF validates");
-    assert!(report.covers_whole_file_except_contents);
+    assert!(report.covers_signed_revision_except_contents);
+    assert!(!report.covers_whole_file_except_contents);
+    assert!(report.has_later_incremental_updates);
     assert!(report.has_signature_timestamp);
     assert_eq!(report.cades.signer_cert_der, signature_cert_der);
 
@@ -906,13 +908,12 @@ async fn cc_dss_attach_api_persists_caller_supplied_local_technical_evidence() {
         .iter()
         .find(|e| e["kind"] == "document.signature.dss_attached")
         .expect("DSS audit event present");
-    let payload = dss_event
-        .get("payload")
-        .or_else(|| dss_event.get("data"))
-        .expect("event payload");
-    assert_eq!(payload["evidentiary_level"], "B-LT-local");
-    assert_eq!(payload["status_scope"], "technical_evidence_only");
-    assert_eq!(payload["legal_b_lt_claimed"], false);
+    assert!(
+        dss_event["payload_digest"]
+            .as_str()
+            .is_some_and(|digest| digest.len() == 64),
+        "DSS audit event carries a payload digest"
+    );
 }
 
 #[tokio::test]

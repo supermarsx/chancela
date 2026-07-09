@@ -1389,7 +1389,8 @@ pub async fn attach_dss_evidence(
     .await
     .map_err(|e| ApiError::Internal(format!("DSS attach task failed: {e}")))??;
 
-    let report = validate_signed_pdf(&updated_pdf, &stored.signer_cert_der)?;
+    let report =
+        validate_signed_pdf_with_incremental_updates(&updated_pdf, &stored.signer_cert_der)?;
     let signed_pdf_digest = sha256_hex(&updated_pdf);
     stored.signed_pdf_digest = signed_pdf_digest.clone();
     stored.signed_pdf_bytes = updated_pdf;
@@ -3256,6 +3257,26 @@ fn validate_signed_pdf(
     if !report.covers_whole_file_except_contents {
         return Err(ApiError::Internal(
             "signed PDF ByteRange does not cover the whole file".to_owned(),
+        ));
+    }
+    if report.cades.signer_cert_der.as_slice() != expected_signer_cert_der {
+        return Err(ApiError::Internal(
+            "signed PDF signer certificate does not match the selected signing certificate"
+                .to_owned(),
+        ));
+    }
+    Ok(report)
+}
+
+fn validate_signed_pdf_with_incremental_updates(
+    signed_pdf: &[u8],
+    expected_signer_cert_der: &[u8],
+) -> Result<chancela_pades::PdfSignatureReport, ApiError> {
+    let report = chancela_pades::validate_pdf_signature(signed_pdf)
+        .map_err(|e| ApiError::Internal(format!("signed PDF failed validation: {e}")))?;
+    if !report.covers_signed_revision_except_contents {
+        return Err(ApiError::Internal(
+            "signed PDF ByteRange does not cover the signed revision".to_owned(),
         ));
     }
     if report.cades.signer_cert_der.as_slice() != expected_signer_cert_der {
