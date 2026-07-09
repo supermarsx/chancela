@@ -386,6 +386,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/ledger/recovery/restore", RouteClass::Gated), // POST ledger.recover@Global + step-up
     // --- Data management ------------------------------------------------------------------------
     ("/v1/data/reset", RouteClass::Gated), // POST data.wipe@Global + step-up
+    ("/v1/data/status", RouteClass::Gated), // GET settings.read@Global
     ("/v1/data/start-over", RouteClass::Gated), // POST data.start_over@Global + step-up
     ("/v1/backup", RouteClass::Gated),     // POST data.backup@Global
     ("/v1/dashboard", RouteClass::Gated),  // GET act.read@Global

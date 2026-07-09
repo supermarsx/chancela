@@ -70,6 +70,7 @@ mod cae;
 mod chronology;
 mod dashboard;
 mod data;
+mod data_status;
 mod database;
 mod delegations;
 mod documents;
@@ -1138,6 +1139,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/books/import", post(bundles::import_book))
         .route("/v1/books/{id}/start-over", post(bundles::start_over_book))
         .route("/v1/data/reset", post(data::reset_data))
+        .route("/v1/data/status", get(data_status::get_data_status))
         .route("/v1/data/start-over", post(data::start_over_instance))
         .route("/v1/dashboard", get(dashboard::dashboard))
         .route(
@@ -1612,6 +1614,15 @@ mod tests {
             return false;
         }
         haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    fn data_status_filesystem_concern<'a>(body: &'a Value, id: &str) -> &'a Value {
+        body["usage"]["filesystem"]
+            .as_array()
+            .expect("filesystem usage array")
+            .iter()
+            .find(|entry| entry["id"] == id)
+            .unwrap_or_else(|| panic!("missing filesystem usage concern {id} in {body}"))
     }
 
     /// A request builder carrying an `X-Chancela-Session` token.
@@ -7013,6 +7024,149 @@ mod tests {
             chancela_store::schema::SCHEMA_VERSION
         );
         assert!(body["ledger_length"].as_u64().expect("length") >= 4);
+    }
+
+    #[tokio::test]
+    async fn data_status_requires_settings_read() {
+        let state = AppState::default();
+
+        let (status, _) = send_raw(state.clone(), get("/v1/data/status")).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "session required");
+
+        let token = powerless_token(&state).await;
+        let (status, body) = send_raw(state, with_session(get("/v1/data/status"), &token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "body: {body}");
+    }
+
+    #[tokio::test]
+    async fn data_status_reports_in_memory_storage_without_health_exposure() {
+        let (status, body) = send(AppState::default(), get("/v1/data/status")).await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert!(body["generated_at"].as_str().is_some());
+        assert_eq!(body["persistence"]["mode"], "in_memory");
+        assert_eq!(body["persistence"]["data_dir_configured"], false);
+        assert_eq!(body["persistence"]["durable_store_open"], false);
+        assert_eq!(body["persistence"]["store_schema_version"], Value::Null);
+        assert_eq!(body["persistence"]["ledger_length"], 0);
+        assert_eq!(body["persistence"]["ledger_verified"], Value::Null);
+        assert_eq!(body["data_dir"]["path"], Value::Null);
+        assert_eq!(body["data_dir"]["exists"], Value::Null);
+        assert_eq!(body["data_dir"]["is_directory"], Value::Null);
+        assert_eq!(body["permissions"]["read_dir"]["checked"], false);
+        assert_eq!(body["permissions"]["create_file"]["checked"], false);
+        assert_eq!(body["permissions"]["write_file"]["checked"], false);
+        assert_eq!(body["permissions"]["delete_probe_file"]["checked"], false);
+        assert_eq!(body["permissions"]["sqlite_store_open"]["checked"], true);
+        assert_eq!(body["permissions"]["sqlite_store_open"]["ok"], false);
+        assert_eq!(body["usage"]["total_bytes"], 0);
+        assert_eq!(
+            body["usage"]["filesystem"]
+                .as_array()
+                .expect("filesystem")
+                .len(),
+            0
+        );
+        assert_eq!(
+            body["usage"]["sqlite_logical"]
+                .as_array()
+                .expect("sqlite_logical")
+                .len(),
+            0
+        );
+
+        let (status, health) = send(AppState::default(), get("/health")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(health.get("data_dir").is_none());
+        assert!(health.get("permissions").is_none());
+        assert!(health.get("usage").is_none());
+    }
+
+    #[tokio::test]
+    async fn data_status_reports_durable_permissions_and_filesystem_usage() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        std::fs::write(
+            tmp.dir.join(crate::settings::SETTINGS_FILE),
+            br#"{"schema_version":1}"#,
+        )
+        .expect("settings sidecar");
+        let laws = tmp.dir.join(crate::law::LAWS_DIR);
+        std::fs::create_dir_all(&laws).expect("laws dir");
+        std::fs::write(laws.join("dl-1-2026.pdf"), b"law").expect("law file");
+
+        let (status, body) = send(state, get("/v1/data/status")).await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["persistence"]["mode"], "durable");
+        assert_eq!(body["persistence"]["data_dir_configured"], true);
+        assert_eq!(body["persistence"]["durable_store_open"], true);
+        assert_eq!(
+            body["persistence"]["store_schema_version"],
+            chancela_store::schema::SCHEMA_VERSION
+        );
+        assert_eq!(body["persistence"]["ledger_verified"], true);
+        assert_eq!(
+            body["data_dir"]["path"],
+            tmp.dir.to_string_lossy().into_owned()
+        );
+        assert_eq!(body["data_dir"]["exists"], true);
+        assert_eq!(body["data_dir"]["is_directory"], true);
+
+        for key in ["read_dir", "create_file", "write_file", "delete_probe_file"] {
+            assert_eq!(body["permissions"][key]["checked"], true, "{key}");
+            assert_eq!(body["permissions"][key]["ok"], true, "{key}");
+        }
+        assert_eq!(body["permissions"]["sqlite_store_open"]["ok"], true);
+
+        let database = data_status_filesystem_concern(&body, "database");
+        assert_eq!(database["basis"], "sqlite_file");
+        assert!(database["bytes"].as_u64().expect("database bytes") > 0);
+        assert!(database["file_count"].as_u64().expect("database files") >= 1);
+        assert!(
+            database["relative_roots"]
+                .as_array()
+                .expect("database roots")
+                .iter()
+                .any(|root| root == "chancela.db")
+        );
+
+        let settings = data_status_filesystem_concern(&body, "settings");
+        assert_eq!(settings["basis"], "filesystem");
+        assert_eq!(settings["file_count"], 1);
+        assert!(settings["bytes"].as_u64().expect("settings bytes") > 0);
+
+        let laws = data_status_filesystem_concern(&body, "laws");
+        assert_eq!(laws["file_count"], 1);
+        assert!(laws["directory_count"].as_u64().expect("law dirs") >= 1);
+
+        assert!(body["usage"]["total_bytes"].as_u64().expect("total bytes") > 0);
+        assert_eq!(
+            body["usage"]["sqlite_logical"]
+                .as_array()
+                .expect("sqlite logical")
+                .len(),
+            0
+        );
+        assert!(
+            body["usage"]["scan_errors"]
+                .as_array()
+                .expect("scan errors")
+                .iter()
+                .any(|err| err
+                    .as_str()
+                    .is_some_and(|msg| msg.contains("sqlite logical usage not reported")))
+        );
+
+        let leftovers: Vec<_> = std::fs::read_dir(&tmp.dir)
+            .expect("read temp dir")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".chancela-data-status-probe-")
+            })
+            .collect();
+        assert!(leftovers.is_empty(), "probe files left behind");
     }
 
     // --- t29: optional passwords + PKI audit attestation ----------------------------------
