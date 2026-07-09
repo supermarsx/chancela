@@ -84,6 +84,7 @@ async fn seed_owner(state: &AppState) -> UserId {
         id: uid,
         username: "owner".to_owned(),
         display_name: "Owner".to_owned(),
+        email: None,
         created_at: OffsetDateTime::now_utc()
             .format(&Rfc3339)
             .unwrap_or_default(),

@@ -1214,6 +1214,7 @@ mod tests {
         let mut act = condo_act();
         act.signatories.push(SignatorySlot {
             name: "Fração A".into(),
+            email: None,
             capacity: SignatoryCapacity::CondoOwner,
             signed: false,
             permilage: None,
@@ -1260,6 +1261,7 @@ mod tests {
         ];
         act.signatories.push(SignatorySlot {
             name: "Fração D".into(),
+            email: None,
             capacity: SignatoryCapacity::CondoOwner,
             signed: false,
             permilage: Some(1001),

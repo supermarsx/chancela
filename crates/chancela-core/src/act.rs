@@ -131,6 +131,9 @@ pub enum SignatoryCapacity {
 pub struct SignatorySlot {
     /// Signatory name.
     pub name: String,
+    /// Optional contact email for coordinating this signatory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     /// Capacity in which they sign.
     pub capacity: SignatoryCapacity,
     /// Whether a signature has been collected for this slot.

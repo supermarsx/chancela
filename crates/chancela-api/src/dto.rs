@@ -433,6 +433,8 @@ impl From<&Attachment> for AttachmentView {
 #[derive(Serialize)]
 pub struct SignatoryView {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     pub capacity: SignatoryCapacity,
     pub signed: bool,
     /// A condómino's *permilagem* (millésimos, 0..=1000), when recorded (ENT-D6 / R6). Additive.
@@ -443,6 +445,7 @@ impl From<&SignatorySlot> for SignatoryView {
     fn from(s: &SignatorySlot) -> Self {
         SignatoryView {
             name: s.name.clone(),
+            email: s.email.clone(),
             capacity: s.capacity,
             signed: s.signed,
             permilage: s.permilage,
@@ -1115,6 +1118,8 @@ impl AttachmentInput {
 #[derive(Deserialize)]
 pub struct SignatoryInput {
     pub name: String,
+    #[serde(default)]
+    pub email: Option<String>,
     pub capacity: SignatoryCapacity,
     #[serde(default)]
     pub signed: bool,
@@ -1124,14 +1129,15 @@ pub struct SignatoryInput {
     pub permilage: Option<u16>,
 }
 
-impl From<SignatoryInput> for SignatorySlot {
-    fn from(s: SignatoryInput) -> Self {
-        SignatorySlot {
-            name: s.name,
-            capacity: s.capacity,
-            signed: s.signed,
-            permilage: s.permilage,
-        }
+impl SignatoryInput {
+    pub fn into_core(self) -> Result<SignatorySlot, ApiError> {
+        Ok(SignatorySlot {
+            name: self.name,
+            email: crate::email::normalize_optional_email(self.email, "signatory.email")?,
+            capacity: self.capacity,
+            signed: self.signed,
+            permilage: self.permilage,
+        })
     }
 }
 

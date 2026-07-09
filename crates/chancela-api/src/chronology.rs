@@ -172,6 +172,7 @@ mod tests {
             id: uid,
             username: "test.actor".to_owned(),
             display_name: "Test Actor".to_owned(),
+            email: None,
             created_at: time::OffsetDateTime::now_utc()
                 .format(&Rfc3339)
                 .unwrap_or_default(),

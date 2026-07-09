@@ -125,6 +125,7 @@ async fn insert_user(state: &AppState, id: UserId, username: &str, role: RoleAss
         id,
         username: username.to_owned(),
         display_name: format!("{username} Display"),
+        email: None,
         created_at: OffsetDateTime::now_utc()
             .format(&Rfc3339)
             .unwrap_or_default(),

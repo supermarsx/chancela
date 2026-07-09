@@ -168,7 +168,7 @@ pub async fn patch_act(
                     signatory.name
                 )));
             }
-            converted.push(signatory.into());
+            converted.push(signatory.into_core()?);
         }
         next.signatories = converted;
     }
@@ -752,6 +752,7 @@ mod tests {
             id: uid,
             username: username.clone(),
             display_name: "Patch Owner".to_owned(),
+            email: None,
             created_at: time::OffsetDateTime::now_utc()
                 .format(&Rfc3339)
                 .unwrap_or_default(),
@@ -964,6 +965,76 @@ mod tests {
             stored.attendees[0].weight,
             Some(chancela_core::AttendanceWeight::Permilage(0)),
             "failed over-limit attendee patch leaves the previous accepted value untouched"
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_signatory_email_round_trips_and_invalid_email_leaves_act_unchanged() {
+        let state = AppState::default();
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
+        let act_id = act.id;
+
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act);
+
+        let valid_req: PatchAct = serde_json::from_value(json!({
+            "signatories": [{
+                "name": "Ana Marques",
+                "email": "  Ana.Marques@Example.PT ",
+                "capacity": "Chair",
+                "signed": true
+            }]
+        }))
+        .expect("valid signatory email request deserializes");
+        let Json(view) = patch_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            Json(valid_req),
+        )
+        .await
+        .expect("valid signatory email is accepted");
+        assert_eq!(
+            view.signatories[0].email.as_deref(),
+            Some("ana.marques@example.pt")
+        );
+
+        let invalid_req: PatchAct = serde_json::from_value(json!({
+            "signatories": [{
+                "name": "Ana Marques",
+                "email": "ana at example.pt",
+                "capacity": "Chair"
+            }]
+        }))
+        .expect("invalid email request deserializes before semantic validation");
+        let err = match patch_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor,
+            Json(invalid_req),
+        )
+        .await
+        {
+            Ok(_) => panic!("invalid signatory email must be rejected"),
+            Err(err) => err,
+        };
+        match err {
+            ApiError::Unprocessable(msg) => {
+                assert!(msg.contains("signatory.email"), "{msg}");
+            }
+            other => panic!("expected 422, got {other:?}"),
+        }
+
+        let acts = state.acts.read().await;
+        let stored = acts.get(&act_id).expect("act remains stored");
+        assert_eq!(
+            stored.signatories[0].email.as_deref(),
+            Some("ana.marques@example.pt"),
+            "failed invalid-email patch leaves the previous accepted signatory untouched"
         );
     }
 

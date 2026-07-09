@@ -70,6 +70,7 @@ mod database;
 mod delegations;
 mod documents;
 mod dto;
+mod email;
 mod entities;
 mod error;
 mod external_signing;
@@ -1556,6 +1557,7 @@ mod tests {
             id: uid,
             username: "test.actor".to_owned(),
             display_name: "Test Actor".to_owned(),
+            email: None,
             created_at: time::OffsetDateTime::now_utc()
                 .format(&Rfc3339)
                 .unwrap_or_default(),
@@ -3889,6 +3891,7 @@ mod tests {
             id: uid,
             username: username.to_owned(),
             display_name: username.to_owned(),
+            email: None,
             created_at: time::OffsetDateTime::now_utc()
                 .format(&Rfc3339)
                 .unwrap_or_default(),
@@ -5005,6 +5008,7 @@ mod tests {
             id: uid,
             username: "no.perms".to_owned(),
             display_name: "No Perms".to_owned(),
+            email: None,
             created_at: time::OffsetDateTime::now_utc()
                 .format(&Rfc3339)
                 .unwrap_or_default(),
@@ -5340,6 +5344,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_user_accepts_and_normalizes_email() {
+        let state = AppState::default();
+        let (status, user) = send(
+            state.clone(),
+            post_json(
+                "/v1/users",
+                json!({
+                    "username": "amelia.marques",
+                    "display_name": "Amélia Marques",
+                    "email": "  Amelia.Marques@Example.PT "
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(user["email"], "amelia.marques@example.pt");
+        let id = user["id"].as_str().expect("id");
+
+        let (status, got) = send(state.clone(), get(&format!("/v1/users/{id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(got["email"], "amelia.marques@example.pt");
+
+        let (status, no_email) = send(
+            state,
+            post_json("/v1/users", json!({ "username": "bruno.dias" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert!(
+            no_email.get("email").is_none(),
+            "unset user email is omitted from UserView"
+        );
+    }
+
+    #[tokio::test]
     async fn create_user_rejects_invalid_username_422() {
         for bad in ["", "Amelia", "has space", "a@b"] {
             let (status, body) = send(
@@ -5390,6 +5429,54 @@ mod tests {
                 .expect("events")
                 .iter()
                 .any(|e| e["kind"] == "user.updated")
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_user_updates_clears_and_rejects_email() {
+        let state = AppState::default();
+        let id = create_user(&state, "amelia.marques").await;
+
+        let (status, patched) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/users/{id}"),
+                json!({ "email": "  Amelia.Marques@Example.PT " }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(patched["email"], "amelia.marques@example.pt");
+
+        let (status, rejected) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/users/{id}"),
+                json!({ "email": "not-an-email" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            rejected["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("email")
+        );
+
+        let (status, got) = send(state.clone(), get(&format!("/v1/users/{id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(got["email"], "amelia.marques@example.pt");
+
+        let (status, cleared) = send(
+            state,
+            patch_json(&format!("/v1/users/{id}"), json!({ "email": null })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            cleared.get("email").is_none(),
+            "null email clears and is omitted from UserView"
         );
     }
 

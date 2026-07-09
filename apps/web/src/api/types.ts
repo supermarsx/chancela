@@ -265,6 +265,8 @@ export interface ActAttachment {
 
 export interface ActSignatory {
   name: string;
+  /** Optional contact email for coordinating this signatory. Optional on write. */
+  email?: string | null;
   capacity: SignatoryCapacity;
   signed: boolean;
   /** Per-mil quota share for condominium owners, or null (t31). Optional on write. */
@@ -1358,6 +1360,8 @@ export interface UserView {
   id: string;
   username: string;
   display_name: string;
+  /** Optional contact email associated with this user. Omitted when unset. */
+  email?: string;
   created_at: string;
   active: boolean;
   /** Whether a sign-in secret is set (t29). No secret material ever crosses the wire. */
@@ -1373,10 +1377,12 @@ export interface UserView {
 export interface CreateUserBody {
   username: string;
   display_name?: string;
+  email?: string;
 }
 
 export interface UpdateUserBody {
   display_name?: string;
+  email?: string | null;
   active?: boolean;
 }
 

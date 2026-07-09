@@ -2359,6 +2359,7 @@ mod tests {
             id: uid,
             username: username.clone(),
             display_name: "Document Owner".to_owned(),
+            email: None,
             created_at: time::OffsetDateTime::now_utc()
                 .format(&Rfc3339)
                 .unwrap_or_default(),

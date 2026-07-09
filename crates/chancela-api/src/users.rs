@@ -75,6 +75,8 @@ pub struct User {
     pub id: UserId,
     pub username: String,
     pub display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     pub created_at: String,
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -103,6 +105,8 @@ pub struct UserView {
     pub id: String,
     pub username: String,
     pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     pub created_at: String,
     pub active: bool,
     pub has_secret: bool,
@@ -120,6 +124,7 @@ impl From<&User> for UserView {
             id: u.id.to_string(),
             username: u.username.clone(),
             display_name: u.display_name.clone(),
+            email: u.email.clone(),
             created_at: u.created_at.clone(),
             active: u.active,
             has_secret: u.password_hash.is_some(),
@@ -134,11 +139,15 @@ impl From<&User> for UserView {
 pub struct CreateUser {
     pub username: String,
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct PatchUser {
     pub display_name: Option<String>,
+    #[serde(default, deserialize_with = "crate::dto::double_option")]
+    pub email: Option<Option<String>>,
     pub active: Option<bool>,
 }
 
@@ -278,6 +287,7 @@ pub async fn create_user(
         .map(|d| d.trim().to_owned())
         .filter(|d| !d.is_empty())
         .unwrap_or_else(|| username.clone());
+    let email = crate::email::normalize_optional_email(req.email, "email")?;
 
     let (session_username, is_bootstrap) = {
         let user_count = state.users.read().await.len();
@@ -323,6 +333,7 @@ pub async fn create_user(
             id: UserId(Uuid::new_v4()),
             username,
             display_name,
+            email,
             created_at: OffsetDateTime::now_utc()
                 .format(&Rfc3339)
                 .unwrap_or_default(),
@@ -1187,6 +1198,9 @@ pub async fn patch_user(
             if !trimmed.is_empty() {
                 user.display_name = trimmed.to_owned();
             }
+        }
+        if let Some(email) = req.email {
+            user.email = crate::email::normalize_optional_email(email, "email")?;
         }
         if let Some(active) = req.active {
             user.active = active;

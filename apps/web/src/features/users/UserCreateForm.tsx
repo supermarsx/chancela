@@ -33,6 +33,7 @@ export function UserCreateForm({
   const create = useCreateUser();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
   const fieldError = usernameError(username);
 
   // Surface a server duplicate (409) inline against the username field.
@@ -43,13 +44,14 @@ export function UserCreateForm({
     e.preventDefault();
     if (!isValidUsername(username)) return;
     create.mutate(
-      { username, display_name: displayName.trim() || undefined },
+      { username, display_name: displayName.trim() || undefined, email: email.trim() || undefined },
       {
         onSuccess: (user) => {
           // R7: the inline 409 duplicate note against the field stays; the host toasts
           // the success + navigates.
           setUsername('');
           setDisplayName('');
+          setEmail('');
           onCreated(user);
         },
         // R7: a non-conflict failure keeps its inline ErrorNote below AND toasts.
@@ -84,6 +86,16 @@ export function UserCreateForm({
           onChange={(e) => setDisplayName(e.target.value)}
           placeholder={t('users.field.displayName.placeholder')}
           autoComplete="off"
+        />
+      </Field>
+      <Field label={t('registry.email.label')} htmlFor="user-email">
+        <Input
+          id="user-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder={t('registry.email.placeholder')}
+          autoComplete="email"
         />
       </Field>
       {create.error && !conflict ? <ErrorNote error={create.error} /> : null}

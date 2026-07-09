@@ -766,6 +766,7 @@ mod tests {
             id: UserId(Uuid::from_u128(id)),
             username: format!("user{id}"),
             display_name: format!("User {id}"),
+            email: None,
             created_at: created_at.to_owned(),
             active: true,
             password_hash: None,

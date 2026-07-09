@@ -496,6 +496,7 @@ mod tests {
             id: uid,
             username: username.to_owned(),
             display_name: username.to_owned(),
+            email: None,
             created_at: time::OffsetDateTime::now_utc()
                 .format(&Rfc3339)
                 .unwrap_or_default(),

@@ -166,6 +166,7 @@ async fn bootstrap(state: &AppState) -> (String, String) {
         id: uid,
         username: "amelia.marques".to_owned(),
         display_name: "Amelia Marques".to_owned(),
+        email: None,
         created_at,
         active: true,
         password_hash: None,
