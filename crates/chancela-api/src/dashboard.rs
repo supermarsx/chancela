@@ -1134,6 +1134,9 @@ fn profile_calendar_reminder(
 
     let parsed_fiscal_year_end = parse_fiscal_year_end(entity.fiscal_year_end.as_deref());
     let fiscal_year_end = parsed_fiscal_year_end.unwrap_or(DEFAULT_FISCAL_YEAR_END);
+    if is_in_first_fiscal_year(registry_extract, fiscal_year_end, today) {
+        return None;
+    }
     let due_date =
         annual_due_date_for_year(today.year(), fiscal_year_end, months_after_fiscal_year_end);
     if is_before_first_applicable_annual_due(
@@ -1302,10 +1305,7 @@ fn is_before_first_applicable_annual_due(
     months_after_fiscal_year_end: u8,
     due_date: Date,
 ) -> bool {
-    let Some(constitution_date) = registry_extract
-        .and_then(|extract| extract.data_constituicao.as_deref())
-        .and_then(parse_dashboard_date)
-    else {
+    let Some(constitution_date) = registry_constitution_date(registry_extract) else {
         // Conservative fallback: without a registry constitution/incorporation date, keep the
         // annual dashboard reminder rather than guessing that the company is still first-year.
         return false;
@@ -1318,18 +1318,40 @@ fn is_before_first_applicable_annual_due(
         )
 }
 
+fn is_in_first_fiscal_year(
+    registry_extract: Option<&RegistryExtract>,
+    fiscal_year_end: FiscalYearEnd,
+    today: Date,
+) -> bool {
+    let Some(constitution_date) = registry_constitution_date(registry_extract) else {
+        return false;
+    };
+    today <= first_fiscal_year_end(constitution_date, fiscal_year_end)
+}
+
+fn registry_constitution_date(registry_extract: Option<&RegistryExtract>) -> Option<Date> {
+    let constitution_date = registry_extract?.effective_data_constituicao()?;
+    parse_dashboard_date(&constitution_date)
+}
+
 fn first_applicable_annual_due_date(
     constitution_date: Date,
     fiscal_year_end: FiscalYearEnd,
     months_after_fiscal_year_end: u8,
 ) -> Date {
+    add_months_clamped(
+        first_fiscal_year_end(constitution_date, fiscal_year_end),
+        months_after_fiscal_year_end,
+    )
+}
+
+fn first_fiscal_year_end(constitution_date: Date, fiscal_year_end: FiscalYearEnd) -> Date {
     let constitution_year_end = fiscal_year_end_date(constitution_date.year(), fiscal_year_end);
-    let first_fiscal_year_end = if constitution_year_end >= constitution_date {
+    if constitution_year_end >= constitution_date {
         constitution_year_end
     } else {
         fiscal_year_end_date(constitution_date.year() + 1, fiscal_year_end)
-    };
-    add_months_clamped(first_fiscal_year_end, months_after_fiscal_year_end)
+    }
 }
 
 fn fiscal_year_end_date(year: i32, fiscal_year_end: FiscalYearEnd) -> Date {
@@ -1990,6 +2012,58 @@ mod tests {
                 .reason
                 .contains("using the entity's recorded fiscal_year_end")
         );
+    }
+
+    #[test]
+    fn custom_fiscal_year_first_year_suppresses_before_and_at_first_year_end() {
+        let mut entity = entity_of(EntityKind::SociedadeAnonima);
+        entity.fiscal_year_end = Some("08-31".to_owned());
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+        let registry_extracts = HashMap::from([(
+            entity.id,
+            registry_extract_with_constitution_date("2026-01-10"),
+        )]);
+
+        for today in [date!(2026 - 07 - 09), date!(2026 - 08 - 31)] {
+            let reminders = dashboard_reminders(
+                &entities,
+                &HashMap::new(),
+                &HashMap::new(),
+                &registry_extracts,
+                today,
+            );
+
+            assert!(
+                reminders
+                    .iter()
+                    .all(|reminder| reminder.source_rule != "csc-art376-annual"),
+                "dashboard must not report annual accounts while the company is in its first fiscal year"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_fiscal_year_after_first_year_end_emits_first_due_reminder() {
+        let mut entity = entity_of(EntityKind::SociedadeAnonima);
+        entity.fiscal_year_end = Some("08-31".to_owned());
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+        let registry_extracts = HashMap::from([(
+            entity.id,
+            registry_extract_with_constitution_date("2026-01-10"),
+        )]);
+
+        let reminders = dashboard_reminders(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &registry_extracts,
+            date!(2026 - 09 - 01),
+        );
+
+        assert_eq!(reminders.len(), 1);
+        assert_eq!(reminders[0].source_rule, "csc-art376-annual");
+        assert_eq!(reminders[0].due_date, "2026-11-30");
+        assert_eq!(reminders[0].entity_id, entity.id.to_string());
     }
 
     #[test]
