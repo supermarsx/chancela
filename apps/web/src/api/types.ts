@@ -2287,7 +2287,25 @@ export interface PendingSignatureInfo {
 }
 
 export type LongTermEvidenceStatus =
-  'not_configured' | 'timestamped' | 'lt_not_implemented' | 'lta_not_implemented';
+  | 'not_configured'
+  | 'timestamped'
+  | 'lt_local_technical_evidence'
+  | 'lt_production_not_claimed'
+  | 'lt_not_implemented'
+  | 'lta_not_implemented';
+
+export interface DssEvidenceStatus {
+  present: boolean;
+  vri_count: number;
+  certificate_count: number;
+  ocsp_count: number;
+  crl_count: number;
+  certificate_sha256: string[];
+  ocsp_sha256: string[];
+  crl_sha256: string[];
+  revocation_evidence_present: boolean;
+  inspection_status: string;
+}
 
 /** Technical PAdES evidence observed for the act; not a legal B-LT/B-LTA conformance claim. */
 export interface SignatureEvidenceStatus {
@@ -2295,6 +2313,11 @@ export interface SignatureEvidenceStatus {
   timestamp_evidence_present: boolean;
   dss_revocation_evidence_present: boolean;
   dss_revocation_evidence_status: string;
+  dss: DssEvidenceStatus;
+  local_b_lt_style_evidence_present: boolean;
+  production_b_lt_status: string;
+  live_revocation_fetching: boolean;
+  legal_b_lt_claimed: boolean;
   long_term_status: LongTermEvidenceStatus[];
   status_scope: string;
 }
@@ -2379,6 +2402,30 @@ export interface CcSignBody {
 
 /** The CC sign response — the produced qualified signature's metadata (same shape as CMD). */
 export type CcSignResult = CmdConfirmResult;
+
+/**
+ * `POST /v1/acts/{id}/signature/dss/attach` — append caller-supplied DER evidence to an
+ * existing signed PDF. Base64 fields are technical/local evidence only; no production/legal LTV
+ * claim is made.
+ */
+export interface DssAttachBody {
+  certificates?: string[];
+  ocsp_responses?: string[];
+  crls?: string[];
+  actor?: string;
+}
+
+export interface DssAttachResult {
+  document_id: string;
+  act_id: string;
+  signed_pdf_digest: string;
+  timestamp_token: boolean;
+  evidence: SignatureEvidenceStatus;
+  evidentiary_level: string;
+  production_b_lt_status: string;
+  legal_b_lt_claimed: boolean;
+  status_scope: string;
+}
 
 // --- Generic remote qualified signing (§ t59) -----------------------------------
 //

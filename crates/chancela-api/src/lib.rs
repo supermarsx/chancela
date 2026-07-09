@@ -993,6 +993,11 @@ pub fn router(state: AppState) -> Router {
             post(signature::sign_cc_signature),
         )
         .route(
+            "/v1/acts/{id}/signature/dss/attach",
+            post(signature::attach_dss_evidence)
+                .layer(DefaultBodyLimit::max(signature::DSS_ATTACH_ENVELOPE_BYTES)),
+        )
+        .route(
             "/v1/acts/{id}/signature/remote/{provider}/initiate",
             post(signature::initiate_remote_signature),
         )

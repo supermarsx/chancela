@@ -56,7 +56,7 @@ use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_si
 use chancela_signing::{
     CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession, RemoteInitiate,
     RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider, TrustPolicy,
-    TrustedListStatus, TslTrustPolicy, cmd_confirm, cmd_initiate, sign_pdf_cc,
+    TrustedListStatus, TslTrustPolicy, attach_pdf_dss, cmd_confirm, cmd_initiate, sign_pdf_cc,
     timestamp_pdf_with_url,
 };
 use chancela_smartcard::Pkcs11Token;
@@ -123,6 +123,8 @@ pub(crate) const OFFICIAL_SIGNATURE_IMPORT_MAX_BYTES: usize = 16 * 1024 * 1024;
 /// HTTP envelope cap: enough for raw PDF bytes plus JSON/base64 overhead.
 pub(crate) const OFFICIAL_SIGNATURE_IMPORT_ENVELOPE_BYTES: usize =
     OFFICIAL_SIGNATURE_IMPORT_MAX_BYTES * 4 / 3 + 64 * 1024;
+/// DSS attach bodies carry small DER evidence arrays as base64 strings.
+pub(crate) const DSS_ATTACH_ENVELOPE_BYTES: usize = 4 * 1024 * 1024;
 
 // --- request / response DTOs ------------------------------------------------------------------
 
@@ -1155,6 +1157,42 @@ pub struct CcSignResponse {
     pub finalization: &'static str,
 }
 
+/// Body of `POST /v1/acts/{id}/signature/dss/attach`.
+///
+/// All entries are caller-supplied DER bytes encoded as base64. This endpoint does not fetch,
+/// trust, or legally validate revocation material; it appends local DSS/VRI evidence to an already
+/// signed PDF and reports the resulting technical evidence level only.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DssAttachRequest {
+    #[serde(
+        default,
+        alias = "certificates_base64",
+        alias = "certificate_der_base64"
+    )]
+    pub certificates: Vec<String>,
+    #[serde(default, alias = "ocsp_responses_base64", alias = "ocsp_der_base64")]
+    pub ocsp_responses: Vec<String>,
+    #[serde(default, alias = "crls_base64", alias = "crl_der_base64")]
+    pub crls: Vec<String>,
+    #[serde(default)]
+    pub actor: Option<String>,
+}
+
+/// Response of a successful local DSS/VRI evidence attachment.
+#[derive(Serialize)]
+pub struct DssAttachResponse {
+    pub document_id: String,
+    pub act_id: String,
+    pub signed_pdf_digest: String,
+    pub timestamp_token: bool,
+    pub evidence: SignatureEvidenceStatus,
+    pub evidentiary_level: &'static str,
+    pub production_b_lt_status: &'static str,
+    pub legal_b_lt_claimed: bool,
+    pub status_scope: &'static str,
+}
+
 /// `POST /v1/acts/{id}/signature/cc/sign` — a synchronous Cartão de Cidadão qualified signature.
 ///
 /// Loads the act's sealed unsigned PDF/A, drives the card on `spawn_blocking` (PKCS#11/PC/SC FFI +
@@ -1314,6 +1352,91 @@ pub async fn sign_cc_signature(
         signed_pdf_digest,
         timestamp_token: final_pdf.report.has_signature_timestamp,
         finalization: "finalizado_qualificado",
+    }))
+}
+
+/// `POST /v1/acts/{id}/signature/dss/attach` — append caller-supplied local DSS/VRI evidence to an
+/// existing signed PDF.
+///
+/// This is a local technical-evidence endpoint only. It requires the act to already have a signed
+/// PDF, accepts DER certificates/OCSP/CRLs supplied by the caller, appends them through the PAdES
+/// DSS writer, re-validates the signed PDF, persists the updated bytes/digest, and chains a
+/// separate audit event. It never claims production/legal LTV or B-LT conformance.
+pub async fn attach_dss_evidence(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<DssAttachRequest>,
+) -> Result<Json<DssAttachResponse>, ApiError> {
+    let act_id = ActId(id);
+    let scope = scope_of_act(&state, act_id).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
+
+    let mut stored = load_signed(&state, act_id)
+        .await?
+        .ok_or_else(|| ApiError::Conflict("o ato ainda não tem PDF assinado".to_owned()))?;
+
+    // Re-check the existing artifact before appending a new DSS revision.
+    validate_signed_pdf(&stored.signed_pdf_bytes, &stored.signer_cert_der)?;
+
+    let evidence = dss_attach_evidence_from_request(req)?;
+    let input_pdf = stored.signed_pdf_bytes.clone();
+    let (updated_pdf, _) = tokio::task::spawn_blocking(move || {
+        attach_pdf_dss(&input_pdf, &evidence).map_err(map_dss_attach_error)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("DSS attach task failed: {e}")))??;
+
+    let report = validate_signed_pdf(&updated_pdf, &stored.signer_cert_der)?;
+    let signed_pdf_digest = sha256_hex(&updated_pdf);
+    stored.signed_pdf_digest = signed_pdf_digest.clone();
+    stored.signed_pdf_bytes = updated_pdf;
+
+    let evidence_status = signature_evidence_status(Some(&stored));
+    let audit_scope = act_audit_scope(&state, act_id).await?;
+    let event_payload = json!({
+        "act_id": act_id.to_string(),
+        "document_id": stored.document_id.clone(),
+        "signed_pdf_digest": signed_pdf_digest.clone(),
+        "evidentiary_level": evidence_status.current_level,
+        "status_scope": TECHNICAL_EVIDENCE_ONLY,
+        "production_b_lt_status": PRODUCTION_B_LT_NOT_CLAIMED,
+        "legal_b_lt_claimed": false,
+        "timestamp_token": report.has_signature_timestamp,
+        "dss": &evidence_status.dss,
+    });
+    let payload = serde_json::to_vec(&event_payload)?;
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &audit_scope,
+            "document.signature.dss_attached",
+            None,
+            &payload,
+        )?;
+        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        state.attest_latest(&attestor, &ledger).await;
+    }
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(act_id, stored.clone());
+
+    Ok(Json(DssAttachResponse {
+        document_id: stored.document_id,
+        act_id: act_id.to_string(),
+        signed_pdf_digest,
+        timestamp_token: evidence_status.timestamp_evidence_present,
+        evidentiary_level: evidence_status.current_level,
+        production_b_lt_status: PRODUCTION_B_LT_NOT_CLAIMED,
+        legal_b_lt_claimed: false,
+        status_scope: TECHNICAL_EVIDENCE_ONLY,
+        evidence: evidence_status,
     }))
 }
 
@@ -3164,6 +3287,47 @@ async fn configured_tsa_url(state: &AppState) -> Option<String> {
 
 fn map_timestamp_error(e: chancela_signing::SigningError) -> ApiError {
     ApiError::Unprocessable(format!("falha ao obter carimbo temporal qualificado: {e}"))
+}
+
+fn dss_attach_evidence_from_request(
+    req: DssAttachRequest,
+) -> Result<chancela_signing::DssEvidence, ApiError> {
+    let evidence = chancela_signing::DssEvidence {
+        certificates: decode_der_base64_list("certificates", req.certificates)?,
+        ocsp_responses: decode_der_base64_list("ocsp_responses", req.ocsp_responses)?,
+        crls: decode_der_base64_list("crls", req.crls)?,
+    };
+    if evidence.certificates.is_empty()
+        && evidence.ocsp_responses.is_empty()
+        && evidence.crls.is_empty()
+    {
+        return Err(ApiError::Unprocessable(
+            "forneça pelo menos um certificado, resposta OCSP ou CRL em DER/base64".to_owned(),
+        ));
+    }
+    Ok(evidence)
+}
+
+fn decode_der_base64_list(field: &str, values: Vec<String>) -> Result<Vec<Vec<u8>>, ApiError> {
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(idx, value)| {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Err(ApiError::Unprocessable(format!(
+                    "{field}[{idx}] não pode estar vazio"
+                )));
+            }
+            B64.decode(trimmed).map_err(|_| {
+                ApiError::Unprocessable(format!("{field}[{idx}] não é base64 DER válido"))
+            })
+        })
+        .collect()
+}
+
+fn map_dss_attach_error(e: chancela_signing::SigningError) -> ApiError {
+    ApiError::Unprocessable(format!("falha ao anexar DSS/VRI local: {e}"))
 }
 
 /// Load the signed variant for an act (in-memory read model, falling back to the store on a miss).

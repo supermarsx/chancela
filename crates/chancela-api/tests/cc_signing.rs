@@ -24,6 +24,8 @@ use std::time::Duration as StdDuration;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
 use der::Encode;
 use der::asn1::{Any, BitString, ObjectIdentifier};
 use serde_json::{Value, json};
@@ -40,8 +42,8 @@ use chancela_cades::{RawSignature, SignatureAlgorithm};
 use chancela_core::ActId;
 use chancela_pades::validate_pdf_signature;
 use chancela_signing::{
-    DssEvidence, SignerProvider, SigningError, SmartcardProvider, StaticTrustPolicy, TrustPolicy,
-    TrustedListStatus, attach_pdf_dss,
+    SignerProvider, SigningError, SmartcardProvider, StaticTrustPolicy, TrustPolicy,
+    TrustedListStatus,
 };
 use chancela_smartcard::token::{LABEL_AUTH_CERT, LABEL_SIGNATURE_CERT};
 use chancela_smartcard::{CertUsage, CryptoToken, MockToken, SmartcardError, TokenCertificate};
@@ -744,7 +746,7 @@ async fn cc_sign_timestamps_when_tsa_configured() {
 }
 
 #[tokio::test]
-async fn cc_signature_status_reports_caller_supplied_dss_as_local_technical_evidence() {
+async fn cc_dss_attach_api_persists_caller_supplied_local_technical_evidence() {
     let dir = TempDir::new();
     let card = CcTestCard::cc_v1();
     let signature_cert_der = card.signature_cert_der.clone();
@@ -769,40 +771,40 @@ async fn cc_signature_status_reports_caller_supplied_dss_as_local_technical_evid
     assert_eq!(status, StatusCode::OK, "cc sign: {done}");
     assert_eq!(done["timestamp_token"], true);
 
-    let act_uuid = ActId(Uuid::parse_str(&act_id).expect("act uuid"));
-    let mut stored = state
-        .signed_documents
-        .read()
-        .await
-        .get(&act_uuid)
-        .cloned()
-        .expect("signed artifact stored");
-    let dss_evidence = DssEvidence {
-        certificates: vec![signature_cert_der.clone()],
-        ocsp_responses: vec![OCSP_DER_FIXTURE.to_vec()],
-        crls: vec![CRL_DER_FIXTURE.to_vec()],
-    };
-    let (with_dss, dss_report) =
-        attach_pdf_dss(&stored.signed_pdf_bytes, &dss_evidence).expect("DSS append");
-    assert!(dss_report.present);
-    assert_eq!(dss_report.vri_count, 1);
-    assert_eq!(dss_report.certificate_count(), 1);
-    assert_eq!(dss_report.ocsp_count(), 1);
-    assert_eq!(dss_report.crl_count(), 1);
+    let (status, before_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let before_digest = sha256_hex(&before_pdf);
 
-    stored.signed_pdf_digest = sha256_hex(&with_dss);
-    stored.signed_pdf_bytes = with_dss;
-    state
-        .store
-        .as_ref()
-        .expect("store")
-        .persist(|tx| tx.upsert_signed_document(&stored))
-        .expect("DSS signed document persisted");
-    state
-        .signed_documents
-        .write()
-        .await
-        .insert(act_uuid, stored);
+    let (status, attached) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/dss/attach"),
+            &token,
+            json!({
+                "certificates": [B64.encode(&signature_cert_der)],
+                "ocsp_responses": [B64.encode(OCSP_DER_FIXTURE)],
+                "crls": [B64.encode(CRL_DER_FIXTURE)],
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "DSS attach: {attached}");
+    assert_eq!(attached["act_id"], act_id);
+    assert_eq!(attached["timestamp_token"], true);
+    assert_eq!(attached["evidentiary_level"], "B-LT-local");
+    assert_eq!(attached["production_b_lt_status"], "not_claimed");
+    assert_eq!(attached["legal_b_lt_claimed"], false);
+    assert_eq!(attached["status_scope"], "technical_evidence_only");
+    let after_digest = attached["signed_pdf_digest"].as_str().expect("digest");
+    assert_ne!(
+        after_digest, before_digest,
+        "DSS append updates signed PDF bytes"
+    );
 
     let (_, view) = send(
         &state,
@@ -861,6 +863,81 @@ async fn cc_signature_status_reports_caller_supplied_dss_as_local_technical_evid
             "missing {expected} in long_term_status: {evidence}"
         );
     }
+
+    let (status, after_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sha256_hex(&after_pdf), after_digest);
+    let report = validate_pdf_signature(&after_pdf).expect("DSS-updated PDF validates");
+    assert!(report.covers_whole_file_except_contents);
+    assert!(report.has_signature_timestamp);
+    assert_eq!(report.cades.signer_cert_der, signature_cert_der);
+
+    let stored = state
+        .signed_documents
+        .read()
+        .await
+        .get(&ActId(Uuid::parse_str(&act_id).unwrap()))
+        .cloned()
+        .expect("signed artifact stored");
+    assert_eq!(stored.signed_pdf_digest, after_digest);
+
+    let (_, events) = send(
+        &state,
+        get_req(&format!("/v1/ledger/events?scope=act:{act_id}"), &token),
+    )
+    .await;
+    assert_eq!(
+        events
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["kind"] == "document.signed")
+            .count(),
+        1,
+        "DSS attach must not mint a second document.signed event"
+    );
+    let dss_event = events
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "document.signature.dss_attached")
+        .expect("DSS audit event present");
+    let payload = dss_event
+        .get("payload")
+        .or_else(|| dss_event.get("data"))
+        .expect("event payload");
+    assert_eq!(payload["evidentiary_level"], "B-LT-local");
+    assert_eq!(payload["status_scope"], "technical_evidence_only");
+    assert_eq!(payload["legal_b_lt_claimed"], false);
+}
+
+#[tokio::test]
+async fn dss_attach_requires_an_existing_signed_pdf() {
+    let dir = TempDir::new();
+    let state = state_at(&dir.0, None, true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/dss/attach"),
+            &token,
+            json!({ "ocsp_responses": [B64.encode(OCSP_DER_FIXTURE)] }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "DSS attach needs an existing signed PDF: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 
 #[tokio::test]
