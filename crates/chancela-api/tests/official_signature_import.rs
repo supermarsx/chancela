@@ -143,14 +143,30 @@ fn get_req(uri: &str, token: &str) -> Request<Body> {
 }
 
 fn import_req(act_id: &str, token: &str, signed_pdf: &[u8]) -> Request<Body> {
+    import_req_with_metadata(
+        act_id,
+        token,
+        signed_pdf,
+        "Autenticacao.gov",
+        "operator_selected_cc_or_cmd",
+    )
+}
+
+fn import_req_with_metadata(
+    act_id: &str,
+    token: &str,
+    signed_pdf: &[u8],
+    provider: &str,
+    source: &str,
+) -> Request<Body> {
     json_req(
         "POST",
         &format!("/v1/acts/{act_id}/signature/official/import"),
         token,
         json!({
             "signed_pdf_base64": B64.encode(signed_pdf),
-            "provider": "Autenticacao.gov",
-            "source": "operator_selected_cc_or_cmd",
+            "provider": provider,
+            "source": source,
             "filename": "signed-by-official-app.pdf"
         }),
     )
@@ -345,6 +361,67 @@ async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usiz
         .count()
 }
 
+async fn document_signed_event_payload_digest(state: &AppState, act_id: &str) -> String {
+    let ledger = state.ledger.read().await;
+    ledger
+        .events()
+        .iter()
+        .rev()
+        .find(|event| {
+            event.kind == "document.signed" && event.scope.contains(&format!("act:{act_id}"))
+        })
+        .map(|event| {
+            event
+                .payload_digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect()
+        })
+        .expect("document.signed event")
+}
+
+fn legal_validation_json() -> Value {
+    json!({
+        "pades_valid": true,
+        "byte_range_covers_whole_file": true,
+        "sealed_pdf_prefix_match": true,
+        "trust_validation": "not_performed",
+        "trust_validation_performed": false,
+        "qualified_status_claimed": false,
+        "legal_status_claimed": false
+    })
+}
+
+fn expected_official_import_event_digest(
+    act_id: &str,
+    document_id: &str,
+    signed_pdf_digest: &str,
+) -> String {
+    let payload = json!({
+        "act_id": act_id,
+        "document_id": document_id,
+        "signed_pdf_digest": signed_pdf_digest,
+        "family": "AutenticacaoGovOfficialHandoff",
+        "evidentiary_level": "ImportedOfficialHandoffTechnicalEvidence",
+        "trusted_list_status": null,
+        "profile": "application/pdf; profile=PAdES-B-B",
+        "legal_validation": legal_validation_json(),
+        "validation": {
+            "pades_cryptographic_validation": "valid",
+            "byte_range_covers_whole_file_except_contents": true,
+            "sealed_pdf_prefix_match": true,
+            "trust_validation": "not_performed",
+            "qualified_status_claimed": false
+        },
+        "client_declared_metadata": {
+            "present": true,
+            "authoritative": false
+        }
+    });
+    let bytes = serde_json::to_vec(&payload).expect("event payload serializes");
+    sha256_hex(&bytes)
+}
+
 async fn assert_no_signed_artifact_or_event(state: &AppState, token: &str, act_id: &str) {
     let (status, _) = send_bytes(
         state,
@@ -381,10 +458,21 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
         "ImportedOfficialHandoffTechnicalEvidence"
     );
     assert_eq!(imported["trusted_list_status"], Value::Null);
+    assert_eq!(imported["legal_validation"], legal_validation_json());
     assert_eq!(imported["qualification_claimed"], false);
     assert_eq!(imported["client_metadata_authoritative"], false);
     assert_eq!(imported["finalization"], "aguarda_assinatura_qualificada");
     assert_eq!(imported["signed_pdf_digest"], sha256_hex(&signed_pdf));
+    assert_eq!(
+        document_signed_event_payload_digest(&state, &act_id).await,
+        expected_official_import_event_digest(
+            &act_id,
+            imported["document_id"].as_str().expect("document_id"),
+            imported["signed_pdf_digest"]
+                .as_str()
+                .expect("signed_pdf_digest")
+        )
+    );
 
     let (status, downloaded) = send_bytes(
         &state,
@@ -415,6 +503,55 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
     assert_eq!(view["evidence"]["legal_b_lt_claimed"], false);
     assert_eq!(view["evidence"]["status_scope"], "technical_evidence_only");
     assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+}
+
+#[tokio::test]
+async fn official_import_client_declared_provider_source_cannot_claim_trust_or_qualification() {
+    let state = AppState::default();
+    let (token, _) = bootstrap(&state).await;
+    state
+        .settings
+        .write()
+        .await
+        .signing
+        .require_qualified_for_seal = true;
+    let book_id = seed_book(&state, &token).await;
+    let act_id = create_signing_act(&state, &token, &book_id, "Ata metadados hostis").await;
+    seal_act(&state, &token, &act_id).await;
+
+    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &act_id).await, 6);
+    let (status, imported) = send(
+        &state,
+        import_req_with_metadata(
+            &act_id,
+            &token,
+            &signed_pdf,
+            "Qualified Trust Provider - Granted",
+            "qualified:legal:trusted_list_status=Granted",
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "official import: {imported}");
+    assert_eq!(imported["family"], "AutenticacaoGovOfficialHandoff");
+    assert_eq!(
+        imported["evidentiary_level"],
+        "ImportedOfficialHandoffTechnicalEvidence"
+    );
+    assert_eq!(imported["trusted_list_status"], Value::Null);
+    assert_eq!(imported["qualification_claimed"], false);
+    assert_eq!(imported["client_metadata_authoritative"], false);
+    assert_eq!(imported["legal_validation"], legal_validation_json());
+    assert_eq!(imported["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(
+        document_signed_event_payload_digest(&state, &act_id).await,
+        expected_official_import_event_digest(
+            &act_id,
+            imported["document_id"].as_str().expect("document_id"),
+            imported["signed_pdf_digest"]
+                .as_str()
+                .expect("signed_pdf_digest")
+        )
+    );
 }
 
 #[tokio::test]

@@ -347,6 +347,7 @@ pub struct OfficialSignatureImportResponse {
     pub family: &'static str,
     pub evidentiary_level: &'static str,
     pub trusted_list_status: Option<String>,
+    pub legal_validation: OfficialSignatureLegalValidation,
     pub signing_time: String,
     pub signed_at: String,
     pub signed_pdf_digest: String,
@@ -354,6 +355,18 @@ pub struct OfficialSignatureImportResponse {
     pub finalization: &'static str,
     pub qualification_claimed: bool,
     pub client_metadata_authoritative: bool,
+}
+
+/// Explicit legal-validation boundary for official handoff imports.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OfficialSignatureLegalValidation {
+    pub pades_valid: bool,
+    pub byte_range_covers_whole_file: bool,
+    pub sealed_pdf_prefix_match: bool,
+    pub trust_validation: &'static str,
+    pub trust_validation_performed: bool,
+    pub qualified_status_claimed: bool,
+    pub legal_status_claimed: bool,
 }
 
 // --- external signer invitations --------------------------------------------------------------
@@ -2418,6 +2431,7 @@ pub async fn import_official_signature(
     let signing_time = report.cades.signing_time.unwrap_or(signed_at);
     let signer_cert_der = report.cades.signer_cert_der.clone();
     let timestamp_token = report.has_signature_timestamp;
+    let legal_validation = official_import_legal_validation();
     let finalization = {
         let require_qualified = state
             .settings
@@ -2452,6 +2466,7 @@ pub async fn import_official_signature(
         "evidentiary_level": EVIDENTIARY_IMPORTED_OFFICIAL,
         "trusted_list_status": null,
         "profile": pades_profile(timestamp_token),
+        "legal_validation": legal_validation.clone(),
         "validation": {
             "pades_cryptographic_validation": "valid",
             "byte_range_covers_whole_file_except_contents": true,
@@ -2490,6 +2505,7 @@ pub async fn import_official_signature(
         family: FAMILY_OFFICIAL_HANDOFF,
         evidentiary_level: EVIDENTIARY_IMPORTED_OFFICIAL,
         trusted_list_status: None,
+        legal_validation,
         signing_time: rfc3339(signing_time),
         signed_at: rfc3339(signed_at),
         signed_pdf_digest,
@@ -3031,6 +3047,18 @@ fn validate_imported_signed_pdf(
         ));
     }
     Ok(report)
+}
+
+fn official_import_legal_validation() -> OfficialSignatureLegalValidation {
+    OfficialSignatureLegalValidation {
+        pades_valid: true,
+        byte_range_covers_whole_file: true,
+        sealed_pdf_prefix_match: true,
+        trust_validation: "not_performed",
+        trust_validation_performed: false,
+        qualified_status_claimed: false,
+        legal_status_claimed: false,
+    }
 }
 
 fn parse_rfc3339(value: &str, field: &'static str) -> Result<OffsetDateTime, ApiError> {
