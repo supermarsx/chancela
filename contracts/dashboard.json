@@ -9,6 +9,63 @@
   "unresolved_compliance": 0,
   "ledger_length": 5,
   "ledger_valid": true,
+  "current_work": {
+    "open_books": [
+      {
+        "book_id": "3f1c8e40-0000-4000-8000-000000000010",
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "entity_name": "Encosto Estratégico, S.A.",
+        "kind": "AssembleiaGeral",
+        "purpose": "Livro de atas da assembleia geral",
+        "opening_date": "2026-01-05",
+        "last_ata_number": 1,
+        "total_acts": 1,
+        "open_acts": 0,
+        "next_ata_number": 2,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+          "book": "/v1/books/3f1c8e40-0000-4000-8000-000000000010",
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=book:3f1c8e40-0000-4000-8000-000000000010"
+        }
+      }
+    ],
+    "act_counts_by_state": {
+      "Draft": 0,
+      "Review": 0,
+      "Convened": 0,
+      "Deliberated": 0,
+      "TextApproved": 0,
+      "Signing": 0,
+      "Sealed": 1,
+      "Archived": 0
+    }
+  },
+  "alerts": [
+    {
+      "code": "registry.provenance.expiring_soon",
+      "label": "Advisory",
+      "category": "RegistryProvenance",
+      "message": "Stored registry extract provenance has valid_until 2026-08-01, which expires in 23 days. Plan a registry refresh before relying on it as current evidence.",
+      "params": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "valid_until": "2026-08-01",
+        "days_until": "23"
+      },
+      "target": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "book_id": null,
+        "act_id": null,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+          "book": null,
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=company:2f1c8e40-0000-4000-8000-000000000001"
+        }
+      },
+      "source": "registry_extracts.provenance.valid_until"
+    }
+  ],
   "reminders": [
     {
       "due_date": "2026-03-31",

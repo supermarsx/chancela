@@ -220,6 +220,23 @@ pub async fn scope_of_act(state: &AppState, act: ActId) -> Scope {
     }
 }
 
+/// The target [`Scope`] for an operation on a follow-up row: the owning act's book, resolved
+/// through the stored `follow_up.act_id`.
+///
+/// Unknown follow-ups fall back to `Global`, matching [`scope_of_act`]'s non-enumerating missing
+/// resource behaviour. The follow-up lock is released before resolving the act scope so callers do
+/// not take locks in `follow_ups -> acts` order.
+pub async fn scope_of_follow_up(state: &AppState, follow_up: &str) -> Scope {
+    let act_id = {
+        let follow_ups = state.follow_ups.read().await;
+        follow_ups.get(follow_up).map(|f| f.act_id)
+    };
+    match act_id {
+        Some(act_id) => scope_of_act(state, act_id).await,
+        None => Scope::Global,
+    }
+}
+
 // =================================================================================================
 // Fail-closed route classification + the router-walk coverage test (plan §3.3 / E8 guard, landed
 // early here so no sensitive endpoint can ship ungated by omission).
@@ -299,6 +316,9 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/compliance", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/seal", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/archive", RouteClass::Gated), // POST act.archive@Book
+    ("/v1/acts/{id}/follow-ups", RouteClass::Gated), // GET act.read@Book · POST act.edit@Book
+    ("/v1/follow-ups/{id}", RouteClass::Gated), // PATCH act.edit@Book(follow_up.act_id)
+    ("/v1/follow-ups/{id}/complete", RouteClass::Gated), // POST act.edit@Book(follow_up.act_id)
     ("/v1/acts/{id}/convening/dispatch", RouteClass::Gated), // POST act.edit@Book (t61-E1)
     ("/v1/acts/{id}/document/preview", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/generate", RouteClass::Gated), // POST document.generate@Book

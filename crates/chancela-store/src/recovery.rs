@@ -1298,6 +1298,7 @@ fn domain_table_names() -> Vec<String> {
         "acts",
         "registry_extracts",
         "documents",
+        "follow_ups",
     ]
     .into_iter()
     .map(String::from)
@@ -1311,6 +1312,7 @@ fn clear_domain(tx: &Tx<'_>) -> Result<(), StoreError> {
     tx.raw().execute("DELETE FROM acts", [])?;
     tx.raw().execute("DELETE FROM registry_extracts", [])?;
     tx.raw().execute("DELETE FROM documents", [])?;
+    tx.raw().execute("DELETE FROM follow_ups", [])?;
     Ok(())
 }
 

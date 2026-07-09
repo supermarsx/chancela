@@ -15,6 +15,20 @@ const baseDashboard: Dashboard = {
   unresolved_compliance: 0,
   ledger_length: 1,
   ledger_valid: true,
+  current_work: {
+    open_books: [],
+    act_counts_by_state: {
+      Draft: 0,
+      Review: 0,
+      Convened: 0,
+      Deliberated: 0,
+      TextApproved: 0,
+      Signing: 0,
+      Sealed: 0,
+      Archived: 0,
+    },
+  },
+  alerts: [],
   reminders: [],
   recent_events: [],
 };

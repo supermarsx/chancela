@@ -8,6 +8,8 @@
 //! to lowercase hex ([`crate::hex`]). Enum fields reuse the core enums directly: their serde
 //! representation is the bare variant name, which is exactly what the contract pins (§2.1).
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Deserializer, Serialize};
 use time::format_description::well_known::Rfc3339;
 use time::macros::format_description;
@@ -31,6 +33,7 @@ use chancela_registry::{
     Quota, RegistryAnnotation, RegistryEvent, RegistryExtract, RegistryOfficer,
     RegistryOfficialSignature, RegistryProvenance,
 };
+use chancela_store::{StoredFollowUp, StoredFollowUpStatus};
 
 use crate::AppState;
 use crate::actor::CurrentActor;
@@ -847,6 +850,105 @@ pub struct DispatchConvening {
     pub recipients: Option<Vec<String>>,
 }
 
+/// Response view of a first-class act follow-up/task. These rows are deliberately outside `ActView`
+/// so sealed act JSON remains immutable.
+#[derive(Serialize)]
+pub struct FollowUpView {
+    pub id: String,
+    pub act_id: String,
+    pub agenda_number: Option<u32>,
+    pub deliberation_index: Option<u32>,
+    pub title: String,
+    pub detail: Option<String>,
+    pub due_date: Option<String>,
+    pub assignee: Option<String>,
+    pub assignee_display: Option<String>,
+    pub status: StoredFollowUpStatus,
+    pub created_at: String,
+    pub created_by: String,
+    pub completed_at: Option<String>,
+    pub completed_by: Option<String>,
+}
+
+impl From<&StoredFollowUp> for FollowUpView {
+    fn from(f: &StoredFollowUp) -> Self {
+        FollowUpView {
+            id: f.id.clone(),
+            act_id: f.act_id.to_string(),
+            agenda_number: f.agenda_number,
+            deliberation_index: f.deliberation_index,
+            title: f.title.clone(),
+            detail: f.detail.clone(),
+            due_date: f.due_date.map(format_date),
+            assignee: f.assignee.clone(),
+            assignee_display: f.assignee_display.clone(),
+            status: f.status,
+            created_at: f.created_at.format(&Rfc3339).unwrap_or_default(),
+            created_by: f.created_by.clone(),
+            completed_at: f
+                .completed_at
+                .map(|t| t.format(&Rfc3339).unwrap_or_default()),
+            completed_by: f.completed_by.clone(),
+        }
+    }
+}
+
+/// Body of `POST /v1/acts/{id}/follow-ups`.
+#[derive(Deserialize)]
+pub struct CreateFollowUp {
+    #[serde(default = "default_actor")]
+    pub actor: String,
+    #[serde(default)]
+    pub agenda_number: Option<u32>,
+    #[serde(default)]
+    pub deliberation_index: Option<u32>,
+    pub title: String,
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub due_date: Option<String>,
+    #[serde(default)]
+    pub assignee: Option<String>,
+    #[serde(default)]
+    pub assignee_display: Option<String>,
+}
+
+/// Body of `PATCH /v1/follow-ups/{id}`. Nullable fields use [`double_option`] semantics.
+#[derive(Deserialize)]
+pub struct PatchFollowUp {
+    #[serde(default = "default_actor")]
+    pub actor: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub detail: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub due_date: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub assignee: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub assignee_display: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub agenda_number: Option<Option<u32>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub deliberation_index: Option<Option<u32>>,
+}
+
+/// Body of `POST /v1/follow-ups/{id}/complete`.
+#[derive(Deserialize)]
+pub struct CompleteFollowUp {
+    #[serde(default = "default_actor")]
+    pub actor: String,
+}
+
+impl Default for CompleteFollowUp {
+    fn default() -> Self {
+        Self {
+            actor: default_actor(),
+        }
+    }
+}
+
 /// Response view of an `Act` (contract §2.5). The structured art. 63.º content fields
 /// (`meeting_time`, `mesa`, `agenda`, `referenced_documents`, `deliberation_items`,
 /// `members_present`/`members_represented`) are additive (t31 §2.4); old clients tolerate them.
@@ -1236,8 +1338,88 @@ pub struct DashboardResponse {
     pub unresolved_compliance: usize,
     pub ledger_length: u64,
     pub ledger_valid: bool,
+    pub current_work: DashboardCurrentWork,
+    pub alerts: Vec<DashboardAlert>,
     pub reminders: Vec<DashboardReminder>,
     pub recent_events: Vec<LedgerEventView>,
+}
+
+/// Current mutable work surfaced by the dashboard. This is additive to the legacy summary counts:
+/// `act_counts_by_state` names the exact [`ActState`] variants, and `open_books` carries only safe
+/// already-stored identifiers/metadata.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardCurrentWork {
+    pub open_books: Vec<DashboardOpenBook>,
+    pub act_counts_by_state: DashboardActStateCounts,
+}
+
+/// Count of acts in each exact lifecycle state. Field names are pinned to the core enum variant
+/// names so consumers do not need to reverse-map the legacy aggregate counters.
+#[derive(Debug, Serialize, Clone, Default, PartialEq, Eq)]
+pub struct DashboardActStateCounts {
+    #[serde(rename = "Draft")]
+    pub draft: usize,
+    #[serde(rename = "Review")]
+    pub review: usize,
+    #[serde(rename = "Convened")]
+    pub convened: usize,
+    #[serde(rename = "Deliberated")]
+    pub deliberated: usize,
+    #[serde(rename = "TextApproved")]
+    pub text_approved: usize,
+    #[serde(rename = "Signing")]
+    pub signing: usize,
+    #[serde(rename = "Sealed")]
+    pub sealed: usize,
+    #[serde(rename = "Archived")]
+    pub archived: usize,
+}
+
+/// One open book row for the current-work dashboard panel.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardOpenBook {
+    pub book_id: String,
+    pub entity_id: String,
+    pub entity_name: Option<String>,
+    pub kind: BookKind,
+    pub purpose: Option<String>,
+    pub opening_date: Option<String>,
+    pub last_ata_number: u64,
+    pub total_acts: usize,
+    pub open_acts: usize,
+    pub next_ata_number: u64,
+    pub links: DashboardTargetLinks,
+}
+
+/// One actionable dashboard alert. Alerts are routing/review signals only: `label` is intentionally
+/// limited to advisory/review-required and messages avoid unsupported legal conclusions.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardAlert {
+    pub code: String,
+    pub label: String,
+    pub category: String,
+    pub message: String,
+    pub params: BTreeMap<String, String>,
+    pub target: DashboardAlertTarget,
+    pub source: Option<String>,
+}
+
+/// Safe target ids for a dashboard alert.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardAlertTarget {
+    pub entity_id: Option<String>,
+    pub book_id: Option<String>,
+    pub act_id: Option<String>,
+    pub links: DashboardTargetLinks,
+}
+
+/// API links a client can follow for the target, when such a target exists.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardTargetLinks {
+    pub entity: Option<String>,
+    pub book: Option<String>,
+    pub act: Option<String>,
+    pub ledger: Option<String>,
 }
 
 /// One bounded dashboard reminder/action item. These are advisory planning signals, not compliance

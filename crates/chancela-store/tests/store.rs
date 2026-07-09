@@ -21,7 +21,8 @@ use chancela_registry::{RegistryExtract, RegistryProvenance};
 #[cfg(feature = "sqlcipher")]
 use chancela_store::StoreOpenOptions;
 use chancela_store::{
-    Store, StoreError, StoredDocument, StoredImportedDocument, StoredImportedDocumentMeta,
+    Store, StoreError, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
+    StoredImportedDocument, StoredImportedDocumentMeta,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -136,6 +137,25 @@ fn sample_imported_document(
             imported_by: "amelia.marques".to_string(),
         },
         bytes: bytes.to_vec(),
+    }
+}
+
+fn sample_follow_up(id: &str, act_id: ActId) -> StoredFollowUp {
+    StoredFollowUp {
+        id: id.to_string(),
+        act_id,
+        agenda_number: Some(1),
+        deliberation_index: Some(0),
+        title: "Entregar certidao atualizada".to_string(),
+        detail: Some("Enviar comprovativo ao orgao fiscal.".to_string()),
+        due_date: Some(time::macros::date!(2026 - 04 - 30)),
+        assignee: Some("amelia.marques".to_string()),
+        assignee_display: Some("Amelia Marques".to_string()),
+        status: StoredFollowUpStatus::Open,
+        created_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+        created_by: "rui.secretario".to_string(),
+        completed_at: None,
+        completed_by: None,
     }
 }
 
@@ -428,7 +448,7 @@ fn book_legal_hold_survives_drop_and_reopen_without_schema_churn() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "5", "book JSON metadata did not require DDL");
+    assert_eq!(stamped, "6", "book JSON metadata did not require DDL");
 }
 
 #[test]
@@ -658,9 +678,9 @@ fn backup_reflects_a_broken_chain_without_failing() {
 fn schema_version_is_current() {
     // The documents table landed as schema v2; the `imported_books` isolation namespace (t54-E2)
     // landed as schema v3; the qualified-signing tables (`signed_documents` + `pending_cmd_sessions`,
-    // t57-S3) landed as schema v4; non-canonical imported documents landed as schema v5. A fresh DB
-    // is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 5);
+    // t57-S3) landed as schema v4; non-canonical imported documents landed as schema v5; act
+    // follow-ups landed as schema v6. A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 6);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -671,7 +691,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "5");
+    assert_eq!(stamped, "6");
 }
 
 #[test]
@@ -813,7 +833,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "5", "stamp advanced forward");
+        assert_eq!(stamped, "6", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -828,6 +848,53 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
     let doc = sample_document("doc-1", act.id, FAKE_PDF);
     store.persist(|tx| tx.upsert_document(&doc)).unwrap();
     assert_eq!(store.document_by_id("doc-1").unwrap().unwrap(), doc);
+}
+
+// --- follow-ups table (schema v6) ---------------------------------------------------------------
+
+#[test]
+fn upsert_follow_up_round_trips_without_mutating_act_json() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let entity = sample_entity("Follow Ups, Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata com tarefas", MeetingChannel::Physical);
+    let follow_up = sample_follow_up("86b55d92-1424-4958-9909-2c3d8c4d395e", act.id);
+    let original_act = act.clone();
+
+    store
+        .persist(|tx| {
+            tx.upsert_act(&act)?;
+            tx.upsert_follow_up(&follow_up)
+        })
+        .expect("persist follow-up");
+
+    let loaded = store.load().expect("load");
+    assert_eq!(loaded.acts.get(&act.id), Some(&original_act));
+    assert_eq!(loaded.follow_ups.get(&follow_up.id), Some(&follow_up));
+    assert_eq!(
+        store
+            .follow_ups_for_act(act.id)
+            .expect("list by act")
+            .as_slice(),
+        std::slice::from_ref(&follow_up)
+    );
+    assert_eq!(
+        store.follow_up(&follow_up.id).expect("get by id").as_ref(),
+        Some(&follow_up)
+    );
+
+    let mut completed = follow_up.clone();
+    completed.status = StoredFollowUpStatus::Completed;
+    completed.completed_at = Some(OffsetDateTime::from_unix_timestamp(1_790_086_400).unwrap());
+    completed.completed_by = Some("amelia.marques".to_string());
+    store
+        .persist(|tx| tx.upsert_follow_up(&completed))
+        .expect("replace follow-up");
+
+    let reloaded = Store::open(dir.path()).expect("reopen").load().unwrap();
+    assert_eq!(reloaded.acts.get(&act.id), Some(&original_act));
+    assert_eq!(reloaded.follow_ups.get(&completed.id), Some(&completed));
 }
 
 #[test]
@@ -1055,7 +1122,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         let store = Store::open(dir.path()).expect("open");
         assert_eq!(
             stamp(dir.path()),
-            "5",
+            "6",
             "fresh db stamped at current version"
         );
         let mut ledger = Ledger::new();
@@ -1092,7 +1159,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         // Store dropped here — the process "restarts". No migration ran; no DDL touched acts.
         assert_eq!(
             stamp(dir.path()),
-            "5",
+            "6",
             "no schema bump after writing G1/G2 acts"
         );
     }
@@ -1101,7 +1168,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     let store = Store::open(dir.path()).expect("reopen");
     assert_eq!(
         stamp(dir.path()),
-        "5",
+        "6",
         "reopen did not bump the schema version"
     );
     let loaded = store.load().expect("reload");

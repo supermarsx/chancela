@@ -68,7 +68,13 @@ import {
   type CaeNode,
   type CaeRefView,
   type Dashboard,
+  type DashboardActStateCounts,
+  type DashboardAlert,
+  type DashboardAlertTarget,
+  type DashboardCurrentWork,
+  type DashboardOpenBook,
   type DashboardReminder,
+  type DashboardTargetLinks,
   type DocumentSettings,
   type DpiaRecordView,
   type DsrRequestView,
@@ -889,16 +895,123 @@ describe('contract fixtures parse through the real client', () => {
         unresolved_compliance: true,
         ledger_length: true,
         ledger_valid: true,
+        current_work: true,
+        alerts: true,
         reminders: true,
         recent_events: true,
       },
       'Dashboard',
     );
     for (const [k, v] of Object.entries(dash)) {
-      if (k === 'ledger_valid' || k === 'recent_events' || k === 'reminders') continue;
+      if (
+        k === 'ledger_valid' ||
+        k === 'current_work' ||
+        k === 'alerts' ||
+        k === 'recent_events' ||
+        k === 'reminders'
+      ) {
+        continue;
+      }
       expect(typeof v, `Dashboard.${k} should be a number`).toBe('number');
     }
     expect(typeof dash.ledger_valid).toBe('boolean');
+    const currentWork = assertExactKeys<DashboardCurrentWork>(
+      dash.current_work,
+      { open_books: true, act_counts_by_state: true },
+      'Dashboard.current_work',
+    );
+    expect(Array.isArray(currentWork.open_books)).toBe(true);
+    const openBook = assertExactKeys<DashboardOpenBook>(
+      currentWork.open_books[0],
+      {
+        book_id: true,
+        entity_id: true,
+        entity_name: true,
+        kind: true,
+        purpose: true,
+        opening_date: true,
+        last_ata_number: true,
+        total_acts: true,
+        open_acts: true,
+        next_ata_number: true,
+        links: true,
+      },
+      'Dashboard.current_work.open_books[0]',
+    );
+    expect(openBook.book_id.length).toBeGreaterThan(0);
+    expect(openBook.entity_id.length).toBeGreaterThan(0);
+    inEnum(BOOK_KINDS, openBook.kind, 'Dashboard.current_work.open_books[0].kind');
+    if (openBook.entity_name !== null) expect(openBook.entity_name.length).toBeGreaterThan(0);
+    if (openBook.purpose !== null) expect(openBook.purpose.length).toBeGreaterThan(0);
+    if (openBook.opening_date !== null) {
+      assertIsoDate(openBook.opening_date, 'Dashboard.current_work.open_books[0].opening_date');
+    }
+    for (const key of ['last_ata_number', 'total_acts', 'open_acts', 'next_ata_number'] as const) {
+      expect(typeof openBook[key], `Dashboard.current_work.open_books[0].${key}`).toBe('number');
+    }
+    const openBookLinks = assertExactKeys<DashboardTargetLinks>(
+      openBook.links,
+      { entity: true, book: true, act: true, ledger: true },
+      'Dashboard.current_work.open_books[0].links',
+    );
+    if (openBookLinks.entity !== null) expect(openBookLinks.entity).toMatch(/^\/v1\/entities\//);
+    if (openBookLinks.book !== null) expect(openBookLinks.book).toMatch(/^\/v1\/books\//);
+    if (openBookLinks.act !== null) expect(openBookLinks.act).toMatch(/^\/v1\/acts\//);
+    if (openBookLinks.ledger !== null) expect(openBookLinks.ledger).toMatch(/^\/v1\/ledger\//);
+
+    const stateCounts = assertExactKeys<DashboardActStateCounts>(
+      currentWork.act_counts_by_state,
+      {
+        Draft: true,
+        Review: true,
+        Convened: true,
+        Deliberated: true,
+        TextApproved: true,
+        Signing: true,
+        Sealed: true,
+        Archived: true,
+      },
+      'Dashboard.current_work.act_counts_by_state',
+    );
+    for (const value of Object.values(stateCounts)) expect(typeof value).toBe('number');
+
+    expect(Array.isArray(dash.alerts)).toBe(true);
+    const alert = assertExactKeys<DashboardAlert>(
+      dash.alerts[0],
+      {
+        code: true,
+        label: true,
+        category: true,
+        message: true,
+        params: true,
+        target: true,
+        source: true,
+      },
+      'Dashboard.alerts[0]',
+    );
+    expect(alert.code.length).toBeGreaterThan(0);
+    inEnum(['Advisory', 'ReviewRequired'], alert.label, 'Dashboard.alerts[0].label');
+    expect(alert.category.length).toBeGreaterThan(0);
+    expect(alert.message.length).toBeGreaterThan(0);
+    expect(alert.params && typeof alert.params).toBe('object');
+    for (const [key, value] of Object.entries(alert.params)) {
+      expect(key.length, 'Dashboard.alerts[0].params key should be non-empty').toBeGreaterThan(0);
+      expect(typeof value, `Dashboard.alerts[0].params.${key} should be string`).toBe('string');
+    }
+    if (alert.source !== null) expect(alert.source.length).toBeGreaterThan(0);
+    const alertTarget = assertExactKeys<DashboardAlertTarget>(
+      alert.target,
+      { entity_id: true, book_id: true, act_id: true, links: true },
+      'Dashboard.alerts[0].target',
+    );
+    if (alertTarget.entity_id !== null) expect(alertTarget.entity_id.length).toBeGreaterThan(0);
+    if (alertTarget.book_id !== null) expect(alertTarget.book_id.length).toBeGreaterThan(0);
+    if (alertTarget.act_id !== null) expect(alertTarget.act_id.length).toBeGreaterThan(0);
+    assertExactKeys<DashboardTargetLinks>(
+      alertTarget.links,
+      { entity: true, book: true, act: true, ledger: true },
+      'Dashboard.alerts[0].target.links',
+    );
     expect(Array.isArray(dash.reminders)).toBe(true);
     const reminder = assertExactKeys<DashboardReminder>(
       dash.reminders[0],

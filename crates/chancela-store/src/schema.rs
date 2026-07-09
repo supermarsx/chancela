@@ -34,7 +34,9 @@
 /// - **v5** — adds `imported_documents`: bounded, validated, non-canonical evidence imports. These
 ///   rows preserve uploaded bytes and metadata without replacing the canonical PDF/A `documents`
 ///   row or any `signed_documents` variant, and without making PDF/A/legal/signature-validity claims.
-pub const SCHEMA_VERSION: i64 = 5;
+/// - **v6** — adds `follow_ups`: first-class act-scoped task rows for post-deliberation work,
+///   persisted outside sealed act JSON and audited through ledger events.
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -288,6 +290,45 @@ pub const CREATE_IMPORTED_DOCUMENTS_ACT_IDX: &str =
 /// Index over `imported_documents.imported_at` — keeps the global list ordered without scanning.
 pub const CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_imported_documents_imported_at ON imported_documents (imported_at);";
 
+/// `follow_ups` — first-class task/follow-up rows tied to an act. These deliberately live outside
+/// the sealed [`chancela_core::Act`] JSON so post-deliberation task management never mutates the
+/// frozen evidentiary payload.
+///
+/// - `id` — fresh UUID minted by the API (primary key).
+/// - `act_id` — owning act scope, indexed for `GET /v1/acts/{id}/follow-ups`.
+/// - `agenda_number` / `deliberation_index` — optional anchors into the act's agenda or structured
+///   deliberation list. They are references only; the act JSON is not touched.
+/// - `title` / `detail` — task text.
+/// - `due_date` — optional ISO `YYYY-MM-DD` date.
+/// - `assignee` / `assignee_display` — optional assignee stable/display labels.
+/// - `status` — `Open` or `Completed`.
+/// - `created_*` / `completed_*` — audit metadata.
+pub const CREATE_FOLLOW_UPS: &str = "\
+CREATE TABLE IF NOT EXISTS follow_ups (
+    id                 TEXT PRIMARY KEY,
+    act_id             TEXT NOT NULL,
+    agenda_number      INTEGER,
+    deliberation_index INTEGER,
+    title              TEXT NOT NULL,
+    detail             TEXT,
+    due_date           TEXT,
+    assignee           TEXT,
+    assignee_display   TEXT,
+    status             TEXT NOT NULL,
+    created_at         TEXT NOT NULL,
+    created_by         TEXT NOT NULL,
+    completed_at       TEXT,
+    completed_by       TEXT
+) STRICT;";
+
+/// Index over `follow_ups.act_id` — feeds the act-scoped task feed.
+pub const CREATE_FOLLOW_UPS_ACT_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_follow_ups_act ON follow_ups (act_id);";
+
+/// Index over `follow_ups.status` — keeps open/completed filtering cheap when the API grows it.
+pub const CREATE_FOLLOW_UPS_STATUS_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_follow_ups_status ON follow_ups (status);";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -310,4 +351,7 @@ pub const ALL: &[&str] = &[
     CREATE_IMPORTED_DOCUMENTS,
     CREATE_IMPORTED_DOCUMENTS_ACT_IDX,
     CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX,
+    CREATE_FOLLOW_UPS,
+    CREATE_FOLLOW_UPS_ACT_IDX,
+    CREATE_FOLLOW_UPS_STATUS_IDX,
 ];

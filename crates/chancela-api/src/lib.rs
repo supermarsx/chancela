@@ -73,6 +73,7 @@ mod dto;
 mod entities;
 mod error;
 mod external_signing;
+mod followups;
 mod hex;
 mod law;
 mod ledger;
@@ -108,7 +109,7 @@ use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryTransport};
 use chancela_signing::{SignerProvider, SigningError, TrustPolicy};
 use chancela_store::{
-    PendingCmdSession, Store, StoreError, StoredDocument, StoredSignedDocument, Tx,
+    PendingCmdSession, Store, StoreError, StoredDocument, StoredFollowUp, StoredSignedDocument, Tx,
 };
 use serde::Serialize;
 use tokio::sync::RwLock;
@@ -148,7 +149,7 @@ pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 /// Every field is `Arc<RwLock<..>>` so the state is cheap to clone into each handler and safe
 /// to mutate concurrently. Cloning an [`AppState`] shares the same underlying maps and ledger.
 /// Handlers that take several locks acquire them in the fixed order **entities → books → acts
-/// → registry_extracts → registry_auto_updates → users → dsr_requests → processor_records →
+/// → follow_ups → registry_extracts → registry_auto_updates → users → dsr_requests → processor_records →
 /// dpia_records → retention_policies → ledger** to avoid deadlock. The `cae` and `sessions` locks
 /// are independent, short-lived locks not part of that chain (a handler acquires and releases one
 /// before touching the ordered locks, or after — never interleaved with them).
@@ -160,6 +161,9 @@ pub struct AppState {
     pub books: Arc<RwLock<HashMap<BookId, Book>>>,
     /// All acts (atas), keyed by their [`ActId`].
     pub acts: Arc<RwLock<HashMap<ActId, Act>>>,
+    /// First-class act-scoped follow-up/task rows. These are persisted outside [`Act`] JSON so sealed
+    /// acts stay immutable while post-deliberation work remains trackable.
+    pub follow_ups: Arc<RwLock<HashMap<String, StoredFollowUp>>>,
     /// The append-only audit ledger backing every mutation (DAT-10/11).
     pub ledger: Arc<RwLock<Ledger>>,
     /// The current application settings document (contract §2.8). Defaults until a `PUT`.
@@ -514,6 +518,7 @@ impl AppState {
                     state.entities = Arc::new(RwLock::new(loaded.entities));
                     state.books = Arc::new(RwLock::new(loaded.books));
                     state.acts = Arc::new(RwLock::new(loaded.acts));
+                    state.follow_ups = Arc::new(RwLock::new(loaded.follow_ups));
                     state.registry_extracts = Arc::new(RwLock::new(loaded.registry_extracts));
                     state.ledger = Arc::new(RwLock::new(loaded.ledger));
                     state.chain_status = Some(Arc::new(loaded.chain_status));
@@ -690,6 +695,7 @@ impl AppState {
         *self.entities.write().await = loaded.entities;
         *self.books.write().await = loaded.books;
         *self.acts.write().await = loaded.acts;
+        *self.follow_ups.write().await = loaded.follow_ups;
         *self.registry_extracts.write().await = loaded.registry_extracts;
         self.registry_auto_updates.write().await.clear();
         self.documents.write().await.clear();
@@ -747,6 +753,7 @@ impl AppState {
         self.entities.write().await.clear();
         self.books.write().await.clear();
         self.acts.write().await.clear();
+        self.follow_ups.write().await.clear();
         self.registry_extracts.write().await.clear();
         self.registry_auto_updates.write().await.clear();
         self.documents.write().await.clear();
@@ -914,6 +921,15 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/acts/{id}/compliance", get(acts::get_compliance))
         .route("/v1/acts/{id}/seal", post(acts::seal_act_handler))
         .route("/v1/acts/{id}/archive", post(acts::archive_act))
+        .route(
+            "/v1/acts/{id}/follow-ups",
+            get(followups::list_follow_ups).post(followups::create_follow_up),
+        )
+        .route("/v1/follow-ups/{id}", patch(followups::patch_follow_up))
+        .route(
+            "/v1/follow-ups/{id}/complete",
+            post(followups::complete_follow_up),
+        )
         .route(
             "/v1/acts/{id}/convening/dispatch",
             post(acts::convening_dispatch),
@@ -8901,6 +8917,280 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::CREATED, "draft act: {act}");
         act["id"].as_str().expect("act id").to_owned()
+    }
+
+    #[tokio::test]
+    async fn follow_up_routes_create_patch_complete_and_leave_sealed_act_unchanged() {
+        use chancela_core::ActState;
+
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_one_act(&state, &book_id).await;
+        let act_key = ActId(Uuid::parse_str(&act_id).expect("act uuid"));
+        let sealed_snapshot = {
+            let mut acts = state.acts.write().await;
+            let act = acts.get_mut(&act_key).expect("act in memory");
+            act.state = ActState::Sealed;
+            act.ata_number = Some(1);
+            act.payload_digest = Some([42; 32]);
+            act.seal_event_seq = Some(100);
+            act.clone()
+        };
+
+        let (status, created) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/follow-ups"),
+                json!({
+                    "actor": "body.actor",
+                    "agenda_number": 1,
+                    "deliberation_index": 0,
+                    "title": "Entregar certidao atualizada",
+                    "detail": "Enviar comprovativo ao orgao fiscal.",
+                    "due_date": "2026-04-30",
+                    "assignee": "amelia.marques",
+                    "assignee_display": "Amelia Marques"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "create follow-up: {created}");
+        let follow_up_id = created["id"].as_str().expect("follow-up id").to_owned();
+        assert_eq!(created["act_id"], act_id);
+        assert_eq!(created["status"], "Open");
+        assert_eq!(created["created_by"], "test.actor");
+
+        let after_create = state
+            .acts
+            .read()
+            .await
+            .get(&act_key)
+            .expect("act after create")
+            .clone();
+        assert_eq!(after_create, sealed_snapshot);
+
+        let (status, patched) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/follow-ups/{follow_up_id}"),
+                json!({
+                    "title": "Entregar certidao e comprovativo",
+                    "detail": null,
+                    "due_date": "2026-05-15",
+                    "assignee_display": "Amelia M.",
+                    "agenda_number": null
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "patch follow-up: {patched}");
+        assert_eq!(patched["title"], "Entregar certidao e comprovativo");
+        assert!(patched["detail"].is_null());
+        assert_eq!(patched["due_date"], "2026-05-15");
+        assert!(patched["agenda_number"].is_null());
+        assert_eq!(patched["status"], "Open");
+
+        let after_patch = state
+            .acts
+            .read()
+            .await
+            .get(&act_key)
+            .expect("act after patch")
+            .clone();
+        assert_eq!(after_patch, sealed_snapshot);
+
+        let (status, completed) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/follow-ups/{follow_up_id}/complete"),
+                json!({ "actor": "body.actor" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "complete follow-up: {completed}");
+        assert_eq!(completed["status"], "Completed");
+        assert_eq!(completed["completed_by"], "test.actor");
+        assert!(completed["completed_at"].as_str().is_some());
+
+        let (status, list) =
+            send(state.clone(), get(&format!("/v1/acts/{act_id}/follow-ups"))).await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = list.as_array().expect("follow-up list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], follow_up_id);
+        assert_eq!(rows[0]["status"], "Completed");
+
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/follow-ups/{follow_up_id}/complete"),
+                json!({}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "complete twice: {body}");
+
+        let after_complete = state
+            .acts
+            .read()
+            .await
+            .get(&act_key)
+            .expect("act after complete")
+            .clone();
+        assert_eq!(after_complete, sealed_snapshot);
+
+        let follow_kinds: Vec<String> = state
+            .ledger
+            .read()
+            .await
+            .events()
+            .iter()
+            .filter(|event| event.kind.starts_with("follow_up."))
+            .map(|event| event.kind.clone())
+            .collect();
+        assert_eq!(
+            follow_kinds,
+            vec![
+                "follow_up.created",
+                "follow_up.updated",
+                "follow_up.completed"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn follow_up_routes_allow_readers_to_list_but_not_mutate() {
+        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_one_act(&state, &book_id).await;
+        let (status, created) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/follow-ups"),
+                json!({ "title": "Preparar comprovativo" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let follow_up_id = created["id"].as_str().expect("follow-up id").to_owned();
+
+        let leitor = seed_user(
+            &state,
+            "leitor.followups",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let token = seed_session(&state, &leitor.to_string()).await;
+
+        let (status, list) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/acts/{act_id}/follow-ups")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(list.as_array().expect("list").len(), 1);
+
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/acts/{act_id}/follow-ups"),
+                    json!({ "title": "Tentativa de escrita" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                patch_json(
+                    &format!("/v1/follow-ups/{follow_up_id}"),
+                    json!({ "title": "Tentativa de edicao" }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        let (status, _) = send_raw(
+            state,
+            with_session(
+                post_json(
+                    &format!("/v1/follow-ups/{follow_up_id}/complete"),
+                    json!({}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn follow_up_routes_persist_and_recover_from_store() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+
+        let (status, entity) = send(
+            state.clone(),
+            post_json(
+                "/v1/entities",
+                json!({
+                    "name": "Follow Ups, Lda",
+                    "nipc": "503004642",
+                    "seat": "Lisboa",
+                    "kind": "SociedadeAnonima"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let entity_id = entity["id"].as_str().expect("entity id").to_owned();
+
+        let (status, book) = send(
+            state.clone(),
+            post_json(
+                "/v1/books",
+                json!({
+                    "entity_id": entity_id,
+                    "kind": "AssembleiaGeral",
+                    "purpose": "livro de atas",
+                    "opening_date": "2026-01-15",
+                    "required_signatories": ["Administrador"]
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let book_id = book["id"].as_str().expect("book id").to_owned();
+        let act_id = draft_one_act(&state, &book_id).await;
+
+        let (status, created) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/follow-ups"),
+                json!({
+                    "title": "Persistir tarefa",
+                    "due_date": "2026-06-01"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let follow_up_id = created["id"].as_str().expect("follow-up id").to_owned();
+
+        let recovered = AppState::with_data_dir(tmp.dir.clone());
+        let (status, list) = send(recovered, get(&format!("/v1/acts/{act_id}/follow-ups"))).await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = list.as_array().expect("follow-up list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], follow_up_id);
+        assert_eq!(rows[0]["title"], "Persistir tarefa");
+        assert_eq!(rows[0]["due_date"], "2026-06-01");
     }
 
     #[tokio::test]

@@ -552,8 +552,66 @@ export interface Dashboard {
   unresolved_compliance: number;
   ledger_length: number;
   ledger_valid: boolean;
+  current_work: DashboardCurrentWork;
+  alerts: DashboardAlert[];
   reminders: DashboardReminder[];
   recent_events: LedgerEventView[];
+}
+
+export interface DashboardCurrentWork {
+  open_books: DashboardOpenBook[];
+  act_counts_by_state: DashboardActStateCounts;
+}
+
+export interface DashboardActStateCounts {
+  Draft: number;
+  Review: number;
+  Convened: number;
+  Deliberated: number;
+  TextApproved: number;
+  Signing: number;
+  Sealed: number;
+  Archived: number;
+}
+
+export interface DashboardOpenBook {
+  book_id: string;
+  entity_id: string;
+  entity_name: string | null;
+  kind: BookKind;
+  purpose: string | null;
+  opening_date: string | null;
+  last_ata_number: number;
+  total_acts: number;
+  open_acts: number;
+  next_ata_number: number;
+  links: DashboardTargetLinks;
+}
+
+export type DashboardAlertLabel = 'Advisory' | 'ReviewRequired';
+
+export interface DashboardAlert {
+  code: string;
+  label: DashboardAlertLabel;
+  category: string;
+  message: string;
+  params: Record<string, string>;
+  target: DashboardAlertTarget;
+  source: string | null;
+}
+
+export interface DashboardAlertTarget {
+  entity_id: string | null;
+  book_id: string | null;
+  act_id: string | null;
+  links: DashboardTargetLinks;
+}
+
+export interface DashboardTargetLinks {
+  entity: string | null;
+  book: string | null;
+  act: string | null;
+  ledger: string | null;
 }
 
 export type DashboardReminderSeverity = 'Advisory' | 'Info' | 'Warning';
