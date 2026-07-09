@@ -175,20 +175,27 @@ function alertPriorityAndTone(alert: DashboardAlert): { priority: number; tone: 
 
 function frontendRouteFromApi(path: string | null | undefined): string | undefined {
   if (!path) return undefined;
-  if (path.startsWith('/entidades/') || path === '/entidades') return path;
-  if (path.startsWith('/livros/') || path === '/livros') return path;
-  if (path.startsWith('/atas/') || path === '/atas') return path;
-  if (path.startsWith('/arquivo') || path.startsWith('/configuracoes')) return path;
+  const route = path.trim();
+  if (!route) return undefined;
+  if (route.startsWith('/entidades/') || route === '/entidades') return route;
+  if (route.startsWith('/livros/') || route === '/livros') return route;
+  if (route.startsWith('/atas/') || route === '/atas') return route;
+  if (route.startsWith('/arquivo') || route.startsWith('/configuracoes')) return route;
 
-  const entity = /^\/v1\/entities\/([^/?#]+)/.exec(path);
+  const entity = /^\/v1\/entities\/([^/?#]+)/.exec(route);
   if (entity) return `/entidades/${entity[1]}`;
-  const book = /^\/v1\/books\/([^/?#]+)/.exec(path);
+  const book = /^\/v1\/books\/([^/?#]+)/.exec(route);
   if (book) return `/livros/${book[1]}`;
-  const act = /^\/v1\/acts\/([^/?#]+)/.exec(path);
+  const act = /^\/v1\/acts\/([^/?#]+)/.exec(route);
   if (act) return `/atas/${act[1]}`;
-  if (path.startsWith('/v1/ledger')) return '/arquivo';
-  if (path.startsWith('/v1/settings')) return '/configuracoes';
+  if (route.startsWith('/v1/ledger')) return '/arquivo';
+  if (route.startsWith('/v1/settings')) return '/configuracoes';
   return undefined;
+}
+
+function routeFromTargetId(prefix: string, id: string | null | undefined): string | undefined {
+  const trimmed = id?.trim();
+  return trimmed ? `${prefix}/${trimmed}` : undefined;
 }
 
 function routeAction(href: string, label: MessageKey, t: TFunction): NotificationAction {
@@ -203,21 +210,17 @@ function actionFromTarget(
   const links = alert.target.links;
   const ordered = [
     {
-      href:
-        frontendRouteFromApi(links.act) ??
-        (alert.target.act_id ? `/atas/${alert.target.act_id}` : undefined),
+      href: frontendRouteFromApi(links.act) ?? routeFromTargetId('/atas', alert.target.act_id),
       label: preferredLabel ?? 'notifications.action.openAct',
     },
     {
-      href:
-        frontendRouteFromApi(links.book) ??
-        (alert.target.book_id ? `/livros/${alert.target.book_id}` : undefined),
+      href: frontendRouteFromApi(links.book) ?? routeFromTargetId('/livros', alert.target.book_id),
       label: preferredLabel ?? 'notifications.action.openBook',
     },
     {
       href:
         frontendRouteFromApi(links.entity) ??
-        (alert.target.entity_id ? `/entidades/${alert.target.entity_id}` : undefined),
+        routeFromTargetId('/entidades', alert.target.entity_id),
       label: preferredLabel ?? 'notifications.action.openEntity',
     },
     {

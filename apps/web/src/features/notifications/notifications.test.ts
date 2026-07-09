@@ -140,6 +140,34 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.action).toEqual({ href: '/atas/act-1', label: 'Abrir ata' });
   });
 
+  it('falls through unsafe links and blank higher-priority ids to the next valid alert target', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        alerts: [
+          alert({
+            code: 'unknown.alert.code',
+            message: 'Alerta sem tradução.',
+            params: {},
+            target: {
+              entity_id: 'entity-1',
+              book_id: ' book-1 ',
+              act_id: '   ',
+              links: {
+                ...targetLinks,
+                act: 'javascript:alert("act")',
+                entity: '/v1/entities/entity-1',
+              },
+            },
+            source: null,
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items[0]?.action).toEqual({ href: '/livros/book-1', label: 'Abrir livro' });
+  });
+
   it('does not duplicate the ledger-integrity fallback when the structured alert is present', () => {
     const items = buildDashboardNotifications(
       dashboard({

@@ -100,6 +100,14 @@ test('Legislação shelf filters live via search in Ferramentas', async ({ page 
   await expect(page).toHaveURL(/[?&]q=condominio/);
 });
 
+test('legacy /templates redirects to the Minutas catalog', async ({ page }) => {
+  await signInAt(page, '/templates');
+
+  await expect(page).toHaveURL(/\/minutas$/);
+  await expect(page.getByRole('heading', { name: 'Minutas' })).toBeVisible();
+  await expect(page.getByLabel('Pesquisar minutas')).toBeVisible();
+});
+
 test('CAE search returns results from the catalog in Ferramentas', async ({ page }) => {
   // The former /cae page now redirects into the Ferramentas explorer (deep links kept).
   await signInAt(page, '/cae');

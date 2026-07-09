@@ -141,6 +141,37 @@ describe('SubNav', () => {
     stopAndAssertStill(() => fireEvent.pointerUp(rightArrow()), 96);
   });
 
+  it('cancels hover autoscroll and hides arrows when overflow disappears', () => {
+    let nextFrame: FrameRequestCallback | null = null;
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      nextFrame = cb;
+      return 1;
+    });
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+
+    render(<SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />);
+    const strip = screen.getByRole('group', { name: 'Secções' });
+    setScrollMetrics(strip, { scrollLeft: 0, clientWidth: 100, scrollWidth: 300 });
+    fireEvent.scroll(strip);
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'Secções: scroll right' }));
+    expect(nextFrame).toBeTruthy();
+
+    setScrollMetrics(strip, { scrollLeft: 0, clientWidth: 300, scrollWidth: 300 });
+    fireEvent.scroll(strip);
+
+    expect(screen.queryByRole('button', { name: 'Secções: scroll left' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Secções: scroll right' })).toBeNull();
+    expect(cancel).toHaveBeenCalledWith(1);
+
+    const frame = nextFrame;
+    nextFrame = null;
+    act(() => {
+      frame?.(16);
+    });
+    expect(strip.scrollLeft).toBe(0);
+  });
+
   // Regression for the user-reported "Maximum update depth exceeded" crash: the segmented
   // pill's indicator effect must depend only on stable values (active + locale, never the
   // per-render `t`) and guard setState by geometry. The buggy pattern loops on mount /

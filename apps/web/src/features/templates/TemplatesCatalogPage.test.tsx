@@ -11,6 +11,22 @@ const CATALOG: TemplateSummary[] = [
   { id: 'condominio-lista-presencas/v1', family: 'Condominium', stage: 'Reuniao', locale: 'pt-PT' },
 ];
 
+const EDGE_CATALOG: TemplateSummary[] = [
+  {
+    id: 'assoc-convocatoria-ga/pt',
+    family: 'Association',
+    stage: 'Convocatoria',
+    locale: 'pt-PT',
+  },
+  {
+    id: 'assoc-convocatoria-ga/en',
+    family: 'Association',
+    stage: 'Convocatoria',
+    locale: 'en-US',
+  },
+  { id: 'fundacao-reuniao/v1', family: 'Foundation', stage: 'Reuniao', locale: 'pt-PT' },
+];
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -30,7 +46,7 @@ describe('TemplatesCatalogPage', () => {
     expect(screen.queryByRole('button', { name: /gerar/i })).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Pesquisar minutas'), {
-      target: { value: 'certidao' },
+      target: { value: ' CERTIDÃO ' },
     });
     expect(await screen.findByText('csc-certidao-ata/v1')).toBeTruthy();
     expect(screen.queryByText('csc-ata-ag/v1')).toBeNull();
@@ -48,5 +64,36 @@ describe('TemplatesCatalogPage', () => {
     const catalog = screen.getByRole('region', { name: 'Catálogo de minutas' });
     expect(within(catalog).getByText('assoc-convocatoria-ga/v1')).toBeTruthy();
     expect(within(catalog).getByText('Convocatória')).toBeTruthy();
+  });
+
+  it('combines folded search, locale filters, empty state and clear without stale results', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: EDGE_CATALOG }]));
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    expect(await screen.findByText('assoc-convocatoria-ga/pt')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Pesquisar minutas'), {
+      target: { value: 'CONVOCATÓRIA' },
+    });
+    expect(screen.getByText('2 de 3 modelos')).toBeTruthy();
+    expect(screen.getByText('assoc-convocatoria-ga/pt')).toBeTruthy();
+    expect(screen.getByText('assoc-convocatoria-ga/en')).toBeTruthy();
+    expect(screen.queryByText('fundacao-reuniao/v1')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Idioma'), { target: { value: 'en-US' } });
+    expect(screen.getByText('1 de 3 modelos')).toBeTruthy();
+    expect(screen.getByText('assoc-convocatoria-ga/en')).toBeTruthy();
+    expect(screen.queryByText('assoc-convocatoria-ga/pt')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Pesquisar minutas'), {
+      target: { value: 'sem resultado' },
+    });
+    expect(await screen.findByText('Sem modelos encontrados')).toBeTruthy();
+    expect(screen.getByText('0 de 3 modelos')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }));
+    expect(await screen.findByText('fundacao-reuniao/v1')).toBeTruthy();
+    expect(screen.getByText('3 de 3 modelos')).toBeTruthy();
   });
 });
