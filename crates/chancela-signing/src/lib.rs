@@ -56,9 +56,9 @@ pub use policy::{StaticTrustPolicy, TrustPolicy, TslTrustPolicy};
 pub use provider::{CmdProvider, SignerProvider, SmartcardProvider};
 pub use remote::{RemoteInitiate, RemoteSignSession, RemoteSigningSource};
 pub use revocation::{
-    BoundedHttpRevocationTransport, DiscoveredRevocationUris, RevocationError, RevocationEvidence,
-    RevocationEvidenceProvider, RevocationFetchLimits, RevocationHttpResponse,
-    RevocationHttpTransport, RevocationSource,
+    BoundedHttpRevocationTransport, DiscoveredRevocationUris, OcspRevocationSource,
+    RevocationError, RevocationEvidence, RevocationEvidenceProvider, RevocationFetchLimits,
+    RevocationHttpResponse, RevocationHttpTransport, RevocationSource, unsigned_ocsp_request_der,
 };
 pub use soft_cert::{
     Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError, SoftCertificateIdentity,

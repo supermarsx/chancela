@@ -23,6 +23,8 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 time = { workspace = true }
 der = { workspace = true }
+spki = { workspace = true }
+sha1 = { workspace = true }
 sha2 = { workspace = true }
 reqwest = { workspace = true }
 # Software-certificate foundation: parse/decrypt PKCS#12/PFX material and sign locally with
@@ -32,12 +34,10 @@ p12 = "0.6.3"
 rsa = { workspace = true }
 p256 = { workspace = true }
 x509-cert = { workspace = true }
+x509-ocsp = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
-# Test-only: build/verify self-signed certs and raw signatures in unit/integration tests
-# (no production code path uses these). See .orchestration escalation t4-m3 / t4-e8.
-spki = { workspace = true }
 # Test-only: encode the in-test cert PEM + RSA signature into mock SCMD SOAP responses, and
 # build the SHA-256 DigestInfo the CMD raw signature covers (t57 two-phase round-trip).
 base64 = { workspace = true }

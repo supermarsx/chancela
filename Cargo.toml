@@ -76,6 +76,7 @@ chancela-cli = { path = "crates/chancela-cli" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+sha1 = "0.10"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
@@ -101,6 +102,7 @@ der = { version = "0.7", features = ["oid", "pem"] }         # keep at 0.7 (0.8 
 spki = "0.7"                                                  # keep at 0.7 (matches cms/x509-cert 0.2)
 cms = { version = "0.2", features = ["builder"] }            # RFC 5652 SignedData; builder = assemble CAdES
 x509-cert = { version = "0.2", features = ["builder", "pem"] } # cert parse/build + self-signed test certs
+x509-ocsp = "0.2.1"                                          # RFC 6960 ASN.1 types for OCSP request/response validation
 x509-tsp = "0.1"                                             # RFC 3161 ASN.1 types only (we drive HTTP/verify)
 rsa = "0.9"                                                  # RSA-PKCS1-SHA256 (CC v1, CMD)
 # rand_core 0.6 is the RNG generation of the whole der-0.7/RustCrypto-0.9 family (rsa 0.9,
