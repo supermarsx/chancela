@@ -2,8 +2,8 @@
  * Save/download helper for generated exports.
  *
  * Desktop/Tauri can ask the user for an exact save path and write the bytes there.
- * Browsers cannot reliably choose an arbitrary path from JavaScript, so the fallback
- * starts a normal browser download and reports that honestly to the caller.
+ * Browsers with the File System Access API can ask for a save location; other browsers
+ * start a normal browser download and report that honestly to the caller.
  */
 import { isTauri } from './tauri';
 
@@ -17,6 +17,7 @@ export interface SaveBlobOptions {
   filename: string;
   contentType?: string;
   filters?: SaveDialogFilter[];
+  preferBrowserSavePicker?: boolean;
 }
 
 interface SaveResultBase {
@@ -27,8 +28,29 @@ interface SaveResultBase {
 
 export type SaveBlobResult =
   | (SaveResultBase & { kind: 'desktop-save'; path: string })
+  | (SaveResultBase & { kind: 'browser-save' })
   | (SaveResultBase & { kind: 'browser-download' })
   | (SaveResultBase & { kind: 'cancelled' });
+
+interface BrowserSaveFilePickerOptions {
+  suggestedName?: string;
+  types?: {
+    description?: string;
+    accept: Record<string, string[]>;
+  }[];
+}
+
+interface BrowserFileHandle {
+  name?: string;
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void> | void;
+    close: () => Promise<void> | void;
+  }>;
+}
+
+interface BrowserWindowWithSavePicker extends Window {
+  showSaveFilePicker?: (options?: BrowserSaveFilePickerOptions) => Promise<BrowserFileHandle>;
+}
 
 function extensionFromFilename(filename: string): string | null {
   const basename = filename.split(/[\\/]/).pop() ?? filename;
@@ -48,6 +70,30 @@ function filtersFor(filename: string, contentType: string): SaveDialogFilter[] |
   const extension = extensionFromFilename(filename);
   if (!extension) return undefined;
   return [{ name: filterName(extension, contentType), extensions: [extension] }];
+}
+
+function pickerMime(contentType: string): string | null {
+  const mime = contentType.split(';', 1)[0]?.trim() ?? '';
+  return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(mime) ? mime : null;
+}
+
+function pickerTypesFor(
+  filename: string,
+  contentType: string,
+  filters?: SaveDialogFilter[],
+): BrowserSaveFilePickerOptions['types'] {
+  const mime = pickerMime(contentType);
+  const pickerFilters = filters ?? filtersFor(filename, contentType);
+  if (!mime || !pickerFilters?.length) return undefined;
+
+  return pickerFilters.map((filter) => ({
+    description: filter.name,
+    accept: {
+      [mime]: filter.extensions.map((extension) =>
+        extension.startsWith('.') ? extension : `.${extension}`,
+      ),
+    },
+  }));
 }
 
 function browserDownload(blob: Blob, filename: string) {
@@ -77,6 +123,13 @@ function blobArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
       reject(reader.error ?? new Error('Não foi possível ler o ficheiro a guardar.'));
     reader.readAsArrayBuffer(blob);
   });
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === 'AbortError' || error.name === 'NotAllowedError')
+  );
 }
 
 async function tryDesktopSave({
@@ -130,11 +183,64 @@ async function tryDesktopSave({
   };
 }
 
+async function tryBrowserSavePicker({
+  blob,
+  filename,
+  contentType,
+  filters,
+}: Required<Pick<SaveBlobOptions, 'blob' | 'filename' | 'contentType'>> &
+  Pick<SaveBlobOptions, 'filters'>): Promise<SaveBlobResult | null> {
+  if (typeof window === 'undefined') return null;
+
+  const browserWindow = window as BrowserWindowWithSavePicker;
+  if (typeof browserWindow.showSaveFilePicker !== 'function') return null;
+
+  let handle: BrowserFileHandle;
+  try {
+    handle = await browserWindow.showSaveFilePicker({
+      suggestedName: filename,
+      types: pickerTypesFor(filename, contentType, filters),
+    });
+  } catch (err) {
+    if (isAbortError(err)) {
+      return {
+        kind: 'cancelled',
+        filename,
+        contentType,
+        bytes: blob.size,
+      };
+    }
+    console.error('saveFile: browser save picker failed, falling back to browser download', err);
+    return null;
+  }
+
+  try {
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+  } catch (err) {
+    console.error('saveFile: browser file write failed, falling back to browser download', err);
+    return null;
+  }
+
+  return {
+    kind: 'browser-save',
+    filename: handle.name ?? filename,
+    contentType,
+    bytes: blob.size,
+  };
+}
+
 export async function saveBlobAs(options: SaveBlobOptions): Promise<SaveBlobResult> {
   const contentType = options.contentType ?? options.blob.type;
   if (isTauri()) {
     const desktopResult = await tryDesktopSave({ ...options, contentType });
     if (desktopResult) return desktopResult;
+  }
+
+  if (options.preferBrowserSavePicker) {
+    const browserResult = await tryBrowserSavePicker({ ...options, contentType });
+    if (browserResult) return browserResult;
   }
 
   browserDownload(options.blob, options.filename);
@@ -147,7 +253,9 @@ export async function saveBlobAs(options: SaveBlobOptions): Promise<SaveBlobResu
 }
 
 export function saveBlobResultMessage(result: SaveBlobResult): string {
-  if (result.kind === 'desktop-save') return `Ficheiro guardado: ${result.filename}.`;
+  if (result.kind === 'desktop-save' || result.kind === 'browser-save') {
+    return `Ficheiro guardado: ${result.filename}.`;
+  }
   if (result.kind === 'cancelled') return `Guardar cancelado: ${result.filename}.`;
   return `Transferência iniciada pelo navegador: ${result.filename}. A pasta é definida pelo browser.`;
 }

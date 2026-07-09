@@ -66,6 +66,64 @@ describe('saveBlobAs', () => {
     expect(saveBlobResultMessage(result)).toBe('Guardar cancelado: working-copy.md.');
   });
 
+  it('uses the browser save picker when requested and writes the selected file', async () => {
+    const blob = new Blob(['%PDF'], { type: 'application/pdf' });
+    const writable = {
+      write: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const createWritable = vi.fn().mockResolvedValue(writable);
+    const showSaveFilePicker = vi.fn().mockResolvedValue({
+      name: 'arquivo-filtrado.pdf',
+      createWritable,
+    });
+    const createUrl = vi.fn();
+    vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl });
+
+    const result = await saveBlobAs({
+      blob,
+      filename: 'arquivo-filtrado.pdf',
+      preferBrowserSavePicker: true,
+    });
+
+    expect(showSaveFilePicker).toHaveBeenCalledWith({
+      suggestedName: 'arquivo-filtrado.pdf',
+      types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+    });
+    expect(createWritable).toHaveBeenCalledTimes(1);
+    expect(writable.write).toHaveBeenCalledWith(blob);
+    expect(writable.close).toHaveBeenCalledTimes(1);
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      kind: 'browser-save',
+      filename: 'arquivo-filtrado.pdf',
+      contentType: 'application/pdf',
+      bytes: 4,
+    });
+    expect(saveBlobResultMessage(result)).toBe('Ficheiro guardado: arquivo-filtrado.pdf.');
+  });
+
+  it('reports a cancelled browser save picker without falling back to a download', async () => {
+    const showSaveFilePicker = vi.fn().mockRejectedValue(new DOMException('cancelled', 'AbortError'));
+    const createUrl = vi.fn();
+    vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl });
+
+    const result = await saveBlobAs({
+      blob: new Blob(['cancel'], { type: 'application/pdf' }),
+      filename: 'arquivo.pdf',
+      preferBrowserSavePicker: true,
+    });
+
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      kind: 'cancelled',
+      filename: 'arquivo.pdf',
+      contentType: 'application/pdf',
+    });
+  });
+
   it('falls back to a browser blob download and describes the browser-managed save location', async () => {
     const blob = new Blob(['zipbytes'], { type: 'application/zip' });
     const createUrl = vi.fn().mockReturnValue('blob:bundle');

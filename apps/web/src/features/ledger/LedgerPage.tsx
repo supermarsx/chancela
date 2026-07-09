@@ -103,7 +103,13 @@ export function LedgerPage() {
     downloadArchive.mutate(params, {
       onSuccess: async (blob) => {
         try {
-          showSaveResult(await saveBlobAs({ blob, filename: archiveFilename(params) }));
+          showSaveResult(
+            await saveBlobAs({
+              blob,
+              filename: archiveFilename(params),
+              preferBrowserSavePicker: true,
+            }),
+          );
         } catch (e) {
           toast.error(e);
         }
