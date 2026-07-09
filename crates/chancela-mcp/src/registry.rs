@@ -256,6 +256,33 @@ pub fn catalog() -> Vec<McpTool> {
             &["book_id"],
         )
     };
+    let archive_export_args = || {
+        closed_obj(
+            serde_json::json!({
+                "book_id": { "type": "string", "description": "book id" },
+                "legal_hold": {
+                    "type": "boolean",
+                    "description": "optional export-time legal-hold marker for the package"
+                },
+                "legal_hold_reason": {
+                    "type": "string",
+                    "description": "required by the API when legal_hold=true"
+                }
+            }),
+            &["book_id"],
+        )
+    };
+    let signature_bundle_args = || {
+        closed_obj(
+            serde_json::json!({
+                "act_id": {
+                    "type": "string",
+                    "description": "act id whose stored signature status/evidence should be reported"
+                }
+            }),
+            &["act_id"],
+        )
+    };
     let mermaid_graph_args = || {
         obj(
             serde_json::json!({
@@ -421,6 +448,18 @@ pub fn catalog() -> Vec<McpTool> {
             },
         },
         McpTool {
+            name: "prepare_archive_export",
+            title: "Prepare archive export",
+            description: "AI-11 write-controlled alias for preparing the existing book archive preservation ZIP. Routes to the API's gated archive-package endpoint; the API enforces book.export for the forwarded key.",
+            access: ToolAccess::WriteControlled,
+            permission: "book.export",
+            input_schema: archive_export_args(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/books/{book_id}/archive/package",
+            },
+        },
+        McpTool {
             name: "open_book",
             title: "Open book",
             description: "Open (create) a new record book. Fields are passed as the request body.",
@@ -517,6 +556,18 @@ pub fn catalog() -> Vec<McpTool> {
             call: ToolCall {
                 method: Get,
                 path_template: "/acts/{id}/document/working-copy",
+            },
+        },
+        McpTool {
+            name: "validate_signature_bundle",
+            title: "Validate signature bundle",
+            description: "AI-11 read-only signature-status alias. Reports technical evidence/status from the existing act signature endpoint only; it does not perform or claim legal validation.",
+            access: ToolAccess::ReadOnly,
+            permission: "act.read",
+            input_schema: signature_bundle_args(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/acts/{act_id}/signature",
             },
         },
         McpTool {
@@ -872,6 +923,51 @@ mod tests {
     }
 
     #[test]
+    fn prepare_archive_export_is_write_controlled_closed_alias_for_archive_package() {
+        let tool = tool("prepare_archive_export");
+        assert_eq!(tool.access, ToolAccess::WriteControlled);
+        assert_eq!(tool.permission, "book.export");
+        assert_eq!(
+            tool.input_schema["required"],
+            serde_json::json!(["book_id"])
+        );
+        assert_eq!(
+            tool.input_schema["additionalProperties"],
+            Value::Bool(false)
+        );
+
+        let call = resolve_call(
+            &tool,
+            &serde_json::json!({
+                "book_id": "book/pt 1",
+                "legal_hold": true,
+                "legal_hold_reason": "retention review"
+            }),
+        )
+        .unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/books/book%2Fpt%201/archive/package");
+        assert_eq!(
+            call.query,
+            vec![
+                ("legal_hold".to_string(), "true".to_string()),
+                (
+                    "legal_hold_reason".to_string(),
+                    "retention review".to_string()
+                ),
+            ]
+        );
+        assert!(call.body.is_none());
+
+        let unknown = resolve_call(
+            &tool,
+            &serde_json::json!({ "book_id": "book-7", "format": "dglab" }),
+        )
+        .unwrap_err();
+        assert_eq!(unknown, ToolError::UnknownArgument("format".to_string()));
+    }
+
+    #[test]
     fn ledger_archive_document_filters_become_query_params() {
         let call = resolve_call(
             &tool("export_ledger_archive_document"),
@@ -920,6 +1016,34 @@ mod tests {
     }
 
     #[test]
+    fn validate_signature_bundle_is_read_only_closed_status_alias() {
+        let tool = tool("validate_signature_bundle");
+        assert_eq!(tool.access, ToolAccess::ReadOnly);
+        assert_eq!(tool.permission, "act.read");
+        assert_eq!(tool.input_schema["required"], serde_json::json!(["act_id"]));
+        assert_eq!(
+            tool.input_schema["additionalProperties"],
+            Value::Bool(false)
+        );
+
+        let call = resolve_call(&tool, &serde_json::json!({ "act_id": "act/pt 1" })).unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/acts/act%2Fpt%201/signature");
+        assert!(call.query.is_empty());
+        assert!(call.body.is_none());
+
+        let unknown = resolve_call(
+            &tool,
+            &serde_json::json!({ "act_id": "act-7", "bundle_bytes": "..." }),
+        )
+        .unwrap_err();
+        assert_eq!(
+            unknown,
+            ToolError::UnknownArgument("bundle_bytes".to_string())
+        );
+    }
+
+    #[test]
     fn generate_mermaid_graph_routes_through_chronology_with_kind() {
         let tool = tool("generate_mermaid_graph");
         assert_eq!(tool.access, ToolAccess::ReadOnly);
@@ -951,6 +1075,8 @@ mod tests {
             tool("export_book_archive_package").permission,
             "book.export"
         );
+        assert_eq!(tool("prepare_archive_export").permission, "book.export");
+        assert_eq!(tool("validate_signature_bundle").permission, "act.read");
         assert_eq!(
             tool("export_ledger_archive_document").permission,
             "ledger.read"

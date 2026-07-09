@@ -170,6 +170,16 @@ impl<T: HttpTransport> McpServer<T> {
                             }
                         }
                     }
+                    None if is_signature_bundle_validation_tool(tool.name) => {
+                        match signature_bundle_validation_success_text(
+                            &outcome, &resolved, &arguments,
+                        ) {
+                            Ok(text) => text,
+                            Err(message) => {
+                                return JsonRpcResponse::success(id, tool_error_result(&message));
+                            }
+                        }
+                    }
                     None => tool_success_text(&outcome),
                 };
                 JsonRpcResponse::success(id, tool_text_result(&text, false))
@@ -345,6 +355,10 @@ fn is_ai_draft_tool(name: &str) -> bool {
     matches!(name, "draft_act" | "draft_minutes")
 }
 
+fn is_signature_bundle_validation_tool(name: &str) -> bool {
+    name == "validate_signature_bundle"
+}
+
 fn ai_draft_success_text(
     outcome: &ApiOutcome,
     tool: &McpTool,
@@ -424,6 +438,84 @@ fn ensure_unsealed_draft_response(value: &Value) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn signature_bundle_validation_success_text(
+    outcome: &ApiOutcome,
+    resolved: &ResolvedCall,
+    arguments: &Value,
+) -> Result<String, String> {
+    let Some(status_view) = &outcome.value else {
+        return signature_bundle_unsupported_text(
+            resolved,
+            arguments,
+            "unsupported",
+            "the integration API did not return JSON signature status; no safe validation backend is available through MCP",
+        );
+    };
+
+    let Some(evidence) = status_view.get("evidence").and_then(Value::as_object) else {
+        return signature_bundle_unsupported_text(
+            resolved,
+            arguments,
+            "not_implemented",
+            "the integration API response did not include technical signature evidence",
+        );
+    };
+    if evidence.get("status_scope").and_then(Value::as_str) != Some("technical_evidence_only") {
+        return signature_bundle_unsupported_text(
+            resolved,
+            arguments,
+            "not_implemented",
+            "the integration API response did not mark signature evidence as technical_evidence_only",
+        );
+    }
+
+    let payload = json!({
+        "kind": "signature_bundle_validation",
+        "status": "technical_evidence",
+        "backend_supported": true,
+        "scope": "technical_evidence_only",
+        "legal_validation_claimed": false,
+        "qualified_signature_claimed_by_mcp": false,
+        "source": {
+            "surface": "mcp",
+            "endpoint": format!("{} {}", resolved.method.as_str(), resolved.path),
+        },
+        "act_id": arguments.get("act_id").cloned().unwrap_or(Value::Null),
+        "signature_status": status_view.get("status").cloned().unwrap_or(Value::Null),
+        "finalization": status_view.get("finalization").cloned().unwrap_or(Value::Null),
+        "signed": status_view.get("signed").cloned().unwrap_or(Value::Null),
+        "pending": status_view.get("pending").cloned().unwrap_or(Value::Null),
+        "evidence": Value::Object(evidence.clone()),
+        "backend_status": status_view,
+    });
+    serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("could not encode signature evidence response: {e}"))
+}
+
+fn signature_bundle_unsupported_text(
+    resolved: &ResolvedCall,
+    arguments: &Value,
+    status: &str,
+    reason: &str,
+) -> Result<String, String> {
+    let payload = json!({
+        "kind": "signature_bundle_validation",
+        "status": status,
+        "backend_supported": false,
+        "scope": "technical_evidence_only",
+        "legal_validation_claimed": false,
+        "qualified_signature_claimed_by_mcp": false,
+        "source": {
+            "surface": "mcp",
+            "endpoint": format!("{} {}", resolved.method.as_str(), resolved.path),
+        },
+        "act_id": arguments.get("act_id").cloned().unwrap_or(Value::Null),
+        "reason": reason,
+    });
+    serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("could not encode unsupported signature evidence response: {e}"))
 }
 
 fn should_render_as_binary(outcome: &ApiOutcome) -> bool {
@@ -623,7 +715,18 @@ mod tests {
         assert!(names.contains(&"search_legal_texts"));
         assert!(names.contains(&"draft_minutes"));
         assert!(names.contains(&"export_act_working_copy"));
+        assert!(names.contains(&"validate_signature_bundle"));
+        assert!(names.contains(&"prepare_archive_export"));
         assert!(names.contains(&"seal_act"));
+        let by_name = |name: &str| tools.iter().find(|t| t["name"] == name).unwrap();
+        assert_eq!(
+            by_name("validate_signature_bundle")["annotations"]["readOnlyHint"],
+            json!(true)
+        );
+        assert_eq!(
+            by_name("prepare_archive_export")["annotations"]["readOnlyHint"],
+            json!(false)
+        );
         // schema + annotations present
         assert!(tools[0]["inputSchema"].is_object());
         assert!(tools[0]["annotations"]["readOnlyHint"].is_boolean());
@@ -887,6 +990,91 @@ mod tests {
     }
 
     #[test]
+    fn tools_call_validate_signature_bundle_wraps_technical_status_only() {
+        let cfg = McpConfig {
+            enabled_tools: EnabledTools::List(vec!["validate_signature_bundle".into()]),
+            ..enabled_cfg()
+        };
+        let response = HttpResponse::text(
+            200,
+            r#"{
+                "status": "signed",
+                "finalization": "finalizado_qualificado",
+                "require_qualified_for_seal": true,
+                "signed": {
+                    "family": "QualifiedCertificate",
+                    "evidentiary_level": "Qualified",
+                    "trusted_list_status": "granted",
+                    "signer_cert_subject": "CN=Amelia",
+                    "signing_time": "2026-07-09T09:00:00Z",
+                    "signed_at": "2026-07-09T09:00:01Z",
+                    "signed_pdf_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "timestamp_token": true,
+                    "download": "/v1/acts/act-7/document/signed"
+                },
+                "evidence": {
+                    "current_level": "B-T",
+                    "timestamp_evidence_present": true,
+                    "dss_revocation_evidence_present": false,
+                    "dss_revocation_evidence_status": "not_present",
+                    "local_b_lt_style_evidence_present": false,
+                    "production_b_lt_status": "not_claimed",
+                    "live_revocation_fetching": false,
+                    "legal_b_lt_claimed": false,
+                    "legal_b_lta_claimed": false,
+                    "long_term_status": ["timestamped", "lt_not_implemented"],
+                    "status_scope": "technical_evidence_only"
+                }
+            }"#,
+        )
+        .with_header("Content-Type", "application/json");
+        let server = McpServer::from_config(&cfg, MockTransport::with_response(response)).unwrap();
+        let resp = server
+            .handle(&req(
+                "tools/call",
+                42,
+                json!({
+                    "name": "validate_signature_bundle",
+                    "arguments": { "act_id": "act-7" }
+                }),
+            ))
+            .unwrap();
+
+        let result = resp.result.unwrap();
+        assert_eq!(result["isError"], json!(false));
+        let payload: Value =
+            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(payload["kind"], json!("signature_bundle_validation"));
+        assert_eq!(payload["status"], json!("technical_evidence"));
+        assert_eq!(payload["backend_supported"], json!(true));
+        assert_eq!(payload["scope"], json!("technical_evidence_only"));
+        assert_eq!(payload["legal_validation_claimed"], json!(false));
+        assert_eq!(payload["qualified_signature_claimed_by_mcp"], json!(false));
+        assert_eq!(payload["signature_status"], json!("signed"));
+        assert_eq!(payload["evidence"]["current_level"], json!("B-T"));
+        assert_eq!(
+            payload["evidence"]["status_scope"],
+            json!("technical_evidence_only")
+        );
+        assert_eq!(
+            payload["backend_status"]["evidence"]["legal_b_lt_claimed"],
+            json!(false)
+        );
+
+        let recorded = server.bridge_recorded();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].method, crate::bridge::HttpMethod::Get);
+        assert_eq!(
+            recorded[0].url,
+            "http://127.0.0.1:8080/api/v1/acts/act-7/signature"
+        );
+        assert_eq!(
+            recorded[0].header("Authorization"),
+            Some("Bearer chk_ab12cd_secretsecret")
+        );
+    }
+
+    #[test]
     fn tools_call_generate_mermaid_graph_selects_requested_graph() {
         let response = HttpResponse::text(
             200,
@@ -997,6 +1185,55 @@ mod tests {
         assert_eq!(
             recorded[0].url,
             "http://127.0.0.1:8080/api/v1/books/book-7/archive/package"
+        );
+        assert_eq!(
+            recorded[0].header("Authorization"),
+            Some("Bearer chk_ab12cd_secretsecret")
+        );
+    }
+
+    #[test]
+    fn tools_call_prepare_archive_export_routes_to_archive_package_endpoint() {
+        let cfg = McpConfig {
+            enabled_tools: EnabledTools::List(vec!["prepare_archive_export".into()]),
+            ..enabled_cfg()
+        };
+        let response = HttpResponse::bytes(200, b"PK".to_vec())
+            .with_header("Content-Type", "application/zip")
+            .with_header(
+                "Content-Disposition",
+                "attachment; filename=\"chancela-preservation-book-book-7.zip\"",
+            );
+        let server = McpServer::from_config(&cfg, MockTransport::with_response(response)).unwrap();
+        let resp = server
+            .handle(&req(
+                "tools/call",
+                44,
+                json!({
+                    "name": "prepare_archive_export",
+                    "arguments": {
+                        "book_id": "book-7",
+                        "legal_hold": true,
+                        "legal_hold_reason": "retention review"
+                    }
+                }),
+            ))
+            .unwrap();
+
+        let result = resp.result.unwrap();
+        assert_eq!(result["isError"], json!(false));
+        let payload: Value =
+            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(payload["kind"], json!("binary"));
+        assert_eq!(payload["encoding"], json!("base64"));
+        assert_eq!(payload["content_type"], json!("application/zip"));
+
+        let recorded = server.bridge_recorded();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].method, crate::bridge::HttpMethod::Get);
+        assert_eq!(
+            recorded[0].url,
+            "http://127.0.0.1:8080/api/v1/books/book-7/archive/package?legal_hold=true&legal_hold_reason=retention%20review"
         );
         assert_eq!(
             recorded[0].header("Authorization"),
