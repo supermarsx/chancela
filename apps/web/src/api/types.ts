@@ -188,6 +188,19 @@ export interface StatuteOverrides {
   convocation_notice_days: number | null;
 }
 
+export interface EntityBookStateCounts {
+  created: number;
+  open: number;
+  closed: number;
+}
+
+/** List-only backend activity rollup from the full book state and ledger. */
+export interface EntityActivitySummary {
+  last_book: BookView | null;
+  book_state_counts: EntityBookStateCounts;
+  last_change: LedgerEventView | null;
+}
+
 export interface Entity {
   id: string;
   name: string;
@@ -203,6 +216,8 @@ export interface Entity {
   profile: EntityProfile;
   /** Statute overlay, or `null` when the entity uses the family default (t31). */
   statute: StatuteOverrides | null;
+  /** Present on `GET /v1/entities`; omitted by create/detail responses. */
+  activity_summary?: EntityActivitySummary;
 }
 
 export interface BookView {

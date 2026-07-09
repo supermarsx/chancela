@@ -1,19 +1,28 @@
 //! Entity endpoints (contract §2.3) — unchanged from the scaffold, moved here for the
 //! module split. Entities are the root object: books belong to an entity, acts to a book.
 
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
+
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
-use chancela_core::{Entity, EntityId, EntityKind, Nipc, StatuteOverrides};
+use chancela_core::{
+    Book, BookId, BookState, Entity, EntityId, EntityKind, Nipc, StatuteOverrides,
+};
+use chancela_ledger::{ChainId, Event};
 use serde::Deserialize;
 use time::{Date, Month};
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{authorizer, require_permission, scope_of_entity};
-use crate::dto::{EntityView, read_redaction_for_actor};
+use crate::authz::{authorizer, require_permission, scope_of_book, scope_of_entity};
+use crate::dto::{
+    BookStateCountsView, BookView, EntityActivitySummaryView, EntityListItemView, EntityView,
+    LedgerEventView, read_redaction_for_actor,
+};
 use crate::error::ApiError;
 
 /// Justification recorded on the `entity.created` event when the NIPC-validation override stored
@@ -184,16 +193,220 @@ fn invalid_fiscal_year_end() -> ApiError {
 pub async fn list_entities(
     State(state): State<AppState>,
     actor: CurrentActor,
-) -> Result<Json<Vec<EntityView>>, ApiError> {
+) -> Result<Json<Vec<EntityListItemView>>, ApiError> {
     let authz = crate::authz::authorizer(&state, &actor).await?;
     let redaction = read_redaction_for_actor(&state, &actor).await?;
     let entities = state.entities.read().await;
-    let out = entities
+    let visible: Vec<_> = entities
         .values()
         .filter(|e| authz.permits(Permission::EntityRead, scope_of_entity(e.id)))
-        .map(|e| EntityView::build(e, redaction))
+        .collect();
+
+    let visible_entity_ids: HashSet<_> = visible.iter().map(|e| e.id).collect();
+    let books = state.books.read().await;
+    let readable_books: Vec<_> = books
+        .values()
+        .filter(|b| visible_entity_ids.contains(&b.entity_id))
+        .filter(|b| authz.permits(Permission::BookRead, scope_of_book(b.id)))
+        .collect();
+
+    let ledger = if authz.permits(Permission::LedgerRead, Scope::Global) {
+        Some(state.ledger.read().await)
+    } else {
+        None
+    };
+    let events = ledger.as_ref().map(|ledger| ledger.events());
+    let mut summaries =
+        entity_activity_summaries(&visible_entity_ids, readable_books.iter().copied(), events);
+
+    let out = visible
+        .into_iter()
+        .map(|e| EntityListItemView {
+            entity: EntityView::build(e, redaction),
+            activity_summary: summaries
+                .remove(&e.id)
+                .unwrap_or_else(empty_activity_summary),
+        })
         .collect();
     Ok(Json(out))
+}
+
+struct EntityActivitySummaryBuilder<'book, 'event> {
+    last_book: Option<&'book Book>,
+    book_state_counts: BookStateCountsView,
+    last_change: Option<&'event Event>,
+}
+
+fn entity_activity_summaries<'book, 'event>(
+    entity_ids: &HashSet<EntityId>,
+    books: impl IntoIterator<Item = &'book Book>,
+    events: Option<&'event [Event]>,
+) -> HashMap<EntityId, EntityActivitySummaryView> {
+    let mut summaries: HashMap<_, _> = entity_ids
+        .iter()
+        .copied()
+        .map(|id| {
+            (
+                id,
+                EntityActivitySummaryBuilder {
+                    last_book: None,
+                    book_state_counts: BookStateCountsView::default(),
+                    last_change: None,
+                },
+            )
+        })
+        .collect();
+    let mut book_entity_ids = HashMap::new();
+
+    for book in books {
+        book_entity_ids.insert(book.id, book.entity_id);
+        let Some(summary) = summaries.get_mut(&book.entity_id) else {
+            continue;
+        };
+        summary.book_state_counts.add(book.state);
+        if summary
+            .last_book
+            .is_none_or(|current| compare_last_book(book, current) == Ordering::Greater)
+        {
+            summary.last_book = Some(book);
+        }
+    }
+
+    if let Some(events) = events {
+        for event in events {
+            for entity_id in collect_event_entity_ids(event, entity_ids, &book_entity_ids) {
+                let Some(summary) = summaries.get_mut(&entity_id) else {
+                    continue;
+                };
+                if summary.last_change.is_none_or(|current| {
+                    compare_event_recency(event, current) == Ordering::Greater
+                }) {
+                    summary.last_change = Some(event);
+                }
+            }
+        }
+    }
+
+    summaries
+        .into_iter()
+        .map(|(id, summary)| {
+            (
+                id,
+                EntityActivitySummaryView {
+                    last_book: summary.last_book.map(BookView::from),
+                    book_state_counts: summary.book_state_counts,
+                    last_change: summary.last_change.map(LedgerEventView::from),
+                },
+            )
+        })
+        .collect()
+}
+
+fn empty_activity_summary() -> EntityActivitySummaryView {
+    EntityActivitySummaryView {
+        last_book: None,
+        book_state_counts: BookStateCountsView::default(),
+        last_change: None,
+    }
+}
+
+fn compare_last_book(candidate: &Book, current: &Book) -> Ordering {
+    book_activity_date(candidate)
+        .cmp(&book_activity_date(current))
+        .then_with(|| candidate.last_ata_number.cmp(&current.last_ata_number))
+        .then_with(|| book_state_rank(candidate.state).cmp(&book_state_rank(current.state)))
+        .then_with(|| candidate.id.to_string().cmp(&current.id.to_string()))
+}
+
+fn book_activity_date(book: &Book) -> Option<Date> {
+    let opening = book.termo_abertura.as_ref().map(|t| t.opening_date);
+    let closing = book.termo_encerramento.as_ref().map(|t| t.closing_date);
+    opening.max(closing)
+}
+
+const fn book_state_rank(state: BookState) -> u8 {
+    match state {
+        BookState::Open => 2,
+        BookState::Created => 1,
+        BookState::Closed => 0,
+    }
+}
+
+fn compare_event_recency(candidate: &Event, current: &Event) -> Ordering {
+    candidate
+        .timestamp
+        .cmp(&current.timestamp)
+        .then_with(|| candidate.seq.cmp(&current.seq))
+}
+
+fn collect_event_entity_ids(
+    event: &Event,
+    entity_ids: &HashSet<EntityId>,
+    book_entity_ids: &HashMap<BookId, EntityId>,
+) -> HashSet<EntityId> {
+    let mut ids = HashSet::new();
+    add_entity_id(event.scope.as_str(), entity_ids, &mut ids);
+    add_segment_entity_ids(event.scope.as_str(), "entity:", entity_ids, &mut ids);
+    add_segment_entity_ids(event.scope.as_str(), "company:", entity_ids, &mut ids);
+    add_segment_book_entity_ids(event.scope.as_str(), book_entity_ids, &mut ids);
+
+    for link in &event.links {
+        match &link.chain {
+            ChainId::Company(raw) => add_entity_id(raw, entity_ids, &mut ids),
+            ChainId::Book(raw) => add_book_entity_id(raw, book_entity_ids, &mut ids),
+            ChainId::Global | ChainId::Application => {}
+        }
+    }
+
+    ids
+}
+
+fn add_segment_entity_ids(
+    value: &str,
+    prefix: &str,
+    entity_ids: &HashSet<EntityId>,
+    ids: &mut HashSet<EntityId>,
+) {
+    for segment in value.split('/') {
+        if let Some(raw) = segment.strip_prefix(prefix).filter(|raw| !raw.is_empty()) {
+            add_entity_id(raw, entity_ids, ids);
+        }
+    }
+}
+
+fn add_segment_book_entity_ids(
+    value: &str,
+    book_entity_ids: &HashMap<BookId, EntityId>,
+    ids: &mut HashSet<EntityId>,
+) {
+    for segment in value.split('/') {
+        if let Some(raw) = segment.strip_prefix("book:").filter(|raw| !raw.is_empty()) {
+            add_book_entity_id(raw, book_entity_ids, ids);
+        }
+    }
+}
+
+fn add_entity_id(raw: &str, entity_ids: &HashSet<EntityId>, ids: &mut HashSet<EntityId>) {
+    let Ok(uuid) = Uuid::parse_str(raw) else {
+        return;
+    };
+    let id = EntityId(uuid);
+    if entity_ids.contains(&id) {
+        ids.insert(id);
+    }
+}
+
+fn add_book_entity_id(
+    raw: &str,
+    book_entity_ids: &HashMap<BookId, EntityId>,
+    ids: &mut HashSet<EntityId>,
+) {
+    let Ok(uuid) = Uuid::parse_str(raw) else {
+        return;
+    };
+    if let Some(entity_id) = book_entity_ids.get(&BookId(uuid)) {
+        ids.insert(*entity_id);
+    }
 }
 
 /// Fetch one entity by id, or return `404`. RBAC (t64-E3): `entity.read` scoped to the entity.
@@ -220,7 +433,10 @@ mod tests {
     use chancela_authz::{
         GUEST_ROLE_ID, LEITOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId, Scope,
     };
+    use chancela_core::book::ClosingReason;
+    use chancela_core::{BookKind, NumberingScheme, TermoDeAbertura, TermoDeEncerramento};
     use serde_json::{Value, json};
+    use time::macros::date;
     use tower::ServiceExt;
 
     async fn send_raw(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
@@ -362,5 +578,155 @@ mod tests {
         assert_eq!(reader_detail["nipc"], "503004642");
         assert_eq!(reader_detail["nipc_validated"], true);
         assert_eq!(reader_detail["seat"], "Rua da Liberdade, Lisboa");
+    }
+
+    #[tokio::test]
+    async fn list_entities_returns_activity_summary_from_full_state_and_ledger() {
+        let state = AppState::default();
+        let owner = token_for_role(&state, "owner", OWNER_ROLE_ID).await;
+        let (status, created) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Encosto Estratégico, S.A.",
+                        "nipc": "503004642",
+                        "seat": "Lisboa",
+                        "kind": "SociedadeAnonima",
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let entity_uuid =
+            Uuid::parse_str(created["id"].as_str().expect("entity id")).expect("entity id is uuid");
+        let entity_id = EntityId(entity_uuid);
+        let entity = state
+            .entities
+            .read()
+            .await
+            .get(&entity_id)
+            .expect("entity stored")
+            .clone();
+
+        let mut open_book = Book::new(entity_id, BookKind::AssembleiaGeral);
+        open_book
+            .open(TermoDeAbertura {
+                entity_name: entity.name.clone(),
+                entity_nipc: entity.nipc.to_string(),
+                entity_seat: entity.seat.clone(),
+                purpose: "Assembleia anual 2026".to_owned(),
+                numbering_scheme: NumberingScheme::Sequential,
+                opening_date: date!(2026 - 01 - 10),
+                required_signatories: vec!["Administrador".to_owned()],
+            })
+            .expect("open book");
+        for _ in 0..4 {
+            open_book.assign_next_ata_number().expect("ata number");
+        }
+
+        let mut closed_book =
+            Book::new_successor(entity_id, BookKind::ConselhoFiscal, open_book.id);
+        closed_book
+            .open(TermoDeAbertura {
+                entity_name: entity.name.clone(),
+                entity_nipc: entity.nipc.to_string(),
+                entity_seat: entity.seat.clone(),
+                purpose: "Fiscalização 2026".to_owned(),
+                numbering_scheme: NumberingScheme::Sequential,
+                opening_date: date!(2026 - 02 - 01),
+                required_signatories: vec!["Presidente".to_owned()],
+            })
+            .expect("open successor");
+        for _ in 0..8 {
+            closed_book.assign_next_ata_number().expect("ata number");
+        }
+        closed_book
+            .close(TermoDeEncerramento {
+                ata_count: 0,
+                reason: ClosingReason::BookFull,
+                closing_date: date!(2026 - 06 - 30),
+                required_signatories: vec!["Presidente".to_owned()],
+            })
+            .expect("close successor");
+
+        let open_scope = format!("entity:{}/book:{}", entity_id, open_book.id);
+        let closed_scope = format!("entity:{}/book:{}", entity_id, closed_book.id);
+        let closed_book_id = closed_book.id.to_string();
+
+        {
+            let mut books = state.books.write().await;
+            books.insert(open_book.id, open_book.clone());
+            books.insert(closed_book.id, closed_book.clone());
+        }
+
+        let (close_seq, ledger_len) = {
+            let mut ledger = state.ledger.write().await;
+            ledger.append(
+                "amelia.marques",
+                &open_scope,
+                "book.opened",
+                None,
+                &serde_json::to_vec(open_book.termo_abertura.as_ref().expect("opened"))
+                    .expect("payload"),
+            );
+            ledger.append(
+                "bruno.costa",
+                &closed_scope,
+                "book.opened",
+                None,
+                &serde_json::to_vec(closed_book.termo_abertura.as_ref().expect("opened"))
+                    .expect("payload"),
+            );
+            let close = ledger
+                .append(
+                    "bruno.costa",
+                    &closed_scope,
+                    "book.closed",
+                    None,
+                    &serde_json::to_vec(closed_book.termo_encerramento.as_ref().expect("closed"))
+                        .expect("payload"),
+                )
+                .seq;
+
+            for i in 0..1005 {
+                ledger.append(
+                    "system",
+                    "settings",
+                    "settings.updated",
+                    None,
+                    format!("noise-{i}").as_bytes(),
+                );
+            }
+            (close, ledger.len())
+        };
+        assert!(
+            close_seq < ledger_len as u64 - 1000,
+            "book.closed is outside the latest 1000 ledger events"
+        );
+
+        let (status, list) =
+            send_raw(state.clone(), with_session(get("/v1/entities"), &owner)).await;
+        assert_eq!(status, StatusCode::OK);
+        let row = list
+            .as_array()
+            .expect("entity list")
+            .iter()
+            .find(|row| row["id"] == created["id"])
+            .expect("created entity row");
+        let summary = &row["activity_summary"];
+
+        assert_eq!(summary["last_book"]["id"], closed_book_id);
+        assert_eq!(summary["last_book"]["state"], "Closed");
+        assert_eq!(
+            summary["book_state_counts"],
+            json!({ "created": 0, "open": 1, "closed": 1 })
+        );
+        assert_eq!(summary["last_change"]["kind"], "book.closed");
+        assert_eq!(summary["last_change"]["scope"], closed_scope);
+        assert_eq!(summary["last_change"]["seq"], close_seq);
     }
 }

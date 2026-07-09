@@ -215,6 +215,42 @@ pub struct EntityView {
     pub statute: Option<StatuteOverrides>,
 }
 
+/// List-only activity rollup for one entity. This is computed by the API from the full book state
+/// and full in-memory ledger, so clients do not need to infer it from the capped ledger feed.
+#[derive(Serialize)]
+pub struct EntityActivitySummaryView {
+    pub last_book: Option<BookView>,
+    pub book_state_counts: BookStateCountsView,
+    pub last_change: Option<LedgerEventView>,
+}
+
+/// Stable count shape for an entity's readable books by lifecycle state.
+#[derive(Default, Serialize)]
+pub struct BookStateCountsView {
+    pub created: usize,
+    pub open: usize,
+    pub closed: usize,
+}
+
+impl BookStateCountsView {
+    pub(crate) fn add(&mut self, state: BookState) {
+        match state {
+            BookState::Created => self.created += 1,
+            BookState::Open => self.open += 1,
+            BookState::Closed => self.closed += 1,
+        }
+    }
+}
+
+/// `GET /v1/entities` row: the normal entity view plus server-owned activity enrichment. Detail and
+/// create responses keep returning [`EntityView`] without this list-only summary.
+#[derive(Serialize)]
+pub struct EntityListItemView {
+    #[serde(flatten)]
+    pub entity: EntityView,
+    pub activity_summary: EntityActivitySummaryView,
+}
+
 impl From<&Entity> for EntityView {
     fn from(e: &Entity) -> Self {
         EntityView {
