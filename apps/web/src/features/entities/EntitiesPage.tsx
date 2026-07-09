@@ -4,7 +4,7 @@
  * its own dedicated route (`/entidades/nova`, `/entidades/importar`) — so the list is no
  * longer squeezed by an always-visible aside form (t13 items 1–2).
  */
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useBooks, useEntities, useSettings } from '../../api/hooks';
 import {
@@ -43,6 +43,7 @@ import {
   Select,
   SkeletonTable,
   Table,
+  Truncate,
 } from '../../ui';
 import { GateButtonLink } from '../session/permissions';
 import { NipcBadge } from './NipcBadge';
@@ -65,13 +66,6 @@ interface EnrichedEntityRow {
   hasActivitySummary: boolean;
   searchText: string;
 }
-
-const SUMMARY_STACK_STYLE = {
-  display: 'inline-flex',
-  flexDirection: 'column',
-  alignItems: 'flex-start',
-  gap: '0.35rem',
-} as const;
 
 const BOOK_FILTER_OPTIONS: { value: BookFilter; labelKey: MessageKey }[] = [
   { value: 'all', labelKey: 'entities.filters.books.all' },
@@ -155,6 +149,54 @@ function normalizeSearch(value: string): string {
 
 function displayFiscalYearEnd(value: string | null | undefined, t: TFunction): string {
   return value ? value : t('entities.fiscalYearEnd.default');
+}
+
+function cx(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter((item): item is string => !!item).join(' ');
+}
+
+function joinCellParts(parts: Array<string | null | undefined | false>): string {
+  return parts
+    .filter((part): part is string => typeof part === 'string' && part !== '')
+    .join(' · ');
+}
+
+function CellLine({
+  title,
+  className,
+  children,
+}: {
+  title: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={cx('entity-cell-line', className)} title={title}>
+      {children}
+    </span>
+  );
+}
+
+function EntityTableCell({
+  column,
+  actions = false,
+  children,
+}: {
+  column: RegisteredEntityColumn;
+  actions?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <td
+      className={cx(
+        'entities-table__cell',
+        actions ? 'entities-table__cell--actions' : 'entities-table__cell--truncate',
+      )}
+      data-entity-column={column}
+    >
+      {children}
+    </td>
+  );
 }
 
 function bookStateTone(state: BookView['state']): 'neutral' | 'accent' | 'ok' {
@@ -489,14 +531,18 @@ function activityKindFilterOptions(
 }
 
 function EntityContext({ entity }: { entity: Entity }) {
+  const details = joinCellParts([
+    entityKindLabels[entity.kind],
+    entityFamilyLabels[entity.family],
+    `Regras ${entityRulePack(entity)}`,
+    entityTemplateFamily(entity),
+  ]);
   return (
-    <span style={SUMMARY_STACK_STYLE}>
-      <span>{entityKindLabels[entity.kind]}</span>
-      <span className="row-wrap">
-        <Badge>{entityFamilyLabels[entity.family]}</Badge>
-      </span>
-      <span className="muted">Regras {entityRulePack(entity)}</span>
-    </span>
+    <CellLine title={details}>
+      <span className="entity-cell-line__primary">{entityKindLabels[entity.kind]}</span>
+      <Badge>{entityFamilyLabels[entity.family]}</Badge>
+      <span className="entity-cell-line__text muted">Regras {entityRulePack(entity)}</span>
+    </CellLine>
   );
 }
 
@@ -511,25 +557,35 @@ function BookSummary({
   loading: boolean;
   error: unknown;
 }) {
-  if (loading) return <span className="muted">A carregar livros…</span>;
-  if (error) return <span className="muted">Livros indisponíveis</span>;
-  if (!book) return <span className="muted">Sem livros</span>;
+  if (loading) return <Truncate text="A carregar livros…" className="muted" />;
+  if (error) return <Truncate text="Livros indisponíveis" className="muted" />;
+  if (!book) return <Truncate text="Sem livros" className="muted" />;
+  const bookMeta = joinCellParts([
+    book.purpose ?? 'Sem finalidade',
+    `Última ata ${book.last_ata_number > 0 ? book.last_ata_number : '—'}`,
+    bookDateSummary(book),
+  ]);
+  const closingReason = book.closing_reason
+    ? `Motivo ${closingReasonLabels[book.closing_reason]}`
+    : null;
+  const states = bookStateSummary(stateCounts);
+  const title = joinCellParts([
+    bookKindLabels[book.kind],
+    bookStateLabels[book.state],
+    bookMeta,
+    closingReason,
+    states,
+  ]);
   return (
-    <span style={SUMMARY_STACK_STYLE}>
-      <span className="row-wrap">
-        <Link to={`/livros/${book.id}`}>{bookKindLabels[book.kind]}</Link>
-        <Badge tone={bookStateTone(book.state)}>{bookStateLabels[book.state]}</Badge>
-      </span>
-      <span className="muted">
-        {book.purpose ?? 'Sem finalidade'} · Última ata{' '}
-        {book.last_ata_number > 0 ? book.last_ata_number : '—'}
-      </span>
-      <span className="muted">{bookDateSummary(book)}</span>
-      {book.closing_reason ? (
-        <span className="muted">Motivo {closingReasonLabels[book.closing_reason]}</span>
-      ) : null}
-      <span className="muted">{bookStateSummary(stateCounts)}</span>
-    </span>
+    <CellLine title={title}>
+      <Link className="entity-cell-line__link" to={`/livros/${book.id}`}>
+        {bookKindLabels[book.kind]}
+      </Link>
+      <Badge tone={bookStateTone(book.state)}>{bookStateLabels[book.state]}</Badge>
+      <span className="entity-cell-line__text muted">{bookMeta}</span>
+      {closingReason ? <span className="entity-cell-line__text muted">{closingReason}</span> : null}
+      <span className="entity-cell-line__text muted">{states}</span>
+    </CellLine>
   );
 }
 
@@ -542,68 +598,72 @@ function ActivitySummary({
 }) {
   if (!activity) {
     return (
-      <span style={SUMMARY_STACK_STYLE}>
-        <span className="muted">Sem atividade no arquivo</span>
-        <Link to="/arquivo">Ver arquivo</Link>
-      </span>
+      <CellLine title="Sem atividade no arquivo">
+        <span className="entity-cell-line__text muted">Sem atividade no arquivo</span>
+        <Link className="entity-cell-line__link" to="/arquivo">
+          Ver arquivo
+        </Link>
+      </CellLine>
     );
   }
+  const timestamp = formatActivityTimestamp(activity.timestamp, locale);
+  const title = joinCellParts([activityLabel(activity.kind), timestamp, activity.actor]);
   return (
-    <span style={SUMMARY_STACK_STYLE}>
-      <span className="row-wrap">
-        <Badge tone={activityTone(activity.kind)}>{activityLabel(activity.kind)}</Badge>
+    <CellLine title={title}>
+      <Badge tone={activityTone(activity.kind)}>{activityLabel(activity.kind)}</Badge>
+      <span className="entity-cell-line__text muted">
+        <time dateTime={activity.timestamp}>{timestamp}</time> · {activity.actor}
       </span>
-      <span className="muted">
-        <time dateTime={activity.timestamp}>
-          {formatActivityTimestamp(activity.timestamp, locale)}
-        </time>{' '}
-        · {activity.actor}
-      </span>
-    </span>
+    </CellLine>
   );
 }
 
 function RegistryFreshnessSummary({ registry }: { registry: EntityRegistrySummary | null }) {
   if (!registry) {
     return (
-      <span style={SUMMARY_STACK_STYLE}>
+      <CellLine title="Não importado · Sem certidão">
         <Badge tone="neutral">Não importado</Badge>
-        <span className="muted">Sem certidão</span>
-      </span>
+        <span className="entity-cell-line__text muted">Sem certidão</span>
+      </CellLine>
     );
   }
+  const meta = joinCellParts([
+    `Obtido ${formatDateValue(registry.retrieved_at)}`,
+    `Válido até ${formatDateValue(registry.valid_until)}`,
+  ]);
+  const title = joinCellParts([registryFreshnessLabel(registry), meta]);
   return (
-    <span style={SUMMARY_STACK_STYLE}>
+    <CellLine title={title}>
       <Badge tone={registryFreshnessTone(registry)}>{registryFreshnessLabel(registry)}</Badge>
-      <span className="muted">Obtido {formatDateValue(registry.retrieved_at)}</span>
-      <span className="muted">Válido até {formatDateValue(registry.valid_until)}</span>
-    </span>
+      <span className="entity-cell-line__text muted">{meta}</span>
+    </CellLine>
   );
 }
 
 function CaeSummary({ registry }: { registry: EntityRegistrySummary | null }) {
-  if (!registry || registry.cae.length === 0) return <span className="muted">—</span>;
+  if (!registry || registry.cae.length === 0) return <Truncate text="—" className="muted" />;
   const first = registry.cae.find((cae) => cae.role === 'Principal') ?? registry.cae[0];
   const fullDetails = registry.cae.map(caeDetails).join('\n');
   return (
-    <span className="cell-clamp cell-clamp--two" style={SUMMARY_STACK_STYLE} title={fullDetails}>
+    <CellLine title={fullDetails}>
       <span className="mono">{caeLabel(first)}</span>
-      {first.designation ? <span className="muted">{first.designation}</span> : null}
-    </span>
+      {first.designation ? (
+        <span className="entity-cell-line__text muted">{first.designation}</span>
+      ) : null}
+    </CellLine>
   );
 }
 
 function LastRegistryChange({ registry }: { registry: EntityRegistrySummary | null }) {
   const change = registry?.last_registry_change;
-  if (!change) return <span className="muted">—</span>;
+  if (!change) return <Truncate text="—" className="muted" />;
+  const meta = joinCellParts([formatDateValue(change.date), change.reference]);
+  const title = joinCellParts([change.label, meta]);
   return (
-    <span style={SUMMARY_STACK_STYLE}>
-      <span>{change.label}</span>
-      <span className="muted">
-        {formatDateValue(change.date)}
-        {change.reference ? ` · ${change.reference}` : ''}
-      </span>
-    </span>
+    <CellLine title={title}>
+      <span className="entity-cell-line__primary">{change.label}</span>
+      <span className="entity-cell-line__text muted">{meta}</span>
+    </CellLine>
   );
 }
 
@@ -650,89 +710,107 @@ function EntityColumnCell({
   switch (column) {
     case 'Name':
       return (
-        <td>
-          <span className="cell-clamp cell-clamp--two" title={entity.name}>
-            {entity.name}
-          </span>
-        </td>
+        <EntityTableCell column={column}>
+          <Truncate text={entity.name} />
+        </EntityTableCell>
       );
     case 'Nipc':
       return (
-        <td>
-          <span className="nipc-cell">
+        <EntityTableCell column={column}>
+          <CellLine
+            className="entity-cell-line--nipc"
+            title={joinCellParts([
+              entity.nipc,
+              entity.nipc_validated ? 'NIPC validado' : 'NIPC não validado',
+            ])}
+          >
             <code className="mono">{entity.nipc}</code>
             {!entity.nipc_validated ? <NipcBadge /> : null}
-          </span>
-        </td>
+          </CellLine>
+        </EntityTableCell>
       );
     case 'Seat':
-      return <td>{entity.seat}</td>;
+      return (
+        <EntityTableCell column={column}>
+          <Truncate text={entity.seat} />
+        </EntityTableCell>
+      );
     case 'Type':
       return (
-        <td>
+        <EntityTableCell column={column}>
           <EntityContext entity={entity} />
-        </td>
+        </EntityTableCell>
       );
     case 'Matricula':
       return (
-        <td>
+        <EntityTableCell column={column}>
           {registry?.matricula ? (
-            <code className="mono">{registry.matricula}</code>
+            <Truncate text={registry.matricula} mono />
           ) : (
-            <span className="muted">—</span>
+            <Truncate text="—" className="muted" />
           )}
-        </td>
+        </EntityTableCell>
       );
     case 'Constitution':
-      return <td>{formatDateValue(registry?.data_constituicao)}</td>;
+      return (
+        <EntityTableCell column={column}>
+          <Truncate text={formatDateValue(registry?.data_constituicao)} />
+        </EntityTableCell>
+      );
     case 'Capital':
-      return <td>{registry?.capital ?? <span className="muted">—</span>}</td>;
+      return (
+        <EntityTableCell column={column}>
+          <Truncate text={registry?.capital ?? '—'} className={registry?.capital ? '' : 'muted'} />
+        </EntityTableCell>
+      );
     case 'Cae':
       return (
-        <td>
+        <EntityTableCell column={column}>
           <CaeSummary registry={registry} />
-        </td>
+        </EntityTableCell>
       );
     case 'Registry':
       return (
-        <td>
+        <EntityTableCell column={column}>
           <RegistryFreshnessSummary registry={registry} />
-        </td>
+        </EntityTableCell>
       );
     case 'LastRegistryChange':
       return (
-        <td>
+        <EntityTableCell column={column}>
           <LastRegistryChange registry={registry} />
-        </td>
+        </EntityTableCell>
       );
     case 'FiscalYearEnd':
       return (
-        <td>
-          <code className="mono">{displayFiscalYearEnd(entity.fiscal_year_end, t)}</code>
-        </td>
+        <EntityTableCell column={column}>
+          <Truncate text={displayFiscalYearEnd(entity.fiscal_year_end, t)} mono />
+        </EntityTableCell>
       );
     case 'LastBook':
       return (
-        <td>
+        <EntityTableCell column={column}>
           <BookSummary
             book={lastBook}
             stateCounts={stateCounts}
             loading={loadingBooks}
             error={booksError}
           />
-        </td>
+        </EntityTableCell>
       );
     case 'LastActivity':
       return (
-        <td>
+        <EntityTableCell column={column}>
           <ActivitySummary activity={activity} locale={locale} />
-        </td>
+        </EntityTableCell>
       );
     case 'Actions':
       return (
-        <td className="users-actions">
-          <IconButton icon={<Icon.ArrowRight />} label={openLabel} onClick={onOpen} />
-        </td>
+        <EntityTableCell column={column} actions>
+          <span className="users-actions entities-table__actions">
+            <IconButton icon={<Icon.ArrowRight />} label={openLabel} onClick={onOpen} />
+          </span>
+        </EntityTableCell>
       );
   }
 }
@@ -1062,46 +1140,48 @@ export function EntitiesPage() {
                 <p>{t('entities.filters.empty.body')}</p>
               </EmptyState>
             ) : (
-              <Table
-                head={
-                  <tr>
-                    {visibleColumns.map((column) => (
-                      <th key={column}>{t(ENTITY_COLUMN_LABEL_KEYS[column])}</th>
-                    ))}
-                  </tr>
-                }
-              >
-                {rows.map(
-                  ({
-                    entity: ent,
-                    lastBook,
-                    bookStateCounts: stateCounts,
-                    activity,
-                    registry,
-                    hasActivitySummary,
-                  }) => (
-                    <tr key={ent.id}>
+              <div className="entities-table">
+                <Table
+                  head={
+                    <tr>
                       {visibleColumns.map((column) => (
-                        <EntityColumnCell
-                          key={column}
-                          column={column}
-                          entity={ent}
-                          registry={registry}
-                          lastBook={lastBook}
-                          stateCounts={stateCounts}
-                          activity={activity}
-                          locale={locale}
-                          loadingBooks={!hasActivitySummary && books.isLoading}
-                          booksError={hasActivitySummary ? null : books.error}
-                          onOpen={() => navigate(`/entidades/${ent.id}`)}
-                          openLabel={t('common.open')}
-                          t={t}
-                        />
+                        <th key={column}>{t(ENTITY_COLUMN_LABEL_KEYS[column])}</th>
                       ))}
                     </tr>
-                  ),
-                )}
-              </Table>
+                  }
+                >
+                  {rows.map(
+                    ({
+                      entity: ent,
+                      lastBook,
+                      bookStateCounts: stateCounts,
+                      activity,
+                      registry,
+                      hasActivitySummary,
+                    }) => (
+                      <tr key={ent.id}>
+                        {visibleColumns.map((column) => (
+                          <EntityColumnCell
+                            key={column}
+                            column={column}
+                            entity={ent}
+                            registry={registry}
+                            lastBook={lastBook}
+                            stateCounts={stateCounts}
+                            activity={activity}
+                            locale={locale}
+                            loadingBooks={!hasActivitySummary && books.isLoading}
+                            booksError={hasActivitySummary ? null : books.error}
+                            onOpen={() => navigate(`/entidades/${ent.id}`)}
+                            openLabel={t('common.open')}
+                            t={t}
+                          />
+                        ))}
+                      </tr>
+                    ),
+                  )}
+                </Table>
+              </div>
             )}
           </div>
         )}

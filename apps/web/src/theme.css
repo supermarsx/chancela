@@ -1399,6 +1399,93 @@ a.btn.btn--iconOnly {
   margin-bottom: 0.75rem;
 }
 
+.entities-table .table th,
+.entities-table .table td {
+  white-space: nowrap;
+}
+
+.entities-table__cell {
+  --entity-cell-max: 16rem;
+}
+
+.entities-table__cell[data-entity-column='Name'] {
+  --entity-cell-max: clamp(14rem, 28vw, 24rem);
+}
+
+.entities-table__cell[data-entity-column='Seat'],
+.entities-table__cell[data-entity-column='Type'],
+.entities-table__cell[data-entity-column='Cae'],
+.entities-table__cell[data-entity-column='Registry'],
+.entities-table__cell[data-entity-column='LastRegistryChange'],
+.entities-table__cell[data-entity-column='LastBook'],
+.entities-table__cell[data-entity-column='LastActivity'] {
+  --entity-cell-max: clamp(13rem, 24vw, 22rem);
+}
+
+.entities-table__cell[data-entity-column='Nipc'],
+.entities-table__cell[data-entity-column='Matricula'],
+.entities-table__cell[data-entity-column='Constitution'],
+.entities-table__cell[data-entity-column='Capital'],
+.entities-table__cell[data-entity-column='FiscalYearEnd'] {
+  --entity-cell-max: 12rem;
+}
+
+.entities-table__cell--truncate {
+  max-width: var(--entity-cell-max);
+  overflow: hidden;
+}
+
+.entities-table__cell--truncate > .truncate,
+.entities-table__cell--truncate > .entity-cell-line {
+  max-width: var(--entity-cell-max);
+}
+
+.entity-cell-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.entity-cell-line .badge {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.entity-cell-line__primary,
+.entity-cell-line__link,
+.entity-cell-line__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-cell-line__primary,
+.entity-cell-line__link {
+  flex: 0 1 auto;
+}
+
+.entity-cell-line__text {
+  flex: 1 1 auto;
+}
+
+.entities-table__cell--actions {
+  width: 1%;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.entities-table__actions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
 .filter-advanced {
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);

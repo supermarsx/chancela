@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders, fetchTable } from '../../test/utils';
 import { EntitiesPage } from './EntitiesPage';
 import { NewEntityPage } from './NewEntityPage';
 import { EntityDetailPage } from './EntityDetailPage';
 import { entityFieldHelp } from './fieldHelp';
-import { DEFAULT_SETTINGS, type Entity } from '../../api/types';
+import { DEFAULT_SETTINGS, type Entity, type LedgerEventView } from '../../api/types';
 
 const ENTITY: Entity = {
   id: 'new-ent-1',
@@ -129,6 +129,62 @@ describe('EntitiesPage', () => {
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeTruthy();
     expect(screen.queryByRole('columnheader', { name: 'Sede' })).toBeNull();
     expect(screen.queryByRole('columnheader', { name: 'CAE' })).toBeNull();
+  });
+
+  it('renders the default entity table columns as one-line truncation cells', async () => {
+    const activity: LedgerEventView = {
+      id: 'event-long-entity',
+      seq: 1,
+      actor: 'amelia.marques.com.identificador.operacional.extenso',
+      justification: null,
+      timestamp: '2026-07-02T10:15:30Z',
+      scope: ENTITY.id,
+      kind: 'entity.created',
+      payload_digest: '0'.repeat(64),
+      prev_hash: '0'.repeat(64),
+      hash: '1'.repeat(64),
+      chains: ['global', `company:${ENTITY.id}`],
+      attestation: null,
+    };
+    const longEntity: Entity = {
+      ...ENTITY,
+      name: 'Encosto Estratégico Sociedade de Investimento Imobiliário e Participações Internacionais, Lda.',
+      activity_summary: {
+        last_book: null,
+        book_state_counts: { created: 0, open: 0, closed: 0 },
+        last_change: activity,
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [longEntity] },
+      ]),
+    );
+    renderWithProviders(<EntitiesPage />, ['/entidades']);
+
+    const name = await screen.findByText(longEntity.name);
+    expect(name.className).toContain('truncate');
+    expect(name.getAttribute('title')).toBe(longEntity.name);
+
+    const row = name.closest('tr') as HTMLElement;
+    const cells = within(row).getAllByRole('cell');
+    expect(cells).toHaveLength(5);
+    for (const cell of cells.slice(0, 4)) {
+      expect(cell.className).toContain('entities-table__cell--truncate');
+    }
+    expect(cells[4].className).toContain('entities-table__cell--actions');
+    expect(cells[4].className).not.toContain('entities-table__cell--truncate');
+    expect(within(cells[4]).getByRole('button', { name: 'Abrir' })).toBeTruthy();
+
+    const typeLine = cells[2].querySelector('.entity-cell-line');
+    expect(typeLine?.getAttribute('title')).toContain('Sociedade por Quotas');
+    expect(typeLine?.getAttribute('title')).toContain('Regras csc-art63/v2');
+
+    const activityLine = cells[3].querySelector('.entity-cell-line');
+    expect(activityLine?.getAttribute('title')).toContain('Entidade criada');
+    expect(activityLine?.getAttribute('title')).toContain(activity.actor);
   });
 
   it('opens an entity via an icon button carrying an accessible "Abrir" tooltip label', async () => {
