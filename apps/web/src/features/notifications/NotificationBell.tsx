@@ -18,6 +18,7 @@ import {
   isActionableNotification,
   popupNotifications,
 } from './notifications';
+import { unreadNotifications, useNotificationTriage, withNotificationTriage } from './triage';
 
 const POPUP_LIMIT = 5;
 const POPUP_GAP = 8;
@@ -38,12 +39,15 @@ export function NotificationBell() {
   const popupRef = useRef<HTMLDivElement>(null);
   const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0, maxHeight: 0 });
   const { data, isLoading, error } = useDashboard();
+  const triage = useNotificationTriage();
   const notifications = useMemo(
-    () => (data ? buildDashboardNotifications(data, t) : []),
-    [data, t],
+    () =>
+      data ? withNotificationTriage(buildDashboardNotifications(data, t), triage.entries) : [],
+    [data, t, triage.entries],
   );
-  const actionableCount = notifications.filter(isActionableNotification).length;
-  const topItems = popupNotifications(notifications, POPUP_LIMIT);
+  const unread = unreadNotifications(notifications);
+  const actionableCount = unread.filter(isActionableNotification).length;
+  const topItems = popupNotifications(unread, POPUP_LIMIT);
   const label =
     actionableCount > 0
       ? t('notifications.bell.labelWithCount', { count: actionableCount })
@@ -102,7 +106,7 @@ export function NotificationBell() {
       window.removeEventListener('scroll', repositionPopup, true);
       window.removeEventListener('resize', repositionPopup);
     };
-  }, [open, repositionPopup, isLoading, error, topItems.length]);
+  }, [open, repositionPopup, isLoading, error, triage.isLoading, triage.error, topItems.length]);
 
   const popupStyle: CSSProperties = {
     left: popupPosition.left,
@@ -112,11 +116,7 @@ export function NotificationBell() {
 
   const popup = open ? (
     <>
-      <div
-        className="notification-center__backdrop"
-        aria-hidden="true"
-        onClick={closePopup}
-      />
+      <div className="notification-center__backdrop" aria-hidden="true" onClick={closePopup} />
       <div
         ref={popupRef}
         className="notification-center__popup"
@@ -134,16 +134,18 @@ export function NotificationBell() {
             ) : null
           }
         >
-          {isLoading ? (
+          {isLoading || triage.isLoading ? (
             <Loading />
-          ) : error ? (
-            <ErrorNote error={error} />
+          ) : error || triage.error ? (
+            <ErrorNote error={error ?? triage.error} />
           ) : (
             <NotificationList
               compact
               items={topItems}
               emptyTitle={t('notifications.popup.empty')}
               onAction={closePopup}
+              onTriage={triage.setStatus}
+              triageDisabled={triage.isUpdating}
             />
           )}
           <div className="notification-center__footer">

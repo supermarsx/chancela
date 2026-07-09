@@ -158,6 +158,15 @@ export const fiFI: Catalog = {
   'notifications.filter.alerts': 'Alerts',
   'notifications.filter.reminders': 'Reminders',
   'notifications.filter.operations': 'Operations',
+  'notifications.filter.resolved': 'Resolved',
+  'notifications.empty.resolved': 'No resolved notifications.',
+  'notifications.status.read': 'Read',
+  'notifications.status.dismissed': 'Dismissed',
+  'notifications.status.acknowledged': 'Acknowledged',
+  'notifications.triage.read': 'Mark read',
+  'notifications.triage.dismiss': 'Dismiss',
+  'notifications.triage.acknowledge': 'Acknowledge',
+  'notifications.triage.restore': 'Restore',
   'notifications.badge.alert': 'Alert',
   'notifications.badge.operation': 'Operation',
   'notifications.action.openEntity': 'Open entity',
@@ -664,6 +673,14 @@ export const fiFI: Catalog = {
   'acts.sealing.title': 'Sinetöinti',
   'acts.sealing.ready':
     'Pöytäkirja on vaatimustenmukainen ja allekirjoitettavana — se voidaan sinetöidä.',
+  'acts.sealing.readyWithWarnings':
+    'Pöytäkirjassa on ei-estäviä vaatimustenmukaisuusvaroituksia. Tarkista ja kuittaa ne nimenomaisesti ennen sinetöintiä.',
+  'acts.sealing.warningAck.title': 'Vahvista vaatimustenmukaisuusvaroitukset',
+  'acts.sealing.warningAck.body':
+    'Ei-estäviä vaatimustenmukaisuusvaroituksia on olemassa. Sinetöinti jatkuu vasta, kun vahvistat tarkistaneesi ne.',
+  'acts.sealing.warningAck.checkbox':
+    'Kuittaan nämä vaatimustenmukaisuusvaroitukset nimenomaisesti ja haluan sinetöidä pöytäkirjan.',
+  'acts.sealing.warningAck.confirm': 'Sinetöi pöytäkirja varoituksilla',
   'acts.sealing.unavailableState':
     'Sinetöinti on käytettävissä vain tilassa ”Allekirjoitettavana”.',
   'acts.sealing.fixErrors': 'Korjaa vaatimustenmukaisuusvirheet ennen sinetöintiä.',

@@ -158,6 +158,15 @@ export const svSE: Catalog = {
   'notifications.filter.alerts': 'Alerts',
   'notifications.filter.reminders': 'Reminders',
   'notifications.filter.operations': 'Operations',
+  'notifications.filter.resolved': 'Resolved',
+  'notifications.empty.resolved': 'No resolved notifications.',
+  'notifications.status.read': 'Read',
+  'notifications.status.dismissed': 'Dismissed',
+  'notifications.status.acknowledged': 'Acknowledged',
+  'notifications.triage.read': 'Mark read',
+  'notifications.triage.dismiss': 'Dismiss',
+  'notifications.triage.acknowledge': 'Acknowledge',
+  'notifications.triage.restore': 'Restore',
   'notifications.badge.alert': 'Alert',
   'notifications.badge.operation': 'Operation',
   'notifications.action.openEntity': 'Open entity',
@@ -664,6 +673,14 @@ export const svSE: Catalog = {
     'Det finns ännu ingen integration för kvalificerad elektronisk underskrift. Vid försegling kedjas protokollet i liggaren på grundval av en manuell underskrift av de närvarande — säkerställ att undertecknarna har skrivit under det fysiska exemplaret eller PDF-filen innan du fortsätter.',
   'acts.sealing.title': 'Försegling',
   'acts.sealing.ready': 'Protokollet följer kraven och är under underskrift — det kan förseglas.',
+  'acts.sealing.readyWithWarnings':
+    'Protokollet har icke-blockerande efterlevnadsvarningar. Granska och bekräfta dem uttryckligen före försegling.',
+  'acts.sealing.warningAck.title': 'Bekräfta efterlevnadsvarningar',
+  'acts.sealing.warningAck.body':
+    'Det finns icke-blockerande efterlevnadsvarningar. Förseglingen fortsätter först när du bekräftar att du har granskat dem.',
+  'acts.sealing.warningAck.checkbox':
+    'Jag bekräftar uttryckligen dessa efterlevnadsvarningar och vill försegla protokollet.',
+  'acts.sealing.warningAck.confirm': 'Försegla protokoll med varningar',
   'acts.sealing.unavailableState':
     'Försegling är endast tillgänglig i tillståndet ”Under underskrift”.',
   'acts.sealing.fixErrors': 'Åtgärda efterlevnadsfelen innan du kan försegla.',

@@ -160,6 +160,15 @@ export const deDE: Catalog = {
   'notifications.filter.alerts': 'Alerts',
   'notifications.filter.reminders': 'Reminders',
   'notifications.filter.operations': 'Operations',
+  'notifications.filter.resolved': 'Resolved',
+  'notifications.empty.resolved': 'No resolved notifications.',
+  'notifications.status.read': 'Read',
+  'notifications.status.dismissed': 'Dismissed',
+  'notifications.status.acknowledged': 'Acknowledged',
+  'notifications.triage.read': 'Mark read',
+  'notifications.triage.dismiss': 'Dismiss',
+  'notifications.triage.acknowledge': 'Acknowledge',
+  'notifications.triage.restore': 'Restore',
   'notifications.badge.alert': 'Alert',
   'notifications.badge.operation': 'Operation',
   'notifications.action.openEntity': 'Open entity',
@@ -670,6 +679,14 @@ export const deDE: Catalog = {
   'acts.sealing.title': 'Versiegelung',
   'acts.sealing.ready':
     'Das Protokoll ist konform und in Unterzeichnung — es kann versiegelt werden.',
+  'acts.sealing.readyWithWarnings':
+    'Das Protokoll enthält nicht blockierende Konformitätswarnungen. Prüfen und bestätigen Sie diese ausdrücklich vor der Versiegelung.',
+  'acts.sealing.warningAck.title': 'Konformitätswarnungen bestätigen',
+  'acts.sealing.warningAck.body':
+    'Es gibt nicht blockierende Konformitätswarnungen. Die Versiegelung wird erst fortgesetzt, nachdem Sie bestätigt haben, dass Sie sie geprüft haben.',
+  'acts.sealing.warningAck.checkbox':
+    'Ich bestätige diese Konformitätswarnungen ausdrücklich und möchte das Protokoll versiegeln.',
+  'acts.sealing.warningAck.confirm': 'Protokoll mit Warnungen versiegeln',
   'acts.sealing.unavailableState':
     'Die Versiegelung ist nur im Status „In Unterzeichnung" verfügbar.',
   'acts.sealing.fixErrors': 'Beheben Sie die Konformitätsfehler, um versiegeln zu können.',

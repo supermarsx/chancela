@@ -524,7 +524,7 @@ export function isActionableNotification(item: NotificationItem): boolean {
   return item.kind !== 'operation';
 }
 
-export function popupNotifications(items: NotificationItem[], limit: number): NotificationItem[] {
+export function popupNotifications<T extends NotificationItem>(items: T[], limit: number): T[] {
   const actionable = items.filter(isActionableNotification);
   return (actionable.length > 0 ? actionable : items).slice(0, limit);
 }

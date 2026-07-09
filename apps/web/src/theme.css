@@ -3752,6 +3752,15 @@ a.btn--primary {
   background: color-mix(in srgb, var(--surface) 72%, transparent);
 }
 
+.notifications-list__item.is-read {
+  background: color-mix(in srgb, var(--surface) 54%, transparent);
+}
+
+.notifications-list__item.is-resolved {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface) 44%, transparent);
+}
+
 .notifications-list--compact .notifications-list__item {
   padding: 0.5rem 0.55rem;
 }
@@ -3823,14 +3832,36 @@ a.btn--primary {
   font-size: 0.72rem;
 }
 
+.notifications-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+}
+
+.notifications-list__action,
+.notifications-list__triage {
+  min-height: 1.85rem;
+  white-space: normal;
+}
+
 .notifications-list__action {
   margin-top: 0.65rem;
   padding: 0.28rem 0.65rem;
   font-size: 0.76rem;
 }
 
-.notifications-list--compact .notifications-list__action {
+.notifications-list__actions .notifications-list__action {
+  margin-top: 0;
+}
+
+.notifications-list--compact .notifications-list__actions {
   margin-top: 0.45rem;
+  gap: 0.25rem;
+}
+
+.notifications-list--compact .notifications-list__action,
+.notifications-list--compact .notifications-list__triage {
   padding: 0.22rem 0.5rem;
   font-size: 0.72rem;
 }

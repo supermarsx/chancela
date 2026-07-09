@@ -78,6 +78,7 @@ function rect(overrides: Partial<DOMRect>): DOMRect {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -142,6 +143,99 @@ describe('NotificationBell', () => {
     expect(titleRow).toBeTruthy();
     expect(titleRow.contains(badge)).toBe(true);
     expect(badge.className).toContain('badge--accent');
+  });
+
+  it('marks an alert read through persisted triage and removes it from the bell count', async () => {
+    const requests: { url: string; method: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const method = init?.method ?? 'GET';
+        requests.push({ url, method });
+        if (url.includes('/v1/dashboard')) {
+          return Promise.resolve(
+            new Response(JSON.stringify(dashboard({ alerts: [actionableActAlert()] })), {
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+        }
+        if (url.includes('/v1/notifications/triage') && method === 'PATCH') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                status: 'read',
+                durable: true,
+                entry: {
+                  notification_id: 'alert:act.compliance.review_required:-:-:act-1:0',
+                  status: 'read',
+                  updated_at: '2026-07-09T10:00:00Z',
+                },
+              }),
+              { headers: { 'Content-Type': 'application/json' } },
+            ),
+          );
+        }
+        if (url.includes('/v1/notifications/triage')) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                entries: [],
+                durable: true,
+                max_entries_per_owner: 500,
+              }),
+              { headers: { 'Content-Type': 'application/json' } },
+            ),
+          );
+        }
+        return Promise.reject(new Error(`no stub for ${url}`));
+      }),
+    );
+
+    renderWithProviders(<NotificationBell />, ['/']);
+
+    fireEvent.click(await screen.findByRole('button', { name: '1 notificações pendentes' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    expect(within(dialog).getByRole('link', { name: 'Rever ata' })).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Marcar como lida' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Notificações' })).toBeTruthy();
+      expect(within(dialog).getByText('Sem alertas ou lembretes pendentes.')).toBeTruthy();
+    });
+    expect(
+      requests.some(
+        (request) =>
+          request.method === 'PATCH' &&
+          request.url.includes(
+            '/v1/notifications/triage/alert%3Aact.compliance.review_required%3A-%3A-%3Aact-1%3A0',
+          ),
+      ),
+    ).toBe(true);
+  });
+
+  it('uses durable browser triage when the backend triage endpoint is absent', async () => {
+    window.localStorage.setItem(
+      'chancela.notificationTriage.v1',
+      JSON.stringify([
+        {
+          notification_id: 'alert:act.compliance.review_required:-:-:act-1:0',
+          status: 'read',
+          updated_at: '2026-07-09T10:00:00Z',
+        },
+      ]),
+    );
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([{ match: '/v1/dashboard', body: dashboard({ alerts: [actionableActAlert()] }) }]),
+    );
+
+    renderWithProviders(<NotificationBell />, ['/']);
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeTruthy();
+    expect(screen.queryByText('1')).toBeNull();
   });
 
   it('portals the popup layer to body so header/content ancestors cannot clip it', async () => {

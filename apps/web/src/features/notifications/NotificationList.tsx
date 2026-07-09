@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
 import { useLocale, useT } from '../../i18n';
 import { Badge, EmptyState, Icon } from '../../ui';
-import type { NotificationItem } from './notifications';
+import type { NotificationTriageStatus } from '../../api/types';
+import type { TriagedNotificationItem } from './triage';
 
 function formatTimestamp(value: string | undefined, locale: string): string | null {
   if (!value) return null;
@@ -15,11 +16,15 @@ export function NotificationList({
   compact = false,
   emptyTitle,
   onAction,
+  onTriage,
+  triageDisabled = false,
 }: {
-  items: NotificationItem[];
+  items: TriagedNotificationItem[];
   compact?: boolean;
   emptyTitle?: string;
   onAction?: () => void;
+  onTriage?: (id: string, status: NotificationTriageStatus) => void;
+  triageDisabled?: boolean;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -36,14 +41,27 @@ export function NotificationList({
     >
       {items.map((item) => {
         const timestamp = formatTimestamp(item.timestamp, locale);
+        const statusLabel =
+          item.triageStatus === 'read'
+            ? t('notifications.status.read')
+            : item.triageStatus === 'dismissed'
+              ? t('notifications.status.dismissed')
+              : item.triageStatus === 'acknowledged'
+                ? t('notifications.status.acknowledged')
+                : null;
+        const resolved = item.triageStatus === 'dismissed' || item.triageStatus === 'acknowledged';
         return (
           <li
-            className={`notifications-list__item notifications-list__item--${item.tone}`}
+            className={`notifications-list__item notifications-list__item--${item.tone}${
+              item.triageStatus === 'read' ? ' is-read' : ''
+            }${resolved ? ' is-resolved' : ''}`}
             data-kind={item.kind}
+            data-triage-status={item.triageStatus}
             key={item.id}
           >
             <div className="notifications-list__head">
               <Badge tone={item.tone}>{item.badge}</Badge>
+              {statusLabel ? <Badge>{statusLabel}</Badge> : null}
               <span className="notifications-list__title">{item.title}</span>
             </div>
             <p className="notifications-list__detail muted">{item.detail}</p>
@@ -57,17 +75,73 @@ export function NotificationList({
                 ))}
               </div>
             ) : null}
-            {item.action ? (
-              <Link
-                className="btn btn--ghost btn--icon notifications-list__action"
-                to={item.action.href}
-                onClick={onAction}
-              >
-                <span className="btn__icon">
-                  <Icon.ArrowRight />
-                </span>
-                {item.action.label}
-              </Link>
+            {item.action || onTriage ? (
+              <div className="notifications-list__actions">
+                {item.action ? (
+                  <Link
+                    className="btn btn--ghost btn--icon notifications-list__action"
+                    to={item.action.href}
+                    onClick={onAction}
+                  >
+                    <span className="btn__icon">
+                      <Icon.ArrowRight />
+                    </span>
+                    {item.action.label}
+                  </Link>
+                ) : null}
+                {onTriage && resolved ? (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--icon notifications-list__triage"
+                    disabled={triageDisabled}
+                    onClick={() => onTriage(item.id, 'unread')}
+                  >
+                    <span className="btn__icon">
+                      <Icon.Refresh />
+                    </span>
+                    {t('notifications.triage.restore')}
+                  </button>
+                ) : null}
+                {onTriage && !resolved && item.triageStatus === 'unread' ? (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--icon notifications-list__triage"
+                    disabled={triageDisabled}
+                    onClick={() => onTriage(item.id, 'read')}
+                  >
+                    <span className="btn__icon">
+                      <Icon.Check />
+                    </span>
+                    {t('notifications.triage.read')}
+                  </button>
+                ) : null}
+                {onTriage && !resolved && item.kind !== 'operation' ? (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--icon notifications-list__triage"
+                    disabled={triageDisabled}
+                    onClick={() => onTriage(item.id, 'acknowledged')}
+                  >
+                    <span className="btn__icon">
+                      <Icon.Check />
+                    </span>
+                    {t('notifications.triage.acknowledge')}
+                  </button>
+                ) : null}
+                {onTriage && !resolved ? (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--icon notifications-list__triage"
+                    disabled={triageDisabled}
+                    onClick={() => onTriage(item.id, 'dismissed')}
+                  >
+                    <span className="btn__icon">
+                      <Icon.Close />
+                    </span>
+                    {t('notifications.triage.dismiss')}
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </li>
         );

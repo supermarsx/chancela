@@ -616,6 +616,31 @@ export interface Dashboard {
   recent_events: LedgerEventView[];
 }
 
+export type NotificationTriageStatus = 'unread' | 'read' | 'dismissed' | 'acknowledged';
+
+export interface NotificationTriageEntry {
+  owner?: string;
+  notification_id: string;
+  status: Exclude<NotificationTriageStatus, 'unread'>;
+  updated_at: string;
+}
+
+export interface NotificationTriageResponse {
+  entries: NotificationTriageEntry[];
+  durable: boolean;
+  max_entries_per_owner: number;
+}
+
+export interface NotificationTriageUpdateBody {
+  status: NotificationTriageStatus;
+}
+
+export interface NotificationTriageUpdateResponse {
+  status: NotificationTriageStatus;
+  entry: NotificationTriageEntry | null;
+  durable: boolean;
+}
+
 export interface DashboardCurrentWork {
   open_books: DashboardOpenBook[];
   act_counts_by_state: DashboardActStateCounts;

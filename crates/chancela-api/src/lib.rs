@@ -80,6 +80,7 @@ mod followups;
 mod hex;
 mod law;
 mod ledger;
+mod notifications;
 mod paper_import;
 mod password_policy;
 mod privacy;
@@ -232,12 +233,17 @@ pub struct AppState {
     /// `retention-policies.json`; create and update transitions are also chained into the ledger.
     pub retention_policies:
         Arc<RwLock<HashMap<privacy::RetentionPolicyId, privacy::RetentionPolicyRecord>>>,
+    /// Per-actor notification triage for dashboard-derived notification ids. File-backed states load
+    /// and write this through `notification-triage.json`; the dashboard generation itself is unchanged.
+    pub notification_triage: Arc<RwLock<notifications::NotificationTriageTable>>,
     /// Where `privacy-processors.json` is persisted, or `None` for in-memory registers.
     pub processor_records_path: Option<Arc<PathBuf>>,
     /// Where `privacy-dpias.json` is persisted, or `None` for in-memory registers.
     pub dpia_records_path: Option<Arc<PathBuf>>,
     /// Where `retention-policies.json` is persisted, or `None` for in-memory registers.
     pub retention_policies_path: Option<Arc<PathBuf>>,
+    /// Where `notification-triage.json` is persisted, or `None` for in-memory triage.
+    pub notification_triage_path: Option<Arc<PathBuf>>,
     /// Where `users.json` is persisted, or `None` for in-memory profiles. Mirrors `persist_path`.
     pub users_path: Option<Arc<PathBuf>>,
     /// The scoped RBAC role catalog (t64): the seeded defaults + any custom roles. `Default` empty;
@@ -459,6 +465,9 @@ impl AppState {
         let retention_policies_path = dir.join(privacy::RETENTION_POLICIES_FILE);
         let loaded_retention_policies =
             privacy::load_retention_policies(&retention_policies_path).unwrap_or_default();
+        let notification_triage_path = dir.join(notifications::NOTIFICATION_TRIAGE_FILE);
+        let loaded_notification_triage =
+            notifications::load_notification_triage(&notification_triage_path).unwrap_or_default();
         let api_keys_path = dir.join(apikeys::API_KEYS_FILE);
         let loaded_api_keys = apikeys::load_api_keys(&api_keys_path).unwrap_or_default();
         let external_signing_envelopes_path =
@@ -487,6 +496,8 @@ impl AppState {
             dpia_records_path: Some(Arc::new(dpia_records_path)),
             retention_policies: Arc::new(RwLock::new(loaded_retention_policies)),
             retention_policies_path: Some(Arc::new(retention_policies_path)),
+            notification_triage: Arc::new(RwLock::new(loaded_notification_triage)),
+            notification_triage_path: Some(Arc::new(notification_triage_path)),
             api_keys: Arc::new(RwLock::new(loaded_api_keys)),
             api_keys_path: Some(Arc::new(api_keys_path)),
             external_signing_envelopes: Arc::new(RwLock::new(loaded_external_signing_envelopes)),
@@ -676,6 +687,7 @@ impl AppState {
                 dir.join(crate::privacy::PROCESSORS_FILE),
                 dir.join(crate::privacy::DPIAS_FILE),
                 dir.join(crate::privacy::RETENTION_POLICIES_FILE),
+                dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
                 dir.join(crate::apikeys::API_KEYS_FILE),
                 dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
                 dir.join(chancela_cae::CACHE_FILE),
@@ -734,6 +746,10 @@ impl AppState {
             *self.retention_policies.write().await =
                 privacy::load_retention_policies(&dir.join(privacy::RETENTION_POLICIES_FILE))
                     .unwrap_or_default();
+            *self.notification_triage.write().await = notifications::load_notification_triage(
+                &dir.join(notifications::NOTIFICATION_TRIAGE_FILE),
+            )
+            .unwrap_or_default();
             *self.api_keys.write().await =
                 apikeys::load_api_keys(&dir.join(apikeys::API_KEYS_FILE)).unwrap_or_default();
             *self.external_signing_envelopes.write().await = external_signing::load_envelopes(
@@ -777,6 +793,7 @@ impl AppState {
         self.processor_records.write().await.clear();
         self.dpia_records.write().await.clear();
         self.retention_policies.write().await.clear();
+        self.notification_triage.write().await.clear();
         self.sessions.write().await.clear();
         self.attestations.write().await.clear();
         self.api_keys.write().await.clear();
@@ -1111,6 +1128,14 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/data/reset", post(data::reset_data))
         .route("/v1/data/start-over", post(data::start_over_instance))
         .route("/v1/dashboard", get(dashboard::dashboard))
+        .route(
+            "/v1/notifications/triage",
+            get(notifications::list_notification_triage),
+        )
+        .route(
+            "/v1/notifications/triage/{id}",
+            patch(notifications::patch_notification_triage),
+        )
         .route("/v1/backup", post(backup::create_backup))
         .route(
             "/v1/settings",

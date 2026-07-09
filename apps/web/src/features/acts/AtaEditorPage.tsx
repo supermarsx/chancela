@@ -15,7 +15,8 @@
  * The SIG-03 manual-signature warning (UX-41) shows during signing because there is no
  * qualified-signature backend yet — sealing attests a manual signature.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useParams } from 'react-router-dom';
 import {
   useAct,
@@ -32,6 +33,7 @@ import {
   attachmentKindLabels,
   meetingChannelLabels,
   optionsFrom,
+  severityLabels,
   signatoryCapacityLabels,
 } from '../../api/labels';
 import {
@@ -50,6 +52,7 @@ import {
   type ActView,
   type ActVoteResult,
   type AttachmentKind,
+  type ComplianceReport,
   type MeetingChannel,
   type SignatoryCapacity,
 } from '../../api/types';
@@ -892,6 +895,136 @@ function draftToPatch(draft: Draft) {
   };
 }
 
+interface SealWarningItem {
+  code: string;
+  message: string;
+}
+
+function sealWarningItems(report: ComplianceReport | undefined): SealWarningItem[] {
+  if (!report) return [];
+  const issueWarnings = report.issues
+    .filter((issue) => issue.severity === 'Warning')
+    .map((issue) => ({ code: issue.rule_id, message: issue.message }));
+  const advisoryWarnings = (report.convening_advisories ?? []).map((advisory) => ({
+    code: advisory.code,
+    message: advisory.message,
+  }));
+  return [...issueWarnings, ...advisoryWarnings];
+}
+
+function complianceWarningCount(report: ComplianceReport | undefined): number {
+  if (!report) return 0;
+  return report.warnings + (report.convening_advisories?.length ?? 0);
+}
+
+function SealWarningAcknowledgementModal({
+  open,
+  warnings,
+  warningCount,
+  checked,
+  pending,
+  onCheckedChange,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  warnings: SealWarningItem[];
+  warningCount: number;
+  checked: boolean;
+  pending: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !pending) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, pending, onClose]);
+
+  if (!open) return null;
+
+  const ready = checked && !pending;
+  const warningLabel =
+    warningCount === 1
+      ? t('compliance.warnings.one', { count: warningCount })
+      : t('compliance.warnings.other', { count: warningCount });
+
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (ready) onConfirm();
+  }
+
+  return createPortal(
+    <div
+      className="modal-backdrop"
+      onClick={() => {
+        if (!pending) onClose();
+      }}
+    >
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="modal__head">
+          <h2 className="modal__title" id={titleId}>
+            {t('acts.sealing.warningAck.title')}
+          </h2>
+        </header>
+        <form className="modal__body" onSubmit={submit}>
+          <div className="modal__intro">
+            <p>{t('acts.sealing.warningAck.body')}</p>
+            <p className="muted">{warningLabel}</p>
+          </div>
+
+          {warnings.length > 0 ? (
+            <ul className="issues">
+              {warnings.map((warning, i) => (
+                <li key={`${warning.code}-${i}`} className="issue issue--warning">
+                  <div className="issue__head">
+                    <Badge tone="warn">{severityLabels.Warning}</Badge>
+                    <code className="mono">{warning.code}</code>
+                  </div>
+                  <p className="issue__message">{warning.message}</p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          <label className="checkline">
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={pending}
+              onChange={(e) => onCheckedChange(e.target.checked)}
+            />
+            {t('acts.sealing.warningAck.checkbox')}
+          </label>
+
+          <div className="modal__foot">
+            <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" variant="primary" icon={<Icon.Seal />} disabled={!ready}>
+              {pending ? t('acts.sealing.sealing') : t('acts.sealing.warningAck.confirm')}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export function AtaEditorPage() {
   const t = useT();
   const toast = useToast();
@@ -906,6 +1039,8 @@ export function AtaEditorPage() {
   const archive = useArchiveAct(id);
 
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [sealWarningsOpen, setSealWarningsOpen] = useState(false);
+  const [sealWarningsAcknowledged, setSealWarningsAcknowledged] = useState(false);
 
   // Seed the working copy once per act identity; refetches of the same act (after an
   // advance/seal) update the read-only header via the cache without clobbering edits.
@@ -955,14 +1090,27 @@ export function AtaEditorPage() {
     });
   }
 
-  function onSeal() {
-    seal.mutate(
-      { acknowledge_warnings: true },
-      {
-        onSuccess: () => toast.success(t('toast.ata.sealed')),
-        onError: (e) => toast.error(e),
+  function submitSeal(acknowledgeWarnings: boolean) {
+    seal.mutate(acknowledgeWarnings ? { acknowledge_warnings: true } : {}, {
+      onSuccess: () => {
+        setSealWarningsOpen(false);
+        setSealWarningsAcknowledged(false);
+        toast.success(t('toast.ata.sealed'));
       },
-    );
+      onError: (e) => {
+        setSealWarningsOpen(false);
+        toast.error(e);
+      },
+    });
+  }
+
+  function onSeal() {
+    if (hasComplianceWarnings) {
+      setSealWarningsAcknowledged(false);
+      setSealWarningsOpen(true);
+      return;
+    }
+    submitSeal(false);
   }
 
   function onArchive() {
@@ -974,6 +1122,9 @@ export function AtaEditorPage() {
 
   const sealAllowed = compliance.data?.seal_allowed ?? false;
   const canSeal = a.state === 'Signing' && sealAllowed;
+  const warningCount = complianceWarningCount(compliance.data);
+  const hasComplianceWarnings = warningCount > 0;
+  const warningItems = sealWarningItems(compliance.data);
 
   return (
     <div className="stack">
@@ -1265,9 +1416,11 @@ export function AtaEditorPage() {
                   <p className="muted">
                     {a.state !== 'Signing'
                       ? t('acts.sealing.unavailableState')
-                      : sealAllowed
-                        ? t('acts.sealing.ready')
-                        : t('acts.sealing.fixErrors')}
+                      : sealAllowed && hasComplianceWarnings
+                        ? t('acts.sealing.readyWithWarnings')
+                        : sealAllowed
+                          ? t('acts.sealing.ready')
+                          : t('acts.sealing.fixErrors')}
                   </p>
                   <GateButton
                     perm="signing.perform"
@@ -1304,6 +1457,18 @@ export function AtaEditorPage() {
           </Card>
         </div>
       </div>
+      <SealWarningAcknowledgementModal
+        open={sealWarningsOpen}
+        warnings={warningItems}
+        warningCount={warningCount}
+        checked={sealWarningsAcknowledged}
+        pending={seal.isPending}
+        onCheckedChange={setSealWarningsAcknowledged}
+        onClose={() => {
+          if (!seal.isPending) setSealWarningsOpen(false);
+        }}
+        onConfirm={() => submitSeal(true)}
+      />
     </div>
   );
 }

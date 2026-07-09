@@ -159,6 +159,15 @@ export const frFR: Catalog = {
   'notifications.filter.alerts': 'Alerts',
   'notifications.filter.reminders': 'Reminders',
   'notifications.filter.operations': 'Operations',
+  'notifications.filter.resolved': 'Resolved',
+  'notifications.empty.resolved': 'No resolved notifications.',
+  'notifications.status.read': 'Read',
+  'notifications.status.dismissed': 'Dismissed',
+  'notifications.status.acknowledged': 'Acknowledged',
+  'notifications.triage.read': 'Mark read',
+  'notifications.triage.dismiss': 'Dismiss',
+  'notifications.triage.acknowledge': 'Acknowledge',
+  'notifications.triage.restore': 'Restore',
   'notifications.badge.alert': 'Alert',
   'notifications.badge.operation': 'Operation',
   'notifications.action.openEntity': 'Open entity',
@@ -667,6 +676,14 @@ export const frFR: Catalog = {
     'L’intégration de la signature électronique qualifiée n’est pas encore disponible. Lors du scellement, le procès-verbal est chaîné dans le registre sur la base d’une signature manuelle des présents — assurez-vous que les signataires ont signé le support physique ou le PDF avant de poursuivre.',
   'acts.sealing.title': 'Scellement',
   'acts.sealing.ready': 'Le procès-verbal est conforme et en signature — il peut être scellé.',
+  'acts.sealing.readyWithWarnings':
+    'Le procès-verbal contient des avertissements de conformité non bloquants. Examinez-les et reconnaissez-les explicitement avant de sceller.',
+  'acts.sealing.warningAck.title': 'Confirmer les avertissements de conformité',
+  'acts.sealing.warningAck.body':
+    'Des avertissements de conformité non bloquants existent. Le scellement ne continue qu’après confirmation de leur examen.',
+  'acts.sealing.warningAck.checkbox':
+    'Je reconnais explicitement ces avertissements de conformité et veux sceller le procès-verbal.',
+  'acts.sealing.warningAck.confirm': 'Sceller avec avertissements',
   'acts.sealing.unavailableState':
     'Le scellement n’est disponible que dans l’état « En signature ».',
   'acts.sealing.fixErrors': 'Corrigez les erreurs de conformité pour pouvoir sceller.',

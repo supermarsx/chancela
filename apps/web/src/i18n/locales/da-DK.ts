@@ -157,6 +157,15 @@ export const daDK: Catalog = {
   'notifications.filter.alerts': 'Alerts',
   'notifications.filter.reminders': 'Reminders',
   'notifications.filter.operations': 'Operations',
+  'notifications.filter.resolved': 'Resolved',
+  'notifications.empty.resolved': 'No resolved notifications.',
+  'notifications.status.read': 'Read',
+  'notifications.status.dismissed': 'Dismissed',
+  'notifications.status.acknowledged': 'Acknowledged',
+  'notifications.triage.read': 'Mark read',
+  'notifications.triage.dismiss': 'Dismiss',
+  'notifications.triage.acknowledge': 'Acknowledge',
+  'notifications.triage.restore': 'Restore',
   'notifications.badge.alert': 'Alert',
   'notifications.badge.operation': 'Operation',
   'notifications.action.openEntity': 'Open entity',
@@ -664,6 +673,14 @@ export const daDK: Catalog = {
   'acts.sealing.title': 'Besegling',
   'acts.sealing.ready':
     'Protokollen er i overensstemmelse og under underskrift — den kan besegles.',
+  'acts.sealing.readyWithWarnings':
+    'Protokollen har ikke-blokerende overholdelsesadvarsler. Gennemgå dem, og anerkend dem udtrykkeligt før besegling.',
+  'acts.sealing.warningAck.title': 'Bekræft overholdelsesadvarsler',
+  'acts.sealing.warningAck.body':
+    'Der er ikke-blokerende overholdelsesadvarsler. Besegling fortsætter først, når du bekræfter, at du har gennemgået dem.',
+  'acts.sealing.warningAck.checkbox':
+    'Jeg anerkender udtrykkeligt disse overholdelsesadvarsler og vil besegle protokollen.',
+  'acts.sealing.warningAck.confirm': 'Besegl protokol med advarsler',
   'acts.sealing.unavailableState': 'Besegling er kun tilgængelig i tilstanden »Under underskrift«.',
   'acts.sealing.fixErrors': 'Ret overholdelsesfejlene, før du kan besegle.',
   'acts.sealing.sealing': 'Besegler…',

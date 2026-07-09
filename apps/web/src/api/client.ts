@@ -41,6 +41,9 @@ import type {
   CreateSessionBody,
   CreateUserBody,
   Dashboard,
+  NotificationTriageResponse,
+  NotificationTriageUpdateBody,
+  NotificationTriageUpdateResponse,
   DocumentBundle,
   ImportedDocumentView,
   ImportDocumentBody,
@@ -787,6 +790,12 @@ export const api = {
 
   // Dashboard (§2.7)
   dashboard: () => get<Dashboard>('/v1/dashboard'),
+  getNotificationTriage: () => get<NotificationTriageResponse>('/v1/notifications/triage'),
+  patchNotificationTriage: (id: string, body: NotificationTriageUpdateBody) =>
+    patch<NotificationTriageUpdateResponse>(
+      `/v1/notifications/triage/${encodeURIComponent(id)}`,
+      body,
+    ),
 };
 
 /**

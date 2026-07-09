@@ -65,9 +65,11 @@ const mesaError: ComplianceReport['issues'][number] = {
 };
 
 /** A `fetch` stub that persists PATCHes and derives compliance from the act's mesa chair. */
-function stateful(initial: ActView) {
+function stateful(initial: ActView, options: { warnings?: ComplianceReport['issues'] } = {}) {
   let act = initial;
   const patches: Record<string, unknown>[] = [];
+  const seals: Record<string, unknown>[] = [];
+  const warnings = options.warnings ?? [];
   const json = (body: unknown, status = 200) =>
     Promise.resolve(
       new Response(JSON.stringify(body), {
@@ -84,15 +86,34 @@ function stateful(initial: ActView) {
         rule_pack: 'csc-art63/v2',
         family: 'CommercialCompany',
         statute_overlay: false,
-        issues: hasChair ? [] : [mesaError],
+        issues: hasChair ? warnings : [mesaError, ...warnings],
         errors: hasChair ? 0 : 1,
-        warnings: 0,
+        warnings: warnings.length,
         seal_allowed: hasChair,
       };
       return json(report);
     }
     if (url.includes('/v1/books/')) return json(book);
     if (url.includes(`/v1/acts/${act.id}/follow-ups`) && method === 'GET') return json([]);
+    if (url.includes(`/v1/acts/${act.id}/seal`) && method === 'POST') {
+      const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {};
+      seals.push(body);
+      act = {
+        ...act,
+        state: 'Sealed',
+        ata_number: 1,
+        payload_digest: 'sha256:sealed',
+        seal_event_seq: 7,
+      };
+      return json({
+        act,
+        ata_number: 1,
+        event_seq: 7,
+        payload_digest: 'sha256:sealed',
+        acknowledged_warnings: warnings,
+        document: null,
+      });
+    }
     if (/\/v1\/acts\/[^/]+$/.test(url)) {
       if (method === 'PATCH') {
         const body = JSON.parse(init!.body as string) as Record<string, unknown>;
@@ -104,7 +125,7 @@ function stateful(initial: ActView) {
     }
     return Promise.reject(new Error(`no stub for ${method} ${url}`));
   }) as typeof fetch;
-  return { fetchImpl, patches };
+  return { fetchImpl, patches, seals };
 }
 
 function renderEditor() {
@@ -249,5 +270,58 @@ describe('AtaEditorPage — agenda add/remove', () => {
     expect(screen.queryByLabelText('Ponto da ordem de trabalhos')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     await waitFor(() => expect(shared.patches.at(-1)?.agenda).toEqual([]));
+  });
+});
+
+describe('AtaEditorPage — seal warning acknowledgement', () => {
+  it('seals without sending an implicit warning acknowledgement when compliance is clean', async () => {
+    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+    const shared = stateful(withChair);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Selar ata' }));
+
+    await waitFor(() => expect(shared.seals).toHaveLength(1));
+    expect(shared.seals[0]).toEqual({});
+    expect(shared.seals[0]).not.toHaveProperty('acknowledge_warnings');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('requires an explicit acknowledgement checkbox before sealing with compliance warnings', async () => {
+    const warning = {
+      rule_id: 'SIG-03/manual-signature',
+      severity: 'Warning' as const,
+      message: 'A ata será selada com assinatura manual.',
+    };
+    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+    const shared = stateful(withChair, { warnings: [warning] });
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Selar ata' }));
+
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Confirmar avisos de conformidade',
+    });
+    expect(shared.seals).toHaveLength(0);
+    expect(within(dialog).getByText('SIG-03/manual-signature')).toBeTruthy();
+    expect(within(dialog).getByText(/assinatura manual/i)).toBeTruthy();
+
+    const confirm = within(dialog).getByRole<HTMLButtonElement>('button', {
+      name: 'Selar ata com avisos',
+    });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(shared.seals).toHaveLength(0);
+
+    fireEvent.click(
+      within(dialog).getByLabelText(/Reconheço explicitamente estes avisos de conformidade/i),
+    );
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(shared.seals).toHaveLength(1));
+    expect(shared.seals[0]).toEqual({ acknowledge_warnings: true });
   });
 });
