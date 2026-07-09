@@ -122,6 +122,25 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
     if !catalog.has(b"Metadata") {
         return Err(fail("catalog has no /Metadata".into()));
     }
+    let lang = catalog
+        .get(b"Lang")
+        .and_then(Object::as_str)
+        .map_err(|_| fail("catalog has no textual /Lang".into()))?;
+    if lang.is_empty() {
+        return Err(fail("catalog /Lang is empty".into()));
+    }
+    if let Ok(mark_info_obj) = catalog.get(b"MarkInfo") {
+        let mark_info = mark_info_obj
+            .as_dict()
+            .map_err(|_| fail("catalog /MarkInfo is not a dictionary".into()))?;
+        if matches!(mark_info.get(b"Marked"), Ok(Object::Boolean(true)))
+            && !catalog.has(b"StructTreeRoot")
+        {
+            return Err(fail(
+                "catalog claims /MarkInfo /Marked true without /StructTreeRoot".into(),
+            ));
+        }
+    }
     let oi_arr = catalog
         .get(b"OutputIntents")
         .and_then(Object::as_array)
@@ -149,6 +168,11 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
     }
     if !find(&meta.content, b"<pdfaid:conformance>U</pdfaid:conformance>") {
         return Err(fail("XMP missing pdfaid:conformance = U".into()));
+    }
+    if find(&meta.content, b"pdfuaid:") || find(&meta.content, b"<pdfuaid") {
+        return Err(fail(
+            "XMP claims PDF/UA, but the writer has no tagged-PDF implementation".into(),
+        ));
     }
 
     // OutputIntent: /S GTS_PDFA1 and an N=3 DestOutputProfile.

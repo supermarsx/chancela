@@ -5,7 +5,7 @@
 //! Fixtures use the fictional "Encosto Estratégico Lda" / "Amélia Marques" — never a real entity.
 
 use chancela_core::{Block, DocumentModel, KvRow, Run, SignatureSlot, VoteRow};
-use lopdf::{Document, Object};
+use lopdf::{Dictionary, Document, Object};
 
 use crate::pdfa;
 
@@ -93,6 +93,28 @@ fn fixture() -> DocumentModel {
         },
     ];
     doc
+}
+
+fn catalog(parsed: &Document) -> &Dictionary {
+    let root = parsed
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .unwrap();
+    parsed.get_object(root).and_then(Object::as_dict).unwrap()
+}
+
+fn xmp_text(parsed: &Document) -> String {
+    let catalog = catalog(parsed);
+    let meta_ref = catalog
+        .get(b"Metadata")
+        .and_then(Object::as_reference)
+        .unwrap();
+    let meta = parsed
+        .get_object(meta_ref)
+        .and_then(Object::as_stream)
+        .unwrap();
+    String::from_utf8_lossy(&meta.content).into_owned()
 }
 
 #[test]
@@ -266,12 +288,7 @@ fn diacritics_survive_via_tounicode() {
 fn metadata_is_uncompressed_pdfa2u() {
     let bytes = pdfa::write(&fixture()).expect("write");
     let parsed = Document::load_mem(&bytes).expect("parse");
-    let root = parsed
-        .trailer
-        .get(b"Root")
-        .and_then(Object::as_reference)
-        .unwrap();
-    let catalog = parsed.get_object(root).and_then(Object::as_dict).unwrap();
+    let catalog = catalog(&parsed);
     let meta_ref = catalog
         .get(b"Metadata")
         .and_then(Object::as_reference)
@@ -284,4 +301,129 @@ fn metadata_is_uncompressed_pdfa2u() {
     let xmp = String::from_utf8_lossy(&meta.content);
     assert!(xmp.contains("<pdfaid:part>2</pdfaid:part>"));
     assert!(xmp.contains("<pdfaid:conformance>U</pdfaid:conformance>"));
+}
+
+#[test]
+fn accessibility_metadata_falls_back_for_missing_title_language() {
+    let mut doc = DocumentModel::new(" \t\n", "Encosto Estratégico Lda", "Sem título");
+    doc.language = "  ".to_string();
+
+    let report = pdfa::accessibility_report(&doc);
+    assert_eq!(report.metadata.title.value, "Untitled Chancela document");
+    assert!(!report.metadata.title.source_present);
+    assert!(report.metadata.title.fallback_used);
+    assert_eq!(report.metadata.language.value, "und");
+    assert!(!report.metadata.language.source_present);
+    assert!(report.metadata.language.fallback_used);
+    assert!(!report.pdf_ua_claimed);
+
+    let bytes = pdfa::write(&doc).expect("write");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let catalog = catalog(&parsed);
+    assert_eq!(
+        catalog.get(b"Lang").and_then(Object::as_str).unwrap(),
+        b"und"
+    );
+    let xmp = xmp_text(&parsed);
+    assert!(xmp.contains("<rdf:li xml:lang=\"x-default\">Untitled Chancela document</rdf:li>"));
+    assert!(xmp.contains("<rdf:li>und</rdf:li>"));
+}
+
+#[test]
+fn implausible_language_metadata_is_reported_and_falls_back() {
+    let mut doc = fixture();
+    doc.language = "pt_PT".to_string();
+
+    let report = pdfa::accessibility_report(&doc);
+    assert_eq!(report.metadata.language.value, "und");
+    assert!(report.metadata.language.source_present);
+    assert!(report.metadata.language.fallback_used);
+    assert!(!report.pdf_ua_claimed);
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::MissingStructTreeRoot)
+    );
+
+    let bytes = pdfa::write(&doc).expect("write");
+    assert!(
+        !bytes.windows(7).any(|w| w == b"pdfuaid"),
+        "fallback metadata must not introduce PDF/UA identification"
+    );
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let catalog = catalog(&parsed);
+    assert_eq!(
+        catalog.get(b"Lang").and_then(Object::as_str).unwrap(),
+        b"und"
+    );
+    let xmp = xmp_text(&parsed);
+    assert!(xmp.contains("<rdf:li>und</rdf:li>"));
+    assert!(!xmp.contains("pt_PT"));
+}
+
+#[test]
+fn long_non_ascii_title_is_preserved_in_report_and_xmp() {
+    let title = format!(
+        "São Tomé & Príncipe: ata extraordinária <revisão> \"final\" {}",
+        vec!["ação"; 32].join(" ")
+    );
+    let doc = DocumentModel::new(format!("  {title}  "), "Encosto Estratégico Lda", "Teste");
+
+    let report = pdfa::accessibility_report(&doc);
+    assert_eq!(report.metadata.title.value, title);
+    assert!(report.metadata.title.source_present);
+    assert!(!report.metadata.title.fallback_used);
+    assert!(report.to_json().contains("São Tomé & Príncipe"));
+    assert!(report.to_json().contains("\\\"final\\\""));
+
+    let bytes = pdfa::write(&doc).expect("write");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let xmp = xmp_text(&parsed);
+    assert!(xmp.contains("São Tomé &amp; Príncipe"));
+    assert!(xmp.contains("&lt;revisão&gt;"));
+    assert!(xmp.contains("&quot;final&quot;"));
+}
+
+#[test]
+fn accessibility_report_json_is_deterministic() {
+    let a = pdfa::accessibility_report(&fixture()).to_json();
+    let b = pdfa::accessibility_report(&fixture()).to_json();
+    assert_eq!(a, b);
+    assert_eq!(
+        a,
+        "{\"version\":1,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":false,\"tagged_content_present\":false,\"layout_artifacts_marked\":false},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"missing_struct_tree_root\",\"content_is_not_tagged\",\"missing_role_map\",\"no_alt_text_model\",\"layout_artifacts_not_marked\"]}"
+    );
+}
+
+#[test]
+fn pdf_ua_is_not_claimed_without_tagging() {
+    let report = pdfa::accessibility_report(&fixture());
+    assert!(!report.pdf_ua_claimed);
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::MissingStructTreeRoot)
+    );
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::ContentIsNotTagged)
+    );
+
+    let bytes = pdfa::write(&fixture()).expect("write");
+    assert!(
+        !bytes.windows(7).any(|w| w == b"pdfuaid"),
+        "writer must not emit PDF/UA identification metadata"
+    );
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let catalog = catalog(&parsed);
+    assert!(!catalog.has(b"StructTreeRoot"));
+    let mark_info = catalog
+        .get(b"MarkInfo")
+        .and_then(Object::as_dict)
+        .expect("honest MarkInfo dictionary");
+    assert!(matches!(
+        mark_info.get(b"Marked"),
+        Ok(Object::Boolean(false))
+    ));
 }

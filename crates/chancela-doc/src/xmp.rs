@@ -8,6 +8,8 @@
 
 use chancela_core::DocumentModel;
 
+use crate::accessibility::AccessibilityMetadata;
+
 /// The producer/creator tool string embedded in the metadata.
 pub const CREATOR_TOOL: &str = "Chancela chancela-doc";
 
@@ -41,10 +43,10 @@ pub fn iso_date(created_at: &Option<String>) -> String {
 }
 
 /// Build the full XMP packet bytes for `doc`.
-pub fn packet(doc: &DocumentModel) -> Vec<u8> {
+pub fn packet(doc: &DocumentModel, metadata: &AccessibilityMetadata) -> Vec<u8> {
     let date = iso_date(&doc.created_at);
-    let title = xml_escape(&doc.title);
-    let lang = xml_escape(&doc.language);
+    let title = xml_escape(&metadata.title.value);
+    let lang = xml_escape(&metadata.language.value);
     let creator = xml_escape(&doc.entity_name);
     let date = xml_escape(&date);
 

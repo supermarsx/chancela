@@ -14,7 +14,11 @@ use lopdf::{Dictionary, Document, Object, Stream, StringFormat};
 use sha2::{Digest, Sha256};
 
 use crate::font::Font;
-use crate::{DocError, layout, selfcheck, xmp};
+use crate::{DocError, accessibility, layout, selfcheck, xmp};
+
+pub use crate::accessibility::{
+    AccessibilityMetadata, AccessibilityReport, MetadataValue, PdfUaBlocker,
+};
 
 /// The bundled sRGB OutputIntent profile (CC0; see `assets/icc/PROVENANCE.md`).
 const SRGB_ICC: &[u8] = include_bytes!("../assets/icc/sRGB-v2-micro.icc");
@@ -29,8 +33,14 @@ fn lit(s: &str) -> Object {
     Object::String(s.as_bytes().to_vec(), StringFormat::Literal)
 }
 
+/// Report the accessibility features and PDF/UA blockers the current writer can assert.
+pub fn accessibility_report(doc: &DocumentModel) -> AccessibilityReport {
+    accessibility::report(doc)
+}
+
 /// Write `doc` as PDF/A-2u bytes and self-verify them before returning.
 pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
+    let accessibility = accessibility::report(doc);
     let font = Font::load()?;
     let laid = layout::lay_out(doc, &font);
 
@@ -136,7 +146,7 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     pdf.set_object(oi_id, Object::Dictionary(oi));
 
     // --- XMP metadata (uncompressed, no /Filter) -------------------------------------------------
-    let xmp_bytes = xmp::packet(doc);
+    let xmp_bytes = xmp::packet(doc, &accessibility.metadata);
     let mut meta_dict = Dictionary::new();
     meta_dict.set("Type", name("Metadata"));
     meta_dict.set("Subtype", name("XML"));
@@ -199,7 +209,13 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
         "OutputIntents",
         Object::Array(vec![Object::Reference(oi_id)]),
     );
-    catalog.set("Lang", lit(&doc.language));
+    catalog.set("Lang", lit(&accessibility.metadata.language.value));
+    let mut mark_info = Dictionary::new();
+    mark_info.set(
+        "Marked",
+        Object::Boolean(accessibility.tagged_content_present),
+    );
+    catalog.set("MarkInfo", Object::Dictionary(mark_info));
     pdf.set_object(catalog_id, Object::Dictionary(catalog));
 
     // Trailer: /Root + deterministic /ID (never clock/RNG), no /Encrypt.
