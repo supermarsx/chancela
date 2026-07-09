@@ -114,6 +114,10 @@ const DSS_REVOCATION_LOCAL_TECHNICAL_ONLY: &str = "present_local_technical_only"
 const DSS_REVOCATION_PRESENT_WITHOUT_TIMESTAMP: &str = "present_without_signature_timestamp";
 const PRODUCTION_B_LT_NOT_CLAIMED: &str = "not_claimed";
 const TECHNICAL_EVIDENCE_ONLY: &str = "technical_evidence_only";
+const DOC_TIMESTAMP_INSPECTION_INSPECTED: &str = "inspected_from_signed_pdf";
+const DOC_TIMESTAMP_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
+const RENEWAL_POLICY_NOT_CONFIGURED: &str = "not_configured";
+const RENEWAL_POLICY_MANUAL_REVIEW: &str = "manual_review";
 /// Pending-session lifetime, aligned to the SCMD OTP validity window.
 const SESSION_TTL_SECS: i64 = 5 * 60;
 const EXTERNAL_INVITE_NOTICE: &str = "Acompanhamento de convite externo apenas; esta acao nao assina o documento nem conclui assinatura qualificada.";
@@ -256,6 +260,8 @@ pub struct SignatureEvidenceStatus {
     pub dss_revocation_evidence_status: &'static str,
     /// Detailed embedded DSS/VRI counts and hashes read from the signed PDF.
     pub dss: DssEvidenceStatus,
+    /// Detailed embedded `/DocTimeStamp` report read from the signed PDF.
+    pub doc_timestamp: DocTimeStampEvidenceStatus,
     /// True only for the technical B-T + DSS revocation combination that resembles B-LT evidence.
     pub local_b_lt_style_evidence_present: bool,
     /// Production/legal B-LT is not claimed by this local DSS reporting surface.
@@ -264,6 +270,10 @@ pub struct SignatureEvidenceStatus {
     pub live_revocation_fetching: bool,
     /// Guardrail for consumers that might otherwise infer a legal/conformance conclusion.
     pub legal_b_lt_claimed: bool,
+    /// Guardrail for consumers that might otherwise infer a legal/conformance B-LTA conclusion.
+    pub legal_b_lta_claimed: bool,
+    /// Archive timestamp renewal policy. No automatic renewal is configured in this API surface.
+    pub renewal_policy: RenewalPolicyEvidenceStatus,
     /// Explicit long-term evidence milestones and gaps. B-LT/B-LTA are reported as not implemented
     /// rather than silently implied.
     pub long_term_status: Vec<LongTermEvidenceStatus>,
@@ -320,6 +330,34 @@ pub struct DssEvidenceStatus {
     pub crl_sha256: Vec<String>,
     pub revocation_evidence_present: bool,
     pub inspection_status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocTimeStampEvidenceStatus {
+    pub present: bool,
+    pub count: usize,
+    pub token_sha256: Vec<String>,
+    pub validations: Vec<DocTimeStampValidationEvidenceStatus>,
+    pub all_imprints_valid: bool,
+    pub inspection_status: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocTimeStampValidationEvidenceStatus {
+    pub index: usize,
+    pub object_id: String,
+    pub byte_range: Option<[i64; 4]>,
+    pub document_digest_sha256: Option<String>,
+    pub token_imprint_sha256: Option<String>,
+    pub token_hash_algorithm: Option<String>,
+    pub status: &'static str,
+    pub failure_reason: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenewalPolicyEvidenceStatus {
+    pub status: &'static str,
+    pub action: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -2833,6 +2871,9 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
     let dss = signed
         .map(|doc| dss_evidence_status(&doc.signed_pdf_bytes))
         .unwrap_or_else(DssEvidenceStatus::not_applicable);
+    let doc_timestamp = signed
+        .map(|doc| doc_timestamp_evidence_status(&doc.signed_pdf_bytes))
+        .unwrap_or_else(DocTimeStampEvidenceStatus::not_applicable);
     let local_b_lt_style_evidence_present = timestamped && dss.revocation_evidence_present;
     let current_level = match (
         signed.is_some(),
@@ -2871,10 +2912,13 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
         dss_revocation_evidence_present: dss.revocation_evidence_present,
         dss_revocation_evidence_status,
         dss,
+        doc_timestamp,
         local_b_lt_style_evidence_present,
         production_b_lt_status: PRODUCTION_B_LT_NOT_CLAIMED,
         live_revocation_fetching: false,
         legal_b_lt_claimed: false,
+        legal_b_lta_claimed: false,
+        renewal_policy: RenewalPolicyEvidenceStatus::not_configured(),
         long_term_status,
         timestamp_trust: signed.and_then(timestamp_trust_status_from_persisted_metadata),
         status_scope: TECHNICAL_EVIDENCE_ONLY,
@@ -3001,6 +3045,109 @@ fn dss_evidence_status(pdf_bytes: &[u8]) -> DssEvidenceStatus {
 
 fn dss_hashes_hex(hashes: &[[u8; 32]]) -> Vec<String> {
     hashes.iter().map(crate::hex::hex).collect()
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut out, "{byte:02x}").expect("write to string");
+    }
+    out
+}
+
+impl DocTimeStampEvidenceStatus {
+    fn not_applicable() -> Self {
+        Self {
+            present: false,
+            count: 0,
+            token_sha256: Vec::new(),
+            validations: Vec::new(),
+            all_imprints_valid: false,
+            inspection_status: DSS_INSPECTION_NOT_APPLICABLE,
+        }
+    }
+
+    fn unavailable() -> Self {
+        Self {
+            inspection_status: DOC_TIMESTAMP_INSPECTION_UNAVAILABLE,
+            ..Self::not_applicable()
+        }
+    }
+
+    fn from_report(report: &chancela_pades::DocTimeStampReport) -> Self {
+        Self {
+            present: report.present,
+            count: report.count,
+            token_sha256: dss_hashes_hex(&report.token_hashes),
+            validations: report
+                .validations
+                .iter()
+                .map(DocTimeStampValidationEvidenceStatus::from_validation)
+                .collect(),
+            all_imprints_valid: report.all_imprints_valid(),
+            inspection_status: DOC_TIMESTAMP_INSPECTION_INSPECTED,
+        }
+    }
+}
+
+impl DocTimeStampValidationEvidenceStatus {
+    fn from_validation(validation: &chancela_pades::DocTimeStampValidation) -> Self {
+        Self {
+            index: validation.index,
+            object_id: format!("{} {}", validation.object_id.0, validation.object_id.1),
+            byte_range: validation.byte_range,
+            document_digest_sha256: validation
+                .document_digest
+                .map(|digest| crate::hex::hex(&digest)),
+            token_imprint_sha256: validation.token_imprint.as_deref().map(hex_bytes),
+            token_hash_algorithm: validation.token_hash_algorithm.clone(),
+            status: doc_timestamp_status(validation.status),
+            failure_reason: validation.failure_reason.map(doc_timestamp_failure_reason),
+        }
+    }
+}
+
+impl RenewalPolicyEvidenceStatus {
+    fn not_configured() -> Self {
+        Self {
+            status: RENEWAL_POLICY_NOT_CONFIGURED,
+            action: RENEWAL_POLICY_MANUAL_REVIEW,
+        }
+    }
+}
+
+fn doc_timestamp_evidence_status(pdf_bytes: &[u8]) -> DocTimeStampEvidenceStatus {
+    match chancela_pades::inspect_doc_timestamps(pdf_bytes) {
+        Ok(report) => DocTimeStampEvidenceStatus::from_report(&report),
+        Err(_) => DocTimeStampEvidenceStatus::unavailable(),
+    }
+}
+
+fn doc_timestamp_status(status: chancela_pades::DocTimeStampSemanticStatus) -> &'static str {
+    match status {
+        chancela_pades::DocTimeStampSemanticStatus::Valid => "valid",
+        chancela_pades::DocTimeStampSemanticStatus::Failed => "failed",
+        chancela_pades::DocTimeStampSemanticStatus::Unsupported => "unsupported",
+        _ => "unsupported",
+    }
+}
+
+fn doc_timestamp_failure_reason(reason: chancela_pades::DocTimeStampFailureReason) -> &'static str {
+    match reason {
+        chancela_pades::DocTimeStampFailureReason::MissingByteRange => "missing_byte_range",
+        chancela_pades::DocTimeStampFailureReason::InvalidByteRange => "invalid_byte_range",
+        chancela_pades::DocTimeStampFailureReason::InvalidContents => "invalid_contents",
+        chancela_pades::DocTimeStampFailureReason::NotSignedData => "not_signed_data",
+        chancela_pades::DocTimeStampFailureReason::NotTstInfo => "not_tst_info",
+        chancela_pades::DocTimeStampFailureReason::EmptyTstInfo => "empty_tst_info",
+        chancela_pades::DocTimeStampFailureReason::MalformedToken => "malformed_token",
+        chancela_pades::DocTimeStampFailureReason::UnsupportedHashAlgorithm => {
+            "unsupported_hash_algorithm"
+        }
+        chancela_pades::DocTimeStampFailureReason::ImprintMismatch => "imprint_mismatch",
+        _ => "unknown",
+    }
 }
 
 async fn ensure_act_exists(state: &AppState, act_id: ActId) -> Result<(), ApiError> {
@@ -3925,10 +4072,15 @@ mod tests {
         assert!(!unsigned.dss_revocation_evidence_present);
         assert_eq!(unsigned.dss_revocation_evidence_status, "not_applicable");
         assert_eq!(unsigned.dss.inspection_status, "not_applicable");
+        assert_eq!(unsigned.doc_timestamp.inspection_status, "not_applicable");
+        assert!(!unsigned.doc_timestamp.present);
         assert!(!unsigned.local_b_lt_style_evidence_present);
         assert_eq!(unsigned.production_b_lt_status, "not_claimed");
         assert!(!unsigned.live_revocation_fetching);
         assert!(!unsigned.legal_b_lt_claimed);
+        assert!(!unsigned.legal_b_lta_claimed);
+        assert_eq!(unsigned.renewal_policy.status, "not_configured");
+        assert_eq!(unsigned.renewal_policy.action, "manual_review");
         assert_eq!(
             unsigned.long_term_status,
             vec![
@@ -3953,6 +4105,10 @@ mod tests {
             ]
         );
         assert_eq!(b_b.dss_revocation_evidence_status, "inspection_unavailable");
+        assert_eq!(
+            b_b.doc_timestamp.inspection_status,
+            "inspection_unavailable"
+        );
 
         let b_t_doc = stored_signed_document(Some(b"timestamp-token".to_vec()));
         let b_t = signature_evidence_status(Some(&b_t_doc));
@@ -3969,7 +4125,70 @@ mod tests {
         );
         assert_eq!(b_t.dss_revocation_evidence_status, "inspection_unavailable");
         assert_eq!(b_t.timestamp_trust, None);
+        assert!(!b_t.legal_b_lta_claimed);
+        assert_eq!(b_t.renewal_policy.status, "not_configured");
+        assert_eq!(b_t.renewal_policy.action, "manual_review");
         assert_eq!(b_t.status_scope, TECHNICAL_EVIDENCE_ONLY);
+    }
+
+    #[test]
+    fn doc_timestamp_status_reports_absent_and_valid_fixture_without_b_lta_claim() {
+        let no_dts_pdf = include_bytes!(
+            "../../../docs/fixtures/validator-corpus/cases/bt-dss-local/input/bt-dss-local.pdf"
+        );
+        let no_dts = doc_timestamp_evidence_status(no_dts_pdf);
+        assert_eq!(no_dts.inspection_status, "inspected_from_signed_pdf");
+        assert!(!no_dts.present);
+        assert_eq!(no_dts.count, 0);
+        assert_eq!(no_dts.token_sha256, Vec::<String>::new());
+        assert!(!no_dts.all_imprints_valid);
+
+        let dts_pdf = include_bytes!(
+            "../../../docs/fixtures/validator-corpus/cases/future-doctimestamp/input/future-doctimestamp.pdf"
+        );
+        let mut doc = stored_signed_document(Some(b"timestamp-token".to_vec()));
+        doc.signed_pdf_bytes = dts_pdf.to_vec();
+        let status = signature_evidence_status(Some(&doc));
+        assert_ne!(status.current_level, "B-LTA");
+        assert!(!status.legal_b_lta_claimed);
+        assert_eq!(status.renewal_policy.status, "not_configured");
+        assert_eq!(status.renewal_policy.action, "manual_review");
+        assert_eq!(
+            status.doc_timestamp.inspection_status,
+            "inspected_from_signed_pdf"
+        );
+        assert!(status.doc_timestamp.present);
+        assert_eq!(status.doc_timestamp.count, 1);
+        assert_eq!(status.doc_timestamp.token_sha256.len(), 1);
+        assert_eq!(status.doc_timestamp.validations.len(), 1);
+        assert_eq!(status.doc_timestamp.validations[0].status, "valid");
+        assert_eq!(status.doc_timestamp.validations[0].failure_reason, None);
+        assert!(status.doc_timestamp.all_imprints_valid);
+    }
+
+    #[test]
+    fn doc_timestamp_status_reports_failed_imprint_fixture() {
+        let mut dts_pdf = include_bytes!(
+            "../../../docs/fixtures/validator-corpus/cases/future-doctimestamp/input/future-doctimestamp.pdf"
+        )
+        .to_vec();
+        let version_byte = dts_pdf
+            .iter()
+            .position(|byte| *byte == b'7')
+            .expect("PDF version digit");
+        dts_pdf[version_byte] = b'6';
+
+        let status = doc_timestamp_evidence_status(&dts_pdf);
+        assert_eq!(status.inspection_status, "inspected_from_signed_pdf");
+        assert!(status.present);
+        assert_eq!(status.count, 1);
+        assert_eq!(status.validations.len(), 1);
+        assert_eq!(status.validations[0].status, "failed");
+        assert_eq!(
+            status.validations[0].failure_reason,
+            Some("imprint_mismatch")
+        );
+        assert!(!status.all_imprints_valid);
     }
 
     #[test]

@@ -28,6 +28,9 @@ use uuid::Uuid;
 
 const OCSP_DER_FIXTURE: &[u8] = &[0x30, 0x03, 0x02, 0x01, 0x05];
 const CRL_DER_FIXTURE: &[u8] = &[0x30, 0x05, 0x06, 0x03, 0x2a, 0x03, 0x04];
+const DOC_TIMESTAMP_FIXTURE_PDF: &[u8] = include_bytes!(
+    "../../../docs/fixtures/validator-corpus/cases/future-doctimestamp/input/future-doctimestamp.pdf"
+);
 
 struct TempDir(std::path::PathBuf);
 
@@ -1111,6 +1114,26 @@ async fn archive_package_reports_persisted_signature_metadata_as_evidence() {
         report["signature"]["timestamp_trust"]["status_scope"],
         "technical_evidence_only"
     );
+    let doc_timestamp = &report["signature"]["doc_timestamp"];
+    assert_eq!(
+        doc_timestamp["basis"],
+        "embedded_pdf_doctimestamp_inspection_only"
+    );
+    assert_eq!(doc_timestamp["present"], false);
+    assert_eq!(doc_timestamp["count"], 0);
+    assert_eq!(doc_timestamp["token_sha256"], json!([]));
+    assert_eq!(doc_timestamp["validations"], json!([]));
+    assert_eq!(doc_timestamp["all_imprints_valid"], false);
+    assert_eq!(doc_timestamp["inspection_status"], "inspection_unavailable");
+    assert_eq!(
+        report["signature"]["renewal_policy"]["status"],
+        "not_configured"
+    );
+    assert_eq!(
+        report["signature"]["renewal_policy"]["action"],
+        "manual_review"
+    );
+    assert_eq!(report["signature"]["legal_b_lta_claimed"], false);
     assert_eq!(
         report["signature"]["persisted_validation"]["byte_range_covers_whole_file_except_contents"],
         "validated_before_persistence"
@@ -1237,8 +1260,92 @@ async fn archive_package_reports_embedded_dss_without_legal_b_lt_claim() {
     );
     assert_eq!(dss["ocsp_sha256"], json!([sha256_hex(OCSP_DER_FIXTURE)]));
     assert_eq!(dss["crl_sha256"], json!([sha256_hex(CRL_DER_FIXTURE)]));
+    let doc_timestamp = &report["signature"]["doc_timestamp"];
+    assert_eq!(
+        doc_timestamp["basis"],
+        "embedded_pdf_doctimestamp_inspection_only"
+    );
+    assert_eq!(doc_timestamp["present"], false);
+    assert_eq!(doc_timestamp["count"], 0);
+    assert_eq!(doc_timestamp["all_imprints_valid"], false);
+    assert_eq!(report["signature"]["legal_b_lta_claimed"], false);
+    assert_eq!(
+        report["signature"]["renewal_policy"]["status"],
+        "not_configured"
+    );
+    assert_eq!(
+        report["signature"]["renewal_policy"]["action"],
+        "manual_review"
+    );
     assert!(
         report["signature"].get("legal_qualification").is_none(),
         "archive evidence must not claim legal qualification: {report}"
+    );
+}
+
+#[tokio::test]
+async fn archive_package_reports_embedded_doc_timestamp_evidence_without_b_lta_claim() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+    let act_id = ActId(Uuid::parse_str(&sealed.act_id).expect("act uuid"));
+
+    let signed_pdf_bytes = DOC_TIMESTAMP_FIXTURE_PDF.to_vec();
+    let signed_pdf_digest = sha256_hex(&signed_pdf_bytes);
+    let signer_cert_der = b"fixture signer certificate DER".to_vec();
+    let signed = StoredSignedDocument {
+        act_id,
+        document_id: sealed.document_id.clone(),
+        signed_pdf_digest,
+        signature_family: "CartaoDeCidadao".to_owned(),
+        evidentiary_level: "Qualified".to_owned(),
+        trusted_list_status: Some("Granted".to_owned()),
+        signer_cert_subject: Some("CN=Chancela mock signer".to_owned()),
+        signing_time: datetime!(2026-04-01 12:00:00 UTC),
+        signed_at: datetime!(2026-04-01 12:02:00 UTC),
+        signer_cert_der,
+        timestamp_token_der: Some(b"fixture timestamp token DER".to_vec()),
+        timestamp_trust_report_json: None,
+        signed_pdf_bytes,
+    };
+    state
+        .store
+        .as_ref()
+        .expect("store")
+        .persist(|tx| tx.upsert_signed_document(&signed))
+        .expect("signed document persisted");
+
+    let package = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    let members = zip_members(&package);
+    let evidence_path = format!("evidence/{}.json", sealed.document_id);
+    let report = member_json(&members, &evidence_path);
+    let signature = &report["signature"];
+    let doc_timestamp = &signature["doc_timestamp"];
+
+    assert_eq!(
+        doc_timestamp["basis"],
+        "embedded_pdf_doctimestamp_inspection_only"
+    );
+    assert_eq!(
+        doc_timestamp["inspection_status"],
+        "inspected_from_signed_pdf"
+    );
+    assert_eq!(doc_timestamp["present"], true);
+    assert_eq!(doc_timestamp["count"], 1);
+    assert_eq!(doc_timestamp["token_sha256"].as_array().unwrap().len(), 1);
+    assert_eq!(doc_timestamp["validations"].as_array().unwrap().len(), 1);
+    assert_eq!(doc_timestamp["validations"][0]["status"], "valid");
+    assert_eq!(
+        doc_timestamp["validations"][0]["failure_reason"],
+        Value::Null
+    );
+    assert_eq!(doc_timestamp["all_imprints_valid"], true);
+    assert_eq!(signature["renewal_policy"]["status"], "not_configured");
+    assert_eq!(signature["renewal_policy"]["action"], "manual_review");
+    assert_eq!(signature["legal_b_lta_claimed"], false);
+    assert!(
+        signature.get("current_level").is_none(),
+        "archive evidence must not claim a B-LTA current level: {report}"
     );
 }

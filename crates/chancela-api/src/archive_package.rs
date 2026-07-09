@@ -41,6 +41,11 @@ const DSS_INSPECTION_INSPECTED: &str = "inspected_from_signed_pdf";
 const DSS_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
 const PRODUCTION_B_LT_NOT_CLAIMED: &str = "not_claimed";
 const DSS_BASIS: &str = "embedded_pdf_dss_catalog_inspection_only";
+const DOC_TIMESTAMP_BASIS: &str = "embedded_pdf_doctimestamp_inspection_only";
+const DOC_TIMESTAMP_INSPECTION_INSPECTED: &str = "inspected_from_signed_pdf";
+const DOC_TIMESTAMP_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
+const RENEWAL_POLICY_NOT_CONFIGURED: &str = "not_configured";
+const RENEWAL_POLICY_MANUAL_REVIEW: &str = "manual_review";
 
 #[derive(Clone)]
 struct PackageDocument {
@@ -196,6 +201,9 @@ struct SignatureEvidence<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     timestamp_trust: Option<TimestampTrustEvidenceReport>,
     dss: DssEvidenceReport,
+    doc_timestamp: DocTimeStampEvidenceReport,
+    renewal_policy: RenewalPolicyEvidenceReport,
+    legal_b_lta_claimed: bool,
     persisted_validation: PersistedValidationEvidence,
 }
 
@@ -273,6 +281,35 @@ struct DssEvidenceReport {
     production_b_lt_status: &'static str,
     legal_b_lt_claimed: bool,
     inspection_status: &'static str,
+}
+
+#[derive(Serialize)]
+struct DocTimeStampEvidenceReport {
+    basis: &'static str,
+    present: bool,
+    count: usize,
+    token_sha256: Vec<String>,
+    validations: Vec<DocTimeStampValidationEvidenceReport>,
+    all_imprints_valid: bool,
+    inspection_status: &'static str,
+}
+
+#[derive(Serialize)]
+struct DocTimeStampValidationEvidenceReport {
+    index: usize,
+    object_id: String,
+    byte_range: Option<[i64; 4]>,
+    document_digest_sha256: Option<String>,
+    token_imprint_sha256: Option<String>,
+    token_hash_algorithm: Option<String>,
+    status: &'static str,
+    failure_reason: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct RenewalPolicyEvidenceReport {
+    status: &'static str,
+    action: &'static str,
 }
 
 #[derive(Serialize)]
@@ -1181,6 +1218,9 @@ fn signature_evidence<'a>(
         },
         timestamp_trust,
         dss: dss_evidence_report(&signed.signed_pdf_bytes, has_timestamp),
+        doc_timestamp: doc_timestamp_evidence_report(&signed.signed_pdf_bytes),
+        renewal_policy: RenewalPolicyEvidenceReport::not_configured(),
+        legal_b_lta_claimed: false,
         persisted_validation: PersistedValidationEvidence {
             basis: "stored signed document metadata; signed routes persist this row only after SIG-24 validation succeeds",
             byte_range_covers_whole_file_except_contents: "validated_before_persistence",
@@ -1248,6 +1288,104 @@ fn dss_evidence_report(pdf_bytes: &[u8], has_timestamp: bool) -> DssEvidenceRepo
 
 fn dss_hashes_hex(hashes: &[[u8; 32]]) -> Vec<String> {
     hashes.iter().map(crate::hex::hex).collect()
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut out, "{byte:02x}").expect("write to string");
+    }
+    out
+}
+
+impl DocTimeStampEvidenceReport {
+    fn unavailable() -> Self {
+        Self {
+            basis: DOC_TIMESTAMP_BASIS,
+            present: false,
+            count: 0,
+            token_sha256: Vec::new(),
+            validations: Vec::new(),
+            all_imprints_valid: false,
+            inspection_status: DOC_TIMESTAMP_INSPECTION_UNAVAILABLE,
+        }
+    }
+
+    fn from_report(report: &chancela_pades::DocTimeStampReport) -> Self {
+        Self {
+            basis: DOC_TIMESTAMP_BASIS,
+            present: report.present,
+            count: report.count,
+            token_sha256: dss_hashes_hex(&report.token_hashes),
+            validations: report
+                .validations
+                .iter()
+                .map(DocTimeStampValidationEvidenceReport::from_validation)
+                .collect(),
+            all_imprints_valid: report.all_imprints_valid(),
+            inspection_status: DOC_TIMESTAMP_INSPECTION_INSPECTED,
+        }
+    }
+}
+
+impl DocTimeStampValidationEvidenceReport {
+    fn from_validation(validation: &chancela_pades::DocTimeStampValidation) -> Self {
+        Self {
+            index: validation.index,
+            object_id: format!("{} {}", validation.object_id.0, validation.object_id.1),
+            byte_range: validation.byte_range,
+            document_digest_sha256: validation
+                .document_digest
+                .map(|digest| crate::hex::hex(&digest)),
+            token_imprint_sha256: validation.token_imprint.as_deref().map(hex_bytes),
+            token_hash_algorithm: validation.token_hash_algorithm.clone(),
+            status: doc_timestamp_status(validation.status),
+            failure_reason: validation.failure_reason.map(doc_timestamp_failure_reason),
+        }
+    }
+}
+
+impl RenewalPolicyEvidenceReport {
+    fn not_configured() -> Self {
+        Self {
+            status: RENEWAL_POLICY_NOT_CONFIGURED,
+            action: RENEWAL_POLICY_MANUAL_REVIEW,
+        }
+    }
+}
+
+fn doc_timestamp_evidence_report(pdf_bytes: &[u8]) -> DocTimeStampEvidenceReport {
+    match chancela_pades::inspect_doc_timestamps(pdf_bytes) {
+        Ok(report) => DocTimeStampEvidenceReport::from_report(&report),
+        Err(_) => DocTimeStampEvidenceReport::unavailable(),
+    }
+}
+
+fn doc_timestamp_status(status: chancela_pades::DocTimeStampSemanticStatus) -> &'static str {
+    match status {
+        chancela_pades::DocTimeStampSemanticStatus::Valid => "valid",
+        chancela_pades::DocTimeStampSemanticStatus::Failed => "failed",
+        chancela_pades::DocTimeStampSemanticStatus::Unsupported => "unsupported",
+        _ => "unsupported",
+    }
+}
+
+fn doc_timestamp_failure_reason(reason: chancela_pades::DocTimeStampFailureReason) -> &'static str {
+    match reason {
+        chancela_pades::DocTimeStampFailureReason::MissingByteRange => "missing_byte_range",
+        chancela_pades::DocTimeStampFailureReason::InvalidByteRange => "invalid_byte_range",
+        chancela_pades::DocTimeStampFailureReason::InvalidContents => "invalid_contents",
+        chancela_pades::DocTimeStampFailureReason::NotSignedData => "not_signed_data",
+        chancela_pades::DocTimeStampFailureReason::NotTstInfo => "not_tst_info",
+        chancela_pades::DocTimeStampFailureReason::EmptyTstInfo => "empty_tst_info",
+        chancela_pades::DocTimeStampFailureReason::MalformedToken => "malformed_token",
+        chancela_pades::DocTimeStampFailureReason::UnsupportedHashAlgorithm => {
+            "unsupported_hash_algorithm"
+        }
+        chancela_pades::DocTimeStampFailureReason::ImprintMismatch => "imprint_mismatch",
+        _ => "unknown",
+    }
 }
 
 fn stable_package_time(docs: &[PackageDocument]) -> OffsetDateTime {

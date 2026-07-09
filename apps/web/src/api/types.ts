@@ -2371,6 +2371,31 @@ export interface DssEvidenceStatus {
   inspection_status: string;
 }
 
+export interface DocTimeStampValidationEvidenceStatus {
+  index: number;
+  object_id: string;
+  byte_range: [number, number, number, number] | null;
+  document_digest_sha256: string | null;
+  token_imprint_sha256: string | null;
+  token_hash_algorithm: string | null;
+  status: 'valid' | 'failed' | 'unsupported' | string;
+  failure_reason: string | null;
+}
+
+export interface DocTimeStampEvidenceStatus {
+  present: boolean;
+  count: number;
+  token_sha256: string[];
+  validations: DocTimeStampValidationEvidenceStatus[];
+  all_imprints_valid: boolean;
+  inspection_status: string;
+}
+
+export interface RenewalPolicyEvidenceStatus {
+  status: 'not_configured' | string;
+  action: 'manual_review' | string;
+}
+
 export interface TimestampQtstMatchEvidenceStatus {
   provider_name: string;
   service_name: string;
@@ -2402,10 +2427,13 @@ export interface SignatureEvidenceStatus {
   dss_revocation_evidence_present: boolean;
   dss_revocation_evidence_status: string;
   dss: DssEvidenceStatus;
+  doc_timestamp: DocTimeStampEvidenceStatus;
   local_b_lt_style_evidence_present: boolean;
   production_b_lt_status: string;
   live_revocation_fetching: boolean;
   legal_b_lt_claimed: boolean;
+  legal_b_lta_claimed: boolean;
+  renewal_policy: RenewalPolicyEvidenceStatus;
   long_term_status: LongTermEvidenceStatus[];
   timestamp_trust?: TimestampTrustEvidenceStatus;
   status_scope: string;
