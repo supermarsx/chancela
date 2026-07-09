@@ -781,6 +781,8 @@ fn is_before_first_applicable_annual_due(
         .and_then(|extract| extract.data_constituicao.as_deref())
         .and_then(parse_dashboard_date)
     else {
+        // Conservative fallback: without a registry constitution/incorporation date, keep the
+        // annual dashboard reminder rather than guessing that the company is still first-year.
         return false;
     };
     due_date
@@ -1295,6 +1297,26 @@ mod tests {
         assert_eq!(reminders.len(), 1);
         assert_eq!(reminders[0].due_date, "2026-03-31");
         assert_eq!(reminders[0].status, "Overdue");
+        assert_eq!(reminders[0].source_rule, "csc-art376-annual");
+        assert_eq!(reminders[0].entity_id, entity.id.to_string());
+    }
+
+    #[test]
+    fn company_without_constitution_date_keeps_annual_reminder_conservatively() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let mut entities = HashMap::new();
+        entities.insert(entity.id, entity.clone());
+
+        let reminders = dashboard_reminders(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::from([(entity.id, registry_extract(None))]),
+            date!(2026 - 07 - 09),
+        );
+
+        assert_eq!(reminders.len(), 1);
+        assert_eq!(reminders[0].due_date, "2026-03-31");
         assert_eq!(reminders[0].source_rule, "csc-art376-annual");
         assert_eq!(reminders[0].entity_id, entity.id.to_string());
     }
