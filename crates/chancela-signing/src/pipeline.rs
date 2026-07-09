@@ -12,13 +12,14 @@ use time::OffsetDateTime;
 
 use chancela_cades::{assemble_cades_b, signed_attributes_digest};
 use chancela_pades::{
-    DssEvidence, DssReport, SignOptions, add_dss_revision, add_signature_timestamp, inspect_dss,
-    sign_pdf,
+    DssEvidence, DssReport, SignOptions, add_dss_revision, add_dss_revision_with_validation_time,
+    add_signature_timestamp, inspect_dss, sign_pdf,
 };
 use chancela_tsa::{HttpTsaTransport, Timestamp, TimestampRequest, TsaClient, TsaTransport};
 
 use crate::SigningError;
 use crate::provider::SignerProvider;
+use crate::revocation::RevocationEvidence;
 
 /// A source of qualified timestamps (SIG-22), abstracted so the envelope engine can hold it as
 /// `&dyn TimestampProvider` and so tests can inject a `chancela-tsa` mock.
@@ -137,6 +138,26 @@ pub fn attach_pdf_dss(
     evidence: &DssEvidence,
 ) -> Result<(Vec<u8>, DssReport), SigningError> {
     let out = add_dss_revision(signed_pdf, evidence).map_err(pades_err)?;
+    let report = inspect_dss(&out).map_err(pades_err)?;
+    Ok((out, report))
+}
+
+/// Append validated CRL revocation evidence to a signed PAdES PDF.
+///
+/// The supplied evidence must already have been validated by
+/// [`RevocationEvidenceProvider`](crate::RevocationEvidenceProvider). This records local DSS/VRI
+/// material plus `/TU` validation-time metadata only; it does not mark the artifact as B-LT or
+/// make a legal long-term-validation sufficiency claim.
+pub fn attach_pdf_revocation_evidence(
+    signed_pdf: &[u8],
+    evidence: &RevocationEvidence,
+) -> Result<(Vec<u8>, DssReport), SigningError> {
+    let validation_time = evidence
+        .validation_time
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(|e| SigningError::Pades(format!("invalid revocation validation time: {e}")))?;
+    let out = add_dss_revision_with_validation_time(signed_pdf, &evidence.dss, &validation_time)
+        .map_err(pades_err)?;
     let report = inspect_dss(&out).map_err(pades_err)?;
     Ok((out, report))
 }

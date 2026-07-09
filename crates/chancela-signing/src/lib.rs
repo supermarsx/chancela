@@ -36,6 +36,7 @@ pub mod pipeline;
 pub mod policy;
 pub mod provider;
 pub mod remote;
+pub mod revocation;
 pub mod soft_cert;
 pub mod validate;
 
@@ -48,12 +49,17 @@ pub use envelope::{
 };
 pub use mock::MockProvider;
 pub use pipeline::{
-    TimestampProvider, attach_pdf_dss, sign_detached_cades, sign_pdf_pades, timestamp_pdf,
-    timestamp_pdf_with_url,
+    TimestampProvider, attach_pdf_dss, attach_pdf_revocation_evidence, sign_detached_cades,
+    sign_pdf_pades, timestamp_pdf, timestamp_pdf_with_url,
 };
 pub use policy::{StaticTrustPolicy, TrustPolicy, TslTrustPolicy};
 pub use provider::{CmdProvider, SignerProvider, SmartcardProvider};
 pub use remote::{RemoteInitiate, RemoteSignSession, RemoteSigningSource};
+pub use revocation::{
+    BoundedHttpRevocationTransport, DiscoveredRevocationUris, RevocationError, RevocationEvidence,
+    RevocationEvidenceProvider, RevocationFetchLimits, RevocationHttpResponse,
+    RevocationHttpTransport, RevocationSource,
+};
 pub use soft_cert::{
     Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError, SoftCertificateIdentity,
 };
