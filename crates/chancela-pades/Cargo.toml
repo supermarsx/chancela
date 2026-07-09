@@ -15,6 +15,7 @@ lopdf = { workspace = true }
 sha2 = { workspace = true }
 der = { workspace = true }
 x509-cert = { workspace = true }
+x509-tsp = { workspace = true }
 cms = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

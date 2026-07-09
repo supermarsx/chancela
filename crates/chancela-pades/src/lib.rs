@@ -48,7 +48,8 @@ mod pdf;
 mod tests;
 
 pub use archive_timestamp::{
-    DocTimeStampReport, add_doc_timestamp_revision, inspect_doc_timestamps,
+    DocTimeStampFailureReason, DocTimeStampReport, DocTimeStampSemanticStatus,
+    DocTimeStampValidation, add_doc_timestamp_revision, inspect_doc_timestamps,
 };
 pub use dss::{
     DssEvidence, DssReport, add_dss_revision, add_dss_revision_with_validation_time, inspect_dss,

@@ -117,7 +117,7 @@ pub fn validate_pdf_signature(pdf: &[u8]) -> Result<PdfSignatureReport, PadesErr
 
     let has_signature_timestamp = detect_signature_timestamp(cms_der).unwrap_or(false);
     let dss = dss::inspect_dss_document(&doc)?;
-    let doc_timestamps = archive_timestamp::inspect_doc_timestamps_document(&doc)?;
+    let doc_timestamps = archive_timestamp::inspect_doc_timestamps_document(&doc, pdf)?;
 
     Ok(PdfSignatureReport {
         byte_range,

@@ -24,9 +24,9 @@ use chancela_cades::{
 use crate::error::PadesError;
 use crate::sign::MAX_CONTENTS_BYTES;
 use crate::{
-    DssEvidence, SignOptions, add_doc_timestamp_revision, add_dss_revision,
-    add_dss_revision_with_validation_time, add_signature_timestamp, inspect_doc_timestamps,
-    inspect_dss, sign_pdf, validate_pdf_signature,
+    DocTimeStampFailureReason, DocTimeStampSemanticStatus, DssEvidence, SignOptions,
+    add_doc_timestamp_revision, add_dss_revision, add_dss_revision_with_validation_time,
+    add_signature_timestamp, inspect_doc_timestamps, inspect_dss, sign_pdf, validate_pdf_signature,
 };
 
 // --- OIDs used only for the in-test self-signed certificates -------------------------------------
@@ -252,6 +252,34 @@ fn add_fixture_timestamp(signed: &[u8]) -> Vec<u8> {
     add_signature_timestamp(signed, |_sig_digest| tsa.stamp(&req)).expect("B-T")
 }
 
+fn fixture_timestamp_token() -> Vec<u8> {
+    let tsa = chancela_tsa::TsaClient::new(chancela_tsa::MockTsaTransport::from_fixture());
+    let req = chancela_tsa::TimestampRequest::new(chancela_tsa::mock::FIXTURE_DIGEST)
+        .with_nonce(chancela_tsa::mock::FIXTURE_NONCE)
+        .without_certificate();
+    tsa.stamp(&req).expect("fixture token").token_der
+}
+
+fn token_with_replaced_fixture_imprint(imprint: &[u8; 32]) -> Vec<u8> {
+    let mut token = fixture_timestamp_token();
+    let pos = token
+        .windows(chancela_tsa::mock::FIXTURE_DIGEST.len())
+        .position(|w| w == chancela_tsa::mock::FIXTURE_DIGEST)
+        .expect("fixture imprint present");
+    token[pos..pos + imprint.len()].copy_from_slice(imprint);
+    token
+}
+
+fn doc_timestamp_token_for_revision(pdf: &[u8]) -> Vec<u8> {
+    let placeholder =
+        add_doc_timestamp_revision(pdf, &fixture_timestamp_token()).expect("placeholder DTS");
+    let report = inspect_doc_timestamps(&placeholder).expect("inspect placeholder DTS");
+    let digest = report.validations[0]
+        .document_digest
+        .expect("DocTimeStamp ByteRange digest");
+    token_with_replaced_fixture_imprint(&digest)
+}
+
 fn fixture_dss_evidence(signer: &TestSigner) -> DssEvidence {
     let issuer = TestSigner::new_rsa("PAdES DSS Issuer", 42);
     DssEvidence {
@@ -456,9 +484,65 @@ fn doc_timestamp_revision_appends_and_reports_without_lta_claim() {
         report.doc_timestamps.token_hashes,
         vec![sha256(DOC_TIMESTAMP_TOKEN_DER_FIXTURE)]
     );
+    assert_eq!(
+        report.doc_timestamps.validations[0].status,
+        DocTimeStampSemanticStatus::Failed
+    );
+    assert_eq!(
+        report.doc_timestamps.validations[0].failure_reason,
+        Some(DocTimeStampFailureReason::MalformedToken)
+    );
+    assert!(!report.doc_timestamps.all_imprints_valid());
 
     let direct = inspect_doc_timestamps(&with_doc_ts).expect("inspect DTS");
     assert_eq!(direct, report.doc_timestamps);
+}
+
+#[test]
+fn doc_timestamp_reports_valid_rfc3161_imprint_binding() {
+    let signer = TestSigner::new_rsa("PAdES DocTimeStamp Valid", 15);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let token = doc_timestamp_token_for_revision(&signed);
+
+    let with_doc_ts = add_doc_timestamp_revision(&signed, &token).expect("DTS append");
+    let report = validate_pdf_signature(&with_doc_ts).expect("validate DTS PDF");
+
+    assert!(report.doc_timestamps.present);
+    assert_eq!(report.doc_timestamps.count, 1);
+    assert!(report.doc_timestamps.all_imprints_valid());
+    let validation = &report.doc_timestamps.validations[0];
+    assert_eq!(validation.status, DocTimeStampSemanticStatus::Valid);
+    assert_eq!(validation.failure_reason, None);
+    assert_eq!(
+        validation.token_imprint.as_deref(),
+        Some(validation.document_digest.as_ref().unwrap().as_slice())
+    );
+    assert_eq!(
+        validation.token_hash_algorithm.as_deref(),
+        Some("2.16.840.1.101.3.4.2.1")
+    );
+}
+
+#[test]
+fn doc_timestamp_reports_tampered_rfc3161_imprint_binding() {
+    let signer = TestSigner::new_rsa("PAdES DocTimeStamp Tampered", 16);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let stale_token = fixture_timestamp_token();
+
+    let with_doc_ts = add_doc_timestamp_revision(&signed, &stale_token).expect("DTS append");
+    let report = validate_pdf_signature(&with_doc_ts).expect("validate DTS PDF");
+
+    let validation = &report.doc_timestamps.validations[0];
+    assert_eq!(validation.status, DocTimeStampSemanticStatus::Failed);
+    assert_eq!(
+        validation.failure_reason,
+        Some(DocTimeStampFailureReason::ImprintMismatch)
+    );
+    assert_ne!(
+        validation.token_imprint.as_deref(),
+        Some(validation.document_digest.as_ref().unwrap().as_slice())
+    );
+    assert!(!report.doc_timestamps.all_imprints_valid());
 }
 
 #[test]

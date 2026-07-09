@@ -1,13 +1,23 @@
 //! Caller-supplied PAdES document timestamp incremental updates.
 //!
-//! This module appends and reports a technical `/DocTimeStamp` revision. It deliberately does not
-//! validate RFC 3161 semantics, decide renewal policy, or claim PAdES-B-LTA / legal LTV
-//! sufficiency.
+//! This module appends and reports a technical `/DocTimeStamp` revision. It verifies the RFC 3161
+//! message imprint against the timestamp dictionary's `/ByteRange` bytes where the token is a
+//! SHA-256 `TimeStampToken`. It deliberately does not validate TSA signer/path trust, decide
+//! renewal policy, or claim PAdES-B-LTA / legal LTV sufficiency.
 
+use cms::content_info::ContentInfo;
+use cms::signed_data::SignedData;
+use der::asn1::ObjectIdentifier;
+use der::{Decode, Encode};
 use sha2::{Digest, Sha256};
+use x509_tsp::TstInfo;
 
 use crate::error::PadesError;
 use crate::pdf;
+
+const ID_SIGNED_DATA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.7.2");
+const ID_CT_TST_INFO: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.1.4");
+const ID_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.1");
 
 /// Technical report for embedded PAdES document timestamps.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -19,6 +29,8 @@ pub struct DocTimeStampReport {
     pub count: usize,
     /// SHA-256 hashes of decoded `/DocTimeStamp /Contents` token bytes, in object-id order.
     pub token_hashes: Vec<[u8; 32]>,
+    /// Per-token semantic validation of the RFC 3161 imprint against the timestamped PDF revision.
+    pub validations: Vec<DocTimeStampValidation>,
 }
 
 impl DocTimeStampReport {
@@ -26,13 +38,83 @@ impl DocTimeStampReport {
     pub fn token_count(&self) -> usize {
         self.token_hashes.len()
     }
+
+    /// Whether every discovered document timestamp has a valid SHA-256 imprint binding.
+    pub fn all_imprints_valid(&self) -> bool {
+        self.present
+            && self.validations.len() == self.count
+            && self
+                .validations
+                .iter()
+                .all(|v| v.status == DocTimeStampSemanticStatus::Valid)
+    }
+}
+
+/// Semantic validation result for one `/DocTimeStamp` token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct DocTimeStampValidation {
+    /// Zero-based position after sorting `/DocTimeStamp` dictionaries by object id.
+    pub index: usize,
+    /// PDF object id of the `/DocTimeStamp` dictionary.
+    pub object_id: (u32, u16),
+    /// Parsed `/ByteRange`, when available and well-typed.
+    pub byte_range: Option<[i64; 4]>,
+    /// SHA-256 digest over the bytes selected by `/ByteRange`, excluding `/Contents`.
+    pub document_digest: Option<[u8; 32]>,
+    /// Digest carried by `TSTInfo.messageImprint.hashedMessage`.
+    pub token_imprint: Option<Vec<u8>>,
+    /// Hash algorithm OID carried by `TSTInfo.messageImprint.hashAlgorithm`.
+    pub token_hash_algorithm: Option<String>,
+    /// High-level semantic status.
+    pub status: DocTimeStampSemanticStatus,
+    /// Machine-readable failure/boundary reason when `status` is not `Valid`.
+    pub failure_reason: Option<DocTimeStampFailureReason>,
+}
+
+/// High-level `/DocTimeStamp` semantic status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DocTimeStampSemanticStatus {
+    /// The RFC 3161 token imprint matches the SHA-256 digest of the indicated PDF revision bytes.
+    Valid,
+    /// The token or PDF timestamp metadata is malformed or the imprint does not match.
+    Failed,
+    /// The token uses a construction this PAdES layer does not validate semantically.
+    Unsupported,
+}
+
+/// Machine-readable semantic validation failure reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DocTimeStampFailureReason {
+    /// `/ByteRange` is absent from the timestamp dictionary.
+    MissingByteRange,
+    /// `/ByteRange` is not four non-negative integers within the file.
+    InvalidByteRange,
+    /// `/Contents` is absent or is not a complete DER `TimeStampToken`.
+    InvalidContents,
+    /// The token is not a CMS `SignedData` `ContentInfo`.
+    NotSignedData,
+    /// The token's encapsulated content is not `id-ct-TSTInfo`.
+    NotTstInfo,
+    /// The token has no encapsulated `TSTInfo` bytes.
+    EmptyTstInfo,
+    /// The token or `TSTInfo` could not be decoded as DER.
+    MalformedToken,
+    /// The token imprint uses a hash algorithm other than SHA-256.
+    UnsupportedHashAlgorithm,
+    /// The SHA-256 imprint in the token does not match the PDF revision digest.
+    ImprintMismatch,
 }
 
 /// Append a `/DocTimeStamp` incremental update using caller-supplied RFC 3161 token bytes.
 ///
 /// The token is embedded as `/SubFilter /ETSI.RFC3161` in a new signature dictionary. The
 /// `/ByteRange` covers the resulting PDF revision except the timestamp token's `/Contents`
-/// placeholder, but this function does not verify that the token attests that digest.
+/// placeholder. Call [`inspect_doc_timestamps`] or [`crate::validate_pdf_signature`] to verify
+/// that the token's RFC 3161 message imprint attests that digest. TSA signer/path trust remains a
+/// higher-layer follow-up and no B-LTA/legal LTV claim is made here.
 pub fn add_doc_timestamp_revision(
     pdf_bytes: &[u8],
     timestamp_token_der: &[u8],
@@ -130,11 +212,12 @@ pub fn add_doc_timestamp_revision(
 pub fn inspect_doc_timestamps(pdf_bytes: &[u8]) -> Result<DocTimeStampReport, PadesError> {
     let doc =
         lopdf::Document::load_mem(pdf_bytes).map_err(|e| PadesError::PdfParse(e.to_string()))?;
-    inspect_doc_timestamps_document(&doc)
+    inspect_doc_timestamps_document(&doc, pdf_bytes)
 }
 
 pub(crate) fn inspect_doc_timestamps_document(
     doc: &lopdf::Document,
+    pdf_bytes: &[u8],
 ) -> Result<DocTimeStampReport, PadesError> {
     let mut entries: Vec<_> = doc
         .objects
@@ -148,22 +231,22 @@ pub(crate) fn inspect_doc_timestamps_document(
     entries.sort_by_key(|(id, _)| *id);
 
     let mut token_hashes = Vec::new();
-    for (_, dict) in &entries {
-        let contents = dict
-            .get(b"Contents")
-            .and_then(lopdf::Object::as_str)
-            .map_err(|_| PadesError::InvalidDocTimeStampToken)?;
-        let len = pdf::der_total_len(contents).ok_or(PadesError::InvalidDocTimeStampToken)?;
-        if len > contents.len() {
-            return Err(PadesError::InvalidDocTimeStampToken);
+    let mut validations = Vec::new();
+    for (index, (object_id, dict)) in entries.iter().enumerate() {
+        let token = decoded_timestamp_token(dict);
+        if let Ok(token) = token {
+            token_hashes.push(Sha256::digest(token).into());
         }
-        token_hashes.push(Sha256::digest(&contents[..len]).into());
+        validations.push(validate_doc_timestamp(
+            index, *object_id, dict, pdf_bytes, token,
+        ));
     }
 
     Ok(DocTimeStampReport {
         present: !entries.is_empty(),
         count: entries.len(),
         token_hashes,
+        validations,
     })
 }
 
@@ -174,6 +257,177 @@ fn validate_token(timestamp_token_der: &[u8]) -> Result<(), PadesError> {
         return Err(PadesError::InvalidDocTimeStampToken);
     }
     Ok(())
+}
+
+fn validate_doc_timestamp(
+    index: usize,
+    object_id: (u32, u16),
+    dict: &lopdf::Dictionary,
+    pdf_bytes: &[u8],
+    token: Result<&[u8], DocTimeStampFailureReason>,
+) -> DocTimeStampValidation {
+    let byte_range = match parse_byte_range(dict, pdf_bytes.len()) {
+        Ok(range) => range,
+        Err(reason) => {
+            return DocTimeStampValidation {
+                index,
+                object_id,
+                byte_range: None,
+                document_digest: None,
+                token_imprint: None,
+                token_hash_algorithm: None,
+                status: DocTimeStampSemanticStatus::Failed,
+                failure_reason: Some(reason),
+            };
+        }
+    };
+    let document_digest = digest_byte_range(pdf_bytes, byte_range);
+    let token = match token {
+        Ok(token) => token,
+        Err(reason) => {
+            return DocTimeStampValidation {
+                index,
+                object_id,
+                byte_range: Some(byte_range),
+                document_digest: Some(document_digest),
+                token_imprint: None,
+                token_hash_algorithm: None,
+                status: DocTimeStampSemanticStatus::Failed,
+                failure_reason: Some(reason),
+            };
+        }
+    };
+    let imprint = match timestamp_token_imprint(token) {
+        Ok(imprint) => imprint,
+        Err(reason) => {
+            return DocTimeStampValidation {
+                index,
+                object_id,
+                byte_range: Some(byte_range),
+                document_digest: Some(document_digest),
+                token_imprint: None,
+                token_hash_algorithm: None,
+                status: match reason {
+                    DocTimeStampFailureReason::UnsupportedHashAlgorithm => {
+                        DocTimeStampSemanticStatus::Unsupported
+                    }
+                    _ => DocTimeStampSemanticStatus::Failed,
+                },
+                failure_reason: Some(reason),
+            };
+        }
+    };
+
+    let valid = imprint.hashed_message.as_slice() == document_digest;
+    DocTimeStampValidation {
+        index,
+        object_id,
+        byte_range: Some(byte_range),
+        document_digest: Some(document_digest),
+        token_imprint: Some(imprint.hashed_message),
+        token_hash_algorithm: Some(imprint.hash_algorithm),
+        status: if valid {
+            DocTimeStampSemanticStatus::Valid
+        } else {
+            DocTimeStampSemanticStatus::Failed
+        },
+        failure_reason: if valid {
+            None
+        } else {
+            Some(DocTimeStampFailureReason::ImprintMismatch)
+        },
+    }
+}
+
+#[derive(Debug)]
+struct TimestampImprint {
+    hash_algorithm: String,
+    hashed_message: Vec<u8>,
+}
+
+fn timestamp_token_imprint(
+    token_der: &[u8],
+) -> Result<TimestampImprint, DocTimeStampFailureReason> {
+    let ci =
+        ContentInfo::from_der(token_der).map_err(|_| DocTimeStampFailureReason::MalformedToken)?;
+    if ci.content_type != ID_SIGNED_DATA {
+        return Err(DocTimeStampFailureReason::NotSignedData);
+    }
+    let signed_data_der = ci
+        .content
+        .to_der()
+        .map_err(|_| DocTimeStampFailureReason::MalformedToken)?;
+    let signed_data = SignedData::from_der(&signed_data_der)
+        .map_err(|_| DocTimeStampFailureReason::MalformedToken)?;
+    if signed_data.encap_content_info.econtent_type != ID_CT_TST_INFO {
+        return Err(DocTimeStampFailureReason::NotTstInfo);
+    }
+    let tst_der = signed_data
+        .encap_content_info
+        .econtent
+        .as_ref()
+        .ok_or(DocTimeStampFailureReason::EmptyTstInfo)?
+        .value();
+    let tst = TstInfo::from_der(tst_der).map_err(|_| DocTimeStampFailureReason::MalformedToken)?;
+    let hash_algorithm = tst.message_imprint.hash_algorithm.oid.to_string();
+    let hashed_message = tst.message_imprint.hashed_message.as_bytes().to_vec();
+    if tst.message_imprint.hash_algorithm.oid != ID_SHA256 {
+        return Err(DocTimeStampFailureReason::UnsupportedHashAlgorithm);
+    }
+    Ok(TimestampImprint {
+        hash_algorithm,
+        hashed_message,
+    })
+}
+
+fn decoded_timestamp_token(dict: &lopdf::Dictionary) -> Result<&[u8], DocTimeStampFailureReason> {
+    let contents = dict
+        .get(b"Contents")
+        .and_then(lopdf::Object::as_str)
+        .map_err(|_| DocTimeStampFailureReason::InvalidContents)?;
+    let len = pdf::der_total_len(contents).ok_or(DocTimeStampFailureReason::InvalidContents)?;
+    if len > contents.len() {
+        return Err(DocTimeStampFailureReason::InvalidContents);
+    }
+    Ok(&contents[..len])
+}
+
+fn parse_byte_range(
+    dict: &lopdf::Dictionary,
+    total_len: usize,
+) -> Result<[i64; 4], DocTimeStampFailureReason> {
+    let arr = dict
+        .get(b"ByteRange")
+        .and_then(lopdf::Object::as_array)
+        .map_err(|_| DocTimeStampFailureReason::MissingByteRange)?;
+    if arr.len() != 4 {
+        return Err(DocTimeStampFailureReason::InvalidByteRange);
+    }
+    let mut byte_range = [0i64; 4];
+    let mut ranges = [0usize; 4];
+    for (i, item) in arr.iter().enumerate() {
+        let value = item
+            .as_i64()
+            .map_err(|_| DocTimeStampFailureReason::InvalidByteRange)?;
+        byte_range[i] = value;
+        ranges[i] =
+            usize::try_from(value).map_err(|_| DocTimeStampFailureReason::InvalidByteRange)?;
+    }
+    let [s1, l1, s2, l2] = ranges;
+    if s1.checked_add(l1).map(|e| e > total_len).unwrap_or(true)
+        || s2.checked_add(l2).map(|e| e > total_len).unwrap_or(true)
+    {
+        return Err(DocTimeStampFailureReason::InvalidByteRange);
+    }
+    Ok(byte_range)
+}
+
+fn digest_byte_range(pdf_bytes: &[u8], byte_range: [i64; 4]) -> [u8; 32] {
+    let [s1, l1, s2, l2] = byte_range.map(|v| usize::try_from(v).expect("valid byte range"));
+    let mut hasher = Sha256::new();
+    hasher.update(&pdf_bytes[s1..s1 + l1]);
+    hasher.update(&pdf_bytes[s2..s2 + l2]);
+    hasher.finalize().into()
 }
 
 fn serialize_dict(dict: &lopdf::Dictionary) -> Result<Vec<u8>, PadesError> {
