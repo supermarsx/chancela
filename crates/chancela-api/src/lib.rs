@@ -902,6 +902,12 @@ pub fn router(state: AppState) -> Router {
             post(paper_import::validate_paper_book_import),
         )
         .route(
+            "/v1/books/paper-import",
+            post(paper_import::preserve_paper_book_import).layer(DefaultBodyLimit::max(
+                paper_import::PAPER_BOOK_IMPORT_ENVELOPE_BYTES,
+            )),
+        )
+        .route(
             "/v1/books/{id}/legal-hold",
             get(books::get_legal_hold)
                 .put(books::set_legal_hold)

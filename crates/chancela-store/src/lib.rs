@@ -446,6 +446,62 @@ pub struct StoredImportedDocument {
     pub bytes: Vec<u8>,
 }
 
+/// OCR hook state for a preserved historical paper-book import package. This is only status; OCR
+/// output is deliberately not part of the preserved-package slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredPaperBookOcrStatus {
+    /// Package retained; no OCR work has been executed by this slice.
+    NotStarted,
+}
+
+impl StoredPaperBookOcrStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotStarted => "not_started",
+        }
+    }
+
+    fn parse(raw: &str) -> Result<Self, StoreError> {
+        match raw {
+            "not_started" => Ok(Self::NotStarted),
+            other => Err(StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid stored paper-book OCR status {other:?}"),
+            ))),
+        }
+    }
+}
+
+/// Metadata for a preserved historical paper-book import package (`paper_book_imports`, schema v8).
+/// This is the ledger payload source and intentionally excludes raw bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredPaperBookImportMeta {
+    pub import_id: String,
+    pub entity_ref: String,
+    pub entity_name: String,
+    pub entity_nipc: String,
+    pub book_ref: String,
+    pub date_from: Date,
+    pub date_to: Date,
+    pub page_count: u32,
+    pub sha256: String,
+    pub size_bytes: usize,
+    pub content_type: String,
+    pub source_filename: Option<String>,
+    pub notes: Option<String>,
+    pub imported_at: OffsetDateTime,
+    pub imported_by: String,
+    pub ocr_status: StoredPaperBookOcrStatus,
+}
+
+/// A preserved historical paper-book import package with retained bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredPaperBookImport {
+    pub meta: StoredPaperBookImportMeta,
+    pub bytes: Vec<u8>,
+}
+
 /// Status of a persisted act follow-up. Serialized and stored with the contract's exact
 /// `Open`/`Completed` spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -846,6 +902,22 @@ impl Store {
              size_bytes, imported_at, imported_by, bytes FROM imported_documents WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_imported_document)
+            .optional()?
+            .transpose()
+    }
+
+    /// Fetch one preserved historical paper-book import package by id, including retained bytes.
+    pub fn paper_book_import(
+        &self,
+        import_id: &str,
+    ) -> Result<Option<StoredPaperBookImport>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
+             page_count, sha256, size_bytes, content_type, source_filename, notes, imported_at, \
+             imported_by, ocr_status, bytes FROM paper_book_imports WHERE import_id = ?1",
+        )?;
+        stmt.query_row(params![import_id], row_to_paper_book_import)
             .optional()?
             .transpose()
     }
@@ -1264,6 +1336,53 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Upsert a preserved historical paper-book package (`paper_book_imports`, schema v8).
+    /// Intended to run in the same transaction as its metadata-only `paper_book_import.preserved`
+    /// ledger event. This never touches canonical book, act, document, or signed-document rows.
+    pub fn upsert_paper_book_import(
+        &self,
+        import: &StoredPaperBookImport,
+    ) -> Result<(), StoreError> {
+        let imported_at = import
+            .meta
+            .imported_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let size_bytes = i64::try_from(import.meta.size_bytes).map_err(|_| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "paper-book import size does not fit sqlite INTEGER",
+            ))
+        })?;
+        self.txn.execute(
+            "INSERT OR REPLACE INTO paper_book_imports \
+             (import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
+              page_count, sha256, size_bytes, content_type, source_filename, notes, imported_at, \
+              imported_by, ocr_status, bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+            params![
+                import.meta.import_id,
+                import.meta.entity_ref,
+                import.meta.entity_name,
+                import.meta.entity_nipc,
+                import.meta.book_ref,
+                format_date(import.meta.date_from),
+                format_date(import.meta.date_to),
+                i64::from(import.meta.page_count),
+                import.meta.sha256,
+                size_bytes,
+                import.meta.content_type,
+                import.meta.source_filename,
+                import.meta.notes,
+                imported_at,
+                import.meta.imported_by,
+                import.meta.ocr_status.as_str(),
+                import.bytes,
+            ],
+        )?;
+        Ok(())
+    }
+
     /// Upsert an act-scoped follow-up/task row (`follow_ups`, schema v6). Intended to run in the
     /// same transaction as its `follow_up.*` ledger event.
     pub fn upsert_follow_up(&self, follow_up: &StoredFollowUp) -> Result<(), StoreError> {
@@ -1543,6 +1662,58 @@ fn imported_document_meta_from_raw(
         imported_at: parse_rfc3339(&imported_at_raw)?,
         imported_by,
     })
+}
+
+/// Map one `paper_book_imports` full row to [`StoredPaperBookImport`] (metadata + retained bytes).
+fn row_to_paper_book_import(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredPaperBookImport, StoreError>> {
+    let import_id: String = row.get(0)?;
+    let entity_ref: String = row.get(1)?;
+    let entity_name: String = row.get(2)?;
+    let entity_nipc: String = row.get(3)?;
+    let book_ref: String = row.get(4)?;
+    let date_from_raw: String = row.get(5)?;
+    let date_to_raw: String = row.get(6)?;
+    let page_count_raw: i64 = row.get(7)?;
+    let sha256: String = row.get(8)?;
+    let size_raw: i64 = row.get(9)?;
+    let content_type: String = row.get(10)?;
+    let source_filename: Option<String> = row.get(11)?;
+    let notes: Option<String> = row.get(12)?;
+    let imported_at_raw: String = row.get(13)?;
+    let imported_by: String = row.get(14)?;
+    let ocr_status_raw: String = row.get(15)?;
+    let bytes: Vec<u8> = row.get(16)?;
+    Ok((|| {
+        let size_bytes = usize::try_from(size_raw).map_err(|_| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("stored paper-book import size {size_raw} is negative or too large"),
+            ))
+        })?;
+        Ok(StoredPaperBookImport {
+            meta: StoredPaperBookImportMeta {
+                import_id,
+                entity_ref,
+                entity_name,
+                entity_nipc,
+                book_ref,
+                date_from: parse_date(&date_from_raw)?,
+                date_to: parse_date(&date_to_raw)?,
+                page_count: int_to_u32(page_count_raw)?,
+                sha256,
+                size_bytes,
+                content_type,
+                source_filename,
+                notes,
+                imported_at: parse_rfc3339(&imported_at_raw)?,
+                imported_by,
+                ocr_status: StoredPaperBookOcrStatus::parse(&ocr_status_raw)?,
+            },
+            bytes,
+        })
+    })())
 }
 
 /// Map one `follow_ups` row to [`StoredFollowUp`]. Deferred inner `Result` lets timestamp, date,

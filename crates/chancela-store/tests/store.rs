@@ -22,7 +22,8 @@ use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::StoreOpenOptions;
 use chancela_store::{
     Store, StoreError, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
-    StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocument, StoredImportedDocumentMeta, StoredPaperBookImport,
+    StoredPaperBookImportMeta, StoredPaperBookOcrStatus,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -135,6 +136,30 @@ fn sample_imported_document(
             size_bytes: bytes.len(),
             imported_at: OffsetDateTime::from_unix_timestamp(1_780_000_000).unwrap(),
             imported_by: "amelia.marques".to_string(),
+        },
+        bytes: bytes.to_vec(),
+    }
+}
+
+fn sample_paper_book_import(id: &str, bytes: &[u8]) -> StoredPaperBookImport {
+    StoredPaperBookImport {
+        meta: StoredPaperBookImportMeta {
+            import_id: id.to_string(),
+            entity_ref: "entity-legacy-001".to_string(),
+            entity_name: "Encosto Estrategico, S.A.".to_string(),
+            entity_nipc: "503004642".to_string(),
+            book_ref: "ag-book-1968-1971".to_string(),
+            date_from: time::macros::date!(1968 - 01 - 01),
+            date_to: time::macros::date!(1971 - 12 - 31),
+            page_count: 240,
+            sha256: hex(&Sha256::digest(bytes)),
+            size_bytes: bytes.len(),
+            content_type: "application/pdf".to_string(),
+            source_filename: Some("ag-1968-1971.pdf".to_string()),
+            notes: Some("Scanned from bound paper minute book.".to_string()),
+            imported_at: OffsetDateTime::from_unix_timestamp(1_780_000_001).unwrap(),
+            imported_by: "amelia.marques".to_string(),
+            ocr_status: StoredPaperBookOcrStatus::NotStarted,
         },
         bytes: bytes.to_vec(),
     }
@@ -1110,6 +1135,38 @@ fn imported_document_round_trips_lists_by_act_and_survives_reopen() {
             .unwrap()
             .as_ref(),
         Some(&linked)
+    );
+}
+
+#[test]
+fn paper_book_import_package_round_trips_with_metadata_and_ocr_status() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333333",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+
+    store
+        .persist(|tx| tx.upsert_paper_book_import(&import))
+        .expect("persist paper-book package");
+
+    let by_id = store
+        .paper_book_import(&import.meta.import_id)
+        .expect("read by id")
+        .expect("paper-book import present");
+    assert_eq!(by_id, import);
+    assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::NotStarted);
+    assert_eq!(by_id.meta.sha256, hex(&Sha256::digest(&by_id.bytes)));
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .paper_book_import(&import.meta.import_id)
+            .unwrap()
+            .as_ref(),
+        Some(&import)
     );
 }
 

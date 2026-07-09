@@ -39,7 +39,9 @@
 /// - **v7** — adds `signed_documents.timestamp_trust_report_json`: a nullable, non-secret
 ///   technical timestamp-trust diagnostic report captured at signing completion when the RFC 3161
 ///   token, policy/QTST and certificate-path inputs are available.
-pub const SCHEMA_VERSION: i64 = 7;
+/// - **v8** — adds `paper_book_imports`: preserved historical paper-book package bytes and
+///   metadata. These rows are non-canonical evidence only and carry OCR hook status, not OCR output.
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -295,6 +297,38 @@ pub const CREATE_IMPORTED_DOCUMENTS_ACT_IDX: &str =
 /// Index over `imported_documents.imported_at` — keeps the global list ordered without scanning.
 pub const CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_imported_documents_imported_at ON imported_documents (imported_at);";
 
+/// `paper_book_imports` — preserved historical paper-book import packages (schema v8).
+///
+/// This table retains the operator-supplied scan/package bytes with fixity and descriptive
+/// metadata after the API re-runs paper-book import validation. It deliberately does not create
+/// canonical minutes, generated documents, signed variants, or OCR text. `ocr_status` is only a
+/// hook/status marker for later asynchronous work.
+pub const CREATE_PAPER_BOOK_IMPORTS: &str = "\
+CREATE TABLE IF NOT EXISTS paper_book_imports (
+    import_id       TEXT PRIMARY KEY,
+    entity_ref      TEXT NOT NULL,
+    entity_name     TEXT NOT NULL,
+    entity_nipc     TEXT NOT NULL,
+    book_ref        TEXT NOT NULL,
+    date_from       TEXT NOT NULL,
+    date_to         TEXT NOT NULL,
+    page_count      INTEGER NOT NULL,
+    sha256          TEXT NOT NULL,
+    size_bytes      INTEGER NOT NULL,
+    content_type    TEXT NOT NULL,
+    source_filename TEXT,
+    notes           TEXT,
+    imported_at     TEXT NOT NULL,
+    imported_by     TEXT NOT NULL,
+    ocr_status      TEXT NOT NULL,
+    bytes           BLOB NOT NULL
+) STRICT;";
+
+pub const CREATE_PAPER_BOOK_IMPORTS_BOOK_REF_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_paper_book_imports_book_ref ON paper_book_imports (book_ref);";
+
+pub const CREATE_PAPER_BOOK_IMPORTS_IMPORTED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_paper_book_imports_imported_at ON paper_book_imports (imported_at);";
+
 /// `follow_ups` — first-class task/follow-up rows tied to an act. These deliberately live outside
 /// the sealed [`chancela_core::Act`] JSON so post-deliberation task management never mutates the
 /// frozen evidentiary payload.
@@ -356,6 +390,9 @@ pub const ALL: &[&str] = &[
     CREATE_IMPORTED_DOCUMENTS,
     CREATE_IMPORTED_DOCUMENTS_ACT_IDX,
     CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX,
+    CREATE_PAPER_BOOK_IMPORTS,
+    CREATE_PAPER_BOOK_IMPORTS_BOOK_REF_IDX,
+    CREATE_PAPER_BOOK_IMPORTS_IMPORTED_AT_IDX,
     CREATE_FOLLOW_UPS,
     CREATE_FOLLOW_UPS_ACT_IDX,
     CREATE_FOLLOW_UPS_STATUS_IDX,
