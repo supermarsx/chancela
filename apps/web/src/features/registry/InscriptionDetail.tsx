@@ -17,7 +17,8 @@
  */
 import type { ReactNode } from 'react';
 import { useT } from '../../i18n';
-import { Badge, Table, Truncate } from '../../ui';
+import { Badge, FieldHelp, Table, Truncate } from '../../ui';
+import { registryFieldHelp } from './fieldHelp';
 import type {
   AddressView,
   ApresentacaoView,
@@ -37,21 +38,57 @@ function moneyText(money: MoneyView): string {
 }
 
 /** A `<dl>` row, omitted when empty. `wide` spans both columns of a pair grid. */
-function DefRow({ term, wide, children }: { term: string; wide?: boolean; children: ReactNode }) {
+function DefRow({
+  term,
+  wide,
+  help,
+  children,
+}: {
+  term: string;
+  wide?: boolean;
+  help?: string;
+  children: ReactNode;
+}) {
   if (children === null || children === undefined || children === '') return null;
   return (
     <div className={wide ? 'deflist__wide' : undefined}>
-      <dt>{term}</dt>
+      <dt>
+        {help ? (
+          <span className="field__labelrow">
+            <span>{term}</span>
+            <FieldHelp text={help} />
+          </span>
+        ) : (
+          term
+        )}
+      </dt>
       <dd>{children}</dd>
     </div>
   );
 }
 
 /** A section with a small uppercase heading, omitted by the caller when its body is empty. */
-function DetailBlock({ title, children }: { title: string; children: ReactNode }) {
+function DetailBlock({
+  title,
+  help,
+  children,
+}: {
+  title: string;
+  help?: string;
+  children: ReactNode;
+}) {
   return (
     <section className="registry-detail__block">
-      <h5 className="registry-detail__h">{title}</h5>
+      <h5 className="registry-detail__h">
+        {help ? (
+          <span className="field__labelrow">
+            <span>{title}</span>
+            <FieldHelp text={help} />
+          </span>
+        ) : (
+          title
+        )}
+      </h5>
       {children}
     </section>
   );
@@ -170,35 +207,54 @@ function ConstitutionCard({
   return (
     <div className="registry-detail">
       <dl className="deflist deflist--pairs">
-        <DefRow term={t('registry.field.firma')} wide>
+        <DefRow term={t('registry.field.firma')} help={registryFieldHelp.firma} wide>
           {payload.firma}
         </DefRow>
-        <DefRow term={t('registry.field.nipc')}>
+        <DefRow term={t('registry.field.nipc')} help={registryFieldHelp.nipc}>
           {payload.nipc ? <code className="mono">{payload.nipc}</code> : null}
         </DefRow>
-        <DefRow term={t('registry.detail.naturezaJuridica')}>{payload.natureza_juridica}</DefRow>
-        <DefRow term={t('registry.field.capital')}>
+        <DefRow
+          term={t('registry.detail.naturezaJuridica')}
+          help={registryFieldHelp.naturezaJuridica}
+        >
+          {payload.natureza_juridica}
+        </DefRow>
+        <DefRow term={t('registry.field.capital')} help={registryFieldHelp.capital}>
           {payload.capital ? moneyText(payload.capital) : null}
         </DefRow>
-        <DefRow term={t('registry.detail.fiscalYearEnd')}>{payload.fiscal_year_end}</DefRow>
-        <DefRow term={t('registry.detail.capitalRealization')} wide>
+        <DefRow term={t('registry.detail.fiscalYearEnd')} help={registryFieldHelp.fiscalYearEnd}>
+          {payload.fiscal_year_end}
+        </DefRow>
+        <DefRow
+          term={t('registry.detail.capitalRealization')}
+          help={registryFieldHelp.capitalRealization}
+          wide
+        >
           {payload.capital_realization_note}
         </DefRow>
-        <DefRow term={t('registry.detail.deliberationDate')}>{payload.deliberation_date}</DefRow>
+        <DefRow
+          term={t('registry.detail.deliberationDate')}
+          help={registryFieldHelp.deliberationDate}
+        >
+          {payload.deliberation_date}
+        </DefRow>
       </dl>
 
       {payload.sede ? (
-        <DetailBlock title={t('registry.field.sede')}>
+        <DetailBlock title={t('registry.field.sede')} help={registryFieldHelp.sede}>
           <AddressBlock address={payload.sede} />
         </DetailBlock>
       ) : null}
       {payload.objecto ? (
-        <DetailBlock title={t('registry.field.objeto')}>
+        <DetailBlock title={t('registry.field.objeto')} help={registryFieldHelp.objeto}>
           <p className="registry-detail__prose">{payload.objecto}</p>
         </DetailBlock>
       ) : null}
       {payload.forma_de_obrigar ? (
-        <DetailBlock title={t('registry.detail.formaObrigar')}>
+        <DetailBlock
+          title={t('registry.detail.formaObrigar')}
+          help={registryFieldHelp.formaObrigar}
+        >
           <p className="registry-detail__prose">{payload.forma_de_obrigar}</p>
         </DetailBlock>
       ) : null}
@@ -227,7 +283,12 @@ function DesignationCard({
       {payload.orgaos.length > 0 ? <OrganList orgaos={payload.orgaos} /> : null}
       {payload.deliberation_date ? (
         <dl className="deflist deflist--pairs">
-          <DefRow term={t('registry.detail.deliberationDate')}>{payload.deliberation_date}</DefRow>
+          <DefRow
+            term={t('registry.detail.deliberationDate')}
+            help={registryFieldHelp.deliberationDate}
+          >
+            {payload.deliberation_date}
+          </DefRow>
         </dl>
       ) : null}
     </div>
@@ -266,13 +327,18 @@ function AmendmentCard({
         <DefRow term={t('registry.detail.newCapital')}>
           {payload.new_capital ? moneyText(payload.new_capital) : null}
         </DefRow>
-        <DefRow term={t('registry.detail.deliberationDate')}>{payload.deliberation_date}</DefRow>
-        <DefRow term={t('registry.detail.newObjecto')} wide>
+        <DefRow
+          term={t('registry.detail.deliberationDate')}
+          help={registryFieldHelp.deliberationDate}
+        >
+          {payload.deliberation_date}
+        </DefRow>
+        <DefRow term={t('registry.detail.newObjecto')} help={registryFieldHelp.objeto} wide>
           {payload.new_objecto}
         </DefRow>
       </dl>
       {payload.new_sede ? (
-        <DetailBlock title={t('registry.detail.newSede')}>
+        <DetailBlock title={t('registry.detail.newSede')} help={registryFieldHelp.sede}>
           <AddressBlock address={payload.new_sede} />
         </DetailBlock>
       ) : null}

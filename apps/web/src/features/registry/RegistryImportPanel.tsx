@@ -28,11 +28,13 @@ import {
   Input,
   InlineWarning,
   Table,
+  FieldHelp,
   useToast,
 } from '../../ui';
 import { CaeRefList } from '../cae/CaeRefList';
 import { AccessCodeField } from './AccessCodeField';
 import { RegistryErrorNote } from './RegistryErrorNote';
+import { registryFieldHelp } from './fieldHelp';
 
 function ValueCell({ value }: { value: string | null }) {
   return value === null ? (
@@ -42,20 +44,35 @@ function ValueCell({ value }: { value: string | null }) {
   );
 }
 
+function HelpTerm({ label, help }: { label: string; help?: string }) {
+  return help ? (
+    <span className="field__labelrow">
+      <span>{label}</span>
+      <FieldHelp text={help} />
+    </span>
+  ) : (
+    <>{label}</>
+  );
+}
+
 function SummaryRow({
   term,
   value,
   mono,
   wide,
+  help,
 }: {
   term: string;
   value: string | null;
   mono?: boolean;
   wide?: boolean;
+  help?: string;
 }) {
   return (
     <div className={wide ? 'deflist__wide' : undefined}>
-      <dt>{term}</dt>
+      <dt>
+        <HelpTerm label={term} help={help} />
+      </dt>
       <dd className={mono ? 'mono registry-breakable' : 'registry-breakable'}>
         {value ?? <span className="muted">—</span>}
       </dd>
@@ -70,11 +87,34 @@ function RegistryExtractSummary({ extract }: { extract: RegistryExtractView }) {
     <div className="registry-result-box">
       <p className="field__label">Resumo</p>
       <dl className="deflist deflist--pairs registry-result-summary">
-        <SummaryRow term={t('registry.field.firma')} value={extract.firma} wide />
-        <SummaryRow term={t('registry.field.nipc')} value={extract.nipc} mono />
-        <SummaryRow term={t('registry.field.legalForm')} value={formaJuridica} />
-        <SummaryRow term={t('registry.field.matricula')} value={extract.matricula} />
-        <SummaryRow term={t('registry.field.sede')} value={extract.sede} wide />
+        <SummaryRow
+          term={t('registry.field.firma')}
+          value={extract.firma}
+          help={registryFieldHelp.firma}
+          wide
+        />
+        <SummaryRow
+          term={t('registry.field.nipc')}
+          value={extract.nipc}
+          help={registryFieldHelp.nipc}
+          mono
+        />
+        <SummaryRow
+          term={t('registry.field.legalForm')}
+          value={formaJuridica}
+          help={registryFieldHelp.legalForm}
+        />
+        <SummaryRow
+          term={t('registry.field.matricula')}
+          value={extract.matricula}
+          help={registryFieldHelp.matricula}
+        />
+        <SummaryRow
+          term={t('registry.field.sede')}
+          value={extract.sede}
+          help={registryFieldHelp.sede}
+          wide
+        />
       </dl>
     </div>
   );
@@ -87,10 +127,32 @@ function RegistryReportProvenance({ extract }: { extract: RegistryExtractView })
     <div className="registry-result-box registry-result-box--provenance">
       <p className="field__label">{t('registry.provenance.title')}</p>
       <dl className="deflist registry-provenance-mini">
-        <SummaryRow term={t('registry.provenance.accessCode')} value={p.access_code_masked} mono />
-        <SummaryRow term={t('registry.provenance.retrievedAt')} value={p.retrieved_at} mono />
-        <SummaryRow term={t('registry.provenance.source')} value={p.source_url} mono wide />
-        <SummaryRow term={t('registry.provenance.digest')} value={p.raw_digest} mono wide />
+        <SummaryRow
+          term={t('registry.provenance.accessCode')}
+          value={p.access_code_masked}
+          help={registryFieldHelp.accessCodeMasked}
+          mono
+        />
+        <SummaryRow
+          term={t('registry.provenance.retrievedAt')}
+          value={p.retrieved_at}
+          help={registryFieldHelp.retrievedAt}
+          mono
+        />
+        <SummaryRow
+          term={t('registry.provenance.source')}
+          value={p.source_url}
+          help={registryFieldHelp.source}
+          mono
+          wide
+        />
+        <SummaryRow
+          term={t('registry.provenance.digest')}
+          value={p.raw_digest}
+          help={registryFieldHelp.digest}
+          mono
+          wide
+        />
       </dl>
     </div>
   );
@@ -347,7 +409,11 @@ export function RegistryImportPanel({ entityId }: { entityId: string }) {
           </div>
           <form className="form registry-import-form" onSubmit={onSubmit}>
             <AccessCodeField id="entity-import-code" value={code} onChange={setCode} />
-            <Field label={t('registry.email.label')} htmlFor="entity-import-email">
+            <Field
+              label={t('registry.email.label')}
+              htmlFor="entity-import-email"
+              help={registryFieldHelp.email}
+            >
               <Input
                 id="entity-import-email"
                 type="email"

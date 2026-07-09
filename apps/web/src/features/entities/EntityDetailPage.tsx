@@ -14,6 +14,7 @@ import {
   Card,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   Input,
   PageHeader,
@@ -29,6 +30,7 @@ import { EntityStatuteEditor } from './EntityStatuteEditor';
 import { NipcBadge } from './NipcBadge';
 import { PrintButton } from './PrintButton';
 import { EntityPrintDocument } from './EntityPrintDocument';
+import { entityFieldHelp } from './fieldHelp';
 
 const FISCAL_YEAR_END_FIELD_LABEL = 'Fecho do exercício';
 const FISCAL_YEAR_END_INPUT_LABEL = 'Fecho do exercício (MM-DD)';
@@ -37,6 +39,15 @@ const FISCAL_YEAR_END_ERROR = 'Use uma data válida no formato MM-DD.';
 
 function displayFiscalYearEnd(value: string | null | undefined) {
   return value ? value : '12-31 (por omissão)';
+}
+
+function HelpTerm({ label, help }: { label: string; help: string }) {
+  return (
+    <span className="field__labelrow">
+      <span>{label}</span>
+      <FieldHelp text={help} />
+    </span>
+  );
 }
 
 function normalizeFiscalYearEndInput(input: string): string | null {
@@ -91,7 +102,9 @@ function FiscalYearEndEditor({ entity }: { entity: Entity }) {
       {update.error ? <ErrorNote error={update.error} /> : null}
       <dl className="deflist">
         <div>
-          <dt>{FISCAL_YEAR_END_FIELD_LABEL}</dt>
+          <dt>
+            <HelpTerm label={FISCAL_YEAR_END_FIELD_LABEL} help={entityFieldHelp.fiscalYearEnd} />
+          </dt>
           <dd>
             <code className="mono">{displayFiscalYearEnd(entity.fiscal_year_end)}</code>
           </dd>
@@ -102,6 +115,7 @@ function FiscalYearEndEditor({ entity }: { entity: Entity }) {
           label={FISCAL_YEAR_END_INPUT_LABEL}
           htmlFor="entity-fiscal-year-end"
           hint={FISCAL_YEAR_END_HINT}
+          help={entityFieldHelp.fiscalYearEnd}
           error={error}
         >
           <Input
@@ -171,7 +185,9 @@ export function EntityDetailPage() {
       <Card title={t('entities.identificationCard')}>
         <dl className="deflist">
           <div>
-            <dt>{t('entities.field.nipc')}</dt>
+            <dt>
+              <HelpTerm label={t('entities.field.nipc')} help={entityFieldHelp.nipc} />
+            </dt>
             <dd>
               <span className="nipc-cell">
                 <code className="mono">{ent.nipc}</code>
@@ -180,11 +196,15 @@ export function EntityDetailPage() {
             </dd>
           </div>
           <div>
-            <dt>{t('entities.field.seat')}</dt>
+            <dt>
+              <HelpTerm label={t('entities.field.seat')} help={entityFieldHelp.seat} />
+            </dt>
             <dd>{ent.seat}</dd>
           </div>
           <div>
-            <dt>{t('entities.field.legalForm')}</dt>
+            <dt>
+              <HelpTerm label={t('entities.field.legalForm')} help={entityFieldHelp.legalForm} />
+            </dt>
             <dd>{entityKindLabels[ent.kind]}</dd>
           </div>
           <div>
@@ -192,7 +212,9 @@ export function EntityDetailPage() {
             <dd>{entityFamilyLabels[ent.family]}</dd>
           </div>
           <div>
-            <dt>{FISCAL_YEAR_END_FIELD_LABEL}</dt>
+            <dt>
+              <HelpTerm label={FISCAL_YEAR_END_FIELD_LABEL} help={entityFieldHelp.fiscalYearEnd} />
+            </dt>
             <dd>
               <code className="mono">{displayFiscalYearEnd(ent.fiscal_year_end)}</code>
             </dd>

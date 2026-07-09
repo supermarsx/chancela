@@ -15,6 +15,7 @@ import { Badge, Button, Card, Field, Icon, Input, useToast } from '../../ui';
 import { useT } from '../../i18n';
 import { AccessCodeField } from './AccessCodeField';
 import { RegistryErrorNote } from './RegistryErrorNote';
+import { registryFieldHelp } from './fieldHelp';
 
 function ImportStatus({
   pending,
@@ -100,6 +101,7 @@ export function ImportFromRegistryForm() {
               label={t('registry.email.label')}
               htmlFor="import-email"
               hint={t('registry.email.hint')}
+              help={registryFieldHelp.email}
             >
               <Input
                 id="import-email"

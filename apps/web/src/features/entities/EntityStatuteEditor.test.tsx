@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { EntityStatuteEditor } from './EntityStatuteEditor';
+import { entityFieldHelp } from './fieldHelp';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
 import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
@@ -79,6 +80,15 @@ describe('EntityStatuteEditor', () => {
   it('shows the read-only rule pack from the profile', () => {
     renderEditor(entity);
     expect(screen.getByText('csc-art63/v2')).toBeTruthy();
+  });
+
+  it('adds inline help to statute override fields', () => {
+    renderEditor(entity);
+
+    expect(screen.getAllByRole('button', { name: 'Ajuda' })).toHaveLength(3);
+    expect(document.body.textContent).toContain(entityFieldHelp.statuteQuorum);
+    expect(document.body.textContent).toContain(entityFieldHelp.statuteMajority);
+    expect(document.body.textContent).toContain(entityFieldHelp.statuteNotice);
   });
 
   it('PATCHes a quorum + reinforced majority overlay', async () => {

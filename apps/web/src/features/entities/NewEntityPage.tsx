@@ -25,6 +25,7 @@ import {
   Toggle,
   useToast,
 } from '../../ui';
+import { entityFieldHelp } from './fieldHelp';
 
 const FISCAL_YEAR_END_LABEL = 'Fecho do exercício (MM-DD)';
 const FISCAL_YEAR_END_HINT = 'Opcional. Vazio mantém o fecho por omissão em 12-31.';
@@ -123,6 +124,7 @@ export function NewEntityPage() {
             label={t('entities.form.nipc')}
             htmlFor="ent-nipc"
             hint={t('entities.form.nipcHint')}
+            help={entityFieldHelp.nipc}
             error={nipcError}
           >
             <Input
@@ -144,7 +146,7 @@ export function NewEntityPage() {
               <InlineWarning tone="warn">{t('entities.form.allowInvalidNipc.hint')}</InlineWarning>
             ) : null}
           </div>
-          <Field label={t('entities.form.seat')} htmlFor="ent-seat">
+          <Field label={t('entities.form.seat')} htmlFor="ent-seat" help={entityFieldHelp.seat}>
             <Input
               id="ent-seat"
               required
@@ -153,7 +155,11 @@ export function NewEntityPage() {
               placeholder={t('entities.form.seatPlaceholder')}
             />
           </Field>
-          <Field label={t('entities.form.legalForm')} htmlFor="ent-kind">
+          <Field
+            label={t('entities.form.legalForm')}
+            htmlFor="ent-kind"
+            help={entityFieldHelp.legalForm}
+          >
             <Select
               id="ent-kind"
               value={kind}
@@ -165,6 +171,7 @@ export function NewEntityPage() {
             label={FISCAL_YEAR_END_LABEL}
             htmlFor="ent-fiscal-year-end"
             hint={FISCAL_YEAR_END_HINT}
+            help={entityFieldHelp.fiscalYearEnd}
             error={fiscalYearEndError}
           >
             <Input

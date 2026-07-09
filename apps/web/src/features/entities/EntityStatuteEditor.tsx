@@ -14,6 +14,7 @@ import type { Entity, StatuteOverrides } from '../../api/types';
 import { useT } from '../../i18n';
 import { Card, ErrorNote, Field, Icon, Input, useToast } from '../../ui';
 import { GateButton, scopeEntity } from '../session/permissions';
+import { entityFieldHelp } from './fieldHelp';
 
 // Working copy: every field a plain string so blanks read as "unset". Assembled back into
 // a `StatuteOverrides` on save (a whole facet is null when its inputs are blank).
@@ -110,6 +111,7 @@ export function EntityStatuteEditor({ entity }: { entity: Entity }) {
           label={t('entities.statute.quorum')}
           htmlFor="statute-quorum"
           hint={t('entities.statute.quorumHint')}
+          help={entityFieldHelp.statuteQuorum}
         >
           <Input
             id="statute-quorum"
@@ -119,7 +121,11 @@ export function EntityStatuteEditor({ entity }: { entity: Entity }) {
             onChange={(e) => set('quorum', e.target.value)}
           />
         </Field>
-        <Field label={t('entities.statute.majority')} hint={t('entities.statute.majorityHint')}>
+        <Field
+          label={t('entities.statute.majority')}
+          hint={t('entities.statute.majorityHint')}
+          help={entityFieldHelp.statuteMajority}
+        >
           <div className="rowline">
             <Input
               type="number"
@@ -144,6 +150,7 @@ export function EntityStatuteEditor({ entity }: { entity: Entity }) {
           label={t('entities.statute.convocationNoticeDays')}
           htmlFor="statute-notice"
           hint={t('entities.statute.convocationNoticeHint')}
+          help={entityFieldHelp.statuteNotice}
         >
           <Input
             id="statute-notice"

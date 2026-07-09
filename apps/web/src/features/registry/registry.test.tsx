@@ -5,6 +5,7 @@ import { renderWithProviders } from '../../test/utils';
 import { ImportFromRegistryForm } from './ImportFromRegistryForm';
 import { RegistryImportPanel } from './RegistryImportPanel';
 import { RegistryProvenance } from './RegistryProvenance';
+import { registryFieldHelp } from './fieldHelp';
 import { EntityPrintDocument } from '../entities/EntityPrintDocument';
 import type {
   Entity,
@@ -169,6 +170,8 @@ describe('ImportFromRegistryForm', () => {
     expect(codeInput.type).toBe('password');
     expect(screen.getByRole('button', { name: 'Mostrar código' })).toBeTruthy();
     expect(screen.getByLabelText('E-mail (opcional)')).toBeTruthy();
+    expect(document.body.textContent).toContain(registryFieldHelp.accessCode);
+    expect(document.body.textContent).toContain(registryFieldHelp.email);
 
     const submit = screen.getByRole('button', { name: /importar do registo/i });
     expect(submit.hasAttribute('disabled')).toBe(true);
@@ -288,6 +291,9 @@ describe('RegistryImportPanel', () => {
     expect(screen.getByText(EXTRACT.provenance.source_url)).toBeTruthy();
     expect(screen.getByText('Campos atualizados')).toBeTruthy();
     expect(screen.getByText('Próximo passo')).toBeTruthy();
+    expect(document.body.textContent).toContain(registryFieldHelp.firma);
+    expect(document.body.textContent).toContain(registryFieldHelp.accessCodeMasked);
+    expect(document.body.textContent).toContain(registryFieldHelp.digest);
 
     const back = screen.getByRole('link', { name: /voltar à entidade/i }) as HTMLAnchorElement;
     expect(back.getAttribute('href')).toBe('/entidades/ent-1');
@@ -416,6 +422,10 @@ describe('RegistryProvenance', () => {
     expect(screen.getByText('Atividades de consultoria para os negócios e a gestão.')).toBeTruthy();
     expect(screen.getByText('Secundário')).toBeTruthy();
     expect(screen.getByText(/Não catalogado/)).toBeTruthy();
+    expect(document.body.textContent).toContain(registryFieldHelp.accessCodeMasked);
+    expect(document.body.textContent).toContain(registryFieldHelp.legalForm);
+    expect(document.body.textContent).toContain(registryFieldHelp.sede);
+    expect(document.body.textContent).toContain(registryFieldHelp.cae);
 
     // The full código de acesso is absent everywhere in the rendered tree.
     expect(container.textContent).not.toContain(FULL_CODE);
@@ -621,6 +631,9 @@ describe('RegistryProvenance — structured inscriptions', () => {
     // Deliberation date + forma de obrigar.
     expect(screen.getByText('2026-05-11')).toBeTruthy();
     expect(screen.getByText('Obriga-se com a assinatura de um gerente.')).toBeTruthy();
+    expect(document.body.textContent).toContain(registryFieldHelp.naturezaJuridica);
+    expect(document.body.textContent).toContain(registryFieldHelp.fiscalYearEnd);
+    expect(document.body.textContent).toContain(registryFieldHelp.formaObrigar);
   });
 
   it('keeps the raw text one "texto integral" toggle away when structured, and shows it plainly when not', async () => {

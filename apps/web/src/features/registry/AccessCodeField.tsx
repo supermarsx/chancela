@@ -18,6 +18,7 @@ import { useState } from 'react';
 import type { SVGProps } from 'react';
 import { Button, Field, Input } from '../../ui';
 import { useT } from '../../i18n';
+import { registryFieldHelp } from './fieldHelp';
 
 interface Props {
   id: string;
@@ -83,6 +84,7 @@ export function AccessCodeField({ id, value, onChange, hint, error }: Props) {
       label={t('registry.accessCode.label')}
       htmlFor={id}
       hint={hint ?? t('registry.accessCode.hint')}
+      help={registryFieldHelp.accessCode}
       error={error}
     >
       <div

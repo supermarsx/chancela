@@ -17,9 +17,10 @@ import { useEntityRegistry } from '../../api/hooks';
 import { legalFormLabel } from '../../api/labels';
 import { ApiError } from '../../api/client';
 import { useT } from '../../i18n';
-import { Badge, Card, Digest, EmptyState, ErrorNote, Loading, Truncate } from '../../ui';
+import { Badge, Card, Digest, EmptyState, ErrorNote, FieldHelp, Loading, Truncate } from '../../ui';
 import { CaeRefList } from '../cae/CaeRefList';
 import { AnotacoesList, InscriptionDetailBody } from './InscriptionDetail';
+import { registryFieldHelp } from './fieldHelp';
 import type {
   RegistryEventView,
   RegistryExtractView,
@@ -35,16 +36,27 @@ import type {
 function Row({
   term,
   wide,
+  help,
   children,
 }: {
   term: string;
   wide?: boolean;
+  help?: string;
   children: React.ReactNode;
 }) {
   if (children === null || children === undefined || children === '') return null;
   return (
     <div className={wide ? 'deflist__wide' : undefined}>
-      <dt>{term}</dt>
+      <dt>
+        {help ? (
+          <span className="field__labelrow">
+            <span>{term}</span>
+            <FieldHelp text={help} />
+          </span>
+        ) : (
+          term
+        )}
+      </dt>
       <dd>{children}</dd>
     </div>
   );
@@ -153,24 +165,28 @@ function ExtractBody({ extract }: { extract: RegistryExtractView }) {
     <div className="stack">
       <Card title={t('registry.provenance.title')} actions={<ValidityBadge provenance={p} />}>
         <dl className="deflist">
-          <Row term={t('registry.provenance.accessCode')}>
+          <Row term={t('registry.provenance.accessCode')} help={registryFieldHelp.accessCodeMasked}>
             <code className="mono">{p.access_code_masked}</code>
           </Row>
-          <Row term={t('registry.provenance.retrievedAt')}>
+          <Row term={t('registry.provenance.retrievedAt')} help={registryFieldHelp.retrievedAt}>
             <span className="mono">{p.retrieved_at}</span>
           </Row>
-          <Row term={t('registry.provenance.conservatoria')}>{p.conservatoria}</Row>
-          <Row term={t('registry.provenance.oficial')}>{p.oficial}</Row>
-          <Row term={t('registry.provenance.subscribedOn')}>
+          <Row term={t('registry.provenance.conservatoria')} help={registryFieldHelp.conservatoria}>
+            {p.conservatoria}
+          </Row>
+          <Row term={t('registry.provenance.oficial')} help={registryFieldHelp.oficial}>
+            {p.oficial}
+          </Row>
+          <Row term={t('registry.provenance.subscribedOn')} help={registryFieldHelp.subscribedOn}>
             {p.subscribed_on ? <span className="mono">{p.subscribed_on}</span> : null}
           </Row>
-          <Row term={t('registry.provenance.validUntil')}>
+          <Row term={t('registry.provenance.validUntil')} help={registryFieldHelp.validUntil}>
             {p.valid_until ? <span className="mono">{p.valid_until}</span> : null}
           </Row>
-          <Row term={t('registry.provenance.source')}>
+          <Row term={t('registry.provenance.source')} help={registryFieldHelp.source}>
             <Truncate text={p.source_url} href={p.source_url} mono />
           </Row>
-          <Row term={t('registry.provenance.digest')}>
+          <Row term={t('registry.provenance.digest')} help={registryFieldHelp.digest}>
             <Digest value={p.raw_digest} />
           </Row>
         </dl>
@@ -178,23 +194,34 @@ function ExtractBody({ extract }: { extract: RegistryExtractView }) {
 
       <Card title={t('registry.registryData')}>
         <dl className="deflist deflist--pairs">
-          <Row term={t('registry.field.firma')} wide>
+          <Row term={t('registry.field.firma')} help={registryFieldHelp.firma} wide>
             {extract.firma}
           </Row>
-          <Row term={t('registry.field.nipc')}>
+          <Row term={t('registry.field.nipc')} help={registryFieldHelp.nipc}>
             {extract.nipc ? <code className="mono">{extract.nipc}</code> : null}
           </Row>
-          <Row term={t('registry.field.matricula')}>{extract.matricula}</Row>
-          <Row term={t('registry.field.legalForm')}>{formaJuridica}</Row>
-          <Row term={t('registry.field.dataConstituicao')}>{extract.data_constituicao}</Row>
-          <Row term={t('registry.field.capital')}>{extract.capital}</Row>
-          <Row term={t('registry.field.sede')} wide>
+          <Row term={t('registry.field.matricula')} help={registryFieldHelp.matricula}>
+            {extract.matricula}
+          </Row>
+          <Row term={t('registry.field.legalForm')} help={registryFieldHelp.legalForm}>
+            {formaJuridica}
+          </Row>
+          <Row
+            term={t('registry.field.dataConstituicao')}
+            help={registryFieldHelp.dataConstituicao}
+          >
+            {extract.data_constituicao}
+          </Row>
+          <Row term={t('registry.field.capital')} help={registryFieldHelp.capital}>
+            {extract.capital}
+          </Row>
+          <Row term={t('registry.field.sede')} help={registryFieldHelp.sede} wide>
             {extract.sede}
           </Row>
-          <Row term={t('registry.field.objeto')} wide>
+          <Row term={t('registry.field.objeto')} help={registryFieldHelp.objeto} wide>
             {extract.objeto}
           </Row>
-          <Row term={t('registry.field.cae')} wide>
+          <Row term={t('registry.field.cae')} help={registryFieldHelp.cae} wide>
             {extract.cae.length > 0 ? <CaeRefList refs={extract.cae} /> : null}
           </Row>
         </dl>

@@ -5,6 +5,7 @@ import { renderWithProviders, fetchTable } from '../../test/utils';
 import { EntitiesPage } from './EntitiesPage';
 import { NewEntityPage } from './NewEntityPage';
 import { EntityDetailPage } from './EntityDetailPage';
+import { entityFieldHelp } from './fieldHelp';
 import type { Entity } from '../../api/types';
 
 const ENTITY: Entity = {
@@ -117,6 +118,17 @@ describe('EntitiesPage', () => {
 });
 
 describe('NewEntityPage', () => {
+  it('adds inline help to core entity identity fields', () => {
+    vi.stubGlobal('fetch', fetchTable([]));
+    renderWithProviders(<NewEntityPage />, ['/entidades/nova']);
+
+    expect(screen.getAllByRole('button', { name: 'Ajuda' }).length).toBeGreaterThanOrEqual(4);
+    expect(document.body.textContent).toContain(entityFieldHelp.nipc);
+    expect(document.body.textContent).toContain(entityFieldHelp.seat);
+    expect(document.body.textContent).toContain(entityFieldHelp.legalForm);
+    expect(document.body.textContent).toContain(entityFieldHelp.fiscalYearEnd);
+  });
+
   it('creates an entity and navigates to its detail page', async () => {
     const calls: { url: string; body: unknown }[] = [];
     const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -262,6 +274,25 @@ describe('NewEntityPage', () => {
 });
 
 describe('EntityDetailPage', () => {
+  it('adds inline help to read-only identity and fiscal-year detail fields', async () => {
+    const { fn } = entityDetailFetch({ ...ENTITY, fiscal_year_end: null });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/entidades/:id" element={<EntityDetailPage />} />
+      </Routes>,
+      ['/entidades/new-ent-1'],
+    );
+
+    expect((await screen.findAllByText('12-31 (por omissão)')).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Ajuda' }).length).toBeGreaterThanOrEqual(5);
+    expect(document.body.textContent).toContain(entityFieldHelp.nipc);
+    expect(document.body.textContent).toContain(entityFieldHelp.seat);
+    expect(document.body.textContent).toContain(entityFieldHelp.legalForm);
+    expect(document.body.textContent).toContain(entityFieldHelp.fiscalYearEnd);
+  });
+
   it('displays the default fiscal-year end and persists a custom date', async () => {
     const { fn, calls } = entityDetailFetch({ ...ENTITY, fiscal_year_end: null });
     vi.stubGlobal('fetch', fn);
