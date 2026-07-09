@@ -7,9 +7,9 @@
 //! - **verify-before-trust** — an imported bundle or a restore archive is verified *before* it is
 //!   ever persisted or swapped in; a broken/forged bundle is **quarantined** (isolated, read-only,
 //!   under its ORIGINAL ids), a bad backup is **refused** (the live store untouched);
-//! - **no-secrets export** — a bundle carries only entity/book/act/document/event data; the store
-//!   crate has no access to `users.json`, sessions, or attestation-private material, so a secret
-//!   *cannot structurally* enter a bundle (test-enforced);
+//! - **no-secrets export** — a bundle carries only entity/book/act/document/signed-document/event
+//!   data; the store crate has no access to `users.json`, sessions, or attestation-private
+//!   material, so a secret *cannot structurally* enter a bundle (test-enforced);
 //! - **atomic wipe** — a destructive reset is all-or-rollback (one transaction), never a partial
 //!   half-wipe, and always after the export-first safety rail when requested;
 //! - **nothing silently erased** — every recovery/lifecycle op emits a chained audit event
@@ -58,6 +58,9 @@ pub const RESTORED_EVENT_KIND: &str = "ledger.restored";
 pub const REINITIALIZED_EVENT_KIND: &str = "ledger.reinitialized";
 /// Sole NEW audit-event kind (§2.11): a domain-wipe that PRESERVES the ledger records itself here.
 pub const DATA_WIPED_EVENT_KIND: &str = "data.wiped";
+const PDF_CONTENT_TYPE: &str = "application/pdf";
+const SIGNED_PDF_B_B_PROFILE: &str = "application/pdf; profile=PAdES-B-B";
+const SIGNED_PDF_B_T_PROFILE: &str = "application/pdf; profile=PAdES-B-T";
 
 // =================================================================================================
 // Bundle format (export) — §2.4
@@ -124,6 +127,78 @@ pub struct BundleManifest {
     pub bundle_digest: String,
     /// An optional exporter attestation over `bundle_digest` (always `None` in v1).
     pub signature: Option<BundleSignature>,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleDocumentMetadata {
+    format: &'static str,
+    sidecar: &'static str,
+    owner: BundleDocumentOwner,
+    document: BundleBaseDocumentMetadata,
+    final_artifact: BundleFinalArtifact,
+    signed: Option<BundleSignedDocumentRef>,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleDocumentOwner {
+    kind: &'static str,
+    id: String,
+    book_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    act_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleBaseDocumentMetadata {
+    id: String,
+    role: &'static str,
+    template_id: String,
+    profile: String,
+    created_at: String,
+    pdf_digest: String,
+    pdf_path: String,
+    content_type: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleFinalArtifact {
+    kind: &'static str,
+    path: String,
+    sha256: String,
+    content_type: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleSignedDocumentRef {
+    signed_pdf_digest: String,
+    signature_family: String,
+    evidentiary_level: String,
+    signing_time: String,
+    signed_at: String,
+    signed_pdf_path: String,
+    signing_metadata_path: String,
+    timestamp_token_present: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct BundleSigningMetadata {
+    format: &'static str,
+    sidecar: &'static str,
+    act_id: String,
+    document_id: String,
+    source_document_present: bool,
+    source_document_path: String,
+    signed_pdf_path: String,
+    signed_pdf_digest: String,
+    signature_family: String,
+    evidentiary_level: String,
+    trusted_list_status: Option<String>,
+    signer_cert_subject: Option<String>,
+    signing_time: String,
+    signed_at: String,
+    signer_certificate_sha256: String,
+    timestamp_token_present: bool,
+    timestamp_token_sha256: Option<String>,
 }
 
 /// The result of [`Store::export_book`]: the retained archive path, the raw bytes (for download),
@@ -1160,10 +1235,84 @@ impl Store {
             events_jsonl.push(b'\n');
         }
         members.push(("events.jsonl".to_owned(), events_jsonl));
-        // Latest generated document per act (deterministic by act id).
+        // Book-level instruments (termo de abertura / encerramento) are keyed by the book id cast
+        // to ActId in the documents table. Include every such preserved PDF, oldest first, so the
+        // opening term is never lost when a later closing term also exists.
+        let mut exported_document_ids = BTreeSet::new();
+        let book_document_scope = chancela_core::ActId(book_id.0);
+        let book_signed = self.signed_document_for_act(book_document_scope)?;
+        for doc in self.documents_for_act(book_document_scope)? {
+            let matching_signed = book_signed
+                .as_ref()
+                .filter(|signed| signed.document_id == doc.id)
+                .cloned();
+            append_document_members(
+                &mut members,
+                &mut exported_document_ids,
+                "book",
+                book_id.to_string(),
+                book_id.to_string(),
+                None,
+                doc,
+                matching_signed,
+            )?;
+        }
+        if let Some(signed) = book_signed {
+            if !exported_document_ids.contains(&signed.document_id) {
+                match self.document_by_id(&signed.document_id)? {
+                    Some(doc) => append_document_members(
+                        &mut members,
+                        &mut exported_document_ids,
+                        "book",
+                        book_id.to_string(),
+                        book_id.to_string(),
+                        None,
+                        doc,
+                        Some(signed),
+                    )?,
+                    None => append_signed_members(&mut members, &signed, false)?,
+                }
+            }
+        }
+
+        // Latest generated document per act (deterministic by act id). If a signed row references
+        // a different source document, include that signed base document as well so the final PAdES
+        // artifact and the base artifact metadata travel together.
         for act in &acts {
+            let signed = self.signed_document_for_act(act.id)?;
             if let Some(doc) = self.document_for_act(act.id)? {
-                members.push((format!("documents/{}.pdf", doc.id), doc.pdf_bytes));
+                let matching_signed = signed
+                    .as_ref()
+                    .filter(|signed| signed.document_id == doc.id)
+                    .cloned();
+                append_document_members(
+                    &mut members,
+                    &mut exported_document_ids,
+                    "act",
+                    act.id.to_string(),
+                    book_id.to_string(),
+                    Some(act.id.to_string()),
+                    doc,
+                    matching_signed,
+                )?;
+            }
+            if let Some(signed) = signed {
+                if exported_document_ids.contains(&signed.document_id) {
+                    continue;
+                }
+                match self.document_by_id(&signed.document_id)? {
+                    Some(doc) => append_document_members(
+                        &mut members,
+                        &mut exported_document_ids,
+                        "act",
+                        act.id.to_string(),
+                        book_id.to_string(),
+                        Some(act.id.to_string()),
+                        doc,
+                        Some(signed),
+                    )?,
+                    None => append_signed_members(&mut members, &signed, false)?,
+                }
             }
         }
 
@@ -1289,6 +1438,162 @@ struct BuiltBundle {
 // =================================================================================================
 // Free helpers
 // =================================================================================================
+
+fn append_document_members(
+    members: &mut Vec<(String, Vec<u8>)>,
+    exported_document_ids: &mut BTreeSet<String>,
+    owner_kind: &'static str,
+    owner_id: String,
+    book_id: String,
+    act_id: Option<String>,
+    doc: crate::StoredDocument,
+    signed: Option<crate::StoredSignedDocument>,
+) -> Result<(), StoreError> {
+    if !exported_document_ids.insert(doc.id.clone()) {
+        return Ok(());
+    }
+
+    let metadata =
+        document_metadata_bytes(owner_kind, owner_id, book_id, act_id, &doc, signed.as_ref())?;
+    let doc_id = doc.id.clone();
+    members.push((format!("documents/{doc_id}.pdf"), doc.pdf_bytes));
+    members.push((format!("documents/{doc_id}.json"), metadata));
+    if let Some(signed) = signed {
+        append_signed_members(members, &signed, true)?;
+    }
+    Ok(())
+}
+
+fn append_signed_members(
+    members: &mut Vec<(String, Vec<u8>)>,
+    signed: &crate::StoredSignedDocument,
+    source_document_present: bool,
+) -> Result<(), StoreError> {
+    let doc_id = &signed.document_id;
+    members.push((
+        format!("signed/{doc_id}.pdf"),
+        signed.signed_pdf_bytes.clone(),
+    ));
+    members.push((
+        format!("signed/{doc_id}.json"),
+        signing_metadata_bytes(signed, source_document_present)?,
+    ));
+    Ok(())
+}
+
+fn document_metadata_bytes(
+    owner_kind: &'static str,
+    owner_id: String,
+    book_id: String,
+    act_id: Option<String>,
+    doc: &crate::StoredDocument,
+    signed: Option<&crate::StoredSignedDocument>,
+) -> Result<Vec<u8>, StoreError> {
+    let pdf_path = format!("documents/{}.pdf", doc.id);
+    let final_artifact = match signed {
+        Some(signed) => BundleFinalArtifact {
+            kind: "signed_pdf",
+            path: format!("signed/{}.pdf", doc.id),
+            sha256: signed.signed_pdf_digest.clone(),
+            content_type: signed_pdf_profile(signed),
+        },
+        None => BundleFinalArtifact {
+            kind: "base_pdf",
+            path: pdf_path.clone(),
+            sha256: doc.pdf_digest.clone(),
+            content_type: PDF_CONTENT_TYPE,
+        },
+    };
+    let signed = signed.map(|signed| BundleSignedDocumentRef {
+        signed_pdf_digest: signed.signed_pdf_digest.clone(),
+        signature_family: signed.signature_family.clone(),
+        evidentiary_level: signed.evidentiary_level.clone(),
+        signing_time: format_rfc3339(signed.signing_time),
+        signed_at: format_rfc3339(signed.signed_at),
+        signed_pdf_path: format!("signed/{}.pdf", doc.id),
+        signing_metadata_path: format!("signed/{}.json", doc.id),
+        timestamp_token_present: signed.timestamp_token_der.is_some(),
+    });
+    serde_json::to_vec_pretty(&BundleDocumentMetadata {
+        format: BUNDLE_FORMAT,
+        sidecar: "document",
+        owner: BundleDocumentOwner {
+            kind: owner_kind,
+            id: owner_id,
+            book_id,
+            act_id,
+        },
+        document: BundleBaseDocumentMetadata {
+            id: doc.id.clone(),
+            role: document_role(owner_kind, &doc.template_id),
+            template_id: doc.template_id.clone(),
+            profile: doc.profile.clone(),
+            created_at: format_rfc3339(doc.created_at),
+            pdf_digest: doc.pdf_digest.clone(),
+            pdf_path,
+            content_type: PDF_CONTENT_TYPE,
+        },
+        final_artifact,
+        signed,
+    })
+    .map_err(StoreError::from)
+}
+
+fn signing_metadata_bytes(
+    signed: &crate::StoredSignedDocument,
+    source_document_present: bool,
+) -> Result<Vec<u8>, StoreError> {
+    serde_json::to_vec_pretty(&BundleSigningMetadata {
+        format: BUNDLE_FORMAT,
+        sidecar: "signed_document",
+        act_id: signed.act_id.to_string(),
+        document_id: signed.document_id.clone(),
+        source_document_present,
+        source_document_path: format!("documents/{}.pdf", signed.document_id),
+        signed_pdf_path: format!("signed/{}.pdf", signed.document_id),
+        signed_pdf_digest: signed.signed_pdf_digest.clone(),
+        signature_family: signed.signature_family.clone(),
+        evidentiary_level: signed.evidentiary_level.clone(),
+        trusted_list_status: signed.trusted_list_status.clone(),
+        signer_cert_subject: signed.signer_cert_subject.clone(),
+        signing_time: format_rfc3339(signed.signing_time),
+        signed_at: format_rfc3339(signed.signed_at),
+        signer_certificate_sha256: hex(&Sha256::digest(&signed.signer_cert_der)),
+        timestamp_token_present: signed.timestamp_token_der.is_some(),
+        timestamp_token_sha256: signed
+            .timestamp_token_der
+            .as_ref()
+            .map(|token| hex(&Sha256::digest(token))),
+    })
+    .map_err(StoreError::from)
+}
+
+fn document_role(owner_kind: &str, template_id: &str) -> &'static str {
+    if owner_kind == "book" {
+        let id = template_id.to_ascii_lowercase();
+        if id.contains("termo-abertura") {
+            return "opening_term";
+        }
+        if id.contains("termo-encerramento") {
+            return "closing_term";
+        }
+        return "book_document";
+    }
+    "act_document"
+}
+
+fn signed_pdf_profile(signed: &crate::StoredSignedDocument) -> &'static str {
+    if signed.timestamp_token_der.is_some() {
+        SIGNED_PDF_B_T_PROFILE
+    } else {
+        SIGNED_PDF_B_B_PROFILE
+    }
+}
+
+fn format_rfc3339(at: OffsetDateTime) -> String {
+    at.format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+}
 
 /// The domain aggregate table names cleared by a wipe/factory reset (excludes `events`).
 fn domain_table_names() -> Vec<String> {

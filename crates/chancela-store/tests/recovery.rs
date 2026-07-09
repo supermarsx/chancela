@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use chancela_core::{Act, ActId, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
 use chancela_ledger::{ChainId, Ledger};
 use chancela_store::recovery::{CollisionPolicy, ImportVerdict, ResetScope, StartOverScope};
-use chancela_store::{Store, StoreError, StoredDocument};
+use chancela_store::{Store, StoreError, StoredDocument, StoredSignedDocument};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
@@ -82,6 +82,23 @@ fn sample_document(id: &str, act_id: ActId, bytes: &[u8]) -> StoredDocument {
         profile: "csc/sq".to_string(),
         created_at: OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap(),
         pdf_bytes: bytes.to_vec(),
+    }
+}
+
+fn sample_signed_document(act_id: ActId, document_id: &str, bytes: &[u8]) -> StoredSignedDocument {
+    StoredSignedDocument {
+        act_id,
+        document_id: document_id.to_string(),
+        signed_pdf_digest: hex(&Sha256::digest(bytes)),
+        signature_family: "ChaveMovelDigital".to_string(),
+        evidentiary_level: "Qualified".to_string(),
+        trusted_list_status: Some("Granted".to_string()),
+        signer_cert_subject: Some("CN=Amelia Marques".to_string()),
+        signing_time: OffsetDateTime::from_unix_timestamp(1_770_000_100).unwrap(),
+        signed_at: OffsetDateTime::from_unix_timestamp(1_770_000_120).unwrap(),
+        signer_cert_der: vec![0x30, 0x82, 0x01, 0x02],
+        timestamp_token_der: Some(vec![0x30, 0x03, 0x01, 0x01, 0xff]),
+        signed_pdf_bytes: bytes.to_vec(),
     }
 }
 
@@ -210,6 +227,137 @@ fn export_import_round_trip_is_verified() {
     assert_eq!(imports.len(), 1);
     assert!(matches!(imports[0].verdict, ImportVerdict::Verified));
     assert!(dst.imported_bundle(&outcome.import_id).unwrap().is_some());
+}
+
+#[test]
+fn export_bundle_includes_signed_document_artifacts() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, book, act) = seed(&store);
+    let signed_bytes = b"%PDF-1.7 signed ata\n%%EOF";
+    let signed = sample_signed_document(act.id, "doc-1", signed_bytes);
+    store
+        .persist(|tx| tx.upsert_signed_document(&signed))
+        .expect("persist signed document");
+
+    let export = store
+        .export_book(&mut ledger, book.id, dir.path(), "amelia.marques", at())
+        .expect("export");
+
+    assert_eq!(
+        zip_member(&export.bytes, "documents/doc-1.pdf").as_deref(),
+        Some(FAKE_PDF)
+    );
+    assert_eq!(
+        zip_member(&export.bytes, "signed/doc-1.pdf").as_deref(),
+        Some(signed_bytes.as_slice())
+    );
+
+    let document_sidecar: serde_json::Value =
+        serde_json::from_slice(&zip_member(&export.bytes, "documents/doc-1.json").unwrap())
+            .unwrap();
+    assert_eq!(document_sidecar["sidecar"], "document");
+    assert_eq!(document_sidecar["owner"]["kind"], "act");
+    assert_eq!(document_sidecar["final_artifact"]["kind"], "signed_pdf");
+    assert_eq!(
+        document_sidecar["final_artifact"]["path"],
+        "signed/doc-1.pdf"
+    );
+    assert_eq!(
+        document_sidecar["final_artifact"]["content_type"],
+        "application/pdf; profile=PAdES-B-T"
+    );
+    assert_eq!(
+        document_sidecar["signed"]["signing_metadata_path"],
+        "signed/doc-1.json"
+    );
+    assert_eq!(document_sidecar["signed"]["timestamp_token_present"], true);
+
+    let signing_sidecar: serde_json::Value =
+        serde_json::from_slice(&zip_member(&export.bytes, "signed/doc-1.json").unwrap()).unwrap();
+    assert_eq!(signing_sidecar["sidecar"], "signed_document");
+    assert_eq!(signing_sidecar["act_id"], act.id.to_string());
+    assert_eq!(signing_sidecar["document_id"], "doc-1");
+    assert_eq!(signing_sidecar["source_document_present"], true);
+    assert_eq!(signing_sidecar["trusted_list_status"], "Granted");
+    assert_eq!(signing_sidecar["timestamp_token_present"], true);
+    assert_eq!(
+        signing_sidecar["timestamp_token_sha256"],
+        hex(&Sha256::digest([0x30, 0x03, 0x01, 0x01, 0xff]))
+    );
+}
+
+#[test]
+fn export_bundle_keeps_all_book_level_term_documents() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, book, _act) = seed(&store);
+    let book_scope = ActId(book.id.0);
+
+    let mut opening = sample_document("opening-term", book_scope, b"%PDF opening term\n%%EOF");
+    opening.template_id = "csc-termo-abertura/v1".to_string();
+    opening.created_at = OffsetDateTime::from_unix_timestamp(1_770_000_010).unwrap();
+    let signed_opening_bytes = b"%PDF signed opening term\n%%EOF";
+    let signed_opening = sample_signed_document(book_scope, "opening-term", signed_opening_bytes);
+
+    let mut closing = sample_document("closing-term", book_scope, b"%PDF closing term\n%%EOF");
+    closing.template_id = "csc-termo-encerramento/v1".to_string();
+    closing.created_at = OffsetDateTime::from_unix_timestamp(1_770_000_020).unwrap();
+
+    store
+        .persist(|tx| {
+            tx.upsert_document(&opening)?;
+            tx.upsert_document(&closing)?;
+            tx.upsert_signed_document(&signed_opening)
+        })
+        .expect("persist book-level terms");
+
+    let export = store
+        .export_book(&mut ledger, book.id, dir.path(), "amelia.marques", at())
+        .expect("export");
+
+    assert_eq!(
+        zip_member(&export.bytes, "documents/opening-term.pdf").as_deref(),
+        Some(b"%PDF opening term\n%%EOF".as_slice())
+    );
+    assert_eq!(
+        zip_member(&export.bytes, "documents/closing-term.pdf").as_deref(),
+        Some(b"%PDF closing term\n%%EOF".as_slice())
+    );
+
+    let opening_sidecar: serde_json::Value =
+        serde_json::from_slice(&zip_member(&export.bytes, "documents/opening-term.json").unwrap())
+            .unwrap();
+    assert_eq!(opening_sidecar["owner"]["kind"], "book");
+    assert_eq!(opening_sidecar["owner"]["book_id"], book.id.to_string());
+    assert_eq!(opening_sidecar["document"]["role"], "opening_term");
+    assert_eq!(opening_sidecar["final_artifact"]["kind"], "signed_pdf");
+    assert_eq!(
+        opening_sidecar["final_artifact"]["path"],
+        "signed/opening-term.pdf"
+    );
+    assert_eq!(
+        opening_sidecar["signed"]["signing_metadata_path"],
+        "signed/opening-term.json"
+    );
+
+    assert_eq!(
+        zip_member(&export.bytes, "signed/opening-term.pdf").as_deref(),
+        Some(signed_opening_bytes.as_slice())
+    );
+    let opening_signing_sidecar: serde_json::Value =
+        serde_json::from_slice(&zip_member(&export.bytes, "signed/opening-term.json").unwrap())
+            .unwrap();
+    assert_eq!(opening_signing_sidecar["sidecar"], "signed_document");
+    assert_eq!(opening_signing_sidecar["act_id"], book_scope.to_string());
+    assert_eq!(opening_signing_sidecar["document_id"], "opening-term");
+    assert_eq!(opening_signing_sidecar["source_document_present"], true);
+
+    let closing_sidecar: serde_json::Value =
+        serde_json::from_slice(&zip_member(&export.bytes, "documents/closing-term.json").unwrap())
+            .unwrap();
+    assert_eq!(closing_sidecar["owner"]["kind"], "book");
+    assert_eq!(closing_sidecar["document"]["role"], "closing_term");
 }
 
 #[test]
