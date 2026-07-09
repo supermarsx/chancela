@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders, fetchTable } from '../../test/utils';
 
@@ -120,6 +120,120 @@ describe('BooksPage', () => {
     expect(abrir.getAttribute('href')).toBe('/livros/novo');
     // No inline open-book form on the list page.
     expect(screen.queryByLabelText('Tipo de livro')).toBeNull();
+  });
+
+  it('filters the books list by search, state and type, then clears back to all rows', async () => {
+    const books: BookView[] = [
+      { ...BOOK, id: 'book-ag', purpose: 'Atas da Assembleia', state: 'Open' },
+      {
+        ...BOOK,
+        id: 'book-gerencia',
+        kind: 'GerenciaAdministracao',
+        state: 'Closed',
+        purpose: 'Atas da Gerência',
+        opening_date: '2025-01-01',
+        closing_date: '2025-12-31',
+        last_ata_number: 4,
+      },
+      {
+        ...BOOK,
+        id: 'book-condominio',
+        kind: 'Condominio',
+        state: 'Created',
+        purpose: 'Administração do prédio',
+        opening_date: '2026-06-01',
+      },
+    ];
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/books', body: books }]));
+    renderWithProviders(<BooksPage />, ['/livros']);
+
+    expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
+    expect(screen.getByText('Atas da Gerência')).toBeTruthy();
+    expect(screen.getByText('Administração do prédio')).toBeTruthy();
+    expect(screen.getByLabelText('A mostrar 3 de 3 livros')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: 'gerencia' } });
+    await waitFor(() => expect(screen.queryByText('Atas da Assembleia')).toBeNull());
+    expect(screen.getByText('Atas da Gerência')).toBeTruthy();
+    expect(screen.queryByText('Administração do prédio')).toBeNull();
+    expect(screen.getByLabelText('A mostrar 1 de 3 livros')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros de livros' }));
+    await waitFor(() => expect(screen.getByText('Atas da Assembleia')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'Created' } });
+    expect(await screen.findByText('Administração do prédio')).toBeTruthy();
+    expect(screen.queryByText('Atas da Assembleia')).toBeNull();
+    expect(screen.queryByText('Atas da Gerência')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'Condominio' } });
+    expect(screen.getByText('Administração do prédio')).toBeTruthy();
+    expect(screen.getByLabelText('A mostrar 1 de 3 livros')).toBeTruthy();
+  });
+
+  it('keeps advanced book filters collapsed and filters by activity/date when expanded', async () => {
+    const books: BookView[] = [
+      { ...BOOK, id: 'book-empty', purpose: 'Sem atas ainda', opening_date: '2024-01-01' },
+      {
+        ...BOOK,
+        id: 'book-active',
+        purpose: 'Atas em curso',
+        opening_date: '2026-02-01',
+        last_ata_number: 7,
+      },
+      {
+        ...BOOK,
+        id: 'book-successor',
+        purpose: 'Livro reiniciado',
+        opening_date: '2026-03-01',
+        predecessor: 'book-old',
+      },
+    ];
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/books', body: books }]));
+    const { container } = renderWithProviders(<BooksPage />, ['/livros']);
+
+    expect(await screen.findByText('Sem atas ainda')).toBeTruthy();
+    const advanced = container.querySelector('details.filter-advanced') as HTMLDetailsElement;
+    expect(advanced.open).toBe(false);
+
+    fireEvent.click(screen.getByText('Filtros avançados'));
+    expect(advanced.open).toBe(true);
+
+    const advancedFilters = within(advanced);
+    fireEvent.change(advancedFilters.getByLabelText('Atividade'), {
+      target: { value: 'has-acts' },
+    });
+    expect(await screen.findByText('Atas em curso')).toBeTruthy();
+    expect(screen.queryByText('Sem atas ainda')).toBeNull();
+    expect(screen.queryByText('Livro reiniciado')).toBeNull();
+
+    fireEvent.change(advancedFilters.getByLabelText('Atividade'), { target: { value: 'all' } });
+    fireEvent.change(advancedFilters.getByLabelText('Aberto desde'), {
+      target: { value: '2026-02-15' },
+    });
+    expect(await screen.findByText('Livro reiniciado')).toBeTruthy();
+    expect(screen.queryByText('Atas em curso')).toBeNull();
+    expect(screen.queryByText('Sem atas ainda')).toBeNull();
+  });
+
+  it('shows an empty filtered state without losing the clear action', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/books', body: [BOOK] }]));
+    renderWithProviders(<BooksPage />, ['/livros']);
+
+    expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Pesquisar'), {
+      target: { value: 'nada disto existe' },
+    });
+
+    expect(await screen.findByText('Sem resultados')).toBeTruthy();
+    expect(
+      screen.getByText('Altere a pesquisa ou os filtros para voltar a ver livros.'),
+    ).toBeTruthy();
+    const clear = screen.getByRole('button', { name: 'Limpar filtros de livros' });
+    expect((clear as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(clear);
+    expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
   });
 });
 
