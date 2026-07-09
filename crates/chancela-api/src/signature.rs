@@ -55,9 +55,10 @@ use chancela_csc::{
 use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_signature};
 use chancela_signing::{
     CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession, RemoteInitiate,
-    RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider, TrustPolicy,
+    RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider,
+    TimestampTrustDecision, TimestampTrustPolicy, TimestampTrustReport, TrustPolicy,
     TrustedListStatus, TslTrustPolicy, attach_pdf_dss, attach_pdf_revocation_evidence, cmd_confirm,
-    cmd_initiate, sign_pdf_cc, timestamp_pdf_with_url,
+    cmd_initiate, sign_pdf_cc, timestamp_pdf_with_url, validate_timestamp_trust,
 };
 use chancela_smartcard::Pkcs11Token;
 use chancela_store::{PendingCmdSession, StoredDocument, StoredSignedDocument};
@@ -263,8 +264,45 @@ pub struct SignatureEvidenceStatus {
     /// Explicit long-term evidence milestones and gaps. B-LT/B-LTA are reported as not implemented
     /// rather than silently implied.
     pub long_term_status: Vec<LongTermEvidenceStatus>,
+    /// Technical timestamp-trust diagnostics from the RFC 3161 token and authenticated QTST
+    /// evidence, when the full validator inputs were persisted for this signed artifact.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp_trust: Option<TimestampTrustEvidenceStatus>,
     /// Scope marker for consumers: these fields describe technical evidence only.
     pub status_scope: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TimestampTrustEvidenceStatus {
+    /// `"accepted"` or `"rejected"` from technical timestamp-trust validation.
+    pub decision: &'static str,
+    /// `TSTInfo.policy` OID observed in the timestamp token.
+    pub policy_oid: String,
+    /// Whether the policy OID matched the local accepted-policy set; `None` means no local policy
+    /// OID allow-list was configured.
+    pub policy_oid_accepted: Option<bool>,
+    /// Whether the timestamp token exposed the TSA signing certificate.
+    pub tsa_certificate_embedded: bool,
+    pub embedded_certificate_count: usize,
+    /// Trusted-list/QTST status after unauthenticated granted statuses are downgraded.
+    pub qtst_status: &'static str,
+    /// Whether the QTST result came from an authenticated trusted list.
+    pub qtst_authenticated: bool,
+    pub qtst_matches: Vec<TimestampQtstMatchEvidenceStatus>,
+    pub trust_anchor_count: usize,
+    pub certificate_path_valid: bool,
+    pub certificate_path_anchor_index: Option<usize>,
+    pub certificate_path_len: Option<usize>,
+    pub failure_reasons: Vec<String>,
+    pub status_scope: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TimestampQtstMatchEvidenceStatus {
+    pub provider_name: String,
+    pub service_name: String,
+    pub granted_and_effective: bool,
+    pub trust_anchor_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2831,7 +2869,71 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
         live_revocation_fetching: false,
         legal_b_lt_claimed: false,
         long_term_status,
+        timestamp_trust: signed.and_then(timestamp_trust_status_from_persisted_metadata),
         status_scope: TECHNICAL_EVIDENCE_ONLY,
+    }
+}
+
+fn timestamp_trust_status_from_persisted_metadata(
+    signed: &StoredSignedDocument,
+) -> Option<TimestampTrustEvidenceStatus> {
+    // Current signed-document persistence stores the raw timestamp token but not the verified
+    // `Timestamp` + authenticated `QtstMatchDetails` inputs needed to recompute the full
+    // certificate-path result after restart. Keep the wire/reporting seam explicit and nullable
+    // until those inputs are persisted by the signing completion path.
+    let _ = signed.timestamp_token_der.as_ref()?;
+    None
+}
+
+/// Build the wire/status diagnostics for technical timestamp trust from already-verified
+/// RFC 3161 and authenticated QTST inputs.
+#[allow(dead_code)]
+pub fn timestamp_trust_evidence_status(
+    timestamp: &chancela_tsa::Timestamp,
+    qtst: &chancela_tsl::QtstMatchDetails,
+    policy: &TimestampTrustPolicy,
+) -> TimestampTrustEvidenceStatus {
+    TimestampTrustEvidenceStatus::from(validate_timestamp_trust(timestamp, qtst, policy))
+}
+
+impl From<TimestampTrustReport> for TimestampTrustEvidenceStatus {
+    fn from(report: TimestampTrustReport) -> Self {
+        let decision = match report.decision {
+            TimestampTrustDecision::Accepted => "accepted",
+            TimestampTrustDecision::Rejected => "rejected",
+            _ => "rejected",
+        };
+        let qtst_status = match report.trusted_list_status {
+            TrustedListStatus::Granted => "granted",
+            TrustedListStatus::Withdrawn => "withdrawn",
+            TrustedListStatus::Unknown => "unknown",
+            _ => "unknown",
+        };
+        Self {
+            decision,
+            policy_oid: report.timestamp_policy_oid,
+            policy_oid_accepted: report.policy_oid_accepted,
+            tsa_certificate_embedded: report.tsa_certificate_embedded,
+            embedded_certificate_count: report.embedded_certificate_count,
+            qtst_status,
+            qtst_authenticated: report.trusted_list_authenticated,
+            qtst_matches: report
+                .qtst_matches
+                .into_iter()
+                .map(|m| TimestampQtstMatchEvidenceStatus {
+                    provider_name: m.provider_name,
+                    service_name: m.service_name,
+                    granted_and_effective: m.granted_and_effective,
+                    trust_anchor_count: m.trust_anchor_count,
+                })
+                .collect(),
+            trust_anchor_count: report.trust_anchor_count,
+            certificate_path_valid: report.certificate_path_valid,
+            certificate_path_anchor_index: report.certificate_path_anchor_index,
+            certificate_path_len: report.certificate_path_len,
+            failure_reasons: report.failure_reasons,
+            status_scope: TECHNICAL_EVIDENCE_ONLY,
+        }
     }
 }
 
@@ -3792,7 +3894,53 @@ mod tests {
             ]
         );
         assert_eq!(b_t.dss_revocation_evidence_status, "inspection_unavailable");
+        assert_eq!(b_t.timestamp_trust, None);
         assert_eq!(b_t.status_scope, TECHNICAL_EVIDENCE_ONLY);
+    }
+
+    #[test]
+    fn timestamp_trust_evidence_status_maps_validator_diagnostics_without_legal_claim() {
+        let t = OffsetDateTime::from_unix_timestamp(0).unwrap();
+        let timestamp = chancela_tsa::Timestamp {
+            token_der: b"token".to_vec(),
+            gen_time: t,
+            serial_number: vec![1],
+            policy: "1.2.3.4".to_owned(),
+            tsa_certificate_der: None,
+            embedded_certificate_ders: vec![b"embedded".to_vec()],
+        };
+        let qtst = chancela_tsl::QtstMatchDetails {
+            status: chancela_tsl::QualifiedStatus::Granted,
+            matches: vec![chancela_tsl::QtstServiceMatch {
+                provider_name: "Provider".to_owned(),
+                service_name: "QTST".to_owned(),
+                service_status: chancela_tsl::ServiceStatus::Granted,
+                granted_and_effective: true,
+                trust_anchor_ders: vec![b"anchor".to_vec()],
+            }],
+            trust_anchor_ders: vec![b"anchor".to_vec()],
+            authenticated: true,
+        };
+
+        let status = timestamp_trust_evidence_status(
+            &timestamp,
+            &qtst,
+            &TimestampTrustPolicy::require_one_of(["1.2.3.4"]),
+        );
+
+        assert_eq!(status.decision, "rejected");
+        assert_eq!(status.policy_oid, "1.2.3.4");
+        assert_eq!(status.policy_oid_accepted, Some(true));
+        assert_eq!(status.qtst_status, "granted");
+        assert!(status.qtst_authenticated);
+        assert_eq!(status.qtst_matches.len(), 1);
+        assert_eq!(status.qtst_matches[0].provider_name, "Provider");
+        assert_eq!(status.trust_anchor_count, 1);
+        assert!(!status.certificate_path_valid);
+        assert!(status.failure_reasons.contains(
+            &"timestamp token did not expose an embedded TSA signing certificate".to_owned()
+        ));
+        assert_eq!(status.status_scope, TECHNICAL_EVIDENCE_ONLY);
     }
 
     #[test]

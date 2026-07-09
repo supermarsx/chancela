@@ -193,6 +193,8 @@ struct SignatureEvidence<'a> {
     signature: SignatureMetadataEvidence<'a>,
     signer_certificate: SignerCertificateEvidence<'a>,
     timestamp_token: TimestampTokenEvidence,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timestamp_trust: Option<TimestampTrustEvidenceReport>,
     dss: DssEvidenceReport,
     persisted_validation: PersistedValidationEvidence,
 }
@@ -229,6 +231,32 @@ struct TimestampTokenEvidence {
 }
 
 #[derive(Serialize)]
+struct TimestampTrustEvidenceReport {
+    decision: &'static str,
+    policy_oid: String,
+    policy_oid_accepted: Option<bool>,
+    tsa_certificate_embedded: bool,
+    embedded_certificate_count: usize,
+    qtst_status: &'static str,
+    qtst_authenticated: bool,
+    qtst_matches: Vec<TimestampQtstMatchEvidenceReport>,
+    trust_anchor_count: usize,
+    certificate_path_valid: bool,
+    certificate_path_anchor_index: Option<usize>,
+    certificate_path_len: Option<usize>,
+    failure_reasons: Vec<String>,
+    status_scope: &'static str,
+}
+
+#[derive(Serialize)]
+struct TimestampQtstMatchEvidenceReport {
+    provider_name: String,
+    service_name: String,
+    granted_and_effective: bool,
+    trust_anchor_count: usize,
+}
+
+#[derive(Serialize)]
 struct DssEvidenceReport {
     basis: &'static str,
     present: bool,
@@ -253,6 +281,7 @@ struct PersistedValidationEvidence {
     byte_range_covers_whole_file_except_contents: &'static str,
     signer_certificate_matches_expected_certificate: &'static str,
     signature_timestamp: &'static str,
+    timestamp_trust: &'static str,
     cryptographic_revalidation_at_export: &'static str,
 }
 
@@ -1137,6 +1166,7 @@ fn signature_evidence<'a>(
             path: timestamp_token_path,
             sha256: timestamp_token_sha256,
         },
+        timestamp_trust: None,
         dss: dss_evidence_report(&signed.signed_pdf_bytes, has_timestamp),
         persisted_validation: PersistedValidationEvidence {
             basis: "stored signed document metadata; signed routes persist this row only after SIG-24 validation succeeds",
@@ -1146,6 +1176,11 @@ fn signature_evidence<'a>(
                 "present_and_validated_before_persistence"
             } else {
                 "not_present"
+            },
+            timestamp_trust: if has_timestamp {
+                "not_persisted_full_validator_inputs"
+            } else {
+                "not_applicable"
             },
             cryptographic_revalidation_at_export: "not_performed",
         },

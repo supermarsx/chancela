@@ -2370,6 +2370,30 @@ export interface DssEvidenceStatus {
   inspection_status: string;
 }
 
+export interface TimestampQtstMatchEvidenceStatus {
+  provider_name: string;
+  service_name: string;
+  granted_and_effective: boolean;
+  trust_anchor_count: number;
+}
+
+export interface TimestampTrustEvidenceStatus {
+  decision: 'accepted' | 'rejected';
+  policy_oid: string;
+  policy_oid_accepted: boolean | null;
+  tsa_certificate_embedded: boolean;
+  embedded_certificate_count: number;
+  qtst_status: 'granted' | 'withdrawn' | 'unknown';
+  qtst_authenticated: boolean;
+  qtst_matches: TimestampQtstMatchEvidenceStatus[];
+  trust_anchor_count: number;
+  certificate_path_valid: boolean;
+  certificate_path_anchor_index: number | null;
+  certificate_path_len: number | null;
+  failure_reasons: string[];
+  status_scope: string;
+}
+
 /** Technical PAdES evidence observed for the act; not a legal B-LT/B-LTA conformance claim. */
 export interface SignatureEvidenceStatus {
   current_level: string;
@@ -2382,6 +2406,7 @@ export interface SignatureEvidenceStatus {
   live_revocation_fetching: boolean;
   legal_b_lt_claimed: boolean;
   long_term_status: LongTermEvidenceStatus[];
+  timestamp_trust?: TimestampTrustEvidenceStatus;
   status_scope: string;
 }
 
