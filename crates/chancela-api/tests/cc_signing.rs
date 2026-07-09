@@ -692,7 +692,11 @@ async fn cc_sign_timestamps_when_tsa_configured() {
     let factory = provider_factory(card, Some(issuer));
     let state = state_at(&dir.0, Some(factory), true, true);
     let tsa = MockTsaServer::granted();
-    state.settings.write().await.signing.tsa_url = Some(tsa.url().to_owned());
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.tsa_url = Some(tsa.url().to_owned());
+        settings.signing.tsl_url = None;
+    }
     let (token, _uid) = bootstrap(&state).await;
     let act_id = seal_an_act(&state, &token).await;
 
@@ -754,7 +758,11 @@ async fn cc_dss_attach_api_persists_caller_supplied_local_technical_evidence() {
     let factory = provider_factory(card, Some(issuer));
     let state = state_at(&dir.0, Some(factory), true, true);
     let tsa = MockTsaServer::granted();
-    state.settings.write().await.signing.tsa_url = Some(tsa.url().to_owned());
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.tsa_url = Some(tsa.url().to_owned());
+        settings.signing.tsl_url = None;
+    }
     let (token, _uid) = bootstrap(&state).await;
     let act_id = seal_an_act(&state, &token).await;
 

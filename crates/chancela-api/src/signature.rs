@@ -3545,8 +3545,15 @@ fn timestamp_pdf_with_trust_report(
         .map_err(|e| chancela_signing::SigningError::Timestamp(e.to_string()))?;
     let client = chancela_tsa::TsaClient::new(transport);
     let mut captured: Option<chancela_tsa::Timestamp> = None;
+    let request_certificate = tsl_url
+        .as_deref()
+        .map(|url| !url.trim().is_empty())
+        .unwrap_or(false);
     let stamped = add_signature_timestamp(signed_pdf, |sig_digest: &[u8; 32]| {
-        let request = chancela_tsa::TimestampRequest::new(*sig_digest).with_generated_nonce();
+        let mut request = chancela_tsa::TimestampRequest::new(*sig_digest).with_generated_nonce();
+        if !request_certificate {
+            request = request.without_certificate();
+        }
         let ts = client
             .stamp(&request)
             .map_err(|e| chancela_signing::SigningError::Timestamp(e.to_string()))?;
