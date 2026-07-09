@@ -637,6 +637,10 @@ a:focus-visible {
   cursor: pointer;
   background: transparent;
   color: var(--accent);
+  --btn-leather-base: color-mix(in srgb, var(--accent) 12%, transparent);
+  --btn-leather-highlight: color-mix(in srgb, var(--accent-strong) 18%, transparent);
+  --btn-leather-shadow: color-mix(in srgb, var(--accent) 22%, transparent);
+  --btn-leather-grain-opacity: 0.14;
 }
 
 .btn:disabled {
@@ -687,11 +691,19 @@ a:focus-visible {
   background: var(--accent-strong);
   color: var(--on-accent);
   border-color: var(--accent-strong);
+  --btn-leather-base: color-mix(in srgb, var(--accent-strong) 78%, transparent);
+  --btn-leather-highlight: color-mix(in srgb, var(--paper) 28%, transparent);
+  --btn-leather-shadow: color-mix(in srgb, var(--accent) 24%, transparent);
+  --btn-leather-grain-opacity: 0.12;
 }
 
 .btn--secondary {
   background: transparent;
   color: var(--accent);
+  --btn-leather-base: color-mix(in srgb, var(--accent) 12%, transparent);
+  --btn-leather-highlight: color-mix(in srgb, var(--accent-strong) 18%, transparent);
+  --btn-leather-shadow: color-mix(in srgb, var(--accent) 22%, transparent);
+  --btn-leather-grain-opacity: 0.14;
 }
 
 .btn--ghost {
@@ -760,12 +772,13 @@ a.btn.btn--iconOnly {
 
 /* ---------------------------------------------------------------------------
  * Leather-textured buttons (t19-e2) — the same procedural hide as the background,
- * stamped behind the button's accent so the primary/secondary chrome reads as gilt on
- * tanned leather. Gated by `:root[data-button-texture='on']` (appearance.button_texture,
- * default true); when off the buttons are flat fills. The grain sits UNDER the label via
- * a ::before layer at low opacity, so it never lowers text contrast (WCAG AA holds in
- * both themes — ink/accent are unchanged, only the fill gains depth). Reuses the
- * `--leather-grain` data-URI published on the root by AppearanceEffects.
+ * stamped behind each button's own theme tokens so primary, secondary and destructive
+ * chrome read as coloured hide rather than grey noise. Gated by
+ * `:root[data-button-texture='on']` (appearance.button_texture, default true); when off
+ * the buttons are flat fills. The texture sits UNDER the label via pseudo layers at low
+ * opacity, so it never lowers text contrast (WCAG AA holds in both themes — ink/accent
+ * are unchanged, only the fill gains depth). Reuses the `--leather-grain` data-URI
+ * published on the root by AppearanceEffects.
  * ------------------------------------------------------------------------- */
 .btn {
   position: relative;
@@ -773,26 +786,37 @@ a.btn.btn--iconOnly {
   isolation: isolate;
 }
 
-/* The grain rides a negative-z-index ::before: it paints above the button's own fill but
-   below the in-flow label/icon, so a bare text-node label needs no wrapper to stay on
-   top and its contrast is untouched. */
-:root[data-button-texture='on'] .btn::before {
+/* The negative-z-index layers sit below the in-flow label/icon, so a bare text-node label
+   needs no wrapper to stay on top and its contrast is untouched. */
+:root[data-button-texture='on'] .btn::before,
+:root[data-button-texture='on'] .btn::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  border-radius: inherit;
+}
+
+:root[data-button-texture='on'] .btn::before {
+  background:
+    linear-gradient(135deg, var(--btn-leather-highlight), transparent 44%),
+    radial-gradient(140% 150% at 50% 120%, var(--btn-leather-shadow), transparent 66%),
+    linear-gradient(var(--btn-leather-base), var(--btn-leather-base));
+}
+
+:root[data-button-texture='on'] .btn::after {
   background-image: var(--leather-grain, none);
   background-repeat: repeat;
   background-position: center;
   background-size: 320px 320px;
-  mix-blend-mode: soft-light;
-  opacity: 0.5;
-  border-radius: inherit;
+  mix-blend-mode: multiply;
+  opacity: var(--btn-leather-grain-opacity, 0.14);
 }
 
 /* A ghost button is chromeless text; texture there would read as noise, so skip it. */
-:root[data-button-texture='on'] .btn--ghost::before {
+:root[data-button-texture='on'] .btn--ghost::before,
+:root[data-button-texture='on'] .btn--ghost::after {
   display: none;
 }
 
@@ -7004,6 +7028,10 @@ input[type='radio']:disabled {
 .btn--danger {
   color: var(--error);
   border-color: var(--error);
+  --btn-leather-base: color-mix(in srgb, var(--error) 10%, transparent);
+  --btn-leather-highlight: color-mix(in srgb, var(--error-bg) 28%, transparent);
+  --btn-leather-shadow: color-mix(in srgb, var(--error) 22%, transparent);
+  --btn-leather-grain-opacity: 0.12;
 }
 .btn--danger:hover:not(:disabled) {
   background: var(--error-bg);
@@ -7013,6 +7041,20 @@ input[type='radio']:disabled {
   background: var(--error);
   color: var(--on-accent);
   border-color: var(--error);
+  --btn-leather-base: color-mix(in srgb, var(--error) 76%, transparent);
+  --btn-leather-highlight: color-mix(in srgb, var(--error-bg) 34%, transparent);
+  --btn-leather-shadow: color-mix(in srgb, var(--error) 28%, transparent);
+  --btn-leather-grain-opacity: 0.11;
+}
+
+/* This late override wins over every variant token, including `.btn--primary.btn--danger`,
+   while preserving the existing disabled text, border and background treatment. */
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  --btn-leather-base: color-mix(in srgb, var(--text-muted) 7%, transparent);
+  --btn-leather-highlight: color-mix(in srgb, var(--text-muted) 9%, transparent);
+  --btn-leather-shadow: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  --btn-leather-grain-opacity: 0.06;
 }
 
 /* Server-driven read-only degraded banner. Mirrors `.safe-banner` (same bottom-pinned
