@@ -21,7 +21,7 @@ import type {
   ImportDocumentBody,
   ImportedDocumentView,
 } from '../../api/types';
-import { ApiError, api } from '../../api/client';
+import { ApiError, api, type ActDocumentWorkingCopyFormat } from '../../api/client';
 import {
   useActDocumentBundle,
   useActDocumentPreview,
@@ -352,7 +352,9 @@ export function ActDocumentPanel({
   const preview = useActDocumentPreview(act.id, open);
   const bundle = useActDocumentBundle(act.id, sealed);
   const download = useDownloadActDocument(act.id);
-  const workingCopyDownload = useDownloadActDocumentWorkingCopy(act.id);
+  const workingCopyMarkdownDownload = useDownloadActDocumentWorkingCopy(act.id);
+  const workingCopyTextDownload = useDownloadActDocumentWorkingCopy(act.id, 'txt');
+  const workingCopyHtmlDownload = useDownloadActDocumentWorkingCopy(act.id, 'html');
   const officeDownload = useDownloadActDocumentOffice(act.id);
   const importedDocuments = useQuery({
     queryKey: importedDocumentsKey(act.id),
@@ -410,9 +412,15 @@ export function ActDocumentPanel({
     });
   }
 
-  function onDownloadWorkingCopy() {
-    const filename = `${downloadBaseName()}-working-copy.md`;
-    workingCopyDownload.mutate(undefined, {
+  function onDownloadWorkingCopy(format: ActDocumentWorkingCopyFormat, extension: string) {
+    const filename = `${downloadBaseName()}-working-copy.${extension}`;
+    const mutation =
+      format === 'txt'
+        ? workingCopyTextDownload
+        : format === 'html'
+          ? workingCopyHtmlDownload
+          : workingCopyMarkdownDownload;
+    mutation.mutate(undefined, {
       onSuccess: async (download) => {
         try {
           showSaveResult(
@@ -503,12 +511,34 @@ export function ActDocumentPanel({
                   type="button"
                   variant="secondary"
                   icon={<Icon.FileText />}
-                  disabled={workingCopyDownload.isPending}
-                  onClick={onDownloadWorkingCopy}
+                  disabled={workingCopyMarkdownDownload.isPending}
+                  onClick={() => onDownloadWorkingCopy('markdown', 'md')}
                 >
-                  {workingCopyDownload.isPending
+                  {workingCopyMarkdownDownload.isPending
                     ? t('documents.download.pending')
                     : t('documents.download.markdown')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.FileText />}
+                  disabled={workingCopyTextDownload.isPending}
+                  onClick={() => onDownloadWorkingCopy('txt', 'txt')}
+                >
+                  {workingCopyTextDownload.isPending
+                    ? t('documents.download.pending')
+                    : t('documents.download.txt')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.FileText />}
+                  disabled={workingCopyHtmlDownload.isPending}
+                  onClick={() => onDownloadWorkingCopy('html', 'html')}
+                >
+                  {workingCopyHtmlDownload.isPending
+                    ? t('documents.download.pending')
+                    : t('documents.download.html')}
                 </Button>
                 <Button
                   type="button"

@@ -52,6 +52,7 @@ import {
   type ApiKeyRateLimit,
   type ApiKeyView,
   type ActMesa,
+  type ActSealMetadata,
   type ActView,
   type AiSettings,
   type AppearanceSettings,
@@ -104,8 +105,12 @@ import {
   type PaperBookImportDateSpan,
   type PaperBookImportFinding,
   type PaperBookImportIdentity,
+  type PaperBookContinuationRecommendation,
+  type PaperBookLinkingEvidence,
+  type PaperBookOriginalAtaNumberRange,
   type PaperBookImportPackage,
   type PaperBookImportReport,
+  type PaperBookPageRange,
   type PermissionGrant,
   type PermissionScope,
   type ProcessorRecordView,
@@ -127,6 +132,7 @@ import {
   type TslIdentitySummaryView,
   type TslProviderAnalysisView,
   type TslProviderView,
+  type TslRefreshStatusView,
   type TslServiceStatusView,
   type TslServiceSummaryView,
   type TslSourceView,
@@ -535,6 +541,8 @@ function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImpo
       identity: true,
       date_span: true,
       package: true,
+      linking_evidence: true,
+      continuation: true,
       candidate_classification: true,
       can_accept_as_import_candidate: true,
       required_operator_actions: true,
@@ -567,6 +575,7 @@ function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImpo
     report.package,
     {
       page_count: true,
+      source_page_range: true,
       source_filename: true,
       digest: true,
       notes_present: true,
@@ -575,7 +584,68 @@ function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImpo
     `${label}.package`,
   );
   expect(pkg.page_count).toBeGreaterThan(0);
+  const sourcePageRange = assertExactKeys<PaperBookPageRange>(
+    pkg.source_page_range,
+    { from: true, to: true },
+    `${label}.package.source_page_range`,
+  );
+  expect(sourcePageRange.from).toBeGreaterThan(0);
+  expect(sourcePageRange.to).toBeGreaterThanOrEqual(sourcePageRange.from);
+  expect(sourcePageRange.to).toBeLessThanOrEqual(pkg.page_count);
   if (pkg.digest) assertHex64(pkg.digest, `${label}.package.digest`);
+  const linking = assertExactKeys<PaperBookLinkingEvidence>(
+    report.linking_evidence,
+    {
+      source_page_range: true,
+      original_ata_number_range: true,
+      non_canonical: true,
+      planning_evidence_only: true,
+      canonical_act_created: true,
+      canonical_document_created: true,
+      signature_created: true,
+      legal_acceptance_claimed: true,
+    },
+    `${label}.linking_evidence`,
+  );
+  expect(linking.source_page_range).toEqual(sourcePageRange);
+  expect(linking.non_canonical).toBe(true);
+  expect(linking.planning_evidence_only).toBe(true);
+  expect(linking.canonical_act_created).toBe(false);
+  expect(linking.canonical_document_created).toBe(false);
+  expect(linking.signature_created).toBe(false);
+  expect(linking.legal_acceptance_claimed).toBe(false);
+  if (linking.original_ata_number_range) {
+    const range = assertExactKeys<PaperBookOriginalAtaNumberRange>(
+      linking.original_ata_number_range,
+      { from: true, to: true },
+      `${label}.linking_evidence.original_ata_number_range`,
+    );
+    expect(range.from).toBeGreaterThan(0);
+    expect(range.to).toBeGreaterThanOrEqual(range.from);
+  }
+  const continuation = assertExactKeys<PaperBookContinuationRecommendation>(
+    report.continuation,
+    {
+      recommendation: true,
+      recommended_action: true,
+      recommended_next_ata_number: true,
+      action_metadata: true,
+      requires_operator_review: true,
+      canonical_act_created: true,
+      canonical_document_created: true,
+      signature_created: true,
+      legal_acceptance_claimed: true,
+    },
+    `${label}.continuation`,
+  );
+  expect(continuation.recommendation.length).toBeGreaterThan(0);
+  expect(continuation.recommended_action.length).toBeGreaterThan(0);
+  expect(Array.isArray(continuation.action_metadata)).toBe(true);
+  expect(continuation.requires_operator_review).toBe(true);
+  expect(continuation.canonical_act_created).toBe(false);
+  expect(continuation.canonical_document_created).toBe(false);
+  expect(continuation.signature_created).toBe(false);
+  expect(continuation.legal_acceptance_claimed).toBe(false);
   const classification = assertExactKeys<PaperBookImportClassification>(
     report.candidate_classification,
     {
@@ -745,6 +815,7 @@ describe('contract fixtures parse through the real client', () => {
         ata_number: true,
         payload_digest: true,
         seal_event_seq: true,
+        seal_metadata: true,
         retifies: true,
       },
       'ActView',
@@ -756,6 +827,26 @@ describe('contract fixtures parse through the real client', () => {
     if (act.meeting_date) assertIsoDate(act.meeting_date, 'ActView.meeting_date');
     if (act.meeting_time) expect(act.meeting_time).toMatch(/^\d{2}:\d{2}$/);
     if (act.payload_digest) assertHex64(act.payload_digest, 'ActView.payload_digest');
+    if (act.seal_metadata) {
+      const sealMetadata = assertExactKeys<ActSealMetadata>(
+        act.seal_metadata,
+        {
+          rule_pack_id: true,
+          version: true,
+          family: true,
+          profile: true,
+        },
+        'ActView.seal_metadata',
+      );
+      expect(sealMetadata.rule_pack_id.length).toBeGreaterThan(0);
+      expect(sealMetadata.version.length).toBeGreaterThan(0);
+      inEnum(
+        ['CommercialCompany', 'Condominium', 'Association', 'Foundation', 'Cooperative'],
+        sealMetadata.family,
+        'ActView.seal_metadata.family',
+      );
+      inEnum(ENTITY_KINDS, sealMetadata.profile, 'ActView.seal_metadata.profile');
+    }
     expect(Array.isArray(act.attachments)).toBe(true);
     expect(Array.isArray(act.signatories)).toBe(true);
 
@@ -1608,6 +1699,7 @@ describe('contract fixtures parse through the real client', () => {
       summary,
       {
         source: true,
+        last_refresh: true,
         scheme_operator_name: true,
         scheme_name: true,
         scheme_territory: true,
@@ -1632,6 +1724,27 @@ describe('contract fixtures parse through the real client', () => {
     inEnum(TSL_SOURCE_KINDS, source.kind, `${label}.source.kind`);
     if (source.path !== null) expect(typeof source.path).toBe('string');
     expect(source.note.length).toBeGreaterThan(0);
+    if (s.last_refresh !== null) {
+      assertExactKeys<TslRefreshStatusView>(
+        s.last_refresh,
+        {
+          attempted_at: true,
+          source_kind: true,
+          source_url: true,
+          source_path: true,
+          target_path: true,
+          outcome: true,
+          validation: true,
+          providers: true,
+          services: true,
+          ca_qc_services: true,
+          qualified_esignature_services: true,
+          trusted_esignature_services: true,
+          error: true,
+        },
+        `${label}.last_refresh`,
+      );
+    }
     if (s.issue_date_time !== null) assertTimestamp(s.issue_date_time, `${label}.issue_date_time`);
     if (s.next_update !== null) assertTimestamp(s.next_update, `${label}.next_update`);
     expect(typeof s.stale).toBe('boolean');

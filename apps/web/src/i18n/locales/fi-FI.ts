@@ -1974,9 +1974,11 @@ export const fiFI: Catalog = {
   'common.no': 'Não',
   'entities.fiscalYearEnd.default': '12-31 (por omissão)',
   'documents.download.markdown': 'Descarregar Markdown',
+  'documents.download.txt': 'Lataa TXT',
+  'documents.download.html': 'Lataa HTML',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+    'Markdown, TXT, HTML ja DOCX ovat tarkistusta varten tarkoitettuja ei-todisteellisia työkopioita; säilytetty PDF/A on virallinen asiakirja.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

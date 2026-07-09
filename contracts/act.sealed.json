@@ -24,5 +24,11 @@
   "ata_number": 1,
   "payload_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "seal_event_seq": 5,
+  "seal_metadata": {
+    "rule_pack_id": "csc-art63/v2",
+    "version": "v2",
+    "family": "CommercialCompany",
+    "profile": "SociedadeAnonima"
+  },
   "retifies": null
 }

@@ -1983,9 +1983,11 @@ export const itIT: Catalog = {
   'common.no': 'Não',
   'entities.fiscalYearEnd.default': '12-31 (por omissão)',
   'documents.download.markdown': 'Descarregar Markdown',
+  'documents.download.txt': 'Scarica TXT',
+  'documents.download.html': 'Scarica HTML',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+    'Markdown, TXT, HTML e DOCX sono copie di lavoro non probatorie per la revisione; il PDF/A conservato è il documento ufficiale.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

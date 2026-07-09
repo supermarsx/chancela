@@ -1974,9 +1974,11 @@ export const plPL: Catalog = {
   'common.no': 'Não',
   'entities.fiscalYearEnd.default': '12-31 (por omissão)',
   'documents.download.markdown': 'Descarregar Markdown',
+  'documents.download.txt': 'Pobierz TXT',
+  'documents.download.html': 'Pobierz HTML',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+    'Markdown, TXT, HTML i DOCX to robocze kopie bez mocy dowodowej do przeglądu; zachowany PDF/A jest dokumentem oficjalnym.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

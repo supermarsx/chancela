@@ -1981,9 +1981,11 @@ export const nlNL: Catalog = {
   'common.no': 'Não',
   'entities.fiscalYearEnd.default': '12-31 (por omissão)',
   'documents.download.markdown': 'Descarregar Markdown',
+  'documents.download.txt': 'TXT downloaden',
+  'documents.download.html': 'HTML downloaden',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+    'Markdown, TXT, HTML en DOCX zijn niet-bewijskrachtige werkkopieën voor controle; de bewaarde PDF/A is het officiële document.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

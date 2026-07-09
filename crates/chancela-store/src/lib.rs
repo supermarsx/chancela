@@ -493,8 +493,9 @@ impl StoredPaperBookOcrStatus {
     }
 }
 
-/// Metadata for a preserved historical paper-book import package (`paper_book_imports`, schema v8).
-/// This is the ledger payload source and intentionally excludes raw bytes.
+/// Metadata for a preserved historical paper-book import package (`paper_book_imports`, schema v10).
+/// This is the ledger payload source and intentionally excludes raw bytes. Page and original
+/// number ranges are non-canonical linking/planning metadata only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredPaperBookImportMeta {
     pub import_id: String,
@@ -505,6 +506,10 @@ pub struct StoredPaperBookImportMeta {
     pub date_from: Date,
     pub date_to: Date,
     pub page_count: u32,
+    pub page_from: u32,
+    pub page_to: u32,
+    pub original_number_from: Option<u64>,
+    pub original_number_to: Option<u64>,
     pub sha256: String,
     pub size_bytes: usize,
     pub content_type: String,
@@ -996,8 +1001,9 @@ impl Store {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = guard.prepare(
             "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
-             page_count, sha256, size_bytes, content_type, source_filename, notes, imported_at, \
-             imported_by, ocr_status, bytes FROM paper_book_imports WHERE import_id = ?1",
+             page_count, page_from, page_to, original_number_from, original_number_to, sha256, \
+             size_bytes, content_type, source_filename, notes, imported_at, imported_by, \
+             ocr_status, bytes FROM paper_book_imports WHERE import_id = ?1",
         )?;
         stmt.query_row(params![import_id], row_to_paper_book_import)
             .optional()?
@@ -1015,7 +1021,8 @@ impl Store {
         if let Some(book_ref) = book_ref {
             let mut stmt = guard.prepare(
                 "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
-                 date_to, page_count, sha256, size_bytes, content_type, source_filename, notes, \
+                 date_to, page_count, page_from, page_to, original_number_from, \
+                 original_number_to, sha256, size_bytes, content_type, source_filename, notes, \
                  imported_at, imported_by, ocr_status FROM paper_book_imports \
                  WHERE book_ref = ?1 ORDER BY imported_at DESC, rowid DESC",
             )?;
@@ -1026,7 +1033,8 @@ impl Store {
         } else {
             let mut stmt = guard.prepare(
                 "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
-                 date_to, page_count, sha256, size_bytes, content_type, source_filename, notes, \
+                 date_to, page_count, page_from, page_to, original_number_from, \
+                 original_number_to, sha256, size_bytes, content_type, source_filename, notes, \
                  imported_at, imported_by, ocr_status FROM paper_book_imports \
                  ORDER BY imported_at DESC, rowid DESC",
             )?;
@@ -1510,6 +1518,7 @@ impl Tx<'_> {
         &self,
         import: &StoredPaperBookImport,
     ) -> Result<(), StoreError> {
+        validate_paper_book_import_ranges(&import.meta, std::io::ErrorKind::InvalidInput)?;
         let imported_at = import
             .meta
             .imported_at
@@ -1521,12 +1530,21 @@ impl Tx<'_> {
                 "paper-book import size does not fit sqlite INTEGER",
             ))
         })?;
+        let original_number_from = optional_u64_to_i64(
+            import.meta.original_number_from,
+            "paper-book import original_number_from",
+        )?;
+        let original_number_to = optional_u64_to_i64(
+            import.meta.original_number_to,
+            "paper-book import original_number_to",
+        )?;
         self.txn.execute(
             "INSERT OR REPLACE INTO paper_book_imports \
              (import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
-              page_count, sha256, size_bytes, content_type, source_filename, notes, imported_at, \
-              imported_by, ocr_status, bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+              page_count, page_from, page_to, original_number_from, original_number_to, sha256, \
+              size_bytes, content_type, source_filename, notes, imported_at, imported_by, \
+              ocr_status, bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             params![
                 import.meta.import_id,
                 import.meta.entity_ref,
@@ -1536,6 +1554,10 @@ impl Tx<'_> {
                 format_date(import.meta.date_from),
                 format_date(import.meta.date_to),
                 i64::from(import.meta.page_count),
+                i64::from(import.meta.page_from),
+                i64::from(import.meta.page_to),
+                original_number_from,
+                original_number_to,
                 import.meta.sha256,
                 size_bytes,
                 import.meta.content_type,
@@ -1938,14 +1960,18 @@ fn row_to_paper_book_import_meta(
     let date_from_raw: String = row.get(5)?;
     let date_to_raw: String = row.get(6)?;
     let page_count_raw: i64 = row.get(7)?;
-    let sha256: String = row.get(8)?;
-    let size_raw: i64 = row.get(9)?;
-    let content_type: String = row.get(10)?;
-    let source_filename: Option<String> = row.get(11)?;
-    let notes: Option<String> = row.get(12)?;
-    let imported_at_raw: String = row.get(13)?;
-    let imported_by: String = row.get(14)?;
-    let ocr_status_raw: String = row.get(15)?;
+    let page_from_raw: i64 = row.get(8)?;
+    let page_to_raw: i64 = row.get(9)?;
+    let original_number_from_raw: Option<i64> = row.get(10)?;
+    let original_number_to_raw: Option<i64> = row.get(11)?;
+    let sha256: String = row.get(12)?;
+    let size_raw: i64 = row.get(13)?;
+    let content_type: String = row.get(14)?;
+    let source_filename: Option<String> = row.get(15)?;
+    let notes: Option<String> = row.get(16)?;
+    let imported_at_raw: String = row.get(17)?;
+    let imported_by: String = row.get(18)?;
+    let ocr_status_raw: String = row.get(19)?;
     Ok(paper_book_import_meta_from_raw(
         import_id,
         entity_ref,
@@ -1955,6 +1981,10 @@ fn row_to_paper_book_import_meta(
         date_from_raw,
         date_to_raw,
         page_count_raw,
+        page_from_raw,
+        page_to_raw,
+        original_number_from_raw,
+        original_number_to_raw,
         sha256,
         size_raw,
         content_type,
@@ -1971,7 +2001,7 @@ fn row_to_paper_book_import(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<Result<StoredPaperBookImport, StoreError>> {
     let meta = row_to_paper_book_import_meta(row)?;
-    let bytes: Vec<u8> = row.get(16)?;
+    let bytes: Vec<u8> = row.get(20)?;
     Ok((|| Ok(StoredPaperBookImport { meta: meta?, bytes }))())
 }
 
@@ -2025,6 +2055,10 @@ fn paper_book_import_meta_from_raw(
     date_from_raw: String,
     date_to_raw: String,
     page_count_raw: i64,
+    page_from_raw: i64,
+    page_to_raw: i64,
+    original_number_from_raw: Option<i64>,
+    original_number_to_raw: Option<i64>,
     sha256: String,
     size_raw: i64,
     content_type: String,
@@ -2040,6 +2074,31 @@ fn paper_book_import_meta_from_raw(
             format!("stored paper-book import size {size_raw} is negative or too large"),
         ))
     })?;
+    let page_count = int_to_u32(page_count_raw)?;
+    let page_from = int_to_u32(page_from_raw)?;
+    let page_to = int_to_u32(page_to_raw)?;
+    if page_from == 0 || page_to == 0 || page_from > page_to || page_to > page_count {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "stored paper-book page range {page_from}-{page_to} is outside page_count {page_count}"
+            ),
+        )));
+    }
+    let original_number_from = original_number_from_raw.map(int_to_u64).transpose()?;
+    let original_number_to = original_number_to_raw.map(int_to_u64).transpose()?;
+    if matches!(
+        (original_number_from, original_number_to),
+        (Some(from), Some(to)) if from == 0 || to == 0 || from > to
+    ) || matches!(
+        (original_number_from, original_number_to),
+        (Some(_), None) | (None, Some(_))
+    ) {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stored paper-book original number range is invalid",
+        )));
+    }
     Ok(StoredPaperBookImportMeta {
         import_id,
         entity_ref,
@@ -2048,7 +2107,11 @@ fn paper_book_import_meta_from_raw(
         book_ref,
         date_from: parse_date(&date_from_raw)?,
         date_to: parse_date(&date_to_raw)?,
-        page_count: int_to_u32(page_count_raw)?,
+        page_count,
+        page_from,
+        page_to,
+        original_number_from,
+        original_number_to,
         sha256,
         size_bytes,
         content_type,
@@ -2213,6 +2276,56 @@ fn int_to_u32(raw: i64) -> Result<u32, StoreError> {
     })
 }
 
+fn int_to_u64(raw: i64) -> Result<u64, StoreError> {
+    u64::try_from(raw).map_err(|_| {
+        StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("stored integer {raw} is negative for u64"),
+        ))
+    })
+}
+
+fn optional_u64_to_i64(value: Option<u64>, field: &str) -> Result<Option<i64>, StoreError> {
+    value
+        .map(|value| {
+            i64::try_from(value).map_err(|_| {
+                StoreError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("{field} does not fit sqlite INTEGER"),
+                ))
+            })
+        })
+        .transpose()
+}
+
+fn validate_paper_book_import_ranges(
+    meta: &StoredPaperBookImportMeta,
+    kind: std::io::ErrorKind,
+) -> Result<(), StoreError> {
+    if meta.page_count == 0
+        || meta.page_from == 0
+        || meta.page_to == 0
+        || meta.page_from > meta.page_to
+        || meta.page_to > meta.page_count
+    {
+        return Err(StoreError::Io(std::io::Error::new(
+            kind,
+            format!(
+                "paper-book page range {}-{} is outside page_count {}",
+                meta.page_from, meta.page_to, meta.page_count
+            ),
+        )));
+    }
+    match (meta.original_number_from, meta.original_number_to) {
+        (None, None) => Ok(()),
+        (Some(from), Some(to)) if from > 0 && to > 0 && from <= to => Ok(()),
+        _ => Err(StoreError::Io(std::io::Error::new(
+            kind,
+            "paper-book original number range is invalid",
+        ))),
+    }
+}
+
 /// Convert a BLOB column into a fixed 32-byte digest, treating a wrong-length value as corruption.
 fn blob32(bytes: Vec<u8>, what: &str) -> Result<[u8; 32], StoreError> {
     let len = bytes.len();
@@ -2355,26 +2468,37 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
 
     // Additive migration: the `links` column (multi-chain event links) was added after the
     // initial schema v1. `ALTER TABLE ... ADD COLUMN` is idempotent-safe via this guard.
-    let has_links: bool = conn
-        .prepare("SELECT COUNT(*) FROM pragma_table_info('events') WHERE name='links'")?
-        .query_row([], |row| row.get::<_, i64>(0))
-        .map(|n| n > 0)
-        .unwrap_or(false);
-    if !has_links {
+    if !table_has_column(conn, "events", "links")? {
         conn.execute_batch("ALTER TABLE events ADD COLUMN links TEXT NOT NULL DEFAULT '[]';")?;
     }
 
-    let has_timestamp_trust_report: bool = conn
-        .prepare(
-            "SELECT COUNT(*) FROM pragma_table_info('signed_documents') \
-             WHERE name='timestamp_trust_report_json'",
-        )?
-        .query_row([], |row| row.get::<_, i64>(0))
-        .map(|n| n > 0)
-        .unwrap_or(false);
-    if !has_timestamp_trust_report {
+    if !table_has_column(conn, "signed_documents", "timestamp_trust_report_json")? {
         conn.execute_batch(
             "ALTER TABLE signed_documents ADD COLUMN timestamp_trust_report_json TEXT;",
+        )?;
+    }
+
+    if !table_has_column(conn, "paper_book_imports", "page_from")? {
+        conn.execute_batch(
+            "ALTER TABLE paper_book_imports ADD COLUMN page_from INTEGER NOT NULL DEFAULT 1;",
+        )?;
+    }
+    if !table_has_column(conn, "paper_book_imports", "page_to")? {
+        conn.execute_batch(
+            "ALTER TABLE paper_book_imports ADD COLUMN page_to INTEGER NOT NULL DEFAULT 1;",
+        )?;
+        conn.execute_batch(
+            "UPDATE paper_book_imports SET page_to = page_count WHERE page_count > 1;",
+        )?;
+    }
+    if !table_has_column(conn, "paper_book_imports", "original_number_from")? {
+        conn.execute_batch(
+            "ALTER TABLE paper_book_imports ADD COLUMN original_number_from INTEGER;",
+        )?;
+    }
+    if !table_has_column(conn, "paper_book_imports", "original_number_to")? {
+        conn.execute_batch(
+            "ALTER TABLE paper_book_imports ADD COLUMN original_number_to INTEGER;",
         )?;
     }
 
@@ -2432,6 +2556,19 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
     }
 
     Ok(())
+}
+
+fn table_has_column(
+    conn: &rusqlite::Connection,
+    table: &str,
+    column: &str,
+) -> Result<bool, StoreError> {
+    let sql = format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'");
+    Ok(conn
+        .prepare(&sql)?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .map(|n| n > 0)
+        .unwrap_or(false))
 }
 
 /// Read the stable `instance_id` from `meta` (present after [`configure_and_migrate`]).

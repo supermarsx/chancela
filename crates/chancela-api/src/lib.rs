@@ -19,6 +19,8 @@
 //! - `POST /v1/acts`, `GET|PATCH /v1/acts/{id}`, `POST /v1/acts/{id}/advance`,
 //!   `GET /v1/acts/{id}/compliance`, `POST /v1/acts/{id}/seal`,
 //!   `POST /v1/acts/{id}/archive` — the ata lifecycle, compliance gate, and seal (§2.5).
+//! - `GET /v1/acts/{id}/document/working-copy[?format=markdown|txt|html]` — deterministic
+//!   non-evidentiary text working copies.
 //! - `GET /v1/acts/{id}/document/office` — deterministic non-evidentiary DOCX working copy.
 //! - `POST /v1/documents/import/validate` — read-only structural import validation report.
 //! - `POST|GET /v1/documents/import[ed]`, `GET /v1/documents/imported/{id}[/bytes]` —
@@ -2373,7 +2375,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn working_copy_export_is_markdown_non_evidentiary_and_read_only() {
+    async fn working_copy_export_formats_are_non_evidentiary_and_read_only() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_fill_and_advance(&state, &book_id).await;
 
@@ -2414,37 +2416,45 @@ mod tests {
         )
         .await;
 
-        let (status, headers, body) = send_raw_bytes(
-            state.clone(),
-            with_session(
-                get(&format!("/v1/acts/{act_id}/document/working-copy")),
-                &token,
-            ),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(
-            headers
-                .get("content-type")
+        for (query, expected_type, expected_ext, format_notice) in [
+            ("", "text/markdown", ".md", "Markdown export"),
+            ("?format=txt", "text/plain", ".txt", "plain-text export"),
+            ("?format=html", "text/html", ".html", "HTML export"),
+        ] {
+            let (status, headers, body) = send_raw_bytes(
+                state.clone(),
+                with_session(
+                    get(&format!("/v1/acts/{act_id}/document/working-copy{query}")),
+                    &token,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "format query {query:?}");
+            assert!(
+                headers
+                    .get("content-type")
+                    .and_then(|value| value.to_str().ok())
+                    .is_some_and(|value| value.starts_with(expected_type)),
+                "working copy content-type for {query:?}: {headers:?}"
+            );
+            let disposition = headers
+                .get("content-disposition")
                 .and_then(|value| value.to_str().ok())
-                .is_some_and(|value| value.starts_with("text/markdown")),
-            "working copy content-type is markdown: {headers:?}"
-        );
-        let disposition = headers
-            .get("content-disposition")
-            .and_then(|value| value.to_str().ok())
-            .expect("content-disposition");
-        assert!(
-            disposition.contains("working-copy") && disposition.contains(".md"),
-            "filename labels working copy: {disposition}"
-        );
-        let markdown = String::from_utf8(body).expect("markdown is utf-8");
-        assert!(markdown.contains("WORKING COPY - NON-EVIDENTIARY"));
-        assert!(markdown.contains("not the preserved signed original"));
-        assert!(markdown.contains(doc_id));
-        assert!(markdown.contains(digest));
-        assert!(markdown.contains("Ata da AG anual"));
-        assert!(markdown.contains("Sede social"));
+                .expect("content-disposition");
+            assert!(
+                disposition.contains("working-copy") && disposition.contains(expected_ext),
+                "filename labels working copy for {query:?}: {disposition}"
+            );
+            let body = String::from_utf8(body).expect("working copy is utf-8");
+            assert!(body.contains("WORKING COPY - NON-EVIDENTIARY"));
+            assert!(body.contains(format_notice));
+            assert!(body.contains("not the preserved signed original"));
+            assert!(body.contains(doc_id));
+            assert!(body.contains(digest));
+            assert!(body.contains("Ata da AG anual"));
+            assert!(body.contains("Sede social"));
+            assert!(!body.starts_with("%PDF-"));
+        }
 
         let (status, _, pdf_after) = send_bytes(
             state.clone(),

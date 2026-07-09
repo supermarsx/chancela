@@ -1972,9 +1972,11 @@ export const daDK: Catalog = {
   'common.no': 'Não',
   'entities.fiscalYearEnd.default': '12-31 (por omissão)',
   'documents.download.markdown': 'Descarregar Markdown',
+  'documents.download.txt': 'Download TXT',
+  'documents.download.html': 'Download HTML',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+    'Markdown, TXT, HTML og DOCX er ikke-bevismæssige arbejdskopier til gennemgang; den bevarede PDF/A er det officielle dokument.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

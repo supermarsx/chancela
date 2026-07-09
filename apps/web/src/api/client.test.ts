@@ -270,6 +270,37 @@ describe('api client', () => {
     expect(download.headers.get('Content-Disposition')).toContain('working-copy.md');
   });
 
+  it('downloads TXT and HTML act working-copy exports through the bounded format query', async () => {
+    for (const [format, contentType, extension, body] of [
+      ['txt', 'text/plain; charset=utf-8', 'txt', 'WORKING COPY - NON-EVIDENTIARY\n'],
+      ['html', 'text/html; charset=utf-8', 'html', '<!doctype html><h1>WORKING COPY</h1>'],
+    ] as const) {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 200,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Disposition': `attachment; filename="act-act-1-working-copy.${extension}"`,
+          },
+        }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      const download = await api.fetchActDocumentWorkingCopy('act-1', format);
+
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        `/v1/acts/act-1/document/working-copy?format=${format}`,
+      );
+      expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
+      expect(download.text).toBe(body);
+      expect(download.contentType).toBe(contentType);
+      expect(download.blob).toBeInstanceOf(Blob);
+      expect(download.blob.type).toBe(contentType.replace('; ', ';'));
+      expect(download.blob.type).not.toBe('application/pdf');
+      expect(download.headers.get('Content-Disposition')).toContain(`working-copy.${extension}`);
+    }
+  });
+
   it('downloads an act office working-copy export as DOCX bytes', async () => {
     const docx = new Blob(['PK\u0003\u0004docx'], {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

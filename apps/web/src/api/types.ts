@@ -331,6 +331,13 @@ export interface ActDeliberationItem {
   statements: ActMemberStatement[];
 }
 
+export interface ActSealMetadata {
+  rule_pack_id: string;
+  version: string;
+  family: EntityFamily;
+  profile: EntityKind;
+}
+
 export interface ActView {
   id: string;
   book_id: string;
@@ -354,6 +361,7 @@ export interface ActView {
   ata_number: number | null;
   payload_digest: string | null;
   seal_event_seq: number | null;
+  seal_metadata: ActSealMetadata | null;
   retifies: string | null;
 }
 
@@ -1034,7 +1042,7 @@ export interface TslRefreshRequest {
 
 export interface TslSummaryView {
   source: TslSourceView;
-  last_refresh?: TslRefreshStatusView | null;
+  last_refresh: TslRefreshStatusView | null;
   scheme_operator_name: string;
   scheme_name: string;
   scheme_territory: string;
@@ -3067,10 +3075,44 @@ export interface PaperBookImportDateSpan {
 
 export interface PaperBookImportPackage {
   page_count: number;
+  source_page_range: PaperBookPageRange;
   source_filename: string | null;
   digest: string | null;
   notes_present: boolean;
   notes_truncated: boolean;
+}
+
+export interface PaperBookPageRange {
+  from: number;
+  to: number;
+}
+
+export interface PaperBookOriginalAtaNumberRange {
+  from: number;
+  to: number;
+}
+
+export interface PaperBookLinkingEvidence {
+  source_page_range: PaperBookPageRange;
+  original_ata_number_range: PaperBookOriginalAtaNumberRange | null;
+  non_canonical: boolean;
+  planning_evidence_only: boolean;
+  canonical_act_created: boolean;
+  canonical_document_created: boolean;
+  signature_created: boolean;
+  legal_acceptance_claimed: boolean;
+}
+
+export interface PaperBookContinuationRecommendation {
+  recommendation: string;
+  recommended_action: string;
+  recommended_next_ata_number: number | null;
+  action_metadata: string[];
+  requires_operator_review: boolean;
+  canonical_act_created: boolean;
+  canonical_document_created: boolean;
+  signature_created: boolean;
+  legal_acceptance_claimed: boolean;
 }
 
 export interface PaperBookImportClassification {
@@ -3098,6 +3140,8 @@ export interface PaperBookImportReport {
   identity: PaperBookImportIdentity;
   date_span: PaperBookImportDateSpan;
   package: PaperBookImportPackage;
+  linking_evidence: PaperBookLinkingEvidence;
+  continuation: PaperBookContinuationRecommendation;
   candidate_classification: PaperBookImportClassification;
   can_accept_as_import_candidate: boolean;
   required_operator_actions: string[];
@@ -3112,6 +3156,10 @@ export interface PaperBookImportValidateBody {
   date_from: string;
   date_to: string;
   page_count: number;
+  page_from?: number | null;
+  page_to?: number | null;
+  original_ata_number_from?: number | null;
+  original_ata_number_to?: number | null;
   source_filename?: string | null;
   digest?: string | null;
   notes?: string | null;
@@ -3178,6 +3226,10 @@ export interface PaperBookImportView {
   /** Optional additive metadata for APIs that preserve the source package page span. */
   page_from?: number | null;
   page_to?: number | null;
+  original_ata_number_from?: number | null;
+  original_ata_number_to?: number | null;
+  linking_evidence?: PaperBookLinkingEvidence | null;
+  continuation?: PaperBookContinuationRecommendation | null;
   page_count: number;
   sha256: string;
   size_bytes: number;

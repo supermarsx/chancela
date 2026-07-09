@@ -141,6 +141,10 @@ fn valid_candidate() -> Value {
         "date_from": "1968-01-01",
         "date_to": "1971-12-31",
         "page_count": 240,
+        "page_from": 1,
+        "page_to": 48,
+        "original_ata_number_from": 101,
+        "original_ata_number_to": 119,
         "source_filename": "ag-1968-1971.pdf",
         "digest": "abababababababababababababababababababababababababababababababab",
         "notes": "Scanned from bound paper minute book."
@@ -277,6 +281,40 @@ async fn valid_paper_book_import_validation_returns_non_canonical_dry_run_report
     assert_eq!(body["dry_run"], true);
     assert_eq!(body["identity"]["book_ref"], "ag-book-1968-1971");
     assert_eq!(body["package"]["page_count"], 240);
+    assert_eq!(body["package"]["source_page_range"]["from"], 1);
+    assert_eq!(body["package"]["source_page_range"]["to"], 48);
+    assert_eq!(body["linking_evidence"]["source_page_range"]["from"], 1);
+    assert_eq!(body["linking_evidence"]["source_page_range"]["to"], 48);
+    assert_eq!(
+        body["linking_evidence"]["original_ata_number_range"]["from"],
+        101
+    );
+    assert_eq!(
+        body["linking_evidence"]["original_ata_number_range"]["to"],
+        119
+    );
+    assert_eq!(body["linking_evidence"]["planning_evidence_only"], true);
+    assert_eq!(body["linking_evidence"]["canonical_act_created"], false);
+    assert_eq!(
+        body["linking_evidence"]["canonical_document_created"],
+        false
+    );
+    assert_eq!(body["linking_evidence"]["signature_created"], false);
+    assert_eq!(body["linking_evidence"]["legal_acceptance_claimed"], false);
+    assert_eq!(
+        body["continuation"]["recommendation"],
+        "continue_after_operator_review_of_original_numbering"
+    );
+    assert_eq!(
+        body["continuation"]["recommended_action"],
+        "prepare_next_digital_ata_using_recommended_next_ata_number"
+    );
+    assert_eq!(body["continuation"]["recommended_next_ata_number"], 120);
+    assert_eq!(body["continuation"]["requires_operator_review"], true);
+    assert_eq!(body["continuation"]["canonical_act_created"], false);
+    assert_eq!(body["continuation"]["canonical_document_created"], false);
+    assert_eq!(body["continuation"]["signature_created"], false);
+    assert_eq!(body["continuation"]["legal_acceptance_claimed"], false);
     assert_eq!(
         body["candidate_classification"]["classification"],
         "historical_paper_book_non_canonical_evidence"
@@ -295,6 +333,43 @@ async fn valid_paper_book_import_validation_returns_non_canonical_dry_run_report
         false
     );
     assert_eq!(body["can_accept_as_import_candidate"], true);
+}
+
+#[tokio::test]
+async fn paper_book_import_validation_rejects_bad_source_or_original_ranges() {
+    let state = AppState::default();
+    let token = bootstrap(&state).await;
+
+    let mut bad_pages = valid_candidate();
+    bad_pages["page_from"] = json!(49);
+    bad_pages["page_to"] = json!(48);
+    let (status, body) = validate(&state, &token, bad_pages).await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "bad source pages: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("source page range")),
+        "error names source page range: {body}"
+    );
+
+    let mut missing_original_to = valid_candidate();
+    missing_original_to["original_ata_number_to"] = Value::Null;
+    let (status, body) = validate(&state, &token, missing_original_to).await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "partial original range: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("supplied together")),
+        "error names paired original ata-number fields: {body}"
+    );
 }
 
 #[tokio::test]
@@ -376,6 +451,29 @@ async fn paper_book_import_preserves_package_bytes_and_appends_metadata_only_eve
         body["candidate_classification"]["legal_validity_claimed"],
         false
     );
+    assert_eq!(body["package"]["source_page_range"]["from"], 1);
+    assert_eq!(body["package"]["source_page_range"]["to"], 48);
+    assert_eq!(
+        body["linking_evidence"]["original_ata_number_range"]["from"],
+        101
+    );
+    assert_eq!(
+        body["linking_evidence"]["original_ata_number_range"]["to"],
+        119
+    );
+    assert_eq!(body["linking_evidence"]["planning_evidence_only"], true);
+    assert_eq!(body["linking_evidence"]["canonical_act_created"], false);
+    assert_eq!(
+        body["linking_evidence"]["canonical_document_created"],
+        false
+    );
+    assert_eq!(body["linking_evidence"]["signature_created"], false);
+    assert_eq!(body["linking_evidence"]["legal_acceptance_claimed"], false);
+    assert_eq!(body["continuation"]["recommended_next_ata_number"], 120);
+    assert_eq!(body["continuation"]["canonical_act_created"], false);
+    assert_eq!(body["continuation"]["canonical_document_created"], false);
+    assert_eq!(body["continuation"]["signature_created"], false);
+    assert_eq!(body["continuation"]["legal_acceptance_claimed"], false);
     assert_eq!(body["preservation"]["bytes_in_ledger_event"], false);
     assert_eq!(body["preservation"]["ocr_status"], "not_run");
     let import_id = body["import_id"].as_str().expect("import id");
@@ -400,6 +498,10 @@ async fn paper_book_import_preserves_package_bytes_and_appends_metadata_only_eve
         .expect("paper import row");
     assert_eq!(stored.bytes, bytes);
     assert_eq!(stored.meta.sha256, body["preservation"]["sha256"]);
+    assert_eq!(stored.meta.page_from, 1);
+    assert_eq!(stored.meta.page_to, 48);
+    assert_eq!(stored.meta.original_number_from, Some(101));
+    assert_eq!(stored.meta.original_number_to, Some(119));
     assert_eq!(stored.meta.ocr_status.as_str(), "not_run");
 }
 
@@ -697,6 +799,22 @@ async fn paper_book_import_list_and_read_are_metadata_only_and_download_returns_
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["import_id"], import_id);
     assert_eq!(rows[0]["book_ref"], "ag-book-1968-1971");
+    assert_eq!(rows[0]["page_from"], 1);
+    assert_eq!(rows[0]["page_to"], 48);
+    assert_eq!(rows[0]["original_ata_number_from"], 101);
+    assert_eq!(rows[0]["original_ata_number_to"], 119);
+    assert_eq!(rows[0]["linking_evidence"]["source_page_range"]["from"], 1);
+    assert_eq!(rows[0]["linking_evidence"]["source_page_range"]["to"], 48);
+    assert_eq!(
+        rows[0]["linking_evidence"]["original_ata_number_range"]["from"],
+        101
+    );
+    assert_eq!(
+        rows[0]["linking_evidence"]["original_ata_number_range"]["to"],
+        119
+    );
+    assert_eq!(rows[0]["linking_evidence"]["planning_evidence_only"], true);
+    assert_eq!(rows[0]["continuation"]["recommended_next_ata_number"], 120);
     assert_eq!(rows[0]["non_canonical"], true);
     assert_eq!(rows[0]["legal_validity_claimed"], false);
     assert_eq!(rows[0]["signature_validity_claimed"], false);
@@ -725,6 +843,12 @@ async fn paper_book_import_list_and_read_are_metadata_only_and_download_returns_
     .await;
     assert_eq!(status, StatusCode::OK, "metadata: {meta}");
     assert_eq!(meta["import_id"], import_id);
+    assert_eq!(meta["page_from"], 1);
+    assert_eq!(meta["page_to"], 48);
+    assert_eq!(meta["original_ata_number_from"], 101);
+    assert_eq!(meta["original_ata_number_to"], 119);
+    assert_eq!(meta["linking_evidence"]["planning_evidence_only"], true);
+    assert_eq!(meta["continuation"]["recommended_next_ata_number"], 120);
     assert!(meta.get("bytes").is_none() && meta.get("content_base64").is_none());
 
     let (status, downloaded, headers) = send_bytes(

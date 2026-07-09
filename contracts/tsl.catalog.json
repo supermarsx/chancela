@@ -5,6 +5,7 @@
       "path": null,
       "note": "parsed from bundled chancela-tsl fixture; no live TSL fetch attempted"
     },
+    "last_refresh": null,
     "scheme_operator_name": "National Security Authority",
     "scheme_name": "PT:Supervision/Accreditation Status List of certification services from Certification Service Providers",
     "scheme_territory": "PT",

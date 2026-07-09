@@ -35,6 +35,7 @@ const PAPER_BOOK_OCR_DRAFT_NOTICE: &str = "OCR draft results are non-authoritati
 const MAX_NOTES_CHARS: usize = 2_000;
 const MAX_OCR_TEXT_CHARS: usize = 1_000_000;
 const MAX_OCR_REVIEW_NOTE_CHARS: usize = 2_000;
+const SQLITE_MAX_INTEGER_U64: u64 = i64::MAX as u64;
 pub(crate) const PAPER_BOOK_IMPORT_MAX_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const PAPER_BOOK_IMPORT_ENVELOPE_BYTES: usize =
     PAPER_BOOK_IMPORT_MAX_BYTES * 4 / 3 + 64 * 1024;
@@ -52,6 +53,22 @@ pub struct PaperBookImportValidationRequest {
     #[serde(alias = "end_date")]
     date_to: Option<String>,
     page_count: Option<u32>,
+    #[serde(alias = "source_page_from", alias = "start_page")]
+    page_from: Option<u32>,
+    #[serde(alias = "source_page_to", alias = "end_page")]
+    page_to: Option<u32>,
+    #[serde(
+        alias = "ata_number_from",
+        alias = "original_number_from",
+        alias = "original_ata_from"
+    )]
+    original_ata_number_from: Option<u64>,
+    #[serde(
+        alias = "ata_number_to",
+        alias = "original_number_to",
+        alias = "original_ata_to"
+    )]
+    original_ata_number_to: Option<u64>,
     #[serde(alias = "filename")]
     source_filename: Option<String>,
     #[serde(alias = "sha256")]
@@ -80,6 +97,8 @@ pub struct PaperBookImportValidationReport {
     pub identity: PaperBookIdentityReport,
     pub date_span: PaperBookDateSpanReport,
     pub package: PaperBookPackageReport,
+    pub linking_evidence: PaperBookLinkingEvidenceReport,
+    pub continuation: PaperBookContinuationRecommendation,
     pub candidate_classification: PaperBookCandidateClassification,
     pub can_accept_as_import_candidate: bool,
     pub required_operator_actions: Vec<&'static str>,
@@ -95,6 +114,8 @@ pub struct PaperBookImportPreservationReport {
     pub identity: PaperBookIdentityReport,
     pub date_span: PaperBookDateSpanReport,
     pub package: PaperBookPackageReport,
+    pub linking_evidence: PaperBookLinkingEvidenceReport,
+    pub continuation: PaperBookContinuationRecommendation,
     pub preservation: PaperBookPreservationReport,
     pub candidate_classification: PaperBookCandidateClassification,
     pub can_accept_as_import_candidate: bool,
@@ -193,6 +214,12 @@ pub struct PaperBookImportView {
     pub date_from: String,
     pub date_to: String,
     pub page_count: u32,
+    pub page_from: u32,
+    pub page_to: u32,
+    pub original_ata_number_from: Option<u64>,
+    pub original_ata_number_to: Option<u64>,
+    pub linking_evidence: PaperBookLinkingEvidenceReport,
+    pub continuation: PaperBookContinuationRecommendation,
     pub sha256: String,
     pub size_bytes: usize,
     pub content_type: String,
@@ -229,10 +256,48 @@ pub struct PaperBookDateSpanReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PaperBookPackageReport {
     pub page_count: u32,
+    pub source_page_range: PaperBookPageRangeReport,
     pub source_filename: Option<String>,
     pub digest: Option<String>,
     pub notes_present: bool,
     pub notes_truncated: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PaperBookPageRangeReport {
+    pub from: u32,
+    pub to: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PaperBookOriginalAtaNumberRangeReport {
+    pub from: u64,
+    pub to: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookLinkingEvidenceReport {
+    pub source_page_range: PaperBookPageRangeReport,
+    pub original_ata_number_range: Option<PaperBookOriginalAtaNumberRangeReport>,
+    pub non_canonical: bool,
+    pub planning_evidence_only: bool,
+    pub canonical_act_created: bool,
+    pub canonical_document_created: bool,
+    pub signature_created: bool,
+    pub legal_acceptance_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookContinuationRecommendation {
+    pub recommendation: &'static str,
+    pub recommended_action: &'static str,
+    pub recommended_next_ata_number: Option<u64>,
+    pub action_metadata: Vec<&'static str>,
+    pub requires_operator_review: bool,
+    pub canonical_act_created: bool,
+    pub canonical_document_created: bool,
+    pub signature_created: bool,
+    pub legal_acceptance_claimed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -335,6 +400,16 @@ pub async fn preserve_paper_book_import(
             date_from: parse_date(&validation.date_span.from)?,
             date_to: parse_date(&validation.date_span.to)?,
             page_count: validation.package.page_count,
+            page_from: validation.linking_evidence.source_page_range.from,
+            page_to: validation.linking_evidence.source_page_range.to,
+            original_number_from: validation
+                .linking_evidence
+                .original_ata_number_range
+                .map(|range| range.from),
+            original_number_to: validation
+                .linking_evidence
+                .original_ata_number_range
+                .map(|range| range.to),
             sha256: declared_sha256.clone(),
             size_bytes: bytes.len(),
             content_type: content_type.clone(),
@@ -676,6 +751,14 @@ fn validate_candidate(
             "page_count must be greater than zero".to_owned(),
         ));
     }
+    let source_page_range = validate_source_page_range(page_count, req.page_from, req.page_to)?;
+    let original_ata_number_range = validate_original_ata_number_range(
+        req.original_ata_number_from,
+        req.original_ata_number_to,
+    )?;
+    let linking_evidence =
+        paper_book_linking_evidence(source_page_range, original_ata_number_range);
+    let continuation = paper_book_continuation_recommendation(original_ata_number_range);
 
     let from = parse_date(&date_from)?;
     let to = parse_date(&date_to)?;
@@ -736,11 +819,14 @@ fn validate_candidate(
         },
         package: PaperBookPackageReport {
             page_count,
+            source_page_range,
             source_filename,
             digest,
             notes_present: notes.is_some(),
             notes_truncated: false,
         },
+        linking_evidence,
+        continuation,
         candidate_classification: PaperBookCandidateClassification {
             classification: "historical_paper_book_non_canonical_evidence",
             non_canonical: true,
@@ -754,13 +840,21 @@ fn validate_candidate(
         can_accept_as_import_candidate: true,
         required_operator_actions: vec![
             "review_report",
+            "confirm_source_page_range",
+            "record_original_ata_number_range_before_digital_continuation",
             "preserve_package_in_a_later_operator_action",
-            "link_to_canonical_records_without_replacing_them",
+            "plan_digital_continuation_without_auto_creating_canonical_records",
         ],
-        findings: vec![PaperBookImportFinding::info(
-            "report_only",
-            "validation is read-only; no package, book, act, document, or ledger event was created",
-        )],
+        findings: vec![
+            PaperBookImportFinding::info(
+                "report_only",
+                "validation is read-only; no package, book, act, document, or ledger event was created",
+            ),
+            PaperBookImportFinding::info(
+                "linking_evidence_only",
+                "page and original ata-number ranges are planning metadata only and do not create canonical records",
+            ),
+        ],
     })
 }
 
@@ -779,6 +873,8 @@ fn preservation_report(
             digest: Some(meta.sha256.clone()),
             ..validation.package
         },
+        linking_evidence: paper_book_linking_evidence_from_meta(meta),
+        continuation: paper_book_continuation_recommendation(original_ata_range_from_meta(meta)),
         preservation: PaperBookPreservationReport {
             status: "preserved_non_canonical_package",
             non_canonical: true,
@@ -804,13 +900,150 @@ fn preservation_report(
         can_accept_as_import_candidate: true,
         required_operator_actions: vec![
             "review_non_canonical_preservation_report",
+            "review_linking_evidence_before_any_digital_continuation",
             "perform_ocr_in_a_later_operator_action_if_needed",
-            "link_to_canonical_records_without_replacing_them",
+            "plan_next_digital_ata_without_auto_creating_canonical_records",
         ],
-        findings: vec![PaperBookImportFinding::info(
-            "preserved_non_canonical",
-            "package bytes were preserved outside canonical books, acts, documents, and signatures; the ledger event contains metadata only",
-        )],
+        findings: vec![
+            PaperBookImportFinding::info(
+                "preserved_non_canonical",
+                "package bytes were preserved outside canonical books, acts, documents, and signatures; the ledger event contains metadata only",
+            ),
+            PaperBookImportFinding::info(
+                "linking_evidence_preserved",
+                "source page and original ata-number ranges were preserved as non-canonical planning metadata only",
+            ),
+        ],
+    }
+}
+
+fn validate_source_page_range(
+    page_count: u32,
+    page_from: Option<u32>,
+    page_to: Option<u32>,
+) -> Result<PaperBookPageRangeReport, ApiError> {
+    let from = page_from.unwrap_or(1);
+    let to = page_to.unwrap_or(page_count);
+    if from == 0 || to == 0 {
+        return Err(ApiError::Unprocessable(
+            "source page range is 1-based and must be greater than zero".to_owned(),
+        ));
+    }
+    if from > to {
+        return Err(ApiError::Unprocessable(
+            "source page range is invalid: page_from must be on or before page_to".to_owned(),
+        ));
+    }
+    if to > page_count {
+        return Err(ApiError::Unprocessable(format!(
+            "source page range page_to {to} exceeds page_count {page_count}"
+        )));
+    }
+    Ok(PaperBookPageRangeReport { from, to })
+}
+
+fn validate_original_ata_number_range(
+    from: Option<u64>,
+    to: Option<u64>,
+) -> Result<Option<PaperBookOriginalAtaNumberRangeReport>, ApiError> {
+    let (Some(from), Some(to)) = (from, to) else {
+        if from.is_some() || to.is_some() {
+            return Err(ApiError::Unprocessable(
+                "original_ata_number_from and original_ata_number_to must be supplied together"
+                    .to_owned(),
+            ));
+        }
+        return Ok(None);
+    };
+    if from == 0 || to == 0 {
+        return Err(ApiError::Unprocessable(
+            "original ata-number range values must be greater than zero".to_owned(),
+        ));
+    }
+    if from > to {
+        return Err(ApiError::Unprocessable(
+            "original ata-number range is invalid: original_ata_number_from must be on or before original_ata_number_to"
+                .to_owned(),
+        ));
+    }
+    if from > SQLITE_MAX_INTEGER_U64 || to > SQLITE_MAX_INTEGER_U64 {
+        return Err(ApiError::Unprocessable(
+            "original ata-number range values are too large to persist".to_owned(),
+        ));
+    }
+    Ok(Some(PaperBookOriginalAtaNumberRangeReport { from, to }))
+}
+
+fn paper_book_linking_evidence(
+    source_page_range: PaperBookPageRangeReport,
+    original_ata_number_range: Option<PaperBookOriginalAtaNumberRangeReport>,
+) -> PaperBookLinkingEvidenceReport {
+    PaperBookLinkingEvidenceReport {
+        source_page_range,
+        original_ata_number_range,
+        non_canonical: true,
+        planning_evidence_only: true,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        signature_created: false,
+        legal_acceptance_claimed: false,
+    }
+}
+
+fn paper_book_linking_evidence_from_meta(
+    meta: &StoredPaperBookImportMeta,
+) -> PaperBookLinkingEvidenceReport {
+    paper_book_linking_evidence(
+        PaperBookPageRangeReport {
+            from: meta.page_from,
+            to: meta.page_to,
+        },
+        original_ata_range_from_meta(meta),
+    )
+}
+
+fn original_ata_range_from_meta(
+    meta: &StoredPaperBookImportMeta,
+) -> Option<PaperBookOriginalAtaNumberRangeReport> {
+    match (meta.original_number_from, meta.original_number_to) {
+        (Some(from), Some(to)) => Some(PaperBookOriginalAtaNumberRangeReport { from, to }),
+        _ => None,
+    }
+}
+
+fn paper_book_continuation_recommendation(
+    original_ata_number_range: Option<PaperBookOriginalAtaNumberRangeReport>,
+) -> PaperBookContinuationRecommendation {
+    let recommended_next_ata_number =
+        original_ata_number_range.and_then(|range| range.to.checked_add(1));
+    let (recommendation, recommended_action, action_metadata) =
+        if original_ata_number_range.is_some() {
+            (
+                "continue_after_operator_review_of_original_numbering",
+                "prepare_next_digital_ata_using_recommended_next_ata_number",
+                vec![
+                    "source_page_range",
+                    "original_ata_number_range",
+                    "recommended_next_ata_number",
+                ],
+            )
+        } else {
+            (
+                "capture_original_ata_number_range_before_continuation",
+                "record_original_ata_number_range_then_plan_next_digital_ata",
+                vec!["source_page_range", "original_ata_number_range"],
+            )
+        };
+    PaperBookContinuationRecommendation {
+        recommendation,
+        recommended_action,
+        recommended_next_ata_number,
+        action_metadata,
+        requires_operator_review: true,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        signature_created: false,
+        legal_acceptance_claimed: false,
     }
 }
 
@@ -927,6 +1160,12 @@ fn paper_book_import_event_payload(meta: &StoredPaperBookImportMeta) -> serde_js
         "date_from": format_date(meta.date_from),
         "date_to": format_date(meta.date_to),
         "page_count": meta.page_count,
+        "page_from": meta.page_from,
+        "page_to": meta.page_to,
+        "original_ata_number_from": meta.original_number_from,
+        "original_ata_number_to": meta.original_number_to,
+        "linking_evidence": paper_book_linking_evidence_from_meta(meta),
+        "continuation": paper_book_continuation_recommendation(original_ata_range_from_meta(meta)),
         "sha256": meta.sha256,
         "size_bytes": meta.size_bytes,
         "content_type": meta.content_type,
@@ -1027,6 +1266,12 @@ fn paper_book_import_view(meta: &StoredPaperBookImportMeta) -> PaperBookImportVi
         date_from: format_date(meta.date_from),
         date_to: format_date(meta.date_to),
         page_count: meta.page_count,
+        page_from: meta.page_from,
+        page_to: meta.page_to,
+        original_ata_number_from: meta.original_number_from,
+        original_ata_number_to: meta.original_number_to,
+        linking_evidence: paper_book_linking_evidence_from_meta(meta),
+        continuation: paper_book_continuation_recommendation(original_ata_range_from_meta(meta)),
         sha256: meta.sha256.clone(),
         size_bytes: meta.size_bytes,
         content_type: meta.content_type.clone(),
@@ -1318,6 +1563,10 @@ mod tests {
             date_from: Some("1968-01-01".to_owned()),
             date_to: Some("1971-12-31".to_owned()),
             page_count: Some(240),
+            page_from: Some(1),
+            page_to: Some(48),
+            original_ata_number_from: Some(101),
+            original_ata_number_to: Some(119),
             source_filename: Some("ag-1968-1971.pdf".to_owned()),
             digest: Some("AB".repeat(32)),
             notes: Some("Scanned from bound paper minute book.".to_owned()),
@@ -1329,9 +1578,38 @@ mod tests {
         let report = validate_candidate(base_request()).expect("valid report");
         let expected = "ab".repeat(32);
         assert_eq!(report.package.digest.as_deref(), Some(expected.as_str()));
+        assert_eq!(report.package.source_page_range.from, 1);
+        assert_eq!(report.package.source_page_range.to, 48);
+        assert_eq!(
+            report.linking_evidence.original_ata_number_range,
+            Some(PaperBookOriginalAtaNumberRangeReport { from: 101, to: 119 })
+        );
+        assert_eq!(report.continuation.recommended_next_ata_number, Some(120));
         assert!(report.candidate_classification.non_canonical);
         assert!(!report.candidate_classification.qualified_signature_claimed);
         assert!(!report.candidate_classification.canonical_minutes_claimed);
+    }
+
+    #[test]
+    fn validation_defaults_source_page_range_and_requests_numbering_before_continuation() {
+        let mut req = base_request();
+        req.page_from = None;
+        req.page_to = None;
+        req.original_ata_number_from = None;
+        req.original_ata_number_to = None;
+
+        let report = validate_candidate(req).expect("valid report");
+
+        assert_eq!(report.package.source_page_range.from, 1);
+        assert_eq!(report.package.source_page_range.to, 240);
+        assert_eq!(report.linking_evidence.original_ata_number_range, None);
+        assert_eq!(
+            report.continuation.recommendation,
+            "capture_original_ata_number_range_before_continuation"
+        );
+        assert_eq!(report.continuation.recommended_next_ata_number, None);
+        assert!(!report.continuation.canonical_act_created);
+        assert!(!report.continuation.legal_acceptance_claimed);
     }
 
     #[test]

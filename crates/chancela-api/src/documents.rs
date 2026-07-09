@@ -1638,12 +1638,13 @@ pub async fn get_document_pdf(
     Ok(([(header::CONTENT_TYPE, "application/pdf")], doc.pdf_bytes).into_response())
 }
 
-/// `GET /v1/acts/{id}/document/working-copy` — Markdown convenience export of the sealed
+/// `GET /v1/acts/{id}/document/working-copy` — Markdown/TXT/HTML convenience export of the sealed
 /// generated act document. This is explicitly non-evidentiary: it never changes the preserved
 /// PDF/A bytes, the signed variant, or the ledger.
 pub async fn export_working_copy(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Query(query): Query<WorkingCopyQuery>,
     actor: CurrentActor,
 ) -> Result<Response, ApiError> {
     let act_id = ActId(id);
@@ -1654,18 +1655,64 @@ pub async fn export_working_copy(
     let doc = load_document(&state, act_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let model = render_persisted_act_document_model(&state, act_id, &doc.template_id).await?;
-    let body = working_copy_markdown(act_id, &doc, &model);
-    let filename = format!("act-{id}-working-copy.md");
+    let model = render_persisted_act_document_model(&state, act_id, &doc.template_id)
+        .await
+        .map_err(|err| match err {
+            ApiError::NotFound => ApiError::Conflict(
+                "preserved document exists, but its editable document model is unavailable"
+                    .to_owned(),
+            ),
+            other => other,
+        })?;
+    let (body, content_type, extension) = match query.format {
+        WorkingCopyFormat::Markdown => (
+            working_copy_markdown(act_id, &doc, &model),
+            "text/markdown; charset=utf-8",
+            "md",
+        ),
+        WorkingCopyFormat::Txt => (
+            working_copy_text(act_id, &doc, &model),
+            "text/plain; charset=utf-8",
+            "txt",
+        ),
+        WorkingCopyFormat::Html => (
+            working_copy_html(act_id, &doc, &model),
+            "text/html; charset=utf-8",
+            "html",
+        ),
+    };
+    let filename = format!("act-{id}-working-copy.{extension}");
 
     Response::builder()
-        .header(header::CONTENT_TYPE, "text/markdown; charset=utf-8")
+        .header(header::CONTENT_TYPE, content_type)
         .header(
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{filename}\""),
         )
         .body(Body::from(body))
         .map_err(|e| ApiError::Internal(format!("failed to build working-copy response: {e}")))
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum WorkingCopyFormat {
+    #[serde(alias = "md")]
+    Markdown,
+    #[serde(alias = "text")]
+    Txt,
+    Html,
+}
+
+impl Default for WorkingCopyFormat {
+    fn default() -> Self {
+        Self::Markdown
+    }
+}
+
+#[derive(Deserialize)]
+pub struct WorkingCopyQuery {
+    #[serde(default)]
+    format: WorkingCopyFormat,
 }
 
 /// `GET /v1/acts/{id}/document/office` — deterministic DOCX working-copy export of the preserved
@@ -1754,6 +1801,217 @@ fn working_copy_markdown(act_id: ActId, doc: &StoredDocument, model: &DocumentMo
     }
     append_blocks_markdown(&mut out, &model.blocks);
     out
+}
+
+fn working_copy_text(act_id: ActId, doc: &StoredDocument, model: &DocumentModel) -> String {
+    let mut out = String::new();
+    out.push_str("WORKING COPY - NON-EVIDENTIARY\n\n");
+    out.push_str(
+        "This plain-text export is a working copy for review and editing convenience only. It is \
+         not the preserved signed original and must not be used as the canonical record.\n\n",
+    );
+    out.push_str("Export notice\n\n");
+    out.push_str("Status: working copy, non-evidentiary\n");
+    out.push_str(&format!("Act ID: {act_id}\n"));
+    out.push_str(&format!("Preserved document ID: {}\n", doc.id));
+    out.push_str(&format!("Template: {}\n", doc.template_id));
+    out.push_str(&format!("Preserved PDF digest: {}\n", doc.pdf_digest));
+    out.push_str("Preserved original: use the stored PDF/A or signed PDF endpoint\n\n");
+    out.push_str("----------\n\n");
+    out.push_str(&model.title);
+    out.push_str("\n\n");
+    if !model.subject.trim().is_empty() {
+        out.push_str(&model.subject);
+        out.push_str("\n\n");
+    }
+    append_blocks_text(&mut out, &model.blocks);
+    out
+}
+
+fn append_blocks_text(out: &mut String, blocks: &[Block]) {
+    for block in blocks {
+        match block {
+            Block::Heading { level, text } => {
+                out.push_str(&format!(
+                    "{} {}\n\n",
+                    "=".repeat((*level).clamp(1, 6) as usize),
+                    text
+                ));
+            }
+            Block::Paragraph { runs } => {
+                let paragraph = runs_text(runs);
+                if !paragraph.trim().is_empty() {
+                    out.push_str(paragraph.trim());
+                    out.push_str("\n\n");
+                }
+            }
+            Block::KeyValue { rows } => {
+                for row in rows {
+                    out.push_str(&format!("{}: {}\n", row.key, row.value));
+                }
+                out.push('\n');
+            }
+            Block::VoteTable { rows } => {
+                out.push_str("Item | Favor | Against | Abstain\n");
+                out.push_str("-----|-------|---------|--------\n");
+                for row in rows {
+                    out.push_str(&format!(
+                        "{} | {} | {} | {}\n",
+                        row.label, row.favor, row.against, row.abstain
+                    ));
+                }
+                out.push('\n');
+            }
+            Block::SignatureBlock { slots } => {
+                out.push_str("Signature slots\n\n");
+                for slot in slots {
+                    let name = if slot.name.trim().is_empty() {
+                        "blank"
+                    } else {
+                        slot.name.as_str()
+                    };
+                    out.push_str(&format!("{}: {name}\n", slot.role));
+                }
+                out.push('\n');
+            }
+            Block::PageBreak => out.push_str("[page break]\n\n"),
+            Block::Rule => out.push_str("----------\n\n"),
+        }
+    }
+}
+
+fn runs_text(runs: &[Run]) -> String {
+    runs.iter().map(|run| run.text.as_str()).collect()
+}
+
+fn working_copy_html(act_id: ActId, doc: &StoredDocument, model: &DocumentModel) -> String {
+    let mut body = String::new();
+    body.push_str("<h1>WORKING COPY - NON-EVIDENTIARY</h1>");
+    body.push_str("<p>This HTML export is a working copy for review and editing convenience only. It is not the preserved signed original and must not be used as the canonical record.</p>");
+    body.push_str("<section><h2>Export notice</h2><dl>");
+    for (term, detail) in [
+        ("Status", "working copy, non-evidentiary".to_owned()),
+        ("Act ID", act_id.to_string()),
+        ("Preserved document ID", doc.id.clone()),
+        ("Template", doc.template_id.clone()),
+        ("Preserved PDF digest", doc.pdf_digest.clone()),
+        (
+            "Preserved original",
+            "Use the stored PDF/A or signed PDF endpoint".to_owned(),
+        ),
+    ] {
+        body.push_str("<dt>");
+        body.push_str(&html_escape(term));
+        body.push_str("</dt><dd>");
+        body.push_str(&html_escape(&detail));
+        body.push_str("</dd>");
+    }
+    body.push_str("</dl></section><hr>");
+    body.push_str("<main>");
+    body.push_str("<h1>");
+    body.push_str(&html_escape(&model.title));
+    body.push_str("</h1>");
+    if !model.subject.trim().is_empty() {
+        body.push_str("<p><em>");
+        body.push_str(&html_escape(&model.subject));
+        body.push_str("</em></p>");
+    }
+    append_blocks_html(&mut body, &model.blocks);
+    body.push_str("</main>");
+
+    format!(
+        "<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"><title>{}</title></head><body>{body}</body></html>",
+        html_escape(&model.language),
+        html_escape(&format!("{} - working copy", model.title))
+    )
+}
+
+fn append_blocks_html(out: &mut String, blocks: &[Block]) {
+    for block in blocks {
+        match block {
+            Block::Heading { level, text } => {
+                let level = (*level).clamp(1, 6);
+                out.push_str(&format!("<h{level}>"));
+                out.push_str(&html_escape(text));
+                out.push_str(&format!("</h{level}>"));
+            }
+            Block::Paragraph { runs } => {
+                if runs_text(runs).trim().is_empty() {
+                    continue;
+                }
+                out.push_str("<p>");
+                for run in runs {
+                    append_run_html(out, run);
+                }
+                out.push_str("</p>");
+            }
+            Block::KeyValue { rows } => {
+                out.push_str("<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>");
+                for row in rows {
+                    out.push_str("<tr><td>");
+                    out.push_str(&html_escape(&row.key));
+                    out.push_str("</td><td>");
+                    out.push_str(&html_escape(&row.value));
+                    out.push_str("</td></tr>");
+                }
+                out.push_str("</tbody></table>");
+            }
+            Block::VoteTable { rows } => {
+                out.push_str("<table><thead><tr><th>Item</th><th>Favor</th><th>Against</th><th>Abstain</th></tr></thead><tbody>");
+                for row in rows {
+                    out.push_str("<tr><td>");
+                    out.push_str(&html_escape(&row.label));
+                    out.push_str("</td><td>");
+                    out.push_str(&row.favor.to_string());
+                    out.push_str("</td><td>");
+                    out.push_str(&row.against.to_string());
+                    out.push_str("</td><td>");
+                    out.push_str(&row.abstain.to_string());
+                    out.push_str("</td></tr>");
+                }
+                out.push_str("</tbody></table>");
+            }
+            Block::SignatureBlock { slots } => {
+                out.push_str("<section><h2>Signature slots</h2><ul>");
+                for slot in slots {
+                    let name = if slot.name.trim().is_empty() {
+                        "blank"
+                    } else {
+                        slot.name.as_str()
+                    };
+                    out.push_str("<li><strong>");
+                    out.push_str(&html_escape(&slot.role));
+                    out.push_str("</strong>: ");
+                    out.push_str(&html_escape(name));
+                    out.push_str("</li>");
+                }
+                out.push_str("</ul></section>");
+            }
+            Block::PageBreak => out.push_str("<div data-page-break=\"true\"></div>"),
+            Block::Rule => out.push_str("<hr>"),
+        }
+    }
+}
+
+fn append_run_html(out: &mut String, run: &Run) {
+    match (run.bold, run.italic) {
+        (true, true) => {
+            out.push_str("<strong><em>");
+            out.push_str(&html_escape(&run.text));
+            out.push_str("</em></strong>");
+        }
+        (true, false) => {
+            out.push_str("<strong>");
+            out.push_str(&html_escape(&run.text));
+            out.push_str("</strong>");
+        }
+        (false, true) => {
+            out.push_str("<em>");
+            out.push_str(&html_escape(&run.text));
+            out.push_str("</em>");
+        }
+        (false, false) => out.push_str(&html_escape(&run.text)),
+    }
 }
 
 fn append_blocks_markdown(out: &mut String, blocks: &[Block]) {
@@ -2087,6 +2345,10 @@ fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+fn html_escape(value: &str) -> String {
+    xml_escape(value)
+}
+
 fn is_ata_template(template_id: &str) -> bool {
     registry()
         .get(template_id)
@@ -2294,8 +2556,8 @@ mod tests {
     use chancela_core::book::ClosingReason;
     use chancela_core::{
         ActState, AgendaItem, AttendanceWeight, Attendee, Book, BookKind, Convening,
-        DispatchChannel, Entity, EntityKind, MeetingChannel, Nipc, PresenceMode, SecondCall,
-        SignatoryCapacity,
+        DispatchChannel, Entity, EntityKind, KvRow, MeetingChannel, Nipc, PresenceMode, SecondCall,
+        SignatoryCapacity, SignatureSlot, VoteRow,
     };
     use der::Encode;
     use der::asn1::{Any, BitString, ObjectIdentifier};
@@ -2508,6 +2770,112 @@ mod tests {
     fn report_sha256(bytes: &[u8]) -> String {
         let digest: [u8; 32] = Sha256::digest(bytes).into();
         crate::hex::hex(&digest)
+    }
+
+    fn export_fixture() -> (ActId, StoredDocument, DocumentModel) {
+        let act_id = ActId(Uuid::new_v4());
+        let doc = StoredDocument {
+            id: "doc-fixture".to_owned(),
+            act_id,
+            template_id: "csc-ata-ag/v1".to_owned(),
+            pdf_digest: "ab".repeat(32),
+            profile: PDFA_PROFILE.to_owned(),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            pdf_bytes: b"%PDF-1.7\nfixture\n%%EOF\n".to_vec(),
+        };
+        let model = DocumentModel {
+            title: "Ata <Especial>".to_owned(),
+            entity_name: "Encosto Estratégico, S.A.".to_owned(),
+            entity_nipc: Some("503004642".to_owned()),
+            subject: "Revisão & aprovação".to_owned(),
+            language: "pt-PT".to_owned(),
+            created_at: Some("2026-03-30T10:00:00Z".to_owned()),
+            blocks: vec![
+                Block::Heading {
+                    level: 2,
+                    text: "Deliberação <1>".to_owned(),
+                },
+                Block::Paragraph {
+                    runs: vec![
+                        Run {
+                            text: "Aprovado por ".to_owned(),
+                            bold: false,
+                            italic: false,
+                        },
+                        Run {
+                            text: "<script>alert(1)</script>".to_owned(),
+                            bold: true,
+                            italic: false,
+                        },
+                    ],
+                },
+                Block::KeyValue {
+                    rows: vec![KvRow {
+                        key: "Local".to_owned(),
+                        value: "Lisboa & Porto".to_owned(),
+                    }],
+                },
+                Block::VoteTable {
+                    rows: vec![VoteRow {
+                        label: "Ponto 1".to_owned(),
+                        favor: 3,
+                        against: 1,
+                        abstain: 0,
+                    }],
+                },
+                Block::SignatureBlock {
+                    slots: vec![SignatureSlot {
+                        role: "Presidente da mesa".to_owned(),
+                        name: "".to_owned(),
+                    }],
+                },
+            ],
+        };
+        (act_id, doc, model)
+    }
+
+    #[test]
+    fn text_working_copy_renders_from_model_with_notice_metadata_and_body() {
+        let (act_id, doc, model) = export_fixture();
+
+        let text = working_copy_text(act_id, &doc, &model);
+
+        assert!(text.contains("WORKING COPY - NON-EVIDENTIARY"));
+        assert!(text.contains("plain-text export"));
+        assert!(text.contains("Status: working copy, non-evidentiary"));
+        assert!(text.contains(&doc.id));
+        assert!(text.contains(&doc.pdf_digest));
+        assert!(text.contains("Ata <Especial>"));
+        assert!(text.contains("Aprovado por <script>alert(1)</script>"));
+        assert!(text.contains("Local: Lisboa & Porto"));
+        assert!(
+            !text.starts_with("%PDF-"),
+            "working-copy TXT is not canonical PDF bytes"
+        );
+    }
+
+    #[test]
+    fn html_working_copy_escapes_model_text_and_labels_non_evidentiary() {
+        let (act_id, doc, model) = export_fixture();
+
+        let html = working_copy_html(act_id, &doc, &model);
+
+        assert!(html.starts_with("<!doctype html>"));
+        assert!(html.contains("WORKING COPY - NON-EVIDENTIARY"));
+        assert!(html.contains("HTML export"));
+        assert!(html.contains("working copy, non-evidentiary"));
+        assert!(html.contains(&doc.id));
+        assert!(html.contains(&doc.pdf_digest));
+        assert!(html.contains("Ata &lt;Especial&gt;"));
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(
+            !html.contains("<script>alert(1)</script>"),
+            "HTML export must escape model text"
+        );
+        assert!(
+            !html.starts_with("%PDF-"),
+            "working-copy HTML is not canonical PDF bytes"
+        );
     }
 
     #[test]

@@ -44,7 +44,10 @@
 /// - **v9** — adds `paper_book_ocr_drafts`: non-authoritative OCR draft results linked to
 ///   preserved paper-book imports. These rows are review aids only and make no canonical or legal
 ///   text claim.
-pub const SCHEMA_VERSION: i64 = 9;
+/// - **v10** — adds paper-book non-canonical linking metadata: validated source page ranges,
+///   original paper-book ata number ranges, and digital-continuation planning inputs. These fields
+///   remain non-canonical metadata and do not create act, document, or signature rows.
+pub const SCHEMA_VERSION: i64 = 10;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -305,7 +308,10 @@ pub const CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX: &str = "CREATE INDEX IF NOT
 /// This table retains the operator-supplied scan/package bytes with fixity and descriptive
 /// metadata after the API re-runs paper-book import validation. It deliberately does not create
 /// canonical minutes, generated documents, signed variants, or OCR text. `ocr_status` is only a
-/// hook/status marker for later asynchronous work.
+/// hook/status marker for later asynchronous work. The page/number range fields are
+/// operator-visible linking metadata only: they preserve original paper-book numbering and the
+/// source-package page span so a later digital continuation can be planned without converting the
+/// scan into a canonical digital act.
 pub const CREATE_PAPER_BOOK_IMPORTS: &str = "\
 CREATE TABLE IF NOT EXISTS paper_book_imports (
     import_id       TEXT PRIMARY KEY,
@@ -316,6 +322,10 @@ CREATE TABLE IF NOT EXISTS paper_book_imports (
     date_from       TEXT NOT NULL,
     date_to         TEXT NOT NULL,
     page_count      INTEGER NOT NULL,
+    page_from       INTEGER NOT NULL DEFAULT 1,
+    page_to         INTEGER NOT NULL DEFAULT 1,
+    original_number_from INTEGER,
+    original_number_to   INTEGER,
     sha256          TEXT NOT NULL,
     size_bytes      INTEGER NOT NULL,
     content_type    TEXT NOT NULL,

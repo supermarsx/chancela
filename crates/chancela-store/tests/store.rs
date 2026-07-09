@@ -153,6 +153,10 @@ fn sample_paper_book_import(id: &str, bytes: &[u8]) -> StoredPaperBookImport {
             date_from: time::macros::date!(1968 - 01 - 01),
             date_to: time::macros::date!(1971 - 12 - 31),
             page_count: 240,
+            page_from: 1,
+            page_to: 240,
+            original_number_from: Some(1),
+            original_number_to: Some(15),
             sha256: hex(&Sha256::digest(bytes)),
             size_bytes: bytes.len(),
             content_type: "application/pdf".to_string(),
@@ -618,7 +622,11 @@ fn book_legal_hold_survives_drop_and_reopen_without_schema_churn() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "7", "book JSON metadata did not require DDL");
+    assert_eq!(
+        stamped,
+        chancela_store::schema::SCHEMA_VERSION.to_string(),
+        "book JSON metadata did not require an extra schema bump"
+    );
 }
 
 #[test]
@@ -850,9 +858,10 @@ fn schema_version_is_current() {
     // landed as schema v3; the qualified-signing tables (`signed_documents` + `pending_cmd_sessions`,
     // t57-S3) landed as schema v4; non-canonical imported documents landed as schema v5; act
     // follow-ups landed as schema v6; signed timestamp-trust diagnostics landed as schema v7;
-    // preserved paper-book imports landed as schema v8; paper-book OCR drafts landed as schema v9.
+    // preserved paper-book imports landed as schema v8; paper-book OCR drafts landed as schema v9;
+    // paper-book original numbering/linking metadata landed as schema v10.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 9);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 10);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -863,7 +872,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "9");
+    assert_eq!(stamped, "10");
     let ocr_draft_table: i64 = raw
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",
@@ -880,6 +889,15 @@ fn schema_version_is_current() {
         )
         .unwrap();
     assert_eq!(ocr_draft_import_index, 1);
+    let paper_linking_columns: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('paper_book_imports') \
+             WHERE name IN ('page_from', 'page_to', 'original_number_from', 'original_number_to')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(paper_linking_columns, 4);
 }
 
 #[test]
@@ -1021,7 +1039,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "7", "stamp advanced forward");
+        assert_eq!(stamped, "10", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -1204,6 +1222,10 @@ fn paper_book_import_package_round_trips_with_metadata_and_ocr_status() {
         .expect("paper-book import present");
     assert_eq!(by_id, import);
     assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::NotRun);
+    assert_eq!(by_id.meta.page_from, 1);
+    assert_eq!(by_id.meta.page_to, 240);
+    assert_eq!(by_id.meta.original_number_from, Some(1));
+    assert_eq!(by_id.meta.original_number_to, Some(15));
     assert_eq!(by_id.meta.sha256, hex(&Sha256::digest(&by_id.bytes)));
 
     drop(store);
@@ -1214,6 +1236,127 @@ fn paper_book_import_package_round_trips_with_metadata_and_ocr_status() {
             .unwrap()
             .as_ref(),
         Some(&import)
+    );
+}
+
+#[test]
+fn older_paper_book_import_rows_gain_full_page_range_on_upgrade() {
+    let dir = TempDir::new();
+    let bytes = b"%PDF-1.7\nhistorical paper book scan package\n%%EOF";
+    let digest = hex(&Sha256::digest(bytes));
+    {
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute_batch(
+            "\
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;\
+            INSERT INTO meta (key, value) VALUES ('schema_version', '9');\
+            CREATE TABLE paper_book_imports (\
+                import_id TEXT PRIMARY KEY,\
+                entity_ref TEXT NOT NULL,\
+                entity_name TEXT NOT NULL,\
+                entity_nipc TEXT NOT NULL,\
+                book_ref TEXT NOT NULL,\
+                date_from TEXT NOT NULL,\
+                date_to TEXT NOT NULL,\
+                page_count INTEGER NOT NULL,\
+                sha256 TEXT NOT NULL,\
+                size_bytes INTEGER NOT NULL,\
+                content_type TEXT NOT NULL,\
+                source_filename TEXT,\
+                notes TEXT,\
+                imported_at TEXT NOT NULL,\
+                imported_by TEXT NOT NULL,\
+                ocr_status TEXT NOT NULL,\
+                bytes BLOB NOT NULL\
+            ) STRICT;",
+        )
+        .unwrap();
+        raw.execute(
+            "INSERT INTO paper_book_imports \
+             (import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, date_to, \
+              page_count, sha256, size_bytes, content_type, source_filename, notes, imported_at, \
+              imported_by, ocr_status, bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+            rusqlite::params![
+                "33333333-3333-4333-8333-333333333336",
+                "entity-legacy-001",
+                "Encosto Estrategico, S.A.",
+                "503004642",
+                "ag-book-1968-1971",
+                "1968-01-01",
+                "1971-12-31",
+                12_i64,
+                digest,
+                i64::try_from(bytes.len()).unwrap(),
+                "application/pdf",
+                "ag-1968-1971.pdf",
+                "legacy row before WFL-15",
+                "2026-05-29T01:46:41Z",
+                "amelia.marques",
+                "not_run",
+                bytes,
+            ],
+        )
+        .unwrap();
+    }
+
+    let store = Store::open(dir.path()).expect("open migrated v9 paper import db");
+    let row = store
+        .paper_book_import("33333333-3333-4333-8333-333333333336")
+        .expect("read migrated paper import")
+        .expect("row present");
+    assert_eq!(row.meta.page_count, 12);
+    assert_eq!(row.meta.page_from, 1);
+    assert_eq!(row.meta.page_to, 12);
+    assert_eq!(row.meta.original_number_from, None);
+    assert_eq!(row.meta.original_number_to, None);
+
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let stamped: String = raw
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped, "10");
+}
+
+#[test]
+fn paper_book_import_rejects_invalid_page_or_original_number_ranges() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let mut bad_pages = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333337",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    bad_pages.meta.page_from = 241;
+
+    assert!(
+        store
+            .persist(|tx| tx.upsert_paper_book_import(&bad_pages))
+            .is_err(),
+        "invalid page ranges must be rejected before persistence"
+    );
+    assert!(
+        store
+            .paper_book_import(&bad_pages.meta.import_id)
+            .expect("read after bad page range")
+            .is_none(),
+        "invalid page range row was not inserted"
+    );
+
+    let mut bad_original = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333338",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    bad_original.meta.original_number_to = None;
+
+    assert!(
+        store
+            .persist(|tx| tx.upsert_paper_book_import(&bad_original))
+            .is_err(),
+        "partial original ata-number ranges must be rejected before persistence"
     );
 }
 
@@ -1457,7 +1600,8 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     assert_eq!(bare_act.convening, None);
     assert!(bare_act.attendees.is_empty());
 
-    // No schema bump: the stamp is v2 before and after persisting acts carrying the new fields.
+    // No schema bump: the current stamp is unchanged before and after persisting acts carrying the
+    // new fields.
     let stamp = |path: &Path| -> String {
         let raw = rusqlite::Connection::open(path.join("chancela.db")).unwrap();
         raw.query_row(
@@ -1472,7 +1616,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         let store = Store::open(dir.path()).expect("open");
         assert_eq!(
             stamp(dir.path()),
-            "7",
+            chancela_store::schema::SCHEMA_VERSION.to_string(),
             "fresh db stamped at current version"
         );
         let mut ledger = Ledger::new();
@@ -1509,7 +1653,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         // Store dropped here — the process "restarts". No migration ran; no DDL touched acts.
         assert_eq!(
             stamp(dir.path()),
-            "7",
+            chancela_store::schema::SCHEMA_VERSION.to_string(),
             "no schema bump after writing G1/G2 acts"
         );
     }
@@ -1518,7 +1662,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     let store = Store::open(dir.path()).expect("reopen");
     assert_eq!(
         stamp(dir.path()),
-        "7",
+        chancela_store::schema::SCHEMA_VERSION.to_string(),
         "reopen did not bump the schema version"
     );
     let loaded = store.load().expect("reload");

@@ -188,6 +188,8 @@ export interface TextDownload {
   headers: Headers;
 }
 
+export type ActDocumentWorkingCopyFormat = 'markdown' | 'txt' | 'html';
+
 /** The path a response came back on, for diagnostics; empty when the URL is unavailable. */
 function responsePath(res: Response, path?: string): string {
   if (path) return path;
@@ -313,8 +315,8 @@ export async function fetchBlob(path: string): Promise<Blob> {
 }
 
 /**
- * Fetch a textual download (for example a Markdown export) without routing it through
- * JSON parsing or PDF-specific helpers. Returns both text and Blob forms, preserving
+ * Fetch a textual download without routing it through JSON parsing or PDF-specific
+ * helpers. Returns both text and Blob forms, preserving
  * the response content type/header metadata for callers that save the file.
  */
 export async function fetchTextDownload(path: string): Promise<TextDownload> {
@@ -491,10 +493,13 @@ export const api = {
   // as a Blob (not JSON) so it can be triggered as a download with an honest filename;
   // carries the session token like every other request. 404 until sealed.
   fetchActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document`),
-  // Markdown working-copy export (`GET .../document/working-copy`, text/markdown).
-  // Non-evidentiary and intentionally separate from the persisted/signed PDF downloads.
-  fetchActDocumentWorkingCopy: (id: string) =>
-    fetchTextDownload(`/v1/acts/${id}/document/working-copy`),
+  // Text working-copy export (`GET .../document/working-copy`, text/markdown by default;
+  // `?format=txt|html` for plain text/HTML). Non-evidentiary and intentionally separate
+  // from the persisted/signed PDF downloads.
+  fetchActDocumentWorkingCopy: (id: string, format: ActDocumentWorkingCopyFormat = 'markdown') =>
+    fetchTextDownload(
+      `/v1/acts/${id}/document/working-copy${format === 'markdown' ? '' : query({ format })}`,
+    ),
   // Office-editable DOCX working-copy export (`GET .../document/office`). Read-only and
   // non-evidentiary; the persisted PDF/A or signed PDF remains the canonical record.
   fetchActDocumentOffice: (id: string) => fetchBlob(`/v1/acts/${id}/document/office`),

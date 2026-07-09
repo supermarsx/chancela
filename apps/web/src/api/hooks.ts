@@ -74,7 +74,7 @@ import type {
   TslRefreshRequest,
   TsaCatalogSearchParams,
 } from './types';
-import { api } from './client';
+import { api, type ActDocumentWorkingCopyFormat } from './client';
 import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
 
 export const keys = {
@@ -595,11 +595,15 @@ export function useDownloadActDocument(id: string) {
 }
 
 /**
- * Download a sealed act's Markdown working copy (`GET /v1/acts/{id}/document/working-copy`).
- * This is explicitly non-evidentiary; callers keep it visually separate from the official PDF/A.
+ * Download a sealed act's text working copy (`GET /v1/acts/{id}/document/working-copy`).
+ * Markdown is the default format; TXT and HTML are explicit format variants. These exports are
+ * non-evidentiary, so callers keep them visually separate from the official PDF/A.
  */
-export function useDownloadActDocumentWorkingCopy(id: string) {
-  return useMutation({ mutationFn: () => api.fetchActDocumentWorkingCopy(id) });
+export function useDownloadActDocumentWorkingCopy(
+  id: string,
+  format: ActDocumentWorkingCopyFormat = 'markdown',
+) {
+  return useMutation({ mutationFn: () => api.fetchActDocumentWorkingCopy(id, format) });
 }
 
 /**

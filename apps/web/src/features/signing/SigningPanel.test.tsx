@@ -33,6 +33,7 @@ const sealedAct: ActView = {
   ata_number: 1,
   payload_digest: null,
   seal_event_seq: null,
+  seal_metadata: null,
   retifies: null,
 };
 

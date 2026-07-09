@@ -33,6 +33,7 @@ const baseAct: ActView = {
   ata_number: null,
   payload_digest: null,
   seal_event_seq: null,
+  seal_metadata: null,
   retifies: null,
 };
 
@@ -119,10 +120,12 @@ describe('ActDocumentPanel — download only post-seal', () => {
     // …but no download button while unsealed.
     expect(screen.queryByRole('button', { name: 'Descarregar PDF' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Descarregar Markdown' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Descarregar TXT' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Descarregar HTML' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Descarregar DOCX' })).toBeNull();
   });
 
-  it('shows the PDF, Markdown, and DOCX downloads + digest once sealed and a document exists', async () => {
+  it('shows the PDF and working-copy downloads + digest once sealed and a document exists', async () => {
     vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.includes('/document/bundle')) return json(bundle);
@@ -142,10 +145,12 @@ describe('ActDocumentPanel — download only post-seal', () => {
 
     expect(await screen.findByRole('button', { name: 'Descarregar PDF' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Descarregar Markdown' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Descarregar TXT' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Descarregar HTML' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Descarregar DOCX' })).toBeTruthy();
     expect(
       screen.getByText(
-        'Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+        'Markdown, TXT, HTML e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
       ),
     ).toBeTruthy();
     expect(screen.getByText('Impressão do PDF:')).toBeTruthy();
@@ -232,7 +237,7 @@ describe('ActDocumentPanel — download only post-seal', () => {
     expect(within(metadata).queryByRole('link', { name: longTemplateId })).toBeNull();
     expect(
       screen.getByText(
-        'Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+        'Markdown, TXT, HTML e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
       ),
     ).toBeTruthy();
   });
@@ -294,6 +299,88 @@ describe('ActDocumentPanel — download only post-seal', () => {
     expect(revokeUrl).toHaveBeenCalledWith('blob:working-copy');
     expect(clickSpy).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Descarregar PDF' })).toBeTruthy();
+  });
+
+  it('downloads TXT and HTML working copies with explicit format queries and filenames', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      calls.push(url);
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/document/working-copy?format=txt')) {
+        return Promise.resolve(
+          new Response('WORKING COPY - NON-EVIDENTIARY\n\nTXT copy', {
+            status: 200,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          }),
+        );
+      }
+      if (url.includes('/document/working-copy?format=html')) {
+        return Promise.resolve(
+          new Response('<!doctype html><h1>WORKING COPY - NON-EVIDENTIARY</h1>', {
+            status: 200,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          }),
+        );
+      }
+      const imports = emptyImports(url);
+      if (imports) return imports;
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    const objectUrls = ['blob:txt-working-copy', 'blob:html-working-copy'];
+    let objectUrlIndex = 0;
+    const createUrl = vi.fn((object: Blob | MediaSource) => {
+      void object;
+      return objectUrls[objectUrlIndex++] ?? 'blob:working-copy';
+    });
+    const revokeUrl = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
+    const clickedDownloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clickedDownloads.push(this.download);
+    });
+
+    const sealed: ActView = { ...baseAct, state: 'Sealed', ata_number: 1 };
+    renderWithProviders(
+      <ActDocumentPanel
+        act={sealed}
+        entityName="Encosto Estratégico Lda"
+        family="CommercialCompany"
+      />,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Descarregar TXT' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Descarregar TXT' }));
+    await waitFor(() =>
+      expect(
+        calls.some((url) => url.includes('/v1/acts/act-1/document/working-copy?format=txt')),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(1));
+    const txtBlob = createUrl.mock.calls[0]?.[0] as Blob;
+    expect(txtBlob.type).toBe('text/plain;charset=utf-8');
+    expect(await blobText(txtBlob)).toContain('TXT copy');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Descarregar HTML' }));
+    await waitFor(() =>
+      expect(
+        calls.some((url) => url.includes('/v1/acts/act-1/document/working-copy?format=html')),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(2));
+    const htmlBlob = createUrl.mock.calls[1]?.[0] as Blob;
+    expect(htmlBlob.type).toBe('text/html;charset=utf-8');
+    expect(await blobText(htmlBlob)).toContain('<!doctype html>');
+
+    expect(clickedDownloads).toEqual([
+      'encosto-estrategico-lda-ata-1-working-copy.txt',
+      'encosto-estrategico-lda-ata-1-working-copy.html',
+    ]);
+    expect(revokeUrl).toHaveBeenCalledWith('blob:txt-working-copy');
+    expect(revokeUrl).toHaveBeenCalledWith('blob:html-working-copy');
   });
 
   it('downloads the DOCX office working copy as a non-evidentiary .docx file', async () => {
