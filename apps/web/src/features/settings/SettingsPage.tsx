@@ -16,7 +16,13 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useHealth, useLedgerVerify, useSettings, useUpdateSettings } from '../../api/hooks';
+import {
+  useHealth,
+  useLedgerVerify,
+  usePlatformLogs,
+  useSettings,
+  useUpdateSettings,
+} from '../../api/hooks';
 import { useAutosave } from '../../hooks/useAutosave';
 import { useToast } from '../../ui';
 import {
@@ -30,6 +36,8 @@ import {
   DEFAULT_SETTINGS,
   LOCALES,
   NUMBERING_SCHEMES,
+  PLATFORM_EMITTED_LOG_LEVELS,
+  PLATFORM_SERVICE_IDS,
   REGISTERED_ENTITY_COLUMNS,
   SIGNATURE_FAMILIES,
   THEME_MODES,
@@ -40,7 +48,11 @@ import {
   type Locale,
   type NumberingScheme,
   type OrganizationSettings,
+  type PlatformEmittedLogLevel,
+  type PlatformLogEntry,
+  type PlatformLogsQueryParams,
   type PlatformSettings,
+  type PlatformServiceId,
   type RegisteredEntityColumn,
   type RegistryAutoUpdateSettings,
   type Settings,
@@ -305,6 +317,216 @@ function providerStatus(
   if (provider.local_only)
     return { tone: 'accent', label: t('settings.signing.providerStatus.localOnly') };
   return { tone: 'warn', label: t('settings.signing.providerStatus.unconfigured') };
+}
+
+const PLATFORM_LOG_TAIL_OPTIONS = [25, 50, 100, 200] as const;
+
+function platformLogServiceLabel(serviceId: PlatformServiceId, t: ReturnType<typeof useT>) {
+  return t(`settings.platform.service.${serviceId}` as MessageKey);
+}
+
+function platformLogLevelTone(
+  level: PlatformEmittedLogLevel,
+): 'neutral' | 'accent' | 'warn' | 'error' | 'ok' {
+  if (level === 'error') return 'error';
+  if (level === 'warn') return 'warn';
+  if (level === 'info') return 'accent';
+  return 'neutral';
+}
+
+function platformLogContextText(context: PlatformLogEntry['context']): string {
+  if (context === undefined) return '';
+  try {
+    return JSON.stringify(context, null, 2) ?? String(context);
+  } catch {
+    return String(context);
+  }
+}
+
+function PlatformLogTailPanel() {
+  const t = useT();
+  const [serviceId, setServiceId] = useState<PlatformServiceId | ''>('');
+  const [level, setLevel] = useState<PlatformEmittedLogLevel | ''>('');
+  const [tail, setTail] = useState<number>(100);
+  const params = useMemo<PlatformLogsQueryParams>(
+    () => ({
+      service_id: serviceId || undefined,
+      level: level || undefined,
+      tail,
+    }),
+    [level, serviceId, tail],
+  );
+  const logs = usePlatformLogs(params);
+  const serviceOptions = useMemo(
+    () => [
+      { value: '', label: t('settings.platform.logs.filter.service.all') },
+      ...PLATFORM_SERVICE_IDS.map((id) => ({
+        value: id,
+        label: platformLogServiceLabel(id, t),
+      })),
+    ],
+    [t],
+  );
+  const levelOptions = useMemo(
+    () => [
+      { value: '', label: t('settings.platform.logs.filter.level.all') },
+      ...PLATFORM_EMITTED_LOG_LEVELS.map((item) => ({
+        value: item,
+        label: t(`settings.platform.logLevel.${item}` as MessageKey),
+      })),
+    ],
+    [t],
+  );
+  const tailOptions = useMemo(
+    () => PLATFORM_LOG_TAIL_OPTIONS.map((item) => ({ value: String(item), label: String(item) })),
+    [],
+  );
+  const orderLabel =
+    logs.data?.order === 'chronological'
+      ? t('settings.platform.logs.order.chronological')
+      : (logs.data?.order ?? t('settings.platform.logs.order.unknown'));
+
+  return (
+    <Card
+      title={t('settings.platform.logs.cardTitle')}
+      actions={
+        <IconButton
+          type="button"
+          icon={<Icon.Refresh />}
+          label={
+            logs.isFetching
+              ? t('settings.platform.logs.refreshing')
+              : t('settings.platform.logs.refresh')
+          }
+          disabled={logs.isFetching}
+          onClick={() => void logs.refetch()}
+        />
+      }
+    >
+      <div className="form">
+        <p className="field__hint">{t('settings.platform.logs.hint')}</p>
+        <div className="platform-log-controls">
+          <Field label={t('settings.platform.logs.filter.service')} htmlFor="platform-log-service">
+            <Select
+              id="platform-log-service"
+              value={serviceId}
+              options={serviceOptions}
+              onChange={(e) => setServiceId(e.target.value as PlatformServiceId | '')}
+            />
+          </Field>
+          <Field label={t('settings.platform.logs.filter.level')} htmlFor="platform-log-level">
+            <Select
+              id="platform-log-level"
+              value={level}
+              options={levelOptions}
+              onChange={(e) => setLevel(e.target.value as PlatformEmittedLogLevel | '')}
+            />
+          </Field>
+          <Field label={t('settings.platform.logs.filter.tail')} htmlFor="platform-log-tail">
+            <Select
+              id="platform-log-tail"
+              value={String(tail)}
+              options={tailOptions}
+              onChange={(e) => setTail(Number(e.target.value))}
+            />
+          </Field>
+        </div>
+
+        {logs.isLoading ? <Loading label={t('settings.platform.logs.loading')} /> : null}
+        {logs.error ? <ErrorNote error={logs.error} /> : null}
+
+        {logs.data ? (
+          <div className="stack--tight">
+            <InlineWarning tone="info" title={t('settings.platform.logs.limitations.title')}>
+              <ul className="platform-log-limitations">
+                {logs.data.limitations.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </InlineWarning>
+            <p className="field__hint">
+              {t('settings.platform.logs.summary', {
+                count: logs.data.logs.length,
+                tail: logs.data.tail,
+                order: orderLabel,
+              })}
+            </p>
+            {logs.data.logs.length === 0 ? (
+              <InlineWarning tone="info" title={t('settings.platform.logs.empty.title')}>
+                {t('settings.platform.logs.empty.body')}
+              </InlineWarning>
+            ) : (
+              <div className="platform-log-table-wrap">
+                <table className="table platform-log-table">
+                  <thead>
+                    <tr>
+                      <th>{t('settings.platform.logs.column.seq')}</th>
+                      <th>{t('settings.platform.logs.column.time')}</th>
+                      <th>{t('settings.platform.logs.column.service')}</th>
+                      <th>{t('settings.platform.logs.column.level')}</th>
+                      <th>{t('settings.platform.logs.column.target')}</th>
+                      <th>{t('settings.platform.logs.column.message')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.data.logs.map((entry) => {
+                      const context = platformLogContextText(entry.context);
+                      return (
+                        <tr key={entry.id}>
+                          <td
+                            className="mono"
+                            data-label={t('settings.platform.logs.column.seq')}
+                          >
+                            {entry.seq}
+                          </td>
+                          <td
+                            className="mono"
+                            data-label={t('settings.platform.logs.column.time')}
+                          >
+                            <time dateTime={entry.timestamp}>{entry.timestamp}</time>
+                          </td>
+                          <td data-label={t('settings.platform.logs.column.service')}>
+                            {platformLogServiceLabel(entry.service_id, t)}
+                          </td>
+                          <td data-label={t('settings.platform.logs.column.level')}>
+                            <Badge tone={platformLogLevelTone(entry.level)}>
+                              {t(`settings.platform.logLevel.${entry.level}` as MessageKey)}
+                            </Badge>
+                          </td>
+                          <td
+                            className="mono"
+                            data-label={t('settings.platform.logs.column.target')}
+                          >
+                            {entry.target}
+                          </td>
+                          <td
+                            className="platform-log-message-cell"
+                            data-label={t('settings.platform.logs.column.message')}
+                          >
+                            <p>{entry.message}</p>
+                            {context ? (
+                              <details className="platform-log-context">
+                                <summary>{t('settings.platform.logs.context.show')}</summary>
+                                <pre>{context}</pre>
+                              </details>
+                            ) : (
+                              <p className="field__hint">
+                                {t('settings.platform.logs.context.empty')}
+                              </p>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
 }
 
 export function SettingsPage() {
@@ -828,12 +1050,15 @@ export function SettingsPage() {
 
           {/* Operações -------------------------------------------------------------- */}
           {section === 'operacoes' ? (
-            <PlatformOperationsSection
-              value={draft.platform}
-              audit={committed.platform.audit}
-              canManage={canManageSettings}
-              onChange={setPlatform}
-            />
+            <div className="stack">
+              <PlatformOperationsSection
+                value={draft.platform}
+                audit={committed.platform.audit}
+                canManage={canManageSettings}
+                onChange={setPlatform}
+              />
+              <PlatformLogTailPanel />
+            </div>
           ) : null}
 
           {/* Utilizadores ------------------------------------------------------------ */}

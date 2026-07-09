@@ -2455,6 +2455,9 @@ export interface SigningSettings {
 export const PLATFORM_LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'off'] as const;
 export type PlatformLogLevel = (typeof PLATFORM_LOG_LEVELS)[number];
 
+export const PLATFORM_EMITTED_LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'] as const;
+export type PlatformEmittedLogLevel = (typeof PLATFORM_EMITTED_LOG_LEVELS)[number];
+
 export const PLATFORM_SERVICE_IDS = ['app', 'api', 'mcp_stdio'] as const;
 export type PlatformServiceId = (typeof PLATFORM_SERVICE_IDS)[number];
 
@@ -2543,6 +2546,38 @@ export interface PlatformControlResponse {
   service: PlatformServiceStatus;
   action: PlatformServiceAction;
   result: PlatformControlResult;
+}
+
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: JsonValue }
+  | JsonValue[];
+
+export interface PlatformLogEntry {
+  id: string;
+  seq: number;
+  timestamp: string;
+  service_id: PlatformServiceId;
+  level: PlatformEmittedLogLevel;
+  target: string;
+  message: string;
+  context?: JsonValue;
+}
+
+export interface PlatformLogsQueryParams {
+  service_id?: PlatformServiceId;
+  level?: PlatformEmittedLogLevel;
+  tail?: number;
+}
+
+export interface PlatformLogsResponse {
+  logs: PlatformLogEntry[];
+  tail: number;
+  order: 'chronological';
+  limitations: string[];
 }
 
 // --- Qualified CMD signing (§ t57) ----------------------------------------------

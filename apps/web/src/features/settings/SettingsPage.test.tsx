@@ -264,6 +264,33 @@ function platformServicesResponse(settings: TestSettings) {
   };
 }
 
+const PLATFORM_LOG_LIMITATIONS = [
+  'This is an in-memory API log ring; entries reset when the API process restarts.',
+  'It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards them.',
+];
+
+const PLATFORM_LOG_FIXTURE = [
+  {
+    id: 'platform-log-1',
+    seq: 1,
+    timestamp: '2026-07-09T12:00:00Z',
+    service_id: 'api',
+    level: 'info',
+    target: 'platform.services',
+    message: 'Platform service status read',
+    context: { service_count: 2 },
+  },
+  {
+    id: 'platform-log-2',
+    seq: 2,
+    timestamp: '2026-07-09T12:01:00Z',
+    service_id: 'mcp_stdio',
+    level: 'warn',
+    target: 'platform.service.control',
+    message: 'MCP supervisor handoff recorded',
+  },
+] as const;
+
 function platformOutcome(serviceId: 'api' | 'mcp_stdio', action: string) {
   if (serviceId === 'api' && action === 'restart') return 'restart_required';
   if (serviceId === 'api') return 'unsupported';
@@ -290,20 +317,49 @@ function platformMessage(serviceId: 'api' | 'mcp_stdio', action: string) {
 }
 
 /**
- * A fetch stub for the settings page's four endpoints. Captures every call so a test
+ * A fetch stub for the settings page's endpoints. Captures every call so a test
  * can assert what the PUT sent. The PUT echoes the posted document (schema stamped),
  * mirroring the real server.
  */
-function settingsFetch(initialSettings: unknown = DEFAULT_SETTINGS): {
+function settingsFetch(
+  initialSettings: unknown = DEFAULT_SETTINGS,
+  options: {
+    platformLogs?: readonly unknown[];
+    platformLogLimitations?: string[];
+  } = {},
+): {
   fn: typeof fetch;
   calls: Recorded[];
 } {
   const calls: Recorded[] = [];
   let storedSettings: unknown = cloneJson(initialSettings);
+  let platformLogs = cloneJson(options.platformLogs ?? PLATFORM_LOG_FIXTURE) as Array<
+    Record<string, unknown>
+  >;
+  const platformLogLimitations = options.platformLogLimitations ?? PLATFORM_LOG_LIMITATIONS;
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
     calls.push({ url, method, body: (init?.body as string) ?? null });
+
+    if (url.includes('/v1/platform/logs')) {
+      const parsed = new URL(url, 'http://test.local');
+      const serviceId = parsed.searchParams.get('service_id');
+      const level = parsed.searchParams.get('level');
+      const tail = Number(parsed.searchParams.get('tail') ?? '100');
+      const logs = platformLogs
+        .filter((entry) => !serviceId || entry.service_id === serviceId)
+        .filter((entry) => !level || entry.level === level)
+        .slice(-tail);
+      return Promise.resolve(
+        jsonResponse({
+          logs,
+          tail,
+          order: 'chronological',
+          limitations: platformLogLimitations,
+        }),
+      );
+    }
 
     if (url.includes('/v1/platform/services')) {
       if (method === 'POST') {
@@ -343,6 +399,19 @@ function settingsFetch(initialSettings: unknown = DEFAULT_SETTINGS): {
         ].slice(-100);
         storedSettings = { ...(cloneJson(storedSettings) as object), platform: current.platform };
         const service = platformServiceStatus(current, serviceId);
+        platformLogs = [
+          ...platformLogs,
+          {
+            id: `platform-log-${platformLogs.length + 1}`,
+            seq: platformLogs.length + 1,
+            timestamp: '2026-07-09T12:02:00Z',
+            service_id: serviceId,
+            level: 'info',
+            target: 'platform.service.control',
+            message: 'Platform service control desired state recorded',
+            context: { action, outcome, applied_to_settings: true },
+          },
+        ];
         return Promise.resolve(
           jsonResponse({
             service,
@@ -723,6 +792,105 @@ describe('SettingsPage', () => {
     expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
     expect(screen.getByText(/cannot observe or spawn/)).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /Registar reinício/ }).length).toBeGreaterThan(0);
+  });
+
+  it('renders the platform log tail with limitations and expandable context', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    expect(await screen.findByText('Cauda de logs da plataforma')).toBeTruthy();
+    expect(await screen.findByText('Platform service status read')).toBeTruthy();
+    expect(screen.getByText(/in-memory API log ring/)).toBeTruthy();
+    expect(screen.getByText('2 entradas · limite 100 · cronológico')).toBeTruthy();
+    expect(screen.getAllByText('Servidor API').length).toBeGreaterThan(0);
+    expect(screen.getByText('platform.services')).toBeTruthy();
+
+    const row = screen.getByText('Platform service status read').closest('tr');
+    expect(row).toBeTruthy();
+    fireEvent.click(within(row!).getByText('Contexto'));
+    expect(within(row!).getByText(/service_count/)).toBeTruthy();
+
+    const minimalRow = screen.getByText('MCP supervisor handoff recorded').closest('tr');
+    expect(minimalRow).toBeTruthy();
+    expect(within(minimalRow!).getByText('Sem contexto')).toBeTruthy();
+  });
+
+  it('refetches platform logs with selected filters and manual refresh', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    expect(await screen.findByText('Platform service status read')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Serviço'), { target: { value: 'api' } });
+    fireEvent.change(screen.getByLabelText('Nível'), { target: { value: 'info' } });
+    fireEvent.change(screen.getByLabelText('Entradas'), { target: { value: '25' } });
+
+    await waitFor(() => {
+      expect(
+        calls.some((call) => {
+          if (!call.url.includes('/v1/platform/logs')) return false;
+          const parsed = new URL(call.url, 'http://test.local');
+          return (
+            parsed.searchParams.get('service_id') === 'api' &&
+            parsed.searchParams.get('level') === 'info' &&
+            parsed.searchParams.get('tail') === '25'
+          );
+        }),
+      ).toBe(true);
+    });
+
+    const refreshButton = await waitFor(() =>
+      screen.getByRole('button', { name: 'Atualizar logs' }),
+    );
+    const beforeRefresh = calls.filter((call) => call.url.includes('/v1/platform/logs')).length;
+    fireEvent.click(refreshButton);
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url.includes('/v1/platform/logs')).length).toBeGreaterThan(
+        beforeRefresh,
+      ),
+    );
+  });
+
+  it('shows platform log empty state together with backend limitations', async () => {
+    const { fn } = settingsFetch(DEFAULT_SETTINGS, {
+      platformLogs: [],
+      platformLogLimitations: ['Ring only; no historical process logs are retained.'],
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    expect(await screen.findByText('Sem logs da plataforma')).toBeTruthy();
+    expect(screen.getByText('Ring only; no historical process logs are retained.')).toBeTruthy();
+    expect(screen.getByText('0 entradas · limite 100 · cronológico')).toBeTruthy();
+  });
+
+  it('renders a minimal platform log entry without context', async () => {
+    const { fn } = settingsFetch(DEFAULT_SETTINGS, {
+      platformLogs: [
+        {
+          id: 'platform-log-1',
+          seq: 1,
+          timestamp: '2026-07-09T12:05:00Z',
+          service_id: 'app',
+          level: 'debug',
+          target: 'platform.app',
+          message: 'App shell observed platform state',
+        },
+      ],
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    expect(await screen.findByText('App shell observed platform state')).toBeTruthy();
+    expect(screen.getAllByText('Aplicação').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Debug').length).toBeGreaterThan(0);
+    expect(screen.getByText('Sem contexto')).toBeTruthy();
   });
 
   it('records a platform MCP start desired state without implying live process control', async () => {

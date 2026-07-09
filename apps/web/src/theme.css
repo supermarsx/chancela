@@ -2382,9 +2382,132 @@ a,
   align-items: center;
 }
 
+.platform-log-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.platform-log-limitations {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.platform-log-table-wrap {
+  min-width: 0;
+}
+
+.platform-log-table {
+  table-layout: fixed;
+}
+
+.platform-log-table th:nth-child(1) {
+  width: 4.2rem;
+}
+
+.platform-log-table th:nth-child(2) {
+  width: 11rem;
+}
+
+.platform-log-table th:nth-child(3) {
+  width: 8rem;
+}
+
+.platform-log-table th:nth-child(4) {
+  width: 6.5rem;
+}
+
+.platform-log-table th:nth-child(5) {
+  width: 11rem;
+}
+
+.platform-log-table td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.platform-log-message-cell p {
+  margin: 0;
+}
+
+.platform-log-context {
+  margin-top: 0.35rem;
+}
+
+.platform-log-context summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.platform-log-context pre {
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0.4rem 0 0;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 74%, var(--bg));
+  color: var(--text);
+  font: 0.78rem / 1.45 var(--font-mono);
+}
+
 @media (max-width: 860px) {
   .platform-service-row {
     grid-template-columns: 1fr;
+  }
+
+  .platform-log-table,
+  .platform-log-table thead,
+  .platform-log-table tbody,
+  .platform-log-table tr,
+  .platform-log-table td {
+    display: block;
+  }
+
+  .platform-log-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .platform-log-table tr {
+    padding: 0.65rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .platform-log-table td {
+    display: grid;
+    grid-template-columns: minmax(7rem, 0.35fr) minmax(0, 1fr);
+    gap: 0.5rem;
+    border-bottom: 0;
+    padding: 0.25rem 0;
+  }
+
+  .platform-log-table td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .platform-log-message-cell {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-log-message-cell::before {
+    margin-bottom: -0.25rem;
   }
 }
 

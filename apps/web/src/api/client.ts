@@ -76,6 +76,8 @@ import type {
   PaperBookOcrStatusView,
   PlatformControllableServiceId,
   PlatformControlResponse,
+  PlatformLogsQueryParams,
+  PlatformLogsResponse,
   PlatformServiceAction,
   PlatformServicesResponse,
   RegistryExtractView,
@@ -454,6 +456,14 @@ export const api = {
   controlPlatformService: (id: PlatformControllableServiceId, action: PlatformServiceAction) =>
     post<PlatformControlResponse>(
       `/v1/platform/services/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+    ),
+  listPlatformLogs: (params: PlatformLogsQueryParams = {}) =>
+    get<PlatformLogsResponse>(
+      `/v1/platform/logs${query({
+        service_id: params.service_id,
+        level: params.level,
+        tail: params.tail,
+      })}`,
     ),
 
   // Entities (§2.3)

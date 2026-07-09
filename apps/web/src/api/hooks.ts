@@ -41,6 +41,7 @@ import type {
   PaperBookImportView,
   PaperBookOcrStatus,
   PlatformControllableServiceId,
+  PlatformLogsQueryParams,
   PlatformServiceAction,
   RegistryAutoUpdateAttemptBody,
   RegistryImportBody,
@@ -106,6 +107,16 @@ export const keys = {
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
   platformServices: ['platform', 'services'] as const,
+  platformLogs: (params: PlatformLogsQueryParams = {}) =>
+    [
+      'platform',
+      'logs',
+      {
+        service_id: params.service_id ?? null,
+        level: params.level ?? null,
+        tail: params.tail ?? null,
+      },
+    ] as const,
   health: ['health'] as const,
   caeCatalog: ['cae', 'catalog'] as const,
   caeSearch: (search: string, revision?: CaeRevision) =>
@@ -1806,6 +1817,17 @@ export function usePlatformServices() {
   });
 }
 
+/** Platform log tail (`GET /v1/platform/logs`): API-owned in-memory ring, newest
+ * entries returned in chronological order after optional service/level filters. */
+export function usePlatformLogs(params: PlatformLogsQueryParams) {
+  return useQuery({
+    queryKey: keys.platformLogs(params),
+    queryFn: () => api.listPlatformLogs(params),
+    staleTime: 5_000,
+    retry: false,
+  });
+}
+
 /** Record a desired lifecycle action for a platform service. The API deliberately does not
  * spawn/kill processes; a successful response means settings/audit were updated. */
 export function useControlPlatformService() {
@@ -1839,6 +1861,7 @@ export function useControlPlatformService() {
         };
       });
       void qc.invalidateQueries({ queryKey: keys.platformServices });
+      void qc.invalidateQueries({ queryKey: ['platform', 'logs'] });
       void qc.invalidateQueries({ queryKey: keys.settings });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },

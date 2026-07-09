@@ -34,6 +34,7 @@ import {
   MEETING_CHANNELS,
   NUMBERING_SCHEMES,
   PASSWORD_POLICY_RULE_CODES,
+  PLATFORM_EMITTED_LOG_LEVELS,
   PERMISSION_SOURCES,
   PLATFORM_LOG_LEVELS,
   PLATFORM_SERVICE_ACTIONS,
@@ -119,6 +120,8 @@ import {
   type PlatformAuditEvent,
   type PlatformControlResponse,
   type PlatformControlResult,
+  type PlatformLogEntry,
+  type PlatformLogsResponse,
   type PlatformLoggingSettings,
   type PlatformServiceControlSettings,
   type PlatformServiceLastAction,
@@ -714,6 +717,32 @@ function assertPlatformControlResult(obj: unknown, label: string): PlatformContr
   expect(result.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
   expect(Array.isArray(result.limitations), `${label}.limitations should be an array`).toBe(true);
   return result;
+}
+
+function assertPlatformLogEntry(obj: unknown, label: string): PlatformLogEntry {
+  const entry = assertExactKeys<PlatformLogEntry>(
+    obj,
+    {
+      id: true,
+      seq: true,
+      timestamp: true,
+      service_id: true,
+      level: true,
+      target: true,
+      message: true,
+    },
+    label,
+    ['context'],
+  );
+  expect(entry.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(Number.isInteger(entry.seq), `${label}.seq should be an integer`).toBe(true);
+  expect(entry.seq, `${label}.seq should be positive`).toBeGreaterThan(0);
+  assertTimestamp(entry.timestamp, `${label}.timestamp`);
+  inEnum(['app', 'api', 'mcp_stdio'], entry.service_id, `${label}.service_id`);
+  inEnum(PLATFORM_EMITTED_LOG_LEVELS, entry.level, `${label}.level`);
+  expect(entry.target.length, `${label}.target should be non-empty`).toBeGreaterThan(0);
+  expect(entry.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
+  return entry;
 }
 
 function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImportReport {
@@ -1794,6 +1823,30 @@ describe('contract fixtures parse through the real client', () => {
     expect(result.supported).toBe(false);
     expect(result.applied_to_settings).toBe(true);
     expect(result.kind).toBe('supervisor_required');
+  });
+
+  it('platform.logs.json → PlatformLogsResponse (GET /v1/platform/logs)', async () => {
+    stubFetch(fixture('platform.logs.json'));
+    const response: PlatformLogsResponse = await api.listPlatformLogs({
+      service_id: 'api',
+      level: 'info',
+      tail: 5,
+    });
+    const parsed = assertExactKeys<PlatformLogsResponse>(
+      response,
+      { logs: true, tail: true, order: true, limitations: true },
+      'PlatformLogsResponse',
+    );
+    expect(parsed.tail).toBe(5);
+    expect(parsed.order).toBe('chronological');
+    expect(Array.isArray(parsed.logs), 'PlatformLogsResponse.logs should be an array').toBe(true);
+    expect(Array.isArray(parsed.limitations), 'PlatformLogsResponse.limitations should be an array')
+      .toBe(true);
+    expect(parsed.limitations.length).toBeGreaterThan(0);
+    const first = assertPlatformLogEntry(parsed.logs[0], 'PlatformLogsResponse.logs[0]');
+    expect(first.context).toEqual({ service_count: 2 });
+    const second = assertPlatformLogEntry(parsed.logs[1], 'PlatformLogsResponse.logs[1]');
+    expect(second).not.toHaveProperty('context');
   });
 
   it('registry.extract.json → RegistryExtractView (GET /v1/entities/{id}/registry)', async () => {
