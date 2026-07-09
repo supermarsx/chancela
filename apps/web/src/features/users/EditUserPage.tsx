@@ -212,6 +212,7 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
               filename,
               contentType: DSR_EXPORT_CONTENT_TYPE,
               filters: DSR_EXPORT_FILTERS,
+              preferBrowserSavePicker: true,
             }),
           );
         } catch (e) {

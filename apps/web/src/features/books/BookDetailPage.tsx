@@ -203,7 +203,13 @@ export function BookDetailPage() {
     packageDownload.mutate(undefined, {
       onSuccess: async (blob) => {
         try {
-          showSaveResult(await saveBlobAs({ blob, filename: preservationPackageFilename(b.id) }));
+          showSaveResult(
+            await saveBlobAs({
+              blob,
+              filename: preservationPackageFilename(b.id),
+              preferBrowserSavePicker: true,
+            }),
+          );
         } catch (e) {
           toast.error(e);
         }

@@ -191,7 +191,13 @@ export function LivrosIntegridadeSection() {
   async function onExport(book: BookView) {
     try {
       const { blob } = await exportBook.mutateAsync(book.id);
-      showSaveResult(await saveBlobAs({ blob, filename: `book-${book.id}.zip` }));
+      showSaveResult(
+        await saveBlobAs({
+          blob,
+          filename: `book-${book.id}.zip`,
+          preferBrowserSavePicker: true,
+        }),
+      );
     } catch (e) {
       toast.error(e);
     }

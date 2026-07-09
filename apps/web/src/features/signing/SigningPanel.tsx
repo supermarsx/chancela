@@ -720,7 +720,13 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
     download.mutate(undefined, {
       onSuccess: async (blob) => {
         try {
-          showSaveResult(await saveBlobAs({ blob, filename: `${base}ata-${n}-assinada.pdf` }));
+          showSaveResult(
+            await saveBlobAs({
+              blob,
+              filename: `${base}ata-${n}-assinada.pdf`,
+              preferBrowserSavePicker: true,
+            }),
+          );
         } catch (e) {
           toast.error(e);
         }

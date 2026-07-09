@@ -396,7 +396,7 @@ export function ActDocumentPanel({
     download.mutate(undefined, {
       onSuccess: async (blob) => {
         try {
-          showSaveResult(await saveBlobAs({ blob, filename }));
+          showSaveResult(await saveBlobAs({ blob, filename, preferBrowserSavePicker: true }));
         } catch (e) {
           toast.error(e);
         }
@@ -411,7 +411,12 @@ export function ActDocumentPanel({
       onSuccess: async (download) => {
         try {
           showSaveResult(
-            await saveBlobAs({ blob: download.blob, filename, contentType: download.contentType }),
+            await saveBlobAs({
+              blob: download.blob,
+              filename,
+              contentType: download.contentType,
+              preferBrowserSavePicker: true,
+            }),
           );
         } catch (e) {
           toast.error(e);
@@ -426,7 +431,7 @@ export function ActDocumentPanel({
     officeDownload.mutate(undefined, {
       onSuccess: async (blob) => {
         try {
-          showSaveResult(await saveBlobAs({ blob, filename }));
+          showSaveResult(await saveBlobAs({ blob, filename, preferBrowserSavePicker: true }));
         } catch (e) {
           toast.error(e);
         }
@@ -456,7 +461,13 @@ export function ActDocumentPanel({
   async function onDownloadImported(document: ImportedDocumentView) {
     try {
       const blob = await importedDownload.mutateAsync(document);
-      showSaveResult(await saveBlobAs({ blob, filename: importedDownloadName(document) }));
+      showSaveResult(
+        await saveBlobAs({
+          blob,
+          filename: importedDownloadName(document),
+          preferBrowserSavePicker: true,
+        }),
+      );
     } catch (e) {
       toast.error(e);
     }
