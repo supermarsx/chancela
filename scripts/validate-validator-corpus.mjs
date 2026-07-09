@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +9,6 @@ const corpusRoot = join(repoRoot, "docs", "fixtures", "validator-corpus");
 const manifestPath = join(corpusRoot, "manifest.json");
 
 const manifest = readJson(manifestPath);
-const allowedGenerationStatuses = new Set(["pending_generation", "generated"]);
 const allowedRunStatuses = new Set(["pending_operator_run", "recorded"]);
 const requiredFamilies = new Set(["eu-dss", "adobe"]);
 
@@ -30,20 +30,19 @@ for (const fixtureCase of manifest.cases) {
   assertString(fixtureCase.category, `${fixtureCase.id}.category`);
   assertObject(fixtureCase.pdf, `${fixtureCase.id}.pdf`);
   assertString(fixtureCase.pdf.path, `${fixtureCase.id}.pdf.path`);
-  assert.ok(
-    allowedGenerationStatuses.has(fixtureCase.pdf.generation_status),
-    `${fixtureCase.id}.pdf.generation_status must be pending_generation or generated`,
-  );
+  assert.equal(fixtureCase.pdf.generation_status, "generated", `${fixtureCase.id}.pdf.generation_status must be generated`);
 
   const pdfPath = join(corpusRoot, fixtureCase.pdf.path);
-  if (fixtureCase.pdf.generation_status === "generated") {
-    assert.ok(existsSync(pdfPath), `${fixtureCase.id} generated PDF is missing at ${fixtureCase.pdf.path}`);
-    assertSha256(fixtureCase.pdf.sha256, `${fixtureCase.id}.pdf.sha256`);
-    assertPositiveInteger(fixtureCase.pdf.bytes, `${fixtureCase.id}.pdf.bytes`);
-  } else {
-    assert.equal(fixtureCase.pdf.sha256, null, `${fixtureCase.id}.pdf.sha256 must remain null while pending`);
-    assert.equal(fixtureCase.pdf.bytes, null, `${fixtureCase.id}.pdf.bytes must remain null while pending`);
-  }
+  assert.ok(existsSync(pdfPath), `${fixtureCase.id} generated PDF is missing at ${fixtureCase.pdf.path}`);
+  assertSha256(fixtureCase.pdf.sha256, `${fixtureCase.id}.pdf.sha256`);
+  assertPositiveInteger(fixtureCase.pdf.bytes, `${fixtureCase.id}.pdf.bytes`);
+  const pdfBytes = readFileSync(pdfPath);
+  assert.equal(pdfBytes.length, fixtureCase.pdf.bytes, `${fixtureCase.id}.pdf.bytes must match committed PDF`);
+  assert.equal(
+    createHash("sha256").update(pdfBytes).digest("hex"),
+    fixtureCase.pdf.sha256,
+    `${fixtureCase.id}.pdf.sha256 must match committed PDF`,
+  );
 
   assertExpectedValidation(fixtureCase.id, fixtureCase.expected_validation);
   assertObject(fixtureCase.sidecars, `${fixtureCase.id}.sidecars`);

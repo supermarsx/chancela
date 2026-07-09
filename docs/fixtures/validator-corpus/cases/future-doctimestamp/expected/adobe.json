@@ -28,6 +28,6 @@
   },
   "observed": null,
   "notes": [
-    "Future placeholder; keep pending until /DocTimeStamp support exists and an operator records validator output."
+    "Generated from the current technical /DocTimeStamp primitive; keep pending until an operator records validator output."
   ]
 }
