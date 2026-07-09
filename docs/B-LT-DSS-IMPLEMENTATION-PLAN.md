@@ -1,68 +1,63 @@
-# PAdES B-LT / DSS Local Implementation Plan
+# PAdES B-LT / DSS Local Status
 
-Updated 2026-07-09. This is an implementation plan, not a claim of production
-long-term validation.
+Updated 2026-07-09. This records the implemented local DSS slice and the
+remaining production B-LT/B-LTA gaps. It is not a claim of legal long-term
+validation.
 
 ## Current State
 
 - `chancela-pades` supports PAdES B-B and B-T.
-- `chancela-signing` can orchestrate CC, CMD, CSC, mock signing, TSL gates, and
-  B-T timestamping.
-- `chancela-api` persists one signed document per act, with signed PDF bytes,
-  signer certificate, trust-list status, and an optional timestamp token.
-- Signature evidence currently reports unsigned, B-B, or B-T and explicitly
-  marks DSS/revocation, B-LT, and B-LTA as not implemented.
-- Archive packages preserve signed PDFs, signing JSON, signer certificate, and
-  timestamp sidecars when present, but do not report embedded DSS/VRI evidence.
+- `chancela-pades` can append a deterministic `/DSS` + `/VRI` incremental
+  update from caller-supplied DER certificate, OCSP, and CRL evidence.
+- `chancela-pades` can inspect embedded DSS/VRI evidence and report
+  certificate, OCSP, CRL, VRI, and evidence hash counts.
+- Validation keeps checking the signed revision covered by the signature
+  ByteRange while allowing a later DSS incremental update to exist.
+- Empty DSS evidence and PDFs that already contain a DSS dictionary are
+  rejected in this local slice.
+- Higher layers surface embedded DSS/VRI counts and hashes as local technical
+  evidence only, not as a production B-LT or legal LTV claim.
 
-## Smallest Credible Local Slice
+## Implemented Local Slice
 
-Implement fixture-fed, caller-supplied DSS embedding and reporting:
+The implemented slice is fixture-fed and caller-supplied:
 
-- Add a PAdES DSS/VRI incremental update from supplied DER blobs.
-- Detect and report embedded DSS revocation evidence.
-- Allow validation where the signature ByteRange covers the signed revision and
-  a later DSS incremental update exists.
-- Surface technical evidence as B-LT-local only when a B-T timestamp and DSS
-  OCSP/CRL material are present.
-- Add archive evidence JSON fields for DSS/VRI, OCSP/CRL counts, and evidence
-  hashes.
+- The caller supplies complete DER blobs; Chancela preserves and reports them.
+- The PDF layer creates the DSS/VRI objects deterministically in an incremental
+  revision.
+- Reports distinguish unsigned, B-B, B-T, and B-T plus local DSS evidence.
+- Archive evidence can include embedded DSS/VRI counts and hashes when those
+  bytes are present.
 
-No live OCSP/CRL fetch, no live QTSP dependency, no B-LTA archival document
-timestamp, and no legal sufficiency claim in this slice.
+This proves local evidence attachment/reporting mechanics only. It does not
+prove that the revocation material was authoritative, fresh, trusted, or legally
+sufficient.
 
-## Implementation Targets
+## Tested Coverage
 
-- `crates/chancela-pades/src/lib.rs`: export new DSS types/functions.
-- `crates/chancela-pades/src/dss.rs` or `sign.rs`: add `DssEvidence`,
-  `DssReport`, and `add_dss_revision(signed_pdf, evidence)`.
-- `crates/chancela-pades/src/pdf.rs`: add deterministic incremental object,
-  stream, and xref helpers if the current writer cannot express DSS objects.
-- `crates/chancela-pades/src/validate.rs`: report DSS presence, revocation
-  counts/hashes, and signed-revision length while keeping crypto validation over
-  the original ByteRange.
-- `crates/chancela-pades/src/error.rs`: add DSS-specific errors.
-- `crates/chancela-signing/src/pipeline.rs`: add a thin attach-DSS wrapper.
-- `crates/chancela-signing/src/validate.rs`: add DSS/revocation report fields.
-- `crates/chancela-api/src/signature.rs`: update final signed PDF validation
-  and evidence classification.
-- `crates/chancela-api/src/archive_package.rs`: add DSS/VRI evidence reporting
-  to package sidecars.
-
-## Test Strategy
-
-- Use checked-in public DER fixtures only: signer/issuer certificates, one OCSP
-  response, and one CRL. Do not check in private keys.
 - PAdES round-trip: B-T PDF -> DSS revision -> validates, reports VRI/OCSP/CRL
-  counts, deterministic bytes, and covered-byte tampering still fails.
-- Signing round-trip: B-T + DSS reports timestamp and revocation evidence.
-- API status: unsigned, B-B, B-T, and B-T + DSS classify distinctly.
-- Archive package: evidence JSON reports embedded DSS/VRI and remains
-  byte-deterministic.
+  counts and evidence hashes, and produces deterministic bytes.
+- Signed-revision tamper detection: covered-byte tampering still fails after a
+  later DSS revision is appended.
+- Guardrails: empty revocation evidence and pre-existing DSS dictionaries are
+  rejected instead of silently overclaiming support.
+- Signing/API/archive evidence paths report embedded DSS/VRI material as local
+  technical evidence.
 
 ## Remaining Blockers
 
-Production B-LT legal sufficiency still needs authoritative revocation-data
-acquisition/freshness, responder and certificate-chain validation, TSL/QTSP
-policy validation, TSA signature-chain validation, interoperability validation,
-multi-signature/existing-DSS merge behavior, and B-LTA archival timestamping.
+Production-grade PAdES B-LT/B-LTA and legal LTV still need:
+
+- live OCSP/CRL acquisition from authoritative sources;
+- revocation freshness checks;
+- OCSP/CRL responder trust and certificate-chain validation;
+- TSL/QTSP policy validation and TSA signature-chain validation;
+- merging with existing DSS dictionaries;
+- multi-signature VRI handling;
+- interoperability validation against external validators;
+- B-LTA archive document timestamps (`/DocTimeStamp`) and timestamp renewal
+  policy.
+
+Until those gaps are closed, Chancela must describe the implemented feature as
+local caller-supplied DSS/VRI preservation and reporting, not production B-LT,
+B-LTA, or legal long-term validation.

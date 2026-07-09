@@ -14,8 +14,11 @@
 //!
 //! - **PAdES-B-B** — implemented.
 //! - **PAdES-B-T** — implemented (signature timestamp as a CMS unsigned attribute).
-//! - **PAdES-B-LT / B-LTA** — explicit phase-2 follow-up ([`PadesError::LongTermNotImplemented`]);
-//!   DSS / VRI, document timestamps, and revocation embedding are not yet built.
+//! - **PAdES-B-LT / B-LTA** — not claimed as production-grade legal LTV. The crate can append
+//!   and inspect deterministic, caller-supplied `/DSS` + `/VRI` evidence via [`add_dss_revision`]
+//!   and [`inspect_dss`], but it does not fetch OCSP/CRL data, validate revocation freshness or
+//!   trust, merge an existing DSS, handle multi-signature VRI updates, or add archive document
+//!   timestamps.
 //!
 //! ## Layering
 //!
