@@ -667,7 +667,6 @@ export function SettingsPage() {
       <PageHeader
         crumbs={t('settings.breadcrumb')}
         title={t('settings.page.title')}
-        lede={t('settings.page.lede')}
       >
         <SubNav
           items={SETTINGS_SECTIONS.map((s) => ({

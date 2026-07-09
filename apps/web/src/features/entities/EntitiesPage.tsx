@@ -971,6 +971,7 @@ export function EntitiesPage() {
     <div className="stack">
       <PageHeader
         title={t('entities.title')}
+        lede={t('entities.lede')}
         actions={
           <>
             <GateButtonLink perm="entity.create" to="/entidades/importar" icon={<Icon.Tray />}>

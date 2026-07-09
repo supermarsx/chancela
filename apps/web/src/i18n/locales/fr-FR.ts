@@ -337,6 +337,8 @@ export const frFR: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Entités',
+  'entities.lede':
+    'Suivez les entités enregistrées, l’état du registre, les registres et les actions en attente.',
   'entities.crumb': 'Entités',
   'entities.importButton': 'Importer depuis le registre',
   'entities.newButton': 'Nouvelle entité',
@@ -553,6 +555,8 @@ export const frFR: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Registres',
+  'books.lede':
+    'Consultez les registres créés, ouverts et clôturés, avec les prochaines actions de suivi.',
   'books.crumb': 'Registres',
   'books.allBooks': 'Tous les registres',
   'books.openBook': 'Ouvrir un registre',
@@ -848,8 +852,6 @@ export const frFR: Catalog = {
   // --- Tools ---------------------------------------------------------------------
   'tools.crumbs': 'Outils',
   'tools.title': 'Outils',
-  'tools.lede':
-    'Instruments de consultation et de référence. Explorez en détail la Classification portugaise des activités économiques et maintenez le catalogue à jour, ou consultez la législation qui fonde Chancela — avec extraits, liens officiels et date de la dernière révision.',
   'tools.subnav.aria': 'Section des outils',
   'tools.section.cae': 'Catalogue CAE',
   'tools.section.legislacao': 'Législation',
@@ -975,8 +977,6 @@ export const frFR: Catalog = {
   // --- Settings ------------------------------------------------------------------
   'settings.breadcrumb': 'Configuration',
   'settings.page.title': 'Paramètres',
-  'settings.page.lede':
-    'Tout Chancela est configurable de bout en bout. Les préférences ci-dessous sont enregistrées sur le serveur (avec piste d’audit) et appliquées immédiatement — l’apparence change au fil de vos modifications, et les valeurs par défaut viennent ensuite remplir les formulaires de l’application.',
   'settings.appearance.cardTitle': 'Apparence',
   'settings.appearance.theme.label': 'Thème',
   'settings.appearance.theme.hint': 'Appliqué immédiatement à toute l’application.',

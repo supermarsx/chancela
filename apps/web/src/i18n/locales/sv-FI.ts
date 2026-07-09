@@ -339,6 +339,7 @@ export const svFI: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Enheter',
+  'entities.lede': 'Följ registrerade enheter, registerstatus, böcker och väntande åtgärder.',
   'entities.crumb': 'Enheter',
   'entities.importButton': 'Importera från registret',
   'entities.newButton': 'Ny enhet',
@@ -554,6 +555,7 @@ export const svFI: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Böcker',
+  'books.lede': 'Granska skapade, öppna och stängda böcker med nästa uppföljningsåtgärder.',
   'books.crumb': 'Böcker',
   'books.allBooks': 'Alla böcker',
   'books.openBook': 'Öppna en bok',
@@ -846,8 +848,6 @@ export const svFI: Catalog = {
   // --- Ferramentas (tools) -------------------------------------------------------
   'tools.crumbs': 'Verktyg',
   'tools.title': 'Verktyg',
-  'tools.lede':
-    'Uppslags- och referensverktyg. Utforska den portugisiska klassificeringen av ekonomiska verksamheter i detalj och håll katalogen uppdaterad, eller läs den lagstiftning som ligger till grund för Chancela — med utdrag, officiella länkar och datum för den senaste granskningen.',
   'tools.subnav.aria': 'Verktygssektion',
   'tools.section.cae': 'CAE-katalog',
   'tools.section.legislacao': 'Lagstiftning',
@@ -972,8 +972,6 @@ export const svFI: Catalog = {
   // --- Settings (Configurações) --------------------------------------------------
   'settings.breadcrumb': 'Konfiguration',
   'settings.page.title': 'Inställningar',
-  'settings.page.lede':
-    'Hela Chancela är konfigurerbart från början till slut. Inställningarna nedan sparas på servern (med granskningslogg) och tillämpas omedelbart — utseendet ändras medan du redigerar, och standardvärdena fyller sedan i programmets blanketter.',
   'settings.appearance.cardTitle': 'Utseende',
   'settings.appearance.theme.label': 'Tema',
   'settings.appearance.theme.hint': 'Tillämpas omedelbart i hela programmet.',

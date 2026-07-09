@@ -337,6 +337,7 @@ export const enUS: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Entities',
+  'entities.lede': 'Track registered entities, registry status, books, and pending actions.',
   'entities.crumb': 'Entities',
   'entities.importButton': 'Import from the registry',
   'entities.newButton': 'New entity',
@@ -552,6 +553,7 @@ export const enUS: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Books',
+  'books.lede': 'Review created, open, and closed books with the follow-up actions to handle next.',
   'books.crumb': 'Books',
   'books.allBooks': 'All books',
   'books.openBook': 'Open a book',
@@ -843,8 +845,6 @@ export const enUS: Catalog = {
   // --- Tools ---------------------------------------------------------------------
   'tools.crumbs': 'Tools',
   'tools.title': 'Tools',
-  'tools.lede':
-    'Reference and lookup instruments. Explore the Portuguese Classification of Economic Activities in detail and keep the catalog up to date, or consult the legislation underpinning Chancela — with extracts, official links and the date of the last review.',
   'tools.subnav.aria': 'Tools section',
   'tools.section.cae': 'CAE catalog',
   'tools.section.legislacao': 'Legislation',
@@ -969,8 +969,6 @@ export const enUS: Catalog = {
   // --- Settings ------------------------------------------------------------------
   'settings.breadcrumb': 'Configuration',
   'settings.page.title': 'Settings',
-  'settings.page.lede':
-    'All of Chancela is configurable end to end. The preferences below are saved on the server (with an audit trail) and applied immediately — the look changes as you edit, and the defaults go on to fill the application’s forms.',
   'settings.appearance.cardTitle': 'Appearance',
   'settings.appearance.theme.label': 'Theme',
   'settings.appearance.theme.hint': 'Applied immediately across the whole application.',

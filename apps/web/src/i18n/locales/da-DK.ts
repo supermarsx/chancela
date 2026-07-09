@@ -335,6 +335,8 @@ export const daDK: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Enheder',
+  'entities.lede':
+    'Følg registrerede enheder, registreringsstatus, bøger og afventende handlinger.',
   'entities.crumb': 'Enheder',
   'entities.importButton': 'Importér fra registret',
   'entities.newButton': 'Ny enhed',
@@ -550,6 +552,8 @@ export const daDK: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Bøger',
+  'books.lede':
+    'Gennemgå oprettede, åbne og lukkede bøger med næste opfølgningshandlinger.',
   'books.crumb': 'Bøger',
   'books.allBooks': 'Alle bøger',
   'books.openBook': 'Åbn en bog',
@@ -843,8 +847,6 @@ export const daDK: Catalog = {
   // --- Ferramentas (tools) -------------------------------------------------------
   'tools.crumbs': 'Værktøjer',
   'tools.title': 'Værktøjer',
-  'tools.lede':
-    'Opslags- og referenceværktøjer. Udforsk den portugisiske klassifikation af økonomiske aktiviteter i detaljer og hold kataloget opdateret, eller læs den lovgivning, der ligger til grund for Chancela — med uddrag, officielle links og datoen for den seneste gennemgang.',
   'tools.subnav.aria': 'Værktøjssektion',
   'tools.section.cae': 'CAE-katalog',
   'tools.section.legislacao': 'Lovgivning',
@@ -968,8 +970,6 @@ export const daDK: Catalog = {
   // --- Settings (Configurações) --------------------------------------------------
   'settings.breadcrumb': 'Konfiguration',
   'settings.page.title': 'Indstillinger',
-  'settings.page.lede':
-    'Hele Chancela kan konfigureres fra ende til anden. Præferencerne nedenfor gemmes på serveren (med revisionsspor) og anvendes med det samme — udseendet ændres, mens du redigerer, og standardværdierne udfylder derefter programmets formularer.',
   'settings.appearance.cardTitle': 'Udseende',
   'settings.appearance.theme.label': 'Tema',
   'settings.appearance.theme.hint': 'Anvendes med det samme i hele programmet.',

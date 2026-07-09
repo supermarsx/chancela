@@ -336,6 +336,8 @@ export const esES: Catalog = {
 
   // --- Entidades -----------------------------------------------------------------
   'entities.title': 'Entidades',
+  'entities.lede':
+    'Siga las entidades registradas, el estado del registro, los libros y las acciones pendientes.',
   'entities.crumb': 'Entidades',
   'entities.importButton': 'Importar del registro',
   'entities.newButton': 'Nueva entidad',
@@ -552,6 +554,8 @@ export const esES: Catalog = {
 
   // --- Libros --------------------------------------------------------------------
   'books.title': 'Libros',
+  'books.lede':
+    'Revise los libros creados, abiertos y cerrados, con las próximas acciones de seguimiento.',
   'books.crumb': 'Libros',
   'books.allBooks': 'Todos los libros',
   'books.openBook': 'Abrir un libro',
@@ -846,8 +850,6 @@ export const esES: Catalog = {
   // --- Herramientas --------------------------------------------------------------
   'tools.crumbs': 'Herramientas',
   'tools.title': 'Herramientas',
-  'tools.lede':
-    'Instrumentos de consulta y referencia. Explore en detalle la Clasificación Portuguesa de las Actividades Económicas y mantenga el catálogo actualizado, o consulte la legislación que fundamenta Chancela — con extractos, enlaces oficiales y la fecha de la última revisión.',
   'tools.subnav.aria': 'Sección de herramientas',
   'tools.section.cae': 'Catálogo CAE',
   'tools.section.legislacao': 'Legislación',
@@ -973,8 +975,6 @@ export const esES: Catalog = {
   // --- Configuración -------------------------------------------------------------
   'settings.breadcrumb': 'Configuración',
   'settings.page.title': 'Configuración',
-  'settings.page.lede':
-    'Todo Chancela es configurable de principio a fin. Las preferencias siguientes se guardan en el servidor (con registro de auditoría) y se aplican de inmediato — el aspecto cambia mientras edita, y los valores predeterminados pasan a rellenar los formularios de la aplicación.',
   'settings.appearance.cardTitle': 'Apariencia',
   'settings.appearance.theme.label': 'Tema',
   'settings.appearance.theme.hint': 'Se aplica de inmediato a toda la aplicación.',

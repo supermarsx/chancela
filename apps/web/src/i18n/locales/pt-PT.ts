@@ -344,6 +344,7 @@ export const ptPT = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Entidades',
+  'entities.lede': 'Acompanhe entidades registadas, estado do registo, livros e ações pendentes.',
   'entities.crumb': 'Entidades',
   'entities.importButton': 'Importar do registo',
   'entities.newButton': 'Nova entidade',
@@ -560,6 +561,7 @@ export const ptPT = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Livros',
+  'books.lede': 'Veja livros criados, abertos e encerrados, com as próximas ações a acompanhar.',
   'books.crumb': 'Livros',
   'books.allBooks': 'Todos os livros',
   'books.openBook': 'Abrir livro',
@@ -851,8 +853,6 @@ export const ptPT = {
   // --- Ferramentas (tools) -------------------------------------------------------
   'tools.crumbs': 'Ferramentas',
   'tools.title': 'Ferramentas',
-  'tools.lede':
-    'Instrumentos de consulta e referência. Explore a Classificação Portuguesa das Atividades Económicas em detalhe e mantenha o catálogo atualizado, ou consulte a legislação que fundamenta o Chancela — com extratos, ligações oficiais e a data da última revisão.',
   'tools.subnav.aria': 'Secção de ferramentas',
   'tools.section.cae': 'Catálogo CAE',
   'tools.section.legislacao': 'Legislação',
@@ -978,8 +978,6 @@ export const ptPT = {
   // --- Settings (Configurações) --------------------------------------------------
   'settings.breadcrumb': 'Configuração',
   'settings.page.title': 'Configurações',
-  'settings.page.lede':
-    'Todo o Chancela é configurável de ponta a ponta. As preferências abaixo são guardadas no servidor (com registo de auditoria) e aplicadas de imediato — o aspeto muda enquanto edita, e os valores predefinidos passam a preencher os formulários da aplicação.',
   'settings.appearance.cardTitle': 'Aparência',
   'settings.appearance.theme.label': 'Tema',
   'settings.appearance.theme.hint': 'Aplicado de imediato a toda a aplicação.',

@@ -337,6 +337,8 @@ export const itIT: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Entità',
+  'entities.lede':
+    'Segui le entità registrate, lo stato del registro, i libri e le azioni in sospeso.',
   'entities.crumb': 'Entità',
   'entities.importButton': 'Importa dal registro',
   'entities.newButton': 'Nuova entità',
@@ -553,6 +555,8 @@ export const itIT: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Libri',
+  'books.lede':
+    'Controlla i libri creati, aperti e chiusi con le prossime azioni successive.',
   'books.crumb': 'Libri',
   'books.allBooks': 'Tutti i libri',
   'books.openBook': 'Apri un libro',
@@ -846,8 +850,6 @@ export const itIT: Catalog = {
   // --- Tools ---------------------------------------------------------------------
   'tools.crumbs': 'Strumenti',
   'tools.title': 'Strumenti',
-  'tools.lede':
-    'Strumenti di consultazione e riferimento. Esplora in dettaglio la Classificazione Portoghese delle Attività Economiche e mantieni aggiornato il catalogo, oppure consulta la legislazione su cui si fonda Chancela — con estratti, collegamenti ufficiali e la data dell’ultima revisione.',
   'tools.subnav.aria': 'Sezione strumenti',
   'tools.section.cae': 'Catalogo CAE',
   'tools.section.legislacao': 'Legislazione',
@@ -973,8 +975,6 @@ export const itIT: Catalog = {
   // --- Settings ------------------------------------------------------------------
   'settings.breadcrumb': 'Configurazione',
   'settings.page.title': 'Impostazioni',
-  'settings.page.lede':
-    'Tutto Chancela è configurabile da cima a fondo. Le preferenze qui sotto sono salvate sul server (con registro di controllo) e applicate immediatamente — l’aspetto cambia mentre modifichi, e i valori predefiniti passano a compilare i moduli dell’applicazione.',
   'settings.appearance.cardTitle': 'Aspetto',
   'settings.appearance.theme.label': 'Tema',
   'settings.appearance.theme.hint': 'Applicato immediatamente a tutta l’applicazione.',

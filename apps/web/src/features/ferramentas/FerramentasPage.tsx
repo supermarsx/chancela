@@ -105,7 +105,7 @@ export function FerramentasPage() {
 
   return (
     <div className="stack">
-      <PageHeader crumbs={t('tools.crumbs')} title={t('tools.title')} lede={t('tools.lede')}>
+      <PageHeader crumbs={t('tools.crumbs')} title={t('tools.title')}>
         <div
           className="ferramentas-subnav"
           role="group"

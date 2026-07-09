@@ -337,6 +337,8 @@ export const plPL: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Podmioty',
+  'entities.lede':
+    'Śledź zarejestrowane podmioty, status rejestru, księgi i oczekujące działania.',
   'entities.crumb': 'Podmioty',
   'entities.importButton': 'Importuj z rejestru',
   'entities.newButton': 'Nowy podmiot',
@@ -552,6 +554,7 @@ export const plPL: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Księgi',
+  'books.lede': 'Przeglądaj utworzone, otwarte i zamknięte księgi oraz kolejne działania.',
   'books.crumb': 'Księgi',
   'books.allBooks': 'Wszystkie księgi',
   'books.openBook': 'Otwórz księgę',
@@ -843,8 +846,6 @@ export const plPL: Catalog = {
   // --- Ferramentas (tools) -------------------------------------------------------
   'tools.crumbs': 'Narzędzia',
   'tools.title': 'Narzędzia',
-  'tools.lede':
-    'Narzędzia do wyszukiwania i odniesień. Przeglądaj szczegółowo Portugalską Klasyfikację Działalności Gospodarczej i utrzymuj katalog aktualnym, lub zapoznaj się z przepisami stanowiącymi podstawę Chancela — z fragmentami, oficjalnymi odnośnikami i datą ostatniego przeglądu.',
   'tools.subnav.aria': 'Sekcja narzędzi',
   'tools.section.cae': 'Katalog CAE',
   'tools.section.legislacao': 'Przepisy',
@@ -969,8 +970,6 @@ export const plPL: Catalog = {
   // --- Settings (Configurações) --------------------------------------------------
   'settings.breadcrumb': 'Konfiguracja',
   'settings.page.title': 'Ustawienia',
-  'settings.page.lede':
-    'Całe Chancela można konfigurować od początku do końca. Poniższe preferencje są zapisywane na serwerze (ze ścieżką audytu) i stosowane natychmiast — wygląd zmienia się podczas edycji, a wartości domyślne wypełniają następnie formularze aplikacji.',
   'settings.appearance.cardTitle': 'Wygląd',
   'settings.appearance.theme.label': 'Motyw',
   'settings.appearance.theme.hint': 'Stosowane natychmiast w całej aplikacji.',

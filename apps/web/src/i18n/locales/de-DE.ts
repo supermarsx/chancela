@@ -338,6 +338,8 @@ export const deDE: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Rechtsträger',
+  'entities.lede':
+    'Verfolgen Sie registrierte Rechtsträger, Registerstatus, Bücher und offene Aktionen.',
   'entities.crumb': 'Rechtsträger',
   'entities.importButton': 'Aus dem Register importieren',
   'entities.newButton': 'Neuer Rechtsträger',
@@ -554,6 +556,8 @@ export const deDE: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Bücher',
+  'books.lede':
+    'Prüfen Sie erstellte, offene und geschlossene Bücher samt nächsten Folgeaktionen.',
   'books.crumb': 'Bücher',
   'books.allBooks': 'Alle Bücher',
   'books.openBook': 'Buch eröffnen',
@@ -850,8 +854,6 @@ export const deDE: Catalog = {
   // --- Tools ---------------------------------------------------------------------
   'tools.crumbs': 'Werkzeuge',
   'tools.title': 'Werkzeuge',
-  'tools.lede':
-    'Nachschlage- und Referenzinstrumente. Erkunden Sie die portugiesische Klassifikation der Wirtschaftstätigkeiten im Detail und halten Sie den Katalog aktuell, oder konsultieren Sie die Rechtsvorschriften, auf denen Chancela beruht — mit Auszügen, offiziellen Links und dem Datum der letzten Überprüfung.',
   'tools.subnav.aria': 'Werkzeugbereich',
   'tools.section.cae': 'CAE-Katalog',
   'tools.section.legislacao': 'Rechtsvorschriften',
@@ -977,8 +979,6 @@ export const deDE: Catalog = {
   // --- Settings ------------------------------------------------------------------
   'settings.breadcrumb': 'Konfiguration',
   'settings.page.title': 'Einstellungen',
-  'settings.page.lede':
-    'Ganz Chancela ist durchgängig konfigurierbar. Die folgenden Einstellungen werden auf dem Server gespeichert (mit Prüfprotokoll) und sofort angewendet — das Erscheinungsbild ändert sich, während Sie bearbeiten, und die Standardwerte füllen fortan die Formulare der Anwendung.',
   'settings.appearance.cardTitle': 'Erscheinungsbild',
   'settings.appearance.theme.label': 'Design',
   'settings.appearance.theme.hint': 'Wird sofort auf die gesamte Anwendung angewendet.',

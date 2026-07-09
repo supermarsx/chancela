@@ -143,6 +143,7 @@ export function BooksPage() {
     <div className="stack">
       <PageHeader
         title={t('books.title')}
+        lede={t('books.lede')}
         actions={
           <GateButtonLink
             perm="book.open"

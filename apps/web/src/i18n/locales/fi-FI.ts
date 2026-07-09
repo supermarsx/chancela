@@ -337,6 +337,8 @@ export const fiFI: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Yksiköt',
+  'entities.lede':
+    'Seuraa rekisteröityjä yksiköitä, rekisterin tilaa, kirjoja ja avoimia toimia.',
   'entities.crumb': 'Yksiköt',
   'entities.importButton': 'Tuo rekisteristä',
   'entities.newButton': 'Uusi yksikkö',
@@ -550,6 +552,8 @@ export const fiFI: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Kirjat',
+  'books.lede':
+    'Tarkista luodut, avoimet ja suljetut kirjat sekä seuraavat jatkotoimet.',
   'books.crumb': 'Kirjat',
   'books.allBooks': 'Kaikki kirjat',
   'books.openBook': 'Avaa kirja',
@@ -842,8 +846,6 @@ export const fiFI: Catalog = {
   // --- Ferramentas (tools) -------------------------------------------------------
   'tools.crumbs': 'Työkalut',
   'tools.title': 'Työkalut',
-  'tools.lede':
-    'Haku- ja viitetyökaluja. Tutki Portugalin taloudellisten toimintojen luokitusta yksityiskohtaisesti ja pidä luettelo ajan tasalla, tai lue Chancelan perustana oleva lainsäädäntö — otteineen, virallisine linkkeineen ja viimeisimmän tarkistuksen päivämäärineen.',
   'tools.subnav.aria': 'Työkaluosio',
   'tools.section.cae': 'CAE-luettelo',
   'tools.section.legislacao': 'Lainsäädäntö',
@@ -968,8 +970,6 @@ export const fiFI: Catalog = {
   // --- Settings (Configurações) --------------------------------------------------
   'settings.breadcrumb': 'Kokoonpano',
   'settings.page.title': 'Asetukset',
-  'settings.page.lede':
-    'Koko Chancela on määritettävissä päästä päähän. Alla olevat asetukset tallennetaan palvelimelle (tarkastusjäljellä) ja otetaan käyttöön heti — ulkoasu muuttuu muokatessasi, ja oletusarvot täyttävät jatkossa sovelluksen lomakkeet.',
   'settings.appearance.cardTitle': 'Ulkoasu',
   'settings.appearance.theme.label': 'Teema',
   'settings.appearance.theme.hint': 'Otetaan käyttöön heti koko sovelluksessa.',

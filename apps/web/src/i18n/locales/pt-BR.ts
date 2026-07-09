@@ -337,6 +337,7 @@ export const ptBR: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Entidades',
+  'entities.lede': 'Acompanhe entidades cadastradas, status do registro, livros e ações pendentes.',
   'entities.crumb': 'Entidades',
   'entities.importButton': 'Importar do registro',
   'entities.newButton': 'Nova entidade',
@@ -553,6 +554,7 @@ export const ptBR: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Livros',
+  'books.lede': 'Veja livros criados, abertos e encerrados, com as próximas ações a acompanhar.',
   'books.crumb': 'Livros',
   'books.allBooks': 'Todos os livros',
   'books.openBook': 'Abrir livro',
@@ -844,8 +846,6 @@ export const ptBR: Catalog = {
   // --- Ferramentas (tools) -------------------------------------------------------
   'tools.crumbs': 'Ferramentas',
   'tools.title': 'Ferramentas',
-  'tools.lede':
-    'Instrumentos de consulta e referência. Explore a Classificação Portuguesa das Atividades Econômicas em detalhe e mantenha o catálogo atualizado, ou consulte a legislação que fundamenta o Chancela — com extratos, links oficiais e a data da última revisão.',
   'tools.subnav.aria': 'Seção de ferramentas',
   'tools.section.cae': 'Catálogo CAE',
   'tools.section.legislacao': 'Legislação',
@@ -971,8 +971,6 @@ export const ptBR: Catalog = {
   // --- Settings (Configurações) --------------------------------------------------
   'settings.breadcrumb': 'Configuração',
   'settings.page.title': 'Configurações',
-  'settings.page.lede':
-    'Todo o Chancela é configurável de ponta a ponta. As preferências abaixo são salvas no servidor (com registro de auditoria) e aplicadas de imediato — o aspecto muda enquanto você edita, e os valores padrão passam a preencher os formulários do aplicativo.',
   'settings.appearance.cardTitle': 'Aparência',
   'settings.appearance.theme.label': 'Tema',
   'settings.appearance.theme.hint': 'Aplicado de imediato a todo o aplicativo.',

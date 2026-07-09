@@ -334,6 +334,7 @@ export const nlNL: Catalog = {
 
   // --- Entities ------------------------------------------------------------------
   'entities.title': 'Entiteiten',
+  'entities.lede': 'Volg geregistreerde entiteiten, registerstatus, boeken en openstaande acties.',
   'entities.crumb': 'Entiteiten',
   'entities.importButton': 'Importeren uit het register',
   'entities.newButton': 'Nieuwe entiteit',
@@ -550,6 +551,7 @@ export const nlNL: Catalog = {
 
   // --- Books ---------------------------------------------------------------------
   'books.title': 'Boeken',
+  'books.lede': 'Bekijk aangemaakte, open en gesloten boeken met de volgende opvolgacties.',
   'books.crumb': 'Boeken',
   'books.allBooks': 'Alle boeken',
   'books.openBook': 'Boek openen',
@@ -844,8 +846,6 @@ export const nlNL: Catalog = {
   // --- Tools ---------------------------------------------------------------------
   'tools.crumbs': 'Hulpmiddelen',
   'tools.title': 'Hulpmiddelen',
-  'tools.lede':
-    'Instrumenten voor raadpleging en referentie. Verken de Portugese Classificatie van Economische Activiteiten in detail en houd de catalogus actueel, of raadpleeg de wetgeving waarop Chancela is gebaseerd — met uittreksels, officiële koppelingen en de datum van de laatste herziening.',
   'tools.subnav.aria': 'Sectie hulpmiddelen',
   'tools.section.cae': 'CAE-catalogus',
   'tools.section.legislacao': 'Wetgeving',
@@ -971,8 +971,6 @@ export const nlNL: Catalog = {
   // --- Settings ------------------------------------------------------------------
   'settings.breadcrumb': 'Configuratie',
   'settings.page.title': 'Instellingen',
-  'settings.page.lede':
-    'Heel Chancela is van begin tot eind configureerbaar. De onderstaande voorkeuren worden op de server opgeslagen (met auditspoor) en meteen toegepast — het uiterlijk verandert terwijl u bewerkt, en de standaardwaarden vullen voortaan de formulieren van de applicatie.',
   'settings.appearance.cardTitle': 'Weergave',
   'settings.appearance.theme.label': 'Thema',
   'settings.appearance.theme.hint': 'Meteen toegepast op de hele applicatie.',
