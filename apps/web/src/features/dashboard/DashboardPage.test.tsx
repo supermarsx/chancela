@@ -192,6 +192,66 @@ describe('DashboardPage', () => {
     expect(within(queue).getByText('Lei csc:255')).toBeTruthy();
   });
 
+  it('renders administrator remuneration alerts with CSC art. 399 metadata', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      alerts: [
+        {
+          code: 'entity.administrator_remuneration.setup_recommended',
+          label: 'Advisory',
+          severity: 'Info',
+          category: 'GovernanceSetup',
+          message: 'Raw backend administrator remuneration message.',
+          params: { entity_name: 'Atlântico Estratégico, S.A.', office: 'administration' },
+          target: {
+            entity_id: 'entity-sa',
+            book_id: null,
+            act_id: null,
+            links: { entity: '/v1/entities/entity-sa', book: null, act: null, ledger: null },
+          },
+          source: 'registry_extracts.orgaos',
+          law_refs: [
+            {
+              diploma_id: 'csc',
+              article: '399',
+              label: 'Artigo 399.º',
+              heading: 'Remuneração dos administradores',
+              verification: 'Pending',
+              source_url: null,
+            },
+          ],
+          action: {
+            kind: 'open_entity',
+            label_key: 'notifications.alert.entity.administratorRemuneration.action',
+            api_href: '/v1/entities/entity-sa',
+            route: '/entidades/entity-sa',
+          },
+          recommended_next_steps: [
+            'Review registry officers and statutes.',
+            'Draft remuneration or non-remuneration minutes.',
+          ],
+          i18n: {
+            title_key: 'notifications.alert.entity.administratorRemuneration.title',
+            body_key: 'notifications.alert.entity.administratorRemuneration.body',
+            action_key: 'notifications.alert.entity.administratorRemuneration.action',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    expect(
+      within(queue)
+        .getByRole('link', { name: 'Definir remuneração dos administradores' })
+        .getAttribute('href'),
+    ).toBe('/entidades/entity-sa');
+    expect(within(queue).getByText(/Atlântico Estratégico, S.A./)).toBeTruthy();
+    expect(within(queue).getByText('Lei csc:399')).toBeTruthy();
+  });
+
   it('deduplicates reminders and orders overdue before upcoming work while tolerating bad dates', async () => {
     const longName =
       'Sociedade com uma denominação excecionalmente longa para testar a quebra de linha sem alargar o painel, S.A.';

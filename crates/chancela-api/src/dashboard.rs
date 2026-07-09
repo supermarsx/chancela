@@ -501,18 +501,20 @@ fn push_lifecycle_alerts(
             books,
             registry_extracts.get(&entity.id),
         ) {
+            let remuneration = remuneration_alert_profile(entity.kind);
             alerts.push(DashboardAlert {
-                code: "entity.manager_remuneration.setup_recommended".to_owned(),
+                code: remuneration.code.to_owned(),
                 label: "Advisory".to_owned(),
                 severity: "Info".to_owned(),
                 category: "GovernanceSetup".to_owned(),
                 message: format!(
-                    "Entity {} has management/administration officers in the imported registry evidence, but no sealed remuneration or non-remuneration minutes are recorded. Record the remuneration setup when appropriate.",
-                    entity.name
+                    "Entity {} has {} officers in the imported registry evidence, but no sealed remuneration or non-remuneration minutes are recorded. Record the remuneration setup when appropriate.",
+                    entity.name, remuneration.officer_label
                 ),
                 params: dashboard_alert_params([
                     ("entity_id", entity.id.to_string()),
                     ("entity_name", entity.name.clone()),
+                    ("office", remuneration.officer_label.to_owned()),
                     ("recommended_actions", "record_remuneration,record_non_remuneration".to_owned()),
                 ]),
                 target: DashboardAlertTarget {
@@ -522,10 +524,10 @@ fn push_lifecycle_alerts(
                     links: target_links(Some(entity.id), None, None),
                 },
                 source: Some("registry_extracts.orgaos".to_owned()),
-                law_refs: remuneration_law_refs(entity.kind),
+                law_refs: law_refs(&[("csc", remuneration.article)]),
                 action: Some(dashboard_action(
                     "open_entity",
-                    "notifications.alert.entity.managerRemuneration.action",
+                    remuneration.action_key,
                     Some(format!("/v1/entities/{}", entity.id)),
                     Some(format!("/entidades/{}", entity.id)),
                 )),
@@ -534,9 +536,9 @@ fn push_lifecycle_alerts(
                     "Draft minutes for remuneration or explicit non-remuneration if required.".to_owned(),
                 ],
                 i18n: Some(alert_i18n(
-                    "notifications.alert.entity.managerRemuneration.title",
-                    "notifications.alert.entity.managerRemuneration.body",
-                    Some("notifications.alert.entity.managerRemuneration.action"),
+                    remuneration.title_key,
+                    remuneration.body_key,
+                    Some(remuneration.action_key),
                 )),
             });
         }
@@ -781,11 +783,34 @@ fn law_refs(refs: &[(&str, &str)]) -> Vec<DashboardLawReference> {
         .collect()
 }
 
-fn remuneration_law_refs(kind: EntityKind) -> Vec<DashboardLawReference> {
+struct RemunerationAlertProfile {
+    code: &'static str,
+    officer_label: &'static str,
+    article: &'static str,
+    title_key: &'static str,
+    body_key: &'static str,
+    action_key: &'static str,
+}
+
+fn remuneration_alert_profile(kind: EntityKind) -> RemunerationAlertProfile {
     if matches!(kind, EntityKind::SociedadeAnonima) {
-        law_refs(&[("csc", "399")])
+        RemunerationAlertProfile {
+            code: "entity.administrator_remuneration.setup_recommended",
+            officer_label: "administration",
+            article: "399",
+            title_key: "notifications.alert.entity.administratorRemuneration.title",
+            body_key: "notifications.alert.entity.administratorRemuneration.body",
+            action_key: "notifications.alert.entity.administratorRemuneration.action",
+        }
     } else {
-        law_refs(&[("csc", "255")])
+        RemunerationAlertProfile {
+            code: "entity.manager_remuneration.setup_recommended",
+            officer_label: "management",
+            article: "255",
+            title_key: "notifications.alert.entity.managerRemuneration.title",
+            body_key: "notifications.alert.entity.managerRemuneration.body",
+            action_key: "notifications.alert.entity.managerRemuneration.action",
+        }
     }
 }
 
@@ -1490,6 +1515,57 @@ mod tests {
         assert_eq!(
             alert.params.get("recommended_actions").map(String::as_str),
             Some("record_remuneration,record_non_remuneration")
+        );
+        assert_eq!(
+            alert.params.get("office").map(String::as_str),
+            Some("management")
+        );
+        assert_eq!(
+            alert.i18n.as_ref().map(|i18n| i18n.title_key.as_str()),
+            Some("notifications.alert.entity.managerRemuneration.title")
+        );
+    }
+
+    #[test]
+    fn lifecycle_alerts_recommend_administrator_remuneration_setup_for_sa() {
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+        let registry_extracts =
+            HashMap::from([(entity.id, registry_extract_with_officer("Administrador"))]);
+
+        let alerts = dashboard_alerts(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &registry_extracts,
+            true,
+            date!(2026 - 07 - 09),
+        );
+
+        let alert = alerts
+            .iter()
+            .find(|alert| alert.code == "entity.administrator_remuneration.setup_recommended")
+            .expect("administrator remuneration alert");
+        assert_eq!(alert.severity, "Info");
+        assert_eq!(alert.category, "GovernanceSetup");
+        assert_eq!(alert.law_refs.len(), 1);
+        assert_eq!(alert.law_refs[0].diploma_id, "csc");
+        assert_eq!(alert.law_refs[0].article, "399");
+        assert_eq!(alert.law_refs[0].heading, "Remuneração dos administradores");
+        assert_eq!(
+            alert.params.get("office").map(String::as_str),
+            Some("administration")
+        );
+        assert_eq!(
+            alert
+                .action
+                .as_ref()
+                .map(|action| action.label_key.as_str()),
+            Some("notifications.alert.entity.administratorRemuneration.action")
+        );
+        assert_eq!(
+            alert.i18n.as_ref().map(|i18n| i18n.body_key.as_str()),
+            Some("notifications.alert.entity.administratorRemuneration.body")
         );
     }
 

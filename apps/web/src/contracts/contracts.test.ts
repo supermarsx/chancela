@@ -69,9 +69,12 @@ import {
   type CaeRefView,
   type Dashboard,
   type DashboardActStateCounts,
+  type DashboardAction,
   type DashboardAlert,
   type DashboardAlertTarget,
   type DashboardCurrentWork,
+  type DashboardI18n,
+  type DashboardLawReference,
   type DashboardOpenBook,
   type DashboardReminder,
   type DashboardTargetLinks,
@@ -985,16 +988,24 @@ describe('contract fixtures parse through the real client', () => {
       {
         code: true,
         label: true,
+        severity: true,
         category: true,
         message: true,
         params: true,
         target: true,
         source: true,
+        law_refs: true,
+        action: true,
+        recommended_next_steps: true,
+        i18n: true,
       },
       'Dashboard.alerts[0]',
     );
     expect(alert.code.length).toBeGreaterThan(0);
     inEnum(['Advisory', 'ReviewRequired'], alert.label, 'Dashboard.alerts[0].label');
+    if (alert.severity !== undefined) {
+      inEnum(['Info', 'Warning', 'Error'], alert.severity, 'Dashboard.alerts[0].severity');
+    }
     expect(alert.category.length).toBeGreaterThan(0);
     expect(alert.message.length).toBeGreaterThan(0);
     expect(alert.params && typeof alert.params).toBe('object');
@@ -1016,6 +1027,43 @@ describe('contract fixtures parse through the real client', () => {
       { entity: true, book: true, act: true, ledger: true },
       'Dashboard.alerts[0].target.links',
     );
+    expect(Array.isArray(alert.law_refs)).toBe(true);
+    if (alert.law_refs && alert.law_refs.length > 0) {
+      const lawRef = assertExactKeys<DashboardLawReference>(
+        alert.law_refs[0],
+        {
+          diploma_id: true,
+          article: true,
+          label: true,
+          heading: true,
+          verification: true,
+          source_url: true,
+        },
+        'Dashboard.alerts[0].law_refs[0]',
+      );
+      expect(lawRef.diploma_id.length).toBeGreaterThan(0);
+      expect(lawRef.article.length).toBeGreaterThan(0);
+      expect(lawRef.label.length).toBeGreaterThan(0);
+    }
+    if (alert.action !== null && alert.action !== undefined) {
+      const alertAction = assertExactKeys<DashboardAction>(
+        alert.action,
+        { kind: true, label_key: true, api_href: true, route: true },
+        'Dashboard.alerts[0].action',
+      );
+      expect(alertAction.kind.length).toBeGreaterThan(0);
+      expect(alertAction.label_key.length).toBeGreaterThan(0);
+    }
+    expect(Array.isArray(alert.recommended_next_steps)).toBe(true);
+    if (alert.i18n !== null && alert.i18n !== undefined) {
+      const alertI18n = assertExactKeys<DashboardI18n>(
+        alert.i18n,
+        { title_key: true, body_key: true, action_key: true },
+        'Dashboard.alerts[0].i18n',
+      );
+      expect(alertI18n.title_key.length).toBeGreaterThan(0);
+      expect(alertI18n.body_key.length).toBeGreaterThan(0);
+    }
     expect(Array.isArray(dash.reminders)).toBe(true);
     const reminder = assertExactKeys<DashboardReminder>(
       dash.reminders[0],
@@ -1028,6 +1076,9 @@ describe('contract fixtures parse through the real client', () => {
         entity_name: true,
         source_rule: true,
         source_profile: true,
+        law_refs: true,
+        action: true,
+        recommended_next_steps: true,
       },
       'Dashboard.reminders[0]',
     );
@@ -1054,6 +1105,29 @@ describe('contract fixtures parse through the real client', () => {
       reminder.source_profile.length,
       'Dashboard.reminders[0].source_profile should be non-empty',
     ).toBeGreaterThan(0);
+    expect(Array.isArray(reminder.law_refs)).toBe(true);
+    if (reminder.law_refs && reminder.law_refs.length > 0) {
+      assertExactKeys<DashboardLawReference>(
+        reminder.law_refs[0],
+        {
+          diploma_id: true,
+          article: true,
+          label: true,
+          heading: true,
+          verification: true,
+          source_url: true,
+        },
+        'Dashboard.reminders[0].law_refs[0]',
+      );
+    }
+    if (reminder.action !== null && reminder.action !== undefined) {
+      assertExactKeys<DashboardAction>(
+        reminder.action,
+        { kind: true, label_key: true, api_href: true, route: true },
+        'Dashboard.reminders[0].action',
+      );
+    }
+    expect(Array.isArray(reminder.recommended_next_steps)).toBe(true);
     expect(Array.isArray(dash.recent_events)).toBe(true);
     // recent_events reuse the ledger event shape.
     assertExactKeys<LedgerEventView>(

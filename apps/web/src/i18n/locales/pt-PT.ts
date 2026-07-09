@@ -200,6 +200,11 @@ export const ptPT = {
   'notifications.alert.entity.managerRemuneration.body':
     'A entidade {entity_name} tem gerência/administração no registo importado e ainda não há ata selada de remuneração ou não remuneração. Registe a decisão quando aplicável.',
   'notifications.alert.entity.managerRemuneration.action': 'Abrir entidade',
+  'notifications.alert.entity.administratorRemuneration.title':
+    'Definir remuneração dos administradores',
+  'notifications.alert.entity.administratorRemuneration.body':
+    'A entidade {entity_name} tem administradores no registo importado e ainda não há ata selada de remuneração ou não remuneração. Registe a decisão quando aplicável.',
+  'notifications.alert.entity.administratorRemuneration.action': 'Abrir entidade',
   'notifications.alert.book.missingTermo.title': 'Rever termo de abertura',
   'notifications.alert.book.missingTermo.body':
     'O livro {book_id} tem campos por rever no termo de abertura: {missing_fields}. Complete o registo antes de o usar como prova completa.',

@@ -189,6 +189,10 @@ const ALERT_COPY: Partial<Record<string, { title: MessageKey; body: MessageKey }
     title: 'notifications.alert.entity.managerRemuneration.title',
     body: 'notifications.alert.entity.managerRemuneration.body',
   },
+  'entity.administrator_remuneration.setup_recommended': {
+    title: 'notifications.alert.entity.administratorRemuneration.title',
+    body: 'notifications.alert.entity.administratorRemuneration.body',
+  },
   'book.termo_abertura.missing_metadata': {
     title: 'notifications.alert.book.missingTermo.title',
     body: 'notifications.alert.book.missingTermo.body',

@@ -193,6 +193,10 @@ export const daDK: Catalog = {
   'notifications.alert.entity.managerRemuneration.body':
     'The entity {entity_name} has management/administration officers in imported registry evidence and no sealed remuneration or non-remuneration minutes yet. Record the decision when applicable.',
   'notifications.alert.entity.managerRemuneration.action': 'Open entity',
+  'notifications.alert.entity.administratorRemuneration.title': 'Set up administrator remuneration',
+  'notifications.alert.entity.administratorRemuneration.body':
+    'The entity {entity_name} has administrators in imported registry evidence and no sealed remuneration or non-remuneration minutes yet. Record the decision when applicable.',
+  'notifications.alert.entity.administratorRemuneration.action': 'Open entity',
   'notifications.alert.book.missingTermo.title': 'Review opening term',
   'notifications.alert.book.missingTermo.body':
     'Book {book_id} has opening-term fields to review: {missing_fields}. Complete the record before relying on it as complete evidence.',

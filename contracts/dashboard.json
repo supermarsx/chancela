@@ -65,7 +65,33 @@
           "ledger": "/v1/ledger/events?chain=book:3f1c8e40-0000-4000-8000-000000000010"
         }
       },
-      "source": "acts.by_book"
+      "source": "acts.by_book",
+      "severity": "Info",
+      "law_refs": [
+        {
+          "diploma_id": "dl-76-a-2006",
+          "article": "1",
+          "label": "Artigo 1",
+          "heading": "",
+          "verification": "Pending",
+          "source_url": null
+        }
+      ],
+      "action": {
+        "kind": "open_book",
+        "label_key": "notifications.alert.book.noActs.action",
+        "api_href": "/v1/books/3f1c8e40-0000-4000-8000-000000000010",
+        "route": "/livros/3f1c8e40-0000-4000-8000-000000000010"
+      },
+      "recommended_next_steps": [
+        "Draft the next ata in the open book.",
+        "Import historical minutes if the book is already in use elsewhere."
+      ],
+      "i18n": {
+        "title_key": "notifications.alert.book.noActs.title",
+        "body_key": "notifications.alert.book.noActs.body",
+        "action_key": "notifications.alert.book.noActs.action"
+      }
     },
     {
       "code": "entity.book.no_open_book",
@@ -90,7 +116,41 @@
           "ledger": "/v1/ledger/events?chain=company:2f1c8e40-0000-4000-8000-000000000002"
         }
       },
-      "source": "entities.books"
+      "source": "entities.books",
+      "severity": "Info",
+      "law_refs": [
+        {
+          "diploma_id": "dl-76-a-2006",
+          "article": "1",
+          "label": "Artigo 1",
+          "heading": "",
+          "verification": "Pending",
+          "source_url": null
+        },
+        {
+          "diploma_id": "dl-76-a-2006",
+          "article": "2",
+          "label": "Artigo 2",
+          "heading": "",
+          "verification": "Pending",
+          "source_url": null
+        }
+      ],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.alert.entity.noOpenBook.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000002",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000002"
+      },
+      "recommended_next_steps": [
+        "Open a new digital book for the relevant organ.",
+        "Import an existing paper or external book if the entity already has one."
+      ],
+      "i18n": {
+        "title_key": "notifications.alert.entity.noOpenBook.title",
+        "body_key": "notifications.alert.entity.noOpenBook.body",
+        "action_key": "notifications.alert.entity.noOpenBook.action"
+      }
     },
     {
       "code": "registry.provenance.expiring_soon",
@@ -113,7 +173,74 @@
           "ledger": "/v1/ledger/events?chain=company:2f1c8e40-0000-4000-8000-000000000001"
         }
       },
-      "source": "registry_extracts.provenance.valid_until"
+      "source": "registry_extracts.provenance.valid_until",
+      "severity": "Info",
+      "law_refs": [],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.alert.registry.expiringSoon.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000001"
+      },
+      "recommended_next_steps": [
+        "Open the entity registry evidence.",
+        "Refresh the permanent certificate before using it as current evidence."
+      ],
+      "i18n": {
+        "title_key": "notifications.alert.registry.expiringSoon.title",
+        "body_key": "notifications.alert.registry.expiringSoon.body",
+        "action_key": "notifications.alert.registry.expiringSoon.action"
+      }
+    },
+    {
+      "code": "entity.administrator_remuneration.setup_recommended",
+      "label": "Advisory",
+      "severity": "Info",
+      "category": "GovernanceSetup",
+      "message": "Entity Atlântico Estratégico, S.A. has administration officers in the imported registry evidence, but no sealed remuneration or non-remuneration minutes are recorded. Record the remuneration setup when appropriate.",
+      "params": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000003",
+        "entity_name": "Atlântico Estratégico, S.A.",
+        "office": "administration",
+        "recommended_actions": "record_remuneration,record_non_remuneration"
+      },
+      "target": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000003",
+        "book_id": null,
+        "act_id": null,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000003",
+          "book": null,
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=company:2f1c8e40-0000-4000-8000-000000000003"
+        }
+      },
+      "source": "registry_extracts.orgaos",
+      "law_refs": [
+        {
+          "diploma_id": "csc",
+          "article": "399",
+          "label": "Artigo 399.º",
+          "heading": "Remuneração dos administradores",
+          "verification": "Pending",
+          "source_url": null
+        }
+      ],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.alert.entity.administratorRemuneration.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000003",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000003"
+      },
+      "recommended_next_steps": [
+        "Review the registry officers and statutes.",
+        "Draft minutes for remuneration or explicit non-remuneration if required."
+      ],
+      "i18n": {
+        "title_key": "notifications.alert.entity.administratorRemuneration.title",
+        "body_key": "notifications.alert.entity.administratorRemuneration.body",
+        "action_key": "notifications.alert.entity.administratorRemuneration.action"
+      }
     }
   ],
   "reminders": [
@@ -125,7 +252,27 @@
       "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
       "entity_name": "Encosto Estratégico, S.A.",
       "source_rule": "csc-art376-annual",
-      "source_profile": "csc-commercial"
+      "source_profile": "csc-commercial",
+      "law_refs": [
+        {
+          "diploma_id": "csc",
+          "article": "376",
+          "label": "Artigo 376.º",
+          "heading": "",
+          "verification": "Pending",
+          "source_url": null
+        }
+      ],
+      "action": {
+        "kind": "open_entity",
+        "label_key": "notifications.reminder.annual.action",
+        "api_href": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+        "route": "/entidades/2f1c8e40-0000-4000-8000-000000000001"
+      },
+      "recommended_next_steps": [
+        "Review the annual general meeting record.",
+        "Seal or archive the annual minutes once approved."
+      ]
     }
   ],
   "recent_events": [
