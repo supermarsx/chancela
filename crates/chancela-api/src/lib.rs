@@ -3540,6 +3540,9 @@ mod tests {
             },
             "ai": { "enabled": true },
             "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
+            "ui": {
+                "registered_entity_columns": ["Name", "Nipc", "Type", "LastActivity", "Actions"]
+            },
             "onboarding": { "completed": false, "completed_at": null }
         })
     }

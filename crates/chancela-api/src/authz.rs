@@ -390,6 +390,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/cae/{code}/children", RouteClass::Gated), // GET cae.read@Global
     ("/v1/trust/status", RouteClass::Gated), // GET cae.read@Global (read-only trust reference)
     ("/v1/trust/catalog", RouteClass::Gated), // GET cae.read@Global (read-only trust reference)
+    ("/v1/trust/refresh", RouteClass::Gated), // POST cae.refresh@Global (operator TSL import)
     ("/v1/trust/tsa", RouteClass::Gated),    // GET cae.read@Global (read-only TSA diagnostics)
     ("/v1/trust/providers/{id}", RouteClass::Gated), // GET cae.read@Global
     ("/v1/trust/services/{id}", RouteClass::Gated), // GET cae.read@Global
