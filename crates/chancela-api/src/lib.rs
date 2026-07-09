@@ -1083,6 +1083,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/cae/{code}", get(cae::get_cae))
         .route("/v1/cae/{code}/children", get(cae::list_children))
         .route("/v1/trust/status", get(trust::trust_status))
+        .route("/v1/trust/refresh", post(trust::refresh_trust_tsl))
         .route("/v1/trust/catalog", get(trust::trust_catalog))
         .route("/v1/trust/tsa", get(trust::trust_tsa))
         .route("/v1/trust/providers/{id}", get(trust::trust_provider))

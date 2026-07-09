@@ -11,6 +11,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   useTsaCatalog,
   useTsaCatalogSearch,
+  useRefreshTrustTsl,
   useTrustCatalog,
   useTrustCatalogSearch,
   useTrustProvider,
@@ -20,6 +21,7 @@ import {
 import { useT, type MessageKey } from '../../i18n';
 import {
   Badge,
+  Button,
   Card,
   Digest,
   EmptyState,
@@ -149,6 +151,14 @@ function filterLabel(filter: TrustFilter): MessageKey {
 
 function signatureTone(status: TslSignatureStatus): 'ok' | 'error' {
   return status === 'Valid' ? 'ok' : 'error';
+}
+
+function refreshOutcomeTone(outcome: 'Success' | 'Failed'): 'ok' | 'error' {
+  return outcome === 'Success' ? 'ok' : 'error';
+}
+
+function refreshOutcomeLabel(outcome: 'Success' | 'Failed'): string {
+  return outcome === 'Success' ? 'Importado' : 'Falhou';
 }
 
 function statusTone(kind: TslServiceStatusKind): 'ok' | 'warn' | 'neutral' {
@@ -686,6 +696,7 @@ function TsaToolingPanel() {
 function TrustStatusPanel() {
   const t = useT();
   const status = useTrustStatus();
+  const refresh = useRefreshTrustTsl();
 
   return (
     <Card title={t('trust.status.title')}>
@@ -695,6 +706,25 @@ function TrustStatusPanel() {
         <ErrorNote error={status.error} />
       ) : status.data ? (
         <div className="stack--tight">
+          <div className="trust-toolbar">
+            <div>
+              <p className="trust-toolbar__title">Atualização da lista</p>
+              <p className="muted trust-source-note">
+                Importa a TSL configurada para cache local e mostra a validação que o backend
+                conseguiu executar.
+              </p>
+            </div>
+            <Button
+              type="button"
+              icon={<Icon.Refresh />}
+              onClick={() => refresh.mutate({})}
+              disabled={refresh.isPending}
+            >
+              {refresh.isPending ? 'A importar…' : 'Atualizar TSL'}
+            </Button>
+          </div>
+          {refresh.error ? <ErrorNote error={refresh.error} /> : null}
+
           <div className="trust-statusline" role="group" aria-label="Resumo TSL">
             <div className="trust-statusline__item">
               <span className="trust-statusline__label">{t('trust.status.source')}</span>
@@ -717,6 +747,59 @@ function TrustStatusPanel() {
               <span className="mono">{status.data.validation.checked_at}</span>
             </div>
           </div>
+
+          {status.data.last_refresh ? (
+            <TrustDetailSection title="Última tentativa de importação">
+              <TrustKeyValueGrid>
+                <div>
+                  <dt>Resultado</dt>
+                  <dd>
+                    <Badge tone={refreshOutcomeTone(status.data.last_refresh.outcome)}>
+                      {refreshOutcomeLabel(status.data.last_refresh.outcome)}
+                    </Badge>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Tentada em</dt>
+                  <dd className="mono">{status.data.last_refresh.attempted_at}</dd>
+                </div>
+                <div>
+                  <dt>Origem</dt>
+                  <dd className="mono trust-opaque">
+                    {status.data.last_refresh.source_url ??
+                      status.data.last_refresh.source_path ??
+                      '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Registos</dt>
+                  <dd className="mono">
+                    {status.data.last_refresh.providers ?? '—'} prestadores ·{' '}
+                    {status.data.last_refresh.services ?? '—'} serviços
+                  </dd>
+                </div>
+                <div>
+                  <dt>Assinatura no import</dt>
+                  <dd>
+                    <SignatureBadge status={status.data.last_refresh.validation.signature} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>Confiáveis e-signature</dt>
+                  <dd className="mono">
+                    {status.data.last_refresh.trusted_esignature_services ?? '—'}
+                  </dd>
+                </div>
+              </TrustKeyValueGrid>
+              {status.data.last_refresh.error ? (
+                <p className="muted trust-source-note">{status.data.last_refresh.error}</p>
+              ) : status.data.last_refresh.validation.error ? (
+                <p className="muted trust-source-note">
+                  {status.data.last_refresh.validation.error}
+                </p>
+              ) : null}
+            </TrustDetailSection>
+          ) : null}
 
           <div className="trust-diagnostics-grid">
             <TrustDetailSection title="Identificação da lista">

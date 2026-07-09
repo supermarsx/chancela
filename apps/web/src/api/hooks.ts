@@ -67,6 +67,7 @@ import type {
   DsrRequestView,
   SetBookLegalHoldBody,
   TslCatalogSearchParams,
+  TslRefreshRequest,
   TsaCatalogSearchParams,
 } from './types';
 import { api } from './client';
@@ -955,6 +956,19 @@ export function useTrustCatalog() {
     queryKey: keys.trustCatalog,
     queryFn: () => api.getTrustCatalog(),
     staleTime: 60_000,
+  });
+}
+
+export function useRefreshTrustTsl() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TslRefreshRequest = {}) => api.refreshTrustTsl(body),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.trustStatus });
+      void qc.invalidateQueries({ queryKey: keys.trustCatalog });
+      void qc.invalidateQueries({ queryKey: keys.tsaCatalog });
+      void qc.invalidateQueries({ queryKey: ['trust'] });
+    },
   });
 }
 

@@ -992,8 +992,33 @@ export interface TslValidationView {
   error: string | null;
 }
 
+export type TslRefreshSourceKind = 'Url' | 'File';
+export type TslRefreshOutcome = 'Success' | 'Failed';
+
+export interface TslRefreshStatusView {
+  attempted_at: string;
+  source_kind: TslRefreshSourceKind;
+  source_url: string | null;
+  source_path: string | null;
+  target_path: string | null;
+  outcome: TslRefreshOutcome;
+  validation: TslValidationView;
+  providers: number | null;
+  services: number | null;
+  ca_qc_services: number | null;
+  qualified_esignature_services: number | null;
+  trusted_esignature_services: number | null;
+  error: string | null;
+}
+
+export interface TslRefreshRequest {
+  url?: string;
+  path?: string;
+}
+
 export interface TslSummaryView {
   source: TslSourceView;
+  last_refresh?: TslRefreshStatusView | null;
   scheme_operator_name: string;
   scheme_name: string;
   scheme_territory: string;

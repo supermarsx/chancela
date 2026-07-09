@@ -1,9 +1,9 @@
 //! Trusted List catalog endpoints: offline TSL status, provider/service search, and detail views.
 //!
-//! This is deliberately read-only. It does not fetch the live LOTL/TSL; it parses an on-disk cached
-//! Portuguese TSL XML when one is present in the data directory, otherwise it falls back to the
-//! bundled `chancela-tsl` fixture. Signature validation is reported as data so an operator can see
-//! whether the catalog is advisory (`Invalid`) or trustable (`Valid`).
+//! It parses an on-disk cached Portuguese TSL XML when one is present in the data directory,
+//! otherwise it falls back to the bundled `chancela-tsl` fixture. Operators may also trigger an
+//! explicit URL/file import into that cache. Signature validation is reported as data so an
+//! operator can see whether the catalog is advisory (`Invalid`) or trustable (`Valid`).
 
 use std::path::PathBuf;
 
@@ -15,6 +15,7 @@ use chancela_tsa::mock::{
     FIXTURE_DIGEST, FIXTURE_NONCE, FIXTURE_REQUEST_DER, FIXTURE_RESPONSE_DER,
 };
 use chancela_tsa::{QualifiedTimestampPolicy, TimestampRequest, verify_response};
+use chancela_tsl::source::{DEFAULT_PT_TSL_URL, HttpTslSource, TslSource};
 use chancela_tsl::{
     DigitalIdentity, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
     TrustServiceProvider, TrustedList, parse_tsl, validate_tsl_signature,
@@ -44,6 +45,8 @@ const CACHE_CANDIDATES: &[&str] = &[
     "trusted-list.xml",
     "trusted-list.pt.xml",
 ];
+const TRUST_CACHE_FILE: &str = "tsl.xml";
+const TRUST_REFRESH_STATUS_FILE: &str = "tsl-refresh-status.json";
 
 // --- Views -------------------------------------------------------------------------------------
 
@@ -60,13 +63,13 @@ pub struct TslSourceView {
     pub note: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TslSignatureStatus {
     Valid,
     Invalid,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TslValidationView {
     pub checked_at: String,
     pub signature: TslSignatureStatus,
@@ -76,6 +79,7 @@ pub struct TslValidationView {
 #[derive(Debug, Clone, Serialize)]
 pub struct TslSummaryView {
     pub source: TslSourceView,
+    pub last_refresh: Option<TslRefreshStatusView>,
     pub scheme_operator_name: String,
     pub scheme_name: String,
     pub scheme_territory: String,
@@ -89,6 +93,41 @@ pub struct TslSummaryView {
     pub ca_qc_services: usize,
     pub qualified_esignature_services: usize,
     pub trusted_esignature_services: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TslRefreshSourceKind {
+    Url,
+    File,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TslRefreshOutcome {
+    Success,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TslRefreshStatusView {
+    pub attempted_at: String,
+    pub source_kind: TslRefreshSourceKind,
+    pub source_url: Option<String>,
+    pub source_path: Option<String>,
+    pub target_path: Option<String>,
+    pub outcome: TslRefreshOutcome,
+    pub validation: TslValidationView,
+    pub providers: Option<usize>,
+    pub services: Option<usize>,
+    pub ca_qc_services: Option<usize>,
+    pub qualified_esignature_services: Option<usize>,
+    pub trusted_esignature_services: Option<usize>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TslRefreshRequest {
+    pub url: Option<String>,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -336,6 +375,7 @@ struct LoadedTsl {
     xml: Vec<u8>,
     list: TrustedList,
     source: TslSourceView,
+    last_refresh: Option<TslRefreshStatusView>,
 }
 
 #[derive(Default)]
@@ -388,6 +428,33 @@ pub async fn trust_status(
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
     Ok(Json(summary_view(&loaded, now)))
+}
+
+/// `POST /v1/trust/refresh` — operator-triggered TSL import from a URL or local XML file.
+///
+/// With an empty body, the handler uses the configured signing TSL URL, falling back to the
+/// Portuguese default. The imported XML is parsed and its XML-DSig status is recorded, then a
+/// parseable list is cached as `tsl.xml`. Invalid signatures remain advisory and are surfaced in
+/// the status; they are not treated as trusted validation.
+pub async fn refresh_trust_tsl(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(request): Json<TslRefreshRequest>,
+) -> Result<Json<TslRefreshStatusView>, ApiError> {
+    require_reference_refresh(&state, &actor).await?;
+    let data_dir = state.data_dir().ok_or_else(|| {
+        ApiError::Unprocessable(
+            "TSL import requires CHANCELA_DATA_DIR so the cache and last-attempt status can be persisted"
+                .to_owned(),
+        )
+    })?;
+    let configured_url = state.settings.read().await.signing.tsl_url.clone();
+    let attempt = tokio::task::spawn_blocking(move || {
+        import_tsl_to_cache(data_dir, configured_url, request, OffsetDateTime::now_utc())
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("TSL import worker failed: {e}")))??;
+    Ok(Json(attempt))
 }
 
 /// `GET /v1/trust/catalog?search=&service_type=&status=&history=&supply_point=&limit=` —
@@ -517,7 +584,194 @@ async fn require_reference_read(state: &AppState, actor: &CurrentActor) -> Resul
     require_permission(state, actor, Permission::CaeRead, Scope::Global).await
 }
 
+async fn require_reference_refresh(state: &AppState, actor: &CurrentActor) -> Result<(), ApiError> {
+    // There is no trust-specific mutation verb yet. Reuse the reference refresh permission used by
+    // CAE operator refreshes until an authz migration can add `trust.refresh`.
+    require_permission(state, actor, Permission::CaeRefresh, Scope::Global).await
+}
+
 // --- Catalog assembly --------------------------------------------------------------------------
+
+fn import_tsl_to_cache(
+    data_dir: PathBuf,
+    configured_url: Option<String>,
+    request: TslRefreshRequest,
+    now: OffsetDateTime,
+) -> Result<TslRefreshStatusView, ApiError> {
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| ApiError::Internal(format!("failed to create TSL cache directory: {e}")))?;
+    let target_path = data_dir.join(TRUST_CACHE_FILE);
+    let status_path = data_dir.join(TRUST_REFRESH_STATUS_FILE);
+    let source_path = request
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let source_url = request
+        .url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let source_kind = if source_path.is_some() {
+        TslRefreshSourceKind::File
+    } else {
+        TslRefreshSourceKind::Url
+    };
+    let display_url = source_url
+        .or_else(|| configured_url.filter(|url| !url.trim().is_empty()))
+        .unwrap_or_else(|| DEFAULT_PT_TSL_URL.to_owned());
+    let display_path = source_path.as_ref().map(|path| path.display().to_string());
+    let status_source_url = if source_kind == TslRefreshSourceKind::Url {
+        Some(display_url.clone())
+    } else {
+        None
+    };
+
+    let fetched = if let Some(path) = &source_path {
+        std::fs::read(path).map_err(|e| e.to_string())
+    } else {
+        HttpTslSource::new(display_url.clone())
+            .fetch()
+            .map_err(|e| e.to_string())
+    };
+
+    let mut status = match &fetched {
+        Ok(xml) => status_for_imported_xml(
+            xml,
+            now,
+            source_kind,
+            status_source_url.clone(),
+            display_path,
+            Some(target_path.display().to_string()),
+        ),
+        Err(error) => failed_refresh_status(
+            now,
+            source_kind,
+            status_source_url,
+            display_path,
+            Some(target_path.display().to_string()),
+            error.clone(),
+        ),
+    };
+
+    if status.outcome == TslRefreshOutcome::Success {
+        let tmp_path = target_path.with_extension("xml.tmp");
+        let xml =
+            fetched.map_err(|e| ApiError::Internal(format!("missing imported TSL bytes: {e}")))?;
+        std::fs::write(&tmp_path, xml)
+            .map_err(|e| ApiError::Internal(format!("failed to write TSL cache: {e}")))?;
+        std::fs::rename(&tmp_path, &target_path)
+            .map_err(|e| ApiError::Internal(format!("failed to replace TSL cache: {e}")))?;
+        status.target_path = Some(target_path.display().to_string());
+    }
+
+    persist_refresh_status(&status_path, &status)?;
+    Ok(status)
+}
+
+fn status_for_imported_xml(
+    xml: &[u8],
+    now: OffsetDateTime,
+    source_kind: TslRefreshSourceKind,
+    source_url: Option<String>,
+    source_path: Option<String>,
+    target_path: Option<String>,
+) -> TslRefreshStatusView {
+    match parse_tsl(xml) {
+        Ok(list) => {
+            let validation_error = validate_tsl_signature(xml).err().map(|e| e.to_string());
+            let signature_valid = validation_error.is_none();
+            let services = list.services().count();
+            let ca_qc_services = list.services().filter(|s| s.is_ca_qc()).count();
+            let qualified_esignature_services = list
+                .services()
+                .filter(|s| qualifies_for_esignature(s, now))
+                .count();
+            TslRefreshStatusView {
+                attempted_at: format_time(now),
+                source_kind,
+                source_url,
+                source_path,
+                target_path,
+                outcome: TslRefreshOutcome::Success,
+                validation: TslValidationView {
+                    checked_at: format_time(now),
+                    signature: if signature_valid {
+                        TslSignatureStatus::Valid
+                    } else {
+                        TslSignatureStatus::Invalid
+                    },
+                    error: validation_error,
+                },
+                providers: Some(list.providers.len()),
+                services: Some(services),
+                ca_qc_services: Some(ca_qc_services),
+                qualified_esignature_services: Some(qualified_esignature_services),
+                trusted_esignature_services: Some(if signature_valid {
+                    qualified_esignature_services
+                } else {
+                    0
+                }),
+                error: None,
+            }
+        }
+        Err(error) => failed_refresh_status(
+            now,
+            source_kind,
+            source_url,
+            source_path,
+            target_path,
+            format!("failed to parse Trusted List: {error}"),
+        ),
+    }
+}
+
+fn failed_refresh_status(
+    now: OffsetDateTime,
+    source_kind: TslRefreshSourceKind,
+    source_url: Option<String>,
+    source_path: Option<String>,
+    target_path: Option<String>,
+    error: String,
+) -> TslRefreshStatusView {
+    TslRefreshStatusView {
+        attempted_at: format_time(now),
+        source_kind,
+        source_url,
+        source_path,
+        target_path,
+        outcome: TslRefreshOutcome::Failed,
+        validation: TslValidationView {
+            checked_at: format_time(now),
+            signature: TslSignatureStatus::Invalid,
+            error: Some(error.clone()),
+        },
+        providers: None,
+        services: None,
+        ca_qc_services: None,
+        qualified_esignature_services: None,
+        trusted_esignature_services: None,
+        error: Some(error),
+    }
+}
+
+fn persist_refresh_status(
+    path: &std::path::Path,
+    status: &TslRefreshStatusView,
+) -> Result<(), ApiError> {
+    let bytes = serde_json::to_vec_pretty(status)
+        .map_err(|e| ApiError::Internal(format!("failed to serialize TSL refresh status: {e}")))?;
+    std::fs::write(path, bytes)
+        .map_err(|e| ApiError::Internal(format!("failed to persist TSL refresh status: {e}")))
+}
+
+fn load_refresh_status(data_dir: Option<PathBuf>) -> Option<TslRefreshStatusView> {
+    let path = data_dir?.join(TRUST_REFRESH_STATUS_FILE);
+    let bytes = std::fs::read(path).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
 
 fn load_tsl(state: &AppState) -> Result<LoadedTsl, ApiError> {
     let (xml, source) = match find_cached_tsl(state.data_dir()) {
@@ -545,7 +799,13 @@ fn load_tsl(state: &AppState) -> Result<LoadedTsl, ApiError> {
     };
     let list = parse_tsl(&xml)
         .map_err(|e| ApiError::Internal(format!("failed to parse Trusted List: {e}")))?;
-    Ok(LoadedTsl { xml, list, source })
+    let last_refresh = load_refresh_status(state.data_dir());
+    Ok(LoadedTsl {
+        xml,
+        list,
+        source,
+        last_refresh,
+    })
 }
 
 fn find_cached_tsl(data_dir: Option<PathBuf>) -> Option<PathBuf> {
@@ -584,6 +844,7 @@ fn summary_view(loaded: &LoadedTsl, now: OffsetDateTime) -> TslSummaryView {
         .count();
     TslSummaryView {
         source: loaded.source.clone(),
+        last_refresh: loaded.last_refresh.clone(),
         scheme_operator_name: loaded.list.scheme_operator_name.clone(),
         scheme_name: loaded.list.scheme_name.clone(),
         scheme_territory: loaded.list.scheme_territory.clone(),
@@ -1523,6 +1784,26 @@ mod tests {
 
     const NOW: OffsetDateTime = datetime!(2026-07-06 12:00:00 UTC);
 
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "chancela-trust-test-{}-{}",
+                std::process::id(),
+                OffsetDateTime::now_utc().unix_timestamp_nanos()
+            ));
+            std::fs::create_dir_all(&path).expect("temp dir");
+            Self(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     fn fixture() -> LoadedTsl {
         let xml = BUNDLED_PT_TSL.to_vec();
         LoadedTsl {
@@ -1533,6 +1814,7 @@ mod tests {
                 path: None,
                 note: "fixture".to_owned(),
             },
+            last_refresh: None,
         }
     }
 
@@ -1541,11 +1823,73 @@ mod tests {
         let loaded = fixture();
         let summary = summary_view(&loaded, NOW);
         assert_eq!(summary.scheme_territory, "PT");
+        assert!(summary.last_refresh.is_none());
         assert_eq!(summary.providers, 4);
         assert_eq!(summary.qualified_esignature_services, 1);
         assert_eq!(summary.trusted_esignature_services, 0);
         assert_eq!(summary.validation.signature, TslSignatureStatus::Invalid);
         assert!(summary.validation.error.is_some());
+    }
+
+    #[test]
+    fn import_from_file_persists_cache_and_last_attempt_status() {
+        let tmp = TempDir::new();
+        let source = tmp.0.join("source-tsl.xml");
+        std::fs::write(&source, BUNDLED_PT_TSL).expect("fixture source");
+
+        let status = import_tsl_to_cache(
+            tmp.0.clone(),
+            None,
+            TslRefreshRequest {
+                url: None,
+                path: Some(source.display().to_string()),
+            },
+            NOW,
+        )
+        .expect("import status");
+
+        assert_eq!(status.outcome, TslRefreshOutcome::Success);
+        assert_eq!(status.source_kind, TslRefreshSourceKind::File);
+        assert_eq!(status.source_url, None);
+        assert_eq!(status.providers, Some(4));
+        assert_eq!(status.services, Some(5));
+        assert_eq!(status.validation.signature, TslSignatureStatus::Invalid);
+        assert!(tmp.0.join(TRUST_CACHE_FILE).is_file());
+
+        let persisted = load_refresh_status(Some(tmp.0.clone())).expect("persisted status");
+        assert_eq!(persisted.outcome, TslRefreshOutcome::Success);
+        let state = AppState::with_data_dir(tmp.0.clone());
+        let loaded = load_tsl(&state).expect("cached TSL loads");
+        assert_eq!(loaded.source.kind, TslSourceKind::Cache);
+        assert_eq!(
+            loaded.last_refresh.as_ref().map(|s| s.outcome),
+            Some(TslRefreshOutcome::Success)
+        );
+    }
+
+    #[test]
+    fn failed_import_persists_error_without_replacing_cache() {
+        let tmp = TempDir::new();
+        let source = tmp.0.join("bad-tsl.xml");
+        std::fs::write(&source, b"<not-tsl>").expect("bad source");
+
+        let status = import_tsl_to_cache(
+            tmp.0.clone(),
+            None,
+            TslRefreshRequest {
+                url: None,
+                path: Some(source.display().to_string()),
+            },
+            NOW,
+        )
+        .expect("failed attempt still persists status");
+
+        assert_eq!(status.outcome, TslRefreshOutcome::Failed);
+        assert!(status.error.as_deref().is_some_and(|e| e.contains("parse")));
+        assert!(!tmp.0.join(TRUST_CACHE_FILE).exists());
+        let persisted = load_refresh_status(Some(tmp.0.clone())).expect("persisted failure");
+        assert_eq!(persisted.outcome, TslRefreshOutcome::Failed);
+        assert_eq!(persisted.providers, None);
     }
 
     #[test]

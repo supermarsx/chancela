@@ -6,6 +6,7 @@ import { TrustCatalogPage } from './TrustCatalogPage';
 import type {
   TslCatalogView,
   TslProviderDetailView,
+  TslRefreshStatusView,
   TslServiceDetailView,
   TslServiceSummaryView,
   TslSummaryView,
@@ -21,6 +22,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 const SUMMARY: TslSummaryView = {
   source: { kind: 'Fixture', path: null, note: 'Fixture TSL de teste.' },
+  last_refresh: null,
   scheme_operator_name: 'Gabinete Nacional de Segurança',
   scheme_name: 'Lista de Confiança de Portugal',
   scheme_territory: 'PT',
@@ -38,6 +40,26 @@ const SUMMARY: TslSummaryView = {
   ca_qc_services: 1,
   qualified_esignature_services: 1,
   trusted_esignature_services: 2,
+};
+
+const REFRESH_STATUS: TslRefreshStatusView = {
+  attempted_at: '2026-07-09T10:00:00Z',
+  source_kind: 'Url',
+  source_url: 'https://www.gns.gov.pt/media/TSLPT.xml',
+  source_path: null,
+  target_path: 'F:\\Projects\\chancela\\chancela-data\\tsl.xml',
+  outcome: 'Success',
+  validation: {
+    checked_at: '2026-07-09T10:00:00Z',
+    signature: 'Invalid',
+    error: 'fixture signature not trusted',
+  },
+  providers: 2,
+  services: 3,
+  ca_qc_services: 1,
+  qualified_esignature_services: 1,
+  trusted_esignature_services: 0,
+  error: null,
 };
 
 const QUALIFIED_SERVICE: TslServiceSummaryView = {
@@ -363,9 +385,15 @@ function requestMatching(
 }
 
 function trustFetch(): typeof fetch {
-  return ((input: RequestInfo | URL) => {
+  let summary = SUMMARY;
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const parsed = new URL(url, 'http://localhost');
+    const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+    if (parsed.pathname === '/v1/trust/refresh' && method === 'POST') {
+      summary = { ...SUMMARY, source: { ...SUMMARY.source, kind: 'Cache' }, last_refresh: REFRESH_STATUS };
+      return Promise.resolve(jsonResponse(REFRESH_STATUS));
+    }
     if (parsed.pathname === '/v1/trust/tsa') {
       return Promise.resolve(
         jsonResponse(
@@ -377,7 +405,7 @@ function trustFetch(): typeof fetch {
         ),
       );
     }
-    if (url.includes('/v1/trust/status')) return Promise.resolve(jsonResponse(SUMMARY));
+    if (url.includes('/v1/trust/status')) return Promise.resolve(jsonResponse(summary));
     if (url.includes('/v1/trust/providers/p-multicert'))
       return Promise.resolve(jsonResponse(PROVIDER_DETAIL));
     const serviceId = url.match(/\/v1\/trust\/services\/([^?]+)/)?.[1];
@@ -421,6 +449,28 @@ describe('Ferramentas — TSL trust catalog', () => {
     expect(screen.getAllByText('Fixture OK').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('group', { name: 'Resumo TSL' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Cobertura' })).toBeTruthy();
+  });
+
+  it('imports the TSL on operator request and renders the persisted attempt status', async () => {
+    const fetchMock = vi.fn(trustFetch());
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+
+    await screen.findByRole('group', { name: 'Resumo TSL' });
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar TSL' }));
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/v1/trust/refresh'))).toBe(
+        true,
+      ),
+    );
+    const attempt = await screen.findByRole('group', { name: 'Última tentativa de importação' });
+    expect(attempt).toBeTruthy();
+    expect(screen.getByText('Importado')).toBeTruthy();
+    expect(screen.getByText('https://www.gns.gov.pt/media/TSLPT.xml')).toBeTruthy();
+    expect(within(attempt).getByText('2 prestadores · 3 serviços')).toBeTruthy();
+    expect(screen.getAllByText('Assinatura inválida').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('fixture signature not trusted')).toBeTruthy();
   });
 
   it('renders TSA diagnostics and filters timestamp authority records', async () => {

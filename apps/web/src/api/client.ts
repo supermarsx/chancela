@@ -20,6 +20,8 @@ import type {
   TslCatalogView,
   TslCatalogSearchParams,
   TslProviderDetailView,
+  TslRefreshRequest,
+  TslRefreshStatusView,
   TslServiceDetailView,
   TslServiceSummaryView,
   TslSummaryView,
@@ -581,6 +583,8 @@ export const api = {
   // TSL trust catalog — read-only parsed Trusted List status/search/detail. No live fetch is
   // triggered by these endpoints; the server parses cached XML or its bundled fixture.
   getTrustStatus: () => get<TslSummaryView>('/v1/trust/status'),
+  refreshTrustTsl: (body: TslRefreshRequest = {}) =>
+    post<TslRefreshStatusView>('/v1/trust/refresh', body),
   getTrustCatalog: () => get<TslCatalogView>('/v1/trust/catalog'),
   searchTrustCatalog: (params: TslCatalogSearchParams | string, limit?: number) =>
     get<TslServiceSummaryView[]>(`/v1/trust/catalog${query(trustSearchQuery(params, limit))}`),
