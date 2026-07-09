@@ -243,7 +243,9 @@ family with no template proceeds document-less), `generate_for_termo` (book open
 `generate_for_encerramento` (book close). On-demand surface: `POST /v1/acts/{id}/document/generate`
 (gated on `Permission::DocumentGenerate`), `GET .../document/preview` (live model, works pre-seal),
 `GET .../document` (stored bytes), `GET .../document/bundle` (the DOC-03 preservation bundle whose
-`validation_report` slot is the reserved seam for future PAdES output), `GET /v1/templates`.
+`validation_report` is a local technical-only bundle/document consistency, fixity, and
+signed-document evidence report),
+`GET /v1/templates`.
 `POST /v1/documents/import/validate` is a read-only candidate-import screen: raw bytes or
 JSON/base64 in, structured findings out (content type, size, SHA-256, PDF/PDF-A-ish markers, signed
 PDF/ByteRange signals). `POST /v1/documents/import` then persists an accepted candidate as

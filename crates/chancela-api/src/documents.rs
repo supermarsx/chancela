@@ -26,9 +26,12 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_core::{
     Act, ActId, Block, Book, BookKind, Convening, DocumentModel, Entity, EntityFamily,
-    LifecycleStage, NumberingScheme, Run, TermoDeAbertura, TermoDeEncerramento,
+    LifecycleStage, MeetingChannel, NumberingScheme, Run, SignaturePolicyHint, TermoDeAbertura,
+    TermoDeEncerramento,
 };
-use chancela_store::{StoredDocument, StoredImportedDocument, StoredImportedDocumentMeta};
+use chancela_store::{
+    StoredDocument, StoredImportedDocument, StoredImportedDocumentMeta, StoredSignedDocument,
+};
 use chancela_templates::{Registry, TemplateSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -64,6 +67,10 @@ it is not proof of legal validity, PDF/A conformance, or signature validity.";
 const DOCUMENT_IMPORTED_NOTICE: &str = "Imported document preserved as non-canonical evidence only; \
 it does not replace the generated PDF/A or signed PDF, and no legal validity, PDF/A conformance, or \
 signature validity is claimed.";
+
+const DOCUMENT_BUNDLE_VALIDATION_NOTICE: &str = "Technical bundle evidence report only; it does \
+not certify legal validity, PDF/A conformance, PDF/UA conformance, qualified-signature status, \
+DGLAB certification, or production long-term validation.";
 
 /// The embedded template registry, loaded once. The assets are compile-time-validated by
 /// `chancela-templates` (build.rs embeds them; e1's tests prove the load), so a load failure is
@@ -2765,17 +2772,16 @@ pub(crate) async fn load_document(
 }
 
 /// The DOC-03 preservation bundle for a sealed document: the PDF reference, structured metadata,
-/// and the attachments manifest. The **validation-report slot is RESERVED for Wave D** (PAdES
-/// signing) — it is always `null` in v1, populated once the signing stack validates the sealed PDF
-/// (plan §5.4 / §6).
+/// attachments manifest, and a local technical validation report. The report is evidence-only:
+/// it checks stored bytes/metadata consistency and never certifies legal validity, PDF conformance,
+/// qualified-signature status, DGLAB status, or production LTV.
 #[derive(Serialize)]
 pub struct DocumentBundle {
     pub act_id: String,
     pub document: BundleDocumentMeta,
     pub pdf: BundlePdfRef,
     pub attachments_manifest: Vec<BundleAttachment>,
-    /// RESERVED for Wave D: the PAdES signature validation report. Always `null` in v1.
-    pub validation_report: Option<Value>,
+    pub validation_report: DocumentBundleValidationReport,
 }
 
 #[derive(Serialize)]
@@ -2802,8 +2808,400 @@ pub struct BundleAttachment {
     pub beginning_of_proof: bool,
 }
 
+#[derive(Serialize)]
+pub struct DocumentBundleValidationReport {
+    pub report_kind: &'static str,
+    pub scope: &'static str,
+    pub status: &'static str,
+    pub legal_notice: &'static str,
+    pub bundle_document_consistency: BundleDocumentConsistencyReport,
+    pub canonical_pdf: BundleCanonicalPdfReport,
+    pub fixity: BundleFixityReport,
+    pub signed_document: BundleSignedDocumentReport,
+    pub non_certification: BundleNonCertificationReport,
+    pub findings: Vec<DocumentValidationFinding>,
+}
+
+#[derive(Serialize)]
+pub struct BundleDocumentConsistencyReport {
+    pub route_act_id: String,
+    pub stored_document_act_id: String,
+    pub act_id_matches_document: bool,
+    pub document_id_present: bool,
+    pub template_id_present: bool,
+    pub created_at_present: bool,
+    pub profile_matches_expected: bool,
+    pub attachments_manifest_count: usize,
+}
+
+#[derive(Serialize)]
+pub struct BundleCanonicalPdfReport {
+    pub present: bool,
+    pub media_type: &'static str,
+    pub byte_length: usize,
+    pub download: String,
+    pub pdf_header_present: bool,
+    pub version: Option<String>,
+    pub eof_marker_present: bool,
+    pub startxref_present: bool,
+    pub pdfa_identification_markers_present: bool,
+}
+
+#[derive(Serialize)]
+pub struct BundleFixityReport {
+    pub canonical_pdf_sha256: String,
+    pub stored_pdf_digest: String,
+    pub canonical_pdf_digest_matches_metadata: bool,
+    pub attachment_count: usize,
+    pub attachments_with_digest: usize,
+    pub attachments_without_digest: usize,
+    pub signed_pdf_sha256: Option<String>,
+    pub stored_signed_pdf_digest: Option<String>,
+    pub signed_pdf_digest_matches_metadata: Option<bool>,
+}
+
+#[derive(Serialize)]
+pub struct BundleSignedDocumentReport {
+    pub present: bool,
+    pub status: &'static str,
+    pub document_id: Option<String>,
+    pub document_id_matches_canonical: Option<bool>,
+    pub byte_length: Option<usize>,
+    pub signed_pdf_digest: Option<String>,
+    pub signed_pdf_digest_matches_metadata: Option<bool>,
+    pub download: Option<String>,
+    pub signing_time: Option<String>,
+    pub signed_at: Option<String>,
+    pub stored_signature_family: Option<String>,
+    pub stored_evidentiary_level: Option<String>,
+    pub trusted_list_status: Option<String>,
+    pub signer_cert_subject_present: Option<bool>,
+    pub timestamp_token_present: Option<bool>,
+    pub structural_validation: Option<SignedPdfSignalReport>,
+}
+
+#[derive(Serialize)]
+pub struct BundleNonCertificationReport {
+    pub legal_validity_claimed: bool,
+    pub pdfa_conformance_certified: bool,
+    pub pdfua_conformance_claimed: bool,
+    pub qualified_signature_claimed: bool,
+    pub dglab_certification_claimed: bool,
+    pub production_ltv_claimed: bool,
+    pub trust_provider_validation_performed: bool,
+}
+
+fn build_document_bundle_validation_report(
+    act_id: ActId,
+    doc: &StoredDocument,
+    pdf: &BundlePdfRef,
+    attachments_manifest: &[BundleAttachment],
+    signed: Option<&StoredSignedDocument>,
+) -> DocumentBundleValidationReport {
+    let canonical_pdf_sha256 = sha256_hex(&doc.pdf_bytes);
+    let canonical_pdf_digest_matches_metadata = canonical_pdf_sha256 == doc.pdf_digest;
+    let pdf_recognition = recognize_pdf(&doc.pdf_bytes);
+    let attachments_with_digest = attachments_manifest
+        .iter()
+        .filter(|att| att.digest.is_some())
+        .count();
+    let attachments_without_digest = attachments_manifest.len() - attachments_with_digest;
+    let profile_matches_expected = doc.profile == PDFA_PROFILE;
+    let act_id_matches_document = doc.act_id == act_id;
+    let created_at = doc.created_at.format(&Rfc3339).unwrap_or_default();
+
+    let mut findings = Vec::new();
+    if !act_id_matches_document {
+        findings.push(DocumentValidationFinding::error(
+            "bundle_document_act_id_mismatch",
+            "stored document act_id does not match the bundle route act id",
+        ));
+    }
+    if doc.id.trim().is_empty() {
+        findings.push(DocumentValidationFinding::error(
+            "bundle_document_id_missing",
+            "stored document id is empty",
+        ));
+    }
+    if doc.template_id.trim().is_empty() {
+        findings.push(DocumentValidationFinding::error(
+            "bundle_template_id_missing",
+            "stored document template_id is empty",
+        ));
+    }
+    if created_at.is_empty() {
+        findings.push(DocumentValidationFinding::warning(
+            "bundle_document_created_at_unavailable",
+            "stored document created_at could not be formatted as RFC 3339",
+        ));
+    }
+    if !profile_matches_expected {
+        findings.push(DocumentValidationFinding::warning(
+            "canonical_pdf_profile_unexpected",
+            format!(
+                "stored document profile is {:?}; expected {:?}; this is not a PDF/A conformance certification",
+                doc.profile, PDFA_PROFILE
+            ),
+        ));
+    }
+    if doc.pdf_bytes.is_empty() {
+        findings.push(DocumentValidationFinding::error(
+            "canonical_pdf_missing",
+            "stored canonical PDF bytes are empty",
+        ));
+    }
+    if !pdf_recognition.is_pdf && !doc.pdf_bytes.is_empty() {
+        findings.push(DocumentValidationFinding::error(
+            "canonical_pdf_not_pdf",
+            "stored canonical PDF bytes do not expose a PDF header in the first 1024 bytes",
+        ));
+    }
+    if pdf_recognition.is_pdf && !pdf_recognition.has_eof_marker {
+        findings.push(DocumentValidationFinding::warning(
+            "canonical_pdf_missing_eof",
+            "stored canonical PDF has a PDF header but no %%EOF marker",
+        ));
+    }
+    if pdf_recognition.is_pdf && !pdf_recognition.has_startxref {
+        findings.push(DocumentValidationFinding::warning(
+            "canonical_pdf_missing_startxref",
+            "stored canonical PDF has no startxref marker",
+        ));
+    }
+    if !canonical_pdf_digest_matches_metadata {
+        findings.push(DocumentValidationFinding::error(
+            "canonical_pdf_digest_mismatch",
+            format!(
+                "stored pdf_digest does not match canonical PDF bytes: metadata {}, actual {}",
+                doc.pdf_digest, canonical_pdf_sha256
+            ),
+        ));
+    }
+    if attachments_without_digest > 0 {
+        let message = if attachments_without_digest == 1 {
+            "1 attachment manifest entry lacks digest evidence".to_owned()
+        } else {
+            format!("{attachments_without_digest} attachment manifest entries lack digest evidence")
+        };
+        findings.push(DocumentValidationFinding::warning(
+            "attachment_digest_missing",
+            message,
+        ));
+    }
+
+    let (signed_document, signed_pdf_sha256, stored_signed_pdf_digest, signed_pdf_matches) =
+        match signed {
+            Some(signed) => {
+                let mut signed_findings = Vec::new();
+                let signed_pdf_sha256 = sha256_hex(&signed.signed_pdf_bytes);
+                let signed_pdf_matches = signed_pdf_sha256 == signed.signed_pdf_digest;
+                let document_id_matches_canonical = signed.document_id == doc.id;
+                let structural_validation = recognize_signed_pdf(&signed.signed_pdf_bytes);
+
+                if !document_id_matches_canonical {
+                    signed_findings.push(DocumentValidationFinding::error(
+                        "signed_document_id_mismatch",
+                        "stored signed document does not reference the canonical document id",
+                    ));
+                }
+                if signed.signed_pdf_bytes.is_empty() {
+                    signed_findings.push(DocumentValidationFinding::error(
+                        "signed_pdf_missing",
+                        "stored signed PDF bytes are empty",
+                    ));
+                } else if !recognize_pdf(&signed.signed_pdf_bytes).is_pdf {
+                    signed_findings.push(DocumentValidationFinding::error(
+                        "signed_pdf_not_pdf",
+                        "stored signed PDF bytes do not expose a PDF header in the first 1024 bytes",
+                    ));
+                }
+                if !signed_pdf_matches {
+                    signed_findings.push(DocumentValidationFinding::error(
+                        "signed_pdf_digest_mismatch",
+                        format!(
+                            "stored signed_pdf_digest does not match signed PDF bytes: metadata {}, actual {}",
+                            signed.signed_pdf_digest, signed_pdf_sha256
+                        ),
+                    ));
+                }
+                if signed.signed_at < signed.signing_time {
+                    signed_findings.push(DocumentValidationFinding::warning(
+                        "signed_document_time_order_unexpected",
+                        "stored signed_at is earlier than signing_time",
+                    ));
+                }
+                match structural_validation.validation_status {
+                    "valid_pades_b" => {}
+                    "unsigned" => signed_findings.push(DocumentValidationFinding::warning(
+                        "signed_pdf_signature_signal_absent",
+                        "a signed-document row exists, but local PDF inspection found no signature markers",
+                    )),
+                    "structurally_signed" => signed_findings.push(DocumentValidationFinding::warning(
+                        "signed_pdf_structural_only",
+                        "signature markers are present, but local inspection did not establish a valid PAdES-B signature",
+                    )),
+                    "invalid" => signed_findings.push(DocumentValidationFinding::error(
+                        "signed_pdf_invalid",
+                        structural_validation
+                            .validation_error
+                            .clone()
+                            .unwrap_or_else(|| "local signed PDF validation failed".to_owned()),
+                    )),
+                    "indeterminate" => signed_findings.push(DocumentValidationFinding::warning(
+                        "signed_pdf_indeterminate",
+                        structural_validation
+                            .validation_error
+                            .clone()
+                            .unwrap_or_else(|| {
+                                "local signed PDF validation could not reach a conclusion"
+                                    .to_owned()
+                            }),
+                    )),
+                    _ => {}
+                }
+
+                let status = report_status(&signed_findings);
+                findings.extend(signed_findings);
+                (
+                    BundleSignedDocumentReport {
+                        present: true,
+                        status,
+                        document_id: Some(signed.document_id.clone()),
+                        document_id_matches_canonical: Some(document_id_matches_canonical),
+                        byte_length: Some(signed.signed_pdf_bytes.len()),
+                        signed_pdf_digest: Some(signed.signed_pdf_digest.clone()),
+                        signed_pdf_digest_matches_metadata: Some(signed_pdf_matches),
+                        download: Some(format!("/v1/acts/{act_id}/document/signed")),
+                        signing_time: Some(
+                            signed.signing_time.format(&Rfc3339).unwrap_or_default(),
+                        ),
+                        signed_at: Some(signed.signed_at.format(&Rfc3339).unwrap_or_default()),
+                        stored_signature_family: Some(signed.signature_family.clone()),
+                        stored_evidentiary_level: Some(signed.evidentiary_level.clone()),
+                        trusted_list_status: signed.trusted_list_status.clone(),
+                        signer_cert_subject_present: Some(signed.signer_cert_subject.is_some()),
+                        timestamp_token_present: Some(signed.timestamp_token_der.is_some()),
+                        structural_validation: Some(structural_validation),
+                    },
+                    Some(signed_pdf_sha256),
+                    Some(signed.signed_pdf_digest.clone()),
+                    Some(signed_pdf_matches),
+                )
+            }
+            None => {
+                findings.push(DocumentValidationFinding::warning(
+                    "signed_document_missing",
+                    "no signed PDF variant is present in local storage; no signature, qualified-status, legal-validity, or production-LTV conclusion is claimed",
+                ));
+                (
+                    BundleSignedDocumentReport {
+                        present: false,
+                        status: "not_present",
+                        document_id: None,
+                        document_id_matches_canonical: None,
+                        byte_length: None,
+                        signed_pdf_digest: None,
+                        signed_pdf_digest_matches_metadata: None,
+                        download: None,
+                        signing_time: None,
+                        signed_at: None,
+                        stored_signature_family: None,
+                        stored_evidentiary_level: None,
+                        trusted_list_status: None,
+                        signer_cert_subject_present: None,
+                        timestamp_token_present: None,
+                        structural_validation: None,
+                    },
+                    None,
+                    None,
+                    None,
+                )
+            }
+        };
+
+    DocumentBundleValidationReport {
+        report_kind: "document_bundle_validation",
+        scope: "generated_document_bundle",
+        status: report_status(&findings),
+        legal_notice: DOCUMENT_BUNDLE_VALIDATION_NOTICE,
+        bundle_document_consistency: BundleDocumentConsistencyReport {
+            route_act_id: act_id.to_string(),
+            stored_document_act_id: doc.act_id.to_string(),
+            act_id_matches_document,
+            document_id_present: !doc.id.trim().is_empty(),
+            template_id_present: !doc.template_id.trim().is_empty(),
+            created_at_present: !created_at.is_empty(),
+            profile_matches_expected,
+            attachments_manifest_count: attachments_manifest.len(),
+        },
+        canonical_pdf: BundleCanonicalPdfReport {
+            present: !doc.pdf_bytes.is_empty(),
+            media_type: pdf.media_type,
+            byte_length: pdf.byte_length,
+            download: pdf.download.clone(),
+            pdf_header_present: pdf_recognition.is_pdf,
+            version: pdf_recognition.version,
+            eof_marker_present: pdf_recognition.has_eof_marker,
+            startxref_present: pdf_recognition.has_startxref,
+            pdfa_identification_markers_present: pdf_recognition.pdfa.is_pdfa_ish,
+        },
+        fixity: BundleFixityReport {
+            canonical_pdf_sha256,
+            stored_pdf_digest: doc.pdf_digest.clone(),
+            canonical_pdf_digest_matches_metadata,
+            attachment_count: attachments_manifest.len(),
+            attachments_with_digest,
+            attachments_without_digest,
+            signed_pdf_sha256,
+            stored_signed_pdf_digest,
+            signed_pdf_digest_matches_metadata: signed_pdf_matches,
+        },
+        signed_document,
+        non_certification: BundleNonCertificationReport {
+            legal_validity_claimed: false,
+            pdfa_conformance_certified: false,
+            pdfua_conformance_claimed: false,
+            qualified_signature_claimed: false,
+            dglab_certification_claimed: false,
+            production_ltv_claimed: false,
+            trust_provider_validation_performed: false,
+        },
+        findings,
+    }
+}
+
+async fn load_signed_document_for_bundle(
+    state: &AppState,
+    act_id: ActId,
+) -> Result<Option<StoredSignedDocument>, ApiError> {
+    if let Some(doc) = state.signed_documents.read().await.get(&act_id).cloned() {
+        return Ok(Some(doc));
+    }
+    if let Some(store) = &state.store {
+        return store
+            .signed_document_for_act(act_id)
+            .map_err(|e| ApiError::Internal(format!("signed document store read failed: {e}")));
+    }
+    Ok(None)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest: [u8; 32] = Sha256::digest(bytes).into();
+    crate::hex::hex(&digest)
+}
+
+fn report_status(findings: &[DocumentValidationFinding]) -> &'static str {
+    if findings.iter().any(|finding| finding.severity == "error") {
+        "technical_error"
+    } else if findings.iter().any(|finding| finding.severity == "warning") {
+        "technical_warning"
+    } else {
+        "technical_consistent"
+    }
+}
+
 /// `GET /v1/acts/{id}/document/bundle` — the DOC-03 preservation bundle (PDF ref + metadata +
-/// attachments manifest + reserved validation-report slot). `404` until sealed.
+/// attachments manifest + technical validation report). `404` until sealed.
 pub async fn get_document_bundle(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -2818,7 +3216,7 @@ pub async fn get_document_bundle(
         .ok_or(ApiError::NotFound)?;
 
     // Attachments manifest from the owning act (absent for a book instrument → empty manifest).
-    let attachments_manifest = {
+    let attachments_manifest: Vec<BundleAttachment> = {
         let acts = state.acts.read().await;
         acts.get(&act_id)
             .map(|a| {
@@ -2830,10 +3228,23 @@ pub async fn get_document_bundle(
                         digest: att.digest.as_ref().map(crate::hex::hex),
                         beginning_of_proof: att.beginning_of_proof,
                     })
-                    .collect()
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default()
     };
+    let signed = load_signed_document_for_bundle(&state, act_id).await?;
+    let pdf = BundlePdfRef {
+        media_type: "application/pdf",
+        byte_length: doc.pdf_bytes.len(),
+        download: format!("/v1/acts/{id}/document"),
+    };
+    let validation_report = build_document_bundle_validation_report(
+        act_id,
+        &doc,
+        &pdf,
+        &attachments_manifest,
+        signed.as_ref(),
+    );
 
     Ok(Json(DocumentBundle {
         act_id: act_id.to_string(),
@@ -2844,13 +3255,9 @@ pub async fn get_document_bundle(
             profile: doc.profile.clone(),
             created_at: doc.created_at.format(&Rfc3339).unwrap_or_default(),
         },
-        pdf: BundlePdfRef {
-            media_type: "application/pdf",
-            byte_length: doc.pdf_bytes.len(),
-            download: format!("/v1/acts/{id}/document"),
-        },
+        pdf,
         attachments_manifest,
-        validation_report: None,
+        validation_report,
     }))
 }
 
@@ -2867,6 +3274,9 @@ pub struct TemplateSummary {
     pub id: String,
     pub family: EntityFamily,
     pub stage: LifecycleStage,
+    pub channels: Vec<MeetingChannel>,
+    pub signature_policy: SignaturePolicyHint,
+    pub rule_pack_id: String,
     pub locale: String,
 }
 
@@ -2876,13 +3286,17 @@ impl From<&TemplateSpec> for TemplateSummary {
             id: s.id.clone(),
             family: s.family,
             stage: s.stage,
+            channels: s.channels.clone(),
+            signature_policy: s.signature_policy,
+            rule_pack_id: s.rule_pack_id.clone(),
             locale: s.locale.clone(),
         }
     }
 }
 
-/// `GET /v1/templates?family=&stage=` — available template summaries (id/family/stage/locale) for
-/// the picker. Both filters optional.
+/// `GET /v1/templates?family=&stage=` — available template summaries for the picker. Both filters
+/// optional. The summary mirrors the catalog metadata authors put in the template asset:
+/// family/stage binding, channel tags, signature-policy hint, rule-pack id, and locale.
 pub async fn list_templates(
     State(state): State<AppState>,
     actor: CurrentActor,

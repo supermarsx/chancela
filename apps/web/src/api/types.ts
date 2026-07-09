@@ -492,12 +492,16 @@ export interface DocumentModel {
 
 /**
  * One template-catalog entry (`GET /v1/templates?family=&stage=`, t48-e5). Informational
- * for v1 — the seal auto-selects; the picker only surfaces which model applies.
+ * for v1 — metadata is copied from the authored template asset. `signature_policy` is a
+ * preference hint, not signature validation or a legal-validity conclusion.
  */
 export interface TemplateSummary {
   id: string;
   family: EntityFamily;
   stage: LifecycleStage;
+  channels: MeetingChannel[];
+  signature_policy: SignaturePolicyHint;
+  rule_pack_id: string;
   locale: string;
 }
 
@@ -517,17 +521,109 @@ export interface DocumentBundlePdf {
   download: string;
 }
 
+export interface DocumentBundleValidationFinding {
+  severity: 'error' | 'warning' | 'info' | string;
+  code: string;
+  message: string;
+}
+
+export interface DocumentBundleSignedPdfSignalReport {
+  validation_status: string;
+  signed_pdf_signal: boolean;
+  has_signature_dictionary_marker: boolean;
+  signature_marker_count: number;
+  has_byte_range: boolean;
+  byte_range_marker_count: number;
+  byte_range: [number, number, number, number] | null;
+  byte_range_complete: boolean | null;
+  byte_range_digest_sha256: string | null;
+  signed_revision_bytes: number | null;
+  covered_bytes: number | null;
+  excluded_bytes: number | null;
+  has_contents_marker: boolean;
+  cryptographic_validation_performed: boolean;
+  pades_profile: string | null;
+  validation_error: string | null;
+}
+
+export interface DocumentBundleValidationReport {
+  report_kind: 'document_bundle_validation' | string;
+  scope: 'generated_document_bundle' | string;
+  status: 'technical_consistent' | 'technical_warning' | 'technical_error' | string;
+  legal_notice: string;
+  bundle_document_consistency: {
+    route_act_id: string;
+    stored_document_act_id: string;
+    act_id_matches_document: boolean;
+    document_id_present: boolean;
+    template_id_present: boolean;
+    created_at_present: boolean;
+    profile_matches_expected: boolean;
+    attachments_manifest_count: number;
+  };
+  canonical_pdf: {
+    present: boolean;
+    media_type: string;
+    byte_length: number;
+    download: string;
+    pdf_header_present: boolean;
+    version: string | null;
+    eof_marker_present: boolean;
+    startxref_present: boolean;
+    pdfa_identification_markers_present: boolean;
+  };
+  fixity: {
+    canonical_pdf_sha256: string;
+    stored_pdf_digest: string;
+    canonical_pdf_digest_matches_metadata: boolean;
+    attachment_count: number;
+    attachments_with_digest: number;
+    attachments_without_digest: number;
+    signed_pdf_sha256: string | null;
+    stored_signed_pdf_digest: string | null;
+    signed_pdf_digest_matches_metadata: boolean | null;
+  };
+  signed_document: {
+    present: boolean;
+    status: string;
+    document_id: string | null;
+    document_id_matches_canonical: boolean | null;
+    byte_length: number | null;
+    signed_pdf_digest: string | null;
+    signed_pdf_digest_matches_metadata: boolean | null;
+    download: string | null;
+    signing_time: string | null;
+    signed_at: string | null;
+    stored_signature_family: string | null;
+    stored_evidentiary_level: string | null;
+    trusted_list_status: string | null;
+    signer_cert_subject_present: boolean | null;
+    timestamp_token_present: boolean | null;
+    structural_validation: DocumentBundleSignedPdfSignalReport | null;
+  };
+  non_certification: {
+    legal_validity_claimed: false;
+    pdfa_conformance_certified: false;
+    pdfua_conformance_claimed: false;
+    qualified_signature_claimed: false;
+    dglab_certification_claimed: false;
+    production_ltv_claimed: false;
+    trust_provider_validation_performed: false;
+  };
+  findings: DocumentBundleValidationFinding[];
+}
+
 /**
  * The DOC-03 preservation bundle (`GET /v1/acts/{id}/document/bundle`, t48-e5). 404
  * until sealed (and 404 for a sealed act whose family has no template). `validation_report`
- * is always `null` — RESERVED for Wave D (PAdES signing).
+ * is local technical evidence only; it does not certify legal validity or qualified signatures.
  */
 export interface DocumentBundle {
   act_id: string;
   document: DocumentBundleDocument;
   pdf: DocumentBundlePdf;
   attachments_manifest: unknown[];
-  validation_report: null;
+  validation_report: DocumentBundleValidationReport;
 }
 
 /** Body for `POST /v1/documents/import`: validated again server-side before persistence. */

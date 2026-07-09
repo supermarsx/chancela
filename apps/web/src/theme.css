@@ -5264,6 +5264,12 @@ a.btn--primary {
   overflow-wrap: anywhere;
 }
 
+.template-card__code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
 .template-card__meta {
   display: grid;
   gap: 0.6rem;
@@ -5285,6 +5291,13 @@ a.btn--primary {
 .template-card__meta dd {
   margin: 0.12rem 0 0;
   overflow-wrap: anywhere;
+}
+
+.template-card__channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
 }
 
 .template-card__actions {

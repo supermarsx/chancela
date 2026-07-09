@@ -1,10 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useTemplates } from '../../api/hooks';
-import { entityFamilyLabels, lifecycleStageLabels } from '../../api/labels';
+import {
+  entityFamilyLabels,
+  lifecycleStageLabels,
+  meetingChannelLabels,
+  signaturePolicyLabels,
+} from '../../api/labels';
 import {
   LIFECYCLE_STAGES,
+  MEETING_CHANNELS,
   type EntityFamily,
   type LifecycleStage,
+  type MeetingChannel,
+  type SignaturePolicyHint,
   type TemplateSummary,
 } from '../../api/types';
 import { useT } from '../../i18n';
@@ -41,13 +49,21 @@ function searchText(value: string): string {
 
 function templateMatches(template: TemplateSummary, query: string): boolean {
   if (!query) return true;
+  const channelParts = template.channels.flatMap((channel) => [
+    channel,
+    meetingChannelLabels[channel],
+  ]);
   return [
     template.id,
     template.locale,
     template.family,
     template.stage,
+    template.rule_pack_id,
+    template.signature_policy,
     entityFamilyLabels[template.family],
     lifecycleStageLabels[template.stage],
+    signaturePolicyLabels[template.signature_policy],
+    ...channelParts,
   ].some((part) => searchText(part).includes(query));
 }
 
@@ -55,6 +71,7 @@ function sortTemplates(a: TemplateSummary, b: TemplateSummary): number {
   return (
     a.family.localeCompare(b.family) ||
     a.stage.localeCompare(b.stage) ||
+    a.rule_pack_id.localeCompare(b.rule_pack_id) ||
     a.locale.localeCompare(b.locale) ||
     a.id.localeCompare(b.id)
   );
@@ -67,6 +84,9 @@ export function TemplatesCatalogPage() {
   const [family, setFamily] = useState<EntityFamily | ''>('');
   const [stage, setStage] = useState<LifecycleStage | ''>('');
   const [locale, setLocale] = useState('');
+  const [channel, setChannel] = useState<MeetingChannel | ''>('');
+  const [signaturePolicy, setSignaturePolicy] = useState<SignaturePolicyHint | ''>('');
+  const [rulePack, setRulePack] = useState('');
 
   const allTemplates = useMemo(
     () => [...(templates.data ?? [])].sort(sortTemplates),
@@ -76,21 +96,49 @@ export function TemplatesCatalogPage() {
     () => Array.from(new Set(allTemplates.map((template) => template.locale))).sort(),
     [allTemplates],
   );
+  const channels = useMemo(
+    () =>
+      MEETING_CHANNELS.filter((value) =>
+        allTemplates.some((template) => template.channels.includes(value)),
+      ),
+    [allTemplates],
+  );
+  const signaturePolicies = useMemo(
+    () => Array.from(new Set(allTemplates.map((template) => template.signature_policy))).sort(),
+    [allTemplates],
+  );
+  const rulePacks = useMemo(
+    () => Array.from(new Set(allTemplates.map((template) => template.rule_pack_id))).sort(),
+    [allTemplates],
+  );
   const normalizedQuery = searchText(query.trim());
   const filtered = allTemplates.filter(
     (template) =>
       (!family || template.family === family) &&
       (!stage || template.stage === stage) &&
       (!locale || template.locale === locale) &&
+      (!channel || template.channels.includes(channel)) &&
+      (!signaturePolicy || template.signature_policy === signaturePolicy) &&
+      (!rulePack || template.rule_pack_id === rulePack) &&
       templateMatches(template, normalizedQuery),
   );
-  const hasFilters = query.trim() !== '' || family !== '' || stage !== '' || locale !== '';
+  const hasFilters =
+    query.trim() !== '' ||
+    family !== '' ||
+    stage !== '' ||
+    locale !== '' ||
+    channel !== '' ||
+    signaturePolicy !== '' ||
+    rulePack !== '';
 
   function clearFilters() {
     setQuery('');
     setFamily('');
     setStage('');
     setLocale('');
+    setChannel('');
+    setSignaturePolicy('');
+    setRulePack('');
   }
 
   return (
@@ -168,6 +216,47 @@ export function TemplatesCatalogPage() {
                 onChange={(event) => setLocale(event.target.value)}
               />
             </Field>
+            <Field label={t('templates.channel.label')} htmlFor="templates-channel">
+              <Select
+                id="templates-channel"
+                value={channel}
+                options={[
+                  { value: '', label: t('templates.channel.all') },
+                  ...channels.map((value) => ({
+                    value,
+                    label: meetingChannelLabels[value],
+                  })),
+                ]}
+                onChange={(event) => setChannel(event.target.value as MeetingChannel | '')}
+              />
+            </Field>
+            <Field label={t('templates.signature.label')} htmlFor="templates-signature">
+              <Select
+                id="templates-signature"
+                value={signaturePolicy}
+                options={[
+                  { value: '', label: t('templates.signature.all') },
+                  ...signaturePolicies.map((value) => ({
+                    value,
+                    label: signaturePolicyLabels[value],
+                  })),
+                ]}
+                onChange={(event) =>
+                  setSignaturePolicy(event.target.value as SignaturePolicyHint | '')
+                }
+              />
+            </Field>
+            <Field label={t('templates.rulePack.label')} htmlFor="templates-rule-pack">
+              <Select
+                id="templates-rule-pack"
+                value={rulePack}
+                options={[
+                  { value: '', label: t('templates.rulePack.all') },
+                  ...rulePacks.map((value) => ({ value, label: value })),
+                ]}
+                onChange={(event) => setRulePack(event.target.value)}
+              />
+            </Field>
           </div>
           <div className="templates-controls__actions">
             <Button
@@ -221,6 +310,30 @@ export function TemplatesCatalogPage() {
                   <div>
                     <dt>{t('templates.card.stage')}</dt>
                     <dd>{lifecycleStageLabels[template.stage]}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('templates.card.signature')}</dt>
+                    <dd>{signaturePolicyLabels[template.signature_policy]}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('templates.card.rulePack')}</dt>
+                    <dd>
+                      <code className="template-card__code">{template.rule_pack_id}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t('templates.card.channels')}</dt>
+                    <dd>
+                      {template.channels.length > 0 ? (
+                        <span className="template-card__channels">
+                          {template.channels.map((value) => (
+                            <Badge key={value}>{meetingChannelLabels[value]}</Badge>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="muted">{t('templates.channels.none')}</span>
+                      )}
+                    </dd>
                   </div>
                 </dl>
                 <div className="template-card__actions">

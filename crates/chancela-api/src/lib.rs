@@ -3006,7 +3006,7 @@ mod tests {
 
         // Filter by family + stage.
         let (status, ata) = send(
-            state,
+            state.clone(),
             get("/v1/templates?family=CommercialCompany&stage=Ata"),
         )
         .await;
@@ -3016,6 +3016,31 @@ mod tests {
         assert!(
             arr.iter()
                 .any(|t| t["id"] == "csc-ata-ag/v1" && t["locale"] == "pt-PT")
+        );
+        let spine = arr
+            .iter()
+            .find(|t| t["id"] == "csc-ata-ag/v1")
+            .expect("csc ata spine summary");
+        assert_eq!(spine["family"], "CommercialCompany");
+        assert_eq!(spine["signature_policy"], "QualifiedPreferred");
+        assert_eq!(spine["rule_pack_id"], "csc-art63/v2");
+        assert_eq!(
+            spine["channels"],
+            serde_json::json!(["Physical", "Hybrid", "Telematic", "WrittenResolution"])
+        );
+
+        let (status, certidao) = send(
+            state,
+            get("/v1/templates?family=CommercialCompany&stage=Certidao"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let certidao_arr = certidao.as_array().expect("filtered certidao templates");
+        assert!(
+            certidao_arr.iter().any(|t| {
+                t["id"] == "csc-certidao-ata/v1" && t["channels"] == serde_json::json!([])
+            }),
+            "non-meeting summaries keep the asset's empty channel metadata"
         );
     }
 
@@ -3043,7 +3068,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn document_bundle_reserves_the_validation_report_for_wave_d() {
+    async fn document_bundle_populates_the_validation_report() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_fill_and_advance(&state, &book_id).await;
 
@@ -3072,10 +3097,117 @@ mod tests {
         assert_eq!(bundle["pdf"]["media_type"], "application/pdf");
         assert!(bundle["pdf"]["byte_length"].as_u64().expect("length") > 0);
         assert!(bundle["attachments_manifest"].is_array());
-        // The DOC-03 validation-report slot is reserved for Wave D — explicitly null in v1.
+        let report = &bundle["validation_report"];
+        assert_eq!(report["report_kind"], "document_bundle_validation");
+        assert_eq!(report["scope"], "generated_document_bundle");
+        assert_eq!(report["status"], "technical_warning");
+        assert_eq!(report["canonical_pdf"]["present"], true);
+        assert_eq!(report["canonical_pdf"]["media_type"], "application/pdf");
+        assert_eq!(
+            report["fixity"]["canonical_pdf_sha256"],
+            bundle["document"]["pdf_digest"]
+        );
+        assert_eq!(
+            report["fixity"]["canonical_pdf_digest_matches_metadata"],
+            true
+        );
+        assert_eq!(
+            report["bundle_document_consistency"]["act_id_matches_document"],
+            true
+        );
+        assert_eq!(report["signed_document"]["present"], false);
+        assert_eq!(report["signed_document"]["status"], "not_present");
+        assert_eq!(report["non_certification"]["legal_validity_claimed"], false);
+        assert_eq!(
+            report["non_certification"]["qualified_signature_claimed"],
+            false
+        );
+        assert_eq!(
+            report["non_certification"]["dglab_certification_claimed"],
+            false
+        );
         assert!(
-            bundle["validation_report"].is_null(),
-            "the Wave-D validation-report slot is reserved (null): {bundle}"
+            report["legal_notice"]
+                .as_str()
+                .expect("legal notice")
+                .contains("Technical bundle evidence report only"),
+            "technical-only notice is explicit: {report}"
+        );
+        assert!(
+            report["findings"]
+                .as_array()
+                .expect("findings")
+                .iter()
+                .any(|finding| finding["code"] == "signed_document_missing"
+                    && finding["severity"] == "warning"),
+            "missing signed document is flagged honestly: {report}"
+        );
+    }
+
+    #[tokio::test]
+    async fn document_bundle_validation_report_flags_signed_document_inconsistency() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        let (status, _) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let act_uuid = Uuid::parse_str(&act_id).expect("act uuid");
+        let signed_pdf_bytes = b"%PDF-1.7\n1 0 obj <<>> endobj\nstartxref\n0\n%%EOF\n".to_vec();
+        state.signed_documents.write().await.insert(
+            ActId(act_uuid),
+            StoredSignedDocument {
+                act_id: ActId(act_uuid),
+                document_id: Uuid::new_v4().to_string(),
+                signed_pdf_digest: "00".repeat(32),
+                signature_family: "local-test".to_owned(),
+                evidentiary_level: "technical-only".to_owned(),
+                trusted_list_status: None,
+                signer_cert_subject: None,
+                signing_time: time::OffsetDateTime::UNIX_EPOCH,
+                signed_at: time::OffsetDateTime::UNIX_EPOCH,
+                signer_cert_der: vec![1],
+                timestamp_token_der: None,
+                timestamp_trust_report_json: None,
+                signed_pdf_bytes,
+            },
+        );
+
+        let (status, bundle) =
+            send(state, get(&format!("/v1/acts/{act_id}/document/bundle"))).await;
+        assert_eq!(status, StatusCode::OK);
+        let report = &bundle["validation_report"];
+        assert_eq!(report["status"], "technical_error");
+        assert_eq!(report["signed_document"]["present"], true);
+        assert_eq!(
+            report["signed_document"]["document_id_matches_canonical"],
+            false
+        );
+        assert_eq!(
+            report["signed_document"]["signed_pdf_digest_matches_metadata"],
+            false
+        );
+        assert_eq!(
+            report["non_certification"]["qualified_signature_claimed"],
+            false
+        );
+        let findings = report["findings"].as_array().expect("findings");
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding["code"] == "signed_document_id_mismatch"
+                    && finding["severity"] == "error"),
+            "signed document id mismatch is reported: {report}"
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding["code"] == "signed_pdf_digest_mismatch"
+                    && finding["severity"] == "error"),
+            "signed PDF digest mismatch is reported: {report}"
         );
     }
 

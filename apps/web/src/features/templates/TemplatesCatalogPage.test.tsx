@@ -5,10 +5,42 @@ import { fetchTable, renderWithProviders } from '../../test/utils';
 import type { TemplateSummary } from '../../api/types';
 
 const CATALOG: TemplateSummary[] = [
-  { id: 'csc-ata-ag/v1', family: 'CommercialCompany', stage: 'Ata', locale: 'pt-PT' },
-  { id: 'csc-certidao-ata/v1', family: 'CommercialCompany', stage: 'Certidao', locale: 'pt-PT' },
-  { id: 'assoc-convocatoria-ga/v1', family: 'Association', stage: 'Convocatoria', locale: 'pt-PT' },
-  { id: 'condominio-lista-presencas/v1', family: 'Condominium', stage: 'Reuniao', locale: 'pt-PT' },
+  {
+    id: 'csc-ata-ag/v1',
+    family: 'CommercialCompany',
+    stage: 'Ata',
+    channels: ['Physical', 'Hybrid', 'Telematic', 'WrittenResolution'],
+    signature_policy: 'QualifiedPreferred',
+    rule_pack_id: 'csc-art63/v2',
+    locale: 'pt-PT',
+  },
+  {
+    id: 'csc-certidao-ata/v1',
+    family: 'CommercialCompany',
+    stage: 'Certidao',
+    channels: [],
+    signature_policy: 'QualifiedPreferred',
+    rule_pack_id: 'csc-art63/v2',
+    locale: 'pt-PT',
+  },
+  {
+    id: 'assoc-convocatoria-ga/v1',
+    family: 'Association',
+    stage: 'Convocatoria',
+    channels: [],
+    signature_policy: 'ManualAttested',
+    rule_pack_id: 'assoc-cc/v1',
+    locale: 'pt-PT',
+  },
+  {
+    id: 'condominio-lista-presencas/v1',
+    family: 'Condominium',
+    stage: 'Reuniao',
+    channels: ['Physical', 'Hybrid', 'Telematic'],
+    signature_policy: 'QualifiedOrHandwritten',
+    rule_pack_id: 'condominio-dl268/v1',
+    locale: 'pt-PT',
+  },
 ];
 
 const EDGE_CATALOG: TemplateSummary[] = [
@@ -16,15 +48,29 @@ const EDGE_CATALOG: TemplateSummary[] = [
     id: 'assoc-convocatoria-ga/pt',
     family: 'Association',
     stage: 'Convocatoria',
+    channels: ['Physical'],
+    signature_policy: 'ManualAttested',
+    rule_pack_id: 'assoc-cc/v1',
     locale: 'pt-PT',
   },
   {
     id: 'assoc-convocatoria-ga/en',
     family: 'Association',
     stage: 'Convocatoria',
+    channels: ['Telematic'],
+    signature_policy: 'ManualAttested',
+    rule_pack_id: 'assoc-cc/v1',
     locale: 'en-US',
   },
-  { id: 'fundacao-reuniao/v1', family: 'Foundation', stage: 'Reuniao', locale: 'pt-PT' },
+  {
+    id: 'fundacao-reuniao/v1',
+    family: 'Foundation',
+    stage: 'Reuniao',
+    channels: ['Hybrid'],
+    signature_policy: 'ManualAttested',
+    rule_pack_id: 'fundacao-cc/v1',
+    locale: 'pt-PT',
+  },
 ];
 
 afterEach(() => {
@@ -45,7 +91,14 @@ describe('TemplatesCatalogPage', () => {
     expect(within(filters).getByLabelText('Pesquisa')).toBeTruthy();
     expect(clearFilters.disabled).toBe(true);
 
-    expect(await screen.findByText('csc-ata-ag/v1')).toBeTruthy();
+    const ataId = await screen.findByText('csc-ata-ag/v1');
+    const ataCard = ataId.closest('article');
+    expect(ataCard).toBeTruthy();
+    expect(
+      within(ataCard as HTMLElement).getByText('Assinatura qualificada preferencial'),
+    ).toBeTruthy();
+    expect(within(ataCard as HTMLElement).getByText('csc-art63/v2')).toBeTruthy();
+    expect(within(ataCard as HTMLElement).getByText('Deliberação por escrito')).toBeTruthy();
     expect(screen.getByText('4 de 4 modelos')).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Escolher ata' })[0].getAttribute('href')).toBe(
       '/livros',
@@ -59,10 +112,29 @@ describe('TemplatesCatalogPage', () => {
     expect(await screen.findByText('csc-certidao-ata/v1')).toBeTruthy();
     expect(screen.queryByText('csc-ata-ag/v1')).toBeNull();
     expect(screen.getByText('1 de 4 modelos')).toBeTruthy();
+    expect(screen.getByText('Sem canal específico')).toBeTruthy();
 
     fireEvent.click(clearFilters);
     expect(await screen.findByText('csc-ata-ag/v1')).toBeTruthy();
     expect(clearFilters.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Canal do modelo'), {
+      target: { value: 'Telematic' },
+    });
+    expect(screen.getByText('2 de 4 modelos')).toBeTruthy();
+    expect(screen.getByText('csc-ata-ag/v1')).toBeTruthy();
+    expect(screen.getByText('condominio-lista-presencas/v1')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Política de assinatura'), {
+      target: { value: 'QualifiedOrHandwritten' },
+    });
+    expect(screen.getByText('1 de 4 modelos')).toBeTruthy();
+    const condoCard = screen.getByText('condominio-lista-presencas/v1').closest('article');
+    expect(condoCard).toBeTruthy();
+    expect(within(condoCard as HTMLElement).getByText('Qualificada ou manuscrita')).toBeTruthy();
+
+    fireEvent.click(clearFilters);
+    expect(await screen.findByText('csc-ata-ag/v1')).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Família da entidade'), {
       target: { value: 'Association' },
@@ -92,6 +164,12 @@ describe('TemplatesCatalogPage', () => {
     expect(screen.getByText('2 de 3 modelos')).toBeTruthy();
     expect(screen.getByText('assoc-convocatoria-ga/pt')).toBeTruthy();
     expect(screen.getByText('assoc-convocatoria-ga/en')).toBeTruthy();
+    expect(screen.queryByText('fundacao-reuniao/v1')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Pacote de regras'), {
+      target: { value: 'assoc-cc/v1' },
+    });
+    expect(screen.getByText('2 de 3 modelos')).toBeTruthy();
     expect(screen.queryByText('fundacao-reuniao/v1')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Idioma do modelo'), { target: { value: 'en-US' } });
