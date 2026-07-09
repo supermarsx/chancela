@@ -159,7 +159,7 @@ fn sample_paper_book_import(id: &str, bytes: &[u8]) -> StoredPaperBookImport {
             notes: Some("Scanned from bound paper minute book.".to_string()),
             imported_at: OffsetDateTime::from_unix_timestamp(1_780_000_001).unwrap(),
             imported_by: "amelia.marques".to_string(),
-            ocr_status: StoredPaperBookOcrStatus::NotStarted,
+            ocr_status: StoredPaperBookOcrStatus::NotRun,
         },
         bytes: bytes.to_vec(),
     }
@@ -1156,7 +1156,7 @@ fn paper_book_import_package_round_trips_with_metadata_and_ocr_status() {
         .expect("read by id")
         .expect("paper-book import present");
     assert_eq!(by_id, import);
-    assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::NotStarted);
+    assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::NotRun);
     assert_eq!(by_id.meta.sha256, hex(&Sha256::digest(&by_id.bytes)));
 
     drop(store);
@@ -1168,6 +1168,53 @@ fn paper_book_import_package_round_trips_with_metadata_and_ocr_status() {
             .as_ref(),
         Some(&import)
     );
+}
+
+#[test]
+fn paper_book_import_ocr_status_updates_metadata_only() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333334",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    let original_bytes = import.bytes.clone();
+
+    store
+        .persist(|tx| tx.upsert_paper_book_import(&import))
+        .expect("persist paper-book package");
+    store
+        .persist(|tx| {
+            tx.update_paper_book_import_ocr_status(
+                &import.meta.import_id,
+                StoredPaperBookOcrStatus::Queued,
+            )
+        })
+        .expect("queue OCR status");
+    assert!(
+        store
+            .update_paper_book_import_ocr_status(
+                &import.meta.import_id,
+                StoredPaperBookOcrStatus::Running,
+            )
+            .expect("direct status helper")
+    );
+
+    let by_id = store
+        .paper_book_import(&import.meta.import_id)
+        .expect("read by id")
+        .expect("paper-book import present");
+    assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::Running);
+    assert_eq!(by_id.bytes, original_bytes);
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let by_id = reopened
+        .paper_book_import(&import.meta.import_id)
+        .expect("read reopened")
+        .expect("paper-book import present");
+    assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::Running);
+    assert_eq!(by_id.bytes, original_bytes);
 }
 
 #[test]

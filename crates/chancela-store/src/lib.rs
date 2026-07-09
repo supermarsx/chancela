@@ -450,21 +450,41 @@ pub struct StoredImportedDocument {
 /// output is deliberately not part of the preserved-package slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoredPaperBookOcrStatus {
+    /// OCR is unavailable or intentionally disabled for this preserved package.
+    Disabled,
     /// Package retained; no OCR work has been executed by this slice.
-    NotStarted,
+    NotRun,
+    /// OCR work has been queued by an operator or later worker.
+    Queued,
+    /// OCR work has been marked as running by an operator or later worker.
+    Running,
+    /// OCR work has been marked completed. No OCR text is stored by this slice.
+    Completed,
+    /// OCR work has been marked failed. No OCR text is stored by this slice.
+    Failed,
 }
 
 impl StoredPaperBookOcrStatus {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::NotStarted => "not_started",
+            Self::Disabled => "disabled",
+            Self::NotRun => "not_run",
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
         }
     }
 
-    fn parse(raw: &str) -> Result<Self, StoreError> {
+    pub fn parse(raw: &str) -> Result<Self, StoreError> {
         match raw {
-            "not_started" => Ok(Self::NotStarted),
+            "disabled" => Ok(Self::Disabled),
+            "not_run" | "not_started" => Ok(Self::NotRun),
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
             other => Err(StoreError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("invalid stored paper-book OCR status {other:?}"),
@@ -956,6 +976,21 @@ impl Store {
         Ok(out)
     }
 
+    /// Update only the OCR lifecycle marker for a preserved historical paper-book import.
+    /// This is metadata-only: it never stores OCR text and never changes retained package bytes.
+    pub fn update_paper_book_import_ocr_status(
+        &self,
+        import_id: &str,
+        status: StoredPaperBookOcrStatus,
+    ) -> Result<bool, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let changed = guard.execute(
+            "UPDATE paper_book_imports SET ocr_status = ?1 WHERE import_id = ?2",
+            params![status.as_str(), import_id],
+        )?;
+        Ok(changed > 0)
+    }
+
     /// List follow-ups for an act, open items first, then oldest-created first.
     pub fn follow_ups_for_act(&self, act_id: ActId) -> Result<Vec<StoredFollowUp>, StoreError> {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -1414,6 +1449,25 @@ impl Tx<'_> {
                 import.bytes,
             ],
         )?;
+        Ok(())
+    }
+
+    /// Update only the OCR lifecycle marker for a preserved historical paper-book import inside
+    /// the caller's transaction. This stores no OCR output and leaves package bytes untouched.
+    pub fn update_paper_book_import_ocr_status(
+        &self,
+        import_id: &str,
+        status: StoredPaperBookOcrStatus,
+    ) -> Result<(), StoreError> {
+        let changed = self.txn.execute(
+            "UPDATE paper_book_imports SET ocr_status = ?1 WHERE import_id = ?2",
+            params![status.as_str(), import_id],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::NotFound(format!(
+                "paper-book import {import_id}"
+            )));
+        }
         Ok(())
     }
 

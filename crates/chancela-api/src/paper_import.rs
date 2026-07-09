@@ -27,6 +27,7 @@ use crate::error::ApiError;
 
 const PAPER_BOOK_IMPORT_NOTICE: &str = "Historical paper-book scans are classified as non-canonical evidence only. This report does not preserve the package, replace canonical digital minutes, or claim PDF/A, legal, or qualified-signature validity.";
 const PAPER_BOOK_PRESERVATION_NOTICE: &str = "Historical paper-book package preserved as non-canonical evidence only. It does not replace canonical digital minutes and no PDF/A, legal-validity, signature-validity, or qualified-signature claim is made.";
+const PAPER_BOOK_OCR_STATUS_NOTICE: &str = "OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.";
 const MAX_NOTES_CHARS: usize = 2_000;
 pub(crate) const PAPER_BOOK_IMPORT_MAX_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const PAPER_BOOK_IMPORT_ENVELOPE_BYTES: usize =
@@ -100,6 +101,23 @@ pub struct PaperBookImportsQuery {
     pub book_ref: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PaperBookOcrStatusUpdateRequest {
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookOcrStatusView {
+    pub import_id: String,
+    pub previous_ocr_status: &'static str,
+    pub ocr_status: &'static str,
+    pub status_notice: &'static str,
+    pub ocr_text_stored: bool,
+    pub authoritative_text_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub legal_notice: &'static str,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PaperBookImportView {
     pub import_id: String,
@@ -118,6 +136,9 @@ pub struct PaperBookImportView {
     pub imported_at: String,
     pub imported_by: String,
     pub ocr_status: &'static str,
+    pub ocr_status_notice: &'static str,
+    pub ocr_text_stored: bool,
+    pub authoritative_text_claimed: bool,
     pub non_canonical: bool,
     pub legal_validity_claimed: bool,
     pub signature_validity_claimed: bool,
@@ -256,7 +277,7 @@ pub async fn preserve_paper_book_import(
             notes,
             imported_at,
             imported_by: imported_by.clone(),
-            ocr_status: StoredPaperBookOcrStatus::NotStarted,
+            ocr_status: StoredPaperBookOcrStatus::NotRun,
         },
         bytes,
     };
@@ -310,6 +331,40 @@ pub async fn get_paper_book_import(
     Ok(Json(paper_book_import_view(&stored.meta)))
 }
 
+/// `POST /v1/books/paper-import/{id}/ocr/enqueue` - mark a preserved paper-book import as queued
+/// for a later OCR worker. This does not run OCR and stores no extracted text.
+pub async fn enqueue_paper_book_import_ocr(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path(id): Path<String>,
+) -> Result<Json<PaperBookOcrStatusView>, ApiError> {
+    update_paper_book_import_ocr_status_internal(
+        state,
+        actor,
+        attestor,
+        &id,
+        StoredPaperBookOcrStatus::Queued,
+    )
+    .await
+    .map(Json)
+}
+
+/// `PATCH /v1/books/paper-import/{id}/ocr-status` - update only the OCR lifecycle marker for a
+/// preserved paper-book import. This is metadata-only and does not store OCR output.
+pub async fn update_paper_book_import_ocr_status(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path(id): Path<String>,
+    Json(req): Json<PaperBookOcrStatusUpdateRequest>,
+) -> Result<Json<PaperBookOcrStatusView>, ApiError> {
+    let status = parse_ocr_status(&req.status)?;
+    update_paper_book_import_ocr_status_internal(state, actor, attestor, &id, status)
+        .await
+        .map(Json)
+}
+
 /// `GET /v1/books/paper-import/{id}/bytes` - download the preserved non-canonical package bytes.
 pub async fn get_paper_book_import_bytes(
     State(state): State<AppState>,
@@ -351,6 +406,66 @@ async fn load_paper_book_import_for_actor(
         .paper_book_import(&id)
         .map_err(|e| ApiError::Internal(format!("paper-book import store read failed: {e}")))?
         .ok_or(ApiError::NotFound)
+}
+
+async fn update_paper_book_import_ocr_status_internal(
+    state: AppState,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    raw_id: &str,
+    status: StoredPaperBookOcrStatus,
+) -> Result<PaperBookOcrStatusView, ApiError> {
+    let id = validate_import_id(raw_id)?;
+    require_permission_for_report(&state, &actor).await?;
+    if state.store.is_none() {
+        return Err(ApiError::Unprocessable(
+            "paper-book OCR status updates require on-disk persistence".to_owned(),
+        ));
+    }
+    let store = state.store.as_ref().expect("checked store");
+    let current = store
+        .paper_book_import(&id)
+        .map_err(|e| ApiError::Internal(format!("paper-book import store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+    if current.meta.ocr_status == StoredPaperBookOcrStatus::Disabled
+        && status == StoredPaperBookOcrStatus::Queued
+    {
+        return Err(ApiError::Conflict(
+            "paper-book OCR status is disabled; set a non-disabled status before enqueueing"
+                .to_owned(),
+        ));
+    }
+    let imported_by = actor.resolve("api");
+    let payload = serde_json::to_vec(&paper_book_ocr_status_event_payload(
+        &current.meta,
+        status,
+        &imported_by,
+    ))?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &imported_by,
+        &format!("paper-book-import:{id}"),
+        "paper_book_import.ocr_status_updated",
+        None,
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| {
+        tx.update_paper_book_import_ocr_status(&id, status)
+    })?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    Ok(PaperBookOcrStatusView {
+        import_id: id,
+        previous_ocr_status: current.meta.ocr_status.as_str(),
+        ocr_status: status.as_str(),
+        status_notice: PAPER_BOOK_OCR_STATUS_NOTICE,
+        ocr_text_stored: false,
+        authoritative_text_claimed: false,
+        legal_validity_claimed: false,
+        legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
+    })
 }
 
 fn validate_candidate(
@@ -508,6 +623,15 @@ fn preservation_report(
     }
 }
 
+fn parse_ocr_status(raw: &str) -> Result<StoredPaperBookOcrStatus, ApiError> {
+    StoredPaperBookOcrStatus::parse(raw.trim()).map_err(|_| {
+        ApiError::Unprocessable(
+            "ocr status must be one of disabled, not_run, queued, running, completed, or failed"
+                .to_owned(),
+        )
+    })
+}
+
 fn paper_book_import_event_payload(meta: &StoredPaperBookImportMeta) -> serde_json::Value {
     json!({
         "import_id": meta.import_id,
@@ -536,6 +660,27 @@ fn paper_book_import_event_payload(meta: &StoredPaperBookImportMeta) -> serde_js
     })
 }
 
+fn paper_book_ocr_status_event_payload(
+    meta: &StoredPaperBookImportMeta,
+    status: StoredPaperBookOcrStatus,
+    updated_by: &str,
+) -> serde_json::Value {
+    json!({
+        "import_id": meta.import_id,
+        "previous_ocr_status": meta.ocr_status.as_str(),
+        "ocr_status": status.as_str(),
+        "updated_by": updated_by,
+        "status_notice": PAPER_BOOK_OCR_STATUS_NOTICE,
+        "ocr_text_stored": false,
+        "authoritative_text_claimed": false,
+        "bytes_in_payload": false,
+        "non_canonical": true,
+        "legal_validity_claimed": false,
+        "signature_validity_claimed": false,
+        "qualified_signature_claimed": false,
+    })
+}
+
 fn paper_book_import_view(meta: &StoredPaperBookImportMeta) -> PaperBookImportView {
     PaperBookImportView {
         import_id: meta.import_id.clone(),
@@ -554,6 +699,9 @@ fn paper_book_import_view(meta: &StoredPaperBookImportMeta) -> PaperBookImportVi
         imported_at: meta.imported_at.format(&Rfc3339).unwrap_or_default(),
         imported_by: meta.imported_by.clone(),
         ocr_status: meta.ocr_status.as_str(),
+        ocr_status_notice: PAPER_BOOK_OCR_STATUS_NOTICE,
+        ocr_text_stored: false,
+        authoritative_text_claimed: false,
         non_canonical: true,
         legal_validity_claimed: false,
         signature_validity_claimed: false,

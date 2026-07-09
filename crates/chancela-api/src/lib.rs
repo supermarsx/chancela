@@ -914,6 +914,14 @@ pub fn router(state: AppState) -> Router {
             get(paper_import::get_paper_book_import),
         )
         .route(
+            "/v1/books/paper-import/{id}/ocr/enqueue",
+            post(paper_import::enqueue_paper_book_import_ocr),
+        )
+        .route(
+            "/v1/books/paper-import/{id}/ocr-status",
+            patch(paper_import::update_paper_book_import_ocr_status),
+        )
+        .route(
             "/v1/books/paper-import/{id}/bytes",
             get(paper_import::get_paper_book_import_bytes),
         )

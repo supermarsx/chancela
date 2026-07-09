@@ -90,6 +90,16 @@ fn get_req(uri: &str, token: &str) -> Request<Body> {
         .expect("request builds")
 }
 
+fn patch_req(uri: &str, token: &str, body: Value) -> Request<Body> {
+    Request::builder()
+        .method("PATCH")
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header("x-chancela-session", token)
+        .body(Body::from(body.to_string()))
+        .expect("request builds")
+}
+
 async fn bootstrap(state: &AppState) -> String {
     *state.roles.write().await = chancela_authz::RoleCatalog::seeded_defaults();
 
@@ -170,6 +180,35 @@ async fn validate(state: &AppState, token: &str, body: Value) -> (StatusCode, Va
 
 async fn preserve(state: &AppState, token: &str, body: Value) -> (StatusCode, Value) {
     send(state, json_req("/v1/books/paper-import", token, body)).await
+}
+
+async fn enqueue_ocr(state: &AppState, token: &str, import_id: &str) -> (StatusCode, Value) {
+    send(
+        state,
+        json_req(
+            &format!("/v1/books/paper-import/{import_id}/ocr/enqueue"),
+            token,
+            json!({}),
+        ),
+    )
+    .await
+}
+
+async fn update_ocr_status(
+    state: &AppState,
+    token: &str,
+    import_id: &str,
+    status: &str,
+) -> (StatusCode, Value) {
+    send(
+        state,
+        patch_req(
+            &format!("/v1/books/paper-import/{import_id}/ocr-status"),
+            token,
+            json!({ "status": status }),
+        ),
+    )
+    .await
 }
 
 async fn list_imports(state: &AppState, token: &str, query: &str) -> (StatusCode, Value) {
@@ -292,7 +331,7 @@ async fn paper_book_import_preserves_package_bytes_and_appends_metadata_only_eve
         false
     );
     assert_eq!(body["preservation"]["bytes_in_ledger_event"], false);
-    assert_eq!(body["preservation"]["ocr_status"], "not_started");
+    assert_eq!(body["preservation"]["ocr_status"], "not_run");
     let import_id = body["import_id"].as_str().expect("import id");
 
     let ledger = state.ledger.read().await;
@@ -315,7 +354,113 @@ async fn paper_book_import_preserves_package_bytes_and_appends_metadata_only_eve
         .expect("paper import row");
     assert_eq!(stored.bytes, bytes);
     assert_eq!(stored.meta.sha256, body["preservation"]["sha256"]);
-    assert_eq!(stored.meta.ocr_status.as_str(), "not_started");
+    assert_eq!(stored.meta.ocr_status.as_str(), "not_run");
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_status_lifecycle_is_metadata_only() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let (status, created) = preserve(&state, &token, preserve_body(&package_bytes())).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let before = state.ledger.read().await.events().len();
+
+    let (status, queued) = enqueue_ocr(&state, &token, import_id).await;
+    assert_eq!(status, StatusCode::OK, "enqueue: {queued}");
+    assert_eq!(queued["previous_ocr_status"], "not_run");
+    assert_eq!(queued["ocr_status"], "queued");
+    assert_eq!(queued["ocr_text_stored"], false);
+    assert_eq!(queued["authoritative_text_claimed"], false);
+    assert_eq!(queued["legal_validity_claimed"], false);
+    assert!(
+        queued["status_notice"]
+            .as_str()
+            .is_some_and(|notice| notice.contains("metadata only")),
+        "status notice is non-authoritative: {queued}"
+    );
+
+    let (status, running) = update_ocr_status(&state, &token, import_id, "running").await;
+    assert_eq!(status, StatusCode::OK, "running: {running}");
+    assert_eq!(running["previous_ocr_status"], "queued");
+    assert_eq!(running["ocr_status"], "running");
+
+    let (status, completed) = update_ocr_status(&state, &token, import_id, "completed").await;
+    assert_eq!(status, StatusCode::OK, "completed: {completed}");
+    assert_eq!(completed["previous_ocr_status"], "running");
+    assert_eq!(completed["ocr_status"], "completed");
+
+    let ledger = state.ledger.read().await;
+    assert_eq!(
+        ledger.events().len(),
+        before + 3,
+        "each OCR status mutation appends one metadata event"
+    );
+    assert_eq!(
+        ledger.events().last().expect("last event").kind,
+        "paper_book_import.ocr_status_updated"
+    );
+    drop(ledger);
+
+    let stored = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_import(import_id)
+        .expect("store read")
+        .expect("paper import row");
+    assert_eq!(stored.meta.ocr_status.as_str(), "completed");
+    assert_eq!(stored.bytes, package_bytes());
+
+    let (status, meta) = send(
+        &state,
+        get_req(&format!("/v1/books/paper-import/{import_id}"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "metadata: {meta}");
+    assert_eq!(meta["ocr_status"], "completed");
+    assert_eq!(meta["ocr_text_stored"], false);
+    assert_eq!(meta["authoritative_text_claimed"], false);
+    assert!(meta.get("ocr_text").is_none());
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_status_rejects_unknown_status_without_mutation() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let (status, created) = preserve(&state, &token, preserve_body(&package_bytes())).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let before = state.ledger.read().await.events().len();
+
+    let (status, body) = update_ocr_status(&state, &token, import_id, "verified").await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unknown OCR status: {body}"
+    );
+    assert!(
+        body["error"].as_str().is_some_and(
+            |error| error.contains("disabled, not_run, queued, running, completed, or failed")
+        ),
+        "error names allowed lifecycle: {body}"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        before,
+        "bad OCR status must not append ledger events"
+    );
+    let stored = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_import(import_id)
+        .expect("store read")
+        .expect("paper import row");
+    assert_eq!(stored.meta.ocr_status.as_str(), "not_run");
 }
 
 #[tokio::test]
