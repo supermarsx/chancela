@@ -1983,9 +1983,11 @@ export const nlNL: Catalog = {
   'documents.download.markdown': 'Descarregar Markdown',
   'documents.download.txt': 'TXT downloaden',
   'documents.download.html': 'HTML downloaden',
+  'documents.download.rtf': 'RTF downloaden',
+  'documents.download.odt': 'ODT downloaden',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown, TXT, HTML en DOCX zijn niet-bewijskrachtige werkkopieën voor controle; de bewaarde PDF/A is het officiële document.',
+    'Markdown, TXT, HTML, RTF, ODT en DOCX zijn niet-bewijskrachtige werkkopieën voor controle; de bewaarde PDF/A is het officiële document.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

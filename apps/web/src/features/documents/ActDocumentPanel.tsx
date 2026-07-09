@@ -355,6 +355,8 @@ export function ActDocumentPanel({
   const workingCopyMarkdownDownload = useDownloadActDocumentWorkingCopy(act.id);
   const workingCopyTextDownload = useDownloadActDocumentWorkingCopy(act.id, 'txt');
   const workingCopyHtmlDownload = useDownloadActDocumentWorkingCopy(act.id, 'html');
+  const workingCopyRtfDownload = useDownloadActDocumentWorkingCopy(act.id, 'rtf');
+  const workingCopyOdtDownload = useDownloadActDocumentWorkingCopy(act.id, 'odt');
   const officeDownload = useDownloadActDocumentOffice(act.id);
   const importedDocuments = useQuery({
     queryKey: importedDocumentsKey(act.id),
@@ -414,12 +416,21 @@ export function ActDocumentPanel({
 
   function onDownloadWorkingCopy(format: ActDocumentWorkingCopyFormat, extension: string) {
     const filename = `${downloadBaseName()}-working-copy.${extension}`;
-    const mutation =
-      format === 'txt'
-        ? workingCopyTextDownload
-        : format === 'html'
-          ? workingCopyHtmlDownload
-          : workingCopyMarkdownDownload;
+    const mutation = (() => {
+      switch (format) {
+        case 'txt':
+          return workingCopyTextDownload;
+        case 'html':
+          return workingCopyHtmlDownload;
+        case 'rtf':
+          return workingCopyRtfDownload;
+        case 'odt':
+          return workingCopyOdtDownload;
+        case 'markdown':
+        default:
+          return workingCopyMarkdownDownload;
+      }
+    })();
     mutation.mutate(undefined, {
       onSuccess: async (download) => {
         try {
@@ -511,6 +522,7 @@ export function ActDocumentPanel({
                   type="button"
                   variant="secondary"
                   icon={<Icon.FileText />}
+                  title={t('documents.download.workingCopyHint')}
                   disabled={workingCopyMarkdownDownload.isPending}
                   onClick={() => onDownloadWorkingCopy('markdown', 'md')}
                 >
@@ -522,6 +534,7 @@ export function ActDocumentPanel({
                   type="button"
                   variant="secondary"
                   icon={<Icon.FileText />}
+                  title={t('documents.download.workingCopyHint')}
                   disabled={workingCopyTextDownload.isPending}
                   onClick={() => onDownloadWorkingCopy('txt', 'txt')}
                 >
@@ -533,6 +546,7 @@ export function ActDocumentPanel({
                   type="button"
                   variant="secondary"
                   icon={<Icon.FileText />}
+                  title={t('documents.download.workingCopyHint')}
                   disabled={workingCopyHtmlDownload.isPending}
                   onClick={() => onDownloadWorkingCopy('html', 'html')}
                 >
@@ -544,6 +558,31 @@ export function ActDocumentPanel({
                   type="button"
                   variant="secondary"
                   icon={<Icon.FileText />}
+                  title={t('documents.download.workingCopyHint')}
+                  disabled={workingCopyRtfDownload.isPending}
+                  onClick={() => onDownloadWorkingCopy('rtf', 'rtf')}
+                >
+                  {workingCopyRtfDownload.isPending
+                    ? t('documents.download.pending')
+                    : t('documents.download.rtf')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.FileText />}
+                  title={t('documents.download.workingCopyHint')}
+                  disabled={workingCopyOdtDownload.isPending}
+                  onClick={() => onDownloadWorkingCopy('odt', 'odt')}
+                >
+                  {workingCopyOdtDownload.isPending
+                    ? t('documents.download.pending')
+                    : t('documents.download.odt')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.FileText />}
+                  title={t('documents.download.workingCopyHint')}
                   disabled={officeDownload.isPending}
                   onClick={onDownloadOffice}
                 >

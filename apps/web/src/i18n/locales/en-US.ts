@@ -1972,9 +1972,11 @@ export const enUS: Catalog = {
   'documents.download.markdown': 'Descarregar Markdown',
   'documents.download.txt': 'Download TXT',
   'documents.download.html': 'Download HTML',
+  'documents.download.rtf': 'Download RTF',
+  'documents.download.odt': 'Download ODT',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown, TXT, HTML and DOCX are non-evidentiary working copies for review; the preserved PDF/A is the official document.',
+    'Markdown, TXT, HTML, RTF, ODT and DOCX are non-evidentiary working copies for review; the preserved PDF/A is the official document.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

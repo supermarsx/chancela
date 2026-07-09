@@ -1974,9 +1974,11 @@ export const daDK: Catalog = {
   'documents.download.markdown': 'Descarregar Markdown',
   'documents.download.txt': 'Download TXT',
   'documents.download.html': 'Download HTML',
+  'documents.download.rtf': 'Download RTF',
+  'documents.download.odt': 'Download ODT',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown, TXT, HTML og DOCX er ikke-bevismæssige arbejdskopier til gennemgang; den bevarede PDF/A er det officielle dokument.',
+    'Markdown, TXT, HTML, RTF, ODT og DOCX er ikke-bevismæssige arbejdskopier til gennemgang; den bevarede PDF/A er det officielle dokument.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

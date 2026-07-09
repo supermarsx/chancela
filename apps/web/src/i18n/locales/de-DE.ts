@@ -1992,9 +1992,11 @@ export const deDE: Catalog = {
   'documents.download.markdown': 'Descarregar Markdown',
   'documents.download.txt': 'TXT herunterladen',
   'documents.download.html': 'HTML herunterladen',
+  'documents.download.rtf': 'RTF herunterladen',
+  'documents.download.odt': 'ODT herunterladen',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown, TXT, HTML und DOCX sind nicht beweiskräftige Arbeitskopien zur Prüfung; das aufbewahrte PDF/A ist das offizielle Dokument.',
+    'Markdown, TXT, HTML, RTF, ODT und DOCX sind nicht beweiskräftige Arbeitskopien zur Prüfung; das aufbewahrte PDF/A ist das offizielle Dokument.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

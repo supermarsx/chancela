@@ -188,7 +188,7 @@ export interface TextDownload {
   headers: Headers;
 }
 
-export type ActDocumentWorkingCopyFormat = 'markdown' | 'txt' | 'html';
+export type ActDocumentWorkingCopyFormat = 'markdown' | 'txt' | 'html' | 'rtf' | 'odt';
 
 /** The path a response came back on, for diagnostics; empty when the URL is unavailable. */
 function responsePath(res: Response, path?: string): string {
@@ -493,9 +493,9 @@ export const api = {
   // as a Blob (not JSON) so it can be triggered as a download with an honest filename;
   // carries the session token like every other request. 404 until sealed.
   fetchActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document`),
-  // Text working-copy export (`GET .../document/working-copy`, text/markdown by default;
-  // `?format=txt|html` for plain text/HTML). Non-evidentiary and intentionally separate
-  // from the persisted/signed PDF downloads.
+  // Working-copy export (`GET .../document/working-copy`, text/markdown by default;
+  // `?format=txt|html|rtf|odt` for other review formats). Non-evidentiary and intentionally
+  // separate from the persisted/signed PDF downloads.
   fetchActDocumentWorkingCopy: (id: string, format: ActDocumentWorkingCopyFormat = 'markdown') =>
     fetchTextDownload(
       `/v1/acts/${id}/document/working-copy${format === 'markdown' ? '' : query({ format })}`,

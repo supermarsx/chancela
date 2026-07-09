@@ -1976,9 +1976,11 @@ export const plPL: Catalog = {
   'documents.download.markdown': 'Descarregar Markdown',
   'documents.download.txt': 'Pobierz TXT',
   'documents.download.html': 'Pobierz HTML',
+  'documents.download.rtf': 'Pobierz RTF',
+  'documents.download.odt': 'Pobierz ODT',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown, TXT, HTML i DOCX to robocze kopie bez mocy dowodowej do przeglądu; zachowany PDF/A jest dokumentem oficjalnym.',
+    'Markdown, TXT, HTML, RTF, ODT i DOCX to robocze kopie bez mocy dowodowej do przeglądu; zachowany PDF/A jest dokumentem oficjalnym.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

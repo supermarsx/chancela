@@ -1980,9 +1980,11 @@ export const svFI: Catalog = {
   'documents.download.markdown': 'Descarregar Markdown',
   'documents.download.txt': 'Ladda ner TXT',
   'documents.download.html': 'Ladda ner HTML',
+  'documents.download.rtf': 'Ladda ner RTF',
+  'documents.download.odt': 'Ladda ner ODT',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown, TXT, HTML och DOCX är icke-bevisförande arbetskopior för granskning; den bevarade PDF/A-filen är det officiella dokumentet.',
+    'Markdown, TXT, HTML, RTF, ODT och DOCX är icke-bevisförande arbetskopior för granskning; den bevarade PDF/A-filen är det officiella dokumentet.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

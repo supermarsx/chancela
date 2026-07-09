@@ -379,9 +379,7 @@ function replacePaperBookImportOcrStatus(
   importId: string,
   ocrStatus: PaperBookOcrStatus,
 ): PaperBookImportView[] | undefined {
-  return rows?.map((row) =>
-    row.import_id === importId ? { ...row, ocr_status: ocrStatus } : row,
-  );
+  return rows?.map((row) => (row.import_id === importId ? { ...row, ocr_status: ocrStatus } : row));
 }
 
 export function useEnqueuePaperBookImportOcr(bookRef?: string) {
@@ -595,9 +593,9 @@ export function useDownloadActDocument(id: string) {
 }
 
 /**
- * Download a sealed act's text working copy (`GET /v1/acts/{id}/document/working-copy`).
- * Markdown is the default format; TXT and HTML are explicit format variants. These exports are
- * non-evidentiary, so callers keep them visually separate from the official PDF/A.
+ * Download a sealed act's working copy (`GET /v1/acts/{id}/document/working-copy`).
+ * Markdown is the default format; TXT, HTML, RTF, and ODT are explicit variants. These exports
+ * are non-evidentiary, so callers keep them visually separate from the official PDF/A.
  */
 export function useDownloadActDocumentWorkingCopy(
   id: string,
@@ -1070,10 +1068,7 @@ function hasTrustSearchParams(params: TslCatalogSearchParams): boolean {
   );
 }
 
-export function useTrustCatalogSearch(
-  params: TslCatalogSearchParams,
-  enabled = true,
-) {
+export function useTrustCatalogSearch(params: TslCatalogSearchParams, enabled = true) {
   const normalized = normalizeTrustSearchParams(params);
   return useQuery({
     queryKey: keys.trustSearch(normalized),

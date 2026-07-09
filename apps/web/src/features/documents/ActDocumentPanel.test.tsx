@@ -122,6 +122,8 @@ describe('ActDocumentPanel — download only post-seal', () => {
     expect(screen.queryByRole('button', { name: 'Descarregar Markdown' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Descarregar TXT' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Descarregar HTML' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Descarregar RTF' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Descarregar ODT' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Descarregar DOCX' })).toBeNull();
   });
 
@@ -147,12 +149,17 @@ describe('ActDocumentPanel — download only post-seal', () => {
     expect(screen.getByRole('button', { name: 'Descarregar Markdown' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Descarregar TXT' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Descarregar HTML' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Descarregar RTF' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Descarregar ODT' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Descarregar DOCX' })).toBeTruthy();
     expect(
       screen.getByText(
-        'Markdown, TXT, HTML e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+        'Markdown, TXT, HTML, RTF, ODT e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
       ),
     ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Descarregar RTF' }).getAttribute('title')).toBe(
+      'Markdown, TXT, HTML, RTF, ODT e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+    );
     expect(screen.getByText('Impressão do PDF:')).toBeTruthy();
   });
 
@@ -237,7 +244,7 @@ describe('ActDocumentPanel — download only post-seal', () => {
     expect(within(metadata).queryByRole('link', { name: longTemplateId })).toBeNull();
     expect(
       screen.getByText(
-        'Markdown, TXT, HTML e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
+        'Markdown, TXT, HTML, RTF, ODT e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A preservado é o documento oficial.',
       ),
     ).toBeTruthy();
   });
@@ -381,6 +388,87 @@ describe('ActDocumentPanel — download only post-seal', () => {
     ]);
     expect(revokeUrl).toHaveBeenCalledWith('blob:txt-working-copy');
     expect(revokeUrl).toHaveBeenCalledWith('blob:html-working-copy');
+  });
+
+  it('downloads RTF and ODT working copies with explicit format queries and filenames', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      calls.push(url);
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/document/working-copy?format=rtf')) {
+        return Promise.resolve(
+          new Response('{\\rtf1 WORKING COPY - NON-EVIDENTIARY}', {
+            status: 200,
+            headers: { 'Content-Type': 'application/rtf' },
+          }),
+        );
+      }
+      if (url.includes('/document/working-copy?format=odt')) {
+        return Promise.resolve(
+          new Response(new Blob(['PK\u0003\u0004odt']), {
+            status: 200,
+            headers: { 'Content-Type': 'application/vnd.oasis.opendocument.text' },
+          }),
+        );
+      }
+      const imports = emptyImports(url);
+      if (imports) return imports;
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    const objectUrls = ['blob:rtf-working-copy', 'blob:odt-working-copy'];
+    let objectUrlIndex = 0;
+    const createUrl = vi.fn((object: Blob | MediaSource) => {
+      void object;
+      return objectUrls[objectUrlIndex++] ?? 'blob:working-copy';
+    });
+    const revokeUrl = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
+    const clickedDownloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clickedDownloads.push(this.download);
+    });
+
+    const sealed: ActView = { ...baseAct, state: 'Sealed', ata_number: 1 };
+    renderWithProviders(
+      <ActDocumentPanel
+        act={sealed}
+        entityName="Encosto Estratégico Lda"
+        family="CommercialCompany"
+      />,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Descarregar RTF' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Descarregar RTF' }));
+    await waitFor(() =>
+      expect(
+        calls.some((url) => url.includes('/v1/acts/act-1/document/working-copy?format=rtf')),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(1));
+    const rtfBlob = createUrl.mock.calls[0]?.[0] as Blob;
+    expect(rtfBlob.type).toBe('application/rtf');
+    expect(await blobText(rtfBlob)).toContain('WORKING COPY - NON-EVIDENTIARY');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Descarregar ODT' }));
+    await waitFor(() =>
+      expect(
+        calls.some((url) => url.includes('/v1/acts/act-1/document/working-copy?format=odt')),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(2));
+    const odtBlob = createUrl.mock.calls[1]?.[0] as Blob;
+    expect(odtBlob.type).toBe('application/vnd.oasis.opendocument.text');
+
+    expect(clickedDownloads).toEqual([
+      'encosto-estrategico-lda-ata-1-working-copy.rtf',
+      'encosto-estrategico-lda-ata-1-working-copy.odt',
+    ]);
+    expect(revokeUrl).toHaveBeenCalledWith('blob:rtf-working-copy');
+    expect(revokeUrl).toHaveBeenCalledWith('blob:odt-working-copy');
   });
 
   it('downloads the DOCX office working copy as a non-evidentiary .docx file', async () => {

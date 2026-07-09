@@ -1976,9 +1976,11 @@ export const fiFI: Catalog = {
   'documents.download.markdown': 'Descarregar Markdown',
   'documents.download.txt': 'Lataa TXT',
   'documents.download.html': 'Lataa HTML',
+  'documents.download.rtf': 'Lataa RTF',
+  'documents.download.odt': 'Lataa ODT',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown, TXT, HTML ja DOCX ovat tarkistusta varten tarkoitettuja ei-todisteellisia työkopioita; säilytetty PDF/A on virallinen asiakirja.',
+    'Markdown, TXT, HTML, RTF, ODT ja DOCX ovat tarkistusta varten tarkoitettuja ei-todisteellisia työkopioita; säilytetty PDF/A on virallinen asiakirja.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

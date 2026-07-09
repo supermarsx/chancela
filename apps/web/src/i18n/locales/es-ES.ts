@@ -1983,9 +1983,11 @@ export const esES: Catalog = {
   'documents.download.markdown': 'Descarregar Markdown',
   'documents.download.txt': 'Descargar TXT',
   'documents.download.html': 'Descargar HTML',
+  'documents.download.rtf': 'Descargar RTF',
+  'documents.download.odt': 'Descargar ODT',
   'documents.download.docx': 'Descarregar DOCX',
   'documents.download.workingCopyHint':
-    'Markdown, TXT, HTML y DOCX son copias de trabajo sin valor probatorio para revisión; el PDF/A preservado es el documento oficial.',
+    'Markdown, TXT, HTML, RTF, ODT y DOCX son copias de trabajo sin valor probatorio para revisión; el PDF/A preservado es el documento oficial.',
   'documents.metadata.aria': 'Metadados e proveniência do documento',
   'documents.metadata.title': 'Metadados do PDF/A',
   'documents.metadata.document': 'Documento',

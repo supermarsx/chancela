@@ -1638,9 +1638,9 @@ pub async fn get_document_pdf(
     Ok(([(header::CONTENT_TYPE, "application/pdf")], doc.pdf_bytes).into_response())
 }
 
-/// `GET /v1/acts/{id}/document/working-copy` — Markdown/TXT/HTML convenience export of the sealed
-/// generated act document. This is explicitly non-evidentiary: it never changes the preserved
-/// PDF/A bytes, the signed variant, or the ledger.
+/// `GET /v1/acts/{id}/document/working-copy` — Markdown/TXT/HTML/RTF/ODT convenience export of the
+/// sealed generated act document. This is explicitly non-evidentiary: it never changes the
+/// preserved PDF/A bytes, the signed variant, or the ledger.
 pub async fn export_working_copy(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -1666,19 +1666,29 @@ pub async fn export_working_copy(
         })?;
     let (body, content_type, extension) = match query.format {
         WorkingCopyFormat::Markdown => (
-            working_copy_markdown(act_id, &doc, &model),
+            working_copy_markdown(act_id, &doc, &model).into_bytes(),
             "text/markdown; charset=utf-8",
             "md",
         ),
         WorkingCopyFormat::Txt => (
-            working_copy_text(act_id, &doc, &model),
+            working_copy_text(act_id, &doc, &model).into_bytes(),
             "text/plain; charset=utf-8",
             "txt",
         ),
         WorkingCopyFormat::Html => (
-            working_copy_html(act_id, &doc, &model),
+            working_copy_html(act_id, &doc, &model).into_bytes(),
             "text/html; charset=utf-8",
             "html",
+        ),
+        WorkingCopyFormat::Rtf => (
+            working_copy_rtf(act_id, &doc, &model).into_bytes(),
+            "application/rtf",
+            "rtf",
+        ),
+        WorkingCopyFormat::Odt => (
+            working_copy_odt(act_id, &doc, &model)?,
+            "application/vnd.oasis.opendocument.text",
+            "odt",
         ),
     };
     let filename = format!("act-{id}-working-copy.{extension}");
@@ -1701,6 +1711,9 @@ enum WorkingCopyFormat {
     #[serde(alias = "text")]
     Txt,
     Html,
+    Rtf,
+    #[serde(alias = "opendocument")]
+    Odt,
 }
 
 impl Default for WorkingCopyFormat {
@@ -1926,6 +1939,357 @@ fn working_copy_html(act_id: ActId, doc: &StoredDocument, model: &DocumentModel)
     )
 }
 
+fn working_copy_rtf(act_id: ActId, doc: &StoredDocument, model: &DocumentModel) -> String {
+    let mut out = String::new();
+    out.push_str("{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Aptos;}}\\uc1\n");
+    out.push_str(
+        "\\paperw11906\\paperh16838\\margl1440\\margr1440\\margt1440\\margb1440\\f0\\fs22\n",
+    );
+    append_rtf_heading(&mut out, "WORKING COPY - NON-EVIDENTIARY", 1);
+    append_rtf_paragraph_text(
+        &mut out,
+        "This RTF export is a working copy for review and editing convenience only. It is not the preserved signed original and must not be used as the canonical record.",
+        false,
+        false,
+    );
+    append_rtf_heading(&mut out, "Export notice", 2);
+    for (term, detail) in working_copy_notice_rows(act_id, doc) {
+        append_rtf_paragraph_text(&mut out, &format!("{term}: {detail}"), false, false);
+    }
+    append_rtf_rule(&mut out);
+    append_rtf_heading(&mut out, &model.title, 1);
+    if !model.subject.trim().is_empty() {
+        append_rtf_paragraph_text(&mut out, &model.subject, false, true);
+    }
+    append_blocks_rtf(&mut out, &model.blocks);
+    out.push_str("}\n");
+    out
+}
+
+fn append_blocks_rtf(out: &mut String, blocks: &[Block]) {
+    for block in blocks {
+        match block {
+            Block::Heading { level, text } => append_rtf_heading(out, text, *level),
+            Block::Paragraph { runs } => append_rtf_paragraph_runs(out, runs),
+            Block::KeyValue { rows } => {
+                for row in rows {
+                    append_rtf_paragraph_text(
+                        out,
+                        &format!("{}: {}", row.key, row.value),
+                        false,
+                        false,
+                    );
+                }
+            }
+            Block::VoteTable { rows } => {
+                append_rtf_paragraph_text(out, "Item | Favor | Against | Abstain", true, false);
+                for row in rows {
+                    append_rtf_paragraph_text(
+                        out,
+                        &format!(
+                            "{} | {} | {} | {}",
+                            row.label, row.favor, row.against, row.abstain
+                        ),
+                        false,
+                        false,
+                    );
+                }
+            }
+            Block::SignatureBlock { slots } => {
+                append_rtf_heading(out, "Signature slots", 2);
+                for slot in slots {
+                    let name = if slot.name.trim().is_empty() {
+                        "________________"
+                    } else {
+                        slot.name.as_str()
+                    };
+                    append_rtf_paragraph_text(out, &format!("{}: {name}", slot.role), false, false);
+                }
+            }
+            Block::PageBreak => out.push_str("\\page\n"),
+            Block::Rule => append_rtf_rule(out),
+        }
+    }
+}
+
+fn append_rtf_heading(out: &mut String, text: &str, level: u8) {
+    let size = match level {
+        0 | 1 => 32,
+        2 => 28,
+        3 => 24,
+        _ => 22,
+    };
+    out.push_str(&format!(
+        "\\pard\\sa120\\b\\fs{size} {}\\b0\\fs22\\par\n",
+        rtf_escape(text)
+    ));
+}
+
+fn append_rtf_paragraph_text(out: &mut String, text: &str, bold: bool, italic: bool) {
+    out.push_str("\\pard\\sa120 ");
+    if bold {
+        out.push_str("\\b ");
+    }
+    if italic {
+        out.push_str("\\i ");
+    }
+    out.push_str(&rtf_escape(text));
+    if italic {
+        out.push_str("\\i0 ");
+    }
+    if bold {
+        out.push_str("\\b0 ");
+    }
+    out.push_str("\\par\n");
+}
+
+fn append_rtf_paragraph_runs(out: &mut String, runs: &[Run]) {
+    if runs_text(runs).trim().is_empty() {
+        return;
+    }
+    out.push_str("\\pard\\sa120 ");
+    for run in runs {
+        if run.bold {
+            out.push_str("\\b ");
+        }
+        if run.italic {
+            out.push_str("\\i ");
+        }
+        out.push_str(&rtf_escape(&run.text));
+        if run.italic {
+            out.push_str("\\i0 ");
+        }
+        if run.bold {
+            out.push_str("\\b0 ");
+        }
+    }
+    out.push_str("\\par\n");
+}
+
+fn append_rtf_rule(out: &mut String) {
+    append_rtf_paragraph_text(out, "----------", false, false);
+}
+
+fn rtf_escape(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.replace('\r', "").chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '{' => out.push_str("\\{"),
+            '}' => out.push_str("\\}"),
+            '\n' => out.push_str("\\line "),
+            '\t' => out.push_str("\\tab "),
+            ch if ch.is_ascii() && !ch.is_control() => out.push(ch),
+            ch if ch.is_control() => out.push(' '),
+            ch => {
+                let mut buf = [0u16; 2];
+                for &unit in ch.encode_utf16(&mut buf).iter() {
+                    let signed = unit as i16 as i32;
+                    out.push_str(&format!("\\u{signed}?"));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn working_copy_odt(
+    act_id: ActId,
+    doc: &StoredDocument,
+    model: &DocumentModel,
+) -> Result<Vec<u8>, ApiError> {
+    let options = odt_file_options()?;
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, content) in [
+        (
+            "mimetype",
+            b"application/vnd.oasis.opendocument.text".to_vec(),
+        ),
+        (
+            "content.xml",
+            odt_content_xml(act_id, doc, model).into_bytes(),
+        ),
+        ("styles.xml", odt_styles_xml().as_bytes().to_vec()),
+        ("meta.xml", odt_meta_xml(model).into_bytes()),
+        (
+            "META-INF/manifest.xml",
+            odt_manifest_xml().as_bytes().to_vec(),
+        ),
+    ] {
+        zip.start_file(name, options)
+            .map_err(|e| ApiError::Internal(format!("ODT export failed: {e}")))?;
+        zip.write_all(&content)
+            .map_err(|e| ApiError::Internal(format!("ODT export failed: {e}")))?;
+    }
+    let cursor = zip
+        .finish()
+        .map_err(|e| ApiError::Internal(format!("ODT export failed: {e}")))?;
+    Ok(cursor.into_inner())
+}
+
+fn odt_content_xml(act_id: ActId, doc: &StoredDocument, model: &DocumentModel) -> String {
+    let mut body = String::new();
+    body.push_str(&odt_heading("WORKING COPY - NON-EVIDENTIARY", 1));
+    body.push_str(&odt_paragraph_text(
+        "This OpenDocument Text export is a working copy for review and editing convenience only. It is not the preserved signed original and must not be used as the canonical record.",
+    ));
+    body.push_str(&odt_heading("Export notice", 2));
+    for (term, detail) in working_copy_notice_rows(act_id, doc) {
+        body.push_str(&odt_paragraph_text(&format!("{term}: {detail}")));
+    }
+    body.push_str(&odt_rule());
+    body.push_str(&odt_heading(&model.title, 1));
+    if !model.subject.trim().is_empty() {
+        body.push_str(&odt_styled_paragraph_text(&model.subject, Some("Italic")));
+    }
+    append_blocks_odt(&mut body, &model.blocks);
+
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2"><office:automatic-styles><style:style style:name="Bold" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style><style:style style:name="Italic" style:family="text"><style:text-properties fo:font-style="italic"/></style:style><style:style style:name="BoldItalic" style:family="text"><style:text-properties fo:font-weight="bold" fo:font-style="italic"/></style:style><style:style style:name="PageBreak" style:family="paragraph"><style:paragraph-properties fo:break-before="page"/></style:style></office:automatic-styles><office:body><office:text>{body}</office:text></office:body></office:document-content>"#
+    )
+}
+
+fn append_blocks_odt(out: &mut String, blocks: &[Block]) {
+    for block in blocks {
+        match block {
+            Block::Heading { level, text } => out.push_str(&odt_heading(text, *level)),
+            Block::Paragraph { runs } => out.push_str(&odt_paragraph_runs(runs)),
+            Block::KeyValue { rows } => {
+                for row in rows {
+                    out.push_str(&odt_paragraph_text(&format!("{}: {}", row.key, row.value)));
+                }
+            }
+            Block::VoteTable { rows } => {
+                out.push_str(&odt_styled_paragraph_text(
+                    "Item | Favor | Against | Abstain",
+                    Some("Bold"),
+                ));
+                for row in rows {
+                    out.push_str(&odt_paragraph_text(&format!(
+                        "{} | {} | {} | {}",
+                        row.label, row.favor, row.against, row.abstain
+                    )));
+                }
+            }
+            Block::SignatureBlock { slots } => {
+                out.push_str(&odt_heading("Signature slots", 2));
+                for slot in slots {
+                    let name = if slot.name.trim().is_empty() {
+                        "________________"
+                    } else {
+                        slot.name.as_str()
+                    };
+                    out.push_str(&odt_paragraph_text(&format!("{}: {name}", slot.role)));
+                }
+            }
+            Block::PageBreak => out.push_str(r#"<text:p text:style-name="PageBreak"/>"#),
+            Block::Rule => out.push_str(&odt_rule()),
+        }
+    }
+}
+
+fn odt_heading(text: &str, level: u8) -> String {
+    format!(
+        r#"<text:h text:outline-level="{}">{}</text:h>"#,
+        level.clamp(1, 6),
+        odt_text(text)
+    )
+}
+
+fn odt_paragraph_text(text: &str) -> String {
+    odt_styled_paragraph_text(text, None)
+}
+
+fn odt_styled_paragraph_text(text: &str, style: Option<&str>) -> String {
+    match style {
+        Some(style) => format!(
+            r#"<text:p><text:span text:style-name="{style}">{}</text:span></text:p>"#,
+            odt_text(text)
+        ),
+        None => format!("<text:p>{}</text:p>", odt_text(text)),
+    }
+}
+
+fn odt_paragraph_runs(runs: &[Run]) -> String {
+    if runs_text(runs).trim().is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("<text:p>");
+    for run in runs {
+        let style = match (run.bold, run.italic) {
+            (true, true) => Some("BoldItalic"),
+            (true, false) => Some("Bold"),
+            (false, true) => Some("Italic"),
+            (false, false) => None,
+        };
+        match style {
+            Some(style) => out.push_str(&format!(
+                r#"<text:span text:style-name="{style}">{}</text:span>"#,
+                odt_text(&run.text)
+            )),
+            None => out.push_str(&odt_text(&run.text)),
+        }
+    }
+    out.push_str("</text:p>");
+    out
+}
+
+fn odt_rule() -> String {
+    odt_paragraph_text("----------")
+}
+
+fn odt_text(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.replace('\r', "").chars() {
+        match ch {
+            '\n' => out.push_str("<text:line-break/>"),
+            '\t' => out.push_str("<text:tab/>"),
+            ch => out.push_str(&xml_escape(&ch.to_string())),
+        }
+    }
+    out
+}
+
+fn odt_styles_xml() -> &'static str {
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2"><office:styles><style:default-style style:family="paragraph"><style:paragraph-properties fo:margin-top="0pt" fo:margin-bottom="6pt"/><style:text-properties fo:font-size="11pt"/></style:default-style></office:styles></office:document-styles>"#
+}
+
+fn odt_meta_xml(model: &DocumentModel) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" office:version="1.2"><office:meta><dc:title>{}</dc:title><dc:subject>OpenDocument non-evidentiary export</dc:subject><meta:generator>Chancela</meta:generator><meta:keyword>non-evidentiary</meta:keyword><meta:keyword>working copy</meta:keyword><meta:keyword>preserved PDF/A</meta:keyword></office:meta></office:document-meta>"#,
+        xml_escape(&model.title)
+    )
+}
+
+fn odt_manifest_xml() -> &'static str {
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="META-INF/manifest.xml" manifest:media-type="text/xml"/></manifest:manifest>"#
+}
+
+fn odt_file_options() -> Result<SimpleFileOptions, ApiError> {
+    package_file_options("ODT")
+}
+
+fn working_copy_notice_rows(act_id: ActId, doc: &StoredDocument) -> [(String, String); 6] {
+    [
+        (
+            "Status".to_owned(),
+            "working copy, non-evidentiary".to_owned(),
+        ),
+        ("Act ID".to_owned(), act_id.to_string()),
+        ("Preserved document ID".to_owned(), doc.id.clone()),
+        ("Template".to_owned(), doc.template_id.clone()),
+        ("Preserved PDF digest".to_owned(), doc.pdf_digest.clone()),
+        (
+            "Preserved original".to_owned(),
+            "Use the stored PDF/A or signed PDF endpoint".to_owned(),
+        ),
+    ]
+}
+
 fn append_blocks_html(out: &mut String, blocks: &[Block]) {
     for block in blocks {
         match block {
@@ -2138,8 +2502,12 @@ fn office_docx(
 }
 
 fn docx_file_options() -> Result<SimpleFileOptions, ApiError> {
+    package_file_options("DOCX")
+}
+
+fn package_file_options(kind: &str) -> Result<SimpleFileOptions, ApiError> {
     let timestamp = DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
-        .map_err(|e| ApiError::Internal(format!("DOCX timestamp initialization failed: {e}")))?;
+        .map_err(|e| ApiError::Internal(format!("{kind} timestamp initialization failed: {e}")))?;
     Ok(SimpleFileOptions::default()
         .compression_method(CompressionMethod::Stored)
         .last_modified_time(timestamp))

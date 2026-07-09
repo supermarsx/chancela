@@ -270,10 +270,11 @@ describe('api client', () => {
     expect(download.headers.get('Content-Disposition')).toContain('working-copy.md');
   });
 
-  it('downloads TXT and HTML act working-copy exports through the bounded format query', async () => {
+  it('downloads TXT, HTML, and RTF act working-copy exports through the bounded format query', async () => {
     for (const [format, contentType, extension, body] of [
       ['txt', 'text/plain; charset=utf-8', 'txt', 'WORKING COPY - NON-EVIDENTIARY\n'],
       ['html', 'text/html; charset=utf-8', 'html', '<!doctype html><h1>WORKING COPY</h1>'],
+      ['rtf', 'application/rtf', 'rtf', '{\\rtf1 WORKING COPY - NON-EVIDENTIARY}'],
     ] as const) {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(body, {
@@ -299,6 +300,31 @@ describe('api client', () => {
       expect(download.blob.type).not.toBe('application/pdf');
       expect(download.headers.get('Content-Disposition')).toContain(`working-copy.${extension}`);
     }
+  });
+
+  it('downloads an ODT act working-copy export through the bounded format query', async () => {
+    const odt = new Blob(['PK\u0003\u0004odt'], {
+      type: 'application/vnd.oasis.opendocument.text',
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(odt, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.oasis.opendocument.text',
+          'Content-Disposition': 'attachment; filename="act-act-1-working-copy.odt"',
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const download = await api.fetchActDocumentWorkingCopy('act-1', 'odt');
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/acts/act-1/document/working-copy?format=odt');
+    expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
+    expect(download.blob).toBeInstanceOf(Blob);
+    expect(download.blob.type).toBe('application/vnd.oasis.opendocument.text');
+    expect(download.blob.type).not.toBe('application/pdf');
+    expect(download.headers.get('Content-Disposition')).toContain('working-copy.odt');
   });
 
   it('downloads an act office working-copy export as DOCX bytes', async () => {

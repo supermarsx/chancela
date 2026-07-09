@@ -19,7 +19,7 @@
 //! - `POST /v1/acts`, `GET|PATCH /v1/acts/{id}`, `POST /v1/acts/{id}/advance`,
 //!   `GET /v1/acts/{id}/compliance`, `POST /v1/acts/{id}/seal`,
 //!   `POST /v1/acts/{id}/archive` — the ata lifecycle, compliance gate, and seal (§2.5).
-//! - `GET /v1/acts/{id}/document/working-copy[?format=markdown|txt|html]` — deterministic
+//! - `GET /v1/acts/{id}/document/working-copy[?format=markdown|txt|html|rtf|odt]` — deterministic
 //!   non-evidentiary text working copies.
 //! - `GET /v1/acts/{id}/document/office` — deterministic non-evidentiary DOCX working copy.
 //! - `POST /v1/documents/import/validate` — read-only structural import validation report.
@@ -2376,6 +2376,8 @@ mod tests {
 
     #[tokio::test]
     async fn working_copy_export_formats_are_non_evidentiary_and_read_only() {
+        use std::io::Read;
+
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let act_id = draft_fill_and_advance(&state, &book_id).await;
 
@@ -2420,6 +2422,7 @@ mod tests {
             ("", "text/markdown", ".md", "Markdown export"),
             ("?format=txt", "text/plain", ".txt", "plain-text export"),
             ("?format=html", "text/html", ".html", "HTML export"),
+            ("?format=rtf", "application/rtf", ".rtf", "RTF export"),
         ] {
             let (status, headers, body) = send_raw_bytes(
                 state.clone(),
@@ -2455,6 +2458,64 @@ mod tests {
             assert!(body.contains("Sede social"));
             assert!(!body.starts_with("%PDF-"));
         }
+
+        let odt_request = || {
+            with_session(
+                get(&format!(
+                    "/v1/acts/{act_id}/document/working-copy?format=odt"
+                )),
+                &token,
+            )
+        };
+        let (status, headers, first_odt) = send_raw_bytes(state.clone(), odt_request()).await;
+        assert_eq!(status, StatusCode::OK, "ODT working-copy export succeeds");
+        assert_eq!(
+            headers
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/vnd.oasis.opendocument.text")
+        );
+        let disposition = headers
+            .get("content-disposition")
+            .and_then(|value| value.to_str().ok())
+            .expect("content-disposition");
+        assert!(
+            disposition.contains("working-copy") && disposition.contains(".odt"),
+            "filename labels ODT working copy: {disposition}"
+        );
+        assert!(first_odt.starts_with(b"PK"), "ODT is a zip package");
+        let (status, _, second_odt) = send_raw_bytes(state.clone(), odt_request()).await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "second ODT working-copy export succeeds"
+        );
+        assert_eq!(second_odt, first_odt, "ODT export bytes are deterministic");
+
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(first_odt)).expect("valid odt");
+        assert_eq!(
+            archive.by_index(0).expect("first ODT member").name(),
+            "mimetype",
+            "ODT mimetype is the first stored member"
+        );
+        let mut mimetype = String::new();
+        archive
+            .by_name("mimetype")
+            .expect("mimetype member")
+            .read_to_string(&mut mimetype)
+            .expect("mimetype reads");
+        assert_eq!(mimetype, "application/vnd.oasis.opendocument.text");
+        let mut content_xml = String::new();
+        archive
+            .by_name("content.xml")
+            .expect("content.xml member")
+            .read_to_string(&mut content_xml)
+            .expect("content.xml reads");
+        assert!(content_xml.contains("WORKING COPY - NON-EVIDENTIARY"));
+        assert!(content_xml.contains("not the preserved signed original"));
+        assert!(content_xml.contains(doc_id));
+        assert!(content_xml.contains(digest));
+        assert!(content_xml.contains("Ata da AG anual"));
 
         let (status, _, pdf_after) = send_bytes(
             state.clone(),
