@@ -232,7 +232,9 @@ function ArticleCard({
           type="button"
           className="leg-corpus__article-title"
           onClick={() => onOpen(article.number)}
-          aria-label={t('legislacao.corpus.openArticle', { label: article.label })}
+          aria-label={t('legislacao.corpus.openArticle', {
+            label: articleTitle(article.label, article.heading),
+          })}
         >
           {articleTitle(article.label, article.heading)}
         </button>
@@ -364,7 +366,9 @@ function SearchHit({
       type="button"
       className="leg-corpus__hit"
       onClick={() => onOpen(hit.diploma_id, hit.number)}
-      aria-label={t('legislacao.corpus.openArticle', { label: hit.label })}
+      aria-label={t('legislacao.corpus.openArticle', {
+        label: articleTitle(hit.label, hit.heading),
+      })}
     >
       <span className="leg-corpus__hit-head">
         <span className="leg-corpus__hit-title">{articleTitle(hit.label, hit.heading)}</span>

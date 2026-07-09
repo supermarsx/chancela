@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { DashboardPage } from './DashboardPage';
 import { fetchTable, renderWithProviders } from '../../test/utils';
 import type { Dashboard, LedgerEventView } from '../../api/types';
@@ -90,6 +90,23 @@ describe('DashboardPage', () => {
     ]);
     expect(screen.queryByText('kind-2')).toBeNull();
     expect(screen.queryByText('kind-1')).toBeNull();
+  });
+
+  it('renders the full archive affordance as a tooltip-backed icon link', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const archive = await screen.findByRole('link', { name: 'Ver arquivo completo' });
+    expect(archive.getAttribute('href')).toBe('/arquivo');
+    expect(archive.className).toContain('btn--iconOnly');
+    expect(archive.querySelector('.icon')).toBeTruthy();
+
+    fireEvent.focus(archive);
+    const describedBy = archive.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy as string)?.textContent).toBe(
+      'Ver arquivo completo',
+    );
   });
 
   it('renders annual-meeting reminders in the work queue without adding rows to the recent-events table', async () => {

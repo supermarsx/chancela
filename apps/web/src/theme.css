@@ -726,6 +726,10 @@ a.btn.btn--icon {
   aspect-ratio: 1 / 1;
 }
 
+a.btn.btn--iconOnly {
+  display: inline-flex;
+}
+
 .btn--iconOnly .btn__icon {
   font-size: 1.2em;
 }
@@ -1002,6 +1006,205 @@ a.btn.btn--icon {
   margin: 0.2rem 0 0;
 }
 
+/* Signing panel: status hierarchy, provider choices and compact evidence. */
+.signing-kicker {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.signing-status,
+.signing-evidence,
+.signing-provider {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.signing-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.85rem;
+  padding: 0.95rem 1rem;
+  border-left-width: 4px;
+}
+
+.signing-status--ok {
+  border-left-color: var(--ok);
+}
+
+.signing-status--warn {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.signing-status--info {
+  border-left-color: var(--accent);
+}
+
+.signing-status__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--accent);
+}
+
+.signing-status--ok .signing-status__icon {
+  color: var(--ok);
+}
+
+.signing-status--warn .signing-status__icon {
+  color: var(--warn);
+}
+
+.signing-status__body {
+  min-width: 0;
+}
+
+.signing-status__topline,
+.signing-provider__titleline,
+.signing-evidence__head,
+.signing-evidence__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+}
+
+.signing-status__topline,
+.signing-evidence__head {
+  justify-content: space-between;
+}
+
+.signing-status__title {
+  margin: 0.2rem 0 0;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.signing-status__copy {
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.signing-status__copy p {
+  margin: 0;
+}
+
+.signing-status__copy p + p {
+  margin-top: 0.25rem;
+}
+
+.signing-provider-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.signing-provider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.8rem 0.9rem;
+}
+
+.signing-provider--disabled {
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+}
+
+.signing-provider__copy {
+  min-width: 0;
+}
+
+.signing-provider__copy p {
+  margin: 0.2rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.signing-provider__action {
+  justify-self: end;
+}
+
+.signing-provider-list__note {
+  padding: 0 0.1rem;
+}
+
+.signing-evidence {
+  padding: 0.85rem 0.95rem;
+}
+
+.signing-evidence__title {
+  margin: 0.12rem 0 0;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.signing-evidence .field__hint {
+  margin-top: 0.7rem;
+}
+
+.signing-deflist {
+  margin-top: 0.75rem;
+}
+
+.signing-deflist dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.signing-deflist--compact {
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.65rem 1rem;
+}
+
+.signing-deflist__wide {
+  grid-column: 1 / -1;
+}
+
+.signing-chipline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.signing-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 7%, transparent);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 620px) {
+  .signing-status,
+  .signing-provider {
+    grid-template-columns: 1fr;
+  }
+
+  .signing-status__icon {
+    display: none;
+  }
+
+  .signing-provider__action {
+    justify-self: start;
+  }
+}
+
 /* Chain status line. */
 .chain-status {
   font-family: var(--font-sans);
@@ -1152,6 +1355,30 @@ a.btn.btn--icon {
 /* Filter cell inside a panel head. */
 .filter .field {
   min-width: 14rem;
+}
+
+.filter-advanced {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.filter-advanced > summary {
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.filter-advanced[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
+.filter-advanced__body {
+  align-items: flex-end;
 }
 
 /* Arquivo ledger filters + PDF/A export (t67-E2). */
@@ -4381,7 +4608,7 @@ a.btn--primary {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem 0.9rem;
-  margin-top: 0.25rem;
+  margin: 0.45rem 0 0.15rem;
 }
 
 .leg-search .control {
@@ -4394,6 +4621,10 @@ a.btn--primary {
   align-items: center;
   gap: 0.75rem;
   flex-shrink: 0;
+}
+
+.leg-search__clear.btn {
+  min-height: 2.25rem;
 }
 
 .leg-search__count {
@@ -4544,6 +4775,221 @@ a.btn--primary {
   font-family: var(--font-sans);
   font-size: 0.78rem;
   color: var(--error);
+}
+
+/* Full-text corpus reader: large legal-text targets with enough measure and spacing. */
+.leg-corpus {
+  --law-measure: 74ch;
+}
+
+.leg-corpus__lede {
+  max-width: var(--law-measure);
+  line-height: 1.55;
+}
+
+.leg-corpus__diplomas,
+.leg-corpus__articles,
+.leg-corpus__hits {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.leg-corpus__diploma,
+.leg-corpus__hit {
+  display: grid;
+  width: 100%;
+  min-height: 3.25rem;
+  gap: 0.45rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.leg-corpus__diploma:hover,
+.leg-corpus__hit:hover,
+.leg-corpus__diploma:focus-visible,
+.leg-corpus__hit:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.leg-corpus__diploma {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.leg-corpus__diploma-main,
+.leg-corpus__diploma-meta,
+.leg-corpus__hit-head {
+  display: flex;
+  min-width: 0;
+  gap: 0.45rem;
+}
+
+.leg-corpus__diploma-main {
+  flex-direction: column;
+}
+
+.leg-corpus__diploma-meta,
+.leg-corpus__hit-head {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.leg-corpus__diploma-meta {
+  justify-content: flex-end;
+}
+
+.leg-corpus__diploma-title,
+.leg-corpus__hit-title,
+.leg-corpus__article-title,
+.leg-corpus__article-title-h {
+  overflow-wrap: anywhere;
+}
+
+.leg-corpus__diploma-title,
+.leg-corpus__hit-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.leg-corpus__diploma-ref,
+.leg-corpus__diploma-counts,
+.leg-corpus__hit-diploma {
+  font-size: 0.82rem;
+}
+
+.leg-corpus__diploma-ref {
+  color: var(--accent);
+}
+
+.leg-corpus__article {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.leg-corpus__article--focused {
+  max-width: calc(var(--law-measure) + 2rem);
+}
+
+.leg-corpus__article-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.leg-corpus__article-title {
+  min-height: 2.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  line-height: 1.35;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.leg-corpus__article-title:hover,
+.leg-corpus__article-title:focus-visible {
+  color: var(--accent-strong);
+}
+
+.leg-corpus__article-title-h {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.18rem;
+  line-height: 1.3;
+}
+
+.leg-corpus__article-diploma,
+.leg-corpus__crossrefs,
+.leg-corpus__body {
+  margin: 0;
+}
+
+.leg-corpus__body {
+  max-width: var(--law-measure);
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  line-height: 1.7;
+}
+
+.leg-corpus__marker {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.leg-corpus__citation {
+  display: grid;
+  max-width: var(--law-measure);
+  gap: 0.55rem;
+  margin: 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+}
+
+.leg-corpus__citation div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.leg-corpus__citation dt {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.leg-corpus__citation dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.leg-corpus__diploma-header {
+  display: grid;
+  gap: 0.45rem;
+  max-width: var(--law-measure);
+}
+
+.leg-corpus__hit-snippet {
+  max-width: var(--law-measure);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.dashboard-archive-link {
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  border-radius: 999px;
+}
+
+@media (max-width: 700px) {
+  .leg-corpus__diploma,
+  .leg-corpus__article-head {
+    grid-template-columns: 1fr;
+  }
+
+  .leg-corpus__article-head {
+    display: grid;
+  }
+
+  .leg-corpus__diploma-meta {
+    justify-content: flex-start;
+  }
 }
 
 /* ==========================================================================

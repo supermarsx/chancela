@@ -504,6 +504,8 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
       .closest('button') as HTMLElement;
     expect(within(eidas).getByText('Verificado').className).toContain('badge--ok');
     expect(within(csc).getByText('Por verificar').className).toContain('badge--warn');
+    expect(csc.className).toContain('leg-corpus__diploma');
+    expect(csc.getAttribute('aria-label')).toBe('Abrir Código das Sociedades Comerciais');
   });
 
   it('opens a diploma and never presents a Pending article body as law', async () => {
@@ -518,6 +520,9 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     // an un-sourced body dressed up as statute.
     expect((await screen.findAllByText('Texto por verificar')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('[NÃO VERIFICADO / fonte pendente]').length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole('button', { name: 'Abrir Artigo 63.º — Ata' }).className,
+    ).toContain('leg-corpus__article-title');
   });
 
   it('shows an article view with its full verbatim text and citation (deep-linked)', async () => {
@@ -551,7 +556,11 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     expect(screen.getAllByText('Por verificar').length).toBeGreaterThan(0);
 
     // Clicking the verified hit opens that article's full text.
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir Artigo 25.º' }));
+    const hit = screen.getByRole('button', {
+      name: 'Abrir Artigo 25.º — Efeitos legais das assinaturas eletrónicas',
+    });
+    expect(hit.className).toContain('leg-corpus__hit');
+    fireEvent.click(hit);
     expect(
       await screen.findByText(/efeito legal equivalente ao de uma assinatura manuscrita/),
     ).toBeTruthy();

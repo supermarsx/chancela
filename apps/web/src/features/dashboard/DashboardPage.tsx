@@ -12,10 +12,12 @@ import {
   Badge,
   Card,
   ErrorNote,
+  Icon,
   InlineWarning,
   PageHeader,
   SkeletonCards,
   SkeletonTable,
+  Tooltip,
 } from '../../ui';
 import { LedgerTable } from '../ledger/LedgerTable';
 
@@ -451,7 +453,19 @@ export function DashboardPage() {
 
       <Card
         title={t('dashboard.recentEvents.title')}
-        actions={<Link to="/arquivo">{t('dashboard.viewFullArchive')}</Link>}
+        actions={
+          <Tooltip label={t('dashboard.viewFullArchive')} placement="left">
+            <Link
+              to="/arquivo"
+              className="btn btn--secondary btn--icon btn--iconOnly dashboard-archive-link"
+              aria-label={t('dashboard.viewFullArchive')}
+            >
+              <span className="btn__icon">
+                <Icon.Archive />
+              </span>
+            </Link>
+          </Tooltip>
+        }
       >
         <LedgerTable events={recentEvents} />
       </Card>
