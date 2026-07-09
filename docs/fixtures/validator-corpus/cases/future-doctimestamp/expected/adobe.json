@@ -18,16 +18,17 @@
     "bytes": null
   },
   "expected": {
-    "summary": "Signature is valid, includes revocation information, and includes a document timestamp.",
+    "summary": "Signature is valid, includes revocation information, and includes technical document timestamp evidence.",
     "signature_count": 1,
     "signature_timestamp_present": true,
     "revocation_info_present": true,
-    "document_certified_or_ltv_enabled": true,
+    "document_certified_or_ltv_enabled": false,
     "doc_time_stamp_present": true,
     "tamper_detected": false
   },
   "observed": null,
   "notes": [
-    "Generated from the current technical /DocTimeStamp primitive; keep pending until an operator records validator output."
+    "Generated from the current technical /DocTimeStamp primitive; keep pending until an operator records validator output.",
+    "Technical document timestamp evidence only; this is not a production B-LTA or legal LTV claim."
   ]
 }

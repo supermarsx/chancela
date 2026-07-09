@@ -145,8 +145,8 @@
         "path": "cases/future-doctimestamp/input/future-doctimestamp.pdf",
         "generation_status": "generated",
         "generated_by": "CHANCELA_WRITE_VALIDATOR_CORPUS=docs/fixtures/validator-corpus cargo test -p chancela-pades --test validator_corpus_fixtures",
-        "sha256": "0f2961b2cfb8ad67bf87f70f81ed79babba51f98f86fd95f3a29b5d49cccdd90",
-        "bytes": 35184
+        "sha256": "c73ab56757f657664d7615822d93fb0e630f06e1b9aa72e53cd1bc6b12eef1ef",
+        "bytes": 36452
       },
       "expected_validation": {
         "semantic_outcome": "valid_signature_with_local_dss_and_doc_time_stamp",

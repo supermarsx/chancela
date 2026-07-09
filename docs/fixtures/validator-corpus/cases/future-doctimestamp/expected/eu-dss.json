@@ -20,7 +20,7 @@
   "expected": {
     "overall_indication": "TOTAL_PASSED",
     "sub_indication": null,
-    "pades_profile": "B-LTA",
+    "pades_profile": "DocTimeStamp-technical",
     "signature_count": 1,
     "signature_timestamp_present": true,
     "dss_present": true,
@@ -29,6 +29,7 @@
   },
   "observed": null,
   "notes": [
-    "Generated from the current technical /DocTimeStamp primitive; keep pending until an operator records validator output."
+    "Generated from the current technical /DocTimeStamp primitive; keep pending until an operator records validator output.",
+    "Technical document timestamp evidence only; this is not a production B-LTA or legal LTV claim."
   ]
 }

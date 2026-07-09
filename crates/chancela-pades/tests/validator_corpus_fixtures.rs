@@ -19,13 +19,12 @@ use chancela_cades::{
 };
 use chancela_pades::{
     DssEvidence, SignOptions, add_doc_timestamp_revision, add_dss_revision,
-    add_signature_timestamp, sign_pdf, validate_pdf_signature,
+    add_signature_timestamp, inspect_doc_timestamps, sign_pdf, validate_pdf_signature,
 };
 
 const OID_ECDSA_WITH_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
 const OCSP_DER_FIXTURE: &[u8] = &[0x30, 0x03, 0x02, 0x01, 0x05];
 const CRL_DER_FIXTURE: &[u8] = &[0x30, 0x05, 0x06, 0x03, 0x2a, 0x03, 0x04];
-const DOC_TIMESTAMP_TOKEN_DER_FIXTURE: &[u8] = &[0x30, 0x03, 0x02, 0x01, 0x07];
 const FIXED_P256_SCALAR: [u8; 32] = [
     0x18, 0xd1, 0x2b, 0x43, 0x6d, 0x74, 0xa9, 0x55, 0x31, 0xec, 0x02, 0xc8, 0xa4, 0x0f, 0x5d, 0x66,
     0x10, 0x17, 0x5f, 0x73, 0x86, 0x0d, 0xa3, 0x89, 0x1c, 0x26, 0x45, 0x3f, 0xf0, 0x9b, 0x2e, 0x71,
@@ -112,10 +111,11 @@ fn build_fixtures() -> Vec<(&'static str, Vec<u8>)> {
     let dss_offset = find_after(&tampered_dss, OCSP_DER_FIXTURE, bt.len()).expect("OCSP in DSS");
     tampered_dss[dss_offset + OCSP_DER_FIXTURE.len() - 1] ^= 0xff;
 
-    let doc_ts = add_doc_timestamp_revision(&bt_dss, DOC_TIMESTAMP_TOKEN_DER_FIXTURE)
-        .expect("DocTimeStamp append");
+    let doc_ts_token = doc_timestamp_token_for_revision(&bt_dss);
+    let doc_ts = add_doc_timestamp_revision(&bt_dss, &doc_ts_token).expect("DocTimeStamp append");
     let doc_ts_report = validate_pdf_signature(&doc_ts).expect("DocTimeStamp validates");
     assert!(doc_ts_report.doc_timestamps.present);
+    assert!(doc_ts_report.doc_timestamps.all_imprints_valid());
 
     vec![
         ("bb-basic", bb),
@@ -148,6 +148,34 @@ fn add_fixture_timestamp(signed: &[u8]) -> Vec<u8> {
         .with_nonce(chancela_tsa::mock::FIXTURE_NONCE)
         .without_certificate();
     add_signature_timestamp(signed, |_sig_digest| tsa.stamp(&req)).expect("B-T")
+}
+
+fn fixture_timestamp_token() -> Vec<u8> {
+    let tsa = chancela_tsa::TsaClient::new(chancela_tsa::MockTsaTransport::from_fixture());
+    let req = chancela_tsa::TimestampRequest::new(chancela_tsa::mock::FIXTURE_DIGEST)
+        .with_nonce(chancela_tsa::mock::FIXTURE_NONCE)
+        .without_certificate();
+    tsa.stamp(&req).expect("fixture token").token_der
+}
+
+fn token_with_replaced_fixture_imprint(imprint: &[u8; 32]) -> Vec<u8> {
+    let mut token = fixture_timestamp_token();
+    let pos = token
+        .windows(chancela_tsa::mock::FIXTURE_DIGEST.len())
+        .position(|w| w == chancela_tsa::mock::FIXTURE_DIGEST)
+        .expect("fixture imprint present");
+    token[pos..pos + imprint.len()].copy_from_slice(imprint);
+    token
+}
+
+fn doc_timestamp_token_for_revision(pdf: &[u8]) -> Vec<u8> {
+    let placeholder =
+        add_doc_timestamp_revision(pdf, &fixture_timestamp_token()).expect("placeholder DTS");
+    let report = inspect_doc_timestamps(&placeholder).expect("inspect placeholder DTS");
+    let digest = report.validations[0]
+        .document_digest
+        .expect("DocTimeStamp ByteRange digest");
+    token_with_replaced_fixture_imprint(&digest)
 }
 
 fn build_self_signed(
