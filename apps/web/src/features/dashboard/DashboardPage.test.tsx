@@ -175,6 +175,7 @@ describe('DashboardPage', () => {
               heading: 'Remuneração dos gerentes',
               verification: 'Pending',
               source_url: null,
+              source_complete: false,
             },
           ],
           action: {
@@ -206,7 +207,7 @@ describe('DashboardPage', () => {
         .getAttribute('href'),
     ).toBe('/entidades/entity-1');
     expect(within(queue).getByText(/Encosto Estratégico, Lda./)).toBeTruthy();
-    expect(within(queue).getByText('Lei csc:255')).toBeTruthy();
+    expect(within(queue).getByText('Lei csc:255 · fonte pendente')).toBeTruthy();
   });
 
   it('renders administrator remuneration alerts with CSC art. 399 metadata', async () => {
@@ -235,6 +236,7 @@ describe('DashboardPage', () => {
               heading: 'Remuneração dos administradores',
               verification: 'Pending',
               source_url: null,
+              source_complete: false,
             },
           ],
           action: {
@@ -266,7 +268,60 @@ describe('DashboardPage', () => {
         .getAttribute('href'),
     ).toBe('/entidades/entity-sa');
     expect(within(queue).getByText(/Atlântico Estratégico, S.A./)).toBeTruthy();
-    expect(within(queue).getByText('Lei csc:399')).toBeTruthy();
+    expect(within(queue).getByText('Lei csc:399 · fonte pendente')).toBeTruthy();
+  });
+
+  it('keeps complete verified law references visually normal', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      alerts: [
+        {
+          code: 'entity.no_open_book',
+          label: 'Advisory',
+          severity: 'Info',
+          category: 'DataCompleteness',
+          message: 'Raw backend open-book message.',
+          params: { entity_name: 'Fonte Completa, Lda.' },
+          target: {
+            entity_id: 'entity-verified',
+            book_id: null,
+            act_id: null,
+            links: { entity: '/v1/entities/entity-verified', book: null, act: null, ledger: null },
+          },
+          source: 'entities.open_books',
+          law_refs: [
+            {
+              diploma_id: 'dl-76-a-2006',
+              article: '1',
+              label: 'Artigo 1',
+              heading: '',
+              verification: 'Verified',
+              source_url: 'https://dre.example.test/source',
+              source_complete: true,
+            },
+          ],
+          action: {
+            kind: 'open_entity',
+            label_key: 'notifications.alert.entity.noOpenBook.action',
+            api_href: '/v1/entities/entity-verified',
+            route: '/entidades/entity-verified',
+          },
+          recommended_next_steps: ['Review books.'],
+          i18n: {
+            title_key: 'notifications.alert.entity.noOpenBook.title',
+            body_key: 'notifications.alert.entity.noOpenBook.body',
+            action_key: 'notifications.alert.entity.noOpenBook.action',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    expect(within(queue).getByText('Lei dl-76-a-2006:1')).toBeTruthy();
+    expect(within(queue).queryByText(/fonte pendente/)).toBeNull();
   });
 
   it('deduplicates reminders and orders overdue before upcoming work while tolerating bad dates', async () => {

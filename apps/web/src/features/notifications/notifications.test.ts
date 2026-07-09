@@ -154,6 +154,7 @@ describe('buildDashboardNotifications', () => {
                 heading: 'Remuneração dos gerentes',
                 verification: 'Pending',
                 source_url: null,
+                source_complete: false,
               },
             ],
             source: 'registry_extracts.orgaos',

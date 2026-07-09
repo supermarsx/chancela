@@ -1035,12 +1035,14 @@ describe('contract fixtures parse through the real client', () => {
           heading: true,
           verification: true,
           source_url: true,
+          source_complete: true,
         },
         'Dashboard.alerts[0].law_refs[0]',
       );
       expect(lawRef.diploma_id.length).toBeGreaterThan(0);
       expect(lawRef.article.length).toBeGreaterThan(0);
       expect(lawRef.label.length).toBeGreaterThan(0);
+      expect(typeof lawRef.source_complete).toBe('boolean');
     }
     if (alert.action !== null && alert.action !== undefined) {
       const alertAction = assertExactKeys<DashboardAction>(
@@ -1111,6 +1113,7 @@ describe('contract fixtures parse through the real client', () => {
           heading: true,
           verification: true,
           source_url: true,
+          source_complete: true,
         },
         'Dashboard.reminders[0].law_refs[0]',
       );

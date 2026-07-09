@@ -6,7 +6,12 @@
  */
 import { Link } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
-import type { DashboardAlert, DashboardReminder, LedgerEventView } from '../../api/types';
+import type {
+  DashboardAlert,
+  DashboardLawReference,
+  DashboardReminder,
+  LedgerEventView,
+} from '../../api/types';
 import { useT, type MessageKey, type TFunction, type TParams } from '../../i18n';
 import {
   Badge,
@@ -35,6 +40,15 @@ interface WorkQueueItem {
   detail: string;
   meta: string[];
   href?: string;
+}
+
+function lawRefSourcePending(ref: DashboardLawReference): boolean {
+  return ref.source_complete === false || ref.verification === 'Pending';
+}
+
+function lawRefMeta(ref: DashboardLawReference): string {
+  const label = `${ref.diploma_id}:${ref.article}`;
+  return lawRefSourcePending(ref) ? `Lei ${label} · fonte pendente` : `Lei ${label}`;
 }
 
 function compareByRecency(a: LedgerEventView, b: LedgerEventView): number {
@@ -211,9 +225,7 @@ function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction):
   const titleKey = messageKey(alert.i18n?.title_key) ?? copy?.title;
   const bodyKey = messageKey(alert.i18n?.body_key) ?? copy?.body;
   const params: TParams = { ...alert.params, code };
-  const lawRefs = (alert.law_refs ?? [])
-    .map((ref) => `${ref.diploma_id}:${ref.article}`)
-    .filter(Boolean);
+  const lawRefs = (alert.law_refs ?? []).map(lawRefMeta).filter(Boolean);
 
   return {
     id: `alert:${code || 'unknown'}:${index}`,
@@ -227,7 +239,7 @@ function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction):
       : alert.message.trim() || t('notifications.alert.fallbackDetail'),
     meta: [
       ...(alert.source ? [t('notifications.alert.source', { source: alert.source })] : []),
-      ...(lawRefs.length > 0 ? [`Lei ${lawRefs.join(', ')}`] : []),
+      ...lawRefs,
     ],
     href: routeFromAlert(alert),
   };

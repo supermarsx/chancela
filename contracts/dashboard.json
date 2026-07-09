@@ -74,7 +74,8 @@
           "label": "Artigo 1",
           "heading": "",
           "verification": "Pending",
-          "source_url": null
+          "source_url": null,
+          "source_complete": false
         }
       ],
       "action": {
@@ -125,7 +126,8 @@
           "label": "Artigo 1",
           "heading": "",
           "verification": "Pending",
-          "source_url": null
+          "source_url": null,
+          "source_complete": false
         },
         {
           "diploma_id": "dl-76-a-2006",
@@ -133,7 +135,8 @@
           "label": "Artigo 2",
           "heading": "",
           "verification": "Pending",
-          "source_url": null
+          "source_url": null,
+          "source_complete": false
         }
       ],
       "action": {
@@ -223,7 +226,8 @@
           "label": "Artigo 399.º",
           "heading": "Remuneração dos administradores",
           "verification": "Pending",
-          "source_url": null
+          "source_url": null,
+          "source_complete": false
         }
       ],
       "action": {
@@ -260,7 +264,8 @@
           "label": "Artigo 376.º",
           "heading": "",
           "verification": "Pending",
-          "source_url": null
+          "source_url": null,
+          "source_complete": false
         }
       ],
       "action": {

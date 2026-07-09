@@ -1548,6 +1548,7 @@ pub struct DashboardLawReference {
     pub heading: String,
     pub verification: String,
     pub source_url: Option<String>,
+    pub source_complete: bool,
 }
 
 /// Client-facing action metadata for dashboard actionables.

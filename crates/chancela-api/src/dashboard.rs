@@ -770,6 +770,7 @@ fn law_refs(refs: &[(&str, &str)]) -> Vec<DashboardLawReference> {
                     heading: article.heading.clone(),
                     verification: format!("{:?}", article.verification),
                     source_url: article.source.url.clone(),
+                    source_complete: article.source.is_complete(),
                 })
                 .unwrap_or_else(|| DashboardLawReference {
                     diploma_id: (*diploma_id).to_owned(),
@@ -778,6 +779,7 @@ fn law_refs(refs: &[(&str, &str)]) -> Vec<DashboardLawReference> {
                     heading: String::new(),
                     verification: "Missing".to_owned(),
                     source_url: None,
+                    source_complete: false,
                 })
         })
         .collect()
@@ -1504,6 +1506,8 @@ mod tests {
         assert_eq!(alert.law_refs.len(), 1);
         assert_eq!(alert.law_refs[0].diploma_id, "csc");
         assert_eq!(alert.law_refs[0].article, "255");
+        assert_eq!(alert.law_refs[0].verification, "Pending");
+        assert!(!alert.law_refs[0].source_complete);
         let expected_route = format!("/entidades/{}", entity.id);
         assert_eq!(
             alert
@@ -1552,6 +1556,8 @@ mod tests {
         assert_eq!(alert.law_refs[0].diploma_id, "csc");
         assert_eq!(alert.law_refs[0].article, "399");
         assert_eq!(alert.law_refs[0].heading, "Remuneração dos administradores");
+        assert_eq!(alert.law_refs[0].verification, "Pending");
+        assert!(!alert.law_refs[0].source_complete);
         assert_eq!(
             alert.params.get("office").map(String::as_str),
             Some("administration")

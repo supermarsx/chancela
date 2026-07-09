@@ -663,6 +663,7 @@ export interface DashboardLawReference {
   heading: string;
   verification: string;
   source_url: string | null;
+  source_complete: boolean;
 }
 
 export interface DashboardAction {
