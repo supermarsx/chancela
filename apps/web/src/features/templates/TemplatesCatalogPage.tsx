@@ -111,54 +111,63 @@ export function TemplatesCatalogPage() {
 
       <Card title={t('templates.filters.title')}>
         <div className="templates-controls">
-          <Field label={t('templates.search.label')} htmlFor="templates-search">
-            <Input
-              id="templates-search"
-              value={query}
-              type="search"
-              placeholder={t('templates.search.placeholder')}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </Field>
-          <Field label={t('templates.family.label')} htmlFor="templates-family">
-            <Select
-              id="templates-family"
-              value={family}
-              options={[
-                { value: '', label: t('templates.family.all') },
-                ...ENTITY_FAMILIES.map((value) => ({
-                  value,
-                  label: entityFamilyLabels[value],
-                })),
-              ]}
-              onChange={(event) => setFamily(event.target.value as EntityFamily | '')}
-            />
-          </Field>
-          <Field label={t('templates.stage.label')} htmlFor="templates-stage">
-            <Select
-              id="templates-stage"
-              value={stage}
-              options={[
-                { value: '', label: t('templates.stage.all') },
-                ...LIFECYCLE_STAGES.map((value) => ({
-                  value,
-                  label: lifecycleStageLabels[value],
-                })),
-              ]}
-              onChange={(event) => setStage(event.target.value as LifecycleStage | '')}
-            />
-          </Field>
-          <Field label={t('templates.locale.label')} htmlFor="templates-locale">
-            <Select
-              id="templates-locale"
-              value={locale}
-              options={[
-                { value: '', label: t('templates.locale.all') },
-                ...locales.map((value) => ({ value, label: value })),
-              ]}
-              onChange={(event) => setLocale(event.target.value)}
-            />
-          </Field>
+          <div className="templates-controls__search">
+            <Field label={t('templates.search.label')} htmlFor="templates-search">
+              <div className="templates-search-control">
+                <span className="templates-search-control__icon" aria-hidden="true">
+                  <Icon.Search />
+                </span>
+                <Input
+                  id="templates-search"
+                  value={query}
+                  type="search"
+                  placeholder={t('templates.search.placeholder')}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
+            </Field>
+          </div>
+          <div className="templates-controls__filters">
+            <Field label={t('templates.family.label')} htmlFor="templates-family">
+              <Select
+                id="templates-family"
+                value={family}
+                options={[
+                  { value: '', label: t('templates.family.all') },
+                  ...ENTITY_FAMILIES.map((value) => ({
+                    value,
+                    label: entityFamilyLabels[value],
+                  })),
+                ]}
+                onChange={(event) => setFamily(event.target.value as EntityFamily | '')}
+              />
+            </Field>
+            <Field label={t('templates.stage.label')} htmlFor="templates-stage">
+              <Select
+                id="templates-stage"
+                value={stage}
+                options={[
+                  { value: '', label: t('templates.stage.all') },
+                  ...LIFECYCLE_STAGES.map((value) => ({
+                    value,
+                    label: lifecycleStageLabels[value],
+                  })),
+                ]}
+                onChange={(event) => setStage(event.target.value as LifecycleStage | '')}
+              />
+            </Field>
+            <Field label={t('templates.locale.label')} htmlFor="templates-locale">
+              <Select
+                id="templates-locale"
+                value={locale}
+                options={[
+                  { value: '', label: t('templates.locale.all') },
+                  ...locales.map((value) => ({ value, label: value })),
+                ]}
+                onChange={(event) => setLocale(event.target.value)}
+              />
+            </Field>
+          </div>
           <div className="templates-controls__actions">
             <Button
               type="button"

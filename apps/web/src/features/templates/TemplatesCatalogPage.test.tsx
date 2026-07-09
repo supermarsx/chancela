@@ -45,22 +45,26 @@ describe('TemplatesCatalogPage', () => {
     );
     expect(screen.queryByRole('button', { name: /gerar/i })).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Pesquisar minutas'), {
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
       target: { value: ' CERTIDÃO ' },
     });
     expect(await screen.findByText('csc-certidao-ata/v1')).toBeTruthy();
     expect(screen.queryByText('csc-ata-ag/v1')).toBeNull();
     expect(screen.getByText('1 de 4 modelos')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar pesquisa e filtros' }));
     expect(await screen.findByText('csc-ata-ag/v1')).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('Família'), { target: { value: 'Association' } });
+    fireEvent.change(screen.getByLabelText('Família da entidade'), {
+      target: { value: 'Association' },
+    });
     const associationCard = await screen.findByText('assoc-convocatoria-ga/v1');
     expect(associationCard).toBeTruthy();
     expect(screen.queryByText('condominio-lista-presencas/v1')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Fase'), { target: { value: 'Convocatoria' } });
+    fireEvent.change(screen.getByLabelText('Fase da minuta'), {
+      target: { value: 'Convocatoria' },
+    });
     const catalog = screen.getByRole('region', { name: 'Catálogo de minutas' });
     expect(within(catalog).getByText('assoc-convocatoria-ga/v1')).toBeTruthy();
     expect(within(catalog).getByText('Convocatória')).toBeTruthy();
@@ -73,7 +77,7 @@ describe('TemplatesCatalogPage', () => {
 
     expect(await screen.findByText('assoc-convocatoria-ga/pt')).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('Pesquisar minutas'), {
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
       target: { value: 'CONVOCATÓRIA' },
     });
     expect(screen.getByText('2 de 3 modelos')).toBeTruthy();
@@ -81,18 +85,18 @@ describe('TemplatesCatalogPage', () => {
     expect(screen.getByText('assoc-convocatoria-ga/en')).toBeTruthy();
     expect(screen.queryByText('fundacao-reuniao/v1')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Idioma'), { target: { value: 'en-US' } });
+    fireEvent.change(screen.getByLabelText('Idioma do modelo'), { target: { value: 'en-US' } });
     expect(screen.getByText('1 de 3 modelos')).toBeTruthy();
     expect(screen.getByText('assoc-convocatoria-ga/en')).toBeTruthy();
     expect(screen.queryByText('assoc-convocatoria-ga/pt')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Pesquisar minutas'), {
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
       target: { value: 'sem resultado' },
     });
     expect(await screen.findByText('Sem modelos encontrados')).toBeTruthy();
     expect(screen.getByText('0 de 3 modelos')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar pesquisa e filtros' }));
     expect(await screen.findByText('fundacao-reuniao/v1')).toBeTruthy();
     expect(screen.getByText('3 de 3 modelos')).toBeTruthy();
   });
