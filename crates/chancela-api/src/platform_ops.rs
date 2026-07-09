@@ -8,12 +8,14 @@ use axum::Json;
 use axum::extract::{Path, State};
 use chancela_authz::{Permission, Scope};
 use serde::Serialize;
+use serde_json::json;
 use time::format_description::well_known::Rfc3339;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::require_permission;
 use crate::error::ApiError;
+use crate::platform_logs::{PlatformLogInput, record_platform_log};
 use crate::settings::{
     PLATFORM_API_SERVICE_ID, PLATFORM_MCP_STDIO_SERVICE_ID, PlatformAuditEvent,
     PlatformControlOutcomeKind, PlatformLogLevel, PlatformServiceAction,
@@ -100,7 +102,19 @@ pub async fn list_services(
 ) -> Result<Json<PlatformServicesResponse>, ApiError> {
     require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
     let settings = state.settings.read().await.clone();
-    Ok(Json(status_response(&settings)))
+    let response = status_response(&settings);
+    record_platform_log(
+        &state,
+        PlatformLogInput {
+            service_id: PLATFORM_API_SERVICE_ID,
+            level: PlatformLogLevel::Info,
+            target: "platform.services",
+            message: "Platform service status read",
+            context: Some(json!({ "service_count": response.services.len() })),
+        },
+    )
+    .await?;
+    Ok(Json(response))
 }
 
 /// `POST /v1/platform/services/{id}/actions/{action}` — record desired service control state.
@@ -184,6 +198,23 @@ pub async fn control_service(
 
     *state.settings.write().await = settings.clone();
     let service = service_status(&settings, &service_id)?;
+    record_platform_log(
+        &state,
+        PlatformLogInput {
+            service_id: &service_id,
+            level: PlatformLogLevel::Info,
+            target: "platform.service.control",
+            message: "Platform service control desired state recorded",
+            context: Some(json!({
+                "action": action,
+                "outcome": outcome,
+                "desired_state": desired_state,
+                "applied_to_settings": true,
+                "supported": false,
+            })),
+        },
+    )
+    .await?;
     Ok(Json(PlatformControlResponse {
         service,
         action,

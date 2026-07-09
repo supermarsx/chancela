@@ -85,6 +85,7 @@ mod ledger;
 mod notifications;
 mod paper_import;
 mod password_policy;
+mod platform_logs;
 mod platform_ops;
 mod privacy;
 mod recovery;
@@ -134,6 +135,7 @@ pub use database::{
 pub use delegations::{DelegationId, StoredDelegation};
 pub use error::ApiError;
 pub use law::{LawEntry, LawEntryView, LawStore, StoredLawInfo};
+pub use platform_logs::{PlatformLogEntry, PlatformLogRing, PlatformLogsResponse};
 pub use roles::{
     count_owner_admins, effective_permissions_for, effective_permissions_for_actor,
     last_owner_guard_ok, resolve_principal_id,
@@ -178,6 +180,9 @@ pub struct AppState {
     pub ledger: Arc<RwLock<Ledger>>,
     /// The current application settings document (contract §2.8). Defaults until a `PUT`.
     pub settings: Arc<RwLock<settings::Settings>>,
+    /// In-memory structured platform log tail. This is API-owned, bounded, and reset on restart;
+    /// it is not a historical stdout/stderr tail or an MCP process-log collector.
+    pub platform_logs: Arc<RwLock<PlatformLogRing>>,
     /// Where `settings.json` is persisted, or `None` for pure in-memory state. Shared (and so
     /// cheap to clone) via `Arc`; set only by [`AppState::with_data_dir`]/[`AppState::from_env`].
     pub persist_path: Option<Arc<PathBuf>>,
@@ -805,6 +810,7 @@ impl AppState {
         self.api_keys.write().await.clear();
         self.external_signing_envelopes.write().await.clear();
         self.api_key_rate_limits.write().await.clear();
+        self.platform_logs.write().await.clear();
         // A blank first-run instance has the seeded default roles and no delegations (t64), matching
         // what a subsequent load of the wiped data dir would reseed.
         *self.roles.write().await = chancela_authz::RoleCatalog::seeded_defaults();
@@ -1148,6 +1154,7 @@ pub fn router(state: AppState) -> Router {
             get(settings::get_settings).put(settings::put_settings),
         )
         .route("/v1/platform/services", get(platform_ops::list_services))
+        .route("/v1/platform/logs", get(platform_logs::list_logs))
         .route(
             "/v1/platform/services/{id}/actions/{action}",
             post(platform_ops::control_service),
@@ -4250,6 +4257,131 @@ mod tests {
         assert_eq!(got, sample_settings());
     }
 
+    async fn seed_platform_log(
+        state: &AppState,
+        service_id: &str,
+        level: PlatformLogLevel,
+        target: &str,
+        message: &str,
+        context: Option<Value>,
+    ) -> PlatformLogEntry {
+        platform_logs::record_platform_log(
+            state,
+            platform_logs::PlatformLogInput {
+                service_id,
+                level,
+                target,
+                message,
+                context,
+            },
+        )
+        .await
+        .expect("platform log seed")
+    }
+
+    #[tokio::test]
+    async fn platform_logs_default_empty_tail_is_honest() {
+        let state = AppState::default();
+        let (status, body) = send(state, get("/v1/platform/logs")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["logs"], json!([]));
+        assert_eq!(body["tail"], platform_logs::PLATFORM_LOG_DEFAULT_TAIL);
+        assert_eq!(body["order"], "chronological");
+        assert!(
+            body["limitations"]
+                .as_array()
+                .expect("limitations")
+                .iter()
+                .any(|item| item
+                    .as_str()
+                    .expect("limitation text")
+                    .contains("in-memory API log ring"))
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_logs_seeded_filter_by_service_level_and_tail() {
+        let state = AppState::default();
+        seed_platform_log(
+            &state,
+            "mcp_stdio",
+            PlatformLogLevel::Info,
+            "platform.test",
+            "mcp info",
+            None,
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Warn,
+            "platform.test",
+            "api warn one",
+            Some(json!({ "slot": 1 })),
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Warn,
+            "platform.test",
+            "api warn two",
+            Some(json!({ "slot": 2 })),
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Error,
+            "platform.test",
+            "api error",
+            None,
+        )
+        .await;
+
+        let (status, body) = send(
+            state.clone(),
+            get("/v1/platform/logs?service_id=api&level=warn&tail=1"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let logs = body["logs"].as_array().expect("logs array");
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["service_id"], "api");
+        assert_eq!(logs[0]["level"], "warn");
+        assert_eq!(logs[0]["message"], "api warn two");
+        assert_eq!(logs[0]["context"], json!({ "slot": 2 }));
+
+        let (status, body) = send(state, get("/v1/platform/logs?service_id=api&tail=2")).await;
+        assert_eq!(status, StatusCode::OK);
+        let messages = body["logs"]
+            .as_array()
+            .expect("logs array")
+            .iter()
+            .map(|entry| entry["message"].as_str().expect("message"))
+            .collect::<Vec<_>>();
+        assert_eq!(messages, vec!["api warn two", "api error"]);
+    }
+
+    #[tokio::test]
+    async fn platform_logs_invalid_query_is_422() {
+        let state = AppState::default();
+        let invalid_uris = vec![
+            "/v1/platform/logs?service_id=web".to_owned(),
+            "/v1/platform/logs?level=verbose".to_owned(),
+            "/v1/platform/logs?level=off".to_owned(),
+            "/v1/platform/logs?tail=abc".to_owned(),
+            format!(
+                "/v1/platform/logs?tail={}",
+                platform_logs::PLATFORM_LOG_MAX_TAIL + 1
+            ),
+        ];
+        for uri in invalid_uris {
+            let (status, body) = send(state.clone(), get(&uri)).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
+        }
+    }
+
     #[tokio::test]
     async fn platform_services_status_exposes_api_and_mcp_records() {
         let state = AppState::default();
@@ -4262,7 +4394,7 @@ mod tests {
             .service_overrides
             .insert("api".to_owned(), PlatformLogLevel::Debug);
 
-        let (status, body) = send(state, get("/v1/platform/services")).await;
+        let (status, body) = send(state.clone(), get("/v1/platform/services")).await;
         assert_eq!(status, StatusCode::OK);
         let services = body["services"].as_array().expect("services array");
         assert_eq!(services.len(), 2);
@@ -4322,6 +4454,14 @@ mod tests {
                     .expect("limitation text")
                     .contains("cannot observe or spawn"))
         );
+
+        let (status, logs) = send(state, get("/v1/platform/logs?service_id=api&tail=1")).await;
+        assert_eq!(status, StatusCode::OK);
+        let logs = logs["logs"].as_array().expect("logs array");
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["target"], "platform.services");
+        assert_eq!(logs[0]["message"], "Platform service status read");
+        assert_eq!(logs[0]["context"], json!({ "service_count": 2 }));
     }
 
     #[tokio::test]
@@ -4359,6 +4499,25 @@ mod tests {
         assert_eq!(last.outcome, PlatformControlOutcomeKind::RestartRequired);
         assert_eq!(settings.platform.audit.len(), 1);
         assert_eq!(settings.platform.audit[0].service_id, "api");
+
+        let (status, logs) = send(
+            state.clone(),
+            get("/v1/platform/logs?service_id=api&level=info&tail=5"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let logs = logs["logs"].as_array().expect("logs array");
+        let entry = logs
+            .iter()
+            .find(|entry| entry["target"] == "platform.service.control")
+            .expect("control log entry");
+        assert_eq!(
+            entry["message"],
+            "Platform service control desired state recorded"
+        );
+        assert_eq!(entry["context"]["action"], "restart");
+        assert_eq!(entry["context"]["outcome"], "restart_required");
+        assert_eq!(entry["context"]["applied_to_settings"], true);
 
         let (status, events) = send(state, get("/v1/ledger/events")).await;
         assert_eq!(status, StatusCode::OK);
