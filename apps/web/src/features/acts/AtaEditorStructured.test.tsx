@@ -90,6 +90,7 @@ function stateful(initial: ActView) {
       return json(report);
     }
     if (url.includes('/v1/books/')) return json(book);
+    if (url.includes(`/v1/acts/${act.id}/follow-ups`) && method === 'GET') return json([]);
     if (/\/v1\/acts\/[^/]+$/.test(url)) {
       if (method === 'PATCH') {
         const body = JSON.parse(init!.body as string) as Record<string, unknown>;

@@ -73,6 +73,7 @@ function renderEditor(act: ActView, compliance: ComplianceReport) {
     'fetch',
     fetchTable([
       { match: 'compliance', body: compliance },
+      { match: '/v1/acts/act-1/follow-ups', body: [] },
       { match: '/v1/acts/', body: act },
       { match: '/v1/books/', body: book },
     ]),

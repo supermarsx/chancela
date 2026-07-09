@@ -39,6 +39,7 @@ import {
   type Locale,
   type NumberingScheme,
   type OrganizationSettings,
+  type RegistryAutoUpdateSettings,
   type Settings,
   type SignatureFamily,
   type SigningProviderMetadata,
@@ -56,6 +57,7 @@ import { FuncoesSection } from '../rbac/FuncoesSection';
 import { DelegacoesSection } from '../rbac/DelegacoesSection';
 import { ApiKeysSection } from './ApiKeysSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
+import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
 import { useCan } from '../session/permissions';
 import {
   Badge,
@@ -82,8 +84,9 @@ import { UsersList } from '../users/UserListPage';
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
 
-type SettingsWithMaybeAi = Omit<Settings, 'ai' | 'signing'> & {
+type SettingsWithMaybeAi = Omit<Settings, 'ai' | 'signing' | 'registry_auto_update'> & {
   ai?: Partial<AiSettings> | null;
+  registry_auto_update?: Partial<RegistryAutoUpdateSettings> | null;
   signing: Omit<SigningSettings, 'providers'> & Partial<Pick<SigningSettings, 'providers'>>;
 };
 
@@ -97,6 +100,19 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       providers: settings.signing.providers ?? DEFAULT_SETTINGS.signing.providers,
     },
     ai: { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) },
+    registry_auto_update: {
+      ...DEFAULT_SETTINGS.registry_auto_update,
+      ...(settings.registry_auto_update ?? {}),
+      cadence:
+        settings.registry_auto_update?.cadence ?? DEFAULT_SETTINGS.registry_auto_update.cadence,
+      entity_defaults: {
+        ...DEFAULT_SETTINGS.registry_auto_update.entity_defaults,
+        ...(settings.registry_auto_update?.entity_defaults ?? {}),
+        enabled_profiles:
+          settings.registry_auto_update?.entity_defaults?.enabled_profiles ??
+          DEFAULT_SETTINGS.registry_auto_update.entity_defaults.enabled_profiles,
+      },
+    },
   };
 }
 
@@ -129,6 +145,15 @@ function toWireBody(draft: Settings): Settings {
     },
     ai: {
       enabled: draft.ai.enabled === true,
+    },
+    registry_auto_update: {
+      ...draft.registry_auto_update,
+      entity_defaults: {
+        ...draft.registry_auto_update.entity_defaults,
+        enabled_profiles: draft.registry_auto_update.entity_defaults.enabled_profiles
+          .map((profile) => profile.trim())
+          .filter(Boolean),
+      },
     },
   };
 }
@@ -334,6 +359,8 @@ export function SettingsPage() {
   ) => setDraft((d) => (d ? { ...d, appearance: { ...d.appearance, [key]: value } } : d));
   const setAi = <K extends keyof AiSettings>(key: K, value: AiSettings[K]) =>
     setDraft((d) => (d ? { ...d, ai: { ...d.ai, [key]: value } } : d));
+  const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
+    setDraft((d) => (d ? { ...d, registry_auto_update } : d));
 
   const a = draft.appearance;
 
@@ -672,32 +699,35 @@ export function SettingsPage() {
 
           {/* Gestão ------------------------------------------------------------------ */}
           {section === 'gestao' ? (
-            <Card title={t('settings.management.cardTitle')}>
-              <div className="form">
-                {canManageSettings ? (
-                  <>
-                    <Toggle
-                      label="Ativar IA/MCP"
-                      checked={draft.ai.enabled}
-                      onChange={(v) => setAi('enabled', v)}
-                    />
-                    <p className="field__hint">
-                      Controla o acesso deste tenant às funcionalidades de IA e ao servidor MCP.
-                      Mantém-se desativado por predefinição.
-                    </p>
-                  </>
-                ) : null}
-                <p className="field__hint">{t('settings.management.note')}</p>
-                <div className="row-wrap">
-                  <ButtonLink to="/configuracoes?sec=utilizadores" icon={<Icon.Users />}>
-                    {t('settings.management.usersLink')}
-                  </ButtonLink>
-                  <ButtonLink to="/ferramentas" icon={<Icon.Wrench />}>
-                    {t('settings.management.toolsLink')}
-                  </ButtonLink>
+            <div className="stack">
+              <Card title={t('settings.management.cardTitle')}>
+                <div className="form">
+                  {canManageSettings ? (
+                    <>
+                      <Toggle
+                        label={t('settings.management.ai.label')}
+                        checked={draft.ai.enabled}
+                        onChange={(v) => setAi('enabled', v)}
+                      />
+                      <p className="field__hint">{t('settings.management.ai.hint')}</p>
+                    </>
+                  ) : null}
+                  <p className="field__hint">{t('settings.management.note')}</p>
+                  <div className="row-wrap">
+                    <ButtonLink to="/configuracoes?sec=utilizadores" icon={<Icon.Users />}>
+                      {t('settings.management.usersLink')}
+                    </ButtonLink>
+                    <ButtonLink to="/ferramentas" icon={<Icon.Wrench />}>
+                      {t('settings.management.toolsLink')}
+                    </ButtonLink>
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+              <RegistryAutoUpdateSection
+                value={draft.registry_auto_update}
+                onChange={setRegistryAutoUpdate}
+              />
+            </div>
           ) : null}
 
           {/* Utilizadores ------------------------------------------------------------ */}

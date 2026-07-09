@@ -1839,6 +1839,19 @@ a,
   align-items: center;
 }
 
+.registry-auto-update-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.registry-auto-update-profiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  gap: 0.35rem 0.85rem;
+}
+
 .api-key-secret {
   display: grid;
   gap: 0.85rem;

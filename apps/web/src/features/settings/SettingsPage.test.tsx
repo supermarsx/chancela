@@ -53,6 +53,35 @@ const API_KEY_REVOKED: ApiKeyMetadata = {
   active: false,
 };
 
+const REGISTRY_AUTO_UPDATE_PLAN = {
+  generated_at: '2026-07-09T10:00:00Z',
+  dry_run_only: true,
+  config: DEFAULT_SETTINGS.registry_auto_update,
+  due: [
+    {
+      entity_id: 'ent-1',
+      entity_name: 'Acme, S.A.',
+      entity_profile: 'SociedadeAnonima',
+      retrieved_at: '2026-05-01T10:00:00Z',
+      age_hours: 1656,
+      stale_threshold_hours: 720,
+      code_masked: '1234********9012',
+      status: 'due',
+      reason: 'stale',
+      next_allowed_at: null,
+    },
+  ],
+  skipped: {
+    disabled: 1,
+    fresh: 2,
+    backoff: 0,
+    running: 0,
+    orphaned: 0,
+    capped: 0,
+  },
+  notes: [],
+};
+
 const PROCESSOR_ONE = {
   id: 'processor-1',
   name: 'Cloud Processor',
@@ -115,6 +144,25 @@ function settingsFetch(initialSettings: unknown = DEFAULT_SETTINGS): {
         return Promise.resolve(jsonResponse({ ...parsed, schema_version: 1 }));
       }
       return Promise.resolve(jsonResponse(initialSettings));
+    }
+    if (url.includes('/v1/registry/lookup')) {
+      return Promise.resolve(jsonResponse(REGISTRY_AUTO_UPDATE_PLAN));
+    }
+    if (/\/v1\/entities\/[^/]+\/registry/.test(url) && method === 'POST') {
+      return Promise.resolve(
+        jsonResponse({
+          accepted: true,
+          entity_id: 'ent-1',
+          status: 'manual_required',
+          generated_at: '2026-07-09T10:01:00Z',
+          dry_run_only: true,
+          reason: 'manual dry run',
+          last_attempt_at: '2026-07-09T10:01:00Z',
+          next_allowed_at: null,
+          failure_count: 0,
+          audit_event_seq: 42,
+        }),
+      );
     }
     if (url.includes('/v1/ledger/verify')) {
       return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
@@ -433,6 +481,58 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Gestão' })).toBeTruthy();
     expect(screen.queryByRole('switch', { name: 'Ativar IA/MCP' })).toBeNull();
+  });
+
+  it('shows the backend-owned registry auto-update plan and records a dry-run attempt', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+
+    expect(await screen.findByText('Atualização automática da certidão permanente')).toBeTruthy();
+    expect(await screen.findByText('Acme, S.A.')).toBeTruthy();
+    expect(screen.getByText('Simulação')).toBeTruthy();
+    expect(screen.getByText('Por atualizar')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pedir tentativa' }));
+
+    const resultTitle = await screen.findByText('Resultado da tentativa');
+    const resultPanel = resultTitle.closest('[role="note"]');
+    expect(resultPanel).toBeTruthy();
+    expect(within(resultPanel as HTMLElement).getByText('Revisão manual')).toBeTruthy();
+
+    const attempt = await waitFor(() =>
+      calls.find((call) => call.method === 'POST' && call.url.includes('/v1/entities/ent-1/registry')),
+    );
+    expect(attempt).toBeTruthy();
+    expect(JSON.parse(attempt!.body as string)).toEqual({ dry_run: true });
+  });
+
+  it('round-trips registry auto-update settings through the whole-document autosave', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+
+    const toggle = (await screen.findByRole('switch', {
+      name: 'Ativar trabalhador de atualização',
+    })) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+
+    const put = calls.find((c) => c.method === 'PUT');
+    expect(put).toBeTruthy();
+    const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+    expect(sent.registry_auto_update.enabled).toBe(true);
+    expect(sent.registry_auto_update.stale_threshold_hours).toBe(720);
+    expect(sent.registry_auto_update.entity_defaults).toEqual({
+      enabled: false,
+      enabled_profiles: [],
+    });
   });
 
   it('applies the theme override to the document root live', async () => {

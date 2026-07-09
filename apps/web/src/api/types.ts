@@ -2009,6 +2009,52 @@ export interface SealActBody {
   acknowledge_warnings?: boolean;
 }
 
+export type FollowUpStatus = 'Open' | 'Completed';
+
+/** A mutable act-scoped task row, stored outside `ActView` so sealed act JSON stays immutable. */
+export interface FollowUpView {
+  id: string;
+  act_id: string;
+  agenda_number: number | null;
+  deliberation_index: number | null;
+  title: string;
+  detail: string | null;
+  due_date: string | null;
+  assignee: string | null;
+  assignee_display: string | null;
+  status: FollowUpStatus;
+  created_at: string;
+  created_by: string;
+  completed_at: string | null;
+  completed_by: string | null;
+}
+
+export interface CreateFollowUpBody {
+  actor?: string;
+  agenda_number?: number | null;
+  deliberation_index?: number | null;
+  title: string;
+  detail?: string | null;
+  due_date?: string | null;
+  assignee?: string | null;
+  assignee_display?: string | null;
+}
+
+export interface PatchFollowUpBody {
+  actor?: string;
+  title?: string;
+  detail?: string | null;
+  due_date?: string | null;
+  assignee?: string | null;
+  assignee_display?: string | null;
+  agenda_number?: number | null;
+  deliberation_index?: number | null;
+}
+
+export interface CompleteFollowUpBody {
+  actor?: string;
+}
+
 // Registry (§2.7). `code` is the 12-digit código de acesso — a SECRET carried only
 // in the request body, never persisted or cached client-side.
 export interface RegistryLookupBody {
@@ -2025,6 +2071,95 @@ export interface RegistryImportBody {
   code: string;
   email?: string;
   overwrite?: boolean;
+}
+
+export type RegistryAutoUpdateWeekday =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
+
+export type RegistryAutoUpdateCadence =
+  | { kind: 'interval_hours'; hours: number }
+  | { kind: 'daily'; hour_utc: number }
+  | { kind: 'weekly'; weekday: RegistryAutoUpdateWeekday; hour_utc: number };
+
+export interface RegistryAutoUpdateEntityDefaults {
+  enabled: boolean;
+  /** Empty means every entity profile is eligible; today profiles are EntityKind names. */
+  enabled_profiles: string[];
+}
+
+export interface RegistryAutoUpdateSettings {
+  enabled: boolean;
+  cadence: RegistryAutoUpdateCadence;
+  stale_threshold_hours: number;
+  min_backoff_minutes: number;
+  max_backoff_minutes: number;
+  max_attempts_per_run: number;
+  entity_defaults: RegistryAutoUpdateEntityDefaults;
+}
+
+export type RegistryAutoUpdateStatus =
+  | 'idle'
+  | 'due'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'manual_required';
+
+export interface RegistryAutoUpdateDueItem {
+  entity_id: string;
+  entity_name: string;
+  entity_profile: string;
+  retrieved_at: string;
+  age_hours: number | null;
+  stale_threshold_hours: number;
+  code_masked: string;
+  status: RegistryAutoUpdateStatus;
+  reason: string;
+  next_allowed_at: string | null;
+}
+
+export interface RegistryAutoUpdateSkippedCounts {
+  disabled: number;
+  fresh: number;
+  backoff: number;
+  running: number;
+  orphaned: number;
+  capped: number;
+}
+
+export interface RegistryAutoUpdateDuePlan {
+  generated_at: string;
+  dry_run_only: boolean;
+  config: RegistryAutoUpdateSettings;
+  due: RegistryAutoUpdateDueItem[];
+  skipped: RegistryAutoUpdateSkippedCounts;
+  notes: string[];
+}
+
+export interface RegistryAutoUpdateAttemptBody {
+  force?: boolean;
+  dry_run?: boolean;
+  reason?: string;
+}
+
+export interface RegistryAutoUpdateAttemptView {
+  accepted: boolean;
+  entity_id: string;
+  status: RegistryAutoUpdateStatus;
+  generated_at: string;
+  dry_run_only: boolean;
+  reason: string;
+  last_attempt_at: string | null;
+  next_allowed_at: string | null;
+  failure_count: number;
+  audit_event_seq: number | null;
 }
 
 // --- Settings document (§2.8) ---------------------------------------------------
@@ -2422,6 +2557,7 @@ export interface Settings {
   documents: DocumentSettings;
   catalog: CatalogSettings;
   signing: SigningSettings;
+  registry_auto_update: RegistryAutoUpdateSettings;
   appearance: AppearanceSettings;
   onboarding: OnboardingSettings;
   ai: AiSettings;
@@ -2490,6 +2626,15 @@ export const DEFAULT_SETTINGS: Settings = {
         note: 'Local-only test/operator material; private key and passphrase are never captured in settings.',
       },
     ],
+  },
+  registry_auto_update: {
+    enabled: false,
+    cadence: { kind: 'interval_hours', hours: 24 },
+    stale_threshold_hours: 24 * 30,
+    min_backoff_minutes: 60,
+    max_backoff_minutes: 24 * 60,
+    max_attempts_per_run: 10,
+    entity_defaults: { enabled: false, enabled_profiles: [] },
   },
   appearance: {
     theme: 'system',

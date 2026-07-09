@@ -26,13 +26,17 @@ import type {
   CcSignBody,
   RemoteInitiateBody,
   RemoteConfirmBody,
+  CompleteFollowUpBody,
+  CreateFollowUpBody,
   CreateExternalSignerInviteBody,
   ExternalSignerInviteView,
+  FollowUpView,
   ImportFromRegistryBody,
   LawEntryView,
   LedgerArchiveDocumentParams,
   LedgerQueryParams,
   OpenBookBody,
+  RegistryAutoUpdateAttemptBody,
   RegistryImportBody,
   SealActBody,
   Settings,
@@ -53,6 +57,7 @@ import type {
   CreateRoleBody,
   DpiaRecordView,
   PatchRoleBody,
+  PatchFollowUpBody,
   PatchDpiaRecordBody,
   PatchProcessorRecordBody,
   ProcessorRecordView,
@@ -69,12 +74,14 @@ export const keys = {
   entities: ['entities'] as const,
   entity: (id: string) => ['entities', id] as const,
   entityRegistry: (id: string) => ['entities', id, 'registry'] as const,
+  registryAutoUpdatePlan: ['registry', 'auto-update', 'due-plan'] as const,
   books: (entityId?: string) => ['books', { entityId: entityId ?? null }] as const,
   book: (id: string) => ['books', id] as const,
   bookLegalHold: (id: string) => ['books', id, 'legal-hold'] as const,
   bookActs: (id: string) => ['books', id, 'acts'] as const,
   act: (id: string) => ['acts', id] as const,
   compliance: (id: string) => ['acts', id, 'compliance'] as const,
+  actFollowUps: (id: string) => ['acts', id, 'follow-ups'] as const,
   actDocumentPreview: (id: string) => ['acts', id, 'document', 'preview'] as const,
   actDocumentBundle: (id: string) => ['acts', id, 'document', 'bundle'] as const,
   actSignature: (id: string) => ['acts', id, 'signature'] as const,
@@ -209,6 +216,37 @@ export function useImportEntityRegistry(id: string) {
       void qc.invalidateQueries({ queryKey: keys.entity(id) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+/**
+ * Backend-owned dry-run plan for registry auto-update work (`GET /v1/registry/lookup`).
+ * It is status only: the frontend never performs a registry lookup here and never supplies
+ * result data.
+ */
+export function useRegistryAutoUpdateDuePlan() {
+  return useQuery({
+    queryKey: keys.registryAutoUpdatePlan,
+    queryFn: () => api.getRegistryAutoUpdateDuePlan(),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/**
+ * Request one metadata-only registry auto-update attempt for an entity. The body carries only
+ * worker control fields (`force`, `dry_run`, `reason`); no raw HTML or parsed extract is accepted
+ * by the backend. Refetch the dry-run plan and ledger after a recorded attempt.
+ */
+export function useRequestRegistryAutoUpdate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body = {} }: { id: string; body?: RegistryAutoUpdateAttemptBody }) =>
+      api.requestRegistryAutoUpdate(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.registryAutoUpdatePlan });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }
@@ -359,6 +397,65 @@ export function useSealAct(id: string) {
       void qc.invalidateQueries({ queryKey: keys.bookActs(result.act.book_id) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+export function useActFollowUps(id: string) {
+  return useQuery({
+    queryKey: keys.actFollowUps(id),
+    queryFn: () => api.listActFollowUps(id),
+    enabled: !!id,
+  });
+}
+
+function replaceFollowUp(rows: FollowUpView[] | undefined, row: FollowUpView): FollowUpView[] {
+  const current = rows ?? [];
+  return current.some((item) => item.id === row.id)
+    ? current.map((item) => (item.id === row.id ? row : item))
+    : [row, ...current];
+}
+
+export function useCreateActFollowUp(actId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateFollowUpBody) => api.createActFollowUp(actId, body),
+    onSuccess: (row) => {
+      qc.setQueryData<FollowUpView[]>(keys.actFollowUps(actId), (rows) =>
+        replaceFollowUp(rows, row),
+      );
+      void qc.invalidateQueries({ queryKey: keys.actFollowUps(actId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchFollowUp(actId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: PatchFollowUpBody }) =>
+      api.patchFollowUp(id, body),
+    onSuccess: (row) => {
+      qc.setQueryData<FollowUpView[]>(keys.actFollowUps(actId), (rows) =>
+        replaceFollowUp(rows, row),
+      );
+      void qc.invalidateQueries({ queryKey: keys.actFollowUps(actId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useCompleteFollowUp(actId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body = {} }: { id: string; body?: CompleteFollowUpBody }) =>
+      api.completeFollowUp(id, body),
+    onSuccess: (row) => {
+      qc.setQueryData<FollowUpView[]>(keys.actFollowUps(actId), (rows) =>
+        replaceFollowUp(rows, row),
+      );
+      void qc.invalidateQueries({ queryKey: keys.actFollowUps(actId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }

@@ -27,9 +27,11 @@ import type {
   CloseBookBody,
   ComplianceIssue,
   ComplianceReport,
+  CompleteFollowUpBody,
   CreateDsrRequestBody,
   CreateDpiaRecordBody,
   CreateEntityBody,
+  CreateFollowUpBody,
   CreateProcessorRecordBody,
   CreateRetentionPolicyBody,
   CreateSessionBody,
@@ -52,6 +54,7 @@ import type {
   LawDiplomaDetailView,
   LawArticleView,
   LawSearchView,
+  FollowUpView,
   LedgerArchiveDocumentParams,
   LedgerEventView,
   LedgerQueryParams,
@@ -60,11 +63,15 @@ import type {
   PaperBookImportReport,
   PaperBookImportValidateBody,
   RegistryExtractView,
+  RegistryAutoUpdateAttemptBody,
+  RegistryAutoUpdateAttemptView,
+  RegistryAutoUpdateDuePlan,
   RegistryImportBody,
   RegistryImportReport,
   RegistryLookupBody,
   SealActBody,
   SealResult,
+  PatchFollowUpBody,
   PatchDpiaRecordBody,
   PatchProcessorRecordBody,
   PatchRetentionPolicyBody,
@@ -440,6 +447,13 @@ export const api = {
   getCompliance: (id: string) => get<ComplianceReport>(`/v1/acts/${id}/compliance`),
   sealAct: (id: string, body: SealActBody) => post<SealResult>(`/v1/acts/${id}/seal`, body),
   archiveAct: (id: string) => post<ActView>(`/v1/acts/${id}/archive`),
+  listActFollowUps: (id: string) => get<FollowUpView[]>(`/v1/acts/${id}/follow-ups`),
+  createActFollowUp: (id: string, body: CreateFollowUpBody) =>
+    post<FollowUpView>(`/v1/acts/${id}/follow-ups`, body),
+  patchFollowUp: (id: string, body: PatchFollowUpBody) =>
+    patch<FollowUpView>(`/v1/follow-ups/${encodeURIComponent(id)}`, body),
+  completeFollowUp: (id: string, body: CompleteFollowUpBody = {}) =>
+    post<FollowUpView>(`/v1/follow-ups/${encodeURIComponent(id)}/complete`, body),
 
   // Generated documents (§3.3, plan t48). The preview renders the CURRENT record live
   // (works pre-seal); a `422`/`404` means the family has no template for the stage — the
@@ -527,7 +541,10 @@ export const api = {
   // sent transiently in the request and never returned (provenance is masked).
   registryLookup: (body: RegistryLookupBody) =>
     post<RegistryExtractView>('/v1/registry/lookup', body),
+  getRegistryAutoUpdateDuePlan: () => get<RegistryAutoUpdateDuePlan>('/v1/registry/lookup'),
   getEntityRegistry: (id: string) => get<RegistryExtractView>(`/v1/entities/${id}/registry`),
+  requestRegistryAutoUpdate: (id: string, body: RegistryAutoUpdateAttemptBody = {}) =>
+    post<RegistryAutoUpdateAttemptView>(`/v1/entities/${id}/registry`, body),
   importEntityRegistry: (id: string, body: RegistryImportBody) =>
     post<RegistryImportReport>(`/v1/entities/${id}/registry/import`, body),
   importFromRegistry: (body: ImportFromRegistryBody) =>

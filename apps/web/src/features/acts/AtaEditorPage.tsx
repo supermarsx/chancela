@@ -4,8 +4,8 @@
  * It composes: meeting metadata (date/time/place + present/represented counts), the
  * mesa (bureau — presidente + secretários), the ordem de trabalhos (agenda), a free-text
  * deliberations editor with a read-only preview, a structured per-item deliberations
- * editor (text + VoteResult + member statements), referenced documents, signatories and
- * attachments panels, a lifecycle stepper, a live CompliancePanel, and a SealAction that
+ * editor (text + VoteResult + member statements), act-scoped follow-up tooling, referenced
+ * documents, signatories and attachments panels, a lifecycle stepper, a live CompliancePanel, and a SealAction that
  * stays disabled until `seal_allowed`. Once the act is Sealed/Archived it is read-only.
  *
  * The mesa presidente is the seal-unblocker: the CSC pack (csc-art63/v2) raises a blocking
@@ -73,6 +73,7 @@ import {
   useToast,
 } from '../../ui';
 import { CompliancePanel } from './CompliancePanel';
+import { FollowUpsPanel } from './FollowUpsPanel';
 import { ActDocumentPanel } from '../documents/ActDocumentPanel';
 import { SigningPanel } from '../signing/SigningPanel';
 import { GateButton, scopeBook, type CanScope } from '../session/permissions';
@@ -1130,6 +1131,8 @@ export function AtaEditorPage() {
               onChange={(next) => set('deliberation_items', next)}
             />
           </Card>
+
+          <FollowUpsPanel act={a} />
 
           <Card title={t('acts.referencedDocuments')}>
             <p className="field__hint">{t('acts.referencedDocuments.hint')}</p>

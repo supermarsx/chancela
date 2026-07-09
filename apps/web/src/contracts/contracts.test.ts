@@ -111,6 +111,7 @@ import {
   type RegistryExtractView,
   type RegistryOfficerView,
   type RegistryProvenanceView,
+  type RegistryAutoUpdateSettings,
   type RosterUser,
   type SessionRoster,
   type SessionView,
@@ -218,6 +219,9 @@ type OptionalKeys<T> = {
 }[keyof T];
 /** The always-present property keys of `T`. */
 type RequiredKeys<T> = Exclude<keyof T, OptionalKeys<T>>;
+type SettingsWire = Omit<Settings, 'registry_auto_update'> & {
+  registry_auto_update?: RegistryAutoUpdateSettings;
+};
 
 /**
  * Assert `obj`'s own keys are the REQUIRED keys of the type `T` (expressed as a
@@ -1074,8 +1078,8 @@ describe('contract fixtures parse through the real client', () => {
 
   it('settings.json → Settings (GET/PUT /v1/settings)', async () => {
     stubFetch(fixture('settings.json'));
-    const settings: Settings = await api.getSettings();
-    assertExactKeys<Settings>(
+    const settings = (await api.getSettings()) as SettingsWire;
+    assertExactKeys<SettingsWire>(
       settings,
       {
         schema_version: true,
@@ -1088,6 +1092,7 @@ describe('contract fixtures parse through the real client', () => {
         ai: true,
       },
       'Settings',
+      ['registry_auto_update'],
     );
     expect(typeof settings.schema_version).toBe('number');
     assertExactKeys<OrganizationSettings>(
@@ -1192,6 +1197,59 @@ describe('contract fixtures parse through the real client', () => {
     if (onboarding.completed_at !== null) assertTimestamp(onboarding.completed_at, 'completed_at');
     const ai = assertExactKeys<AiSettings>(settings.ai, { enabled: true }, 'Settings.ai');
     expect(typeof ai.enabled).toBe('boolean');
+    if (settings.registry_auto_update !== undefined) {
+      const registryAutoUpdate = assertExactKeys<RegistryAutoUpdateSettings>(
+        settings.registry_auto_update,
+        {
+          enabled: true,
+          cadence: true,
+          stale_threshold_hours: true,
+          min_backoff_minutes: true,
+          max_backoff_minutes: true,
+          max_attempts_per_run: true,
+          entity_defaults: true,
+        },
+        'Settings.registry_auto_update',
+      );
+      expect(typeof registryAutoUpdate.enabled).toBe('boolean');
+      expect(registryAutoUpdate.stale_threshold_hours).toBeGreaterThanOrEqual(1);
+      expect(registryAutoUpdate.stale_threshold_hours).toBeLessThanOrEqual(8760);
+      expect(registryAutoUpdate.min_backoff_minutes).toBeGreaterThanOrEqual(1);
+      expect(registryAutoUpdate.min_backoff_minutes).toBeLessThanOrEqual(10080);
+      expect(registryAutoUpdate.max_backoff_minutes).toBeGreaterThanOrEqual(1);
+      expect(registryAutoUpdate.max_backoff_minutes).toBeLessThanOrEqual(10080);
+      expect(registryAutoUpdate.min_backoff_minutes).toBeLessThanOrEqual(
+        registryAutoUpdate.max_backoff_minutes,
+      );
+      expect(registryAutoUpdate.max_attempts_per_run).toBeGreaterThanOrEqual(1);
+      expect(registryAutoUpdate.max_attempts_per_run).toBeLessThanOrEqual(100);
+      if (registryAutoUpdate.cadence.kind === 'interval_hours') {
+        expect(registryAutoUpdate.cadence.hours).toBeGreaterThanOrEqual(1);
+        expect(registryAutoUpdate.cadence.hours).toBeLessThanOrEqual(720);
+      } else if (registryAutoUpdate.cadence.kind === 'daily') {
+        expect(registryAutoUpdate.cadence.hour_utc).toBeGreaterThanOrEqual(0);
+        expect(registryAutoUpdate.cadence.hour_utc).toBeLessThanOrEqual(23);
+      } else {
+        inEnum(
+          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+          registryAutoUpdate.cadence.weekday,
+          'registry_auto_update.cadence.weekday',
+        );
+        expect(registryAutoUpdate.cadence.hour_utc).toBeGreaterThanOrEqual(0);
+        expect(registryAutoUpdate.cadence.hour_utc).toBeLessThanOrEqual(23);
+      }
+      const entityDefaults = assertExactKeys<RegistryAutoUpdateSettings['entity_defaults']>(
+        registryAutoUpdate.entity_defaults,
+        { enabled: true, enabled_profiles: true },
+        'Settings.registry_auto_update.entity_defaults',
+      );
+      expect(typeof entityDefaults.enabled).toBe('boolean');
+      expect(Array.isArray(entityDefaults.enabled_profiles)).toBe(true);
+      for (const profile of entityDefaults.enabled_profiles) {
+        expect(typeof profile).toBe('string');
+        expect(profile.trim().length).toBeGreaterThan(0);
+      }
+    }
   });
 
   it('registry.extract.json → RegistryExtractView (GET /v1/entities/{id}/registry)', async () => {
