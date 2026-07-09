@@ -72,6 +72,8 @@ pub struct Settings {
     pub ai: AiSettings,
     /// Purely cosmetic front-end preferences (theme, leather texture).
     pub appearance: AppearanceSettings,
+    /// Front-end layout preferences that are safe to persist server-side.
+    pub ui: UiSettings,
     /// First-use onboarding state (plan t29 §4.1): the authoritative "is the app set up?" signal.
     pub onboarding: OnboardingSettings,
 }
@@ -87,6 +89,7 @@ impl Default for Settings {
             registry_auto_update: RegistryAutoUpdateSettings::default(),
             ai: AiSettings::default(),
             appearance: AppearanceSettings::default(),
+            ui: UiSettings::default(),
             onboarding: OnboardingSettings::default(),
         }
     }
@@ -270,6 +273,52 @@ pub struct OnboardingSettings {
     pub completed: bool,
     /// When onboarding was completed (RFC 3339), or `null`.
     pub completed_at: Option<String>,
+}
+
+/// Front-end layout preferences. Additive and serde-defaulted so older settings documents keep the
+/// product defaults without a migration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UiSettings {
+    /// Visible columns on the registered entities list, in display order.
+    pub registered_entity_columns: Vec<RegisteredEntityColumn>,
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        UiSettings {
+            registered_entity_columns: default_registered_entity_columns(),
+        }
+    }
+}
+
+fn default_registered_entity_columns() -> Vec<RegisteredEntityColumn> {
+    vec![
+        RegisteredEntityColumn::Name,
+        RegisteredEntityColumn::Nipc,
+        RegisteredEntityColumn::Type,
+        RegisteredEntityColumn::LastActivity,
+        RegisteredEntityColumn::Actions,
+    ]
+}
+
+/// Configurable columns for the registered entities table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RegisteredEntityColumn {
+    Name,
+    Nipc,
+    Seat,
+    Type,
+    Matricula,
+    Constitution,
+    Capital,
+    Cae,
+    Registry,
+    LastRegistryChange,
+    FiscalYearEnd,
+    LastBook,
+    LastActivity,
+    Actions,
 }
 
 /// Organization identity and the default actor recorded on ledger events.

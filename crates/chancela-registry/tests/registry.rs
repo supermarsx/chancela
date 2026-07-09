@@ -289,6 +289,10 @@ fn constituicao_specimen_every_field_and_backfill() {
             .contains("Prestação")
     );
     assert_eq!(extract.effective_capital().as_deref(), Some("100,00 Euros"));
+    assert_eq!(
+        extract.effective_data_constituicao().as_deref(),
+        Some("2026-05-11")
+    );
 
     // Multi-act apresentação: the two act kinds on the AP line, plus the UTC timestamp.
     let insc1 = &extract.inscricoes[0];

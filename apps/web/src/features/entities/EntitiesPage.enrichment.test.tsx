@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { BookView, Entity, EntityRegistrySummary, LedgerEventView } from '../../api/types';
+import {
+  DEFAULT_SETTINGS,
+  REGISTERED_ENTITY_COLUMNS,
+  type BookView,
+  type Entity,
+  type EntityRegistrySummary,
+  type LedgerEventView,
+} from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { EntitiesPage } from './EntitiesPage';
 
@@ -251,12 +258,14 @@ function stubEntitiesPageFetch({
   ledger = [ledgerEvent(ENTITY_A, 'registry.imported', 2)],
   booksStatus = 200,
   summaries = true,
+  settingsColumns = REGISTERED_ENTITY_COLUMNS,
 }: {
   entities?: Entity[];
   books?: BookView[];
   ledger?: LedgerEventView[];
   booksStatus?: number;
   summaries?: boolean;
+  settingsColumns?: readonly string[];
 } = {}) {
   const entityRows = summaries
     ? entities.map((entity) =>
@@ -265,6 +274,14 @@ function stubEntitiesPageFetch({
     : entities;
   const fn = ((input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes('/v1/settings')) {
+      return Promise.resolve(
+        jsonResponse({
+          ...DEFAULT_SETTINGS,
+          ui: { registered_entity_columns: settingsColumns },
+        }),
+      );
+    }
     if (url.includes('/v1/entities')) return Promise.resolve(jsonResponse(entityRows));
     if (url.includes('/v1/books')) return Promise.resolve(jsonResponse(books, booksStatus));
     if (url.includes('/v1/ledger/events')) {
@@ -298,13 +315,13 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getByRole('columnheader', { name: 'Registo' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Últ. registo' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Último livro' })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: 'Última alteração / atividade' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Última atividade' })).toBeTruthy();
     expect(screen.getByText('99999/20200101')).toBeTruthy();
     expect(screen.getByText('2020-01-01')).toBeTruthy();
     expect(screen.getByText('5.000,00 EUR')).toBeTruthy();
     expect(screen.getByText('68110 principal')).toBeTruthy();
     expect(screen.getByText('Compra e venda de bens imobiliários.')).toBeTruthy();
-    expect(screen.getByText('+1 CAE')).toBeTruthy();
+    expect(screen.queryByText('+1 CAE')).toBeNull();
     expect(screen.getAllByText('Dentro da validade').length).toBeGreaterThan(1);
     expect(screen.getByText(/Válido até 2027-07-05/)).toBeTruthy();
     expect(screen.getByText('CONSTITUIÇÃO DE SOCIEDADE')).toBeTruthy();
@@ -374,6 +391,7 @@ describe('EntitiesPage enrichment and filtering', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
+    fireEvent.click(screen.getByText('Filtros avançados'));
     fireEvent.change(screen.getByLabelText('Livros'), { target: { value: 'open' } });
     expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
     expect(screen.queryByText(ENTITY_B.name)).toBeNull();
@@ -400,6 +418,7 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText('Expirado').length).toBeGreaterThan(1));
 
+    fireEvent.click(screen.getByText('Filtros avançados'));
     fireEvent.change(screen.getByLabelText('Validade'), { target: { value: 'expired' } });
     expect(screen.queryByText(ENTITY_A.name)).toBeNull();
     expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
@@ -436,6 +455,7 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getByText('2 livros · Aberto: 1 · Encerrado: 1')).toBeTruthy();
     expect(screen.getByText('Motivo Livro completo')).toBeTruthy();
 
+    fireEvent.click(screen.getByText('Filtros avançados'));
     fireEvent.change(screen.getByLabelText('Tipo de livro'), {
       target: { value: 'ConselhoFiscal' },
     });

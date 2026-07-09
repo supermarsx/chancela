@@ -2122,6 +2122,8 @@ mod tests {
         assert_eq!(detail["payload"]["sede"]["freguesia"], "Cedofeita");
         assert_eq!(detail["payload"]["sede"]["postal_code"], "4000-111");
         assert_eq!(detail["payload"]["capital"]["amount_text"], "100,00");
+        assert_eq!(view["matricula"], "C-9001/20260501");
+        assert_eq!(view["data_constituicao"], "2026-05-11");
         let socios = detail["payload"]["socios"].as_array().expect("socios");
         assert_eq!(socios.len(), 2);
         assert_eq!(socios[0]["titular"]["name"], "Rui Tavares Nogueira");

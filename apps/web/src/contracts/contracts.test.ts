@@ -142,6 +142,7 @@ import {
   type TsaSummaryView,
   type TsaTimestampMetadataView,
   type TsaTslDiagnosticsView,
+  type UiSettings,
   type UserDsrExport,
   type UserDsrExportUser,
   type UserDsrRoleAssignment,
@@ -988,18 +989,14 @@ describe('contract fixtures parse through the real client', () => {
       {
         code: true,
         label: true,
-        severity: true,
         category: true,
         message: true,
         params: true,
         target: true,
         source: true,
-        law_refs: true,
-        action: true,
-        recommended_next_steps: true,
-        i18n: true,
       },
       'Dashboard.alerts[0]',
+      ['severity', 'law_refs', 'action', 'recommended_next_steps', 'i18n'],
     );
     expect(alert.code.length).toBeGreaterThan(0);
     inEnum(['Advisory', 'ReviewRequired'], alert.label, 'Dashboard.alerts[0].label');
@@ -1076,11 +1073,9 @@ describe('contract fixtures parse through the real client', () => {
         entity_name: true,
         source_rule: true,
         source_profile: true,
-        law_refs: true,
-        action: true,
-        recommended_next_steps: true,
       },
       'Dashboard.reminders[0]',
+      ['law_refs', 'action', 'recommended_next_steps'],
     );
     assertIsoDate(reminder.due_date, 'Dashboard.reminders[0].due_date');
     inEnum(['Advisory', 'Info', 'Warning'], reminder.severity, 'Dashboard.reminders[0].severity');
@@ -1162,6 +1157,7 @@ describe('contract fixtures parse through the real client', () => {
         catalog: true,
         signing: true,
         appearance: true,
+        ui: true,
         onboarding: true,
         ai: true,
       },
@@ -1181,6 +1177,13 @@ describe('contract fixtures parse through the real client', () => {
     );
     inEnum(LOCALES, documents.locale, 'Settings.documents.locale');
     inEnum(NUMBERING_SCHEMES, documents.numbering_scheme_default, 'numbering_scheme_default');
+    const ui = assertExactKeys<UiSettings>(
+      settings.ui,
+      { registered_entity_columns: true },
+      'Settings.ui',
+    );
+    expect(Array.isArray(ui.registered_entity_columns)).toBe(true);
+    expect(ui.registered_entity_columns).toContain('Actions');
     // Catalog section — legacy single URL + the strict fidelity-gated source chain (t23).
     const catalog = assertExactKeys<CatalogSettings>(
       settings.catalog,

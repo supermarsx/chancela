@@ -216,7 +216,7 @@ impl EntityRegistrySummaryView {
         EntityRegistrySummaryView {
             imported: true,
             matricula: e.matricula.clone(),
-            data_constituicao: e.data_constituicao.clone(),
+            data_constituicao: e.effective_data_constituicao(),
             capital: e.effective_capital(),
             cae: e.cae.iter().map(|r| enrich_cae_ref(r, cae)).collect(),
             retrieved_at: e.provenance.retrieved_at.clone(),
@@ -2157,7 +2157,7 @@ impl RegistryExtractView {
             cae: e.cae.iter().map(|r| enrich_cae_ref(r, cae)).collect(),
             objeto: e.objeto.clone(),
             capital: e.capital.clone(),
-            data_constituicao: e.data_constituicao.clone(),
+            data_constituicao: e.effective_data_constituicao(),
             orgaos: e.orgaos.iter().map(RegistryOfficerView::from).collect(),
             inscricoes: e.inscricoes.iter().map(RegistryEventView::from).collect(),
             anotacoes: e

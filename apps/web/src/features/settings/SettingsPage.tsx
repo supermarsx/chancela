@@ -30,6 +30,7 @@ import {
   DEFAULT_SETTINGS,
   LOCALES,
   NUMBERING_SCHEMES,
+  REGISTERED_ENTITY_COLUMNS,
   SIGNATURE_FAMILIES,
   THEME_MODES,
   type AiSettings,
@@ -39,12 +40,14 @@ import {
   type Locale,
   type NumberingScheme,
   type OrganizationSettings,
+  type RegisteredEntityColumn,
   type RegistryAutoUpdateSettings,
   type Settings,
   type SignatureFamily,
   type SigningProviderMetadata,
   type SigningSettings,
   type ThemeMode,
+  type UiSettings,
 } from '../../api/types';
 import { UI_VERSION } from '../../api/versionCheck';
 import { useT } from '../../i18n';
@@ -84,8 +87,9 @@ import { UsersList } from '../users/UserListPage';
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
 
-type SettingsWithMaybeAi = Omit<Settings, 'ai' | 'signing' | 'registry_auto_update'> & {
+type SettingsWithMaybeAi = Omit<Settings, 'ai' | 'signing' | 'registry_auto_update' | 'ui'> & {
   ai?: Partial<AiSettings> | null;
+  ui?: Partial<UiSettings> | null;
   registry_auto_update?: Partial<RegistryAutoUpdateSettings> | null;
   signing: Omit<SigningSettings, 'providers'> & Partial<Pick<SigningSettings, 'providers'>>;
 };
@@ -100,6 +104,12 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       providers: settings.signing.providers ?? DEFAULT_SETTINGS.signing.providers,
     },
     ai: { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) },
+    ui: {
+      ...DEFAULT_SETTINGS.ui,
+      ...(settings.ui ?? {}),
+      registered_entity_columns:
+        settings.ui?.registered_entity_columns ?? DEFAULT_SETTINGS.ui.registered_entity_columns,
+    },
     registry_auto_update: {
       ...DEFAULT_SETTINGS.registry_auto_update,
       ...(settings.registry_auto_update ?? {}),
@@ -217,6 +227,23 @@ const STANDALONE_SECTIONS: readonly SettingsSection[] = [
  * When the field lands, replace this constant with `draft.<…>.autosave_enabled ?? true`.
  */
 const AUTOSAVE_ENABLED = true;
+
+const ENTITY_COLUMN_LABELS: Record<RegisteredEntityColumn, string> = {
+  Name: 'Denominação',
+  Nipc: 'NIPC',
+  Seat: 'Sede',
+  Type: 'Tipo',
+  Matricula: 'Matrícula',
+  Constitution: 'Constituição',
+  Capital: 'Capital',
+  Cae: 'CAE',
+  Registry: 'Registo',
+  LastRegistryChange: 'Últ. registo',
+  FiscalYearEnd: 'Fecho fiscal',
+  LastBook: 'Último livro',
+  LastActivity: 'Última atividade',
+  Actions: 'Actions',
+};
 
 const isSettingsSection = (v: string | null): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
@@ -359,8 +386,20 @@ export function SettingsPage() {
   ) => setDraft((d) => (d ? { ...d, appearance: { ...d.appearance, [key]: value } } : d));
   const setAi = <K extends keyof AiSettings>(key: K, value: AiSettings[K]) =>
     setDraft((d) => (d ? { ...d, ai: { ...d.ai, [key]: value } } : d));
+  const setUi = <K extends keyof UiSettings>(key: K, value: UiSettings[K]) =>
+    setDraft((d) => (d ? { ...d, ui: { ...d.ui, [key]: value } } : d));
   const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
     setDraft((d) => (d ? { ...d, registry_auto_update } : d));
+
+  const toggleEntityColumn = (column: RegisteredEntityColumn, checked: boolean) => {
+    const current = draft.ui.registered_entity_columns;
+    const next = checked
+      ? REGISTERED_ENTITY_COLUMNS.filter(
+          (candidate) => candidate === column || current.includes(candidate),
+        )
+      : current.filter((candidate) => candidate !== column);
+    setUi('registered_entity_columns', next.length > 0 ? next : ['Actions']);
+  };
 
   const a = draft.appearance;
 
@@ -727,6 +766,27 @@ export function SettingsPage() {
                 value={draft.registry_auto_update}
                 onChange={setRegistryAutoUpdate}
               />
+              <Card title="Tabela de entidades">
+                <div className="form">
+                  <p className="field__hint">
+                    Escolha as colunas visíveis na lista de entidades registadas.
+                  </p>
+                  <div
+                    className="checkbox-grid"
+                    role="group"
+                    aria-label="Colunas da tabela de entidades"
+                  >
+                    {REGISTERED_ENTITY_COLUMNS.map((column) => (
+                      <Toggle
+                        key={column}
+                        label={ENTITY_COLUMN_LABELS[column]}
+                        checked={draft.ui.registered_entity_columns.includes(column)}
+                        onChange={(checked) => toggleEntityColumn(column, checked)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </Card>
             </div>
           ) : null}
 

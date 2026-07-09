@@ -502,7 +502,9 @@ describe('SettingsPage', () => {
     expect(within(resultPanel as HTMLElement).getByText('Revisão manual')).toBeTruthy();
 
     const attempt = await waitFor(() =>
-      calls.find((call) => call.method === 'POST' && call.url.includes('/v1/entities/ent-1/registry')),
+      calls.find(
+        (call) => call.method === 'POST' && call.url.includes('/v1/entities/ent-1/registry'),
+      ),
     );
     expect(attempt).toBeTruthy();
     expect(JSON.parse(attempt!.body as string)).toEqual({ dry_run: true });
@@ -533,6 +535,33 @@ describe('SettingsPage', () => {
       enabled: false,
       enabled_profiles: [],
     });
+  });
+
+  it('round-trips registered entity table columns through settings autosave', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+
+    const seat = (await screen.findByRole('switch', { name: 'Sede' })) as HTMLInputElement;
+    expect(seat.checked).toBe(false);
+    fireEvent.click(seat);
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+
+    const put = calls.find((c) => c.method === 'PUT');
+    expect(put).toBeTruthy();
+    const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+    expect(sent.ui.registered_entity_columns).toEqual([
+      'Name',
+      'Nipc',
+      'Seat',
+      'Type',
+      'LastActivity',
+      'Actions',
+    ]);
   });
 
   it('applies the theme override to the document root live', async () => {

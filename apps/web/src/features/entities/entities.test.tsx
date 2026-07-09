@@ -6,7 +6,7 @@ import { EntitiesPage } from './EntitiesPage';
 import { NewEntityPage } from './NewEntityPage';
 import { EntityDetailPage } from './EntityDetailPage';
 import { entityFieldHelp } from './fieldHelp';
-import type { Entity } from '../../api/types';
+import { DEFAULT_SETTINGS, type Entity } from '../../api/types';
 
 const ENTITY: Entity = {
   id: 'new-ent-1',
@@ -75,7 +75,13 @@ afterEach(() => {
 
 describe('EntitiesPage', () => {
   it('offers neat buttons to the create/import routes instead of an inline form', async () => {
-    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/entities', body: [] }]));
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [] },
+      ]),
+    );
     renderWithProviders(<EntitiesPage />, ['/entidades']);
 
     await screen.findByText('Ainda não há entidades');
@@ -92,15 +98,47 @@ describe('EntitiesPage', () => {
 
   it('flags an unvalidated NIPC with a warning badge in the list', async () => {
     const unvalidated: Entity = { ...ENTITY, nipc: 'GB-12345', nipc_validated: false };
-    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/entities', body: [unvalidated] }]));
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [unvalidated] },
+      ]),
+    );
     renderWithProviders(<EntitiesPage />, ['/entidades']);
 
     expect(await screen.findByText('GB-12345')).toBeTruthy();
     expect(screen.getByText('não validado')).toBeTruthy();
   });
 
+  it('defaults the registered entities table to the compact configured columns', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [ENTITY] },
+      ]),
+    );
+    renderWithProviders(<EntitiesPage />, ['/entidades']);
+
+    expect(await screen.findByText(ENTITY.name)).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Denominação' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'NIPC' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Tipo' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Última atividade' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeTruthy();
+    expect(screen.queryByRole('columnheader', { name: 'Sede' })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'CAE' })).toBeNull();
+  });
+
   it('opens an entity via an icon button carrying an accessible "Abrir" tooltip label', async () => {
-    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/entities', body: [ENTITY] }]));
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [ENTITY] },
+      ]),
+    );
     renderWithProviders(
       <Routes>
         <Route path="/entidades" element={<EntitiesPage />} />

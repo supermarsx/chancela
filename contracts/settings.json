@@ -75,6 +75,15 @@
     "texture_intensity": 60,
     "button_texture": true
   },
+  "ui": {
+    "registered_entity_columns": [
+      "Name",
+      "Nipc",
+      "Type",
+      "LastActivity",
+      "Actions"
+    ]
+  },
   "onboarding": {
     "completed": false,
     "completed_at": null

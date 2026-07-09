@@ -70,6 +70,9 @@ fn sample_settings() -> Value {
             ]
         },
         "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
+        "ui": {
+            "registered_entity_columns": ["Name", "Nipc", "Type", "LastActivity", "Actions"]
+        },
         "ai": { "enabled": false },
         "onboarding": { "completed": false, "completed_at": null }
     })

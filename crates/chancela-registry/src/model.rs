@@ -171,6 +171,24 @@ impl RegistryExtract {
                 .and_then(|c| c.capital.as_ref().map(Money::to_display))
         })
     }
+
+    /// Founding/constitution date from the matrícula block, falling back to the structured
+    /// constitution body when the summary block is sparse.
+    pub fn effective_data_constituicao(&self) -> Option<String> {
+        self.data_constituicao.clone().or_else(|| {
+            self.constitution()
+                .and_then(|c| c.deliberation_date.clone())
+                .or_else(|| {
+                    self.inscricoes.iter().find_map(|e| {
+                        let payload = e.detail.as_ref()?.payload.as_ref()?;
+                        match payload {
+                            InscriptionPayload::Constitution(_) => e.date.clone(),
+                            _ => None,
+                        }
+                    })
+                })
+        })
+    }
 }
 
 // ---- Structured inscription layer (additive; see the t21 plan §1) ----------------------------

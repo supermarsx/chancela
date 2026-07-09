@@ -41,3 +41,15 @@ describe('DEFAULT_SETTINGS.signing', () => {
     });
   });
 });
+
+describe('DEFAULT_SETTINGS.ui', () => {
+  it('defaults registered entities to the compact operational column set', () => {
+    expect(DEFAULT_SETTINGS.ui.registered_entity_columns).toEqual([
+      'Name',
+      'Nipc',
+      'Type',
+      'LastActivity',
+      'Actions',
+    ]);
+  });
+});

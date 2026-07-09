@@ -6,7 +6,7 @@
  */
 import { useDeferredValue, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useBooks, useEntities } from '../../api/hooks';
+import { useBooks, useEntities, useSettings } from '../../api/hooks';
 import {
   bookKindLabels,
   bookStateLabels,
@@ -16,6 +16,7 @@ import {
 } from '../../api/labels';
 import {
   BOOK_KINDS,
+  DEFAULT_SETTINGS,
   type BookKind,
   type BookState,
   type BookView,
@@ -25,6 +26,7 @@ import {
   type EntityKind,
   type EntityRegistrySummary,
   type LedgerEventView,
+  type RegisteredEntityColumn,
 } from '../../api/types';
 import { useLocale, useT } from '../../i18n';
 import {
@@ -122,6 +124,23 @@ const REGISTRY_FRESHNESS_FILTER_OPTIONS: { value: RegistryFreshnessFilter; label
   { value: 'no-expiry', label: 'Sem validade' },
 ];
 
+const ENTITY_COLUMN_LABELS: Record<RegisteredEntityColumn, string> = {
+  Name: 'Denominação',
+  Nipc: 'NIPC',
+  Seat: 'Sede',
+  Type: 'Tipo',
+  Matricula: 'Matrícula',
+  Constitution: 'Constituição',
+  Capital: 'Capital',
+  Cae: 'CAE',
+  Registry: 'Registo',
+  LastRegistryChange: 'Últ. registo',
+  FiscalYearEnd: 'Fecho fiscal',
+  LastBook: 'Último livro',
+  LastActivity: 'Última atividade',
+  Actions: 'Actions',
+};
+
 function normalizeSearch(value: string): string {
   return value
     .normalize('NFD')
@@ -208,6 +227,13 @@ function formatDateValue(value: string | null | undefined, fallback = '—'): st
 function caeLabel(cae: EntityRegistrySummary['cae'][number]): string {
   const suffix = cae.role === 'Principal' ? ' principal' : ' secundário';
   return `${cae.code}${suffix}`;
+}
+
+function caeDetails(cae: EntityRegistrySummary['cae'][number]): string {
+  const parts = [caeLabel(cae)];
+  if (cae.designation) parts.push(cae.designation);
+  if (cae.level || cae.revision) parts.push([cae.level, cae.revision].filter(Boolean).join(' · '));
+  return parts.join(' — ');
 }
 
 function registryFreshnessTone(
@@ -532,12 +558,12 @@ function RegistryFreshnessSummary({ registry }: { registry: EntityRegistrySummar
 
 function CaeSummary({ registry }: { registry: EntityRegistrySummary | null }) {
   if (!registry || registry.cae.length === 0) return <span className="muted">—</span>;
-  const [first, ...rest] = registry.cae;
+  const first = registry.cae.find((cae) => cae.role === 'Principal') ?? registry.cae[0];
+  const fullDetails = registry.cae.map(caeDetails).join('\n');
   return (
-    <span style={SUMMARY_STACK_STYLE}>
+    <span className="cell-clamp cell-clamp--two" style={SUMMARY_STACK_STYLE} title={fullDetails}>
       <span className="mono">{caeLabel(first)}</span>
       {first.designation ? <span className="muted">{first.designation}</span> : null}
-      {rest.length > 0 ? <span className="muted">+{rest.length} CAE</span> : null}
     </span>
   );
 }
@@ -556,11 +582,140 @@ function LastRegistryChange({ registry }: { registry: EntityRegistrySummary | nu
   );
 }
 
+function normalizeVisibleColumns(
+  columns: readonly RegisteredEntityColumn[],
+): RegisteredEntityColumn[] {
+  const seen = new Set<RegisteredEntityColumn>();
+  const next = columns.filter((column) => {
+    if (seen.has(column)) return false;
+    seen.add(column);
+    return true;
+  });
+  if (!seen.has('Actions')) next.push('Actions');
+  return next.length > 0 ? next : [...DEFAULT_SETTINGS.ui.registered_entity_columns];
+}
+
+function EntityColumnCell({
+  column,
+  entity,
+  registry,
+  lastBook,
+  stateCounts,
+  activity,
+  locale,
+  loadingBooks,
+  booksError,
+  onOpen,
+  openLabel,
+}: {
+  column: RegisteredEntityColumn;
+  entity: Entity;
+  registry: EntityRegistrySummary | null;
+  lastBook: BookView | null;
+  stateCounts: Record<BookState, number>;
+  activity: LedgerEventView | null;
+  locale: string;
+  loadingBooks: boolean;
+  booksError: unknown;
+  onOpen: () => void;
+  openLabel: string;
+}) {
+  switch (column) {
+    case 'Name':
+      return (
+        <td>
+          <span className="cell-clamp cell-clamp--two" title={entity.name}>
+            {entity.name}
+          </span>
+        </td>
+      );
+    case 'Nipc':
+      return (
+        <td>
+          <span className="nipc-cell">
+            <code className="mono">{entity.nipc}</code>
+            {!entity.nipc_validated ? <NipcBadge /> : null}
+          </span>
+        </td>
+      );
+    case 'Seat':
+      return <td>{entity.seat}</td>;
+    case 'Type':
+      return (
+        <td>
+          <EntityContext entity={entity} />
+        </td>
+      );
+    case 'Matricula':
+      return (
+        <td>
+          {registry?.matricula ? (
+            <code className="mono">{registry.matricula}</code>
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </td>
+      );
+    case 'Constitution':
+      return <td>{formatDateValue(registry?.data_constituicao)}</td>;
+    case 'Capital':
+      return <td>{registry?.capital ?? <span className="muted">—</span>}</td>;
+    case 'Cae':
+      return (
+        <td>
+          <CaeSummary registry={registry} />
+        </td>
+      );
+    case 'Registry':
+      return (
+        <td>
+          <RegistryFreshnessSummary registry={registry} />
+        </td>
+      );
+    case 'LastRegistryChange':
+      return (
+        <td>
+          <LastRegistryChange registry={registry} />
+        </td>
+      );
+    case 'FiscalYearEnd':
+      return (
+        <td>
+          <code className="mono">{displayFiscalYearEnd(entity.fiscal_year_end)}</code>
+        </td>
+      );
+    case 'LastBook':
+      return (
+        <td>
+          <BookSummary
+            book={lastBook}
+            stateCounts={stateCounts}
+            loading={loadingBooks}
+            error={booksError}
+          />
+        </td>
+      );
+    case 'LastActivity':
+      return (
+        <td>
+          <ActivitySummary activity={activity} locale={locale} />
+        </td>
+      );
+    case 'Actions':
+      return (
+        <td className="users-actions">
+          <IconButton icon={<Icon.ArrowRight />} label={openLabel} onClick={onOpen} />
+        </td>
+      );
+  }
+}
+
 export function EntitiesPage() {
   const t = useT();
   const locale = useLocale();
   const navigate = useNavigate();
   const { data, isLoading, error } = useEntities();
+  const settings = useSettings();
   const books = useBooks();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
@@ -653,6 +808,9 @@ export function EntitiesPage() {
   const familyOptions = familyFilterOptions(data);
   const kindOptions = kindFilterOptions(data);
   const activityKindOptions = activityKindFilterOptions(enrichedRows);
+  const visibleColumns = normalizeVisibleColumns(
+    settings.data?.ui?.registered_entity_columns ?? DEFAULT_SETTINGS.ui.registered_entity_columns,
+  );
 
   const hasFilters =
     search.trim() !== '' ||
@@ -728,113 +886,117 @@ export function EntitiesPage() {
           </EmptyState>
         ) : (
           <div className="stack">
-            <div
-              className="row-wrap filter"
-              role="search"
-              aria-label="Pesquisar e filtrar entidades"
-              style={{ alignItems: 'flex-end' }}
-            >
-              <Field label="Pesquisar" htmlFor="entities-search">
-                <Input
-                  id="entities-search"
-                  type="search"
-                  value={search}
-                  placeholder="Nome, NIPC, sede, forma, livro ou atividade"
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </Field>
-              <Field label="Família" htmlFor="entities-family-filter">
-                <Select
-                  id="entities-family-filter"
-                  value={family}
-                  onChange={(e) => setFamily(e.target.value as 'all' | EntityFamily)}
-                  options={familyOptions}
-                />
-              </Field>
-              <Field label="Forma" htmlFor="entities-kind-filter">
-                <Select
-                  id="entities-kind-filter"
-                  value={kind}
-                  onChange={(e) => setKind(e.target.value as 'all' | EntityKind)}
-                  options={kindOptions}
-                />
-              </Field>
-              <Field label="NIPC" htmlFor="entities-nipc-filter">
-                <Select
-                  id="entities-nipc-filter"
-                  value={validationFilter}
-                  onChange={(e) => setValidationFilter(e.target.value as ValidationFilter)}
-                  options={VALIDATION_FILTER_OPTIONS}
-                />
-              </Field>
-              <Field label="Registo" htmlFor="entities-registry-import-filter">
-                <Select
-                  id="entities-registry-import-filter"
-                  value={registryImportFilter}
-                  onChange={(e) => setRegistryImportFilter(e.target.value as RegistryImportFilter)}
-                  options={REGISTRY_IMPORT_FILTER_OPTIONS}
-                />
-              </Field>
-              <Field label="Validade" htmlFor="entities-registry-freshness-filter">
-                <Select
-                  id="entities-registry-freshness-filter"
-                  value={registryFreshnessFilter}
-                  onChange={(e) =>
-                    setRegistryFreshnessFilter(e.target.value as RegistryFreshnessFilter)
-                  }
-                  options={REGISTRY_FRESHNESS_FILTER_OPTIONS}
-                />
-              </Field>
-              <Field label="Livros" htmlFor="entities-book-filter">
-                <Select
-                  id="entities-book-filter"
-                  value={bookFilter}
-                  onChange={(e) => setBookFilter(e.target.value as BookFilter)}
-                  options={BOOK_FILTER_OPTIONS}
-                />
-              </Field>
-              <Field label="Tipo de livro" htmlFor="entities-book-kind-filter">
-                <Select
-                  id="entities-book-kind-filter"
-                  value={bookKindFilter}
-                  onChange={(e) => setBookKindFilter(e.target.value as BookKindFilter)}
-                  options={BOOK_KIND_FILTER_OPTIONS}
-                />
-              </Field>
-              <Field label="Último livro" htmlFor="entities-last-book-filter">
-                <Select
-                  id="entities-last-book-filter"
-                  value={lastBookFilter}
-                  onChange={(e) => setLastBookFilter(e.target.value as LastBookFilter)}
-                  options={LAST_BOOK_FILTER_OPTIONS}
-                />
-              </Field>
-              <Field label="Atividade" htmlFor="entities-activity-filter">
-                <Select
-                  id="entities-activity-filter"
-                  value={activityFilter}
-                  onChange={(e) => setActivityFilter(e.target.value as ActivityFilter)}
-                  options={ACTIVITY_FILTER_OPTIONS}
-                />
-              </Field>
-              <Field label="Última alteração" htmlFor="entities-activity-kind-filter">
-                <Select
-                  id="entities-activity-kind-filter"
-                  value={activityKindFilter}
-                  onChange={(e) => setActivityKindFilter(e.target.value)}
-                  options={activityKindOptions}
-                />
-              </Field>
-              <Button
-                type="button"
-                variant="ghost"
-                icon={<Icon.Close />}
-                disabled={!hasFilters}
-                aria-label="Limpar filtros de entidades"
-                onClick={clearFilters}
-              >
-                Limpar
-              </Button>
+            <div className="stack--tight" role="search" aria-label="Pesquisar e filtrar entidades">
+              <div className="entities-filterbar filter">
+                <Field label="Pesquisar" htmlFor="entities-search">
+                  <Input
+                    id="entities-search"
+                    type="search"
+                    value={search}
+                    placeholder="Nome, NIPC, sede, forma, livro ou atividade"
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </Field>
+                <Field label="Família" htmlFor="entities-family-filter">
+                  <Select
+                    id="entities-family-filter"
+                    value={family}
+                    onChange={(e) => setFamily(e.target.value as 'all' | EntityFamily)}
+                    options={familyOptions}
+                  />
+                </Field>
+                <Field label="Forma" htmlFor="entities-kind-filter">
+                  <Select
+                    id="entities-kind-filter"
+                    value={kind}
+                    onChange={(e) => setKind(e.target.value as 'all' | EntityKind)}
+                    options={kindOptions}
+                  />
+                </Field>
+                <Field label="NIPC" htmlFor="entities-nipc-filter">
+                  <Select
+                    id="entities-nipc-filter"
+                    value={validationFilter}
+                    onChange={(e) => setValidationFilter(e.target.value as ValidationFilter)}
+                    options={VALIDATION_FILTER_OPTIONS}
+                  />
+                </Field>
+                <Field label="Registo" htmlFor="entities-registry-import-filter">
+                  <Select
+                    id="entities-registry-import-filter"
+                    value={registryImportFilter}
+                    onChange={(e) =>
+                      setRegistryImportFilter(e.target.value as RegistryImportFilter)
+                    }
+                    options={REGISTRY_IMPORT_FILTER_OPTIONS}
+                  />
+                </Field>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.Close />}
+                  disabled={!hasFilters}
+                  aria-label="Limpar filtros de entidades"
+                  onClick={clearFilters}
+                >
+                  Limpar
+                </Button>
+              </div>
+              <details className="entities-advanced-filters">
+                <summary>Filtros avançados</summary>
+                <div className="row-wrap filter" style={{ alignItems: 'flex-end' }}>
+                  <Field label="Validade" htmlFor="entities-registry-freshness-filter">
+                    <Select
+                      id="entities-registry-freshness-filter"
+                      value={registryFreshnessFilter}
+                      onChange={(e) =>
+                        setRegistryFreshnessFilter(e.target.value as RegistryFreshnessFilter)
+                      }
+                      options={REGISTRY_FRESHNESS_FILTER_OPTIONS}
+                    />
+                  </Field>
+                  <Field label="Livros" htmlFor="entities-book-filter">
+                    <Select
+                      id="entities-book-filter"
+                      value={bookFilter}
+                      onChange={(e) => setBookFilter(e.target.value as BookFilter)}
+                      options={BOOK_FILTER_OPTIONS}
+                    />
+                  </Field>
+                  <Field label="Tipo de livro" htmlFor="entities-book-kind-filter">
+                    <Select
+                      id="entities-book-kind-filter"
+                      value={bookKindFilter}
+                      onChange={(e) => setBookKindFilter(e.target.value as BookKindFilter)}
+                      options={BOOK_KIND_FILTER_OPTIONS}
+                    />
+                  </Field>
+                  <Field label="Último livro" htmlFor="entities-last-book-filter">
+                    <Select
+                      id="entities-last-book-filter"
+                      value={lastBookFilter}
+                      onChange={(e) => setLastBookFilter(e.target.value as LastBookFilter)}
+                      options={LAST_BOOK_FILTER_OPTIONS}
+                    />
+                  </Field>
+                  <Field label="Atividade" htmlFor="entities-activity-filter">
+                    <Select
+                      id="entities-activity-filter"
+                      value={activityFilter}
+                      onChange={(e) => setActivityFilter(e.target.value as ActivityFilter)}
+                      options={ACTIVITY_FILTER_OPTIONS}
+                    />
+                  </Field>
+                  <Field label="Última alteração" htmlFor="entities-activity-kind-filter">
+                    <Select
+                      id="entities-activity-kind-filter"
+                      value={activityKindFilter}
+                      onChange={(e) => setActivityKindFilter(e.target.value)}
+                      options={activityKindOptions}
+                    />
+                  </Field>
+                </div>
+              </details>
             </div>
 
             {rows.length === 0 ? (
@@ -845,22 +1007,9 @@ export function EntitiesPage() {
               <Table
                 head={
                   <tr>
-                    <th>{t('entities.th.name')}</th>
-                    <th>{t('entities.th.nipc')}</th>
-                    <th>{t('entities.th.seat')}</th>
-                    <th>{t('entities.th.form')}</th>
-                    <th>Matrícula</th>
-                    <th>Constituição</th>
-                    <th>Capital</th>
-                    <th>CAE</th>
-                    <th>Registo</th>
-                    <th>Últ. registo</th>
-                    <th>Fecho fiscal</th>
-                    <th>Último livro</th>
-                    <th>Última alteração / atividade</th>
-                    <th>
-                      <span className="sr-only">Ações</span>
-                    </th>
+                    {visibleColumns.map((column) => (
+                      <th key={column}>{ENTITY_COLUMN_LABELS[column]}</th>
+                    ))}
                   </tr>
                 }
               >
@@ -874,56 +1023,22 @@ export function EntitiesPage() {
                     hasActivitySummary,
                   }) => (
                     <tr key={ent.id}>
-                      <td>{ent.name}</td>
-                      <td>
-                        <span className="nipc-cell">
-                          <code className="mono">{ent.nipc}</code>
-                          {!ent.nipc_validated ? <NipcBadge /> : null}
-                        </span>
-                      </td>
-                      <td>{ent.seat}</td>
-                      <td>
-                        <EntityContext entity={ent} />
-                      </td>
-                      <td>
-                        {registry?.matricula ? (
-                          <code className="mono">{registry.matricula}</code>
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
-                      </td>
-                      <td>{formatDateValue(registry?.data_constituicao)}</td>
-                      <td>{registry?.capital ?? <span className="muted">—</span>}</td>
-                      <td>
-                        <CaeSummary registry={registry} />
-                      </td>
-                      <td>
-                        <RegistryFreshnessSummary registry={registry} />
-                      </td>
-                      <td>
-                        <LastRegistryChange registry={registry} />
-                      </td>
-                      <td>
-                        <code className="mono">{displayFiscalYearEnd(ent.fiscal_year_end)}</code>
-                      </td>
-                      <td>
-                        <BookSummary
-                          book={lastBook}
+                      {visibleColumns.map((column) => (
+                        <EntityColumnCell
+                          key={column}
+                          column={column}
+                          entity={ent}
+                          registry={registry}
+                          lastBook={lastBook}
                           stateCounts={stateCounts}
-                          loading={!hasActivitySummary && books.isLoading}
-                          error={hasActivitySummary ? null : books.error}
+                          activity={activity}
+                          locale={locale}
+                          loadingBooks={!hasActivitySummary && books.isLoading}
+                          booksError={hasActivitySummary ? null : books.error}
+                          onOpen={() => navigate(`/entidades/${ent.id}`)}
+                          openLabel={t('common.open')}
                         />
-                      </td>
-                      <td>
-                        <ActivitySummary activity={activity} locale={locale} />
-                      </td>
-                      <td className="users-actions">
-                        <IconButton
-                          icon={<Icon.ArrowRight />}
-                          label={t('common.open')}
-                          onClick={() => navigate(`/entidades/${ent.id}`)}
-                        />
-                      </td>
+                      ))}
                     </tr>
                   ),
                 )}

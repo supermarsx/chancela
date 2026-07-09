@@ -2181,13 +2181,7 @@ export interface RegistryImportBody {
 }
 
 export type RegistryAutoUpdateWeekday =
-  | 'monday'
-  | 'tuesday'
-  | 'wednesday'
-  | 'thursday'
-  | 'friday'
-  | 'saturday'
-  | 'sunday';
+  'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 
 export type RegistryAutoUpdateCadence =
   | { kind: 'interval_hours'; hours: number }
@@ -2211,13 +2205,7 @@ export interface RegistryAutoUpdateSettings {
 }
 
 export type RegistryAutoUpdateStatus =
-  | 'idle'
-  | 'due'
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'manual_required';
+  'idle' | 'due' | 'queued' | 'running' | 'completed' | 'failed' | 'manual_required';
 
 export interface RegistryAutoUpdateDueItem {
   entity_id: string;
@@ -2661,6 +2649,28 @@ export interface AppearanceSettings {
   button_texture: boolean;
 }
 
+export const REGISTERED_ENTITY_COLUMNS = [
+  'Name',
+  'Nipc',
+  'Seat',
+  'Type',
+  'Matricula',
+  'Constitution',
+  'Capital',
+  'Cae',
+  'Registry',
+  'LastRegistryChange',
+  'FiscalYearEnd',
+  'LastBook',
+  'LastActivity',
+  'Actions',
+] as const;
+export type RegisteredEntityColumn = (typeof REGISTERED_ENTITY_COLUMNS)[number];
+
+export interface UiSettings {
+  registered_entity_columns: RegisteredEntityColumn[];
+}
+
 /**
  * The CAE catalog section (contract F1b, t19-e1b). `cae_update_url` is the remote
  * `CaeDataset` URL the "Atualizar catálogo" refresh fetches from; `null` (the default)
@@ -2713,6 +2723,7 @@ export interface Settings {
   signing: SigningSettings;
   registry_auto_update: RegistryAutoUpdateSettings;
   appearance: AppearanceSettings;
+  ui: UiSettings;
   onboarding: OnboardingSettings;
   ai: AiSettings;
 }
@@ -2795,6 +2806,9 @@ export const DEFAULT_SETTINGS: Settings = {
     leather_texture: true,
     texture_intensity: 60,
     button_texture: true,
+  },
+  ui: {
+    registered_entity_columns: ['Name', 'Nipc', 'Type', 'LastActivity', 'Actions'],
   },
   onboarding: { completed: false, completed_at: null },
   ai: { enabled: false },
