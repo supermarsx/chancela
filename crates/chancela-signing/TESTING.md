@@ -31,6 +31,10 @@ cargo fmt -p chancela-signing --check
   bundled `chancela-tsa` OpenSSL fixture), detached-CAdES timestamp as external evidence, a
   tamper-detection negative, and a two-signatory serial envelope with a granted policy gate. Each
   produced artifact is re-validated via `validate_signature`.
+- `tests/timestamp_trust.rs` (3): technical timestamp-trust reporting over already-verified RFC 3161
+  output, QTST lookup evidence, accepted policy OIDs, and offline TSA certificate-path validation.
+  It accepts an authenticated QTST anchor path and fails closed for unconfigured policy OIDs or
+  unauthenticated trusted-list grants.
 
 ## Fixtures & keys
 
@@ -61,6 +65,10 @@ cargo fmt -p chancela-signing --check
   bundle), else `SigningError::MissingIssuerCertificate`.
 - **EU DSS validation-sidecar cross-check (SIG-23):** the native `validate_signature` path produces
   the SIG-24 report; the DSS sidecar cross-check remains a documented phase-2 seam.
+- **Timestamp trust report:** `validate_timestamp_trust` produces a technical report from a
+  verified timestamp token, QTST evidence, policy-OID allow-listing, and offline TSA path
+  validation. The report deliberately does not make legal qualification, probative-value, or product
+  B-LT/B-LTA claims.
 
 ## Cross-crate capability matrix (t4 program) — honest per-layer status
 
@@ -76,9 +84,9 @@ implemented; a typed stub or documented seam.
 | **smartcard** | signer-selection (signature vs authentication cert by CKA_LABEL), CC v1 RSA / CC v2 P-256 branching, ECDSA→DER re-encode, `detect()` no-panic — via `MockToken` | real-card `sign_digest`, real PC/SC reader enumeration (`hardware-tests`) | SCAP professional attributes (SIG-04) |
 | **cmd** | full `get_certificate → request_signature (CCMovelSign) → confirm_otp (ValidateOtp) → RawSignature` via `MockScmdTransport`; SIG-02 OTP-as-confirmation labelling; error/OTP-rejection/SOAP-fault paths; field-encryptor preprod-cleartext vs PROD-cert gating | preprod SCMD calls (`network-tests`, needs AMA ApplicationId) | multiple-sign batch; **PROD field-encryption re-verification against certified `doc-CMD-assinatura` (contract anchored to v1.6)**; PROD certification |
 | **tsl** | ETSI TS 119 612 parse + qualified-status query + cache staleness on bundled fixture (granted / withdrawn / unknown issuer) | live PT TSL fetch (`network-tests`) | **TSL XML-DSig signature validation (SIG-11)** — typed stub `SignatureValidationNotImplemented` |
-| **tsa** | RFC 3161 build-request / parse-response / verify via `MockTsaTransport` — structural + imprint + nonce + signed-attribute (content-type/message-digest) binding | live TSA stamp (`network-tests`, `CHANCELA_TSA_URL`) | **TSA asymmetric signature-value + cert-chain verification** — tsa carries no `rsa`/`p256`/`ecdsa`, so it does not verify the token's signature crypto (boundary; the computed binding is that check's precondition) |
+| **tsa** | RFC 3161 build-request / parse-response / verify via `MockTsaTransport` — structural + imprint + nonce + signed-attribute (content-type/message-digest) binding; CMS signature-value verification when the token embeds the referenced signer certificate; offline TSA certificate-path validation | live TSA stamp (`network-tests`, `CHANCELA_TSA_URL`) | broader TSA algorithm coverage beyond the supported RSA/P-256 timestamp-signature profiles; live trust decisions still require authenticated TSL/QTST evidence from higher layers |
 | **pades** | PAdES-B-B + PAdES-B-T sign / validate / tamper-detect on a fixture PDF (RSA + ECDSA); ByteRange excludes `/Contents` exactly | — | **PAdES-LT/LTA (SIG-21 archival default)** — typed stub `LongTermNotImplemented`. Input limits: classic xref only, no pre-existing AcroForm |
-| **signing** | `SignerProvider` orchestration; serial/parallel envelope + slot order; trusted-list policy gate (withdrawn/unknown refused); TSA wiring; `validate_signature` → SIG-24 report; `CmdProvider` driven end-to-end through the pipeline to `assemble_cades_b` | end-to-end with real providers (inherits smartcard/cmd/tsl/tsa gates) | in-CMS detached-CAdES-B-T embedding; **EU DSS validation-sidecar cross-check (SIG-23)** |
+| **signing** | `SignerProvider` orchestration; serial/parallel envelope + slot order; trusted-list policy gate (withdrawn/unknown refused); TSA wiring; `validate_signature` → SIG-24 report; `validate_timestamp_trust` technical report with QTST lookup, policy, and offline TSA path evidence; `CmdProvider` driven end-to-end through the pipeline to `assemble_cades_b` | end-to-end with real providers (inherits smartcard/cmd/tsl/tsa gates) | in-CMS detached-CAdES-B-T embedding; **EU DSS validation-sidecar cross-check (SIG-23)**; product B-LT/B-LTA and legal/probative claims |
 
 **Honest boundary on the CMD full chain.** The `get_certificate → … → RawSignature →
 assemble_cades_b` chain is exercised end-to-end through `CmdProvider` + `MockScmdTransport`
