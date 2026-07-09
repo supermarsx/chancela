@@ -342,7 +342,11 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       notes: 'Digitalizado do livro encadernado.',
       imported_at: '2026-07-09T10:00:00Z',
       imported_by: 'paper.owner',
-      ocr_status: 'not_started',
+      ocr_status: 'not_run',
+      ocr_status_notice:
+        'OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.',
+      ocr_text_stored: false,
+      authoritative_text_claimed: false,
       non_canonical: true,
       legal_validity_claimed: false,
       signature_validity_claimed: false,
@@ -369,6 +373,21 @@ describe('BookDetailPage — paper-book preserved imports', () => {
           headers: { 'Content-Type': 'application/pdf' },
         });
       }
+      if (
+        url === '/v1/books/paper-import/11111111-1111-4111-8111-111111111111/ocr/enqueue' &&
+        method === 'POST'
+      ) {
+        return jsonResponse({
+          import_id: preserved.import_id,
+          previous_ocr_status: 'not_run',
+          ocr_status: 'queued',
+          status_notice: preserved.ocr_status_notice,
+          ocr_text_stored: false,
+          authoritative_text_claimed: false,
+          legal_validity_claimed: false,
+          legal_notice: preserved.legal_notice,
+        });
+      }
       return null;
     });
     vi.stubGlobal('fetch', fn);
@@ -379,6 +398,8 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(await screen.findByText('ag-1968-1971.pdf')).toBeTruthy();
     expect(screen.getByText('1968-01-01 a 1971-12-31')).toBeTruthy();
     expect(screen.getByText(/não declaram validade legal/i)).toBeTruthy();
+    expect(screen.getByText('OCR não executado')).toBeTruthy();
+    expect(screen.getByText(/OCR: metadado apenas; texto armazenado: não/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Descarregar pacote' }));
 
@@ -396,6 +417,15 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       method: 'GET',
       body: null,
     });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Colocar OCR em fila' }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        url: '/v1/books/paper-import/11111111-1111-4111-8111-111111111111/ocr/enqueue',
+        method: 'POST',
+        body: null,
+      }),
+    );
   });
 
   it('validates and preserves a scanned paper-book package as non-canonical evidence', async () => {
@@ -417,7 +447,11 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       notes: 'Digitalizado do livro encadernado.',
       imported_at: '2026-07-09T10:00:00Z',
       imported_by: 'paper.owner',
-      ocr_status: 'not_started',
+      ocr_status: 'not_run',
+      ocr_status_notice:
+        'OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.',
+      ocr_text_stored: false,
+      authoritative_text_claimed: false,
       non_canonical: true,
       legal_validity_claimed: false,
       signature_validity_claimed: false,
@@ -472,7 +506,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
         content_type: 'application/pdf',
         imported_at: '2026-07-09T10:00:00Z',
         imported_by: 'paper.owner',
-        ocr_status: 'not_started',
+        ocr_status: 'not_run',
         bytes_in_ledger_event: false,
         legal_validity_claimed: false,
       },

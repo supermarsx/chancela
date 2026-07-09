@@ -69,6 +69,8 @@ import type {
   PaperBookImportPreserveBody,
   PaperBookImportView,
   PaperBookImportValidateBody,
+  PaperBookOcrStatusUpdateBody,
+  PaperBookOcrStatusView,
   RegistryExtractView,
   RegistryAutoUpdateAttemptBody,
   RegistryAutoUpdateAttemptView,
@@ -762,6 +764,13 @@ export const api = {
     get<PaperBookImportView[]>(`/v1/books/paper-import${query(params)}`),
   getPaperBookImport: (id: string) =>
     get<PaperBookImportView>(`/v1/books/paper-import/${encodeURIComponent(id)}`),
+  enqueuePaperBookImportOcr: (id: string) =>
+    post<PaperBookOcrStatusView>(`/v1/books/paper-import/${encodeURIComponent(id)}/ocr/enqueue`),
+  updatePaperBookImportOcrStatus: (id: string, body: PaperBookOcrStatusUpdateBody) =>
+    patch<PaperBookOcrStatusView>(
+      `/v1/books/paper-import/${encodeURIComponent(id)}/ocr-status`,
+      body,
+    ),
   fetchPaperBookImportBytes: (id: string) =>
     fetchBlob(`/v1/books/paper-import/${encodeURIComponent(id)}/bytes`),
   startOverBook: (id: string, body: StartOverBookBody) =>

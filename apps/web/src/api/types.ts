@@ -3117,7 +3117,7 @@ export interface PaperBookPreservation {
   content_type: string;
   imported_at: string;
   imported_by: string;
-  ocr_status: 'not_started' | string;
+  ocr_status: PaperBookOcrStatus;
   bytes_in_ledger_event: boolean;
   legal_validity_claimed: boolean;
 }
@@ -3129,6 +3129,31 @@ export interface PaperBookImportPreservationReport
   dry_run: false;
   import_id: string;
   preservation: PaperBookPreservation;
+}
+
+export type PaperBookOcrStatus =
+  | 'disabled'
+  | 'not_run'
+  | 'not_started'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | string;
+
+export interface PaperBookOcrStatusUpdateBody {
+  status: PaperBookOcrStatus;
+}
+
+export interface PaperBookOcrStatusView {
+  import_id: string;
+  previous_ocr_status: PaperBookOcrStatus;
+  ocr_status: PaperBookOcrStatus;
+  status_notice: string;
+  ocr_text_stored: boolean;
+  authoritative_text_claimed: boolean;
+  legal_validity_claimed: boolean;
+  legal_notice: string;
 }
 
 /** Preserved historical paper-book package metadata. Raw bytes are fetched via `bytes_download`. */
@@ -3148,7 +3173,10 @@ export interface PaperBookImportView {
   notes: string | null;
   imported_at: string;
   imported_by: string;
-  ocr_status: 'not_started' | string;
+  ocr_status: PaperBookOcrStatus;
+  ocr_status_notice: string;
+  ocr_text_stored: boolean;
+  authoritative_text_claimed: boolean;
   non_canonical: boolean;
   legal_validity_claimed: boolean;
   signature_validity_claimed: boolean;

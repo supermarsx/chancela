@@ -16,6 +16,7 @@ import {
   useDownloadBookArchivePackage,
   useDownloadPaperBookImport,
   useEntity,
+  useEnqueuePaperBookImportOcr,
   usePaperBookImports,
   usePreservePaperBookImport,
   useSetBookLegalHold,
@@ -26,6 +27,7 @@ import type {
   PaperBookImportPreservationReport,
   PaperBookImportReport,
   PaperBookImportView,
+  PaperBookOcrStatus,
 } from '../../api/types';
 import {
   actStateLabels,
@@ -81,6 +83,30 @@ function paperBookImportFilename(row: PaperBookImportView): string {
   const type = row.content_type.split(';')[0]?.trim().toLowerCase();
   const ext = type === 'application/pdf' ? 'pdf' : type === 'application/zip' ? 'zip' : 'bin';
   return `paper-book-import-${row.import_id}.${ext}`;
+}
+
+function paperBookOcrStatusLabel(status: PaperBookOcrStatus): string {
+  switch (status) {
+    case 'disabled':
+      return 'OCR desativado';
+    case 'not_run':
+    case 'not_started':
+      return 'OCR não executado';
+    case 'queued':
+      return 'OCR em fila';
+    case 'running':
+      return 'OCR em curso';
+    case 'completed':
+      return 'OCR concluído';
+    case 'failed':
+      return 'OCR falhou';
+    default:
+      return status;
+  }
+}
+
+function canQueueOcr(status: PaperBookOcrStatus): boolean {
+  return status === 'not_run' || status === 'not_started' || status === 'failed';
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -221,6 +247,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
   const validate = useValidatePaperBookImport();
   const preserve = usePreservePaperBookImport();
   const download = useDownloadPaperBookImport();
+  const enqueueOcr = useEnqueuePaperBookImportOcr(book.id);
   const [file, setFile] = useState<File | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -247,6 +274,13 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
           toast.error(e);
         }
       },
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  function onQueueOcr(row: PaperBookImportView) {
+    enqueueOcr.mutate(row.import_id, {
+      onSuccess: () => toast.success('OCR colocado em fila como metadado não canónico.'),
       onError: (e) => toast.error(e),
     });
   }
@@ -475,20 +509,39 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                     <Badge tone={row.non_canonical ? 'warn' : 'neutral'}>
                       {row.non_canonical ? 'Não canónico' : 'Importado'}
                     </Badge>
+                    <Badge tone={row.ocr_status === 'completed' ? 'ok' : 'neutral'}>
+                      {paperBookOcrStatusLabel(row.ocr_status)}
+                    </Badge>
+                    <span className="muted">
+                      OCR: metadado apenas; texto armazenado: {row.ocr_text_stored ? 'sim' : 'não'}
+                      ; texto autoritativo: {row.authoritative_text_claimed ? 'sim' : 'não'}
+                    </span>
                     <span className="mono">{row.sha256.slice(0, 16)}...</span>
                   </div>
                 </td>
                 <td>
-                  <GateButton
-                    perm="book.import"
-                    type="button"
-                    variant="ghost"
-                    icon={<Icon.Tray />}
-                    disabled={download.isPending}
-                    onClick={() => onDownload(row)}
-                  >
-                    {download.isPending ? 'A descarregar' : 'Descarregar pacote'}
-                  </GateButton>
+                  <div className="row-wrap">
+                    <GateButton
+                      perm="book.import"
+                      type="button"
+                      variant="ghost"
+                      icon={<Icon.Tray />}
+                      disabled={download.isPending}
+                      onClick={() => onDownload(row)}
+                    >
+                      {download.isPending ? 'A descarregar' : 'Descarregar pacote'}
+                    </GateButton>
+                    <GateButton
+                      perm="book.import"
+                      type="button"
+                      variant="ghost"
+                      icon={<Icon.Search />}
+                      disabled={enqueueOcr.isPending || !canQueueOcr(row.ocr_status)}
+                      onClick={() => onQueueOcr(row)}
+                    >
+                      {enqueueOcr.isPending ? 'A colocar em fila' : 'Colocar OCR em fila'}
+                    </GateButton>
+                  </div>
                 </td>
               </tr>
             ))}

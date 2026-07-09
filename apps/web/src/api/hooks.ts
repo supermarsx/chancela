@@ -38,6 +38,8 @@ import type {
   OpenBookBody,
   PaperBookImportValidateBody,
   PaperBookImportPreserveBody,
+  PaperBookImportView,
+  PaperBookOcrStatus,
   RegistryAutoUpdateAttemptBody,
   RegistryImportBody,
   SealActBody,
@@ -367,6 +369,45 @@ export function usePreservePaperBookImport() {
       void qc.invalidateQueries({
         queryKey: keys.paperBookImports(report.identity.book_ref),
       });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+function replacePaperBookImportOcrStatus(
+  rows: PaperBookImportView[] | undefined,
+  importId: string,
+  ocrStatus: PaperBookOcrStatus,
+): PaperBookImportView[] | undefined {
+  return rows?.map((row) =>
+    row.import_id === importId ? { ...row, ocr_status: ocrStatus } : row,
+  );
+}
+
+export function useEnqueuePaperBookImportOcr(bookRef?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.enqueuePaperBookImportOcr(id),
+    onSuccess: (status) => {
+      qc.setQueryData<PaperBookImportView[]>(keys.paperBookImports(bookRef), (rows) =>
+        replacePaperBookImportOcrStatus(rows, status.import_id, status.ocr_status),
+      );
+      void qc.invalidateQueries({ queryKey: keys.paperBookImports(bookRef) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useUpdatePaperBookImportOcrStatus(bookRef?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: PaperBookOcrStatus }) =>
+      api.updatePaperBookImportOcrStatus(id, { status }),
+    onSuccess: (status) => {
+      qc.setQueryData<PaperBookImportView[]>(keys.paperBookImports(bookRef), (rows) =>
+        replacePaperBookImportOcrStatus(rows, status.import_id, status.ocr_status),
+      );
+      void qc.invalidateQueries({ queryKey: keys.paperBookImports(bookRef) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
