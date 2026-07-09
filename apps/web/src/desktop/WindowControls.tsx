@@ -67,7 +67,12 @@ export function WindowControls() {
   const toggleAlwaysOnTop = () => {
     const next = !alwaysOnTop;
     setAlwaysOnTop(next);
-    void win().then((w) => w.setAlwaysOnTop(next));
+    void win()
+      .then((w) => w.setAlwaysOnTop(next))
+      .catch((err) => {
+        console.error('WindowControls: setAlwaysOnTop failed', err);
+        setAlwaysOnTop((current) => (current === next ? !next : current));
+      });
   };
 
   const alwaysOnTopLabel = alwaysOnTop ? t('window.alwaysOnTop.active') : t('window.alwaysOnTop');

@@ -49,4 +49,23 @@ describe('openExternal', () => {
     expect(openUrl).toHaveBeenCalledWith(URL_);
     expect(winOpen).toHaveBeenCalledWith(URL_, '_blank', 'noopener,noreferrer');
   });
+
+  it('rejects unsafe schemes before they reach the Tauri opener or window.open', async () => {
+    asRecord.__TAURI_INTERNALS__ = {};
+    const winOpen = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    await openExternal('javascript:alert(1)');
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(winOpen).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed external URLs in a plain browser', async () => {
+    const winOpen = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    await openExternal('not a url');
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(winOpen).not.toHaveBeenCalled();
+  });
 });

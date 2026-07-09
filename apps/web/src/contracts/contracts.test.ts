@@ -24,17 +24,36 @@ import {
   CAE_LEVELS,
   CAE_REVISIONS,
   CAE_ROLES,
+  DSR_REQUEST_OUTCOMES,
+  DSR_REQUEST_STATUSES,
+  DSR_REQUEST_TYPES,
   ENTITY_KINDS,
   LAW_DIPLOMA_KINDS,
   LAW_VERIFICATIONS,
   LOCALES,
   MEETING_CHANNELS,
   NUMBERING_SCHEMES,
+  PASSWORD_POLICY_RULE_CODES,
   PERMISSION_SOURCES,
+  PRIVACY_RECORD_STATUSES,
+  PRIVACY_RISK_LEVELS,
+  RETENTION_DISPOSAL_ACTIONS,
+  RETENTION_POLICY_STATUSES,
   SIGNATURE_FAMILIES,
   THEME_MODES,
+  TSL_SERVICE_STATUS_KINDS,
+  TSL_SIGNATURE_STATUSES,
+  TSL_SOURCE_KINDS,
+  TSA_PROBE_KINDS,
+  TSA_PROBE_STATUSES,
+  TSA_STATUS_KINDS,
+  type ApiKeyCreated,
+  type ApiKeyGrantView,
+  type ApiKeyRateLimit,
+  type ApiKeyView,
   type ActMesa,
   type ActView,
+  type AiSettings,
   type AppearanceSettings,
   type BackupFile,
   type BackupManifest,
@@ -49,11 +68,15 @@ import {
   type CaeNode,
   type CaeRefView,
   type Dashboard,
+  type DashboardReminder,
   type DocumentSettings,
+  type DpiaRecordView,
+  type DsrRequestView,
   type Entity,
   type EntityCalendarPreset,
   type EntityProfile,
   type InscriptionDetailView,
+  type ImportedDocumentView,
   type LawEntryView,
   type LawArticleView,
   type LawCorpusView,
@@ -66,7 +89,17 @@ import {
   type LedgerEventView,
   type OnboardingSettings,
   type OrganizationSettings,
+  type PasswordPolicyView,
+  type PasswordRuleView,
+  type PaperBookImportClassification,
+  type PaperBookImportDateSpan,
+  type PaperBookImportFinding,
+  type PaperBookImportIdentity,
+  type PaperBookImportPackage,
+  type PaperBookImportReport,
   type PermissionGrant,
+  type PermissionScope,
+  type ProcessorRecordView,
   type RegistryAnnotationView,
   type RegistryEventView,
   type RegistryExtractView,
@@ -76,19 +109,49 @@ import {
   type SessionRoster,
   type SessionView,
   type Settings,
+  type RetentionPolicyView,
   type SigningCmdSettings,
+  type SigningProviderMetadata,
   type SigningSettings,
+  type TslCatalogView,
+  type TslIdentitySummaryView,
+  type TslProviderAnalysisView,
+  type TslProviderView,
+  type TslServiceStatusView,
+  type TslServiceSummaryView,
+  type TslSourceView,
+  type TslSummaryView,
+  type TslValidationView,
+  type TsaAcceptedHashView,
+  type TsaCatalogView,
+  type TsaPolicyAnalysisView,
+  type TsaProbeView,
+  type TsaProfileView,
+  type TsaRecordAnalysisView,
+  type TsaRecordView,
+  type TsaSummaryView,
+  type TsaTimestampMetadataView,
+  type TsaTslDiagnosticsView,
+  type UserDsrExport,
+  type UserDsrExportUser,
+  type UserDsrRoleAssignment,
   type UserView,
 } from '../api/types';
 
 // --- Fixture loading -----------------------------------------------------------
 //
-// Load each `contracts/*.json` as its raw text (via Vite's `?raw`) so the mocked
-// `fetch` returns the exact fixture BYTES, not a re-serialised object — the client's
-// real `JSON.parse` runs on the wire representation. `import.meta.glob` (typed by
-// `vite/client`) keeps the JSON files out of the TS program, so `tsc -b`'s composite
+// Load each contract fixture as raw text (via Vite's `?raw`) so the mocked `fetch`
+// returns the exact fixture BYTES, not a re-serialised object — the client's real
+// JSON/text path runs on the wire representation. `import.meta.glob` (typed by
+// `vite/client`) keeps the files out of the TS program, so `tsc -b`'s composite
 // rootDir stays confined to `src/` while the fixtures live at the repo root.
 const rawFixtures = import.meta.glob('../../../../contracts/*.json', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>;
+
+const rawMarkdownFixtures = import.meta.glob('../../../../contracts/act.*.md', {
   eager: true,
   query: '?raw',
   import: 'default',
@@ -104,16 +167,36 @@ function fixture(name: string): string {
   return entry[1];
 }
 
+function markdownFixture(name: string): string {
+  const entry = Object.entries(rawMarkdownFixtures).find(([path]) => path.endsWith(`/${name}`));
+  if (!entry) {
+    throw new Error(
+      `contract fixture ${name} not found — loaded: ${Object.keys(rawMarkdownFixtures).join(', ')}`,
+    );
+  }
+  return entry[1];
+}
+
 /** Stub `fetch` to return a fixture's raw bytes as an `application/json` response. */
-function stubFetch(body: string, status = 200): void {
+function stubFetchRaw(
+  body: string,
+  status = 200,
+  contentType = 'application/json',
+  extraHeaders: Record<string, string> = {},
+): void {
   vi.stubGlobal(
     'fetch',
-    vi
-      .fn()
-      .mockResolvedValue(
-        new Response(body, { status, headers: { 'Content-Type': 'application/json' } }),
-      ),
+    vi.fn().mockResolvedValue(
+      new Response(body, {
+        status,
+        headers: { 'Content-Type': contentType, ...extraHeaders },
+      }),
+    ),
   );
+}
+
+function stubFetch(body: string, status = 200): void {
+  stubFetchRaw(body, status);
 }
 
 afterEach(() => {
@@ -181,6 +264,341 @@ function assertHex64(value: string, label: string): void {
   expect(value, `${label} should be a 64-char lowercase hex digest`).toMatch(/^[0-9a-f]{64}$/);
 }
 
+function assertPermissionScope(scope: unknown, label: string): PermissionScope {
+  expect(scope, `${label} should be an object`).toBeTypeOf('object');
+  expect(scope, `${label} should not be null`).not.toBeNull();
+  const kind = (scope as { kind?: unknown }).kind;
+  inEnum(['global', 'entity', 'book'], String(kind), `${label}.kind`);
+  if (kind === 'global') {
+    return assertExactKeys<{ kind: 'global' }>(scope, { kind: true }, label);
+  }
+  const scoped = assertExactKeys<{ kind: 'entity' | 'book'; id: string }>(
+    scope,
+    { kind: true, id: true },
+    label,
+  );
+  expect(scoped.id, `${label}.id should be a string`).toBeTypeOf('string');
+  expect(scoped.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  return scoped;
+}
+
+function assertApiKeyGrant(grant: unknown, label: string): ApiKeyGrantView {
+  expect(grant, `${label} should be an object`).toBeTypeOf('object');
+  expect(grant, `${label} should not be null`).not.toBeNull();
+  const kind = (grant as { kind?: unknown }).kind;
+  inEnum(['role', 'permissions'], String(kind), `${label}.kind`);
+  if (kind === 'role') {
+    const role = assertExactKeys<Extract<ApiKeyGrantView, { kind: 'role' }>>(
+      grant,
+      { kind: true, role_id: true, scope: true },
+      label,
+    );
+    expect(role.role_id.length, `${label}.role_id should be non-empty`).toBeGreaterThan(0);
+    assertPermissionScope(role.scope, `${label}.scope`);
+    return role;
+  }
+  const perms = assertExactKeys<Extract<ApiKeyGrantView, { kind: 'permissions' }>>(
+    grant,
+    { kind: true, permissions: true, scope: true },
+    label,
+  );
+  expect(Array.isArray(perms.permissions), `${label}.permissions should be an array`).toBe(true);
+  expect(perms.permissions.length, `${label}.permissions should be non-empty`).toBeGreaterThan(0);
+  for (const permission of perms.permissions) {
+    expect(permission, `${label}.permissions[] should be dotted permission text`).toMatch(
+      /^[a-z]+(?:\.[a-z]+)+$/,
+    );
+  }
+  assertPermissionScope(perms.scope, `${label}.scope`);
+  return perms;
+}
+
+function assertApiKeyRateLimit(rateLimit: unknown, label: string): ApiKeyRateLimit {
+  const rl = assertExactKeys<ApiKeyRateLimit>(rateLimit, { rpm: true, burst: true }, label);
+  expect(Number.isInteger(rl.rpm), `${label}.rpm should be an integer`).toBe(true);
+  expect(Number.isInteger(rl.burst), `${label}.burst should be an integer`).toBe(true);
+  expect(rl.rpm, `${label}.rpm should be non-negative`).toBeGreaterThanOrEqual(0);
+  expect(rl.burst, `${label}.burst should be non-negative`).toBeGreaterThanOrEqual(0);
+  return rl;
+}
+
+function assertApiKeyMetadata(key: ApiKeyView, label: string): void {
+  expect(key.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(key.name.length, `${label}.name should be non-empty`).toBeGreaterThan(0);
+  expect(key.prefix, `${label}.prefix should be the non-secret key prefix`).toMatch(
+    /^chk_[0-9a-f]{12}$/,
+  );
+  expect(key.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
+  assertTimestamp(key.created_at, `${label}.created_at`);
+  if (key.expires_at !== undefined) assertTimestamp(key.expires_at, `${label}.expires_at`);
+  expect(typeof key.revoked, `${label}.revoked should be boolean`).toBe('boolean');
+  expect(typeof key.active, `${label}.active should be boolean`).toBe('boolean');
+  assertApiKeyGrant(key.grant, `${label}.grant`);
+  if (key.rate_limit !== undefined) assertApiKeyRateLimit(key.rate_limit, `${label}.rate_limit`);
+  expect(key, `${label} must not expose key_hash`).not.toHaveProperty('key_hash');
+}
+
+function assertApiKeyView(obj: unknown, label: string): ApiKeyView {
+  const key = assertExactKeys<ApiKeyView>(
+    obj,
+    {
+      id: true,
+      name: true,
+      prefix: true,
+      grant: true,
+      created_by: true,
+      created_at: true,
+      revoked: true,
+      active: true,
+    },
+    label,
+    ['expires_at', 'rate_limit'],
+  );
+  assertApiKeyMetadata(key, label);
+  expect(key, `${label} metadata must not include secret`).not.toHaveProperty('secret');
+  return key;
+}
+
+function assertApiKeyCreated(obj: unknown, label: string): ApiKeyCreated {
+  const key = assertExactKeys<ApiKeyCreated>(
+    obj,
+    {
+      secret: true,
+      id: true,
+      name: true,
+      prefix: true,
+      grant: true,
+      created_by: true,
+      created_at: true,
+      revoked: true,
+      active: true,
+    },
+    label,
+    ['expires_at', 'rate_limit'],
+  );
+  assertApiKeyMetadata(key, label);
+  expect(key.secret, `${label}.secret should be a full one-time API key`).toMatch(
+    /^chk_[0-9a-f]{12}_[0-9a-f]{64}$/,
+  );
+  expect(key.secret.startsWith(`${key.prefix}_`), `${label}.secret should match prefix`).toBe(true);
+  return key;
+}
+
+function assertPrivacyRecordBase(
+  record: {
+    purpose: string;
+    legal_basis: string;
+    data_categories: string[];
+    subprocessors: string[];
+    risk_level: string;
+    status: string;
+    created_at: string;
+    created_by: string;
+    updated_at: string;
+    updated_by: string;
+  },
+  label: string,
+): void {
+  expect(record.purpose.length, `${label}.purpose should be non-empty`).toBeGreaterThan(0);
+  expect(record.legal_basis.length, `${label}.legal_basis should be non-empty`).toBeGreaterThan(0);
+  expect(Array.isArray(record.data_categories), `${label}.data_categories should be an array`).toBe(
+    true,
+  );
+  expect(
+    record.data_categories.length,
+    `${label}.data_categories should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(Array.isArray(record.subprocessors), `${label}.subprocessors should be an array`).toBe(
+    true,
+  );
+  inEnum(PRIVACY_RISK_LEVELS, record.risk_level, `${label}.risk_level`);
+  inEnum(PRIVACY_RECORD_STATUSES, record.status, `${label}.status`);
+  assertTimestamp(record.created_at, `${label}.created_at`);
+  assertTimestamp(record.updated_at, `${label}.updated_at`);
+  expect(record.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
+  expect(record.updated_by.length, `${label}.updated_by should be non-empty`).toBeGreaterThan(0);
+}
+
+function assertProcessorRecord(obj: unknown, label: string): ProcessorRecordView {
+  const record = assertExactKeys<ProcessorRecordView>(
+    obj,
+    {
+      id: true,
+      name: true,
+      purpose: true,
+      legal_basis: true,
+      data_categories: true,
+      subprocessors: true,
+      risk_level: true,
+      status: true,
+      created_at: true,
+      created_by: true,
+      updated_at: true,
+      updated_by: true,
+    },
+    label,
+  );
+  expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(record.name.length, `${label}.name should be non-empty`).toBeGreaterThan(0);
+  assertPrivacyRecordBase(record, label);
+  return record;
+}
+
+function assertDpiaRecord(obj: unknown, label: string): DpiaRecordView {
+  const record = assertExactKeys<DpiaRecordView>(
+    obj,
+    {
+      id: true,
+      title: true,
+      purpose: true,
+      legal_basis: true,
+      data_categories: true,
+      subprocessors: true,
+      risk_level: true,
+      status: true,
+      created_at: true,
+      created_by: true,
+      updated_at: true,
+      updated_by: true,
+    },
+    label,
+  );
+  expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(record.title.length, `${label}.title should be non-empty`).toBeGreaterThan(0);
+  assertPrivacyRecordBase(record, label);
+  return record;
+}
+
+function assertRetentionPolicy(obj: unknown, label: string): RetentionPolicyView {
+  const record = assertExactKeys<RetentionPolicyView>(
+    obj,
+    {
+      id: true,
+      name: true,
+      scope: true,
+      category: true,
+      schedule_id: true,
+      retention_period: true,
+      legal_basis: true,
+      disposal_action: true,
+      status: true,
+      active: true,
+      created_at: true,
+      created_by: true,
+      updated_at: true,
+      updated_by: true,
+    },
+    label,
+    ['notes'],
+  );
+  expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(record.name.length, `${label}.name should be non-empty`).toBeGreaterThan(0);
+  expect(record.scope.length, `${label}.scope should be non-empty`).toBeGreaterThan(0);
+  expect(record.category.length, `${label}.category should be non-empty`).toBeGreaterThan(0);
+  expect(record.schedule_id.length, `${label}.schedule_id should be non-empty`).toBeGreaterThan(0);
+  expect(
+    record.retention_period.length,
+    `${label}.retention_period should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(record.legal_basis.length, `${label}.legal_basis should be non-empty`).toBeGreaterThan(0);
+  inEnum(RETENTION_DISPOSAL_ACTIONS, record.disposal_action, `${label}.disposal_action`);
+  inEnum(RETENTION_POLICY_STATUSES, record.status, `${label}.status`);
+  expect(typeof record.active, `${label}.active should be boolean`).toBe('boolean');
+  assertTimestamp(record.created_at, `${label}.created_at`);
+  assertTimestamp(record.updated_at, `${label}.updated_at`);
+  expect(record.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
+  expect(record.updated_by.length, `${label}.updated_by should be non-empty`).toBeGreaterThan(0);
+  return record;
+}
+
+function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImportReport {
+  const report = assertExactKeys<PaperBookImportReport>(
+    obj,
+    {
+      report_kind: true,
+      dry_run: true,
+      legal_notice: true,
+      identity: true,
+      date_span: true,
+      package: true,
+      candidate_classification: true,
+      can_accept_as_import_candidate: true,
+      required_operator_actions: true,
+      findings: true,
+    },
+    label,
+  );
+  expect(report.report_kind).toBe('paper_book_import_validation');
+  expect(report.dry_run).toBe(true);
+  expect(report.legal_notice.length, `${label}.legal_notice should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  const identity = assertExactKeys<PaperBookImportIdentity>(
+    report.identity,
+    { entity_ref: true, entity_name: true, entity_nipc: true, book_ref: true },
+    `${label}.identity`,
+  );
+  expect(identity.entity_ref.length).toBeGreaterThan(0);
+  expect(identity.entity_name.length).toBeGreaterThan(0);
+  expect(identity.entity_nipc).toMatch(/^\d{9}$/);
+  expect(identity.book_ref.length).toBeGreaterThan(0);
+  const dateSpan = assertExactKeys<PaperBookImportDateSpan>(
+    report.date_span,
+    { from: true, to: true },
+    `${label}.date_span`,
+  );
+  assertIsoDate(dateSpan.from, `${label}.date_span.from`);
+  assertIsoDate(dateSpan.to, `${label}.date_span.to`);
+  const pkg = assertExactKeys<PaperBookImportPackage>(
+    report.package,
+    {
+      page_count: true,
+      source_filename: true,
+      digest: true,
+      notes_present: true,
+      notes_truncated: true,
+    },
+    `${label}.package`,
+  );
+  expect(pkg.page_count).toBeGreaterThan(0);
+  if (pkg.digest) assertHex64(pkg.digest, `${label}.package.digest`);
+  const classification = assertExactKeys<PaperBookImportClassification>(
+    report.candidate_classification,
+    {
+      classification: true,
+      non_canonical: true,
+      historical_evidence: true,
+      preservation_status: true,
+      canonical_minutes_claimed: true,
+      legal_validity_claimed: true,
+      signature_validity_claimed: true,
+      qualified_signature_claimed: true,
+    },
+    `${label}.candidate_classification`,
+  );
+  expect(classification.classification).toBe('historical_paper_book_non_canonical_evidence');
+  expect(classification.preservation_status).toBe('not_preserved_by_validation');
+  expect(classification.non_canonical).toBe(true);
+  expect(classification.canonical_minutes_claimed).toBe(false);
+  expect(classification.legal_validity_claimed).toBe(false);
+  expect(classification.signature_validity_claimed).toBe(false);
+  expect(classification.qualified_signature_claimed).toBe(false);
+  expect(report.can_accept_as_import_candidate).toBe(true);
+  expect(report.required_operator_actions.length).toBeGreaterThan(0);
+  expect(report.findings.length).toBeGreaterThan(0);
+  for (const finding of report.findings) {
+    const item = assertExactKeys<PaperBookImportFinding>(
+      finding,
+      { severity: true, code: true, message: true },
+      `${label}.finding`,
+    );
+    inEnum(['info', 'warning', 'error'], item.severity, `${label}.finding.severity`);
+    expect(item.code.length).toBeGreaterThan(0);
+    expect(item.message.length).toBeGreaterThan(0);
+  }
+  return report;
+}
+
 // --- Per-contract tests --------------------------------------------------------
 
 describe('contract fixtures parse through the real client', () => {
@@ -201,10 +619,18 @@ describe('contract fixtures parse through the real client', () => {
         statute: true,
       },
       'Entity',
+      ['fiscal_year_end'],
+    );
+    expect(entity, 'Entity should expose fiscal_year_end on the wire').toHaveProperty(
+      'fiscal_year_end',
     );
     expect(entity.id).not.toHaveLength(0);
     expect(entity.nipc).toMatch(/^\d{9}$/);
     expect(typeof entity.nipc_validated).toBe('boolean');
+    expect(entity.fiscal_year_end, 'Entity.fiscal_year_end should be present').not.toBeUndefined();
+    if (entity.fiscal_year_end !== null && entity.fiscal_year_end !== undefined) {
+      expect(entity.fiscal_year_end).toMatch(/^\d{2}-\d{2}$/);
+    }
     inEnum(ENTITY_KINDS, entity.kind, 'Entity.kind');
     inEnum(
       ['CommercialCompany', 'Condominium', 'Association', 'Foundation', 'Cooperative'],
@@ -331,6 +757,81 @@ describe('contract fixtures parse through the real client', () => {
     expect(Array.isArray(act.deliberation_items)).toBe(true);
   });
 
+  it('act.working-copy.md → Markdown export (GET /v1/acts/{id}/document/working-copy)', async () => {
+    const body = markdownFixture('act.working-copy.md');
+    stubFetchRaw(body, 200, 'text/markdown; charset=utf-8', {
+      'Content-Disposition':
+        'attachment; filename="act-4b3c2d00-0000-4000-8000-000000000003-working-copy.md"',
+    });
+
+    const workingCopy = await api.fetchActDocumentWorkingCopy(
+      '4b3c2d00-0000-4000-8000-000000000003',
+    );
+
+    expect(workingCopy.text).toBe(body);
+    expect(workingCopy.contentType).toBe('text/markdown; charset=utf-8');
+    expect(workingCopy.blob.type).toBe('text/markdown;charset=utf-8');
+    expect(workingCopy.blob.type).not.toBe('application/pdf');
+    expect(workingCopy.headers.get('Content-Disposition')).toContain('working-copy.md');
+    expect(workingCopy.text).toContain('WORKING COPY - NON-EVIDENTIARY');
+    expect(workingCopy.text).toContain('not the preserved signed original');
+    expect(workingCopy.text).toContain('Ata da Assembleia Geral Anual');
+    expect(workingCopy.text).not.toMatch(/^%PDF/);
+    const digest = workingCopy.text.match(/Preserved PDF digest: `([0-9a-f]{64})`/)?.[1];
+    expect(digest, 'working-copy fixture should cite the preserved PDF digest').toBeTruthy();
+    assertHex64(digest as string, 'working-copy preserved PDF digest');
+  });
+
+  it('document.imported.json → ImportedDocumentView (GET /v1/documents/imported/{id})', async () => {
+    stubFetch(fixture('document.imported.json'));
+    const doc: ImportedDocumentView = await api.getImportedDocument(
+      '8f7e6d50-0000-4000-8000-000000000010',
+    );
+    assertExactKeys<ImportedDocumentView>(
+      doc,
+      {
+        id: true,
+        act_id: true,
+        filename: true,
+        size_bytes: true,
+        sha256: true,
+        declared_content_type: true,
+        detected_content_type: true,
+        imported_at: true,
+        imported_by: true,
+        non_canonical: true,
+        legal_notice: true,
+        bytes_download: true,
+      },
+      'ImportedDocumentView',
+    );
+    assertHex64(doc.sha256, 'ImportedDocumentView.sha256');
+    assertTimestamp(doc.imported_at, 'ImportedDocumentView.imported_at');
+    expect(doc.detected_content_type).toBe('application/pdf');
+    expect(doc.non_canonical).toBe(true);
+    expect(doc.bytes_download).toContain(`/v1/documents/imported/${doc.id}/bytes`);
+    expect(JSON.stringify(doc)).not.toContain('%PDF');
+    expect(JSON.stringify(doc)).not.toContain('access_code');
+  });
+
+  it('paper-book.import.json → PaperBookImportReport (POST /v1/books/paper-import/validate)', async () => {
+    stubFetch(fixture('paper-book.import.json'));
+    const report: PaperBookImportReport = await api.validatePaperBookImport({
+      entity_ref: 'entity-legacy-001',
+      entity_name: 'Encosto Estrategico, S.A.',
+      entity_nipc: '503004642',
+      book_ref: 'ag-book-1968-1971',
+      date_from: '1968-01-01',
+      date_to: '1971-12-31',
+      page_count: 240,
+      source_filename: 'ag-1968-1971.pdf',
+      digest: 'abababababababababababababababababababababababababababababababab',
+    });
+    assertPaperBookImportReport(report, 'PaperBookImportReport');
+    expect(JSON.stringify(report)).not.toContain('password_hash');
+    expect(JSON.stringify(report)).not.toContain('qualified_signature_claimed":true');
+  });
+
   it('ledger.events.json → LedgerEventView[] (GET /v1/ledger/events)', async () => {
     stubFetch(fixture('ledger.events.json'));
     const events: LedgerEventView[] = await api.listLedger();
@@ -349,6 +850,7 @@ describe('contract fixtures parse through the real client', () => {
         payload_digest: true,
         prev_hash: true,
         hash: true,
+        chains: true,
         attestation: true,
       },
       'LedgerEventView',
@@ -359,6 +861,8 @@ describe('contract fixtures parse through the real client', () => {
     assertHex64(event.payload_digest, 'LedgerEventView.payload_digest');
     assertHex64(event.prev_hash, 'LedgerEventView.prev_hash');
     assertHex64(event.hash, 'LedgerEventView.hash');
+    expect(event.chains).toContain('global');
+    for (const chain of event.chains) expect(typeof chain).toBe('string');
     // Attestation is null when unattested, else a {username,fingerprint,algorithm} join (t29).
     if (event.attestation !== null) {
       assertExactKeys(
@@ -385,15 +889,54 @@ describe('contract fixtures parse through the real client', () => {
         unresolved_compliance: true,
         ledger_length: true,
         ledger_valid: true,
+        reminders: true,
         recent_events: true,
       },
       'Dashboard',
     );
     for (const [k, v] of Object.entries(dash)) {
-      if (k === 'ledger_valid' || k === 'recent_events') continue;
+      if (k === 'ledger_valid' || k === 'recent_events' || k === 'reminders') continue;
       expect(typeof v, `Dashboard.${k} should be a number`).toBe('number');
     }
     expect(typeof dash.ledger_valid).toBe('boolean');
+    expect(Array.isArray(dash.reminders)).toBe(true);
+    const reminder = assertExactKeys<DashboardReminder>(
+      dash.reminders[0],
+      {
+        due_date: true,
+        severity: true,
+        status: true,
+        reason: true,
+        entity_id: true,
+        entity_name: true,
+        source_rule: true,
+        source_profile: true,
+      },
+      'Dashboard.reminders[0]',
+    );
+    assertIsoDate(reminder.due_date, 'Dashboard.reminders[0].due_date');
+    inEnum(['Advisory', 'Info', 'Warning'], reminder.severity, 'Dashboard.reminders[0].severity');
+    inEnum(['Upcoming', 'DueSoon', 'Overdue'], reminder.status, 'Dashboard.reminders[0].status');
+    expect(
+      reminder.reason.length,
+      'Dashboard.reminders[0].reason should be non-empty',
+    ).toBeGreaterThan(0);
+    expect(
+      reminder.entity_id.length,
+      'Dashboard.reminders[0].entity_id should be non-empty',
+    ).toBeGreaterThan(0);
+    expect(
+      reminder.entity_name.length,
+      'Dashboard.reminders[0].entity_name should be non-empty',
+    ).toBeGreaterThan(0);
+    expect(
+      reminder.source_rule.length,
+      'Dashboard.reminders[0].source_rule should be non-empty',
+    ).toBeGreaterThan(0);
+    expect(
+      reminder.source_profile.length,
+      'Dashboard.reminders[0].source_profile should be non-empty',
+    ).toBeGreaterThan(0);
     expect(Array.isArray(dash.recent_events)).toBe(true);
     // recent_events reuse the ledger event shape.
     assertExactKeys<LedgerEventView>(
@@ -409,6 +952,7 @@ describe('contract fixtures parse through the real client', () => {
         payload_digest: true,
         prev_hash: true,
         hash: true,
+        chains: true,
         attestation: true,
       },
       'Dashboard.recent_events[0]',
@@ -428,6 +972,7 @@ describe('contract fixtures parse through the real client', () => {
         signing: true,
         appearance: true,
         onboarding: true,
+        ai: true,
       },
       'Settings',
     );
@@ -476,6 +1021,7 @@ describe('contract fixtures parse through the real client', () => {
         tsl_url: true,
         require_qualified_for_seal: true,
         cmd: true,
+        providers: true,
       },
       'Settings.signing',
     );
@@ -490,6 +1036,29 @@ describe('contract fixtures parse through the real client', () => {
     expect(typeof cmd.env).toBe('string');
     if (cmd.application_id !== null) expect(typeof cmd.application_id).toBe('string');
     expect(typeof cmd.ama_cert_configured).toBe('boolean');
+    expect(Array.isArray(signing.providers)).toBe(true);
+    for (const provider of signing.providers) {
+      const row = assertExactKeys<SigningProviderMetadata>(
+        provider,
+        {
+          id: true,
+          mode: true,
+          label: true,
+          configured: true,
+          production_blocked: true,
+          local_only: true,
+          note: true,
+        },
+        'Settings.signing.providers[]',
+      );
+      inEnum(['CMD', 'CC', 'CSC_QTSP', 'LOCAL_PKCS12'], row.mode, 'signing.providers[].mode');
+      expect(typeof row.id).toBe('string');
+      expect(typeof row.label).toBe('string');
+      expect(typeof row.configured).toBe('boolean');
+      expect(typeof row.production_blocked).toBe('boolean');
+      expect(typeof row.local_only).toBe('boolean');
+      expect(typeof row.note).toBe('string');
+    }
     const appearance = assertExactKeys<AppearanceSettings>(
       settings.appearance,
       { theme: true, leather_texture: true, texture_intensity: true, button_texture: true },
@@ -508,6 +1077,8 @@ describe('contract fixtures parse through the real client', () => {
     );
     expect(typeof onboarding.completed).toBe('boolean');
     if (onboarding.completed_at !== null) assertTimestamp(onboarding.completed_at, 'completed_at');
+    const ai = assertExactKeys<AiSettings>(settings.ai, { enabled: true }, 'Settings.ai');
+    expect(typeof ai.enabled).toBe('boolean');
   });
 
   it('registry.extract.json → RegistryExtractView (GET /v1/entities/{id}/registry)', async () => {
@@ -758,6 +1329,376 @@ describe('contract fixtures parse through the real client', () => {
       inEnum(CAE_LEVELS, n.level, 'cae.children[].level');
       inEnum(CAE_REVISIONS, n.revision, 'cae.children[].revision');
       expect(n.designation.length).toBeGreaterThan(0);
+    }
+  });
+
+  function assertTslSummary(summary: unknown, label: string): TslSummaryView {
+    const s = assertExactKeys<TslSummaryView>(
+      summary,
+      {
+        source: true,
+        scheme_operator_name: true,
+        scheme_name: true,
+        scheme_territory: true,
+        sequence_number: true,
+        issue_date_time: true,
+        next_update: true,
+        stale: true,
+        validation: true,
+        providers: true,
+        services: true,
+        ca_qc_services: true,
+        qualified_esignature_services: true,
+        trusted_esignature_services: true,
+      },
+      label,
+    );
+    const source = assertExactKeys<TslSourceView>(
+      s.source,
+      { kind: true, path: true, note: true },
+      `${label}.source`,
+    );
+    inEnum(TSL_SOURCE_KINDS, source.kind, `${label}.source.kind`);
+    if (source.path !== null) expect(typeof source.path).toBe('string');
+    expect(source.note.length).toBeGreaterThan(0);
+    if (s.issue_date_time !== null) assertTimestamp(s.issue_date_time, `${label}.issue_date_time`);
+    if (s.next_update !== null) assertTimestamp(s.next_update, `${label}.next_update`);
+    expect(typeof s.stale).toBe('boolean');
+    const validation = assertExactKeys<TslValidationView>(
+      s.validation,
+      { checked_at: true, signature: true, error: true },
+      `${label}.validation`,
+    );
+    assertTimestamp(validation.checked_at, `${label}.validation.checked_at`);
+    inEnum(TSL_SIGNATURE_STATUSES, validation.signature, `${label}.validation.signature`);
+    if (validation.error !== null) expect(validation.error.length).toBeGreaterThan(0);
+    for (const k of [
+      'providers',
+      'services',
+      'ca_qc_services',
+      'qualified_esignature_services',
+      'trusted_esignature_services',
+    ] as const) {
+      expect(typeof s[k], `${label}.${k} should be a number`).toBe('number');
+    }
+    return s;
+  }
+
+  function assertTslService(service: unknown, label: string): TslServiceSummaryView {
+    const svc = assertExactKeys<TslServiceSummaryView>(
+      service,
+      {
+        id: true,
+        provider_id: true,
+        provider_name: true,
+        name: true,
+        service_type: true,
+        status: true,
+        status_starting_time: true,
+        status_starting_time_raw: true,
+        ca_qc: true,
+        qualified_for_esignatures: true,
+        trusted_for_esignatures: true,
+        additional_service_info: true,
+        service_supply_points: true,
+        history_count: true,
+        identities: true,
+      },
+      label,
+    );
+    expect(svc.id).toMatch(/^svc-/);
+    expect(svc.provider_id).toMatch(/^tsp-/);
+    const status = assertExactKeys<TslServiceStatusView>(
+      svc.status,
+      { kind: true, uri: true },
+      `${label}.status`,
+    );
+    inEnum(TSL_SERVICE_STATUS_KINDS, status.kind, `${label}.status.kind`);
+    if (status.uri !== null) expect(status.uri.length).toBeGreaterThan(0);
+    if (svc.status_starting_time !== null)
+      assertTimestamp(svc.status_starting_time, `${label}.status_starting_time`);
+    if (svc.status_starting_time_raw !== null)
+      expect(svc.status_starting_time_raw.length).toBeGreaterThan(0);
+    expect(typeof svc.ca_qc).toBe('boolean');
+    expect(typeof svc.qualified_for_esignatures).toBe('boolean');
+    expect(typeof svc.trusted_for_esignatures).toBe('boolean');
+    expect(Array.isArray(svc.additional_service_info)).toBe(true);
+    expect(Array.isArray(svc.service_supply_points)).toBe(true);
+    expect(typeof svc.history_count).toBe('number');
+    const identities = assertExactKeys<TslIdentitySummaryView>(
+      svc.identities,
+      { certificates: true, subject_names: true, subject_key_ids: true },
+      `${label}.identities`,
+    );
+    expect(typeof identities.certificates).toBe('number');
+    expect(Array.isArray(identities.subject_names)).toBe(true);
+    expect(Array.isArray(identities.subject_key_ids)).toBe(true);
+    return svc;
+  }
+
+  function assertTslProviderAnalysis(analysis: unknown, label: string): TslProviderAnalysisView {
+    const a = assertExactKeys<TslProviderAnalysisView>(
+      analysis,
+      {
+        services: true,
+        granted_services: true,
+        withdrawn_services: true,
+        other_status_services: true,
+        services_with_history: true,
+        services_with_supply_points: true,
+        ca_qc_services: true,
+        qualified_esignature_services: true,
+        trusted_esignature_services: true,
+        duplicate_service_names: true,
+      },
+      label,
+    );
+    for (const k of [
+      'services',
+      'granted_services',
+      'withdrawn_services',
+      'other_status_services',
+      'services_with_history',
+      'services_with_supply_points',
+      'ca_qc_services',
+      'qualified_esignature_services',
+      'trusted_esignature_services',
+    ] as const) {
+      expect(typeof a[k], `${label}.${k} should be a number`).toBe('number');
+    }
+    expect(Array.isArray(a.duplicate_service_names)).toBe(true);
+    return a;
+  }
+
+  it('tsl.catalog.json → TslCatalogView (GET /v1/trust/catalog)', async () => {
+    stubFetch(fixture('tsl.catalog.json'));
+    const catalog: TslCatalogView = await api.getTrustCatalog();
+    assertExactKeys<TslCatalogView>(catalog, { summary: true, providers: true }, 'TslCatalogView');
+    assertTslSummary(catalog.summary, 'TslCatalogView.summary');
+    expect(Array.isArray(catalog.providers)).toBe(true);
+    expect(catalog.providers.length).toBeGreaterThan(0);
+    for (const provider of catalog.providers) {
+      const p = assertExactKeys<TslProviderView>(
+        provider,
+        {
+          id: true,
+          name: true,
+          trade_names: true,
+          information_uris: true,
+          analysis: true,
+          services: true,
+        },
+        'TslCatalogView.providers[]',
+      );
+      expect(p.id).toMatch(/^tsp-/);
+      expect(p.name.length).toBeGreaterThan(0);
+      expect(Array.isArray(p.trade_names)).toBe(true);
+      expect(Array.isArray(p.information_uris)).toBe(true);
+      assertTslProviderAnalysis(p.analysis, 'TslCatalogView.providers[].analysis');
+      expect(Array.isArray(p.services)).toBe(true);
+      for (const service of p.services) {
+        const svc = assertTslService(service, 'TslCatalogView.providers[].services[]');
+        expect(svc.provider_id).toBe(p.id);
+      }
+    }
+  });
+
+  function assertTsaSummary(summary: unknown, label: string): TsaSummaryView {
+    const s = assertExactKeys<TsaSummaryView>(
+      summary,
+      {
+        configured_url: true,
+        status: true,
+        status_message: true,
+        profile: true,
+        accepted_hash: true,
+        timestamp: true,
+        last_probe: true,
+        tsl: true,
+        records: true,
+        granted_records: true,
+        trusted_records: true,
+        policy_analysis: true,
+      },
+      label,
+    );
+    if (s.configured_url !== null) expect(s.configured_url).toMatch(/^https?:\/\//);
+    inEnum(TSA_STATUS_KINDS, s.status, `${label}.status`);
+    expect(s.status_message.length, `${label}.status_message`).toBeGreaterThan(0);
+
+    const profile = assertExactKeys<TsaProfileView>(
+      s.profile,
+      {
+        protocol: true,
+        hash_algorithm: true,
+        request_content_type: true,
+        response_content_type: true,
+        nonce_policy: true,
+        cert_req_default: true,
+        accepted_policy: true,
+      },
+      `${label}.profile`,
+    );
+    expect(profile.protocol).toContain('RFC 3161');
+    expect(profile.hash_algorithm).toBe('SHA-256');
+    expect(typeof profile.cert_req_default).toBe('boolean');
+
+    const accepted = assertExactKeys<TsaAcceptedHashView>(
+      s.accepted_hash,
+      { algorithm: true, input: true, digest: true },
+      `${label}.accepted_hash`,
+    );
+    expect(accepted.algorithm).toBe('SHA-256');
+    assertHex64(accepted.digest, `${label}.accepted_hash.digest`);
+
+    if (s.timestamp !== null) {
+      const ts = assertExactKeys<TsaTimestampMetadataView>(
+        s.timestamp,
+        {
+          gen_time: true,
+          policy: true,
+          serial_number: true,
+          token_sha256: true,
+          token_bytes: true,
+          tsa_certificate_embedded: true,
+        },
+        `${label}.timestamp`,
+      );
+      assertTimestamp(ts.gen_time, `${label}.timestamp.gen_time`);
+      expect(ts.policy).toMatch(/^\d+(?:\.\d+)+$/);
+      expect(ts.serial_number).toMatch(/^[0-9a-f]+$/);
+      assertHex64(ts.token_sha256, `${label}.timestamp.token_sha256`);
+      expect(typeof ts.token_bytes).toBe('number');
+      expect(typeof ts.tsa_certificate_embedded).toBe('boolean');
+    }
+
+    const probe = assertExactKeys<TsaProbeView>(
+      s.last_probe,
+      {
+        kind: true,
+        status: true,
+        checked_at: true,
+        request_der_sha256: true,
+        response_der_sha256: true,
+        request_matches_fixture: true,
+        error: true,
+      },
+      `${label}.last_probe`,
+    );
+    inEnum(TSA_PROBE_KINDS, probe.kind, `${label}.last_probe.kind`);
+    inEnum(TSA_PROBE_STATUSES, probe.status, `${label}.last_probe.status`);
+    assertTimestamp(probe.checked_at, `${label}.last_probe.checked_at`);
+    assertHex64(probe.request_der_sha256, `${label}.last_probe.request_der_sha256`);
+    assertHex64(probe.response_der_sha256, `${label}.last_probe.response_der_sha256`);
+    expect(typeof probe.request_matches_fixture).toBe('boolean');
+    if (probe.error !== null) expect(probe.error.length).toBeGreaterThan(0);
+
+    const tsl = assertExactKeys<TsaTslDiagnosticsView>(
+      s.tsl,
+      { source: true, signature: true, error: true },
+      `${label}.tsl`,
+    );
+    assertExactKeys<TslSourceView>(
+      tsl.source,
+      { kind: true, path: true, note: true },
+      `${label}.tsl.source`,
+    );
+    inEnum(TSL_SIGNATURE_STATUSES, tsl.signature, `${label}.tsl.signature`);
+    if (tsl.error !== null) expect(tsl.error.length).toBeGreaterThan(0);
+
+    for (const k of ['records', 'granted_records', 'trusted_records'] as const) {
+      expect(typeof s[k], `${label}.${k} should be a number`).toBe('number');
+    }
+    const policy = assertExactKeys<TsaPolicyAnalysisView>(
+      s.policy_analysis,
+      {
+        accepted_policy: true,
+        fixture_policy: true,
+        fixture_policy_accepted: true,
+        qualified_timestamp_records: true,
+        trusted_qualified_timestamp_records: true,
+        advisory: true,
+      },
+      `${label}.policy_analysis`,
+    );
+    expect(policy.accepted_policy.length).toBeGreaterThan(0);
+    if (policy.fixture_policy !== null) expect(policy.fixture_policy).toMatch(/^\d+(?:\.\d+)+$/);
+    expect(typeof policy.fixture_policy_accepted).toBe('boolean');
+    expect(typeof policy.qualified_timestamp_records).toBe('number');
+    expect(typeof policy.trusted_qualified_timestamp_records).toBe('number');
+    expect(typeof policy.advisory).toBe('boolean');
+    return s;
+  }
+
+  function assertTsaRecord(record: unknown, label: string): TsaRecordView {
+    const r = assertExactKeys<TsaRecordView>(
+      record,
+      {
+        id: true,
+        provider_id: true,
+        provider_name: true,
+        name: true,
+        service_type: true,
+        status: true,
+        status_starting_time: true,
+        status_starting_time_raw: true,
+        qualified_timestamp_service: true,
+        granted: true,
+        effective: true,
+        trusted: true,
+        additional_service_info: true,
+        service_supply_points: true,
+        history_count: true,
+        identities: true,
+        analysis: true,
+      },
+      label,
+    );
+    expect(r.id.length, `${label}.id`).toBeGreaterThan(0);
+    expect(r.provider_id.length, `${label}.provider_id`).toBeGreaterThan(0);
+    expect(r.provider_name.length, `${label}.provider_name`).toBeGreaterThan(0);
+    expect(r.service_type, `${label}.service_type should be a TSA service`).toContain('/TSA');
+    const status = assertExactKeys<TslServiceStatusView>(
+      r.status,
+      { kind: true, uri: true },
+      `${label}.status`,
+    );
+    inEnum(TSL_SERVICE_STATUS_KINDS, status.kind, `${label}.status.kind`);
+    if (r.status_starting_time !== null)
+      assertTimestamp(r.status_starting_time, `${label}.status_starting_time`);
+    if (r.status_starting_time_raw !== null)
+      expect(r.status_starting_time_raw.length).toBeGreaterThan(0);
+    for (const k of ['qualified_timestamp_service', 'granted', 'effective', 'trusted'] as const) {
+      expect(typeof r[k], `${label}.${k} should be boolean`).toBe('boolean');
+    }
+    expect(Array.isArray(r.additional_service_info)).toBe(true);
+    expect(Array.isArray(r.service_supply_points)).toBe(true);
+    expect(typeof r.history_count).toBe('number');
+    assertExactKeys<TslIdentitySummaryView>(
+      r.identities,
+      { certificates: true, subject_names: true, subject_key_ids: true },
+      `${label}.identities`,
+    );
+    const analysis = assertExactKeys<TsaRecordAnalysisView>(
+      r.analysis,
+      { classification: true, trust_basis: true, blocking_reasons: true },
+      `${label}.analysis`,
+    );
+    expect(analysis.classification.length).toBeGreaterThan(0);
+    expect(analysis.trust_basis.length).toBeGreaterThan(0);
+    expect(Array.isArray(analysis.blocking_reasons)).toBe(true);
+    return r;
+  }
+
+  it('tsa.status.json → TsaCatalogView (GET /v1/trust/tsa)', async () => {
+    stubFetch(fixture('tsa.status.json'));
+    const catalog: TsaCatalogView = await api.getTsaCatalog();
+    assertExactKeys<TsaCatalogView>(catalog, { summary: true, records: true }, 'TsaCatalogView');
+    const summary = assertTsaSummary(catalog.summary, 'TsaCatalogView.summary');
+    expect(Array.isArray(catalog.records)).toBe(true);
+    expect(catalog.records.length).toBe(summary.records);
+    for (const record of catalog.records) {
+      assertTsaRecord(record, 'TsaCatalogView.records[]');
     }
   });
 
@@ -1065,6 +2006,212 @@ describe('contract fixtures parse through the real client', () => {
     expect(user).not.toHaveProperty('password');
   });
 
+  it('user.dsr-export.json → UserDsrExport (GET /v1/privacy/users/{id}/export)', async () => {
+    stubFetch(fixture('user.dsr-export.json'));
+    const exported: UserDsrExport = await api.exportUserDsr('6d5e4f00-0000-4000-8000-000000000005');
+    assertExactKeys<UserDsrExport>(
+      exported,
+      {
+        exported_at: true,
+        scope: true,
+        format_version: true,
+        redaction_notes: true,
+        exclusions: true,
+        user: true,
+        ledger_event_refs: true,
+      },
+      'UserDsrExport',
+    );
+    assertTimestamp(exported.exported_at, 'UserDsrExport.exported_at');
+    expect(exported.scope).toMatch(/^user:/);
+    expect(exported.format_version).toBeGreaterThanOrEqual(1);
+    expect(exported.redaction_notes.length).toBeGreaterThan(0);
+    expect(exported.exclusions).toContain('password_hash');
+
+    const user = assertExactKeys<UserDsrExportUser>(
+      exported.user,
+      {
+        id: true,
+        username: true,
+        display_name: true,
+        created_at: true,
+        active: true,
+        has_secret: true,
+        has_attestation_key: true,
+        has_recovery_phrase: true,
+        role_assignments: true,
+      },
+      'UserDsrExport.user',
+      ['attestation_key_fingerprint'],
+    );
+    assertTimestamp(user.created_at, 'UserDsrExport.user.created_at');
+    expect(user).not.toHaveProperty('password_hash');
+    expect(user).not.toHaveProperty('password');
+    expect(user).not.toHaveProperty('recovery_phrase');
+
+    expect(Array.isArray(user.role_assignments)).toBe(true);
+    expect(user.role_assignments.length).toBeGreaterThan(0);
+    for (const assignment of user.role_assignments) {
+      const a = assertExactKeys<UserDsrRoleAssignment>(
+        assignment,
+        { role_id: true, scope: true, permissions: true },
+        'UserDsrExport.user.role_assignments[]',
+        ['role_name'],
+      );
+      expect(a.role_id.length).toBeGreaterThan(0);
+      assertPermissionScope(a.scope, 'UserDsrExport.user.role_assignments[].scope');
+      expect(Array.isArray(a.permissions)).toBe(true);
+      for (const permission of a.permissions) {
+        expect(permission).toMatch(/^[a-z]+(?:\.[a-z]+)+$/);
+      }
+    }
+
+    expect(Array.isArray(exported.ledger_event_refs)).toBe(true);
+    expect(exported.ledger_event_refs.length).toBeGreaterThan(0);
+    for (const ref of exported.ledger_event_refs) {
+      const event = assertExactKeys<LedgerEventView>(
+        ref,
+        {
+          id: true,
+          seq: true,
+          actor: true,
+          justification: true,
+          timestamp: true,
+          scope: true,
+          kind: true,
+          payload_digest: true,
+          prev_hash: true,
+          hash: true,
+          chains: true,
+          attestation: true,
+        },
+        'UserDsrExport.ledger_event_refs[]',
+      );
+      assertTimestamp(event.timestamp, 'UserDsrExport.ledger_event_refs[].timestamp');
+      assertHex64(event.payload_digest, 'UserDsrExport.ledger_event_refs[].payload_digest');
+      assertHex64(event.prev_hash, 'UserDsrExport.ledger_event_refs[].prev_hash');
+      assertHex64(event.hash, 'UserDsrExport.ledger_event_refs[].hash');
+      expect(event).not.toHaveProperty('payload');
+    }
+  });
+
+  it('user.dsr-requests.json → DsrRequestView[] (GET /v1/privacy/users/{id}/dsr-requests)', async () => {
+    stubFetch(fixture('user.dsr-requests.json'));
+    const requests: DsrRequestView[] = await api.listUserDsrRequests(
+      '6d5e4f00-0000-4000-8000-000000000005',
+    );
+    expect(Array.isArray(requests)).toBe(true);
+    expect(requests.length).toBeGreaterThan(1);
+    for (const request of requests) {
+      const r = assertExactKeys<DsrRequestView>(
+        request,
+        {
+          id: true,
+          subject_user_id: true,
+          request_type: true,
+          status: true,
+          created_at: true,
+          created_by: true,
+        },
+        'DsrRequestView',
+        [
+          'completed_at',
+          'completed_by',
+          'outcome',
+          'executed_at',
+          'executed_by',
+          'execution_notes',
+          'affected_records',
+          'retention_review',
+          'legal_basis_review',
+        ],
+      );
+      inEnum(DSR_REQUEST_TYPES, r.request_type, 'DsrRequestView.request_type');
+      inEnum(DSR_REQUEST_STATUSES, r.status, 'DsrRequestView.status');
+      assertTimestamp(r.created_at, 'DsrRequestView.created_at');
+      expect(r.created_by.length).toBeGreaterThan(0);
+      if (r.outcome !== undefined) {
+        inEnum(DSR_REQUEST_OUTCOMES, r.outcome, 'DsrRequestView.outcome');
+      }
+      if (r.executed_at !== undefined) assertTimestamp(r.executed_at, 'DsrRequestView.executed_at');
+      if (r.executed_by !== undefined) {
+        expect(
+          r.executed_by.length,
+          'DsrRequestView.executed_by should be non-empty',
+        ).toBeGreaterThan(0);
+      }
+      if (r.execution_notes !== undefined) {
+        expect(
+          r.execution_notes.length,
+          'DsrRequestView.execution_notes should be non-empty',
+        ).toBeGreaterThan(0);
+      }
+      if (r.retention_review !== undefined) {
+        expect(
+          r.retention_review.length,
+          'DsrRequestView.retention_review should be non-empty',
+        ).toBeGreaterThan(0);
+      }
+      if (r.legal_basis_review !== undefined) {
+        expect(
+          r.legal_basis_review.length,
+          'DsrRequestView.legal_basis_review should be non-empty',
+        ).toBeGreaterThan(0);
+      }
+      if (r.affected_records !== undefined) {
+        expect(
+          Array.isArray(r.affected_records),
+          'DsrRequestView.affected_records should be an array',
+        ).toBe(true);
+        for (const affected of r.affected_records) {
+          const a = assertExactKeys<{ collection: string; action: string; count: number }>(
+            affected,
+            { collection: true, action: true, count: true },
+            'DsrRequestView.affected_records[]',
+          );
+          expect(a.collection.length, 'affected collection should be non-empty').toBeGreaterThan(0);
+          expect(a.action.length, 'affected action should be non-empty').toBeGreaterThan(0);
+          expect(Number.isInteger(a.count), 'affected count should be an integer').toBe(true);
+          expect(a.count, 'affected count should not be negative').toBeGreaterThanOrEqual(0);
+        }
+      }
+      if (r.status === 'completed') {
+        expect(r.completed_at).toBeTruthy();
+        expect(r.completed_by).toBeTruthy();
+        assertTimestamp(r.completed_at as string, 'DsrRequestView.completed_at');
+      } else {
+        expect(r.completed_at).toBeUndefined();
+        expect(r.completed_by).toBeUndefined();
+      }
+    }
+  });
+
+  it('privacy.processors.json → ProcessorRecordView[] (GET /v1/privacy/processors)', async () => {
+    stubFetch(fixture('privacy.processors.json'));
+    const processors: ProcessorRecordView[] = await api.listProcessorRecords();
+    expect(Array.isArray(processors)).toBe(true);
+    expect(processors.length).toBeGreaterThan(0);
+    assertProcessorRecord(processors[0], 'ProcessorRecordView');
+  });
+
+  it('privacy.dpias.json → DpiaRecordView[] (GET /v1/privacy/dpias)', async () => {
+    stubFetch(fixture('privacy.dpias.json'));
+    const dpias: DpiaRecordView[] = await api.listDpiaRecords();
+    expect(Array.isArray(dpias)).toBe(true);
+    expect(dpias.length).toBeGreaterThan(0);
+    assertDpiaRecord(dpias[0], 'DpiaRecordView');
+  });
+
+  it('retention.policies.json → RetentionPolicyView[] (GET /v1/privacy/retention-policies)', async () => {
+    stubFetch(fixture('retention.policies.json'));
+    const policies: RetentionPolicyView[] = await api.listRetentionPolicies();
+    expect(Array.isArray(policies)).toBe(true);
+    expect(policies.length).toBeGreaterThan(0);
+    const policy = assertRetentionPolicy(policies[0], 'RetentionPolicyView');
+    expect(policy.retention_period).toMatch(/^P/);
+    expect(policy.active).toBe(true);
+  });
+
   it('session.json → SessionView (GET /v1/session, populated)', async () => {
     stubFetch(fixture('session.json'));
     const session: SessionView = await api.getSession();
@@ -1142,13 +2289,96 @@ describe('contract fixtures parse through the real client', () => {
       expect(u).not.toHaveProperty('created_at');
     }
   });
+
+  it('session.password-policy.json → PasswordPolicyView (GET /v1/session/password-policy)', async () => {
+    stubFetch(fixture('session.password-policy.json'));
+    const policy: PasswordPolicyView = await api.getPasswordPolicy();
+    assertExactKeys<PasswordPolicyView>(
+      policy,
+      {
+        min_length: true,
+        require_lowercase: true,
+        require_uppercase: true,
+        require_digit: true,
+        require_special: true,
+        forbid_username: true,
+        forbid_common: true,
+        max_identical_run: true,
+        max_sequential_run: true,
+        allow_weak_passwords: true,
+        rules: true,
+      },
+      'PasswordPolicyView',
+    );
+    expect(policy.min_length).toBeGreaterThanOrEqual(10);
+    expect(typeof policy.require_lowercase).toBe('boolean');
+    expect(typeof policy.require_uppercase).toBe('boolean');
+    expect(typeof policy.require_digit).toBe('boolean');
+    expect(typeof policy.require_special).toBe('boolean');
+    expect(typeof policy.forbid_username).toBe('boolean');
+    expect(typeof policy.forbid_common).toBe('boolean');
+    expect(policy.max_identical_run).toBeGreaterThanOrEqual(2);
+    expect(policy.max_sequential_run).toBeGreaterThanOrEqual(2);
+    expect(typeof policy.allow_weak_passwords).toBe('boolean');
+    expect(Array.isArray(policy.rules)).toBe(true);
+    expect(policy.rules.length).toBe(PASSWORD_POLICY_RULE_CODES.length);
+    for (const rule of policy.rules) {
+      const r = assertExactKeys<PasswordRuleView>(
+        rule,
+        { code: true, requirement: true },
+        'PasswordPolicyView.rules[]',
+      );
+      inEnum(PASSWORD_POLICY_RULE_CODES, r.code, 'PasswordPolicyView.rules[].code');
+      expect(r.requirement.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('api-key.list.json → ApiKeyView[] (GET /v1/api-keys)', async () => {
+    stubFetch(fixture('api-key.list.json'));
+    const keys: ApiKeyView[] = await api.listApiKeys();
+    expect(Array.isArray(keys), 'API-key list should be an array').toBe(true);
+    expect(keys.length).toBeGreaterThan(0);
+    assertApiKeyView(keys[0], 'ApiKeyView');
+  });
+
+  it('api-key.create.json → ApiKeyCreated (POST /v1/api-keys)', async () => {
+    stubFetch(fixture('api-key.create.json'), 201);
+    const created: ApiKeyCreated = await api.createApiKey({
+      name: 'Ledger export',
+      grant: {
+        kind: 'permissions',
+        permissions: ['ledger.read'],
+        scope: { kind: 'global' },
+      },
+      expires_at: '2026-12-31T23:59:59Z',
+      rate_limit: { rpm: 120, burst: 10 },
+    });
+    assertApiKeyCreated(created, 'ApiKeyCreated');
+  });
+
+  it('api-key.revoke.json → ApiKeyView (DELETE /v1/api-keys/{id})', async () => {
+    stubFetch(fixture('api-key.revoke.json'));
+    const revoked: ApiKeyView = await api.revokeApiKey('7a6b5c40-0000-4000-8000-000000000065');
+    assertApiKeyView(revoked, 'ApiKeyRevoked');
+    expect(revoked.revoked).toBe(true);
+    expect(revoked.active).toBe(false);
+  });
+
+  it('api-key.rotate.json → ApiKeyCreated (POST /v1/api-keys/{id}/rotate)', async () => {
+    stubFetch(fixture('api-key.rotate.json'));
+    const rotated: ApiKeyCreated = await api.rotateApiKey('7a6b5c40-0000-4000-8000-000000000065');
+    assertApiKeyCreated(rotated, 'ApiKeyRotated');
+    expect(rotated.revoked).toBe(false);
+    expect(rotated.active).toBe(true);
+  });
 });
 
 // --- Cross-cutting guards ------------------------------------------------------
 
 describe('contract fixtures — cross-cutting guarantees', () => {
-  it('every fixture is real, non-empty JSON (the wire bytes a client must parse)', () => {
+  it('every fixture is real and non-empty (the wire bytes a client must parse)', () => {
     const names = Object.keys(rawFixtures).map((p) => p.split('/').pop());
+    const markdownNames = Object.keys(rawMarkdownFixtures).map((p) => p.split('/').pop());
     // The canonical fixtures the README inventories.
     for (const expected of [
       'entity.json',
@@ -1163,6 +2393,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'cae.updates.json',
       'cae.sections.json',
       'cae.children.json',
+      'tsl.catalog.json',
       'law.manifest.json',
       'law.corpus.json',
       'law.diploma.json',
@@ -1172,18 +2403,40 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'user.json',
       'session.json',
       'session.roster.json',
+      'session.password-policy.json',
+      'user.dsr-export.json',
+      'user.dsr-requests.json',
+      'privacy.processors.json',
+      'privacy.dpias.json',
+      'retention.policies.json',
+      'paper-book.import.json',
+      'api-key.list.json',
+      'api-key.create.json',
+      'api-key.revoke.json',
+      'api-key.rotate.json',
+      'tsa.status.json',
     ]) {
       expect(names, `contracts/ should include ${expected}`).toContain(expected);
     }
+    expect(markdownNames, 'contracts/ should include act.working-copy.md').toContain(
+      'act.working-copy.md',
+    );
     for (const [path, text] of Object.entries(rawFixtures)) {
       expect(text.length, `${path} should be non-empty`).toBeGreaterThan(0);
       expect(() => JSON.parse(text), `${path} should be valid JSON`).not.toThrow();
     }
+    for (const [path, text] of Object.entries(rawMarkdownFixtures)) {
+      expect(text.length, `${path} should be non-empty`).toBeGreaterThan(0);
+    }
+    expect(markdownFixture('act.working-copy.md')).toContain('WORKING COPY');
   });
 
   it('no fixture leaks a full código de acesso or password material', () => {
-    for (const [path, text] of Object.entries(rawFixtures)) {
-      expect(text, `${path} must not carry a password_hash`).not.toContain('password_hash');
+    for (const [path, text] of Object.entries({ ...rawFixtures, ...rawMarkdownFixtures })) {
+      expect(text, `${path} must not carry a password_hash field`).not.toMatch(
+        /"password_hash"\s*:/,
+      );
+      expect(text, `${path} must not carry an API-key verifier`).not.toContain('key_hash');
       // The only access code representation allowed on the wire is the mask.
       expect(text, `${path} must not carry a raw access_code field`).not.toMatch(
         /"access_code"\s*:/,

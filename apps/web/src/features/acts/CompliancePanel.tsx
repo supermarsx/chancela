@@ -5,14 +5,199 @@
  * the SealAction reads. Refetched by the query cache whenever the act is saved or
  * advanced, so it stays in step with edits.
  */
+import type { MouseEvent } from 'react';
 import type { ComplianceReport } from '../../api/types';
 import { entityFamilyLabels, severityLabels } from '../../api/labels';
+import { openExternal } from '../../desktop/openExternal';
 import { useT } from '../../i18n';
 import { Badge, EmptyState, InlineWarning } from '../../ui';
 
+type MetadataRecord = Record<string, unknown>;
+
+interface SourceReference {
+  label: string;
+  href: string | null;
+}
+
+const SOURCE_CONTAINER_KEYS = [
+  'source',
+  'sources',
+  'source_ref',
+  'source_refs',
+  'source_reference',
+  'source_references',
+  'legal_source',
+  'legal_sources',
+  'legal_reference',
+  'legal_references',
+  'law_ref',
+  'law_refs',
+  'reference',
+  'references',
+  'citation',
+  'citations',
+] as const;
+
+const URL_KEYS = [
+  'url',
+  'href',
+  'link',
+  'source_url',
+  'official_url',
+  'law_url',
+  'canonical_url',
+  'source',
+] as const;
+
+const LABEL_KEYS = [
+  'label',
+  'title',
+  'citation',
+  'reference',
+  'legal_reference',
+  'article_ref',
+  'provision',
+  'anchor',
+] as const;
+
+const AUTHORITY_KEYS = ['authority', 'diploma', 'legal_source', 'source'] as const;
+const ARTICLE_KEYS = ['article', 'article_label', 'article_ref', 'provision'] as const;
+
+function asRecord(value: unknown): MetadataRecord | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as MetadataRecord)
+    : null;
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function httpHref(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function firstString(record: MetadataRecord, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = asNonEmptyString(record[key]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function stringParts(record: MetadataRecord, keys: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const key of keys) {
+    const value = asNonEmptyString(record[key]);
+    if (value && !out.includes(value)) out.push(value);
+  }
+  return out;
+}
+
+function parseSourceRecord(record: MetadataRecord): SourceReference | null {
+  const urlText = firstString(record, URL_KEYS);
+  const href = urlText ? httpHref(urlText) : null;
+  const structuredLabel = stringParts(record, AUTHORITY_KEYS)
+    .concat(stringParts(record, ARTICLE_KEYS))
+    .join(', ');
+  const label = firstString(record, LABEL_KEYS) ?? (structuredLabel || urlText);
+
+  if (!label && !urlText) return null;
+  const visible = label || urlText || '';
+  const unsafeUrl = urlText && !href && !visible.includes(urlText) ? ` (${urlText})` : '';
+  return { label: `${visible}${unsafeUrl}`, href };
+}
+
+function parseSourceValue(value: unknown): SourceReference[] {
+  const text = asNonEmptyString(value);
+  if (text) return [{ label: text, href: httpHref(text) }];
+
+  if (Array.isArray(value)) return value.flatMap(parseSourceValue);
+
+  const record = asRecord(value);
+  if (!record) return [];
+
+  const parsed = parseSourceRecord(record);
+  return parsed ? [parsed] : [];
+}
+
+function sourceReferences(value: unknown): SourceReference[] {
+  const record = asRecord(value);
+  if (!record) return [];
+
+  const refs: SourceReference[] = [];
+  const direct = parseSourceRecord(record);
+  if (direct) refs.push(direct);
+
+  for (const key of SOURCE_CONTAINER_KEYS) {
+    refs.push(...parseSourceValue(record[key]));
+  }
+
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    const key = `${ref.href ?? ''}\u0000${ref.label}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function SourceReferences({ references }: { references: SourceReference[] }) {
+  const t = useT();
+  if (references.length === 0) return null;
+  const sourceLabel = t('legislacao.corpus.article.source');
+
+  return (
+    <div className="row-wrap muted" aria-label={sourceLabel} style={{ marginTop: '0.35rem' }}>
+      <span>{sourceLabel}</span>
+      {references.map((ref, i) => {
+        const href = ref.href;
+        return href ? (
+          <a
+            key={`${href}-${ref.label}-${i}`}
+            className="mono truncate"
+            href={href}
+            target="_blank"
+            rel="noreferrer noopener"
+            title={ref.label}
+            aria-label={`${t('common.open')}: ${ref.label}`}
+            style={{ maxWidth: 'min(100%, 28rem)' }}
+            onClick={(e: MouseEvent<HTMLAnchorElement>) => {
+              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              void openExternal(href);
+            }}
+          >
+            {ref.label}
+          </a>
+        ) : (
+          <span
+            key={`${ref.label}-${i}`}
+            className="mono truncate"
+            title={ref.label}
+            aria-label={`${sourceLabel}: ${ref.label}`}
+            style={{ maxWidth: 'min(100%, 28rem)' }}
+          >
+            {ref.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CompliancePanel({ report }: { report: ComplianceReport }) {
   const t = useT();
-  const clean = report.issues.length === 0;
+  const conveningAdvisories = report.convening_advisories ?? [];
+  const warningCount = report.warnings + conveningAdvisories.length;
+  const clean = report.issues.length === 0 && conveningAdvisories.length === 0;
 
   return (
     <div className="stack--tight">
@@ -31,11 +216,11 @@ export function CompliancePanel({ report }: { report: ComplianceReport }) {
               : t('compliance.errors.other', { count: report.errors })}
           </Badge>
         ) : null}
-        {report.warnings > 0 ? (
+        {warningCount > 0 ? (
           <Badge tone="warn">
-            {report.warnings === 1
-              ? t('compliance.warnings.one', { count: report.warnings })
-              : t('compliance.warnings.other', { count: report.warnings })}
+            {warningCount === 1
+              ? t('compliance.warnings.one', { count: warningCount })
+              : t('compliance.warnings.other', { count: warningCount })}
           </Badge>
         ) : null}
         {clean ? <Badge tone="ok">{t('compliance.conforme')}</Badge> : null}
@@ -57,6 +242,23 @@ export function CompliancePanel({ report }: { report: ComplianceReport }) {
                 <code className="mono">{issue.rule_id}</code>
               </div>
               <p className="issue__message">{issue.message}</p>
+              <SourceReferences references={sourceReferences(issue)} />
+            </li>
+          ))}
+          {conveningAdvisories.map((advisory, i) => (
+            <li
+              key={`${advisory.code}-${i}`}
+              className={`issue issue--${advisory.severity.toLowerCase()}`}
+            >
+              <div className="issue__head">
+                <Badge tone={advisory.severity === 'Error' ? 'error' : 'warn'}>
+                  {severityLabels[advisory.severity]}
+                </Badge>
+                <code className="mono">{advisory.code}</code>
+                <code className="mono">{advisory.threshold_id}</code>
+              </div>
+              <p className="issue__message">{advisory.message}</p>
+              <SourceReferences references={sourceReferences(advisory)} />
             </li>
           ))}
         </ul>

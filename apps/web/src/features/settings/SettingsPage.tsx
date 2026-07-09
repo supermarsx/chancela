@@ -32,6 +32,7 @@ import {
   NUMBERING_SCHEMES,
   SIGNATURE_FAMILIES,
   THEME_MODES,
+  type AiSettings,
   type AppearanceSettings,
   type CatalogSettings,
   type DocumentSettings,
@@ -40,6 +41,7 @@ import {
   type OrganizationSettings,
   type Settings,
   type SignatureFamily,
+  type SigningProviderMetadata,
   type SigningSettings,
   type ThemeMode,
 } from '../../api/types';
@@ -52,6 +54,8 @@ import { LivrosIntegridadeSection } from '../recovery/LivrosIntegridadeSection';
 import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
 import { FuncoesSection } from '../rbac/FuncoesSection';
 import { DelegacoesSection } from '../rbac/DelegacoesSection';
+import { ApiKeysSection } from './ApiKeysSection';
+import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { useCan } from '../session/permissions';
 import {
   Badge,
@@ -71,10 +75,30 @@ import {
   SubNav,
   Toggle,
 } from '../../ui';
+import { EditUserPanel } from '../users/EditUserPage';
+import { NewUserPanel } from '../users/NewUserPage';
 import { UsersList } from '../users/UserListPage';
 
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
+
+type SettingsWithMaybeAi = Omit<Settings, 'ai' | 'signing'> & {
+  ai?: Partial<AiSettings> | null;
+  signing: Omit<SigningSettings, 'providers'> & Partial<Pick<SigningSettings, 'providers'>>;
+};
+
+function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
+  return {
+    ...settings,
+    signing: {
+      ...DEFAULT_SETTINGS.signing,
+      ...settings.signing,
+      cmd: { ...DEFAULT_SETTINGS.signing.cmd, ...(settings.signing.cmd ?? {}) },
+      providers: settings.signing.providers ?? DEFAULT_SETTINGS.signing.providers,
+    },
+    ai: { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) },
+  };
+}
 
 /**
  * Normalise the whole working copy to the wire shape (empty → null for nullables; a
@@ -103,6 +127,9 @@ function toWireBody(draft: Settings): Settings {
       tsa_url: orNull(draft.signing.tsa_url ?? ''),
       tsl_url: orNull(draft.signing.tsl_url ?? ''),
     },
+    ai: {
+      enabled: draft.ai.enabled === true,
+    },
   };
 }
 
@@ -114,20 +141,28 @@ type SettingsSection =
   | 'documentos'
   | 'assinaturas'
   | 'gestao'
+  | 'privacidade'
   | 'utilizadores'
+  | 'chaves-api'
   | 'funcoes'
   | 'delegacoes'
   | 'integridade'
   | 'dados'
   | 'sobre';
 
-const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNode }[] = [
+type SettingsSectionNav =
+  | { id: SettingsSection; label: MessageKey; icon: ReactNode; literal?: never }
+  | { id: SettingsSection; label?: never; icon: ReactNode; literal: string };
+
+const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'aparencia', label: 'settings.appearance.cardTitle', icon: <Icon.Palette /> },
   { id: 'identidade', label: 'settings.identity.cardTitle', icon: <Icon.IdCard /> },
   { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
   { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
+  { id: 'privacidade', literal: 'Privacidade', icon: <Icon.Seal /> },
   { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
+  { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
   { id: 'funcoes', label: 'rbac.funcoes.tab', icon: <Icon.Scale /> },
   { id: 'delegacoes', label: 'rbac.delegacoes.tab', icon: <Icon.ArrowRight /> },
   { id: 'integridade', label: 'integrity.cardTitle', icon: <Icon.Layers /> },
@@ -140,10 +175,12 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: MessageKey; icon: ReactNo
  *  their own `role.manage`/`delegation.*` affordances, so they are standalone too. */
 const STANDALONE_SECTIONS: readonly SettingsSection[] = [
   'utilizadores',
+  'privacidade',
   'funcoes',
   'delegacoes',
   'integridade',
   'dados',
+  'chaves-api',
 ];
 
 /**
@@ -159,6 +196,29 @@ const AUTOSAVE_ENABLED = true;
 const isSettingsSection = (v: string | null): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
 
+function providerModeLabel(provider: SigningProviderMetadata): string {
+  switch (provider.mode) {
+    case 'CMD':
+      return 'CMD/SCMD';
+    case 'CC':
+      return 'Cartão de Cidadão';
+    case 'CSC_QTSP':
+      return 'CSC/QTSP';
+    case 'LOCAL_PKCS12':
+      return 'PKCS#12 local';
+  }
+}
+
+function providerStatus(provider: SigningProviderMetadata): {
+  tone: 'ok' | 'error' | 'accent' | 'warn';
+  label: string;
+} {
+  if (provider.production_blocked) return { tone: 'error', label: 'Bloqueado em produção' };
+  if (provider.configured) return { tone: 'ok', label: 'Configurado' };
+  if (provider.local_only) return { tone: 'accent', label: 'Apenas local' };
+  return { tone: 'warn', label: 'Não configurado' };
+}
+
 export function SettingsPage() {
   const t = useT();
   const toast = useToast();
@@ -166,12 +226,25 @@ export function SettingsPage() {
   // Aparência is the default and carries no `sec` param (so `/configuracoes` lands on it).
   const secParam = params.get('sec');
   const section: SettingsSection = isSettingsSection(secParam) ? secParam : 'aparencia';
+  const selectedUser = section === 'utilizadores' ? params.get('user') : null;
   const selectSection = (next: SettingsSection) =>
     setParams(
       (prev) => {
         const p = new URLSearchParams(prev);
         if (next === 'aparencia') p.delete('sec');
         else p.set('sec', next);
+        if (next !== 'utilizadores') p.delete('user');
+        return p;
+      },
+      { replace: true },
+    );
+  const selectUser = (next: string | null) =>
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.set('sec', 'utilizadores');
+        if (next) p.set('user', next);
+        else p.delete('user');
         return p;
       },
       { replace: true },
@@ -194,14 +267,17 @@ export function SettingsPage() {
 
   // The committed (persisted) document, tracked in a ref so the unmount cleanup can
   // restore it if the operator navigated away mid-preview without saving.
-  const committed = settings.data ?? DEFAULT_SETTINGS;
+  const committed = useMemo(
+    () => withSettingsDefaults(settings.data ?? DEFAULT_SETTINGS),
+    [settings.data],
+  );
   const committedRef = useRef(committed);
   committedRef.current = committed;
 
   // Full working copy, seeded once when the document first loads.
   const [draft, setDraft] = useState<Settings | null>(null);
   useEffect(() => {
-    if (settings.data && !draft) setDraft(settings.data);
+    if (settings.data && !draft) setDraft(withSettingsDefaults(settings.data));
   }, [settings.data, draft]);
 
   // Live preview: apply the draft appearance/locale as it is edited so the operator
@@ -256,6 +332,8 @@ export function SettingsPage() {
     key: K,
     value: AppearanceSettings[K],
   ) => setDraft((d) => (d ? { ...d, appearance: { ...d.appearance, [key]: value } } : d));
+  const setAi = <K extends keyof AiSettings>(key: K, value: AiSettings[K]) =>
+    setDraft((d) => (d ? { ...d, ai: { ...d.ai, [key]: value } } : d));
 
   const a = draft.appearance;
 
@@ -267,7 +345,11 @@ export function SettingsPage() {
         lede={t('settings.page.lede')}
       >
         <SubNav
-          items={SETTINGS_SECTIONS.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
+          items={SETTINGS_SECTIONS.map((s) => ({
+            id: s.id,
+            label: 'literal' in s ? s.literal : t(s.label),
+            icon: s.icon,
+          }))}
           active={section}
           onSelect={selectSection}
           ariaLabel={t('settings.subnav.aria')}
@@ -517,6 +599,39 @@ export function SettingsPage() {
                 <p className="field__hint">{t('settings.signing.requireQualified.hint')}</p>
                 <p className="field__hint">{t('settings.signing.note')}</p>
 
+                <div className="stack--tight">
+                  <p className="card__label">Modos de prestador configurados</p>
+                  <p className="field__hint">
+                    Metadados não secretos. A interface não recolhe chaves privadas, PINs,
+                    passphrases PKCS#12 ou OTPs nesta página.
+                  </p>
+                  <dl className="deflist">
+                    {draft.signing.providers.map((provider) => {
+                      const status = providerStatus(provider);
+                      return (
+                        <div key={provider.id}>
+                          <dt>
+                            {provider.label}
+                            <span className="muted"> · {providerModeLabel(provider)}</span>
+                          </dt>
+                          <dd>
+                            <span className="row-wrap">
+                              <Badge tone={status.tone}>{status.label}</Badge>
+                              {provider.configured && provider.production_blocked ? (
+                                <Badge tone="warn">Configuração incompleta</Badge>
+                              ) : null}
+                              {provider.local_only ? (
+                                <Badge tone="accent">Apenas local</Badge>
+                              ) : null}
+                            </span>
+                            <span className="field__hint">{provider.note}</span>
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                </div>
+
                 {/* Chave Móvel Digital — read-only config. The non-secret selectors (env,
                   ApplicationId) plus the "AMA cert configured?" flag come from the server; the
                   AMA secret material itself is supplied via environment variables, never the
@@ -559,9 +674,22 @@ export function SettingsPage() {
           {section === 'gestao' ? (
             <Card title={t('settings.management.cardTitle')}>
               <div className="form">
+                {canManageSettings ? (
+                  <>
+                    <Toggle
+                      label="Ativar IA/MCP"
+                      checked={draft.ai.enabled}
+                      onChange={(v) => setAi('enabled', v)}
+                    />
+                    <p className="field__hint">
+                      Controla o acesso deste tenant às funcionalidades de IA e ao servidor MCP.
+                      Mantém-se desativado por predefinição.
+                    </p>
+                  </>
+                ) : null}
                 <p className="field__hint">{t('settings.management.note')}</p>
                 <div className="row-wrap">
-                  <ButtonLink to="/utilizadores" icon={<Icon.Users />}>
+                  <ButtonLink to="/configuracoes?sec=utilizadores" icon={<Icon.Users />}>
                     {t('settings.management.usersLink')}
                   </ButtonLink>
                   <ButtonLink to="/ferramentas" icon={<Icon.Wrench />}>
@@ -573,11 +701,38 @@ export function SettingsPage() {
           ) : null}
 
           {/* Utilizadores ------------------------------------------------------------ */}
-          {/* The roster hosted inline as a first-class sub-tab (t60 E5). New/edit still live
-            on their own routes (`/utilizadores/novo|:id`); the standalone `/utilizadores`
-            route keeps working for the CurrentUserPicker links. `UsersList` supplies its
-            own Card + "novo" action, so no extra chrome is needed here. */}
-          {section === 'utilizadores' ? <UsersList /> : null}
+          {/* The roster, create flow and edit/access managers are all hosted inside this
+            settings sub-tab. Legacy `/utilizadores/*` routes redirect here. */}
+          {section === 'utilizadores' ? (
+            <div className="stack">
+              <UsersList />
+              {selectedUser ? (
+                <div className="stack">
+                  <div className="form__actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.Users />}
+                      onClick={() => selectUser(null)}
+                    >
+                      {t('users.breadcrumb.self')}
+                    </Button>
+                  </div>
+                  {selectedUser === 'novo' ? (
+                    <NewUserPanel onCreated={(user) => selectUser(user.id)} />
+                  ) : (
+                    <EditUserPanel id={selectedUser} />
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Chaves API ------------------------------------------------------------- */}
+          {section === 'chaves-api' ? <ApiKeysSection /> : null}
+
+          {/* Privacidade e conformidade ------------------------------------------- */}
+          {section === 'privacidade' ? <PrivacyComplianceSection /> : null}
 
           {/* Funções e permissões (t64-E6) ------------------------------------------ */}
           {section === 'funcoes' ? <FuncoesSection /> : null}

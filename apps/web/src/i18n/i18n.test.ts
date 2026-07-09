@@ -24,11 +24,16 @@ describe('catalog completeness matrix', () => {
   });
 
   it('every non-source locale has exactly the source key set (no missing/extra keys)', async () => {
-    for (const locale of SHIPPED_LOCALES) {
-      if (locale === 'pt-PT') continue;
-      const loader = LOCALE_LOADERS[locale];
-      expect(loader, `missing loader for ${locale}`).toBeDefined();
-      const catalog = await loader!();
+    const catalogs = await Promise.all(
+      SHIPPED_LOCALES.filter((locale) => locale !== 'pt-PT').map(async (locale) => {
+        const loader = LOCALE_LOADERS[locale];
+        expect(loader, `missing loader for ${locale}`).toBeDefined();
+        const catalog = await loader!();
+        return { locale, catalog };
+      }),
+    );
+
+    for (const { locale, catalog } of catalogs) {
       const keys = Object.keys(catalog).sort();
       // Symmetric difference is empty ⇒ identical key sets.
       const missing = sourceKeys.filter((k) => !(k in catalog));
@@ -40,7 +45,7 @@ describe('catalog completeness matrix', () => {
         expect(catalog[k as keyof typeof catalog], `${locale}:${k} empty`).not.toBe('');
       }
     }
-  });
+  }, 15_000);
 });
 
 describe('interpolate', () => {

@@ -17,16 +17,31 @@ import type {
   CaeRefreshResult,
   CaeRevision,
   CaeUpdates,
+  TslCatalogView,
+  TslProviderDetailView,
+  TslServiceDetailView,
+  TslServiceSummaryView,
+  TslSummaryView,
+  TsaCatalogView,
+  TsaRecordView,
   CloseBookBody,
   ComplianceIssue,
   ComplianceReport,
+  CreateDsrRequestBody,
+  CreateDpiaRecordBody,
   CreateEntityBody,
+  CreateProcessorRecordBody,
+  CreateRetentionPolicyBody,
   CreateSessionBody,
   CreateUserBody,
   Dashboard,
   DocumentBundle,
+  ImportedDocumentView,
+  ImportDocumentBody,
   DocumentModel,
   DraftActBody,
+  DpiaRecordView,
+  DsrRequestView,
   Entity,
   EntityFamily,
   LifecycleStage,
@@ -37,15 +52,25 @@ import type {
   LawDiplomaDetailView,
   LawArticleView,
   LawSearchView,
+  LedgerArchiveDocumentParams,
   LedgerEventView,
+  LedgerQueryParams,
   LedgerVerify,
   OpenBookBody,
+  PaperBookImportReport,
+  PaperBookImportValidateBody,
   RegistryExtractView,
   RegistryImportBody,
   RegistryImportReport,
   RegistryLookupBody,
   SealActBody,
   SealResult,
+  PatchDpiaRecordBody,
+  PatchProcessorRecordBody,
+  PatchRetentionPolicyBody,
+  RetentionDryRunBody,
+  RetentionDryRunReport,
+  RetentionPolicyView,
   SignatureStatusView,
   CmdInitiateBody,
   CmdInitiateResult,
@@ -53,6 +78,11 @@ import type {
   CmdConfirmResult,
   CcSignBody,
   CcSignResult,
+  CreateExternalSignerInviteBody,
+  CreateExternalSignerInviteResult,
+  ExternalSignerInviteDecision,
+  ExternalSignerInvitePublicView,
+  ExternalSignerInviteView,
   SignatureProviderView,
   RemoteInitiateBody,
   RemoteInitiateResult,
@@ -62,6 +92,8 @@ import type {
   SessionResult,
   SessionRoster,
   SessionView,
+  PasswordPolicyView,
+  ProcessorRecordView,
   SetSecretBody,
   RemoveSecretBody,
   AttestationKeyBody,
@@ -77,10 +109,16 @@ import type {
   PatchRoleBody,
   RoleAssignmentInput,
   RoleAssignmentView,
+  ApiKeyCreated,
+  ApiKeyRotated,
+  ApiKeyView,
+  CreateApiKeyBody,
   SessionPermissions,
   DelegationView,
   GrantDelegationBody,
   BookView,
+  BookLegalHoldView,
+  ClearBookLegalHoldBody,
   HealthResponse,
   IntegrityReportView,
   ReanchorBody,
@@ -96,6 +134,8 @@ import type {
   ResetOutcomeView,
   StartOverInstanceBody,
   StartOverInstanceView,
+  SetBookLegalHoldBody,
+  UserDsrExport,
 } from './types';
 import { clearSessionToken, getSessionToken } from './session';
 import { t } from '../i18n';
@@ -122,6 +162,14 @@ export class ApiError extends Error {
     this.issues = body.issues;
     this.warnings = body.warnings;
   }
+}
+
+/** A non-JSON text export plus the original download metadata. */
+export interface TextDownload {
+  text: string;
+  blob: Blob;
+  contentType: string;
+  headers: Headers;
 }
 
 /** The path a response came back on, for diagnostics; empty when the URL is unavailable. */
@@ -249,6 +297,59 @@ export async function fetchBlob(path: string): Promise<Blob> {
 }
 
 /**
+ * Fetch a textual download (for example a Markdown export) without routing it through
+ * JSON parsing or PDF-specific helpers. Returns both text and Blob forms, preserving
+ * the response content type/header metadata for callers that save the file.
+ */
+export async function fetchTextDownload(path: string): Promise<TextDownload> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = {};
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(path, { headers });
+  if (res.status === 401) clearSessionToken();
+  if (!res.ok) {
+    let message = t('error.requestFailed', { status: res.status });
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // Non-JSON error body — keep the generic status message.
+    }
+    throw new ApiError(res.status, { error: message });
+  }
+  const contentType = res.headers.get('Content-Type') ?? '';
+  const text = await res.clone().text();
+  const blob = await res.blob();
+  return { text, blob, contentType, headers: res.headers };
+}
+
+/**
+ * Fetch a textual download via POST with a JSON body. Used by public token-gated downloads whose
+ * token must stay in the request body rather than a path or query string.
+ */
+export async function postTextDownload(path: string, body: unknown): Promise<TextDownload> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch(path, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (res.status === 401) clearSessionToken();
+  if (!res.ok) {
+    let message = t('error.requestFailed', { status: res.status });
+    try {
+      const parsed = (await res.json()) as { error?: string };
+      if (parsed?.error) message = parsed.error;
+    } catch {
+      // Non-JSON error body — keep the generic status message.
+    }
+    throw new ApiError(res.status, { error: message });
+  }
+  const contentType = res.headers.get('Content-Type') ?? '';
+  const text = await res.clone().text();
+  const blob = await res.blob();
+  return { text, blob, contentType, headers: res.headers };
+}
+
+/**
  * Fetch a binary body via a non-GET method (e.g. the book-export `.zip`, produced by a
  * `POST`). Mirrors {@link fetchBlob}: attaches the session token, clears a stale token on
  * 401, and surfaces a non-2xx as an `ApiError` (parsing the friendly `{error}` body when
@@ -322,6 +423,14 @@ export const api = {
   openBook: (body: OpenBookBody) => post<BookView>('/v1/books', body),
   closeBook: (id: string, body: CloseBookBody) => post<BookView>(`/v1/books/${id}/close`, body),
   listBookActs: (id: string) => get<ActView[]>(`/v1/books/${id}/acts`),
+  getBookLegalHold: (id: string) => get<BookLegalHoldView>(`/v1/books/${id}/legal-hold`),
+  setBookLegalHold: (id: string, body: SetBookLegalHoldBody) =>
+    put<BookLegalHoldView>(`/v1/books/${id}/legal-hold`, body),
+  clearBookLegalHold: (id: string, body?: ClearBookLegalHoldBody) =>
+    del<BookLegalHoldView | void>(`/v1/books/${id}/legal-hold`, body),
+  // Internal Chancela preservation package (`GET .../archive/package`, application/zip).
+  // Read-only and not a DGLAB-specific export; offered as a direct browser download.
+  fetchBookArchivePackage: (id: string) => fetchBlob(`/v1/books/${id}/archive/package`),
 
   // Acts (§2.5)
   getAct: (id: string) => get<ActView>(`/v1/acts/${id}`),
@@ -344,6 +453,23 @@ export const api = {
   // as a Blob (not JSON) so it can be triggered as a download with an honest filename;
   // carries the session token like every other request. 404 until sealed.
   fetchActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document`),
+  // Markdown working-copy export (`GET .../document/working-copy`, text/markdown).
+  // Non-evidentiary and intentionally separate from the persisted/signed PDF downloads.
+  fetchActDocumentWorkingCopy: (id: string) =>
+    fetchTextDownload(`/v1/acts/${id}/document/working-copy`),
+  // Office-editable DOCX working-copy export (`GET .../document/office`). Read-only and
+  // non-evidentiary; the persisted PDF/A or signed PDF remains the canonical record.
+  fetchActDocumentOffice: (id: string) => fetchBlob(`/v1/acts/${id}/document/office`),
+  // Non-canonical imported document evidence. Import re-runs server validation before
+  // persistence; metadata JSON never carries raw bytes.
+  importDocument: (body: ImportDocumentBody) =>
+    post<ImportedDocumentView>('/v1/documents/import', body),
+  listImportedDocuments: (params: { act_id?: string } = {}) =>
+    get<ImportedDocumentView[]>(`/v1/documents/imported${query(params)}`),
+  getImportedDocument: (id: string) =>
+    get<ImportedDocumentView>(`/v1/documents/imported/${encodeURIComponent(id)}`),
+  fetchImportedDocumentBytes: (id: string) =>
+    fetchBlob(`/v1/documents/imported/${encodeURIComponent(id)}/bytes`),
 
   // Qualified Chave Móvel Digital signing (§ t57). The two-phase flow: `initiate` (phone +
   // PIN → dispatches the SMS OTP) then `confirm` (session_id + OTP → the signed PDF). PIN/OTP
@@ -379,6 +505,23 @@ export const api = {
       `/v1/acts/${id}/signature/remote/${encodeURIComponent(provider)}/confirm`,
       body,
     ),
+  listExternalSignerInvites: (id: string) =>
+    get<ExternalSignerInviteView[]>(`/v1/acts/${id}/signature/external-invites`),
+  createExternalSignerInvite: (id: string, body: CreateExternalSignerInviteBody) =>
+    post<CreateExternalSignerInviteResult>(`/v1/acts/${id}/signature/external-invites`, body),
+  revokeExternalSignerInvite: (id: string, inviteId: string) =>
+    post<ExternalSignerInviteView>(
+      `/v1/acts/${id}/signature/external-invites/${encodeURIComponent(inviteId)}/revoke`,
+    ),
+  lookupExternalSignerInvite: (token: string) =>
+    post<ExternalSignerInvitePublicView>('/v1/signature/external-invites/lookup', { token }),
+  respondExternalSignerInvite: (token: string, decision: ExternalSignerInviteDecision) =>
+    post<ExternalSignerInvitePublicView>('/v1/signature/external-invites/respond', {
+      token,
+      decision,
+    }),
+  fetchExternalSignerInviteWorkingCopy: (token: string) =>
+    postTextDownload('/v1/signature/external-invites/document/working-copy', { token }),
 
   // Registry — certidão permanente (§2.7). The `code` in each body is a secret; it is
   // sent transiently in the request and never returned (provenance is masked).
@@ -400,6 +543,22 @@ export const api = {
   // The INE SMI update-availability signal (t33-e2). Read-only; 502 when SMI is
   // unreachable. The "Verificar novas revisões" UI that consumes it is t23-e3's.
   getCaeUpdates: () => get<CaeUpdates>('/v1/cae/updates'),
+
+  // TSL trust catalog — read-only parsed Trusted List status/search/detail. No live fetch is
+  // triggered by these endpoints; the server parses cached XML or its bundled fixture.
+  getTrustStatus: () => get<TslSummaryView>('/v1/trust/status'),
+  getTrustCatalog: () => get<TslCatalogView>('/v1/trust/catalog'),
+  searchTrustCatalog: (search: string, limit?: number) =>
+    get<TslServiceSummaryView[]>(`/v1/trust/catalog${query({ search, limit })}`),
+  getTrustProvider: (id: string) =>
+    get<TslProviderDetailView>(`/v1/trust/providers/${encodeURIComponent(id)}`),
+  getTrustService: (id: string) =>
+    get<TslServiceDetailView>(`/v1/trust/services/${encodeURIComponent(id)}`),
+  // TSA diagnostics/catalog — read-only configured RFC 3161 status plus offline fixture probe and
+  // TSL timestamp-authority records. No live timestamp request is triggered.
+  getTsaCatalog: () => get<TsaCatalogView>('/v1/trust/tsa'),
+  searchTsaCatalog: (search: string, limit?: number) =>
+    get<TsaRecordView[]>(`/v1/trust/tsa${query({ search, limit })}`),
 
   // Law archive (t27, FROZEN §law-v1) — the local "mini law archive". `GET /v1/law` is a
   // bare `[LawEntryView]`; the tolerant `{ entries }` alternative is kept only so the hook's
@@ -432,6 +591,29 @@ export const api = {
   getUser: (id: string) => get<UserView>(`/v1/users/${id}`),
   createUser: (body: CreateUserBody) => post<UserView>('/v1/users', body),
   updateUser: (id: string, body: UpdateUserBody) => patch<UserView>(`/v1/users/${id}`, body),
+  exportUserDsr: (id: string) => get<UserDsrExport>(`/v1/privacy/users/${id}/export`),
+  listUserDsrRequests: (id: string) =>
+    get<DsrRequestView[]>(`/v1/privacy/users/${id}/dsr-requests`),
+  createUserDsrRequest: (id: string, body: CreateDsrRequestBody) =>
+    post<DsrRequestView>(`/v1/privacy/users/${id}/dsr-requests`, body),
+  completeUserDsrRequest: (userId: string, requestId: string) =>
+    post<DsrRequestView>(`/v1/privacy/users/${userId}/dsr-requests/${requestId}/complete`),
+  listProcessorRecords: () => get<ProcessorRecordView[]>('/v1/privacy/processors'),
+  createProcessorRecord: (body: CreateProcessorRecordBody) =>
+    post<ProcessorRecordView>('/v1/privacy/processors', body),
+  patchProcessorRecord: (id: string, body: PatchProcessorRecordBody) =>
+    patch<ProcessorRecordView>(`/v1/privacy/processors/${id}`, body),
+  listDpiaRecords: () => get<DpiaRecordView[]>('/v1/privacy/dpias'),
+  createDpiaRecord: (body: CreateDpiaRecordBody) => post<DpiaRecordView>('/v1/privacy/dpias', body),
+  patchDpiaRecord: (id: string, body: PatchDpiaRecordBody) =>
+    patch<DpiaRecordView>(`/v1/privacy/dpias/${id}`, body),
+  listRetentionPolicies: () => get<RetentionPolicyView[]>('/v1/privacy/retention-policies'),
+  createRetentionPolicy: (body: CreateRetentionPolicyBody) =>
+    post<RetentionPolicyView>('/v1/privacy/retention-policies', body),
+  patchRetentionPolicy: (id: string, body: PatchRetentionPolicyBody) =>
+    patch<RetentionPolicyView>(`/v1/privacy/retention-policies/${id}`, body),
+  dryRunRetentionPolicy: (body: RetentionDryRunBody) =>
+    post<RetentionDryRunReport>('/v1/privacy/retention-policies/dry-run', body),
   // Sign-in secret + attestation-key management (t29 §4). All echo the updated UserView.
   // The `current_password` (when a secret already exists) rides in the body; a DELETE
   // carries it too (the `del` helper JSON-encodes an optional body).
@@ -448,6 +630,9 @@ export const api = {
   issueRecovery: (id: string, body: IssueRecoveryBody = {}) =>
     post<RecoveryIssued>(`/v1/users/${id}/recovery`, body),
   getSession: () => get<SessionView>('/v1/session'),
+  // Active password-strength ruleset (t68). Exempt so onboarding can render the checklist
+  // before a user/session exists; the server remains authoritative on submit.
+  getPasswordPolicy: () => get<PasswordPolicyView>('/v1/session/password-policy'),
   // The fuller permission view (identity + role assignments + effective grants) for the
   // signed-in principal (`GET /v1/session/permissions`, t64-E3). Used to seed the
   // role-assignment manager with the current user's OWN assignments (there is no read
@@ -474,6 +659,14 @@ export const api = {
   listDelegations: () => get<DelegationView[]>('/v1/delegations'),
   grantDelegation: (body: GrantDelegationBody) => post<DelegationView>('/v1/delegations', body),
   revokeDelegation: (id: string) => del<void>(`/v1/delegations/${id}`),
+
+  // API keys — interactive-session-only management. Create/rotate return the plaintext secret once;
+  // list/revoke return metadata only.
+  listApiKeys: () => get<ApiKeyView[]>('/v1/api-keys'),
+  createApiKey: (body: CreateApiKeyBody) => post<ApiKeyCreated>('/v1/api-keys', body),
+  rotateApiKey: (id: string) => post<ApiKeyRotated>(`/v1/api-keys/${id}/rotate`),
+  revokeApiKey: (id: string) => del<ApiKeyView>(`/v1/api-keys/${id}`),
+
   // The UNAUTHENTICATED sign-in roster (t45-e1): decides onboarding-vs-sign-in and lists
   // the signable users while signed out, without the auth-gated `GET /v1/users`.
   getSessionRoster: () => get<SessionRoster>('/v1/session/roster'),
@@ -481,8 +674,26 @@ export const api = {
   deleteSession: () => del<void>('/v1/session'),
 
   // Ledger (§2.6)
-  listLedger: (params: { scope?: string; limit?: number } = {}) =>
-    get<LedgerEventView[]>(`/v1/ledger/events${query(params)}`),
+  listLedger: (params: LedgerQueryParams = {}) =>
+    get<LedgerEventView[]>(
+      `/v1/ledger/events${query({
+        chain: params.chain,
+        scope: params.scope,
+        limit: params.limit,
+      })}`,
+    ),
+  fetchLedgerArchiveDocumentPdf: (params: LedgerArchiveDocumentParams = {}) =>
+    fetchBlob(
+      `/v1/ledger/archive/document${query({
+        chain: params.chain,
+        scope: params.scope,
+        kind: params.kind,
+        actor: params.actor,
+        from: params.from,
+        to: params.to,
+        limit: params.limit,
+      })}`,
+    ),
   verifyLedger: () => get<LedgerVerify>('/v1/ledger/verify'),
 
   // Chain integrity + recovery + per-book export/import/start-over + data management
@@ -502,6 +713,8 @@ export const api = {
   // Book import: raw `.zip` bytes in the body; verify-before-trust → Verified|Quarantined.
   importBook: (bytes: ArrayBuffer | Blob, policy: CollisionPolicy = 'refuse') =>
     postBytes<ImportOutcomeView>(`/v1/books/import${query({ policy })}`, bytes),
+  validatePaperBookImport: (body: PaperBookImportValidateBody) =>
+    post<PaperBookImportReport>('/v1/books/paper-import/validate', body),
   startOverBook: (id: string, body: StartOverBookBody) =>
     post<StartOverBookResult>(`/v1/books/${id}/start-over`, body),
   // Data management (§2.11). Frontend-reset is client-only — it has NO endpoint here.

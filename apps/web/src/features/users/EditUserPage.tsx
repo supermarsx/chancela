@@ -1,7 +1,7 @@
 /**
- * Edit one user, on its own autonomous route (`/utilizadores/:id`, plan t50 W2). Absorbs
- * what used to be a per-row inline expander on the Utilizadores list into a full screen with
- * three sections:
+ * Edit one user inside Configurações → Utilizadores (`?sec=utilizadores&user=:id`). The
+ * legacy `/utilizadores/:id` route redirects there. This file keeps only the reusable panel.
+ * The panel has three sections:
  *
  *  1. **Identidade** — the immutable audit username (read-only `code`) and the editable
  *     display name (`PATCH /v1/users/{id}`).
@@ -14,26 +14,84 @@
  * link (empty cache) falls back to `GET /v1/users/{id}` via {@link useUser}.
  */
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { useUpdateUser, useUser, useUsers } from '../../api/hooks';
+import { Link } from 'react-router-dom';
+import {
+  useCompleteUserDsrRequest,
+  useCreateUserDsrRequest,
+  useExportUserDsr,
+  useUpdateUser,
+  useUser,
+  useUserDsrRequests,
+  useUsers,
+} from '../../api/hooks';
 import { useT } from '../../i18n';
 import {
   Badge,
   Button,
   Card,
+  EmptyState,
   ErrorNote,
   Field,
   Icon,
   IconButton,
   Input,
   PageHeader,
+  Select,
   Skeleton,
   SkeletonDeflist,
+  SkeletonTable,
+  Table,
   useToast,
 } from '../../ui';
 import { UserAccessManager } from './UserAccessManager';
 import { RoleAssignmentManager } from '../rbac/RoleAssignmentManager';
-import type { UserView } from '../../api/types';
+import {
+  GateButton,
+  PermissionDeniedNote,
+  isPermissionError,
+  useCan,
+} from '../session/permissions';
+import {
+  DSR_REQUEST_TYPES,
+  type DsrRequestStatus,
+  type DsrRequestType,
+  type UserView,
+} from '../../api/types';
+
+function triggerJsonDownload(data: unknown, filename: string) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function safeFilenamePart(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+}
+
+const DSR_REQUEST_TYPE_LABELS: Record<DsrRequestType, string> = {
+  export: 'Exportação',
+  rectification: 'Retificação',
+  erasure: 'Apagamento',
+  restriction: 'Restrição',
+};
+
+const DSR_REQUEST_STATUS_LABELS: Record<DsrRequestStatus, string> = {
+  pending: 'Pendente',
+  completed: 'Concluído',
+};
+
+function formatDateTime(value?: string): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('pt-PT', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
 
 function IdentitySection({ user }: { user: UserView }) {
   const t = useT();
@@ -125,9 +183,160 @@ function ActivationSection({ user }: { user: UserView }) {
   );
 }
 
-export function EditUserPage() {
+function PrivacyDsrSection({ user }: { user: UserView }) {
+  const can = useCan();
+  if (!can('user.manage')) return null;
+  return <PrivacyDsrManager user={user} />;
+}
+
+function PrivacyDsrManager({ user }: { user: UserView }) {
+  const toast = useToast();
+  const dsrExport = useExportUserDsr(user.id);
+  const requests = useUserDsrRequests(user.id);
+  const createRequest = useCreateUserDsrRequest(user.id);
+  const completeRequest = useCompleteUserDsrRequest(user.id);
+  const [requestType, setRequestType] = useState<DsrRequestType>('export');
+
+  function download() {
+    dsrExport.mutate(undefined, {
+      onSuccess: (data) => {
+        triggerJsonDownload(data, `chancela-dsr-user-${safeFilenamePart(user.username)}.json`);
+        toast.success('Exportação DSR/privacy descarregada.');
+      },
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  function create(e: React.FormEvent) {
+    e.preventDefault();
+    createRequest.mutate(
+      { request_type: requestType },
+      {
+        onSuccess: () => toast.success('Pedido DSR criado.'),
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
+
+  function complete(id: string) {
+    completeRequest.mutate(id, {
+      onSuccess: () => toast.success('Pedido DSR marcado como concluído.'),
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  const list = requests.data ?? [];
+  const busy = createRequest.isPending || completeRequest.isPending;
+
+  return (
+    <Card
+      title="Pedidos DSR / privacidade"
+      actions={
+        <GateButton
+          perm="user.manage"
+          type="button"
+          variant="secondary"
+          icon={<Icon.FileText />}
+          disabled={dsrExport.isPending}
+          onClick={download}
+        >
+          {dsrExport.isPending ? 'A preparar exportação DSR' : 'Descarregar exportação DSR'}
+        </GateButton>
+      }
+    >
+      <div className="stack">
+        <p className="field__hint">
+          Regista o ciclo de vida dos pedidos DSR do utilizador e descarrega o JSON não secreto para
+          resposta. O conteúdo da exportação não é apresentado no ecrã.
+        </p>
+
+        <form className="form" onSubmit={create}>
+          <Field label="Tipo de pedido" htmlFor="dsr-request-type">
+            <Select
+              id="dsr-request-type"
+              value={requestType}
+              onChange={(e) => setRequestType(e.target.value as DsrRequestType)}
+              options={DSR_REQUEST_TYPES.map((type) => ({
+                value: type,
+                label: DSR_REQUEST_TYPE_LABELS[type],
+              }))}
+            />
+          </Field>
+          <div className="form__actions">
+            <GateButton
+              perm="user.manage"
+              type="submit"
+              variant="primary"
+              icon={<Icon.Plus />}
+              disabled={createRequest.isPending}
+            >
+              {createRequest.isPending ? 'A criar pedido DSR' : 'Criar pedido DSR'}
+            </GateButton>
+          </div>
+        </form>
+
+        {requests.isLoading ? (
+          <SkeletonTable cols={6} />
+        ) : requests.error ? (
+          isPermissionError(requests.error) ? (
+            <PermissionDeniedNote />
+          ) : (
+            <ErrorNote error={requests.error} />
+          )
+        ) : list.length === 0 ? (
+          <EmptyState title="Sem pedidos DSR">
+            <p>Ainda não há pedidos DSR registados para este utilizador.</p>
+          </EmptyState>
+        ) : (
+          <Table
+            head={
+              <tr>
+                <th>Tipo</th>
+                <th>Estado</th>
+                <th>Criado</th>
+                <th>Criado por</th>
+                <th>Concluído</th>
+                <th>Ação</th>
+              </tr>
+            }
+          >
+            {list.map((request) => (
+              <tr key={request.id}>
+                <td>{DSR_REQUEST_TYPE_LABELS[request.request_type]}</td>
+                <td>
+                  <Badge tone={request.status === 'completed' ? 'ok' : 'warn'}>
+                    {DSR_REQUEST_STATUS_LABELS[request.status]}
+                  </Badge>
+                </td>
+                <td>{formatDateTime(request.created_at)}</td>
+                <td>{request.created_by}</td>
+                <td>{formatDateTime(request.completed_at)}</td>
+                <td className="users-actions">
+                  {request.status === 'pending' ? (
+                    <GateButton
+                      perm="user.manage"
+                      variant="secondary"
+                      icon={<Icon.Check />}
+                      disabled={busy}
+                      onClick={() => complete(request.id)}
+                    >
+                      Marcar concluído
+                    </GateButton>
+                  ) : (
+                    <span className="muted">{request.completed_by ?? '—'}</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+export function EditUserPanel({ id, showHeader = false }: { id: string; showHeader?: boolean }) {
   const t = useT();
-  const { id = '' } = useParams();
   const users = useUsers();
   const cached = users.data?.find((u) => u.id === id);
   // Cold deep link (empty list cache) → fetch the single user directly.
@@ -138,10 +347,14 @@ export function EditUserPage() {
     if (single.isLoading || users.isLoading) {
       return (
         <div className="stack">
-          <PageHeader
-            crumbs={<Link to="/utilizadores">{t('users.breadcrumb.self')}</Link>}
-            title={<Skeleton width="16rem" height="1.6rem" />}
-          />
+          {showHeader ? (
+            <PageHeader
+              crumbs={
+                <Link to="/configuracoes?sec=utilizadores">{t('users.breadcrumb.self')}</Link>
+              }
+              title={<Skeleton width="16rem" height="1.6rem" />}
+            />
+          ) : null}
           <Card title={t('users.edit.identityCard')}>
             <SkeletonDeflist />
           </Card>
@@ -151,27 +364,37 @@ export function EditUserPage() {
     if (single.error) return <ErrorNote error={single.error} />;
     return (
       <div className="stack">
-        <PageHeader
-          crumbs={<Link to="/utilizadores">{t('users.breadcrumb.self')}</Link>}
-          title={t('users.edit.notFound')}
-        />
+        {showHeader ? (
+          <PageHeader
+            crumbs={<Link to="/configuracoes?sec=utilizadores">{t('users.breadcrumb.self')}</Link>}
+            title={t('users.edit.notFound')}
+          />
+        ) : (
+          <Card title={t('users.edit.notFound')}>
+            <p className="field__hint">{t('users.edit.notFound')}</p>
+          </Card>
+        )}
       </div>
     );
   }
 
   return (
     <div className="stack">
-      <PageHeader
-        crumbs={
-          <>
-            <Link to="/utilizadores">{t('users.breadcrumb.self')}</Link> · {user.display_name}
-          </>
-        }
-        title={user.display_name}
-      />
+      {showHeader ? (
+        <PageHeader
+          crumbs={
+            <>
+              <Link to="/configuracoes?sec=utilizadores">{t('users.breadcrumb.self')}</Link> ·{' '}
+              {user.display_name}
+            </>
+          }
+          title={user.display_name}
+        />
+      ) : null}
 
       <IdentitySection user={user} />
       <ActivationSection user={user} />
+      <PrivacyDsrSection user={user} />
 
       {/* Funções — scoped role assignment (t64-E6). Gated `role.assign` at each scope; the
           last-Owner-removal guard surfaces the server's honest 409. */}

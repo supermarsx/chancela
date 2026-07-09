@@ -197,6 +197,8 @@ export interface Entity {
   seat: string;
   family: EntityFamily;
   kind: EntityKind;
+  /** Fiscal year end as `MM-DD`; absent/null means the backend's Dec 31 default. */
+  fiscal_year_end?: string | null;
   /** Per-family compliance profile derived from `kind` (t31). */
   profile: EntityProfile;
   /** Statute overlay, or `null` when the entity uses the family default (t31). */
@@ -217,6 +219,25 @@ export interface BookView {
   predecessor: string | null;
   required_signatories_abertura: string[] | null;
   required_signatories_encerramento: string[] | null;
+}
+
+/** `GET /v1/books/{id}/legal-hold` — retention-disposal override for a book. */
+export interface BookLegalHoldView {
+  legal_hold: boolean;
+  reason: string | null;
+  actor: string | null;
+  set_at: string | null;
+}
+
+/** `PUT /v1/books/{id}/legal-hold` body. `actor` is optional; session attribution wins. */
+export interface SetBookLegalHoldBody {
+  reason: string;
+  actor?: string;
+}
+
+/** `DELETE /v1/books/{id}/legal-hold` body. Optional because session attribution is enough. */
+export interface ClearBookLegalHoldBody {
+  actor?: string;
 }
 
 export interface ActAttachment {
@@ -304,6 +325,15 @@ export interface ComplianceIssue {
   message: string;
 }
 
+export interface ConveningAdvisory {
+  code: string;
+  severity: Severity;
+  message: string;
+  threshold_id: string;
+  actual_days: number | null;
+  minimum_days: number | null;
+}
+
 export interface ComplianceReport {
   /** The dispatched family rule-pack id (t31 — no longer always `csc-art63/v2`). */
   rule_pack: string;
@@ -315,6 +345,8 @@ export interface ComplianceReport {
   errors: number;
   warnings: number;
   seal_allowed: boolean;
+  /** Warning-only convening advisories; omitted by the API when empty. */
+  convening_advisories?: ConveningAdvisory[];
 }
 
 export interface SealResult {
@@ -440,6 +472,30 @@ export interface DocumentBundle {
   validation_report: null;
 }
 
+/** Body for `POST /v1/documents/import`: validated again server-side before persistence. */
+export interface ImportDocumentBody {
+  content_base64: string;
+  content_type?: string | null;
+  filename?: string | null;
+  act_id?: string | null;
+}
+
+/** Non-canonical imported document metadata. Raw bytes are fetched via `bytes_download`. */
+export interface ImportedDocumentView {
+  id: string;
+  act_id: string | null;
+  filename: string | null;
+  size_bytes: number;
+  sha256: string;
+  declared_content_type: string | null;
+  detected_content_type: string;
+  imported_at: string;
+  imported_by: string;
+  non_canonical: boolean;
+  legal_notice: string;
+  bytes_download: string;
+}
+
 /** PKI audit attestation joined onto a ledger event when the actor's session held an
  *  unlocked attestation key (t29). `null` when the event was not attested. */
 export interface LedgerEventAttestation {
@@ -459,7 +515,24 @@ export interface LedgerEventView {
   payload_digest: string;
   prev_hash: string;
   hash: string;
+  /** Canonical chain ids this event belongs to, including `global`. */
+  chains: string[];
   attestation: LedgerEventAttestation | null;
+}
+
+/** Query params for `GET /v1/ledger/events`. */
+export interface LedgerQueryParams {
+  chain?: string;
+  scope?: string;
+  limit?: number;
+}
+
+/** Query params for `GET /v1/ledger/archive/document`, which streams a PDF/A. */
+export interface LedgerArchiveDocumentParams extends LedgerQueryParams {
+  kind?: string;
+  actor?: string;
+  from?: string;
+  to?: string;
 }
 
 export interface LedgerVerify {
@@ -479,7 +552,22 @@ export interface Dashboard {
   unresolved_compliance: number;
   ledger_length: number;
   ledger_valid: boolean;
+  reminders: DashboardReminder[];
   recent_events: LedgerEventView[];
+}
+
+export type DashboardReminderSeverity = 'Advisory' | 'Info' | 'Warning';
+export type DashboardReminderStatus = 'Upcoming' | 'DueSoon' | 'Overdue';
+
+export interface DashboardReminder {
+  due_date: string;
+  severity: DashboardReminderSeverity;
+  status: DashboardReminderStatus;
+  reason: string;
+  entity_id: string;
+  entity_name: string;
+  source_rule: string;
+  source_profile: string;
 }
 
 // --- Registry / certidão permanente (§2.7, plan t11) ----------------------------
@@ -750,6 +838,245 @@ export interface CaeUpdates {
   rev3: CaeVersion;
   rev4: CaeVersion;
   checked_at: string;
+}
+
+// --- TSL trust catalog (§ signatures/trust) -------------------------------------
+//
+// Read-only surface over the parsed Portuguese Trusted List. The backend does not fetch live TSL
+// data from these endpoints: it parses a cached XML if present, otherwise the bundled fixture, and
+// reports XML-DSig validation status explicitly.
+
+export const TSL_SOURCE_KINDS = ['Cache', 'Fixture'] as const;
+export type TslSourceKind = (typeof TSL_SOURCE_KINDS)[number];
+
+export const TSL_SIGNATURE_STATUSES = ['Valid', 'Invalid'] as const;
+export type TslSignatureStatus = (typeof TSL_SIGNATURE_STATUSES)[number];
+
+export const TSL_SERVICE_STATUS_KINDS = ['Granted', 'Withdrawn', 'Other'] as const;
+export type TslServiceStatusKind = (typeof TSL_SERVICE_STATUS_KINDS)[number];
+
+export interface TslSourceView {
+  kind: TslSourceKind;
+  path: string | null;
+  note: string;
+}
+
+export interface TslValidationView {
+  checked_at: string;
+  signature: TslSignatureStatus;
+  error: string | null;
+}
+
+export interface TslSummaryView {
+  source: TslSourceView;
+  scheme_operator_name: string;
+  scheme_name: string;
+  scheme_territory: string;
+  sequence_number: number | null;
+  issue_date_time: string | null;
+  next_update: string | null;
+  stale: boolean;
+  validation: TslValidationView;
+  providers: number;
+  services: number;
+  ca_qc_services: number;
+  qualified_esignature_services: number;
+  trusted_esignature_services: number;
+}
+
+export interface TslServiceStatusView {
+  kind: TslServiceStatusKind;
+  uri: string | null;
+}
+
+export interface TslIdentitySummaryView {
+  certificates: number;
+  subject_names: string[];
+  subject_key_ids: string[];
+}
+
+export interface TslProviderAnalysisView {
+  services: number;
+  granted_services: number;
+  withdrawn_services: number;
+  other_status_services: number;
+  services_with_history: number;
+  services_with_supply_points: number;
+  ca_qc_services: number;
+  qualified_esignature_services: number;
+  trusted_esignature_services: number;
+  duplicate_service_names: string[];
+}
+
+export interface TslServiceSummaryView {
+  id: string;
+  provider_id: string;
+  provider_name: string;
+  name: string;
+  service_type: string;
+  status: TslServiceStatusView;
+  status_starting_time: string | null;
+  status_starting_time_raw: string | null;
+  ca_qc: boolean;
+  qualified_for_esignatures: boolean;
+  trusted_for_esignatures: boolean;
+  additional_service_info: string[];
+  service_supply_points: string[];
+  history_count: number;
+  identities: TslIdentitySummaryView;
+}
+
+export interface TslProviderView {
+  id: string;
+  name: string;
+  trade_names: string[];
+  information_uris: string[];
+  analysis: TslProviderAnalysisView;
+  services: TslServiceSummaryView[];
+}
+
+export interface TslCatalogView {
+  summary: TslSummaryView;
+  providers: TslProviderView[];
+}
+
+export interface TslProviderDetailView {
+  provider: TslProviderView;
+  summary: TslSummaryView;
+}
+
+export interface TslDigitalIdentityView {
+  kind: string;
+  value: string;
+  sha256: string | null;
+  byte_length: number | null;
+}
+
+export interface TslServiceHistoryView {
+  name: string;
+  service_type: string;
+  status: TslServiceStatusView;
+  status_starting_time: string | null;
+  status_starting_time_raw: string | null;
+  additional_service_info: string[];
+  service_supply_points: string[];
+  identities: TslIdentitySummaryView;
+}
+
+export interface TslServiceDetailView extends TslServiceSummaryView {
+  digital_identities: TslDigitalIdentityView[];
+  history: TslServiceHistoryView[];
+  summary: TslSummaryView;
+}
+
+// --- TSA diagnostics/catalog (§ signatures/trust) -------------------------------
+//
+// Read-only TSA tooling over the configured RFC 3161 endpoint plus an offline fixture probe.
+// No live TSA request is made by this surface.
+
+export const TSA_STATUS_KINDS = ['Ready', 'Unconfigured', 'Error'] as const;
+export type TsaStatusKind = (typeof TSA_STATUS_KINDS)[number];
+
+export const TSA_PROBE_KINDS = ['Fixture'] as const;
+export type TsaProbeKind = (typeof TSA_PROBE_KINDS)[number];
+
+export const TSA_PROBE_STATUSES = ['Passed', 'Failed'] as const;
+export type TsaProbeStatus = (typeof TSA_PROBE_STATUSES)[number];
+
+export interface TsaProfileView {
+  protocol: string;
+  hash_algorithm: string;
+  request_content_type: string;
+  response_content_type: string;
+  nonce_policy: string;
+  cert_req_default: boolean;
+  accepted_policy: string;
+}
+
+export interface TsaAcceptedHashView {
+  algorithm: string;
+  input: string;
+  digest: string;
+}
+
+export interface TsaTimestampMetadataView {
+  gen_time: string;
+  policy: string;
+  serial_number: string;
+  token_sha256: string;
+  token_bytes: number;
+  tsa_certificate_embedded: boolean;
+}
+
+export interface TsaProbeView {
+  kind: TsaProbeKind;
+  status: TsaProbeStatus;
+  checked_at: string;
+  request_der_sha256: string;
+  response_der_sha256: string;
+  request_matches_fixture: boolean;
+  error: string | null;
+}
+
+export interface TsaTslDiagnosticsView {
+  source: TslSourceView;
+  signature: TslSignatureStatus;
+  error: string | null;
+}
+
+export interface TsaSummaryView {
+  configured_url: string | null;
+  status: TsaStatusKind;
+  status_message: string;
+  profile: TsaProfileView;
+  accepted_hash: TsaAcceptedHashView;
+  timestamp: TsaTimestampMetadataView | null;
+  last_probe: TsaProbeView;
+  tsl: TsaTslDiagnosticsView;
+  records: number;
+  granted_records: number;
+  trusted_records: number;
+  policy_analysis: TsaPolicyAnalysisView;
+}
+
+export interface TsaPolicyAnalysisView {
+  accepted_policy: string;
+  fixture_policy: string | null;
+  fixture_policy_accepted: boolean;
+  qualified_timestamp_records: number;
+  trusted_qualified_timestamp_records: number;
+  advisory: boolean;
+}
+
+export interface TsaRecordView {
+  id: string;
+  provider_id: string;
+  provider_name: string;
+  name: string;
+  service_type: string;
+  status: TslServiceStatusView;
+  status_starting_time: string | null;
+  status_starting_time_raw: string | null;
+  qualified_timestamp_service: boolean;
+  granted: boolean;
+  effective: boolean;
+  trusted: boolean;
+  additional_service_info: string[];
+  service_supply_points: string[];
+  history_count: number;
+  identities: TslIdentitySummaryView;
+  analysis: TsaRecordAnalysisView;
+}
+
+export interface TsaRecordAnalysisView {
+  classification: string;
+  trust_basis: string;
+  blocking_reasons: string[];
+}
+
+export interface TsaCatalogView {
+  summary: TsaSummaryView;
+  records: TsaRecordView[];
 }
 
 // --- Law archive (t27, FROZEN §law-v1) — the local "mini law archive" -----------
@@ -1103,6 +1430,53 @@ export interface GrantDelegationBody {
   expires_at?: string;
 }
 
+// --- API keys (§ integration API-key lifecycle) ---------------------------------
+//
+// Management endpoints are interactive-session-only and gated by `user.manage`. Secrets are
+// deliberately split: list/revoke return only metadata; create/rotate return plaintext once.
+
+/** Persisted per-key rate-limit policy. Omitted on a key when the server default applies. */
+export interface ApiKeyRateLimit {
+  /** Sustained requests per minute. */
+  rpm: number;
+  /** Token-bucket burst capacity. */
+  burst: number;
+}
+
+export type ApiKeyGrantView =
+  | { kind: 'role'; role_id: string; scope: PermissionScope }
+  | { kind: 'permissions'; permissions: string[]; scope: PermissionScope };
+
+export interface ApiKeyView {
+  id: string;
+  name: string;
+  /** Non-secret display prefix (`chk_<prefix>`), safe to show and log. */
+  prefix: string;
+  grant: ApiKeyGrantView;
+  created_by: string;
+  created_at: string;
+  expires_at?: string;
+  revoked: boolean;
+  active: boolean;
+  rate_limit?: ApiKeyRateLimit;
+}
+
+export interface CreateApiKeyBody {
+  name: string;
+  grant: ApiKeyGrantView;
+  expires_at?: string;
+  rate_limit?: ApiKeyRateLimit;
+}
+
+/** `POST /v1/api-keys` response: full secret shown once plus flattened key metadata. */
+export type ApiKeyCreated = ApiKeyView & {
+  /** Full `chk_...` plaintext secret. Never returned again and never stored in list cache. */
+  secret: string;
+};
+
+/** `POST /v1/api-keys/{id}/rotate` response: same one-time-secret shape as create. */
+export type ApiKeyRotated = ApiKeyCreated;
+
 /**
  * `GET /v1/session` — the active user, or `null` when signed out.
  *
@@ -1140,6 +1514,48 @@ export interface RosterUser {
 export interface SessionRoster {
   onboarding_required: boolean;
   users: RosterUser[];
+}
+
+/**
+ * Stable password policy rule ids returned by `GET /v1/session/password-policy` (t68).
+ * The server remains authoritative; the UI uses these machine ids for the live checklist
+ * and localised labels.
+ */
+export const PASSWORD_POLICY_RULE_CODES = [
+  'length',
+  'lowercase',
+  'uppercase',
+  'digit',
+  'special',
+  'not_username',
+  'not_common',
+  'no_repeats',
+  'no_sequential',
+] as const;
+export type PasswordPolicyRuleCode = (typeof PASSWORD_POLICY_RULE_CODES)[number];
+
+/** One checklist row in the password policy view. */
+export interface PasswordRuleView {
+  code: PasswordPolicyRuleCode;
+  requirement: string;
+}
+
+/**
+ * `GET /v1/session/password-policy` (t68) — the active server password-strength policy.
+ * Exempt/unauthenticated so onboarding can render it before any user exists.
+ */
+export interface PasswordPolicyView {
+  min_length: number;
+  require_lowercase: boolean;
+  require_uppercase: boolean;
+  require_digit: boolean;
+  require_special: boolean;
+  forbid_username: boolean;
+  forbid_common: boolean;
+  max_identical_run: number;
+  max_sequential_run: number;
+  allow_weak_passwords: boolean;
+  rules: PasswordRuleView[];
 }
 
 export interface CreateSessionBody {
@@ -1194,6 +1610,249 @@ export interface RecoveryIssued extends UserView {
   recovery_phrase: string;
 }
 
+export const DSR_REQUEST_TYPES = ['export', 'rectification', 'erasure', 'restriction'] as const;
+export type DsrRequestType = (typeof DSR_REQUEST_TYPES)[number];
+
+export const DSR_REQUEST_STATUSES = ['pending', 'completed'] as const;
+export type DsrRequestStatus = (typeof DSR_REQUEST_STATUSES)[number];
+
+export const DSR_REQUEST_OUTCOMES = [
+  'fulfilled',
+  'partially_fulfilled',
+  'rejected',
+  'no_action_required',
+] as const;
+export type DsrRequestOutcome = (typeof DSR_REQUEST_OUTCOMES)[number];
+
+export interface DsrAffectedRecord {
+  collection: string;
+  action: string;
+  count: number;
+}
+
+/** One tracked DSR/privacy lifecycle request for a subject user. */
+export interface DsrRequestView {
+  id: string;
+  subject_user_id: string;
+  request_type: DsrRequestType;
+  status: DsrRequestStatus;
+  created_at: string;
+  created_by: string;
+  completed_at?: string;
+  completed_by?: string;
+  outcome?: DsrRequestOutcome;
+  executed_at?: string;
+  executed_by?: string;
+  execution_notes?: string;
+  affected_records?: DsrAffectedRecord[];
+  retention_review?: string;
+  legal_basis_review?: string;
+}
+
+/** Body of `POST /v1/privacy/users/{id}/dsr-requests`. */
+export interface CreateDsrRequestBody {
+  request_type: DsrRequestType;
+}
+
+// --- Privacy/compliance registers ----------------------------------------------
+
+export const PRIVACY_RISK_LEVELS = ['low', 'medium', 'high', 'critical'] as const;
+export type PrivacyRiskLevel = (typeof PRIVACY_RISK_LEVELS)[number];
+
+export const PRIVACY_RECORD_STATUSES = ['draft', 'active', 'under_review', 'retired'] as const;
+export type PrivacyRecordStatus = (typeof PRIVACY_RECORD_STATUSES)[number];
+
+export const RETENTION_POLICY_STATUSES = ['draft', 'active', 'suspended', 'retired'] as const;
+export type RetentionPolicyStatus = (typeof RETENTION_POLICY_STATUSES)[number];
+
+export const RETENTION_DISPOSAL_ACTIONS = [
+  'review',
+  'archive',
+  'anonymize',
+  'delete',
+  'legal_hold',
+  'no_action',
+] as const;
+export type RetentionDisposalAction = (typeof RETENTION_DISPOSAL_ACTIONS)[number];
+
+interface PrivacyRegisterRecordBase {
+  purpose: string;
+  legal_basis: string;
+  data_categories: string[];
+  subprocessors: string[];
+  risk_level: PrivacyRiskLevel;
+  status: PrivacyRecordStatus;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+/** One GDPR processor register record (`GET /v1/privacy/processors`). */
+export interface ProcessorRecordView extends PrivacyRegisterRecordBase {
+  id: string;
+  name: string;
+}
+
+/** One DPIA register record (`GET /v1/privacy/dpias`). */
+export interface DpiaRecordView extends PrivacyRegisterRecordBase {
+  id: string;
+  title: string;
+}
+
+/** One bounded retention policy register record (`GET /v1/privacy/retention-policies`). */
+export interface RetentionPolicyView {
+  id: string;
+  name: string;
+  scope: string;
+  category: string;
+  schedule_id: string;
+  retention_period: string;
+  legal_basis: string;
+  disposal_action: RetentionDisposalAction;
+  status: RetentionPolicyStatus;
+  active: boolean;
+  notes?: string;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+/** Body of `POST /v1/privacy/retention-policies`. */
+export interface CreateRetentionPolicyBody {
+  id?: string;
+  name: string;
+  scope: string;
+  category: string;
+  schedule_id: string;
+  retention_period: string;
+  legal_basis: string;
+  disposal_action: RetentionDisposalAction;
+  status: RetentionPolicyStatus;
+  active: boolean;
+  notes?: string;
+}
+
+/** Body of `PATCH /v1/privacy/retention-policies/{id}`. */
+export interface PatchRetentionPolicyBody {
+  name?: string;
+  scope?: string;
+  category?: string;
+  schedule_id?: string;
+  retention_period?: string;
+  legal_basis?: string;
+  disposal_action?: RetentionDisposalAction;
+  status?: RetentionPolicyStatus;
+  active?: boolean;
+  notes?: string;
+}
+
+/** Body of `POST /v1/privacy/retention-policies/dry-run`. */
+export interface RetentionDryRunBody {
+  scope: string;
+  category: string;
+  record_id?: string;
+}
+
+export interface RetentionDryRunCandidate {
+  scope: string;
+  category: string;
+  record_id?: string;
+}
+
+export interface RetentionDryRunMatch {
+  policy_id: string;
+  name: string;
+  scope: string;
+  category: string;
+  schedule_id: string;
+  retention_period: string;
+  disposal_action: RetentionDisposalAction;
+  status: RetentionPolicyStatus;
+  active: boolean;
+  destructive_action: boolean;
+  would_execute: boolean;
+  reason: string;
+}
+
+export interface RetentionDryRunReport {
+  mode: 'dry_run';
+  execution_supported: boolean;
+  destructive_execution_supported: boolean;
+  candidate: RetentionDryRunCandidate;
+  matched_count: number;
+  matches: RetentionDryRunMatch[];
+}
+
+/** Body of `POST /v1/privacy/processors`. */
+export interface CreateProcessorRecordBody {
+  name: string;
+  purpose: string;
+  legal_basis: string;
+  data_categories: string[];
+  subprocessors: string[];
+  risk_level: PrivacyRiskLevel;
+  status: PrivacyRecordStatus;
+}
+
+/** Body of `PATCH /v1/privacy/processors/{id}`. */
+export interface PatchProcessorRecordBody {
+  name?: string;
+  purpose?: string;
+  legal_basis?: string;
+  data_categories?: string[];
+  subprocessors?: string[];
+  risk_level?: PrivacyRiskLevel;
+  status?: PrivacyRecordStatus;
+}
+
+/** Body of `POST /v1/privacy/dpias`. */
+export interface CreateDpiaRecordBody {
+  title: string;
+  purpose: string;
+  legal_basis: string;
+  data_categories: string[];
+  subprocessors: string[];
+  risk_level: PrivacyRiskLevel;
+  status: PrivacyRecordStatus;
+}
+
+/** Body of `PATCH /v1/privacy/dpias/{id}`. */
+export interface PatchDpiaRecordBody {
+  title?: string;
+  purpose?: string;
+  legal_basis?: string;
+  data_categories?: string[];
+  subprocessors?: string[];
+  risk_level?: PrivacyRiskLevel;
+  status?: PrivacyRecordStatus;
+}
+
+/** One role assignment embedded in the non-secret DSR user export. */
+export interface UserDsrRoleAssignment {
+  role_id: string;
+  scope: PermissionScope;
+  role_name?: string;
+  permissions: string[];
+}
+
+/** The exported user profile plus non-secret authorization context. */
+export interface UserDsrExportUser extends UserView {
+  role_assignments: UserDsrRoleAssignment[];
+}
+
+/** Non-secret JSON payload returned by `GET /v1/privacy/users/{id}/export`. */
+export interface UserDsrExport {
+  exported_at: string;
+  scope: string;
+  format_version: number;
+  redaction_notes: string[];
+  exclusions: string[];
+  user: UserDsrExportUser;
+  ledger_event_refs: LedgerEventView[];
+}
+
 /** `GET /v1/ledger/attestations/{seq}` — a server-verified attestation, or 404. */
 export interface AttestationVerifyView {
   attestation: {
@@ -1225,11 +1884,17 @@ export interface CreateEntityBody {
   kind: EntityKind;
   /** Create even when the NIPC fails control-digit validation (stored unvalidated) (t25). */
   allow_invalid_nipc?: boolean;
+  /** Fiscal year end as `MM-DD`; `null`/omitted means the backend's Dec 31 default. */
+  fiscal_year_end?: string | null;
 }
 
-/** `PATCH /v1/entities/{id}` — set (`{...}`), clear (`null`), or leave (omit) the statute overlay (t31). */
+/**
+ * `PATCH /v1/entities/{id}` — set/clear `statute` and/or `fiscal_year_end`; omitted fields
+ * are left untouched.
+ */
 export interface UpdateEntityBody {
   statute?: StatuteOverrides | null;
+  fiscal_year_end?: string | null;
 }
 
 export interface OpenBookBody {
@@ -1333,12 +1998,25 @@ export interface SigningCmdSettings {
   ama_cert_configured: boolean;
 }
 
+export type SigningProviderMode = 'CMD' | 'CC' | 'CSC_QTSP' | 'LOCAL_PKCS12';
+
+export interface SigningProviderMetadata {
+  id: string;
+  mode: SigningProviderMode;
+  label: string;
+  configured: boolean;
+  production_blocked: boolean;
+  local_only: boolean;
+  note: string;
+}
+
 export interface SigningSettings {
   preferred_family: SignatureFamily;
   tsa_url: string | null;
   tsl_url: string | null;
   require_qualified_for_seal: boolean;
   cmd: SigningCmdSettings;
+  providers: SigningProviderMetadata[];
 }
 
 // --- Qualified CMD signing (§ t57) ----------------------------------------------
@@ -1383,6 +2061,19 @@ export interface PendingSignatureInfo {
   expires_at: string;
 }
 
+export type LongTermEvidenceStatus =
+  'not_configured' | 'timestamped' | 'lt_not_implemented' | 'lta_not_implemented';
+
+/** Technical PAdES evidence observed for the act; not a legal B-LT/B-LTA conformance claim. */
+export interface SignatureEvidenceStatus {
+  current_level: string;
+  timestamp_evidence_present: boolean;
+  dss_revocation_evidence_present: boolean;
+  dss_revocation_evidence_status: string;
+  long_term_status: LongTermEvidenceStatus[];
+  status_scope: string;
+}
+
 /** `GET /v1/acts/{id}/signature` — the act's signature status + derived finalization. */
 export interface SignatureStatusView {
   status: SignatureStatus;
@@ -1392,6 +2083,8 @@ export interface SignatureStatusView {
   signed?: SignedSignatureInfo;
   /** Present only when `status === 'pending'`. */
   pending?: PendingSignatureInfo;
+  /** Technical evidence profile; deliberately does not imply B-LT/B-LTA support. */
+  evidence: SignatureEvidenceStatus;
 }
 
 /**
@@ -1527,6 +2220,92 @@ export interface RemoteConfirmResult extends CmdConfirmResult {
   provider_id: string;
 }
 
+// --- External signer invitation tracking ---------------------------------------
+
+export type ExternalSignerInviteStatus =
+  'pending' | 'accepted' | 'declined' | 'expired' | 'revoked';
+export type ExternalSignerInviteDecision = 'accept' | 'decline';
+
+export interface CreateExternalSignerInviteBody {
+  recipient_name: string;
+  recipient_email: string;
+  provider_hint?: string;
+  expires_at: string;
+  purpose: string;
+  actor?: string;
+}
+
+/** Public invite metadata. The plaintext token and token hash are never listed. */
+export interface ExternalSignerInviteView {
+  id: string;
+  act_id: string;
+  recipient_name: string;
+  recipient_email: string;
+  provider_hint?: string;
+  purpose: string;
+  status: ExternalSignerInviteStatus;
+  workflow: string;
+  token_hint: string;
+  created_at: string;
+  created_by: string;
+  expires_at: string;
+  revoked_at?: string;
+  revoked_by?: string;
+  responded_at?: string;
+}
+
+/** Create response; `token` is returned exactly once and must not be cached as list data. */
+export interface CreateExternalSignerInviteResult {
+  invite: ExternalSignerInviteView;
+  token: string;
+}
+
+export interface ExternalSignerInviteActPublicView {
+  id: string;
+  title: string;
+  state: string;
+  meeting_date?: string;
+  ata_number?: number;
+  entity_name: string;
+  book_kind: string;
+}
+
+export interface ExternalSignerInviteArtifactPublicView {
+  kind: string;
+  method: 'POST';
+  path: string;
+  content_type: string;
+  filename: string;
+  notice: string;
+}
+
+export interface ExternalSignerInviteDocumentPublicView {
+  id: string;
+  template_id: string;
+  profile: string;
+  pdf_digest: string;
+  artifact: ExternalSignerInviteArtifactPublicView;
+}
+
+/**
+ * Public token-holder envelope. This is acknowledgement/tracking metadata only: it never contains
+ * token material, document bytes, canonical PDF URLs, or a qualified-signature completion claim.
+ */
+export interface ExternalSignerInvitePublicView {
+  invite_id: string;
+  act: ExternalSignerInviteActPublicView;
+  document?: ExternalSignerInviteDocumentPublicView;
+  recipient_name: string;
+  provider_hint?: string;
+  purpose: string;
+  status: ExternalSignerInviteStatus;
+  workflow: string;
+  created_at: string;
+  expires_at: string;
+  responded_at?: string;
+  notice: string;
+}
+
 export interface AppearanceSettings {
   theme: ThemeMode;
   leather_texture: boolean;
@@ -1574,6 +2353,11 @@ export interface OnboardingSettings {
   completed_at: string | null;
 }
 
+/** Tenant-level gate for AI features and the MCP surface. Defaults disabled. */
+export interface AiSettings {
+  enabled: boolean;
+}
+
 export interface Settings {
   schema_version: number;
   organization: OrganizationSettings;
@@ -1582,6 +2366,7 @@ export interface Settings {
   signing: SigningSettings;
   appearance: AppearanceSettings;
   onboarding: OnboardingSettings;
+  ai: AiSettings;
 }
 
 /** The server's default document (contract §2.8) — used as the pre-load fallback so
@@ -1609,6 +2394,44 @@ export const DEFAULT_SETTINGS: Settings = {
     tsl_url: 'https://www.gns.gov.pt/media/TSLPT.xml',
     require_qualified_for_seal: false,
     cmd: { env: 'preprod', application_id: null, ama_cert_configured: false },
+    providers: [
+      {
+        id: 'cmd',
+        mode: 'CMD',
+        label: 'Chave Móvel Digital (CMD/SCMD)',
+        configured: false,
+        production_blocked: true,
+        local_only: false,
+        note: 'Missing AMA ApplicationId/certificate; defaults to pre-production.',
+      },
+      {
+        id: 'cc',
+        mode: 'CC',
+        label: 'Cartão de Cidadão',
+        configured: false,
+        production_blocked: false,
+        local_only: true,
+        note: 'Requires a co-located desktop process and card reader; no PIN is stored.',
+      },
+      {
+        id: 'csc_qtsp',
+        mode: 'CSC_QTSP',
+        label: 'CSC/QTSP remote provider',
+        configured: false,
+        production_blocked: true,
+        local_only: false,
+        note: 'No CSC/QTSP provider is configured in the environment.',
+      },
+      {
+        id: 'soft_pkcs12',
+        mode: 'LOCAL_PKCS12',
+        label: 'Local soft certificate (PKCS#12/PFX)',
+        configured: false,
+        production_blocked: true,
+        local_only: true,
+        note: 'Local-only test/operator material; private key and passphrase are never captured in settings.',
+      },
+    ],
   },
   appearance: {
     theme: 'system',
@@ -1617,6 +2440,7 @@ export const DEFAULT_SETTINGS: Settings = {
     button_texture: true,
   },
   onboarding: { completed: false, completed_at: null },
+  ai: { enabled: false },
 };
 
 export interface HealthResponse {
@@ -1787,6 +2611,70 @@ export interface ImportOutcomeView {
   source_instance_id: string;
   bundle_digest: string;
   collided: boolean;
+}
+
+export interface PaperBookImportIdentity {
+  entity_ref: string;
+  entity_name: string;
+  entity_nipc: string;
+  book_ref: string;
+}
+
+export interface PaperBookImportDateSpan {
+  from: string;
+  to: string;
+}
+
+export interface PaperBookImportPackage {
+  page_count: number;
+  source_filename: string | null;
+  digest: string | null;
+  notes_present: boolean;
+  notes_truncated: boolean;
+}
+
+export interface PaperBookImportClassification {
+  classification: 'historical_paper_book_non_canonical_evidence';
+  non_canonical: boolean;
+  historical_evidence: boolean;
+  preservation_status: 'not_preserved_by_validation';
+  canonical_minutes_claimed: boolean;
+  legal_validity_claimed: boolean;
+  signature_validity_claimed: boolean;
+  qualified_signature_claimed: boolean;
+}
+
+export interface PaperBookImportFinding {
+  severity: 'info' | 'warning' | 'error';
+  code: string;
+  message: string;
+}
+
+/** `POST /v1/books/paper-import/validate` read-only validation report. */
+export interface PaperBookImportReport {
+  report_kind: 'paper_book_import_validation';
+  dry_run: boolean;
+  legal_notice: string;
+  identity: PaperBookImportIdentity;
+  date_span: PaperBookImportDateSpan;
+  package: PaperBookImportPackage;
+  candidate_classification: PaperBookImportClassification;
+  can_accept_as_import_candidate: boolean;
+  required_operator_actions: string[];
+  findings: PaperBookImportFinding[];
+}
+
+export interface PaperBookImportValidateBody {
+  entity_ref: string;
+  entity_name: string;
+  entity_nipc: string;
+  book_ref: string;
+  date_from: string;
+  date_to: string;
+  page_count: number;
+  source_filename?: string | null;
+  digest?: string | null;
+  notes?: string | null;
 }
 
 /** `POST /v1/books/{id}/start-over` request (forward-writing lifecycle op; reason + a

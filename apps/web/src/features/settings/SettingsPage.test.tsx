@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { SettingsPage } from './SettingsPage';
 import { DEFAULT_SETTINGS } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
+import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -17,12 +18,91 @@ interface Recorded {
   body: string | null;
 }
 
+const PERMISSION_CATALOG = {
+  permissions: [
+    { permission: 'ledger.read', meta: false },
+    { permission: 'entity.read', meta: false },
+    { permission: 'role.manage', meta: true },
+  ],
+};
+
+const API_KEY_ONE = {
+  id: 'key-1',
+  name: 'ERP bridge',
+  prefix: 'chk_ab12cd34ef56',
+  grant: {
+    kind: 'permissions',
+    permissions: ['ledger.read'],
+    scope: { kind: 'global' },
+  },
+  created_by: 'user-1',
+  created_at: '2026-07-09T10:00:00Z',
+  revoked: false,
+  active: true,
+  rate_limit: { rpm: 60, burst: 20 },
+};
+
+type ApiKeyMetadata = typeof API_KEY_ONE;
+
+const API_KEY_REVOKED: ApiKeyMetadata = {
+  ...API_KEY_ONE,
+  id: 'key-revoked',
+  name: 'Retired bridge',
+  prefix: 'chk_revoked',
+  revoked: true,
+  active: false,
+};
+
+const PROCESSOR_ONE = {
+  id: 'processor-1',
+  name: 'Cloud Processor',
+  purpose: 'Alojamento da aplicação',
+  legal_basis: 'Contrato',
+  data_categories: ['Identificação', 'Contactos'],
+  subprocessors: ['EU Backup SARL'],
+  risk_level: 'medium',
+  status: 'draft',
+  created_at: '2026-07-09T10:00:00Z',
+  created_by: 'amelia.marques',
+  updated_at: '2026-07-09T10:00:00Z',
+  updated_by: 'amelia.marques',
+};
+
+const DPIA_ONE = {
+  id: 'dpia-1',
+  title: 'Marketing profiling',
+  purpose: 'Segmentação de comunicações',
+  legal_basis: 'Interesse legítimo',
+  data_categories: ['Comportamento'],
+  subprocessors: ['Analytics Processor SA'],
+  risk_level: 'high',
+  status: 'under_review',
+  created_at: '2026-07-09T11:00:00Z',
+  created_by: 'amelia.marques',
+  updated_at: '2026-07-09T11:00:00Z',
+  updated_by: 'amelia.marques',
+};
+
+type ProcessorRecordMetadata = typeof PROCESSOR_ONE;
+type DpiaRecordMetadata = typeof DPIA_ONE;
+
+function apiKeyIdFromUrl(url: string): string | undefined {
+  return url.match(/\/v1\/api-keys\/([^/]+)/)?.[1];
+}
+
+function privacyRecordIdFromUrl(url: string, root: 'processors' | 'dpias'): string | undefined {
+  return url.match(new RegExp(`/v1/privacy/${root}/([^/]+)`))?.[1];
+}
+
 /**
  * A fetch stub for the settings page's four endpoints. Captures every call so a test
  * can assert what the PUT sent. The PUT echoes the posted document (schema stamped),
  * mirroring the real server.
  */
-function settingsFetch(): { fn: typeof fetch; calls: Recorded[] } {
+function settingsFetch(initialSettings: unknown = DEFAULT_SETTINGS): {
+  fn: typeof fetch;
+  calls: Recorded[];
+} {
   const calls: Recorded[] = [];
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -34,7 +114,7 @@ function settingsFetch(): { fn: typeof fetch; calls: Recorded[] } {
         const parsed = JSON.parse(init?.body as string) as Record<string, unknown>;
         return Promise.resolve(jsonResponse({ ...parsed, schema_version: 1 }));
       }
-      return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      return Promise.resolve(jsonResponse(initialSettings));
     }
     if (url.includes('/v1/ledger/verify')) {
       return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
@@ -44,6 +124,218 @@ function settingsFetch(): { fn: typeof fetch; calls: Recorded[] } {
     }
     return Promise.reject(new Error(`no stub for ${url}`));
   }) as typeof fetch;
+  return { fn, calls };
+}
+
+function settingsWithoutAi(): Omit<typeof DEFAULT_SETTINGS, 'ai'> {
+  const copy: Partial<typeof DEFAULT_SETTINGS> = { ...DEFAULT_SETTINGS };
+  delete copy.ai;
+  return copy as Omit<typeof DEFAULT_SETTINGS, 'ai'>;
+}
+
+function settingsWithoutProviderMetadata(): unknown {
+  return {
+    ...DEFAULT_SETTINGS,
+    signing: {
+      ...DEFAULT_SETTINGS.signing,
+      providers: undefined,
+    },
+  };
+}
+
+function apiKeysFetch(initialKeys: ApiKeyMetadata[] = [API_KEY_ONE]): {
+  fn: typeof fetch;
+  calls: Recorded[];
+} {
+  const calls: Recorded[] = [];
+  let keys = initialKeys.map((key) => ({
+    ...key,
+    grant: {
+      ...key.grant,
+      permissions: [...key.grant.permissions],
+      scope: { ...key.grant.scope },
+    },
+    rate_limit: key.rate_limit ? { ...key.rate_limit } : undefined,
+  }));
+  const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    calls.push({ url, method, body: (init?.body as string) ?? null });
+
+    if (url.includes('/v1/api-keys/') && method === 'POST' && url.endsWith('/rotate')) {
+      const id = apiKeyIdFromUrl(url);
+      const existing = keys.find((k) => k.id === id);
+      if (!existing) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const rotated = {
+        ...existing,
+        secret: 'chk_rotated_plaintext_secret',
+        prefix: 'chk_rotated',
+        revoked: false,
+        active: true,
+      };
+      keys = keys.map((k) =>
+        k.id === id
+          ? {
+              ...k,
+              prefix: rotated.prefix,
+              revoked: rotated.revoked,
+              active: rotated.active,
+            }
+          : k,
+      );
+      return Promise.resolve(jsonResponse(rotated));
+    }
+    if (url.includes('/v1/api-keys/') && method === 'DELETE') {
+      const id = apiKeyIdFromUrl(url);
+      const updated = { ...keys.find((k) => k.id === id)!, revoked: true, active: false };
+      keys = keys.map((k) => (k.id === id ? updated : k));
+      return Promise.resolve(jsonResponse(updated));
+    }
+    if (url.includes('/v1/api-keys')) {
+      if (method === 'POST') {
+        const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+        const name = body.name as string;
+        const grant = body.grant as typeof API_KEY_ONE.grant;
+        const rate_limit = body.rate_limit as typeof API_KEY_ONE.rate_limit;
+        const created = {
+          id: 'key-2',
+          secret: 'chk_new_plaintext_secret',
+          prefix: 'chk_new',
+          created_by: 'user-1',
+          created_at: '2026-07-09T11:00:00Z',
+          revoked: false,
+          active: true,
+          name,
+          grant,
+          rate_limit,
+        };
+        keys = [
+          ...keys,
+          {
+            id: created.id,
+            name: created.name,
+            prefix: created.prefix,
+            grant: created.grant,
+            created_by: created.created_by,
+            created_at: created.created_at,
+            revoked: created.revoked,
+            active: created.active,
+            rate_limit: created.rate_limit,
+          },
+        ];
+        return Promise.resolve(jsonResponse(created, 201));
+      }
+      return Promise.resolve(jsonResponse(keys));
+    }
+    if (url.includes('/v1/permissions')) return Promise.resolve(jsonResponse(PERMISSION_CATALOG));
+    if (url.includes('/v1/entities')) return Promise.resolve(jsonResponse([]));
+    if (url.includes('/v1/books')) return Promise.resolve(jsonResponse([]));
+    if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+    if (url.includes('/v1/ledger/verify')) {
+      return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
+    }
+    if (url.includes('/health')) {
+      return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+    }
+    return Promise.reject(new Error(`no stub for ${url}`));
+  }) as typeof fetch;
+  return { fn, calls };
+}
+
+function privacyFetch(
+  initialProcessors: ProcessorRecordMetadata[] = [PROCESSOR_ONE],
+  initialDpias: DpiaRecordMetadata[] = [DPIA_ONE],
+): {
+  fn: typeof fetch;
+  calls: Recorded[];
+} {
+  const calls: Recorded[] = [];
+  let processors = initialProcessors.map((record) => ({
+    ...record,
+    data_categories: [...record.data_categories],
+    subprocessors: [...record.subprocessors],
+  }));
+  let dpias = initialDpias.map((record) => ({
+    ...record,
+    data_categories: [...record.data_categories],
+    subprocessors: [...record.subprocessors],
+  }));
+
+  const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    calls.push({ url, method, body: (init?.body as string) ?? null });
+
+    if (url.includes('/v1/privacy/processors/') && method === 'PATCH') {
+      const id = privacyRecordIdFromUrl(url, 'processors');
+      const patch = JSON.parse(init?.body as string) as Partial<ProcessorRecordMetadata>;
+      const current = processors.find((record) => record.id === id);
+      if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const updated = {
+        ...current,
+        ...patch,
+        updated_at: '2026-07-09T12:00:00Z',
+        updated_by: 'amelia.marques',
+      };
+      processors = processors.map((record) => (record.id === id ? updated : record));
+      return Promise.resolve(jsonResponse(updated));
+    }
+    if (url.includes('/v1/privacy/dpias/') && method === 'PATCH') {
+      const id = privacyRecordIdFromUrl(url, 'dpias');
+      const patch = JSON.parse(init?.body as string) as Partial<DpiaRecordMetadata>;
+      const current = dpias.find((record) => record.id === id);
+      if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const updated = {
+        ...current,
+        ...patch,
+        updated_at: '2026-07-09T12:00:00Z',
+        updated_by: 'amelia.marques',
+      };
+      dpias = dpias.map((record) => (record.id === id ? updated : record));
+      return Promise.resolve(jsonResponse(updated));
+    }
+    if (url.includes('/v1/privacy/processors')) {
+      if (method === 'POST') {
+        const body = JSON.parse(init?.body as string) as Omit<ProcessorRecordMetadata, 'id'>;
+        const created = {
+          ...body,
+          id: 'processor-2',
+          created_at: '2026-07-09T12:00:00Z',
+          created_by: 'amelia.marques',
+          updated_at: '2026-07-09T12:00:00Z',
+          updated_by: 'amelia.marques',
+        };
+        processors = [...processors, created];
+        return Promise.resolve(jsonResponse(created, 201));
+      }
+      return Promise.resolve(jsonResponse(processors));
+    }
+    if (url.includes('/v1/privacy/dpias')) {
+      if (method === 'POST') {
+        const body = JSON.parse(init?.body as string) as Omit<DpiaRecordMetadata, 'id'>;
+        const created = {
+          ...body,
+          id: 'dpia-2',
+          created_at: '2026-07-09T12:00:00Z',
+          created_by: 'amelia.marques',
+          updated_at: '2026-07-09T12:00:00Z',
+          updated_by: 'amelia.marques',
+        };
+        dpias = [...dpias, created];
+        return Promise.resolve(jsonResponse(created, 201));
+      }
+      return Promise.resolve(jsonResponse(dpias));
+    }
+    if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+    if (url.includes('/v1/ledger/verify')) {
+      return Promise.resolve(jsonResponse({ valid: true, length: 3 }));
+    }
+    if (url.includes('/health')) {
+      return Promise.resolve(jsonResponse({ status: 'ok', version: '9.9.9' }));
+    }
+    return Promise.reject(new Error(`no stub for ${url}`));
+  }) as typeof fetch;
+
   return { fn, calls };
 }
 
@@ -91,6 +383,56 @@ describe('SettingsPage', () => {
     // Switching to Sobre surfaces the /health version there.
     fireEvent.click(screen.getByRole('button', { name: 'Sobre' }));
     expect(await screen.findByText('9.9.9')).toBeTruthy();
+  });
+
+  it('defaults the AI/MCP tenant gate off when the settings document omits it', async () => {
+    const { fn } = settingsFetch(settingsWithoutAi());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+
+    const toggle = (await screen.findByRole('switch', {
+      name: 'Ativar IA/MCP',
+    })) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+  });
+
+  it('round-trips an enabled AI/MCP tenant gate through the settings autosave', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+
+    const toggle = (await screen.findByRole('switch', {
+      name: 'Ativar IA/MCP',
+    })) as HTMLInputElement;
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+
+    const put = calls.find((c) => c.method === 'PUT');
+    expect(put).toBeTruthy();
+    const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+    expect(sent.ai).toEqual({ enabled: true });
+  });
+
+  it('hides the AI/MCP tenant gate from users without settings.manage', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission !== 'settings.manage')}
+      >
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=gestao'],
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Gestão' })).toBeTruthy();
+    expect(screen.queryByRole('switch', { name: 'Ativar IA/MCP' })).toBeNull();
   });
 
   it('applies the theme override to the document root live', async () => {
@@ -282,9 +624,130 @@ describe('SettingsPage', () => {
     // The sub-tab button exists and the roster renders inline (the fictional example user).
     expect(await screen.findByRole('button', { name: 'Utilizadores' })).toBeTruthy();
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
-    // The inline "novo utilizador" action links to the standalone create route (still valid).
+    // The inline "novo utilizador" action stays inside the settings users section.
     const novo = screen.getByRole('link', { name: /novo utilizador/i });
-    expect(novo.getAttribute('href')).toBe('/utilizadores/novo');
+    expect(novo.getAttribute('href')).toBe('/configuracoes?sec=utilizadores&user=novo');
+  });
+
+  it('hosts privacy/compliance processor and DPIA registers with search and filters', async () => {
+    const { fn } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    expect(await screen.findByRole('button', { name: 'Privacidade' })).toBeTruthy();
+    expect(await screen.findByText('Cloud Processor')).toBeTruthy();
+    expect(await screen.findByText('Marketing profiling')).toBeTruthy();
+
+    const dpiaPanel = screen.getByText('DPIAs').closest('section');
+    expect(dpiaPanel).toBeTruthy();
+    fireEvent.change(within(dpiaPanel!).getByLabelText('Pesquisar'), {
+      target: { value: 'marketing' },
+    });
+    expect(within(dpiaPanel!).getByText('Marketing profiling')).toBeTruthy();
+
+    fireEvent.change(within(dpiaPanel!).getByLabelText('Risco'), {
+      target: { value: 'critical' },
+    });
+    expect(await within(dpiaPanel!).findByText('Sem resultados')).toBeTruthy();
+  });
+
+  it('creates and patches GDPR processor records from the privacy settings tab', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const processorPanel = (await screen.findByText('Processadores GDPR')).closest('section');
+    expect(processorPanel).toBeTruthy();
+    fireEvent.click(within(processorPanel!).getByRole('button', { name: 'Novo registo' }));
+
+    const formCard = await screen.findByRole('heading', { name: 'Novo registo' });
+    const form = formCard.closest('section');
+    expect(form).toBeTruthy();
+    fireEvent.change(within(form!).getByLabelText('Nome do processador'), {
+      target: { value: 'Payroll Processor' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Finalidade'), {
+      target: { value: 'Processamento salarial' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Base legal'), {
+      target: { value: 'Contrato de trabalho' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Categorias de dados'), {
+      target: { value: 'Identificação\nRemuneração' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Subprocessadores'), {
+      target: { value: 'Payroll Backup SA' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Risco'), { target: { value: 'high' } });
+    fireEvent.change(within(form!).getByLabelText('Estado'), { target: { value: 'active' } });
+    fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
+
+    const post = await waitFor(() => {
+      const call = calls.find(
+        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/processors'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(post!.body as string)).toMatchObject({
+      name: 'Payroll Processor',
+      purpose: 'Processamento salarial',
+      legal_basis: 'Contrato de trabalho',
+      data_categories: ['Identificação', 'Remuneração'],
+      subprocessors: ['Payroll Backup SA'],
+      risk_level: 'high',
+      status: 'active',
+    });
+    expect(await screen.findByText('Payroll Processor')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Estado de Payroll Processor'), {
+      target: { value: 'under_review' },
+    });
+
+    const patch = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'PATCH' &&
+          c.url.endsWith('/v1/privacy/processors/processor-2') &&
+          c.body?.includes('under_review'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(patch!.body as string)).toEqual({ status: 'under_review' });
+  });
+
+  it('matches privacy register permission gating to user.manage or settings.manage', async () => {
+    const allowed = privacyFetch();
+    vi.stubGlobal('fetch', allowed.fn);
+
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission === 'settings.manage')}
+      >
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=privacidade'],
+    );
+
+    expect(await screen.findByText('Cloud Processor')).toBeTruthy();
+    expect(allowed.calls.some((c) => c.url.includes('/v1/privacy/processors'))).toBe(true);
+
+    cleanup();
+    const denied = privacyFetch();
+    vi.stubGlobal('fetch', denied.fn);
+
+    renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue(() => false)}>
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=privacidade'],
+    );
+
+    expect(await screen.findByText('Sem permissão')).toBeTruthy();
+    expect(denied.calls.some((c) => c.url.includes('/v1/privacy/'))).toBe(false);
   });
 
   it('resets a signing URL to its default via the icon-only reset button', async () => {
@@ -312,5 +775,135 @@ describe('SettingsPage', () => {
     // …and clicking it restores the committed default.
     fireEvent.click(reset());
     expect(tsa.value).toBe(DEFAULT_SETTINGS.signing.tsa_url ?? '');
+  });
+
+  it('surfaces signing provider modes without secret inputs', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+
+    expect(await screen.findByText('Modos de prestador configurados')).toBeTruthy();
+    expect(screen.getByText(/Chave Móvel Digital \(CMD\/SCMD\)/)).toBeTruthy();
+    expect(screen.getAllByText(/Cartão de Cidadão/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/CSC\/QTSP remote provider/)).toBeTruthy();
+    expect(screen.getByText(/Local soft certificate \(PKCS#12\/PFX\)/)).toBeTruthy();
+    expect(screen.getAllByText('Bloqueado em produção').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Apenas local').length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText(/passphrase|chave privada|private key|pin/i)).toBeNull();
+  });
+
+  it('defaults provider metadata when an older settings payload omits it', async () => {
+    const { fn } = settingsFetch(settingsWithoutProviderMetadata());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+
+    expect(await screen.findByText(/Local soft certificate \(PKCS#12\/PFX\)/)).toBeTruthy();
+  });
+
+  it('lists API keys as persisted metadata including returned rate limits', async () => {
+    const { fn } = apiKeysFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+
+    expect(await screen.findByRole('button', { name: 'Chaves API' })).toBeTruthy();
+    expect(await screen.findByText('ERP bridge')).toBeTruthy();
+    expect(screen.getByText('chk_ab12cd34ef56')).toBeTruthy();
+    expect(screen.getByText('60 req/min · rajada 20')).toBeTruthy();
+    expect(screen.queryByText('chk_new_plaintext_secret')).toBeNull();
+  });
+
+  it('creates an API key with a scoped permission grant and shows the plaintext once', async () => {
+    const { fn, calls } = apiKeysFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Nova chave API' }));
+    fireEvent.change(await screen.findByLabelText('Nome da chave'), {
+      target: { value: 'Ledger export' },
+    });
+    fireEvent.click(await screen.findByLabelText('ledger.read'));
+    fireEvent.change(screen.getByLabelText('Pedidos por minuto'), { target: { value: '120' } });
+    fireEvent.change(screen.getByLabelText('Rajada'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar chave' }));
+
+    expect(await screen.findByText('Guarde este segredo agora')).toBeTruthy();
+    expect(screen.getByText('chk_new_plaintext_secret')).toBeTruthy();
+    expect(screen.queryByLabelText('role.manage')).toBeNull();
+
+    const post = await waitFor(() =>
+      calls.find((c) => c.method === 'POST' && c.url.includes('/v1/api-keys')),
+    );
+    expect(JSON.parse(post!.body as string)).toMatchObject({
+      name: 'Ledger export',
+      grant: {
+        kind: 'permissions',
+        permissions: ['ledger.read'],
+        scope: { kind: 'global' },
+      },
+      rate_limit: { rpm: 120, burst: 10 },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Concluído' }));
+    await waitFor(() => expect(screen.queryByText('chk_new_plaintext_secret')).toBeNull());
+    expect(await screen.findByText('chk_new')).toBeTruthy();
+  });
+
+  it('rotates an active API key and shows the replacement secret once', async () => {
+    const { fn, calls } = apiKeysFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Rodar chave' }));
+
+    expect(await screen.findByText('Guarde este segredo agora')).toBeTruthy();
+    expect(screen.getByText('chk_rotated_plaintext_secret')).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === 'POST' && c.url.includes('/v1/api-keys/key-1/rotate')),
+      ).toBe(true),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Concluído' }));
+    await waitFor(() => expect(screen.queryByText('chk_rotated_plaintext_secret')).toBeNull());
+    expect(await screen.findByText('chk_rotated')).toBeTruthy();
+  });
+
+  it('does not offer API-key actions for revoked keys', async () => {
+    const { fn } = apiKeysFetch([API_KEY_ONE, API_KEY_REVOKED]);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+
+    const activeRow = (await screen.findByText('ERP bridge')).closest('tr');
+    const revokedRow = (await screen.findByText('Retired bridge')).closest('tr');
+    expect(activeRow).toBeTruthy();
+    expect(revokedRow).toBeTruthy();
+
+    expect(within(activeRow!).getByRole('button', { name: 'Rodar chave' })).toBeTruthy();
+    expect(within(revokedRow!).queryByRole('button', { name: 'Rodar chave' })).toBeNull();
+    expect(within(revokedRow!).queryByRole('button', { name: 'Revogar' })).toBeNull();
+    expect(within(revokedRow!).getByText('—')).toBeTruthy();
+  });
+
+  it('revokes API keys from the settings tab', async () => {
+    const { fn, calls } = apiKeysFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=chaves-api']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Revogar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar revogação' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/v1/api-keys/key-1'))).toBe(
+        true,
+      ),
+    );
+    expect(await screen.findByText('Revogada')).toBeTruthy();
   });
 });

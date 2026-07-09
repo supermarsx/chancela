@@ -1,12 +1,13 @@
 /**
  * Painel — the WFL-40 dashboard subset (plan t5 §2.7). Counts, the chain-valid
- * indicator, an unresolved-compliance callout, and the last ledger events. Everything
- * is derived from `GET /v1/dashboard`, which the seal/mutation hooks invalidate, so
- * the numbers stay live.
+ * indicator, an unresolved-compliance callout, advisory reminders, and the last ledger
+ * events. Everything is derived from `GET /v1/dashboard`, which the seal/mutation hooks
+ * invalidate, so the numbers stay live.
  */
 import { Link } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
-import { useT } from '../../i18n';
+import type { DashboardReminder, LedgerEventView } from '../../api/types';
+import { useT, type TFunction } from '../../i18n';
 import {
   Badge,
   Card,
@@ -18,6 +19,33 @@ import {
 } from '../../ui';
 import { LedgerTable } from '../ledger/LedgerTable';
 
+const RECENT_EVENTS_LIMIT = 10;
+
+type QueueTone = 'neutral' | 'accent' | 'warn' | 'error';
+
+interface WorkQueueItem {
+  id: string;
+  priority: number;
+  sortTime: number | null;
+  badge: string;
+  tone: QueueTone;
+  title: string;
+  detail: string;
+  meta: string[];
+  href?: string;
+}
+
+function compareByRecency(a: LedgerEventView, b: LedgerEventView): number {
+  const aTime = Date.parse(a.timestamp);
+  const bTime = Date.parse(b.timestamp);
+  const aValid = !Number.isNaN(aTime);
+  const bValid = !Number.isNaN(bTime);
+
+  if (aValid && bValid && aTime !== bTime) return bTime - aTime;
+  if (aValid !== bValid) return aValid ? -1 : 1;
+  return b.seq - a.seq;
+}
+
 function Metric({ label, value, note }: { label: string; value: number | string; note?: string }) {
   return (
     <li className="card">
@@ -25,6 +53,199 @@ function Metric({ label, value, note }: { label: string; value: number | string;
       <p className="card__metric">{value}</p>
       {note ? <p className="card__note">{note}</p> : null}
     </li>
+  );
+}
+
+function reminderTone(reminder: DashboardReminder): 'neutral' | 'accent' | 'warn' {
+  if (reminder.status === 'Overdue') return 'warn';
+  if (reminder.status === 'DueSoon') return 'accent';
+  return 'neutral';
+}
+
+function reminderStatusLabel(status: DashboardReminder['status'], t: TFunction): string {
+  if (status === 'Overdue') return t('dashboard.workQueue.status.overdue');
+  if (status === 'DueSoon') return t('dashboard.workQueue.status.dueSoon');
+  return t('dashboard.workQueue.status.upcoming');
+}
+
+function parseReminderDate(value: string): number | null {
+  const trimmed = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!match) return null;
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const time = Date.UTC(year, month - 1, day);
+  const date = new Date(time);
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return time;
+}
+
+function reminderDateLabel(dueDate: string, t: TFunction): string {
+  const trimmed = dueDate.trim();
+  if (!trimmed) return t('dashboard.workQueue.date.missing');
+  return parseReminderDate(trimmed) === null ? t('dashboard.workQueue.date.invalid') : trimmed;
+}
+
+function reminderDateMeta(dueDate: string, t: TFunction): string {
+  const label = reminderDateLabel(dueDate, t);
+  const missing = t('dashboard.workQueue.date.missing');
+  const invalid = t('dashboard.workQueue.date.invalid');
+  if (label === missing || label === invalid) return label;
+  return t('dashboard.workQueue.date.value', { date: label });
+}
+
+function reminderPriority(status: DashboardReminder['status']): number {
+  if (status === 'Overdue') return 1;
+  if (status === 'DueSoon') return 3;
+  return 4;
+}
+
+function dedupeReminders(reminders: DashboardReminder[]): DashboardReminder[] {
+  const seen = new Set<string>();
+  return reminders.filter((reminder) => {
+    const key = [
+      reminder.entity_id.trim(),
+      reminder.source_rule.trim(),
+      reminder.source_profile.trim(),
+      reminder.due_date.trim(),
+      reminder.status,
+    ].join('\u0000');
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function compareQueueItems(a: WorkQueueItem, b: WorkQueueItem): number {
+  if (a.priority !== b.priority) return a.priority - b.priority;
+  if (a.sortTime !== null && b.sortTime !== null && a.sortTime !== b.sortTime) {
+    return a.sortTime - b.sortTime;
+  }
+  if (a.sortTime !== null || b.sortTime !== null) return a.sortTime === null ? 1 : -1;
+  const byTitle = a.title.localeCompare(b.title, 'pt');
+  return byTitle || a.id.localeCompare(b.id);
+}
+
+function buildWorkQueue({
+  ledgerValid,
+  unresolvedCompliance,
+  reminders,
+  t,
+}: {
+  ledgerValid: boolean;
+  unresolvedCompliance: number;
+  reminders: DashboardReminder[];
+  t: TFunction;
+}): WorkQueueItem[] {
+  const items: WorkQueueItem[] = [];
+
+  if (!ledgerValid) {
+    items.push({
+      id: 'integrity',
+      priority: 0,
+      sortTime: null,
+      badge: t('dashboard.workQueue.integrity.badge'),
+      tone: 'error',
+      title: t('dashboard.workQueue.integrity.title'),
+      detail: t('dashboard.workQueue.integrity.detail'),
+      meta: [t('dashboard.workQueue.integrity.meta')],
+      href: '/arquivo',
+    });
+  }
+
+  for (const reminder of dedupeReminders(reminders)) {
+    const dueDate = reminder.due_date.trim();
+    const sortTime = dueDate ? parseReminderDate(dueDate) : null;
+    const entityName = reminder.entity_name.trim() || t('dashboard.workQueue.entity.unnamed');
+    const entityId = reminder.entity_id.trim();
+    const sourceRule = reminder.source_rule.trim() || t('dashboard.workQueue.rule.missing');
+    const sourceProfile =
+      reminder.source_profile.trim() || t('dashboard.workQueue.profile.missing');
+
+    items.push({
+      id: `reminder:${entityId}:${sourceRule}:${sourceProfile}:${dueDate}:${reminder.status}`,
+      priority: reminderPriority(reminder.status),
+      sortTime,
+      badge: reminderStatusLabel(reminder.status, t),
+      tone: reminderTone(reminder),
+      title: entityName,
+      detail: reminder.reason.trim() || t('dashboard.workQueue.reminder.fallback'),
+      meta: [
+        reminderDateMeta(reminder.due_date, t),
+        t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
+      ],
+      href: entityId ? `/entidades/${entityId}` : undefined,
+    });
+  }
+
+  if (unresolvedCompliance > 0) {
+    items.push({
+      id: 'compliance',
+      priority: 2,
+      sortTime: null,
+      badge: t('dashboard.workQueue.compliance.badge'),
+      tone: 'warn',
+      title:
+        unresolvedCompliance === 1
+          ? t('dashboard.workQueue.compliance.title.one', { count: unresolvedCompliance })
+          : t('dashboard.workQueue.compliance.title.other', { count: unresolvedCompliance }),
+      detail: t('dashboard.workQueue.compliance.detail'),
+      meta: [t('dashboard.workQueue.compliance.meta')],
+    });
+  }
+
+  return items.sort(compareQueueItems);
+}
+
+function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
+  const t = useT();
+  if (items.length === 0) {
+    return (
+      <Card title={t('dashboard.workQueue.title')}>
+        <p className="dashboard-workqueue__empty muted">{t('dashboard.workQueue.empty')}</p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card title={t('dashboard.workQueue.title')}>
+      <ol className="dashboard-workqueue" aria-label={t('dashboard.workQueue.aria')}>
+        {items.map((item) => (
+          <li className="dashboard-workqueue__item" key={item.id}>
+            <div className="dashboard-workqueue__head">
+              <Badge tone={item.tone}>{item.badge}</Badge>
+              {item.href ? (
+                <Link className="dashboard-workqueue__title" to={item.href}>
+                  {item.title}
+                </Link>
+              ) : (
+                <span className="dashboard-workqueue__title">{item.title}</span>
+              )}
+            </div>
+            <p className="dashboard-workqueue__detail muted">{item.detail}</p>
+            <div className="dashboard-workqueue__meta">
+              {item.meta.map((meta) => (
+                <span className="muted" key={meta}>
+                  {meta}
+                </span>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }
 
@@ -46,11 +267,22 @@ export function DashboardPage() {
   if (error) return <ErrorNote error={error} />;
   if (!data) return null;
 
+  const recentEvents = data.recent_events
+    .slice()
+    .sort(compareByRecency)
+    .slice(0, RECENT_EVENTS_LIMIT);
+  const workQueueItems = buildWorkQueue({
+    ledgerValid: data.ledger_valid,
+    unresolvedCompliance: data.unresolved_compliance,
+    reminders: data.reminders,
+    t,
+  });
+
   return (
     <div className="stack">
       <PageHeader title={t('dashboard.title')} />
 
-      <ul className="cards">
+      <ul className="cards dashboard-metrics">
         <Metric label={t('dashboard.metric.entities')} value={data.entities} />
         <Metric
           label={t('dashboard.metric.booksOpen')}
@@ -102,11 +334,13 @@ export function DashboardPage() {
         </InlineWarning>
       ) : null}
 
+      <OperatorWorkQueue items={workQueueItems} />
+
       <Card
         title={t('dashboard.recentEvents.title')}
         actions={<Link to="/arquivo">{t('dashboard.viewFullArchive')}</Link>}
       >
-        <LedgerTable events={data.recent_events} />
+        <LedgerTable events={recentEvents} />
       </Card>
     </div>
   );

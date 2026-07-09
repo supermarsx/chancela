@@ -15,12 +15,26 @@
  */
 import { isTauri } from './tauri';
 
+const SAFE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    return SAFE_EXTERNAL_PROTOCOLS.has(new URL(url).protocol.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Route `url` to the user's default browser (desktop) or a new tab (browser).
  * Never throws to the caller: a failed hand-off is logged and swallowed so a
  * mis-typed or unreachable URL can't break the click handler.
  */
 export async function openExternal(url: string): Promise<void> {
+  // Defence-in-depth: never hand a non-http(s)/mailto/tel scheme to Tauri, the
+  // OS opener, or window.open.
+  if (!isSafeExternalUrl(url)) return;
+
   if (isTauri()) {
     try {
       const { openUrl } = await import('@tauri-apps/plugin-opener');
@@ -32,8 +46,5 @@ export async function openExternal(url: string): Promise<void> {
       console.error('openExternal: opener plugin failed, falling back', err);
     }
   }
-  // Defence-in-depth: never hand a non-http(s)/mailto/tel scheme to the OS browser
-  // or window.open — a `javascript:`/`data:` URL reaching here would be executed.
-  if (!/^https?:|^mailto:|^tel:/i.test(url)) return;
   window.open(url, '_blank', 'noopener,noreferrer');
 }

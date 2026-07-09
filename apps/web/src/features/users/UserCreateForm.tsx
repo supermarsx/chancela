@@ -1,7 +1,7 @@
 /**
  * The reusable "create a user" form (plan t50 W2). Extracted verbatim from the old inline
- * `CreateUserForm` on `UsersPage` so it can be mounted on BOTH the dedicated
- * `/utilizadores/novo` screen (authenticated create) AND, later, the signed-out
+ * `CreateUserForm` on `UsersPage` so it can be mounted in BOTH the settings users
+ * section (authenticated create) AND, later, the signed-out
  * entry-screen bootstrap path (t50 W3). It owns the field state, the client-side username
  * validation that mirrors the server, and the inline 409-duplicate surface; it does NOT
  * decide what happens after a successful create — the parent's `onCreated(user)` handler

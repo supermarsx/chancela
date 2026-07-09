@@ -26,4 +26,18 @@ describe('DEFAULT_SETTINGS.signing', () => {
       ama_cert_configured: false,
     });
   });
+
+  it('surfaces non-secret provider-mode metadata by default', () => {
+    expect(DEFAULT_SETTINGS.signing.providers.map((p) => p.mode)).toEqual([
+      'CMD',
+      'CC',
+      'CSC_QTSP',
+      'LOCAL_PKCS12',
+    ]);
+    expect(DEFAULT_SETTINGS.signing.providers.find((p) => p.id === 'soft_pkcs12')).toMatchObject({
+      configured: false,
+      production_blocked: true,
+      local_only: true,
+    });
+  });
 });

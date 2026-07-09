@@ -46,4 +46,29 @@ describe('WindowControls always-on-top toggle', () => {
       screen.getByRole('button', { name: 'Manter sempre à frente' }).getAttribute('aria-pressed'),
     ).toBe('false');
   });
+
+  it('reverts the optimistic toggle state when setAlwaysOnTop fails', async () => {
+    win.setAlwaysOnTop.mockRejectedValueOnce(new Error('ACL denied'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(<WindowControls />);
+
+    const toggle = screen.getByRole('button', { name: 'Manter sempre à frente' });
+    fireEvent.click(toggle);
+
+    expect(
+      screen.getByRole('button', { name: 'Sempre à frente: ativado' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Manter sempre à frente' }).getAttribute('aria-pressed'),
+      ).toBe('false'),
+    );
+    expect(win.setAlwaysOnTop).toHaveBeenCalledWith(true);
+    expect(consoleError).toHaveBeenCalledWith(
+      'WindowControls: setAlwaysOnTop failed',
+      expect.any(Error),
+    );
+    consoleError.mockRestore();
+  });
 });

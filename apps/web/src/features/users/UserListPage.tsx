@@ -1,10 +1,10 @@
 /**
- * Utilizadores — the roster (plan t14 §2.8, t44 §5, split into its own screen by t50 W2).
- * A neat full-width list of the accounts that attribute every ledger mutation: username,
- * display name, active state, and at-a-glance access indicators (whether a sign-in password
- * and an audit-attestation key are provisioned). Creating a user now lives on its own screen
- * (`/utilizadores/novo`); editing a user — identity, activation and the access/audit manager
- * — lives on `/utilizadores/:id`.
+ * Utilizadores — the roster (plan t14 §2.8, t44 §5), now hosted only inside
+ * Configurações → Utilizadores. It lists the accounts that attribute every ledger mutation:
+ * username, display name, active state, and at-a-glance access indicators (whether a sign-in
+ * password and an audit-attestation key are provisioned). Creating and editing users are
+ * selected through the Settings query string, so Configurações → Utilizadores is the only
+ * user-management surface.
  *
  * Row actions are icon-only {@link IconButton}s with gilt tooltips (t50 item 6): **Editar**
  * (→ the edit screen), **Ativar/Desativar** (the in-place `PATCH` — users are never deleted,
@@ -12,22 +12,17 @@
  * screen's access section). Activate/deactivate keeps its distinct success toast (t44
  * retrofit-b).
  */
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useUpdateUser, useUsers } from '../../api/hooks';
 import { useT } from '../../i18n';
-import {
-  Badge,
-  Card,
-  EmptyState,
-  ErrorNote,
-  Icon,
-  PageHeader,
-  SkeletonTable,
-  Table,
-  useToast,
-} from '../../ui';
+import { Badge, Card, EmptyState, ErrorNote, Icon, SkeletonTable, Table, useToast } from '../../ui';
 import { GateButtonLink, GateIconButton } from '../session/permissions';
 import type { UserView } from '../../api/types';
+
+export const usersSettingsPath = (user?: string, hash = '') => {
+  const query = user ? `?sec=utilizadores&user=${encodeURIComponent(user)}` : '?sec=utilizadores';
+  return `/configuracoes${query}${hash}`;
+};
 
 function UserRow({ user }: { user: UserView }) {
   const t = useT();
@@ -79,7 +74,7 @@ function UserRow({ user }: { user: UserView }) {
           perm="user.manage"
           icon={<Icon.Pencil />}
           label={t('users.action.edit')}
-          onClick={() => navigate(`/utilizadores/${user.id}`)}
+          onClick={() => navigate(usersSettingsPath(user.id))}
         />
         <GateIconButton
           perm="user.manage"
@@ -92,7 +87,7 @@ function UserRow({ user }: { user: UserView }) {
           perm="user.manage"
           icon={<Icon.Wrench />}
           label={t('users.access.title')}
-          onClick={() => navigate(`/utilizadores/${user.id}#acesso`)}
+          onClick={() => navigate(usersSettingsPath(user.id, '#acesso'))}
         />
       </td>
     </tr>
@@ -101,10 +96,9 @@ function UserRow({ user }: { user: UserView }) {
 
 /**
  * The roster body — a self-contained Card with its own "novo utilizador" action and the
- * table/empty/error states. Rendered both standalone under {@link UserListPage} (with a
- * PageHeader above it) and inline as the Configurações → Utilizadores sub-tab (t60 E5),
- * where the SubNav supplies the page header instead. Carries no PageHeader of its own so
- * it drops cleanly into either host.
+ * table/empty/error states. Rendered inline as the Configurações → Utilizadores sub-tab,
+ * where the SubNav supplies the page header. Carries no PageHeader of its own so the
+ * Settings page is the single user-management surface.
  */
 export function UsersList() {
   const t = useT();
@@ -116,7 +110,7 @@ export function UsersList() {
       actions={
         <GateButtonLink
           perm="user.manage"
-          to="/utilizadores/novo"
+          to={usersSettingsPath('novo')}
           variant="primary"
           icon={<Icon.Plus />}
         >
@@ -150,32 +144,5 @@ export function UsersList() {
         </Table>
       )}
     </Card>
-  );
-}
-
-export function UserListPage() {
-  const t = useT();
-
-  return (
-    <div className="stack">
-      <PageHeader
-        crumbs={
-          <>
-            <Link to="/configuracoes">{t('users.breadcrumb.settings')}</Link> ·{' '}
-            {t('users.breadcrumb.self')}
-          </>
-        }
-        title={t('users.page.title')}
-        lede={
-          <>
-            {t('users.page.ledeBefore')}
-            <code className="mono">api</code>
-            {t('users.page.ledeAfter')}
-          </>
-        }
-      />
-
-      <UsersList />
-    </div>
   );
 }

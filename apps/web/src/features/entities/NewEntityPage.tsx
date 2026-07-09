@@ -26,6 +26,24 @@ import {
   useToast,
 } from '../../ui';
 
+const FISCAL_YEAR_END_LABEL = 'Fecho do exercício (MM-DD)';
+const FISCAL_YEAR_END_HINT = 'Opcional. Vazio mantém o fecho por omissão em 12-31.';
+const FISCAL_YEAR_END_ERROR = 'Use uma data válida no formato MM-DD.';
+
+function normalizeFiscalYearEndInput(input: string): string | null {
+  const value = input.trim();
+  if (value === '') return null;
+  const match = /^(\d{2})-(\d{2})$/.exec(value);
+  if (!match) throw new Error(FISCAL_YEAR_END_ERROR);
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
+    throw new Error(FISCAL_YEAR_END_ERROR);
+  }
+  return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 export function NewEntityPage() {
   const t = useT();
   const toast = useToast();
@@ -35,6 +53,8 @@ export function NewEntityPage() {
   const [nipc, setNipc] = useState('');
   const [seat, setSeat] = useState('');
   const [kind, setKind] = useState<EntityKind>('SociedadePorQuotas');
+  const [fiscalYearEnd, setFiscalYearEnd] = useState('');
+  const [fiscalYearEndError, setFiscalYearEndError] = useState<string | null>(null);
   // §entity-v2 override: create even when the NIPC fails control-digit validation
   // (foreign entities / special registrations). Sends `allow_invalid_nipc: true`.
   const [allowInvalidNipc, setAllowInvalidNipc] = useState(false);
@@ -48,8 +68,23 @@ export function NewEntityPage() {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    let normalizedFiscalYearEnd: string | null;
+    try {
+      normalizedFiscalYearEnd = normalizeFiscalYearEndInput(fiscalYearEnd);
+      setFiscalYearEndError(null);
+    } catch (err) {
+      setFiscalYearEndError(err instanceof Error ? err.message : FISCAL_YEAR_END_ERROR);
+      return;
+    }
     create.mutate(
-      { name, nipc, seat, kind, allow_invalid_nipc: allowInvalidNipc },
+      {
+        name,
+        nipc,
+        seat,
+        kind,
+        allow_invalid_nipc: allowInvalidNipc,
+        fiscal_year_end: normalizedFiscalYearEnd,
+      },
       {
         onSuccess: (entity) => {
           // R6: the success toast fires even though the handler navigates away — the
@@ -124,6 +159,23 @@ export function NewEntityPage() {
               value={kind}
               onChange={(e) => setKind(e.target.value as EntityKind)}
               options={optionsFrom(ENTITY_KINDS, entityKindLabels)}
+            />
+          </Field>
+          <Field
+            label={FISCAL_YEAR_END_LABEL}
+            htmlFor="ent-fiscal-year-end"
+            hint={FISCAL_YEAR_END_HINT}
+            error={fiscalYearEndError}
+          >
+            <Input
+              id="ent-fiscal-year-end"
+              value={fiscalYearEnd}
+              onChange={(e) => {
+                setFiscalYearEnd(e.target.value);
+                if (fiscalYearEndError) setFiscalYearEndError(null);
+              }}
+              placeholder="12-31"
+              maxLength={5}
             />
           </Field>
           <div className="form__actions">

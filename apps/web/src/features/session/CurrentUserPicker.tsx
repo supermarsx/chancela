@@ -243,7 +243,7 @@ export function CurrentUserPicker() {
                 <span />
               )}
               <Link
-                to="/utilizadores"
+                to="/configuracoes?sec=utilizadores"
                 className="session-picker__manage"
                 onClick={() => setOpen(false)}
               >

@@ -1,20 +1,31 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, useLocation } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
-import { UserListPage } from './UserListPage';
-import { NewUserPage } from './NewUserPage';
-import { EditUserPage } from './EditUserPage';
+import { LegacyNewUserRedirect, LegacyUserRedirect, LegacyUsersRedirect } from '../../app/router';
+import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
+import { UsersList } from './UserListPage';
+import { NewUserPanel } from './NewUserPage';
+import { EditUserPanel } from './EditUserPage';
 import { isValidUsername, usernameError } from './username';
-import type { UserView } from '../../api/types';
+import type { DsrRequestView, DsrRequestType, UserView } from '../../api/types';
 
 /** Render the edit screen at a real `:id` path so `useParams` resolves the user id. */
 function renderEditAt(id: string) {
   return renderWithProviders(
     <Routes>
-      <Route path="/utilizadores/:id" element={<EditUserPage />} />
+      <Route path="/configuracoes" element={<EditUserPanel id={id} />} />
     </Routes>,
-    [`/utilizadores/${id}`],
+    [`/configuracoes?sec=utilizadores&user=${id}`],
+  );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <output aria-label="location">
+      {`${location.pathname}${location.search}${location.hash}`}
+    </output>
   );
 }
 
@@ -76,12 +87,12 @@ describe('username validation', () => {
   });
 });
 
-describe('UserListPage (/utilizadores)', () => {
+describe('UsersList (Configurações → Utilizadores)', () => {
   it('lists users with their state', async () => {
     const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UserListPage />, ['/utilizadores']);
+    renderWithProviders(<UsersList />, ['/configuracoes?sec=utilizadores']);
 
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
     expect(screen.getByText('Amélia Marques')).toBeTruthy();
@@ -92,7 +103,7 @@ describe('UserListPage (/utilizadores)', () => {
     const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UserListPage />, ['/utilizadores']);
+    renderWithProviders(<UsersList />, ['/configuracoes?sec=utilizadores']);
 
     // Each row action is an icon-only button whose accessible name comes from its tooltip
     // label (t50 W1 IconButton) — no visible text label, no native title.
@@ -101,13 +112,47 @@ describe('UserListPage (/utilizadores)', () => {
     expect(screen.getByRole('button', { name: 'Acesso e auditoria' })).toBeTruthy();
   });
 
+  it('navigates list actions within the settings users section', async () => {
+    const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(
+      <Routes>
+        <Route
+          path="/configuracoes"
+          element={
+            <>
+              <UsersList />
+              <LocationProbe />
+            </>
+          }
+        />
+      </Routes>,
+      ['/configuracoes?sec=utilizadores'],
+    );
+
+    const novo = await screen.findByRole('link', { name: /novo utilizador/i });
+    expect(novo.getAttribute('href')).toBe('/configuracoes?sec=utilizadores&user=novo');
+
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    expect(screen.getByLabelText('location').textContent).toBe(
+      '/configuracoes?sec=utilizadores&user=u1',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Acesso e auditoria' }));
+    expect(screen.getByLabelText('location').textContent).toBe(
+      '/configuracoes?sec=utilizadores&user=u1#acesso',
+    );
+  });
+
   it('toggles a user active/inactive via PATCH', async () => {
     const { fn, calls } = recordingFetch((r) =>
       r.method === 'PATCH' ? jsonResponse({ ...AMELIA, active: false }) : jsonResponse([AMELIA]),
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<UserListPage />, ['/utilizadores']);
+    renderWithProviders(<UsersList />, ['/configuracoes?sec=utilizadores']);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Desativar' }));
 
@@ -120,12 +165,12 @@ describe('UserListPage (/utilizadores)', () => {
   });
 });
 
-describe('NewUserPage (/utilizadores/novo)', () => {
+describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
   it('renders a client-side validation error for an invalid username and disables submit', async () => {
     const { fn } = recordingFetch(() => jsonResponse([]));
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
+    renderWithProviders(<NewUserPanel />, ['/configuracoes?sec=utilizadores&user=novo']);
 
     const input = await screen.findByLabelText('Nome de utilizador');
     fireEvent.change(input, { target: { value: 'Amelia' } });
@@ -142,7 +187,7 @@ describe('NewUserPage (/utilizadores/novo)', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
+    renderWithProviders(<NewUserPanel />, ['/configuracoes?sec=utilizadores&user=novo']);
 
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'amelia.marques' },
@@ -172,7 +217,7 @@ describe('NewUserPage (/utilizadores/novo)', () => {
     );
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<NewUserPage />, ['/utilizadores/novo']);
+    renderWithProviders(<NewUserPanel />, ['/configuracoes?sec=utilizadores&user=novo']);
 
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'amelia.marques' },
@@ -195,7 +240,7 @@ const BRUNO: UserView = {
   has_recovery_phrase: false,
 };
 
-describe('EditUserPage (/utilizadores/:id) — identity + access manager', () => {
+describe('EditUserPanel (Configurações → Utilizadores → user) — identity + access manager', () => {
   it('renders identity and resolves a cold deep link via GET /v1/users/{id}', async () => {
     // Empty list cache → the edit screen falls back to the single-user read.
     const { fn, calls } = recordingFetch((r) =>
@@ -205,10 +250,8 @@ describe('EditUserPage (/utilizadores/:id) — identity + access manager', () =>
 
     renderEditAt('u1');
 
-    // The display name heads the screen (title + breadcrumb); the immutable username shows
-    // as a read-only field value.
-    expect((await screen.findAllByText('Amélia Marques')).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByDisplayValue('amelia.marques')).toBeTruthy();
+    // The immutable username and display name show as form values in the inline panel.
+    expect(await screen.findByDisplayValue('amelia.marques')).toBeTruthy();
     expect(screen.getByDisplayValue('Amélia Marques')).toBeTruthy();
     expect(calls.some((c) => c.url.endsWith('/v1/users/u1'))).toBe(true);
   });
@@ -294,6 +337,208 @@ describe('EditUserPage (/utilizadores/:id) — identity + access manager', () =>
     expect(post?.url).toContain('/v1/users/u2/attestation-key');
     expect(post?.body).toMatchObject({ current_password: 'current-pw' });
   });
+
+  it('downloads the DSR/privacy JSON export without rendering its contents', async () => {
+    const createUrl = vi.fn().mockReturnValue('blob:dsr');
+    const revokeUrl = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
+    const clickedDownloads: string[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clickedDownloads.push(this.download);
+    });
+    const { fn, calls } = recordingFetch((r) => {
+      if (r.url.endsWith('/v1/privacy/users/u1/export')) {
+        return jsonResponse({
+          user: { id: 'u1', username: 'amelia.marques' },
+          audit_marker: 'opaque-internal-value',
+        });
+      }
+      if (r.url.endsWith('/v1/privacy/users/u1/dsr-requests')) return jsonResponse([]);
+      if (r.url.endsWith('/v1/users/u1')) return jsonResponse(AMELIA);
+      return jsonResponse([AMELIA]);
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u1');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Descarregar exportação DSR' }));
+
+    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(1));
+    expect(clickSpy).toHaveBeenCalled();
+    expect(revokeUrl).toHaveBeenCalledWith('blob:dsr');
+    expect(clickedDownloads).toEqual(['chancela-dsr-user-amelia.marques.json']);
+    expect(calls).toContainEqual({
+      url: '/v1/privacy/users/u1/export',
+      method: 'GET',
+      body: null,
+    });
+    expect(screen.queryByText('opaque-internal-value')).toBeNull();
+    expect(await screen.findByText('Exportação DSR/privacy descarregada.')).toBeTruthy();
+  });
+
+  it('lists, creates, and completes DSR lifecycle requests', async () => {
+    const pending: DsrRequestView = {
+      id: 'dsr-1',
+      subject_user_id: 'u1',
+      request_type: 'export',
+      status: 'pending',
+      created_at: '2026-07-08T09:00:00Z',
+      created_by: 'operator',
+    };
+    let dsrRequests: DsrRequestView[] = [pending];
+    const { fn, calls } = recordingFetch((r) => {
+      if (r.url.endsWith('/v1/privacy/users/u1/dsr-requests') && r.method === 'GET') {
+        return jsonResponse(dsrRequests);
+      }
+      if (r.url.endsWith('/v1/privacy/users/u1/dsr-requests') && r.method === 'POST') {
+        const created: DsrRequestView = {
+          id: 'dsr-2',
+          subject_user_id: 'u1',
+          request_type: r.body?.request_type as DsrRequestType,
+          status: 'pending',
+          created_at: '2026-07-08T10:00:00Z',
+          created_by: 'operator',
+        };
+        dsrRequests = [...dsrRequests, created];
+        return jsonResponse(created, 201);
+      }
+      if (r.url.endsWith('/v1/privacy/users/u1/dsr-requests/dsr-1/complete')) {
+        const completed: DsrRequestView = {
+          ...pending,
+          status: 'completed',
+          completed_at: '2026-07-08T11:00:00Z',
+          completed_by: 'operator',
+        };
+        dsrRequests = [completed, ...dsrRequests.slice(1)];
+        return jsonResponse(completed);
+      }
+      if (r.url.endsWith('/v1/users/u1')) return jsonResponse(AMELIA);
+      return jsonResponse([AMELIA]);
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u1');
+
+    expect(await screen.findByText('Pedidos DSR / privacidade')).toBeTruthy();
+    expect(await screen.findByText('Exportação')).toBeTruthy();
+    expect(screen.getByText('Pendente')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Tipo de pedido'), {
+      target: { value: 'erasure' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar pedido DSR' }));
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.url.endsWith('/v1/privacy/users/u1/dsr-requests') &&
+            c.method === 'POST' &&
+            c.body?.request_type === 'erasure',
+        ),
+      ).toBe(true),
+    );
+    expect((await screen.findAllByText('Apagamento')).length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByText('Pedido DSR criado.')).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Marcar concluído' })[0]);
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.url.endsWith('/v1/privacy/users/u1/dsr-requests/dsr-1/complete') &&
+            c.method === 'POST' &&
+            c.body === null,
+        ),
+      ).toBe(true),
+    );
+    expect((await screen.findAllByText('Concluído')).length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByText('Pedido DSR marcado como concluído.')).toBeTruthy();
+  });
+
+  it('omits the DSR lifecycle surface for users without user.manage', async () => {
+    const { fn, calls } = recordingFetch((r) =>
+      r.url.endsWith('/v1/users/u1') ? jsonResponse(AMELIA) : jsonResponse([AMELIA]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission !== 'user.manage')}
+      >
+        <Routes>
+          <Route path="/configuracoes" element={<EditUserPanel id="u1" />} />
+        </Routes>
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=utilizadores&user=u1'],
+    );
+
+    expect(await screen.findByDisplayValue('amelia.marques')).toBeTruthy();
+    expect(screen.queryByText('Pedidos DSR / privacidade')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Criar pedido DSR' })).toBeNull();
+    expect(calls.some((c) => c.url.includes('/v1/privacy/'))).toBe(false);
+  });
+});
+
+describe('legacy /utilizadores routes', () => {
+  it('redirects /utilizadores to the settings users section', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/utilizadores" element={<LegacyUsersRedirect />} />
+        <Route path="/configuracoes" element={<LocationProbe />} />
+      </Routes>,
+      ['/utilizadores'],
+    );
+
+    expect((await screen.findByLabelText('location')).textContent).toBe(
+      '/configuracoes?sec=utilizadores',
+    );
+  });
+
+  it('redirects /utilizadores/novo to the settings create state', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/utilizadores/novo" element={<LegacyNewUserRedirect />} />
+        <Route path="/configuracoes" element={<LocationProbe />} />
+      </Routes>,
+      ['/utilizadores/novo#convite'],
+    );
+
+    expect((await screen.findByLabelText('location')).textContent).toBe(
+      '/configuracoes?sec=utilizadores&user=novo#convite',
+    );
+  });
+
+  it('redirects /utilizadores/:id and preserves #acesso', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/utilizadores/:id" element={<LegacyUserRedirect />} />
+        <Route path="/configuracoes" element={<LocationProbe />} />
+      </Routes>,
+      ['/utilizadores/u1#acesso'],
+    );
+
+    expect((await screen.findByLabelText('location')).textContent).toBe(
+      '/configuracoes?sec=utilizadores&user=u1#acesso',
+    );
+  });
+
+  it('redirects legacy edit-style user links to the canonical settings user state', async () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/utilizadores/:id/editar" element={<LegacyUserRedirect />} />
+        <Route path="/configuracoes" element={<LocationProbe />} />
+      </Routes>,
+      ['/utilizadores/u1/editar'],
+    );
+
+    expect((await screen.findByLabelText('location')).textContent).toBe(
+      '/configuracoes?sec=utilizadores&user=u1',
+    );
+  });
 });
 
 // The signed-in operator, a DIFFERENT user from the one being edited — makes every edit of
@@ -309,7 +554,7 @@ const OPERATOR: UserView = {
   has_recovery_phrase: false,
 };
 
-describe('EditUserPage — cross-user password change proof + 403 (t51)', () => {
+describe('EditUserPanel — cross-user password change proof + 403 (t51)', () => {
   it('self-service change shows the plain current-password field, not the cross-user proof', async () => {
     const { fn, calls } = recordingFetch((r) => {
       if (r.url.endsWith('/v1/session')) return jsonResponse({ user: BRUNO }); // editing yourself

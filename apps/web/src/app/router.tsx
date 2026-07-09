@@ -4,7 +4,7 @@
  * the Tauri WebView alike. Deep-linkable book/ata URLs are the point — a sealed
  * ata's `/atas/:id` is a stable reference.
  */
-import { createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter, useLocation, useParams } from 'react-router-dom';
 import { Layout } from './layout';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { EntitiesPage } from '../features/entities/EntitiesPage';
@@ -22,17 +22,35 @@ import { LedgerPage } from '../features/ledger/LedgerPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { FerramentasPage } from '../features/ferramentas/FerramentasPage';
 import { CaePage } from '../features/cae/CaePage';
-import { UserListPage } from '../features/users/UserListPage';
-import { NewUserPage } from '../features/users/NewUserPage';
-import { EditUserPage } from '../features/users/EditUserPage';
+import { usersSettingsPath } from '../features/users/UserListPage';
 import { OnboardingWizard } from '../features/onboarding/OnboardingWizard';
 import { NotFoundPage } from '../features/NotFoundPage';
+import { ExternalSignerInvitePage } from '../features/signing/ExternalSignerInvitePage';
+
+export function LegacyUserRedirect() {
+  const { id } = useParams();
+  const { hash } = useLocation();
+  return <Navigate to={usersSettingsPath(id ?? undefined, hash)} replace />;
+}
+
+export function LegacyUsersRedirect() {
+  const { hash } = useLocation();
+  return <Navigate to={usersSettingsPath(undefined, hash)} replace />;
+}
+
+export function LegacyNewUserRedirect() {
+  const { hash } = useLocation();
+  return <Navigate to={usersSettingsPath('novo', hash)} replace />;
+}
 
 export const router = createBrowserRouter([
   // Full-screen first-run wizard — a SIBLING of the app shell, deliberately OUTSIDE the
   // `Layout` chrome (no tab bar / picker). The AuthGate inside Layout redirects a fresh
   // install here; the wizard redirects back once a user exists (plan t44 §3.2).
   { path: '/bem-vindo', element: <OnboardingWizard /> },
+  // Token-authenticated external invite landing page. It stays outside Layout because token holders
+  // may be signed out; the page removes the token from the URL after first read.
+  { path: '/assinatura-externa', element: <ExternalSignerInvitePage /> },
   {
     path: '/',
     element: <Layout />,
@@ -57,11 +75,15 @@ export const router = createBrowserRouter([
       { path: 'configuracoes', element: <SettingsPage /> },
       // `/cae` now redirects into Ferramentas (deep links preserved).
       { path: 'cae', element: <CaePage /> },
-      { path: 'utilizadores', element: <UserListPage /> },
+      {
+        path: 'utilizadores',
+        element: <LegacyUsersRedirect />,
+      },
       // Static `/novo` before `:id` (React Router ranks static above dynamic anyway —
       // mirrors the `entidades/nova` note above).
-      { path: 'utilizadores/novo', element: <NewUserPage /> },
-      { path: 'utilizadores/:id', element: <EditUserPage /> },
+      { path: 'utilizadores/novo', element: <LegacyNewUserRedirect /> },
+      { path: 'utilizadores/:id/editar', element: <LegacyUserRedirect /> },
+      { path: 'utilizadores/:id', element: <LegacyUserRedirect /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

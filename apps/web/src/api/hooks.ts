@@ -13,7 +13,10 @@ import { useEffect } from 'react';
 import type {
   CaeRevision,
   CloseBookBody,
+  CreateDsrRequestBody,
+  CreateDpiaRecordBody,
   CreateEntityBody,
+  CreateProcessorRecordBody,
   CreateUserBody,
   DraftActBody,
   EntityFamily,
@@ -23,8 +26,12 @@ import type {
   CcSignBody,
   RemoteInitiateBody,
   RemoteConfirmBody,
+  CreateExternalSignerInviteBody,
+  ExternalSignerInviteView,
   ImportFromRegistryBody,
   LawEntryView,
+  LedgerArchiveDocumentParams,
+  LedgerQueryParams,
   OpenBookBody,
   RegistryImportBody,
   SealActBody,
@@ -44,9 +51,16 @@ import type {
   ResetDataBody,
   StartOverInstanceBody,
   CreateRoleBody,
+  DpiaRecordView,
   PatchRoleBody,
+  PatchDpiaRecordBody,
+  PatchProcessorRecordBody,
+  ProcessorRecordView,
   RoleAssignmentInput,
   GrantDelegationBody,
+  CreateApiKeyBody,
+  DsrRequestView,
+  SetBookLegalHoldBody,
 } from './types';
 import { api } from './client';
 import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
@@ -57,16 +71,18 @@ export const keys = {
   entityRegistry: (id: string) => ['entities', id, 'registry'] as const,
   books: (entityId?: string) => ['books', { entityId: entityId ?? null }] as const,
   book: (id: string) => ['books', id] as const,
+  bookLegalHold: (id: string) => ['books', id, 'legal-hold'] as const,
   bookActs: (id: string) => ['books', id, 'acts'] as const,
   act: (id: string) => ['acts', id] as const,
   compliance: (id: string) => ['acts', id, 'compliance'] as const,
   actDocumentPreview: (id: string) => ['acts', id, 'document', 'preview'] as const,
   actDocumentBundle: (id: string) => ['acts', id, 'document', 'bundle'] as const,
   actSignature: (id: string) => ['acts', id, 'signature'] as const,
+  externalSignerInvites: (id: string) => ['acts', id, 'signature', 'external-invites'] as const,
   signatureProviders: ['signature', 'providers'] as const,
   templates: (family?: EntityFamily, stage?: LifecycleStage) =>
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
-  ledger: (params: { scope?: string; limit?: number }) => ['ledger', params] as const,
+  ledger: (params: LedgerQueryParams) => ['ledger', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
   ledgerIntegrity: ['ledger', 'integrity'] as const,
   dashboard: ['dashboard'] as const,
@@ -78,18 +94,30 @@ export const keys = {
   caeEntry: (code: string, revision?: CaeRevision) => ['cae', 'entry', code, revision] as const,
   caeChildren: (code: string, revision: CaeRevision) =>
     ['cae', 'children', code, revision] as const,
+  trustStatus: ['trust', 'status'] as const,
+  trustCatalog: ['trust', 'catalog'] as const,
+  trustSearch: (search: string) => ['trust', 'search', search] as const,
+  trustProvider: (id: string) => ['trust', 'provider', id] as const,
+  trustService: (id: string) => ['trust', 'service', id] as const,
+  tsaCatalog: ['trust', 'tsa'] as const,
+  tsaSearch: (search: string) => ['trust', 'tsa', 'search', search] as const,
   lawManifest: ['law', 'manifest'] as const,
   lawCorpus: ['law', 'corpus'] as const,
   lawDiploma: (diploma: string) => ['law', 'corpus', diploma] as const,
   lawSearch: (q: string) => ['law', 'corpus', 'search', q] as const,
   users: ['users'] as const,
   user: (id: string) => ['users', id] as const,
+  userDsrRequests: (id: string) => ['users', id, 'dsr-requests'] as const,
   session: ['session'] as const,
+  passwordPolicy: ['session', 'password-policy'] as const,
   sessionPermissions: ['session', 'permissions'] as const,
   roster: ['session', 'roster'] as const,
   roles: ['roles'] as const,
   permissionCatalog: ['permissions'] as const,
   delegations: ['delegations'] as const,
+  apiKeys: ['api-keys'] as const,
+  privacyProcessors: ['privacy', 'processors'] as const,
+  privacyDpias: ['privacy', 'dpias'] as const,
 };
 
 // --- Entities -------------------------------------------------------------------
@@ -202,6 +230,15 @@ export function useBookActs(id: string) {
   });
 }
 
+export function useBookLegalHold(id: string) {
+  return useQuery({
+    queryKey: keys.bookLegalHold(id),
+    queryFn: () => api.getBookLegalHold(id),
+    enabled: !!id,
+    retry: false,
+  });
+}
+
 export function useOpenBook() {
   const qc = useQueryClient();
   return useMutation({
@@ -223,6 +260,42 @@ export function useCloseBook(id: string) {
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });
+}
+
+export function useSetBookLegalHold(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SetBookLegalHoldBody) => api.setBookLegalHold(id, body),
+    onSuccess: (hold) => {
+      qc.setQueryData(keys.bookLegalHold(id), hold);
+      void qc.invalidateQueries({ queryKey: keys.bookLegalHold(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useClearBookLegalHold(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.clearBookLegalHold(id),
+    onSuccess: (hold) => {
+      qc.setQueryData(
+        keys.bookLegalHold(id),
+        hold ?? { legal_hold: false, reason: null, actor: null, set_at: null },
+      );
+      void qc.invalidateQueries({ queryKey: keys.bookLegalHold(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Download a book's Chancela internal preservation package
+ * (`GET /v1/books/{id}/archive/package`, application/zip). This is a read-only package export,
+ * distinct from the retained self-verifying book bundle (`POST /export`) used by recovery flows.
+ */
+export function useDownloadBookArchivePackage(id: string) {
+  return useMutation({ mutationFn: () => api.fetchBookArchivePackage(id) });
 }
 
 // --- Acts -----------------------------------------------------------------------
@@ -340,6 +413,22 @@ export function useTemplates(family?: EntityFamily, stage?: LifecycleStage) {
  */
 export function useDownloadActDocument(id: string) {
   return useMutation({ mutationFn: () => api.fetchActDocumentPdf(id) });
+}
+
+/**
+ * Download a sealed act's Markdown working copy (`GET /v1/acts/{id}/document/working-copy`).
+ * This is explicitly non-evidentiary; callers keep it visually separate from the official PDF/A.
+ */
+export function useDownloadActDocumentWorkingCopy(id: string) {
+  return useMutation({ mutationFn: () => api.fetchActDocumentWorkingCopy(id) });
+}
+
+/**
+ * Download a sealed act's DOCX office working copy (`GET /v1/acts/{id}/document/office`).
+ * Non-evidentiary and read-only; the preserved PDF/A or signed PDF remains canonical.
+ */
+export function useDownloadActDocumentOffice(id: string) {
+  return useMutation({ mutationFn: () => api.fetchActDocumentOffice(id) });
 }
 
 // --- Qualified CMD signing (§ t57) ----------------------------------------------
@@ -461,6 +550,50 @@ export function useRemoteConfirmSignature(id: string) {
 }
 
 /**
+ * Sealed-act external signer invitation metadata. The endpoint is gated by
+ * `signing.perform`; callers should enable it only when the current principal has that grant.
+ * The list is redacted by contract: no plaintext token or token hash is ever cached here.
+ */
+export function useExternalSignerInvites(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.externalSignerInvites(id),
+    queryFn: () => api.listExternalSignerInvites(id),
+    enabled: enabled && !!id,
+    retry: false,
+  });
+}
+
+/**
+ * Create an external signer invitation. The returned plaintext token is emitted exactly once by
+ * the server; this mutation invalidates the redacted list rather than writing the token to it.
+ */
+export function useCreateExternalSignerInvite(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateExternalSignerInviteBody) => api.createExternalSignerInvite(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.externalSignerInvites(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Revoke a tracked external signer invite; the retained row refetches as `revoked`. */
+export function useRevokeExternalSignerInvite(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (inviteId: string) => api.revokeExternalSignerInvite(id, inviteId),
+    onSuccess: (revoked) => {
+      qc.setQueryData<ExternalSignerInviteView[]>(keys.externalSignerInvites(id), (current) =>
+        current?.map((invite) => (invite.id === revoked.id ? revoked : invite)),
+      );
+      void qc.invalidateQueries({ queryKey: keys.externalSignerInvites(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
  * Download an act's SIGNED PDF (`GET /v1/acts/{id}/document/signed`, t57). A mutation so the
  * button gets `isPending` + the toast idiom for free; only offered once the act is signed (the
  * endpoint 404s until then).
@@ -483,12 +616,23 @@ export function useArchiveAct(id: string) {
 
 // --- Ledger / Dashboard ---------------------------------------------------------
 
-export function useLedger(params: { scope?: string; limit?: number } = {}) {
+export function useLedger(params: LedgerQueryParams = {}) {
   return useQuery({ queryKey: keys.ledger(params), queryFn: () => api.listLedger(params) });
 }
 
 export function useLedgerVerify() {
   return useQuery({ queryKey: keys.ledgerVerify, queryFn: () => api.verifyLedger() });
+}
+
+/**
+ * Download the filtered ledger archive as PDF/A (`GET /v1/ledger/archive/document`, t67).
+ * A mutation so the Arquivo action can expose pending state and toast errors like the
+ * other document downloads.
+ */
+export function useDownloadLedgerArchiveDocument() {
+  return useMutation({
+    mutationFn: (params: LedgerArchiveDocumentParams) => api.fetchLedgerArchiveDocumentPdf(params),
+  });
 }
 
 // --- Chain integrity + recovery + data management (t54) --------------------------
@@ -692,6 +836,75 @@ export function useRefreshCae() {
         void qc.invalidateQueries({ queryKey: ['ledger'] });
       }
     },
+  });
+}
+
+// --- TSL trust catalog ----------------------------------------------------------
+
+export function useTrustStatus() {
+  return useQuery({
+    queryKey: keys.trustStatus,
+    queryFn: () => api.getTrustStatus(),
+    staleTime: 60_000,
+  });
+}
+
+export function useTrustCatalog() {
+  return useQuery({
+    queryKey: keys.trustCatalog,
+    queryFn: () => api.getTrustCatalog(),
+    staleTime: 60_000,
+  });
+}
+
+export function useTrustCatalogSearch(search: string, limit?: number) {
+  const term = search.trim();
+  return useQuery({
+    queryKey: keys.trustSearch(term),
+    queryFn: () => api.searchTrustCatalog(term, limit),
+    enabled: term.length > 0,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useTrustProvider(id: string) {
+  const trimmed = id.trim();
+  return useQuery({
+    queryKey: keys.trustProvider(trimmed),
+    queryFn: () => api.getTrustProvider(trimmed),
+    enabled: trimmed.length > 0,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useTrustService(id: string) {
+  const trimmed = id.trim();
+  return useQuery({
+    queryKey: keys.trustService(trimmed),
+    queryFn: () => api.getTrustService(trimmed),
+    enabled: trimmed.length > 0,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useTsaCatalog() {
+  return useQuery({
+    queryKey: keys.tsaCatalog,
+    queryFn: () => api.getTsaCatalog(),
+    staleTime: 60_000,
+  });
+}
+
+export function useTsaCatalogSearch(search: string, limit?: number) {
+  const term = search.trim();
+  return useQuery({
+    queryKey: keys.tsaSearch(term),
+    queryFn: () => api.searchTsaCatalog(term, limit),
+    enabled: term.length > 0,
+    placeholderData: (prev) => prev,
+    staleTime: 60_000,
   });
 }
 
@@ -903,6 +1116,48 @@ export function useIssueRecovery(id: string) {
   });
 }
 
+export function useExportUserDsr(id: string) {
+  return useMutation({ mutationFn: () => api.exportUserDsr(id) });
+}
+
+export function useUserDsrRequests(id: string) {
+  return useQuery({
+    queryKey: keys.userDsrRequests(id),
+    queryFn: () => api.listUserDsrRequests(id),
+    enabled: !!id,
+    retry: false,
+  });
+}
+
+export function useCreateUserDsrRequest(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateDsrRequestBody) => api.createUserDsrRequest(id, body),
+    onSuccess: (created) => {
+      qc.setQueryData<DsrRequestView[]>(keys.userDsrRequests(id), (current = []) => [
+        ...current,
+        created,
+      ]);
+      void qc.invalidateQueries({ queryKey: keys.userDsrRequests(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useCompleteUserDsrRequest(userId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (requestId: string) => api.completeUserDsrRequest(userId, requestId),
+    onSuccess: (completed) => {
+      qc.setQueryData<DsrRequestView[]>(keys.userDsrRequests(userId), (current = []) =>
+        current.map((request) => (request.id === completed.id ? completed : request)),
+      );
+      void qc.invalidateQueries({ queryKey: keys.userDsrRequests(userId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
 export function useUpdateUser(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -950,6 +1205,19 @@ export function useSessionRoster() {
     queryKey: keys.roster,
     queryFn: () => api.getSessionRoster(),
     staleTime: 15_000,
+    retry: false,
+  });
+}
+
+/**
+ * The unauthenticated password policy (`GET /v1/session/password-policy`, t68). Static for
+ * a running server, cached long enough to keep the onboarding/users checklist stable.
+ */
+export function usePasswordPolicy() {
+  return useQuery({
+    queryKey: keys.passwordPolicy,
+    queryFn: () => api.getPasswordPolicy(),
+    staleTime: 5 * 60_000,
     retry: false,
   });
 }
@@ -1143,6 +1411,130 @@ export function useRevokeDelegation() {
     mutationFn: (id: string) => api.revokeDelegation(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.delegations });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+// --- API-key management ---------------------------------------------------------
+
+/** List non-secret API-key metadata. The one-time plaintext secret is never part of this query. */
+export function useApiKeys() {
+  return useQuery({ queryKey: keys.apiKeys, queryFn: () => api.listApiKeys() });
+}
+
+/**
+ * Mint a new API key. The response contains the plaintext secret exactly once; this mutation
+ * deliberately invalidates the metadata list rather than seeding it with the create payload.
+ */
+export function useCreateApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateApiKeyBody) => api.createApiKey(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.apiKeys });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Rotate an API key's credential material. The plaintext replacement is returned once; keep it in
+ * mutation-local UI state only, and refetch metadata instead of writing the secret-bearing result.
+ */
+export function useRotateApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.rotateApiKey(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.apiKeys });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Revoke an API key by id. The server returns updated metadata; refetch the list for ordering. */
+export function useRevokeApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.revokeApiKey(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.apiKeys });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+// --- Privacy/compliance registers ----------------------------------------------
+
+export function usePrivacyProcessors(enabled = true) {
+  return useQuery({
+    queryKey: keys.privacyProcessors,
+    queryFn: () => api.listProcessorRecords(),
+    enabled,
+  });
+}
+
+export function useCreatePrivacyProcessor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateProcessorRecordBody) => api.createProcessorRecord(body),
+    onSuccess: (created) => {
+      qc.setQueryData<ProcessorRecordView[]>(keys.privacyProcessors, (current = []) => [
+        ...current,
+        created,
+      ]);
+      void qc.invalidateQueries({ queryKey: keys.privacyProcessors });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchPrivacyProcessor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: PatchProcessorRecordBody }) =>
+      api.patchProcessorRecord(id, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<ProcessorRecordView[]>(keys.privacyProcessors, (current = []) =>
+        current.map((record) => (record.id === updated.id ? updated : record)),
+      );
+      void qc.invalidateQueries({ queryKey: keys.privacyProcessors });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePrivacyDpias(enabled = true) {
+  return useQuery({
+    queryKey: keys.privacyDpias,
+    queryFn: () => api.listDpiaRecords(),
+    enabled,
+  });
+}
+
+export function useCreatePrivacyDpia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateDpiaRecordBody) => api.createDpiaRecord(body),
+    onSuccess: (created) => {
+      qc.setQueryData<DpiaRecordView[]>(keys.privacyDpias, (current = []) => [...current, created]);
+      void qc.invalidateQueries({ queryKey: keys.privacyDpias });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchPrivacyDpia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: PatchDpiaRecordBody }) =>
+      api.patchDpiaRecord(id, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<DpiaRecordView[]>(keys.privacyDpias, (current = []) =>
+        current.map((record) => (record.id === updated.id ? updated : record)),
+      );
+      void qc.invalidateQueries({ queryKey: keys.privacyDpias });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });

@@ -5,7 +5,7 @@
  * the session-gated secret / key / settings writes.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
 import { OnboardingWizard } from './OnboardingWizard';
@@ -21,6 +21,32 @@ const USER: UserView = {
   has_secret: false,
   has_attestation_key: false,
   has_recovery_phrase: false,
+};
+
+const STRONG_PASSWORD = 'Str0ng!Vault9';
+const RECOVERY_PHRASE = 'ABCD1234-EFGH5678-JKMN9012-PQRS3456';
+const PASSWORD_POLICY = {
+  min_length: 10,
+  require_lowercase: true,
+  require_uppercase: true,
+  require_digit: true,
+  require_special: true,
+  forbid_username: true,
+  forbid_common: true,
+  max_identical_run: 4,
+  max_sequential_run: 5,
+  allow_weak_passwords: false,
+  rules: [
+    { code: 'length', requirement: 'pelo menos 10 caracteres' },
+    { code: 'lowercase', requirement: 'pelo menos uma letra minúscula' },
+    { code: 'uppercase', requirement: 'pelo menos uma letra maiúscula' },
+    { code: 'digit', requirement: 'pelo menos um algarismo' },
+    { code: 'special', requirement: 'pelo menos um caractere especial' },
+    { code: 'not_username', requirement: 'não pode conter o nome de utilizador' },
+    { code: 'not_common', requirement: 'não pode ser uma palavra-passe comum' },
+    { code: 'no_repeats', requirement: 'sem 4 ou mais caracteres iguais seguidos' },
+    { code: 'no_sequential', requirement: 'sem 5 ou mais caracteres consecutivos seguidos' },
+  ],
 };
 
 interface Recorded {
@@ -45,14 +71,20 @@ function wizardStub(): { fn: typeof fetch; calls: Recorded[] } {
       );
 
     if (url.includes('/v1/session/roster')) return json({ onboarding_required: true, users: [] });
+    if (url.includes('/v1/session/password-policy')) return json(PASSWORD_POLICY);
     if (url.includes('/v1/settings')) {
       if (method === 'PUT') return json(body);
       return json(DEFAULT_SETTINGS);
     }
     if (url.endsWith('/v1/users') && method === 'POST') return json(USER, 201);
     if (url.includes('/v1/users/u1/secret')) return json({ ...USER, has_secret: true });
-    if (url.includes('/v1/users/u1/attestation-key'))
-      return json({ ...USER, has_secret: true, has_attestation_key: true });
+    if (url.includes('/v1/users/u1/recovery'))
+      return json({
+        ...USER,
+        has_secret: true,
+        has_recovery_phrase: true,
+        recovery_phrase: RECOVERY_PHRASE,
+      });
     if (url.includes('/v1/session') && method === 'POST') return json({ token: 'tok', user: USER });
     if (url.includes('/v1/session')) return json({ user: null });
     return Promise.reject(new Error(`no stub for ${url}`));
@@ -77,7 +109,7 @@ afterEach(() => {
 });
 
 describe('OnboardingWizard', () => {
-  it('walks welcome → org → user → password → key → finish and marks onboarding complete', async () => {
+  it('walks welcome → org → user → password → recovery → finish and marks onboarding complete', async () => {
     const { fn, calls } = wizardStub();
     vi.stubGlobal('fetch', fn);
 
@@ -98,17 +130,19 @@ describe('OnboardingWizard', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
 
-    // Password → (set secret) → Key
+    // Password → (set secret) → Recovery phrase
     fireEvent.change(await screen.findByLabelText('Palavra-passe'), {
-      target: { value: 'password123' },
+      target: { value: STRONG_PASSWORD },
     });
     fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
-      target: { value: 'password123' },
+      target: { value: STRONG_PASSWORD },
     });
+    expect(await screen.findByText('As palavras-passe coincidem.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
 
-    // Key → generate → finish
-    fireEvent.click(await screen.findByRole('button', { name: 'Gerar chave de auditoria' }));
+    // Recovery phrase → generate → finish
+    fireEvent.click(await screen.findByRole('button', { name: 'Gerar frase de recuperação' }));
+    expect(await screen.findByText(RECOVERY_PHRASE)).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'Entrar no Chancela' }));
 
     // Landed in the app.
@@ -120,10 +154,15 @@ describe('OnboardingWizard', () => {
     expect(seq).toContain('POST /v1/users');
     expect(seq).toContain('POST /v1/session');
     expect(seq).toContain('POST /v1/users/u1/secret');
-    expect(seq).toContain('POST /v1/users/u1/attestation-key');
+    expect(seq).toContain('POST /v1/users/u1/recovery');
     // create user precedes sign-in precedes the session-gated secret write.
     expect(seq.indexOf('POST /v1/users')).toBeLessThan(seq.indexOf('POST /v1/session'));
     expect(seq.indexOf('POST /v1/session')).toBeLessThan(seq.indexOf('POST /v1/users/u1/secret'));
+    expect(seq.indexOf('POST /v1/users/u1/secret')).toBeLessThan(
+      seq.indexOf('POST /v1/users/u1/recovery'),
+    );
+    const recovery = calls.find((c) => c.url.includes('/v1/users/u1/recovery'));
+    expect(recovery?.body).toMatchObject({ current_password: STRONG_PASSWORD });
 
     // Finish PUT marks onboarding complete and carries the org name.
     const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/v1/settings'));
@@ -151,8 +190,15 @@ describe('OnboardingWizard', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
 
-    // Skip the optional password → finish.
-    fireEvent.click(await screen.findByRole('button', { name: 'Ignorar' }));
+    fireEvent.change(await screen.findByLabelText('Palavra-passe'), {
+      target: { value: STRONG_PASSWORD },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: STRONG_PASSWORD },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Gerar frase de recuperação' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Entrar no Chancela' }));
 
     expect(await screen.findByText('APP HOME')).toBeTruthy();
 
@@ -163,7 +209,7 @@ describe('OnboardingWizard', () => {
     expect((put?.body as { organization: { name: unknown } }).organization.name).toBeNull();
   });
 
-  it('skips the optional password and still completes onboarding', async () => {
+  it('does not expose a password skip path and blocks weak passwords before the server', async () => {
     const { fn, calls } = wizardStub();
     vi.stubGlobal('fetch', fn);
 
@@ -179,14 +225,21 @@ describe('OnboardingWizard', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
 
-    // Password step → skip.
-    fireEvent.click(await screen.findByRole('button', { name: 'Ignorar' }));
+    await screen.findByText('Palavra-passe obrigatória');
+    expect(screen.queryByRole('button', { name: 'Ignorar' })).toBeNull();
 
-    expect(await screen.findByText('APP HOME')).toBeTruthy();
-    // No secret / key writes on the skip path.
+    fireEvent.change(await screen.findByLabelText('Palavra-passe'), {
+      target: { value: 'password123' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirmar palavra-passe'), {
+      target: { value: 'password123' },
+    });
+
+    expect(screen.getByText('As palavras-passe coincidem.')).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Seguinte' }).hasAttribute('disabled')).toBe(true),
+    );
     expect(calls.some((c) => c.url.includes('/secret'))).toBe(false);
-    const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/v1/settings'));
-    expect(put?.body).toMatchObject({ onboarding: { completed: true } });
   });
 });
 
@@ -203,6 +256,7 @@ describe('OnboardingWizard entrance guard', () => {
           onboarding_required: false,
           users: [{ id: 'u1', username: 'operador', display_name: 'Operador', has_secret: false }],
         });
+      if (url.includes('/v1/session/password-policy')) return json(PASSWORD_POLICY);
       if (url.includes('/v1/settings')) return json(DEFAULT_SETTINGS);
       if (url.includes('/v1/session')) return json({ user: null });
       return Promise.reject(new Error(`no stub for ${url}`));
