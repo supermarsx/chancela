@@ -1,0 +1,33 @@
+{
+  "schema": "chancela-external-validator-sidecar/v1",
+  "case_id": "bt-dss-local",
+  "validator": {
+    "family": "adobe",
+    "name": "Adobe Acrobat signature panel",
+    "version": null,
+    "run_status": "pending_operator_run",
+    "run_at": null,
+    "operator": null,
+    "command": null,
+    "environment": null,
+    "report_path": null
+  },
+  "document": {
+    "path": "../input/bt-dss-local.pdf",
+    "sha256": null,
+    "bytes": null
+  },
+  "expected": {
+    "summary": "Signature is valid, includes a signature timestamp, and exposes embedded revocation information.",
+    "signature_count": 1,
+    "signature_timestamp_present": true,
+    "revocation_info_present": true,
+    "document_certified_or_ltv_enabled": true,
+    "doc_time_stamp_present": false,
+    "tamper_detected": false
+  },
+  "observed": null,
+  "notes": [
+    "Pending operator run; local caller-supplied DSS/VRI is not a production B-LT claim."
+  ]
+}

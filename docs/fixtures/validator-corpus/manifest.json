@@ -1,0 +1,166 @@
+{
+  "schema": "chancela-external-validator-corpus/v1",
+  "updated_at": "2026-07-09",
+  "purpose": "Operator-run fixture corpus for external EU DSS and Adobe-style validation of generated PAdES PDFs.",
+  "status_policy": {
+    "pending_generation": "PDF has not been generated or committed yet.",
+    "pending_operator_run": "PDF may exist, but external validator output has not been run and recorded by an operator.",
+    "recorded": "External validator output was run and sidecar observed fields were filled from that run."
+  },
+  "validator_families": [
+    "eu-dss",
+    "adobe"
+  ],
+  "cases": [
+    {
+      "id": "bb-basic",
+      "title": "PAdES B-B signed PDF",
+      "profile": "B-B",
+      "category": "baseline",
+      "pdf": {
+        "path": "cases/bb-basic/input/bb-basic.pdf",
+        "generation_status": "pending_generation",
+        "generated_by": "pending fixture generation helper",
+        "sha256": null,
+        "bytes": null
+      },
+      "expected_validation": {
+        "semantic_outcome": "valid_signature_without_timestamp",
+        "signature_count": 1,
+        "requires_signature_timestamp": false,
+        "requires_dss": false,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": false
+      },
+      "sidecars": {
+        "eu-dss": "cases/bb-basic/expected/eu-dss.json",
+        "adobe": "cases/bb-basic/expected/adobe.json"
+      }
+    },
+    {
+      "id": "bt-timestamped",
+      "title": "PAdES B-T signed PDF with signature timestamp",
+      "profile": "B-T",
+      "category": "timestamped",
+      "pdf": {
+        "path": "cases/bt-timestamped/input/bt-timestamped.pdf",
+        "generation_status": "pending_generation",
+        "generated_by": "pending fixture generation helper",
+        "sha256": null,
+        "bytes": null
+      },
+      "expected_validation": {
+        "semantic_outcome": "valid_signature_with_signature_timestamp",
+        "signature_count": 1,
+        "requires_signature_timestamp": true,
+        "requires_dss": false,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": false
+      },
+      "sidecars": {
+        "eu-dss": "cases/bt-timestamped/expected/eu-dss.json",
+        "adobe": "cases/bt-timestamped/expected/adobe.json"
+      }
+    },
+    {
+      "id": "bt-dss-local",
+      "title": "PAdES B-T signed PDF with local DSS/VRI evidence",
+      "profile": "B-T+DSS",
+      "category": "long-term-local-evidence",
+      "pdf": {
+        "path": "cases/bt-dss-local/input/bt-dss-local.pdf",
+        "generation_status": "pending_generation",
+        "generated_by": "pending fixture generation helper",
+        "sha256": null,
+        "bytes": null
+      },
+      "expected_validation": {
+        "semantic_outcome": "valid_signature_with_local_dss_evidence",
+        "signature_count": 1,
+        "requires_signature_timestamp": true,
+        "requires_dss": true,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": false
+      },
+      "sidecars": {
+        "eu-dss": "cases/bt-dss-local/expected/eu-dss.json",
+        "adobe": "cases/bt-dss-local/expected/adobe.json"
+      }
+    },
+    {
+      "id": "tampered-covered-byte",
+      "title": "Covered-byte tamper after signing",
+      "profile": "malformed/tampered",
+      "category": "negative",
+      "pdf": {
+        "path": "cases/tampered-covered-byte/input/tampered-covered-byte.pdf",
+        "generation_status": "pending_generation",
+        "generated_by": "pending fixture generation helper",
+        "sha256": null,
+        "bytes": null
+      },
+      "expected_validation": {
+        "semantic_outcome": "invalid_signature_digest_mismatch",
+        "signature_count": 1,
+        "requires_signature_timestamp": false,
+        "requires_dss": false,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": true
+      },
+      "sidecars": {
+        "eu-dss": "cases/tampered-covered-byte/expected/eu-dss.json",
+        "adobe": "cases/tampered-covered-byte/expected/adobe.json"
+      }
+    },
+    {
+      "id": "tampered-dss-only",
+      "title": "DSS-only tamper outside the signed revision",
+      "profile": "malformed/tampered",
+      "category": "negative",
+      "pdf": {
+        "path": "cases/tampered-dss-only/input/tampered-dss-only.pdf",
+        "generation_status": "pending_generation",
+        "generated_by": "pending fixture generation helper",
+        "sha256": null,
+        "bytes": null
+      },
+      "expected_validation": {
+        "semantic_outcome": "signature_revision_valid_dss_evidence_suspect",
+        "signature_count": 1,
+        "requires_signature_timestamp": true,
+        "requires_dss": true,
+        "requires_doc_time_stamp": false,
+        "tamper_expected": true
+      },
+      "sidecars": {
+        "eu-dss": "cases/tampered-dss-only/expected/eu-dss.json",
+        "adobe": "cases/tampered-dss-only/expected/adobe.json"
+      }
+    },
+    {
+      "id": "future-doctimestamp",
+      "title": "Future B-LTA PDF with /DocTimeStamp",
+      "profile": "DocTimeStamp-future",
+      "category": "future",
+      "pdf": {
+        "path": "cases/future-doctimestamp/input/future-doctimestamp.pdf",
+        "generation_status": "pending_generation",
+        "generated_by": "future B-LTA fixture generation helper",
+        "sha256": null,
+        "bytes": null
+      },
+      "expected_validation": {
+        "semantic_outcome": "pending_future_archive_timestamp_support",
+        "signature_count": 1,
+        "requires_signature_timestamp": true,
+        "requires_dss": true,
+        "requires_doc_time_stamp": true,
+        "tamper_expected": false
+      },
+      "sidecars": {
+        "eu-dss": "cases/future-doctimestamp/expected/eu-dss.json",
+        "adobe": "cases/future-doctimestamp/expected/adobe.json"
+      }
+    }
+  ]
+}

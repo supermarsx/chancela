@@ -1,0 +1,34 @@
+{
+  "schema": "chancela-external-validator-sidecar/v1",
+  "case_id": "tampered-dss-only",
+  "validator": {
+    "family": "eu-dss",
+    "name": "EU DSS validation",
+    "version": null,
+    "run_status": "pending_operator_run",
+    "run_at": null,
+    "operator": null,
+    "command": null,
+    "environment": null,
+    "report_path": null
+  },
+  "document": {
+    "path": "../input/tampered-dss-only.pdf",
+    "sha256": null,
+    "bytes": null
+  },
+  "expected": {
+    "overall_indication": "INDETERMINATE",
+    "sub_indication": "REVOCATION_OUT_OF_BOUNDS_NO_POE",
+    "pades_profile": "malformed/tampered",
+    "signature_count": 1,
+    "signature_timestamp_present": true,
+    "dss_present": true,
+    "doc_time_stamp_present": false,
+    "tamper_detected": true
+  },
+  "observed": null,
+  "notes": [
+    "Pending operator run; signature revision may remain valid while altered DSS evidence should be reported as suspect."
+  ]
+}

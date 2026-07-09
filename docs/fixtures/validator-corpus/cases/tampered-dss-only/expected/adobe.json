@@ -1,0 +1,33 @@
+{
+  "schema": "chancela-external-validator-sidecar/v1",
+  "case_id": "tampered-dss-only",
+  "validator": {
+    "family": "adobe",
+    "name": "Adobe Acrobat signature panel",
+    "version": null,
+    "run_status": "pending_operator_run",
+    "run_at": null,
+    "operator": null,
+    "command": null,
+    "environment": null,
+    "report_path": null
+  },
+  "document": {
+    "path": "../input/tampered-dss-only.pdf",
+    "sha256": null,
+    "bytes": null
+  },
+  "expected": {
+    "summary": "Signed revision may validate, but embedded validation information is altered or cannot establish long-term validity.",
+    "signature_count": 1,
+    "signature_timestamp_present": true,
+    "revocation_info_present": true,
+    "document_certified_or_ltv_enabled": false,
+    "doc_time_stamp_present": false,
+    "tamper_detected": true
+  },
+  "observed": null,
+  "notes": [
+    "Pending operator run; signature revision may remain valid while altered DSS evidence should be reported as suspect."
+  ]
+}

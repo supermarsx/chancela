@@ -1,0 +1,33 @@
+{
+  "schema": "chancela-external-validator-sidecar/v1",
+  "case_id": "future-doctimestamp",
+  "validator": {
+    "family": "adobe",
+    "name": "Adobe Acrobat signature panel",
+    "version": null,
+    "run_status": "pending_operator_run",
+    "run_at": null,
+    "operator": null,
+    "command": null,
+    "environment": null,
+    "report_path": null
+  },
+  "document": {
+    "path": "../input/future-doctimestamp.pdf",
+    "sha256": null,
+    "bytes": null
+  },
+  "expected": {
+    "summary": "Signature is valid, includes revocation information, and includes a document timestamp.",
+    "signature_count": 1,
+    "signature_timestamp_present": true,
+    "revocation_info_present": true,
+    "document_certified_or_ltv_enabled": true,
+    "doc_time_stamp_present": true,
+    "tamper_detected": false
+  },
+  "observed": null,
+  "notes": [
+    "Future placeholder; keep pending until /DocTimeStamp support exists and an operator records validator output."
+  ]
+}

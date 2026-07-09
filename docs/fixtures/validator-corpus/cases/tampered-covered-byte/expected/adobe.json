@@ -1,0 +1,33 @@
+{
+  "schema": "chancela-external-validator-sidecar/v1",
+  "case_id": "tampered-covered-byte",
+  "validator": {
+    "family": "adobe",
+    "name": "Adobe Acrobat signature panel",
+    "version": null,
+    "run_status": "pending_operator_run",
+    "run_at": null,
+    "operator": null,
+    "command": null,
+    "environment": null,
+    "report_path": null
+  },
+  "document": {
+    "path": "../input/tampered-covered-byte.pdf",
+    "sha256": null,
+    "bytes": null
+  },
+  "expected": {
+    "summary": "Document has been altered or corrupted since signing.",
+    "signature_count": 1,
+    "signature_timestamp_present": false,
+    "revocation_info_present": false,
+    "document_certified_or_ltv_enabled": false,
+    "doc_time_stamp_present": false,
+    "tamper_detected": true
+  },
+  "observed": null,
+  "notes": [
+    "Pending operator run; fixture should tamper with bytes covered by the signature ByteRange."
+  ]
+}

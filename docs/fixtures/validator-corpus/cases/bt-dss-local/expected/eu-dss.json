@@ -1,0 +1,37 @@
+{
+  "schema": "chancela-external-validator-sidecar/v1",
+  "case_id": "bt-dss-local",
+  "validator": {
+    "family": "eu-dss",
+    "name": "EU DSS validation",
+    "version": null,
+    "run_status": "pending_operator_run",
+    "run_at": null,
+    "operator": null,
+    "command": null,
+    "environment": null,
+    "report_path": null
+  },
+  "document": {
+    "path": "../input/bt-dss-local.pdf",
+    "sha256": null,
+    "bytes": null
+  },
+  "expected": {
+    "overall_indication": "TOTAL_PASSED",
+    "sub_indication": null,
+    "pades_profile": "B-T+DSS",
+    "signature_count": 1,
+    "signature_timestamp_present": true,
+    "dss_present": true,
+    "vri_present": true,
+    "ocsp_count_min": 1,
+    "crl_count_min": 1,
+    "doc_time_stamp_present": false,
+    "tamper_detected": false
+  },
+  "observed": null,
+  "notes": [
+    "Pending operator run; local caller-supplied DSS/VRI is not a production B-LT claim."
+  ]
+}
