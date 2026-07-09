@@ -40,6 +40,7 @@ import {
   type Locale,
   type NumberingScheme,
   type OrganizationSettings,
+  type PlatformSettings,
   type RegisteredEntityColumn,
   type RegistryAutoUpdateSettings,
   type Settings,
@@ -59,6 +60,7 @@ import { GestaoDadosSection } from '../recovery/GestaoDadosSection';
 import { FuncoesSection } from '../rbac/FuncoesSection';
 import { DelegacoesSection } from '../rbac/DelegacoesSection';
 import { ApiKeysSection } from './ApiKeysSection';
+import { PlatformOperationsSection } from './PlatformOperationsSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
 import { useCan } from '../session/permissions';
@@ -87,14 +89,20 @@ import { UsersList } from '../users/UserListPage';
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
 
-type SettingsWithMaybeAi = Omit<Settings, 'ai' | 'signing' | 'registry_auto_update' | 'ui'> & {
+type SettingsWithMaybeAi = Omit<
+  Settings,
+  'ai' | 'signing' | 'registry_auto_update' | 'ui' | 'platform'
+> & {
   ai?: Partial<AiSettings> | null;
   ui?: Partial<UiSettings> | null;
+  platform?: Partial<PlatformSettings> | null;
   registry_auto_update?: Partial<RegistryAutoUpdateSettings> | null;
   signing: Omit<SigningSettings, 'providers'> & Partial<Pick<SigningSettings, 'providers'>>;
 };
 
 function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
+  const platform: Partial<PlatformSettings> = settings.platform ?? {};
+  const platformLogging: Partial<PlatformSettings['logging']> = platform.logging ?? {};
   return {
     ...settings,
     signing: {
@@ -109,6 +117,25 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       ...(settings.ui ?? {}),
       registered_entity_columns:
         settings.ui?.registered_entity_columns ?? DEFAULT_SETTINGS.ui.registered_entity_columns,
+    },
+    platform: {
+      ...DEFAULT_SETTINGS.platform,
+      ...platform,
+      logging: {
+        ...DEFAULT_SETTINGS.platform.logging,
+        ...platformLogging,
+        service_overrides:
+          platformLogging.service_overrides ?? DEFAULT_SETTINGS.platform.logging.service_overrides,
+      },
+      api_server: {
+        ...DEFAULT_SETTINGS.platform.api_server,
+        ...(platform.api_server ?? {}),
+      },
+      mcp_stdio_server: {
+        ...DEFAULT_SETTINGS.platform.mcp_stdio_server,
+        ...(platform.mcp_stdio_server ?? {}),
+      },
+      audit: platform.audit ?? DEFAULT_SETTINGS.platform.audit,
     },
     registry_auto_update: {
       ...DEFAULT_SETTINGS.registry_auto_update,
@@ -176,6 +203,7 @@ type SettingsSection =
   | 'documentos'
   | 'assinaturas'
   | 'gestao'
+  | 'operacoes'
   | 'privacidade'
   | 'utilizadores'
   | 'chaves-api'
@@ -195,6 +223,7 @@ const SETTINGS_SECTIONS: SettingsSectionNav[] = [
   { id: 'documentos', label: 'settings.documents.cardTitle', icon: <Icon.FileText /> },
   { id: 'assinaturas', label: 'settings.signing.cardTitle', icon: <Icon.PenNib /> },
   { id: 'gestao', label: 'settings.management.cardTitle', icon: <Icon.Sliders /> },
+  { id: 'operacoes', label: 'settings.platform.cardTitle', icon: <Icon.Power /> },
   { id: 'privacidade', literal: 'Privacidade', icon: <Icon.Seal /> },
   { id: 'utilizadores', label: 'settings.users.cardTitle', icon: <Icon.Users /> },
   { id: 'chaves-api', label: 'settings.apiKeys.cardTitle', icon: <Icon.Seal /> },
@@ -397,6 +426,7 @@ export function SettingsPage() {
     setDraft((d) => (d ? { ...d, ui: { ...d.ui, [key]: value } } : d));
   const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
     setDraft((d) => (d ? { ...d, registry_auto_update } : d));
+  const setPlatform = (platform: PlatformSettings) => setDraft((d) => (d ? { ...d, platform } : d));
 
   const toggleEntityColumn = (column: RegisteredEntityColumn, checked: boolean) => {
     const current = draft.ui.registered_entity_columns;
@@ -794,6 +824,16 @@ export function SettingsPage() {
                 </div>
               </Card>
             </div>
+          ) : null}
+
+          {/* Operações -------------------------------------------------------------- */}
+          {section === 'operacoes' ? (
+            <PlatformOperationsSection
+              value={draft.platform}
+              audit={committed.platform.audit}
+              canManage={canManageSettings}
+              onChange={setPlatform}
+            />
           ) : null}
 
           {/* Utilizadores ------------------------------------------------------------ */}

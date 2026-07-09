@@ -53,3 +53,26 @@ describe('DEFAULT_SETTINGS.ui', () => {
     ]);
   });
 });
+
+describe('DEFAULT_SETTINGS.platform', () => {
+  it('mirrors backend platform logging and desired-state defaults', () => {
+    expect(DEFAULT_SETTINGS.platform.logging).toEqual({
+      global: 'info',
+      app: 'info',
+      api: 'info',
+      mcp: 'info',
+      service_overrides: {},
+    });
+    expect(DEFAULT_SETTINGS.platform.api_server).toEqual({
+      enabled: true,
+      desired_state: 'running',
+      last_action: null,
+    });
+    expect(DEFAULT_SETTINGS.platform.mcp_stdio_server).toEqual({
+      enabled: false,
+      desired_state: 'stopped',
+      last_action: null,
+    });
+    expect(DEFAULT_SETTINGS.platform.audit).toEqual([]);
+  });
+});

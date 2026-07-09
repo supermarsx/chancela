@@ -327,8 +327,12 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getByText('CONSTITUIÇÃO DE SOCIEDADE')).toBeTruthy();
     expect(screen.getByText('06-30')).toBeTruthy();
     expect(screen.getByText('12-31 (por omissão)')).toBeTruthy();
-    expect(screen.getAllByText('Sociedade por Quotas').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Regras csc-art63/v2').length).toBeGreaterThan(0);
+
+    const entityRow = screen.getByText(ENTITY_A.name).closest('tr') as HTMLElement;
+    const cells = within(entityRow).getAllByRole('cell');
+    const typeLine = cells[3].querySelector('.entity-cell-line');
+    expect(typeLine?.textContent).toBe('Sociedade por Quotas');
+    expect(typeLine?.getAttribute('title')).toContain('Regras csc-art63/v2');
 
     const bookLink = screen.getByRole('link', { name: 'Assembleia Geral' });
     expect(bookLink.getAttribute('href')).toBe('/livros/book-open');
@@ -338,10 +342,12 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getByText(/Aberto em 2026-01-10/)).toBeTruthy();
     expect(screen.getByText('1 livro · Aberto: 1')).toBeTruthy();
 
-    expect(screen.getByText('amelia.marques', { exact: false })).toBeTruthy();
+    const activityLine = cells[12].querySelector('.entity-cell-line');
+    expect(activityLine?.textContent).not.toContain('amelia.marques');
+    expect(activityLine?.getAttribute('title')).toContain('amelia.marques');
     expect(screen.getAllByText('Sem livros').length).toBeGreaterThan(0);
-    expect(screen.getByText('Sem atividade no arquivo')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Ver arquivo' }).getAttribute('href')).toBe('/arquivo');
+    expect(screen.getAllByText('Sem atividade').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'Ver arquivo' })).toBeNull();
   });
 
   it('filters by folded search text, legal form, NIPC validation, registry state, book state and activity type', async () => {
@@ -485,7 +491,7 @@ describe('EntitiesPage enrichment and filtering', () => {
     await waitFor(() =>
       expect(screen.getAllByText('Livros indisponíveis').length).toBeGreaterThan(0),
     );
-    expect(screen.getAllByText('Sem atividade no arquivo').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Sem atividade').length).toBeGreaterThan(0);
 
     const rows = screen.getAllByRole('row');
     const entityRow = rows.find((row) => within(row).queryByText(ENTITY_A.name));

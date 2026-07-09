@@ -35,6 +35,8 @@ import {
   NUMBERING_SCHEMES,
   PASSWORD_POLICY_RULE_CODES,
   PERMISSION_SOURCES,
+  PLATFORM_LOG_LEVELS,
+  PLATFORM_SERVICE_ACTIONS,
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
   RETENTION_DISPOSAL_ACTIONS,
@@ -113,6 +115,16 @@ import {
   type PaperBookPageRange,
   type PermissionGrant,
   type PermissionScope,
+  type PlatformActionCapability,
+  type PlatformAuditEvent,
+  type PlatformControlResponse,
+  type PlatformControlResult,
+  type PlatformLoggingSettings,
+  type PlatformServiceControlSettings,
+  type PlatformServiceLastAction,
+  type PlatformServiceStatus,
+  type PlatformServicesResponse,
+  type PlatformSettings,
   type ProcessorRecordView,
   type RegistryAnnotationView,
   type RegistryEventView,
@@ -529,6 +541,179 @@ function assertRetentionPolicy(obj: unknown, label: string): RetentionPolicyView
   expect(record.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
   expect(record.updated_by.length, `${label}.updated_by should be non-empty`).toBeGreaterThan(0);
   return record;
+}
+
+function assertPlatformLastAction(obj: unknown, label: string): PlatformServiceLastAction {
+  const action = assertExactKeys<PlatformServiceLastAction>(
+    obj,
+    {
+      action: true,
+      requested_at: true,
+      requested_by: true,
+      outcome: true,
+      message: true,
+    },
+    label,
+  );
+  inEnum(PLATFORM_SERVICE_ACTIONS, action.action, `${label}.action`);
+  inEnum(
+    ['unsupported', 'restart_required', 'supervisor_required'],
+    action.outcome,
+    `${label}.outcome`,
+  );
+  assertTimestamp(action.requested_at, `${label}.requested_at`);
+  expect(action.requested_by.length, `${label}.requested_by should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  expect(action.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
+  return action;
+}
+
+function assertPlatformServiceControl(obj: unknown, label: string): PlatformServiceControlSettings {
+  const control = assertExactKeys<PlatformServiceControlSettings>(
+    obj,
+    { enabled: true, desired_state: true, last_action: true },
+    label,
+  );
+  expect(typeof control.enabled, `${label}.enabled should be boolean`).toBe('boolean');
+  inEnum(['running', 'stopped'], control.desired_state, `${label}.desired_state`);
+  if (control.last_action !== null)
+    assertPlatformLastAction(control.last_action, `${label}.last_action`);
+  return control;
+}
+
+function assertPlatformLogging(obj: unknown, label: string): PlatformLoggingSettings {
+  const logging = assertExactKeys<PlatformLoggingSettings>(
+    obj,
+    { global: true, app: true, api: true, mcp: true, service_overrides: true },
+    label,
+  );
+  for (const field of ['global', 'app', 'api', 'mcp'] as const) {
+    inEnum(PLATFORM_LOG_LEVELS, logging[field], `${label}.${field}`);
+  }
+  expect(logging.service_overrides, `${label}.service_overrides should be an object`).toBeTypeOf(
+    'object',
+  );
+  expect(logging.service_overrides, `${label}.service_overrides should not be null`).not.toBeNull();
+  for (const [serviceId, level] of Object.entries(logging.service_overrides)) {
+    inEnum(['app', 'api', 'mcp_stdio'], serviceId, `${label}.service_overrides key`);
+    inEnum(PLATFORM_LOG_LEVELS, level, `${label}.service_overrides.${serviceId}`);
+  }
+  return logging;
+}
+
+function assertPlatformAuditEvent(obj: unknown, label: string): PlatformAuditEvent {
+  const event = assertExactKeys<PlatformAuditEvent>(
+    obj,
+    {
+      service_id: true,
+      action: true,
+      requested_at: true,
+      requested_by: true,
+      outcome: true,
+      desired_state: true,
+      message: true,
+    },
+    label,
+  );
+  inEnum(['app', 'api', 'mcp_stdio'], event.service_id, `${label}.service_id`);
+  inEnum(PLATFORM_SERVICE_ACTIONS, event.action, `${label}.action`);
+  inEnum(['running', 'stopped'], event.desired_state, `${label}.desired_state`);
+  inEnum(
+    ['unsupported', 'restart_required', 'supervisor_required'],
+    event.outcome,
+    `${label}.outcome`,
+  );
+  assertTimestamp(event.requested_at, `${label}.requested_at`);
+  expect(event.requested_by.length, `${label}.requested_by should be non-empty`).toBeGreaterThan(0);
+  expect(event.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
+  return event;
+}
+
+function assertPlatformActionCapability(obj: unknown, label: string): PlatformActionCapability {
+  const capability = assertExactKeys<PlatformActionCapability>(
+    obj,
+    { action: true, supported: true, outcome: true, limitation: true },
+    label,
+  );
+  inEnum(PLATFORM_SERVICE_ACTIONS, capability.action, `${label}.action`);
+  expect(typeof capability.supported, `${label}.supported should be boolean`).toBe('boolean');
+  inEnum(
+    ['unsupported', 'restart_required', 'supervisor_required'],
+    capability.outcome,
+    `${label}.outcome`,
+  );
+  expect(capability.limitation.length, `${label}.limitation should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  return capability;
+}
+
+function assertPlatformServiceStatus(obj: unknown, label: string): PlatformServiceStatus {
+  const service = assertExactKeys<PlatformServiceStatus>(
+    obj,
+    {
+      id: true,
+      kind: true,
+      label: true,
+      configured: true,
+      enabled: true,
+      desired_state: true,
+      actual_runtime_status: true,
+      controllable_actions: true,
+      logging_level: true,
+      last_action: true,
+      limitations: true,
+    },
+    label,
+  );
+  inEnum(['api', 'mcp_stdio'], service.id, `${label}.id`);
+  inEnum(['api', 'mcp'], service.kind, `${label}.kind`);
+  expect(service.label.length, `${label}.label should be non-empty`).toBeGreaterThan(0);
+  expect(typeof service.configured, `${label}.configured should be boolean`).toBe('boolean');
+  expect(typeof service.enabled, `${label}.enabled should be boolean`).toBe('boolean');
+  inEnum(['running', 'stopped'], service.desired_state, `${label}.desired_state`);
+  inEnum(['running', 'unknown'], service.actual_runtime_status, `${label}.actual_runtime_status`);
+  inEnum(PLATFORM_LOG_LEVELS, service.logging_level, `${label}.logging_level`);
+  expect(Array.isArray(service.controllable_actions), `${label}.actions should be an array`).toBe(
+    true,
+  );
+  for (const capability of service.controllable_actions) {
+    assertPlatformActionCapability(capability, `${label}.controllable_actions[]`);
+  }
+  if (service.last_action !== null)
+    assertPlatformLastAction(service.last_action, `${label}.last_action`);
+  expect(Array.isArray(service.limitations), `${label}.limitations should be an array`).toBe(true);
+  for (const limitation of service.limitations) {
+    expect(limitation.length, `${label}.limitations[] should be non-empty`).toBeGreaterThan(0);
+  }
+  return service;
+}
+
+function assertPlatformControlResult(obj: unknown, label: string): PlatformControlResult {
+  const result = assertExactKeys<PlatformControlResult>(
+    obj,
+    {
+      kind: true,
+      supported: true,
+      applied_to_settings: true,
+      desired_state: true,
+      actual_runtime_status: true,
+      message: true,
+      limitations: true,
+    },
+    label,
+  );
+  inEnum(['unsupported', 'restart_required', 'supervisor_required'], result.kind, `${label}.kind`);
+  expect(typeof result.supported, `${label}.supported should be boolean`).toBe('boolean');
+  expect(typeof result.applied_to_settings, `${label}.applied_to_settings should be boolean`).toBe(
+    'boolean',
+  );
+  inEnum(['running', 'stopped'], result.desired_state, `${label}.desired_state`);
+  inEnum(['running', 'unknown'], result.actual_runtime_status, `${label}.actual_runtime_status`);
+  expect(result.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
+  expect(Array.isArray(result.limitations), `${label}.limitations should be an array`).toBe(true);
+  return result;
 }
 
 function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImportReport {
@@ -1270,6 +1455,7 @@ describe('contract fixtures parse through the real client', () => {
         documents: true,
         catalog: true,
         signing: true,
+        platform: true,
         appearance: true,
         ui: true,
         onboarding: true,
@@ -1388,6 +1574,18 @@ describe('contract fixtures parse through the real client', () => {
     if (onboarding.completed_at !== null) assertTimestamp(onboarding.completed_at, 'completed_at');
     const ai = assertExactKeys<AiSettings>(settings.ai, { enabled: true }, 'Settings.ai');
     expect(typeof ai.enabled).toBe('boolean');
+    const platform = assertExactKeys<PlatformSettings>(
+      settings.platform,
+      { logging: true, api_server: true, mcp_stdio_server: true, audit: true },
+      'Settings.platform',
+    );
+    assertPlatformLogging(platform.logging, 'Settings.platform.logging');
+    assertPlatformServiceControl(platform.api_server, 'Settings.platform.api_server');
+    assertPlatformServiceControl(platform.mcp_stdio_server, 'Settings.platform.mcp_stdio_server');
+    expect(Array.isArray(platform.audit), 'Settings.platform.audit should be an array').toBe(true);
+    for (const event of platform.audit) {
+      assertPlatformAuditEvent(event, 'Settings.platform.audit[]');
+    }
     if (settings.registry_auto_update !== undefined) {
       const registryAutoUpdate = assertExactKeys<RegistryAutoUpdateSettings>(
         settings.registry_auto_update,
@@ -1441,6 +1639,161 @@ describe('contract fixtures parse through the real client', () => {
         expect(profile.trim().length).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('platform.services.json → PlatformServicesResponse (GET /v1/platform/services)', async () => {
+    stubFetch(
+      JSON.stringify({
+        services: [
+          {
+            id: 'api',
+            kind: 'api',
+            label: 'Chancela API server',
+            configured: true,
+            enabled: true,
+            desired_state: 'running',
+            actual_runtime_status: 'running',
+            controllable_actions: [
+              {
+                action: 'start',
+                supported: false,
+                outcome: 'unsupported',
+                limitation: 'The current API process cannot start another copy of itself.',
+              },
+              {
+                action: 'stop',
+                supported: false,
+                outcome: 'unsupported',
+                limitation: 'The current API process cannot stop itself through this request.',
+              },
+              {
+                action: 'restart',
+                supported: false,
+                outcome: 'restart_required',
+                limitation: 'Restart requires an external supervisor or process relaunch.',
+              },
+            ],
+            logging_level: 'debug',
+            last_action: null,
+            limitations: [
+              'The API can observe this process as running only because it is serving this request.',
+              'Start, stop, and restart require an external supervisor or process relaunch.',
+            ],
+          },
+          {
+            id: 'mcp_stdio',
+            kind: 'mcp',
+            label: 'Chancela MCP stdio server',
+            configured: false,
+            enabled: false,
+            desired_state: 'stopped',
+            actual_runtime_status: 'unknown',
+            controllable_actions: [
+              {
+                action: 'start',
+                supported: false,
+                outcome: 'supervisor_required',
+                limitation:
+                  'The stdio MCP server is launched externally; the API can only record desired state.',
+              },
+            ],
+            logging_level: 'info',
+            last_action: null,
+            limitations: [
+              'The stdio MCP server is launched by an external client or supervisor; the API cannot observe or spawn that process.',
+              'No MCP API key or other secret is exposed through this status surface.',
+            ],
+          },
+        ],
+      }),
+    );
+    const response: PlatformServicesResponse = await api.listPlatformServices();
+    const parsed = assertExactKeys<PlatformServicesResponse>(
+      response,
+      { services: true },
+      'PlatformServicesResponse',
+    );
+    expect(parsed.services.length).toBe(2);
+    const apiService = assertPlatformServiceStatus(
+      parsed.services[0],
+      'PlatformServiceStatus(api)',
+    );
+    expect(apiService.id).toBe('api');
+    expect(apiService.actual_runtime_status).toBe('running');
+    expect(apiService.controllable_actions.some((action) => action.supported)).toBe(false);
+    const mcpService = assertPlatformServiceStatus(
+      parsed.services[1],
+      'PlatformServiceStatus(mcp)',
+    );
+    expect(mcpService.id).toBe('mcp_stdio');
+    expect(mcpService.actual_runtime_status).toBe('unknown');
+  });
+
+  it('platform.control.json → PlatformControlResponse (POST /v1/platform/services/{id}/actions/{action})', async () => {
+    stubFetch(
+      JSON.stringify({
+        service: {
+          id: 'mcp_stdio',
+          kind: 'mcp',
+          label: 'Chancela MCP stdio server',
+          configured: false,
+          enabled: true,
+          desired_state: 'running',
+          actual_runtime_status: 'unknown',
+          controllable_actions: [
+            {
+              action: 'start',
+              supported: false,
+              outcome: 'supervisor_required',
+              limitation:
+                'The stdio MCP server is launched externally; the API can only record desired state.',
+            },
+          ],
+          logging_level: 'info',
+          last_action: {
+            action: 'start',
+            requested_at: '2026-07-09T12:00:00Z',
+            requested_by: 'amelia.marques',
+            outcome: 'supervisor_required',
+            message:
+              'MCP start desired state was recorded; relaunch the external MCP client or supervisor.',
+          },
+          limitations: [
+            'The stdio MCP server is launched by an external client or supervisor; the API cannot observe or spawn that process.',
+          ],
+        },
+        action: 'start',
+        result: {
+          kind: 'supervisor_required',
+          supported: false,
+          applied_to_settings: true,
+          desired_state: 'running',
+          actual_runtime_status: 'unknown',
+          message:
+            'MCP start desired state was recorded; relaunch the external MCP client or supervisor.',
+          limitations: [
+            'The stdio MCP server is launched by an external client or supervisor; the API cannot observe or spawn that process.',
+          ],
+        },
+      }),
+    );
+    const response: PlatformControlResponse = await api.controlPlatformService(
+      'mcp_stdio',
+      'start',
+    );
+    const parsed = assertExactKeys<PlatformControlResponse>(
+      response,
+      { service: true, action: true, result: true },
+      'PlatformControlResponse',
+    );
+    inEnum(PLATFORM_SERVICE_ACTIONS, parsed.action, 'PlatformControlResponse.action');
+    const service = assertPlatformServiceStatus(parsed.service, 'PlatformControlResponse.service');
+    const result = assertPlatformControlResult(parsed.result, 'PlatformControlResponse.result');
+    expect(service.id).toBe('mcp_stdio');
+    expect(service.enabled).toBe(true);
+    expect(result.supported).toBe(false);
+    expect(result.applied_to_settings).toBe(true);
+    expect(result.kind).toBe('supervisor_required');
   });
 
   it('registry.extract.json → RegistryExtractView (GET /v1/entities/{id}/registry)', async () => {

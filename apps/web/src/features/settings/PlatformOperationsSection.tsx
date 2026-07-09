@@ -1,0 +1,382 @@
+import { useMemo } from 'react';
+import { useControlPlatformService, usePlatformServices } from '../../api/hooks';
+import {
+  PLATFORM_LOG_LEVELS,
+  PLATFORM_SERVICE_ACTIONS,
+  type PlatformAuditEvent,
+  type PlatformControlOutcomeKind,
+  type PlatformLogLevel,
+  type PlatformLoggingSettings,
+  type PlatformServiceAction,
+  type PlatformServiceDesiredState,
+  type PlatformServiceId,
+  type PlatformServiceStatus,
+  type PlatformSettings,
+  type PlatformRuntimeStatus,
+} from '../../api/types';
+import { useT } from '../../i18n';
+import type { MessageKey } from '../../i18n';
+import {
+  Badge,
+  Button,
+  Card,
+  ErrorNote,
+  Field,
+  Icon,
+  InlineWarning,
+  Loading,
+  Select,
+  useToast,
+} from '../../ui';
+
+const LOG_BASE_FIELDS = ['global', 'app', 'api', 'mcp'] as const;
+const LOG_OVERRIDE_IDS: readonly PlatformServiceId[] = ['app', 'api', 'mcp_stdio'];
+
+function logLevelOptions(t: ReturnType<typeof useT>) {
+  return PLATFORM_LOG_LEVELS.map((level) => ({
+    value: level,
+    label: t(`settings.platform.logLevel.${level}` as MessageKey),
+  }));
+}
+
+function overrideOptions(t: ReturnType<typeof useT>) {
+  return [
+    { value: '', label: t('settings.platform.logging.override.none') },
+    ...logLevelOptions(t),
+  ];
+}
+
+function statusTone(value: PlatformRuntimeStatus | PlatformServiceDesiredState) {
+  return value === 'running' ? 'ok' : value === 'unknown' ? 'warn' : 'neutral';
+}
+
+function booleanTone(value: boolean) {
+  return value ? 'ok' : 'neutral';
+}
+
+function outcomeTone(outcome: PlatformControlOutcomeKind) {
+  if (outcome === 'restart_required') return 'warn';
+  if (outcome === 'supervisor_required') return 'accent';
+  return 'neutral';
+}
+
+function actionIcon(action: PlatformServiceAction) {
+  if (action === 'restart') return <Icon.Refresh />;
+  if (action === 'stop') return <Icon.Close />;
+  return <Icon.Power />;
+}
+
+function serviceFallbackLabel(id: PlatformServiceId, t: ReturnType<typeof useT>) {
+  if (id === 'api') return t('settings.platform.service.api');
+  if (id === 'mcp_stdio') return t('settings.platform.service.mcp_stdio');
+  return t('settings.platform.service.app');
+}
+
+function ServiceBadges({ service }: { service: PlatformServiceStatus }) {
+  const t = useT();
+  return (
+    <div className="row-wrap">
+      <Badge tone={booleanTone(service.configured)}>
+        {service.configured
+          ? t('settings.platform.configured.yes')
+          : t('settings.platform.configured.no')}
+      </Badge>
+      <Badge tone={booleanTone(service.enabled)}>
+        {service.enabled ? t('settings.platform.enabled.yes') : t('settings.platform.enabled.no')}
+      </Badge>
+      <Badge tone={statusTone(service.desired_state)}>
+        {t(`settings.platform.desired.${service.desired_state}` as MessageKey)}
+      </Badge>
+      <Badge tone={statusTone(service.actual_runtime_status)}>
+        {t(`settings.platform.runtime.${service.actual_runtime_status}` as MessageKey)}
+      </Badge>
+    </div>
+  );
+}
+
+function LastAction({ service }: { service: PlatformServiceStatus }) {
+  const t = useT();
+  const last = service.last_action;
+  if (!last) {
+    return <p className="field__hint">{t('settings.platform.lastAction.empty')}</p>;
+  }
+  return (
+    <dl className="deflist deflist--tight platform-action-summary">
+      <div>
+        <dt>{t('settings.platform.action')}</dt>
+        <dd>{t(`settings.platform.action.${last.action}` as MessageKey)}</dd>
+      </div>
+      <div>
+        <dt>{t('settings.platform.outcome')}</dt>
+        <dd>
+          <Badge tone={outcomeTone(last.outcome)}>
+            {t(`settings.platform.outcome.${last.outcome}` as MessageKey)}
+          </Badge>
+        </dd>
+      </div>
+      <div>
+        <dt>{t('settings.platform.requestedBy')}</dt>
+        <dd className="mono">{last.requested_by}</dd>
+      </div>
+      <div>
+        <dt>{t('settings.platform.requestedAt')}</dt>
+        <dd className="mono">{last.requested_at}</dd>
+      </div>
+      <div className="platform-action-summary__message">
+        <dt>{t('settings.platform.message')}</dt>
+        <dd>{last.message}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function ServiceRow({
+  service,
+  canManage,
+  onControlError,
+}: {
+  service: PlatformServiceStatus;
+  canManage: boolean;
+  onControlError: (error: unknown) => void;
+}) {
+  const t = useT();
+  const toast = useToast();
+  const control = useControlPlatformService();
+
+  const recordAction = (action: PlatformServiceAction) => {
+    control.mutate(
+      { id: service.id, action },
+      {
+        onSuccess: (response) => toast.success(response.result.message),
+        onError: onControlError,
+      },
+    );
+  };
+
+  return (
+    <section className="platform-service-row">
+      <div className="platform-service-row__main">
+        <div className="platform-service-row__head">
+          <div>
+            <p className="card__label">{serviceFallbackLabel(service.id, t)}</p>
+            <h4 className="platform-service-row__title">{service.label}</h4>
+          </div>
+          <ServiceBadges service={service} />
+        </div>
+
+        <dl className="deflist deflist--tight">
+          <div>
+            <dt>{t('settings.platform.configured')}</dt>
+            <dd>
+              {service.configured
+                ? t('settings.platform.configured.yes')
+                : t('settings.platform.configured.no')}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('settings.platform.enabled')}</dt>
+            <dd>
+              {service.enabled
+                ? t('settings.platform.enabled.yes')
+                : t('settings.platform.enabled.no')}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('settings.platform.desired')}</dt>
+            <dd>{t(`settings.platform.desired.${service.desired_state}` as MessageKey)}</dd>
+          </div>
+          <div>
+            <dt>{t('settings.platform.runtime')}</dt>
+            <dd>{t(`settings.platform.runtime.${service.actual_runtime_status}` as MessageKey)}</dd>
+          </div>
+          <div>
+            <dt>{t('settings.platform.effectiveLog')}</dt>
+            <dd>{t(`settings.platform.logLevel.${service.logging_level}` as MessageKey)}</dd>
+          </div>
+        </dl>
+
+        <div className="platform-action-row">
+          {PLATFORM_SERVICE_ACTIONS.map((action) => {
+            const capability = service.controllable_actions.find((c) => c.action === action);
+            const pending =
+              control.isPending &&
+              control.variables?.id === service.id &&
+              control.variables?.action === action;
+            return (
+              <Button
+                key={action}
+                type="button"
+                variant={action === 'restart' ? 'secondary' : 'ghost'}
+                icon={actionIcon(action)}
+                disabled={!canManage || pending}
+                onClick={() => recordAction(action)}
+              >
+                {pending
+                  ? t('settings.platform.action.recording')
+                  : t(`settings.platform.action.record.${action}` as MessageKey)}
+                {capability ? (
+                  <span className="platform-action-row__outcome">
+                    {t(`settings.platform.outcome.${capability.outcome}` as MessageKey)}
+                  </span>
+                ) : null}
+              </Button>
+            );
+          })}
+        </div>
+
+        <div className="platform-limitations">
+          <p className="card__label">{t('settings.platform.limitations')}</p>
+          <ul>
+            {service.limitations.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+            {service.controllable_actions.map((capability) => (
+              <li key={`${capability.action}:${capability.outcome}`}>{capability.limitation}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <aside className="platform-service-row__aside">
+        <p className="card__label">{t('settings.platform.lastAction')}</p>
+        <LastAction service={service} />
+      </aside>
+    </section>
+  );
+}
+
+function AuditTail({ audit }: { audit: PlatformAuditEvent[] }) {
+  const t = useT();
+  const tail = audit.slice(-5).reverse();
+  return (
+    <Card title={t('settings.platform.auditTail')}>
+      {tail.length === 0 ? (
+        <p className="field__hint">{t('settings.platform.audit.empty')}</p>
+      ) : (
+        <ol className="platform-audit-list">
+          {tail.map((event) => (
+            <li key={`${event.service_id}:${event.requested_at}:${event.action}`}>
+              <div className="platform-audit-list__head">
+                <span className="mono">{event.requested_at}</span>
+                <Badge tone={outcomeTone(event.outcome)}>
+                  {t(`settings.platform.outcome.${event.outcome}` as MessageKey)}
+                </Badge>
+              </div>
+              <p>
+                <strong>{serviceFallbackLabel(event.service_id, t)}</strong>{' '}
+                {t(`settings.platform.action.${event.action}` as MessageKey)} ·{' '}
+                {t(`settings.platform.desired.${event.desired_state}` as MessageKey)}
+              </p>
+              <p className="field__hint">
+                {event.requested_by}: {event.message}
+              </p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Card>
+  );
+}
+
+export function PlatformOperationsSection({
+  value,
+  audit,
+  canManage,
+  onChange,
+}: {
+  value: PlatformSettings;
+  audit: PlatformAuditEvent[];
+  canManage: boolean;
+  onChange: (value: PlatformSettings) => void;
+}) {
+  const t = useT();
+  const toast = useToast();
+  const services = usePlatformServices();
+  const levels = useMemo(() => logLevelOptions(t), [t]);
+  const overrides = useMemo(() => overrideOptions(t), [t]);
+
+  const setLogging = (logging: PlatformLoggingSettings) => onChange({ ...value, logging });
+  const setBaseLevel = (field: (typeof LOG_BASE_FIELDS)[number], level: PlatformLogLevel) =>
+    setLogging({ ...value.logging, [field]: level });
+  const setOverride = (serviceId: PlatformServiceId, level: PlatformLogLevel | '') => {
+    const service_overrides = { ...value.logging.service_overrides };
+    if (level === '') delete service_overrides[serviceId];
+    else service_overrides[serviceId] = level;
+    setLogging({ ...value.logging, service_overrides });
+  };
+
+  return (
+    <div className="stack">
+      <Card title={t('settings.platform.cardTitle')}>
+        <div className="form">
+          <p className="field__hint">{t('settings.platform.intro')}</p>
+          {services.isLoading ? <Loading label={t('settings.platform.loading')} /> : null}
+          {services.error ? <ErrorNote error={services.error} /> : null}
+          {services.data && services.data.services.length === 0 ? (
+            <InlineWarning tone="info" title={t('settings.platform.empty.title')}>
+              {t('settings.platform.empty.body')}
+            </InlineWarning>
+          ) : null}
+          {services.data ? (
+            <div className="platform-service-list">
+              {services.data.services.map((service) => (
+                <ServiceRow
+                  key={service.id}
+                  service={service}
+                  canManage={canManage}
+                  onControlError={(error) => toast.error(error)}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </Card>
+
+      <Card title={t('settings.platform.logging.cardTitle')}>
+        <div className="form">
+          <p className="field__hint">{t('settings.platform.logging.hint')}</p>
+          <div className="platform-logging-grid">
+            {LOG_BASE_FIELDS.map((field) => (
+              <Field
+                key={field}
+                label={t(`settings.platform.logging.${field}` as MessageKey)}
+                htmlFor={`platform-log-${field}`}
+              >
+                <Select
+                  id={`platform-log-${field}`}
+                  value={value.logging[field]}
+                  options={levels}
+                  onChange={(e) => setBaseLevel(field, e.target.value as PlatformLogLevel)}
+                />
+              </Field>
+            ))}
+          </div>
+          <div className="stack--tight">
+            <p className="card__label">{t('settings.platform.logging.overrides')}</p>
+            <p className="field__hint">{t('settings.platform.logging.overridesHint')}</p>
+            <div className="platform-logging-grid">
+              {LOG_OVERRIDE_IDS.map((serviceId) => (
+                <Field
+                  key={serviceId}
+                  label={t(`settings.platform.logging.override.${serviceId}` as MessageKey)}
+                  htmlFor={`platform-log-override-${serviceId}`}
+                >
+                  <Select
+                    id={`platform-log-override-${serviceId}`}
+                    value={value.logging.service_overrides[serviceId] ?? ''}
+                    options={overrides}
+                    onChange={(e) =>
+                      setOverride(serviceId, e.target.value as PlatformLogLevel | '')
+                    }
+                  />
+                </Field>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <AuditTail audit={audit} />
+    </div>
+  );
+}

@@ -1370,20 +1370,37 @@ a.btn.btn--iconOnly {
 }
 
 .entities-filterbar {
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.entities-filterbar__primary {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.75rem;
-  overflow-x: auto;
-  padding-bottom: 0.2rem;
 }
 
-.entities-filterbar .field:first-child {
-  min-width: min(22rem, 65vw);
+.entities-filterbar__primary .field {
+  flex: 1 1 10rem;
+  min-width: min(100%, 10rem);
 }
 
-.entities-filterbar .btn {
+.entities-filterbar__primary .field:first-child {
+  flex: 1.8 1 16rem;
+  min-width: min(100%, 16rem);
+}
+
+.entities-filterbar__primary .btn {
   flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.entities-advanced-filters {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
 }
 
 .entities-advanced-filters > summary {
@@ -1397,6 +1414,17 @@ a.btn.btn--iconOnly {
 
 .entities-advanced-filters[open] > summary {
   margin-bottom: 0.75rem;
+}
+
+.entities-advanced-filters__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.entities-advanced-filters__body .field {
+  min-width: 0;
 }
 
 .entities-table .table th,
@@ -1413,13 +1441,19 @@ a.btn.btn--iconOnly {
 }
 
 .entities-table__cell[data-entity-column='Seat'],
-.entities-table__cell[data-entity-column='Type'],
 .entities-table__cell[data-entity-column='Cae'],
 .entities-table__cell[data-entity-column='Registry'],
 .entities-table__cell[data-entity-column='LastRegistryChange'],
-.entities-table__cell[data-entity-column='LastBook'],
-.entities-table__cell[data-entity-column='LastActivity'] {
+.entities-table__cell[data-entity-column='LastBook'] {
   --entity-cell-max: clamp(13rem, 24vw, 22rem);
+}
+
+.entities-table__cell[data-entity-column='Type'] {
+  --entity-cell-max: clamp(8rem, 13vw, 12rem);
+}
+
+.entities-table__cell[data-entity-column='LastActivity'] {
+  --entity-cell-max: clamp(10rem, 16vw, 14rem);
 }
 
 .entities-table__cell[data-entity-column='Nipc'],
@@ -2193,6 +2227,120 @@ a,
 
 .settings-savebar {
   align-items: center;
+}
+
+.platform-service-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.platform-service-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.42fr);
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.platform-service-row__main,
+.platform-service-row__aside {
+  min-width: 0;
+}
+
+.platform-service-row__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+
+.platform-service-row__title {
+  margin: 0.1rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+}
+
+.platform-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.platform-action-row .btn {
+  align-items: center;
+}
+
+.platform-action-row__outcome {
+  display: inline-block;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.7em;
+}
+
+.platform-limitations {
+  margin-top: 0.9rem;
+}
+
+.platform-limitations ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.platform-action-summary {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+.platform-action-summary__message {
+  grid-column: 1 / -1;
+}
+
+.platform-logging-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.85rem;
+}
+
+.platform-audit-list {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.platform-audit-list li {
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.platform-audit-list p {
+  margin: 0.35rem 0 0;
+}
+
+.platform-audit-list__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+@media (max-width: 860px) {
+  .platform-service-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .registry-auto-update-grid {

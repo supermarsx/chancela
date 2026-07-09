@@ -2452,6 +2452,99 @@ export interface SigningSettings {
   providers: SigningProviderMetadata[];
 }
 
+export const PLATFORM_LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'off'] as const;
+export type PlatformLogLevel = (typeof PLATFORM_LOG_LEVELS)[number];
+
+export const PLATFORM_SERVICE_IDS = ['app', 'api', 'mcp_stdio'] as const;
+export type PlatformServiceId = (typeof PLATFORM_SERVICE_IDS)[number];
+
+export const PLATFORM_CONTROLLABLE_SERVICE_IDS = ['api', 'mcp_stdio'] as const;
+export type PlatformControllableServiceId = (typeof PLATFORM_CONTROLLABLE_SERVICE_IDS)[number];
+
+export const PLATFORM_SERVICE_ACTIONS = ['start', 'stop', 'restart'] as const;
+export type PlatformServiceAction = (typeof PLATFORM_SERVICE_ACTIONS)[number];
+
+export type PlatformServiceDesiredState = 'running' | 'stopped';
+export type PlatformControlOutcomeKind = 'unsupported' | 'restart_required' | 'supervisor_required';
+
+export interface PlatformServiceLastAction {
+  action: PlatformServiceAction;
+  requested_at: string;
+  requested_by: string;
+  outcome: PlatformControlOutcomeKind;
+  message: string;
+}
+
+export interface PlatformAuditEvent extends PlatformServiceLastAction {
+  service_id: PlatformServiceId;
+  desired_state: PlatformServiceDesiredState;
+}
+
+export interface PlatformLoggingSettings {
+  global: PlatformLogLevel;
+  app: PlatformLogLevel;
+  api: PlatformLogLevel;
+  mcp: PlatformLogLevel;
+  service_overrides: Partial<Record<PlatformServiceId, PlatformLogLevel>>;
+}
+
+export interface PlatformServiceControlSettings {
+  enabled: boolean;
+  desired_state: PlatformServiceDesiredState;
+  last_action: PlatformServiceLastAction | null;
+}
+
+export interface PlatformSettings {
+  logging: PlatformLoggingSettings;
+  api_server: PlatformServiceControlSettings;
+  mcp_stdio_server: PlatformServiceControlSettings;
+  audit: PlatformAuditEvent[];
+}
+
+export type PlatformServiceKind = 'api' | 'mcp';
+export type PlatformRuntimeStatus = 'running' | 'unknown';
+
+export interface PlatformActionCapability {
+  action: PlatformServiceAction;
+  supported: boolean;
+  outcome: PlatformControlOutcomeKind;
+  limitation: string;
+}
+
+export interface PlatformServiceStatus {
+  id: PlatformControllableServiceId;
+  kind: PlatformServiceKind;
+  label: string;
+  configured: boolean;
+  enabled: boolean;
+  desired_state: PlatformServiceDesiredState;
+  actual_runtime_status: PlatformRuntimeStatus;
+  controllable_actions: PlatformActionCapability[];
+  logging_level: PlatformLogLevel;
+  last_action: PlatformServiceLastAction | null;
+  limitations: string[];
+}
+
+export interface PlatformServicesResponse {
+  services: PlatformServiceStatus[];
+}
+
+export interface PlatformControlResult {
+  kind: PlatformControlOutcomeKind;
+  supported: boolean;
+  applied_to_settings: boolean;
+  desired_state: PlatformServiceDesiredState;
+  actual_runtime_status: PlatformRuntimeStatus;
+  message: string;
+  limitations: string[];
+}
+
+export interface PlatformControlResponse {
+  service: PlatformServiceStatus;
+  action: PlatformServiceAction;
+  result: PlatformControlResult;
+}
+
 // --- Qualified CMD signing (§ t57) ----------------------------------------------
 //
 // The two-phase Chave Móvel Digital signing flow (frozen `chancela-api::signature`
@@ -2919,6 +3012,7 @@ export interface Settings {
   documents: DocumentSettings;
   catalog: CatalogSettings;
   signing: SigningSettings;
+  platform: PlatformSettings;
   registry_auto_update: RegistryAutoUpdateSettings;
   appearance: AppearanceSettings;
   ui: UiSettings;
@@ -2989,6 +3083,18 @@ export const DEFAULT_SETTINGS: Settings = {
         note: 'Local-only test/operator material; private key and passphrase are never captured in settings.',
       },
     ],
+  },
+  platform: {
+    logging: {
+      global: 'info',
+      app: 'info',
+      api: 'info',
+      mcp: 'info',
+      service_overrides: {},
+    },
+    api_server: { enabled: true, desired_state: 'running', last_action: null },
+    mcp_stdio_server: { enabled: false, desired_state: 'stopped', last_action: null },
+    audit: [],
   },
   registry_auto_update: {
     enabled: false,

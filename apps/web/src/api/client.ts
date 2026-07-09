@@ -74,6 +74,10 @@ import type {
   PaperBookImportValidateBody,
   PaperBookOcrStatusUpdateBody,
   PaperBookOcrStatusView,
+  PlatformControllableServiceId,
+  PlatformControlResponse,
+  PlatformServiceAction,
+  PlatformServicesResponse,
   RegistryExtractView,
   RegistryAutoUpdateAttemptBody,
   RegistryAutoUpdateAttemptView,
@@ -444,6 +448,13 @@ export const api = {
   // Settings (§2.8) — whole-document GET/PUT.
   getSettings: () => get<Settings>('/v1/settings'),
   putSettings: (body: Settings) => put<Settings>('/v1/settings', body),
+
+  // Platform operations — desired-state controls plus honest runtime limitations.
+  listPlatformServices: () => get<PlatformServicesResponse>('/v1/platform/services'),
+  controlPlatformService: (id: PlatformControllableServiceId, action: PlatformServiceAction) =>
+    post<PlatformControlResponse>(
+      `/v1/platform/services/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`,
+    ),
 
   // Entities (§2.3)
   listEntities: () => get<Entity[]>('/v1/entities'),

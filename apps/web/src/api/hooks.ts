@@ -40,6 +40,8 @@ import type {
   PaperBookImportPreserveBody,
   PaperBookImportView,
   PaperBookOcrStatus,
+  PlatformControllableServiceId,
+  PlatformServiceAction,
   RegistryAutoUpdateAttemptBody,
   RegistryImportBody,
   SealActBody,
@@ -103,6 +105,7 @@ export const keys = {
   ledgerIntegrity: ['ledger', 'integrity'] as const,
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
+  platformServices: ['platform', 'services'] as const,
   health: ['health'] as const,
   caeCatalog: ['cae', 'catalog'] as const,
   caeSearch: (search: string, revision?: CaeRevision) =>
@@ -1788,6 +1791,56 @@ export function useUpdateSettings() {
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.settings });
+    },
+  });
+}
+
+/** Platform services status (`GET /v1/platform/services`): desired state, observed runtime,
+ * logging level and the backend's honest control limitations for API + MCP stdio. */
+export function usePlatformServices() {
+  return useQuery({
+    queryKey: keys.platformServices,
+    queryFn: () => api.listPlatformServices(),
+    staleTime: 15_000,
+    retry: false,
+  });
+}
+
+/** Record a desired lifecycle action for a platform service. The API deliberately does not
+ * spawn/kill processes; a successful response means settings/audit were updated. */
+export function useControlPlatformService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      action,
+    }: {
+      id: PlatformControllableServiceId;
+      action: PlatformServiceAction;
+    }) => api.controlPlatformService(id, action),
+    onSuccess: (response) => {
+      qc.setQueryData(keys.platformServices, (current: unknown) => {
+        if (
+          !current ||
+          typeof current !== 'object' ||
+          !Array.isArray((current as { services?: unknown }).services)
+        ) {
+          return current;
+        }
+        return {
+          ...(current as object),
+          services: (current as { services: unknown[] }).services.map((service) =>
+            service &&
+            typeof service === 'object' &&
+            (service as { id?: unknown }).id === response.service.id
+              ? response.service
+              : service,
+          ),
+        };
+      });
+      void qc.invalidateQueries({ queryKey: keys.platformServices });
+      void qc.invalidateQueries({ queryKey: keys.settings });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }

@@ -131,6 +131,39 @@ describe('EntitiesPage', () => {
     expect(screen.queryByRole('columnheader', { name: 'CAE' })).toBeNull();
   });
 
+  it('keeps common filters visible and collapses extra filters into the advanced panel', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/settings', body: DEFAULT_SETTINGS },
+        { match: '/v1/entities', body: [ENTITY] },
+      ]),
+    );
+    renderWithProviders(<EntitiesPage />, ['/entidades']);
+
+    expect(await screen.findByText(ENTITY.name)).toBeTruthy();
+    const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar entidades' });
+    const primary = filters.querySelector('.entities-filterbar__primary') as HTMLElement;
+    expect(primary).toBeTruthy();
+    expect(within(primary).getByLabelText('Pesquisar')).toBeTruthy();
+    expect(within(primary).getByLabelText('Família')).toBeTruthy();
+    expect(within(primary).getByLabelText('Forma')).toBeTruthy();
+    expect(within(primary).getByRole('button', { name: /limpar/i })).toBeTruthy();
+    expect(within(primary).queryByLabelText('NIPC')).toBeNull();
+    expect(within(primary).queryByLabelText('Registo')).toBeNull();
+
+    const advanced = filters.querySelector('details.entities-advanced-filters') as HTMLDetailsElement;
+    expect(advanced).toBeTruthy();
+    expect(advanced.open).toBe(false);
+    expect(within(advanced).getByLabelText('NIPC')).toBeTruthy();
+    expect(within(advanced).getByLabelText('Registo')).toBeTruthy();
+
+    fireEvent.click(within(advanced).getByText('Filtros avançados'));
+    expect(advanced.open).toBe(true);
+    expect(within(advanced).getByLabelText('Livros')).toBeTruthy();
+    expect(within(advanced).getByLabelText('Última alteração')).toBeTruthy();
+  });
+
   it('renders the default entity table columns as one-line truncation cells', async () => {
     const activity: LedgerEventView = {
       id: 'event-long-entity',
@@ -179,10 +212,13 @@ describe('EntitiesPage', () => {
     expect(within(cells[4]).getByRole('button', { name: 'Abrir' })).toBeTruthy();
 
     const typeLine = cells[2].querySelector('.entity-cell-line');
+    expect(typeLine?.textContent).toBe('Sociedade por Quotas');
+    expect(typeLine?.textContent).not.toContain('Regras');
     expect(typeLine?.getAttribute('title')).toContain('Sociedade por Quotas');
     expect(typeLine?.getAttribute('title')).toContain('Regras csc-art63/v2');
 
     const activityLine = cells[3].querySelector('.entity-cell-line');
+    expect(activityLine?.textContent).not.toContain(activity.actor);
     expect(activityLine?.getAttribute('title')).toContain('Entidade criada');
     expect(activityLine?.getAttribute('title')).toContain(activity.actor);
   });

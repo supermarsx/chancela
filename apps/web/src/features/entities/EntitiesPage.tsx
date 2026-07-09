@@ -540,8 +540,6 @@ function EntityContext({ entity }: { entity: Entity }) {
   return (
     <CellLine title={details}>
       <span className="entity-cell-line__primary">{entityKindLabels[entity.kind]}</span>
-      <Badge>{entityFamilyLabels[entity.family]}</Badge>
-      <span className="entity-cell-line__text muted">Regras {entityRulePack(entity)}</span>
     </CellLine>
   );
 }
@@ -599,10 +597,7 @@ function ActivitySummary({
   if (!activity) {
     return (
       <CellLine title="Sem atividade no arquivo">
-        <span className="entity-cell-line__text muted">Sem atividade no arquivo</span>
-        <Link className="entity-cell-line__link" to="/arquivo">
-          Ver arquivo
-        </Link>
+        <span className="entity-cell-line__text muted">Sem atividade</span>
       </CellLine>
     );
   }
@@ -612,7 +607,7 @@ function ActivitySummary({
     <CellLine title={title}>
       <Badge tone={activityTone(activity.kind)}>{activityLabel(activity.kind)}</Badge>
       <span className="entity-cell-line__text muted">
-        <time dateTime={activity.timestamp}>{timestamp}</time> · {activity.actor}
+        <time dateTime={activity.timestamp}>{timestamp}</time>
       </span>
     </CellLine>
   );
@@ -1006,66 +1001,71 @@ export function EntitiesPage() {
           <div className="stack">
             <div className="stack--tight" role="search" aria-label={t('entities.filters.aria')}>
               <div className="entities-filterbar filter">
-                <Field label={t('entities.filters.search.label')} htmlFor="entities-search">
-                  <Input
-                    id="entities-search"
-                    type="search"
-                    value={search}
-                    placeholder={t('entities.filters.search.placeholder')}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </Field>
-                <Field label={t('entities.filters.family.label')} htmlFor="entities-family-filter">
-                  <Select
-                    id="entities-family-filter"
-                    value={family}
-                    onChange={(e) => setFamily(e.target.value as 'all' | EntityFamily)}
-                    options={familyOptions}
-                  />
-                </Field>
-                <Field label={t('entities.filters.kind.label')} htmlFor="entities-kind-filter">
-                  <Select
-                    id="entities-kind-filter"
-                    value={kind}
-                    onChange={(e) => setKind(e.target.value as 'all' | EntityKind)}
-                    options={kindOptions}
-                  />
-                </Field>
-                <Field label={t('entities.filters.nipc.label')} htmlFor="entities-nipc-filter">
-                  <Select
-                    id="entities-nipc-filter"
-                    value={validationFilter}
-                    onChange={(e) => setValidationFilter(e.target.value as ValidationFilter)}
-                    options={validationFilterOptions}
-                  />
-                </Field>
-                <Field
-                  label={t('entities.filters.registry.label')}
-                  htmlFor="entities-registry-import-filter"
-                >
-                  <Select
-                    id="entities-registry-import-filter"
-                    value={registryImportFilter}
-                    onChange={(e) =>
-                      setRegistryImportFilter(e.target.value as RegistryImportFilter)
-                    }
-                    options={registryImportFilterOptions}
-                  />
-                </Field>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  icon={<Icon.Close />}
-                  disabled={!hasFilters}
-                  aria-label={t('entities.filters.clear.aria')}
-                  onClick={clearFilters}
-                >
-                  {t('entities.filters.clear')}
-                </Button>
+                <div className="entities-filterbar__primary">
+                  <Field label={t('entities.filters.search.label')} htmlFor="entities-search">
+                    <Input
+                      id="entities-search"
+                      type="search"
+                      value={search}
+                      placeholder={t('entities.filters.search.placeholder')}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </Field>
+                  <Field
+                    label={t('entities.filters.family.label')}
+                    htmlFor="entities-family-filter"
+                  >
+                    <Select
+                      id="entities-family-filter"
+                      value={family}
+                      onChange={(e) => setFamily(e.target.value as 'all' | EntityFamily)}
+                      options={familyOptions}
+                    />
+                  </Field>
+                  <Field label={t('entities.filters.kind.label')} htmlFor="entities-kind-filter">
+                    <Select
+                      id="entities-kind-filter"
+                      value={kind}
+                      onChange={(e) => setKind(e.target.value as 'all' | EntityKind)}
+                      options={kindOptions}
+                    />
+                  </Field>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.Close />}
+                    disabled={!hasFilters}
+                    aria-label={t('entities.filters.clear.aria')}
+                    onClick={clearFilters}
+                  >
+                    {t('entities.filters.clear')}
+                  </Button>
+                </div>
               </div>
               <details className="entities-advanced-filters">
                 <summary>{t('entities.filters.advanced')}</summary>
-                <div className="row-wrap filter" style={{ alignItems: 'flex-end' }}>
+                <div className="entities-advanced-filters__body filter">
+                  <Field label={t('entities.filters.nipc.label')} htmlFor="entities-nipc-filter">
+                    <Select
+                      id="entities-nipc-filter"
+                      value={validationFilter}
+                      onChange={(e) => setValidationFilter(e.target.value as ValidationFilter)}
+                      options={validationFilterOptions}
+                    />
+                  </Field>
+                  <Field
+                    label={t('entities.filters.registry.label')}
+                    htmlFor="entities-registry-import-filter"
+                  >
+                    <Select
+                      id="entities-registry-import-filter"
+                      value={registryImportFilter}
+                      onChange={(e) =>
+                        setRegistryImportFilter(e.target.value as RegistryImportFilter)
+                      }
+                      options={registryImportFilterOptions}
+                    />
+                  </Field>
                   <Field
                     label={t('entities.filters.freshness.label')}
                     htmlFor="entities-registry-freshness-filter"

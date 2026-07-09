@@ -123,6 +123,172 @@ function privacyRecordIdFromUrl(url: string, root: 'processors' | 'dpias'): stri
   return url.match(new RegExp(`/v1/privacy/${root}/([^/]+)`))?.[1];
 }
 
+type TestSettings = typeof DEFAULT_SETTINGS;
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function materializeSettings(value: unknown): TestSettings {
+  const partial = cloneJson(value) as Partial<TestSettings>;
+  const platform = partial.platform ?? DEFAULT_SETTINGS.platform;
+  const logging = platform.logging ?? DEFAULT_SETTINGS.platform.logging;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...partial,
+    signing: {
+      ...DEFAULT_SETTINGS.signing,
+      ...(partial.signing ?? {}),
+      cmd: { ...DEFAULT_SETTINGS.signing.cmd, ...(partial.signing?.cmd ?? {}) },
+      providers: partial.signing?.providers ?? DEFAULT_SETTINGS.signing.providers,
+    },
+    ai: { ...DEFAULT_SETTINGS.ai, ...(partial.ai ?? {}) },
+    ui: {
+      ...DEFAULT_SETTINGS.ui,
+      ...(partial.ui ?? {}),
+      registered_entity_columns:
+        partial.ui?.registered_entity_columns ?? DEFAULT_SETTINGS.ui.registered_entity_columns,
+    },
+    registry_auto_update: {
+      ...DEFAULT_SETTINGS.registry_auto_update,
+      ...(partial.registry_auto_update ?? {}),
+      cadence:
+        partial.registry_auto_update?.cadence ?? DEFAULT_SETTINGS.registry_auto_update.cadence,
+      entity_defaults: {
+        ...DEFAULT_SETTINGS.registry_auto_update.entity_defaults,
+        ...(partial.registry_auto_update?.entity_defaults ?? {}),
+        enabled_profiles:
+          partial.registry_auto_update?.entity_defaults?.enabled_profiles ??
+          DEFAULT_SETTINGS.registry_auto_update.entity_defaults.enabled_profiles,
+      },
+    },
+    platform: {
+      ...DEFAULT_SETTINGS.platform,
+      ...platform,
+      logging: {
+        ...DEFAULT_SETTINGS.platform.logging,
+        ...logging,
+        service_overrides:
+          logging.service_overrides ?? DEFAULT_SETTINGS.platform.logging.service_overrides,
+      },
+      api_server: {
+        ...DEFAULT_SETTINGS.platform.api_server,
+        ...(platform.api_server ?? {}),
+      },
+      mcp_stdio_server: {
+        ...DEFAULT_SETTINGS.platform.mcp_stdio_server,
+        ...(platform.mcp_stdio_server ?? {}),
+      },
+      audit: platform.audit ?? DEFAULT_SETTINGS.platform.audit,
+    },
+  };
+}
+
+function platformActionCapabilities(serviceId: 'api' | 'mcp_stdio') {
+  if (serviceId === 'api') {
+    return [
+      {
+        action: 'start',
+        supported: false,
+        outcome: 'unsupported',
+        limitation: 'The current API process cannot start another copy of itself.',
+      },
+      {
+        action: 'stop',
+        supported: false,
+        outcome: 'unsupported',
+        limitation: 'The current API process cannot stop itself through this request.',
+      },
+      {
+        action: 'restart',
+        supported: false,
+        outcome: 'restart_required',
+        limitation: 'Restart requires an external supervisor or process relaunch.',
+      },
+    ];
+  }
+  return ['start', 'stop', 'restart'].map((action) => ({
+    action,
+    supported: false,
+    outcome: 'supervisor_required',
+    limitation:
+      'The stdio MCP server is launched externally; the API can only record desired state.',
+  }));
+}
+
+function platformServiceStatus(settings: TestSettings, serviceId: 'api' | 'mcp_stdio') {
+  if (serviceId === 'api') {
+    return {
+      id: 'api',
+      kind: 'api',
+      label: 'Chancela API server',
+      configured: true,
+      enabled: settings.platform.api_server.enabled,
+      desired_state: settings.platform.api_server.desired_state,
+      actual_runtime_status: 'running',
+      controllable_actions: platformActionCapabilities('api'),
+      logging_level:
+        settings.platform.logging.service_overrides.api ?? settings.platform.logging.api,
+      last_action: settings.platform.api_server.last_action,
+      limitations: [
+        'The API can observe this process as running only because it is serving this request.',
+        'Start, stop, and restart require an external supervisor or process relaunch.',
+      ],
+    };
+  }
+  return {
+    id: 'mcp_stdio',
+    kind: 'mcp',
+    label: 'Chancela MCP stdio server',
+    configured: false,
+    enabled: settings.platform.mcp_stdio_server.enabled,
+    desired_state: settings.platform.mcp_stdio_server.desired_state,
+    actual_runtime_status: 'unknown',
+    controllable_actions: platformActionCapabilities('mcp_stdio'),
+    logging_level:
+      settings.platform.logging.service_overrides.mcp_stdio ?? settings.platform.logging.mcp,
+    last_action: settings.platform.mcp_stdio_server.last_action,
+    limitations: [
+      'The stdio MCP server is launched by an external client or supervisor; the API cannot observe or spawn that process.',
+      'No MCP API key or other secret is exposed through this status surface.',
+    ],
+  };
+}
+
+function platformServicesResponse(settings: TestSettings) {
+  return {
+    services: [
+      platformServiceStatus(settings, 'api'),
+      platformServiceStatus(settings, 'mcp_stdio'),
+    ],
+  };
+}
+
+function platformOutcome(serviceId: 'api' | 'mcp_stdio', action: string) {
+  if (serviceId === 'api' && action === 'restart') return 'restart_required';
+  if (serviceId === 'api') return 'unsupported';
+  return 'supervisor_required';
+}
+
+function platformMessage(serviceId: 'api' | 'mcp_stdio', action: string) {
+  if (serviceId === 'api' && action === 'restart') {
+    return 'API restart desired state was recorded; an external supervisor must restart the process.';
+  }
+  if (serviceId === 'api' && action === 'start') {
+    return 'API start desired state was recorded, but this already-running process cannot start itself.';
+  }
+  if (serviceId === 'api') {
+    return 'API stop desired state was recorded, but this process cannot terminate itself safely through the API.';
+  }
+  if (action === 'start') {
+    return 'MCP start desired state was recorded; relaunch the external MCP client or supervisor.';
+  }
+  if (action === 'stop') {
+    return 'MCP stop desired state was recorded; stop or relaunch the external MCP client or supervisor.';
+  }
+  return 'MCP restart desired state was recorded; relaunch the external MCP client or supervisor.';
+}
+
 /**
  * A fetch stub for the settings page's four endpoints. Captures every call so a test
  * can assert what the PUT sent. The PUT echoes the posted document (schema stamped),
@@ -133,17 +299,77 @@ function settingsFetch(initialSettings: unknown = DEFAULT_SETTINGS): {
   calls: Recorded[];
 } {
   const calls: Recorded[] = [];
+  let storedSettings: unknown = cloneJson(initialSettings);
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
     calls.push({ url, method, body: (init?.body as string) ?? null });
 
+    if (url.includes('/v1/platform/services')) {
+      if (method === 'POST') {
+        const match = url.match(/\/v1\/platform\/services\/([^/]+)\/actions\/([^/?]+)/);
+        const serviceId = decodeURIComponent(match?.[1] ?? '') as 'api' | 'mcp_stdio';
+        const action = decodeURIComponent(match?.[2] ?? '') as 'start' | 'stop' | 'restart';
+        const desired_state = (action === 'stop' ? 'stopped' : 'running') as 'running' | 'stopped';
+        const outcome = platformOutcome(serviceId, action) as
+          'unsupported' | 'restart_required' | 'supervisor_required';
+        const message = platformMessage(serviceId, action);
+        const current = materializeSettings(storedSettings);
+        const last_action = {
+          action,
+          requested_at: '2026-07-09T12:00:00Z',
+          requested_by: 'amelia.marques',
+          outcome,
+          message,
+        };
+        const controlKey = serviceId === 'api' ? 'api_server' : 'mcp_stdio_server';
+        current.platform[controlKey] = {
+          ...current.platform[controlKey],
+          enabled: desired_state === 'running',
+          desired_state,
+          last_action,
+        };
+        current.platform.audit = [
+          ...current.platform.audit,
+          {
+            service_id: serviceId,
+            action,
+            requested_at: last_action.requested_at,
+            requested_by: last_action.requested_by,
+            outcome,
+            desired_state,
+            message,
+          },
+        ].slice(-100);
+        storedSettings = { ...(cloneJson(storedSettings) as object), platform: current.platform };
+        const service = platformServiceStatus(current, serviceId);
+        return Promise.resolve(
+          jsonResponse({
+            service,
+            action,
+            result: {
+              kind: outcome,
+              supported: false,
+              applied_to_settings: true,
+              desired_state,
+              actual_runtime_status: service.actual_runtime_status,
+              message,
+              limitations: service.limitations,
+            },
+          }),
+        );
+      }
+      return Promise.resolve(
+        jsonResponse(platformServicesResponse(materializeSettings(storedSettings))),
+      );
+    }
     if (url.includes('/v1/settings')) {
       if (method === 'PUT') {
         const parsed = JSON.parse(init?.body as string) as Record<string, unknown>;
-        return Promise.resolve(jsonResponse({ ...parsed, schema_version: 1 }));
+        storedSettings = { ...parsed, schema_version: 1 };
+        return Promise.resolve(jsonResponse(storedSettings));
       }
-      return Promise.resolve(jsonResponse(initialSettings));
+      return Promise.resolve(jsonResponse(storedSettings));
     }
     if (url.includes('/v1/registry/lookup')) {
       return Promise.resolve(jsonResponse(REGISTRY_AUTO_UPDATE_PLAN));
@@ -408,6 +634,7 @@ describe('SettingsPage', () => {
       'Documentos',
       'Assinaturas',
       'Gestão',
+      'Operações',
       'Sobre',
     ]) {
       expect(await screen.findByRole('button', { name })).toBeTruthy();
@@ -481,6 +708,70 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Gestão' })).toBeTruthy();
     expect(screen.queryByRole('switch', { name: 'Ativar IA/MCP' })).toBeNull();
+  });
+
+  it('shows platform API and MCP status with honest control limitations', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    expect(await screen.findByRole('button', { name: 'Operações' })).toBeTruthy();
+    expect(await screen.findByText('Chancela API server')).toBeTruthy();
+    expect(await screen.findByText('Chancela MCP stdio server')).toBeTruthy();
+    expect(screen.getAllByText('Reinício necessário').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
+    expect(screen.getByText(/cannot observe or spawn/)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /Registar reinício/ }).length).toBeGreaterThan(0);
+  });
+
+  it('records a platform MCP start desired state without implying live process control', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    const mcpRow = (await screen.findByText('Chancela MCP stdio server')).closest('section');
+    expect(mcpRow).toBeTruthy();
+    fireEvent.click(within(mcpRow!).getByRole('button', { name: /Registar arranque/ }));
+
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === 'POST' &&
+            call.url.includes('/v1/platform/services/mcp_stdio/actions/start'),
+        ),
+      ).toBe(true),
+    );
+    expect(
+      (await screen.findAllByText(/MCP start desired state was recorded/)).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Operações')).length).toBeGreaterThan(0);
+  });
+
+  it('autosaves platform logging levels through the whole settings document', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    const globalLog = (await screen.findByLabelText('Global')) as HTMLSelectElement;
+    fireEvent.change(globalLog, { target: { value: 'debug' } });
+    const mcpOverride = screen.getByLabelText('MCP stdio') as HTMLSelectElement;
+    fireEvent.change(mcpOverride, { target: { value: 'trace' } });
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+
+    const put = calls.find((c) => c.method === 'PUT');
+    expect(put).toBeTruthy();
+    const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+    expect(sent.platform.logging.global).toBe('debug');
+    expect(sent.platform.logging.service_overrides.mcp_stdio).toBe('trace');
+    expect(sent.platform.api_server.desired_state).toBe('running');
   });
 
   it('shows the backend-owned registry auto-update plan and records a dry-run attempt', async () => {
