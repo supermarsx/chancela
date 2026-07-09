@@ -18,11 +18,13 @@ import type {
   CaeRevision,
   CaeUpdates,
   TslCatalogView,
+  TslCatalogSearchParams,
   TslProviderDetailView,
   TslServiceDetailView,
   TslServiceSummaryView,
   TslSummaryView,
   TsaCatalogView,
+  TsaCatalogSearchParams,
   TsaRecordView,
   CloseBookBody,
   ComplianceIssue,
@@ -409,6 +411,21 @@ function query(params: Record<string, string | number | undefined>): string {
   return s ? `?${s}` : '';
 }
 
+function trustSearchQuery(
+  params: TslCatalogSearchParams | string,
+  limit?: number,
+): Record<string, string | number | undefined> {
+  if (typeof params === 'string') return { search: params, limit };
+  return {
+    search: params.search,
+    service_type: params.service_type,
+    status: params.status,
+    history: params.history,
+    supply_point: params.supply_point,
+    limit: params.limit ?? limit,
+  };
+}
+
 export const api = {
   health: () => get<HealthResponse>('/health'),
 
@@ -565,8 +582,8 @@ export const api = {
   // triggered by these endpoints; the server parses cached XML or its bundled fixture.
   getTrustStatus: () => get<TslSummaryView>('/v1/trust/status'),
   getTrustCatalog: () => get<TslCatalogView>('/v1/trust/catalog'),
-  searchTrustCatalog: (search: string, limit?: number) =>
-    get<TslServiceSummaryView[]>(`/v1/trust/catalog${query({ search, limit })}`),
+  searchTrustCatalog: (params: TslCatalogSearchParams | string, limit?: number) =>
+    get<TslServiceSummaryView[]>(`/v1/trust/catalog${query(trustSearchQuery(params, limit))}`),
   getTrustProvider: (id: string) =>
     get<TslProviderDetailView>(`/v1/trust/providers/${encodeURIComponent(id)}`),
   getTrustService: (id: string) =>
@@ -574,8 +591,8 @@ export const api = {
   // TSA diagnostics/catalog — read-only configured RFC 3161 status plus offline fixture probe and
   // TSL timestamp-authority records. No live timestamp request is triggered.
   getTsaCatalog: () => get<TsaCatalogView>('/v1/trust/tsa'),
-  searchTsaCatalog: (search: string, limit?: number) =>
-    get<TsaRecordView[]>(`/v1/trust/tsa${query({ search, limit })}`),
+  searchTsaCatalog: (params: TsaCatalogSearchParams | string, limit?: number) =>
+    get<TsaRecordView[]>(`/v1/trust/tsa${query(trustSearchQuery(params, limit))}`),
 
   // Law archive (t27, FROZEN §law-v1) — the local "mini law archive". `GET /v1/law` is a
   // bare `[LawEntryView]`; the tolerant `{ entries }` alternative is kept only so the hook's

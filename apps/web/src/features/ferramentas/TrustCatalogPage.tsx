@@ -10,7 +10,9 @@ import { useMemo, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   useTsaCatalog,
+  useTsaCatalogSearch,
   useTrustCatalog,
+  useTrustCatalogSearch,
   useTrustProvider,
   useTrustService,
   useTrustStatus,
@@ -31,12 +33,14 @@ import {
   Toggle,
 } from '../../ui';
 import type {
+  TslCatalogSearchParams,
   TslCatalogView,
   TslProviderView,
   TslServiceStatusKind,
   TslServiceSummaryView,
   TslSignatureStatus,
   TslSourceKind,
+  TsaCatalogSearchParams,
   TsaProbeStatus,
   TsaRecordView,
   TsaStatusKind,
@@ -77,6 +81,8 @@ const TSA_TYPE_FILTERS: readonly { value: TsaTypeFilter; label: string }[] = [
   { value: 'tst', label: 'TST' },
 ];
 
+const TRUST_SEARCH_LIMIT = 500;
+
 function normalize(value: string): string {
   return value
     .normalize('NFD')
@@ -95,6 +101,33 @@ function optionValue<T extends string>(
   fallback: T,
 ): T {
   return options.some((option) => option.value === value) ? (value as T) : fallback;
+}
+
+function hasStructuredSearchParams(params: TslCatalogSearchParams): boolean {
+  return (
+    !!params.search?.trim() ||
+    !!params.service_type ||
+    !!params.status ||
+    !!params.history ||
+    !!params.supply_point
+  );
+}
+
+function trustServiceTypeParam(
+  typeFilter: TrustTypeFilter,
+  trustFilter: TrustFilter = 'all',
+): string | undefined {
+  if (typeFilter === 'caqc') return 'CA/QC';
+  if (typeFilter === 'tsa') return 'TSA';
+  if (typeFilter === 'qtst') return 'TSA/QTST';
+  if (typeFilter === 'all' && trustFilter === 'caqc') return 'CA/QC';
+  return undefined;
+}
+
+function tsaServiceTypeParam(typeFilter: TsaTypeFilter): string | undefined {
+  if (typeFilter === 'qtst') return 'TSA/QTST';
+  if (typeFilter === 'tst') return 'TSA/TST';
+  return undefined;
 }
 
 function sourceLabel(kind: TslSourceKind): MessageKey {
@@ -357,15 +390,37 @@ function TsaToolingPanel() {
   const typeFilter = optionValue(params.get('tsaType'), TSA_TYPE_FILTERS, 'all');
   const statusFilter = optionValue(params.get('tsaStatus'), TRUST_STATUS_FILTERS, 'all');
   const supplyOnly = params.get('tsaSupply') === '1';
+  const tsaSearchParams = useMemo<TsaCatalogSearchParams>(
+    () => ({
+      search: term,
+      service_type: tsaServiceTypeParam(typeFilter),
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      supply_point: supplyOnly ? 'any' : undefined,
+      limit: TRUST_SEARCH_LIMIT,
+    }),
+    [statusFilter, supplyOnly, term, typeFilter],
+  );
+  const tsaSearchEnabled = hasStructuredSearchParams(tsaSearchParams);
+  const tsaSearch = useTsaCatalogSearch(tsaSearchParams, tsaSearchEnabled);
+  const tsaSearchPending = tsaSearchEnabled && tsaSearch.isPending;
 
   const records = useMemo(() => {
+    if (tsaSearchEnabled) return tsaSearch.data ?? [];
     const all = tsa.data?.records ?? [];
     return all.filter(
       (record) =>
         tsaRecordMatches(record, normalizedTerm) &&
         tsaRecordMatchesStructuredFilters(record, typeFilter, statusFilter, supplyOnly),
     );
-  }, [normalizedTerm, statusFilter, supplyOnly, tsa.data, typeFilter]);
+  }, [
+    normalizedTerm,
+    statusFilter,
+    supplyOnly,
+    tsa.data,
+    tsaSearch.data,
+    tsaSearchEnabled,
+    typeFilter,
+  ]);
 
   const selected =
     records.find((record) => record.id === selectedId) ??
@@ -572,39 +627,45 @@ function TsaToolingPanel() {
                   onChange={(checked) => setBooleanParam('tsaSupply', checked)}
                 />
               </div>
-              <div className="trust-results" aria-live="polite">
-                <p className="trust-results__count muted">
-                  {records.length} de {tsa.data.records.length} registos TSA
-                </p>
-                {records.length ? (
-                  <ul className="trust-picklist" aria-label="Registos TSA">
-                    {records.map((record) => (
-                      <li key={record.id}>
-                        <button
-                          type="button"
-                          className={
-                            selected?.id === record.id
-                              ? 'trust-pick trust-pick--service is-current'
-                              : 'trust-pick trust-pick--service'
-                          }
-                          onClick={() => setParam('tsaRecord', record.id, false)}
-                        >
-                          <span className="trust-pick__head">
-                            <code className="mono trust-pick__code">{record.provider_name}</code>
-                            <span className="trust-pick__meta muted">{record.service_type}</span>
-                          </span>
-                          <span className="trust-pick__name">{record.name}</span>
-                          <TsaRecordFlags record={record} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <EmptyState title="Sem registos TSA">
-                    <p>Nenhum serviço de selo temporal corresponde a “{term.trim()}”.</p>
-                  </EmptyState>
-                )}
-              </div>
+              {tsaSearchPending ? (
+                <Loading label="A pesquisar registos TSA" />
+              ) : tsaSearchEnabled && tsaSearch.error ? (
+                <ErrorNote error={tsaSearch.error} />
+              ) : (
+                <div className="trust-results" aria-live="polite">
+                  <p className="trust-results__count muted">
+                    {records.length} de {tsa.data.records.length} registos TSA
+                  </p>
+                  {records.length ? (
+                    <ul className="trust-picklist" aria-label="Registos TSA">
+                      {records.map((record) => (
+                        <li key={record.id}>
+                          <button
+                            type="button"
+                            className={
+                              selected?.id === record.id
+                                ? 'trust-pick trust-pick--service is-current'
+                                : 'trust-pick trust-pick--service'
+                            }
+                            onClick={() => setParam('tsaRecord', record.id, false)}
+                          >
+                            <span className="trust-pick__head">
+                              <code className="mono trust-pick__code">{record.provider_name}</code>
+                              <span className="trust-pick__meta muted">{record.service_type}</span>
+                            </span>
+                            <span className="trust-pick__name">{record.name}</span>
+                            <TsaRecordFlags record={record} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <EmptyState title="Sem registos TSA">
+                      <p>Nenhum serviço de selo temporal corresponde a “{term.trim()}”.</p>
+                    </EmptyState>
+                  )}
+                </div>
+              )}
             </div>
             <div className="trust-explorer__detail">
               {selected ? (
@@ -1121,6 +1182,21 @@ function TrustCatalogExplorer() {
   const supplyOnly = params.get('trustSupply') === '1';
   const selectedProvider = params.get('trustProvider') ?? '';
   const selectedService = params.get('trustService') ?? '';
+  const trustSearchParams = useMemo<TslCatalogSearchParams>(
+    () => ({
+      search: term,
+      service_type: trustServiceTypeParam(typeFilter, filter),
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      history: historyOnly ? 'any' : undefined,
+      supply_point: supplyOnly ? 'any' : undefined,
+      limit: TRUST_SEARCH_LIMIT,
+    }),
+    [filter, historyOnly, statusFilter, supplyOnly, term, typeFilter],
+  );
+  const trustSearchEnabled =
+    filter !== 'providers' && hasStructuredSearchParams(trustSearchParams);
+  const trustSearch = useTrustCatalogSearch(trustSearchParams, trustSearchEnabled);
+  const trustSearchPending = trustSearchEnabled && trustSearch.isPending;
 
   const results = useMemo(() => {
     const data = catalog.data;
@@ -1136,17 +1212,29 @@ function TrustCatalogExplorer() {
               provider.services.some((service) => matchesStructured(service)),
           )
         : [];
+    const serviceCandidates = trustSearchEnabled ? (trustSearch.data ?? []) : flattenServices(data);
     const services =
       filter !== 'providers'
-        ? flattenServices(data).filter(
-            (service) =>
-              serviceMatches(service, normalizedTerm) &&
-              serviceMatchesFilter(service, filter) &&
-              matchesStructured(service),
-          )
+        ? serviceCandidates.filter((service) => {
+            if (!serviceMatchesFilter(service, filter)) return false;
+            if (trustSearchEnabled) {
+              return typeFilter === 'other' ? serviceMatchesType(service, typeFilter) : true;
+            }
+            return serviceMatches(service, normalizedTerm) && matchesStructured(service);
+          })
         : [];
     return { providers, services };
-  }, [catalog.data, filter, historyOnly, normalizedTerm, statusFilter, supplyOnly, typeFilter]);
+  }, [
+    catalog.data,
+    filter,
+    historyOnly,
+    normalizedTerm,
+    statusFilter,
+    supplyOnly,
+    trustSearch.data,
+    trustSearchEnabled,
+    typeFilter,
+  ]);
 
   function setParam(name: string, value: string | null, replace = true) {
     setParams(
@@ -1247,6 +1335,10 @@ function TrustCatalogExplorer() {
             <Loading label={t('trust.catalog.loading')} />
           ) : catalog.error ? (
             <ErrorNote error={catalog.error} />
+          ) : trustSearchPending ? (
+            <Loading label={t('trust.catalog.loading')} />
+          ) : trustSearchEnabled && trustSearch.error ? (
+            <ErrorNote error={trustSearch.error} />
           ) : results.providers.length === 0 && results.services.length === 0 ? (
             <EmptyState title={t('trust.search.noResults.title')}>
               <p>

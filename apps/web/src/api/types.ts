@@ -1013,6 +1013,15 @@ export interface TslCatalogView {
   providers: TslProviderView[];
 }
 
+export interface TslCatalogSearchParams {
+  search?: string;
+  service_type?: string;
+  status?: string;
+  history?: string;
+  supply_point?: string;
+  limit?: number;
+}
+
 export interface TslProviderDetailView {
   provider: TslProviderView;
   summary: TslSummaryView;
@@ -1151,6 +1160,8 @@ export interface TsaCatalogView {
   summary: TsaSummaryView;
   records: TsaRecordView[];
 }
+
+export interface TsaCatalogSearchParams extends TslCatalogSearchParams {}
 
 // --- Law archive (t27, FROZEN §law-v1) — the local "mini law archive" -----------
 //

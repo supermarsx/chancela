@@ -275,10 +275,108 @@ const SERVICE_DETAILS: Record<string, TslServiceDetailView> = {
   },
 };
 
+const TRUST_QUERY_KEYS = ['search', 'service_type', 'status', 'history', 'supply_point'];
+
+function foldFixture(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+function fixtureIncludes(values: string[], term: string | null): boolean {
+  if (!term?.trim()) return true;
+  const folded = foldFixture(term.trim());
+  return values.some((value) => foldFixture(value).includes(folded));
+}
+
+function hasTrustQuery(params: URLSearchParams): boolean {
+  return TRUST_QUERY_KEYS.some((key) => params.has(key));
+}
+
+function serviceMatchesFixtureQuery(
+  service: TslServiceSummaryView,
+  params: URLSearchParams,
+): boolean {
+  return (
+    fixtureIncludes(
+      [
+        service.name,
+        service.provider_name,
+        service.service_type,
+        service.status.kind,
+        service.status.uri ?? '',
+        service.status_starting_time_raw ?? '',
+        ...service.additional_service_info,
+        ...service.service_supply_points,
+        ...service.identities.subject_names,
+        ...service.identities.subject_key_ids,
+      ],
+      params.get('search'),
+    ) &&
+    fixtureIncludes([service.service_type], params.get('service_type')) &&
+    fixtureIncludes([service.status.kind, service.status.uri ?? ''], params.get('status')) &&
+    (params.get('history') !== 'any' || service.history_count > 0) &&
+    (params.get('supply_point') !== 'any' || service.service_supply_points.length > 0)
+  );
+}
+
+function tsaMatchesFixtureQuery(record: TsaCatalogView['records'][number], params: URLSearchParams) {
+  return (
+    fixtureIncludes(
+      [
+        record.name,
+        record.provider_name,
+        record.service_type,
+        record.status.kind,
+        record.status.uri ?? '',
+        record.status_starting_time_raw ?? '',
+        ...record.additional_service_info,
+        ...record.service_supply_points,
+        ...record.identities.subject_names,
+        ...record.identities.subject_key_ids,
+        record.analysis.classification,
+        record.analysis.trust_basis,
+        ...record.analysis.blocking_reasons,
+      ],
+      params.get('search'),
+    ) &&
+    fixtureIncludes([record.service_type], params.get('service_type')) &&
+    fixtureIncludes([record.status.kind, record.status.uri ?? ''], params.get('status')) &&
+    (params.get('history') !== 'any' || record.history_count > 0) &&
+    (params.get('supply_point') !== 'any' || record.service_supply_points.length > 0)
+  );
+}
+
+function requestMatching(
+  fetchMock: ReturnType<typeof vi.fn>,
+  path: string,
+  expected: Record<string, string>,
+): boolean {
+  return fetchMock.mock.calls.some(([input]) => {
+    const url = new URL(String(input), 'http://localhost');
+    return (
+      url.pathname === path &&
+      Object.entries(expected).every(([key, value]) => url.searchParams.get(key) === value)
+    );
+  });
+}
+
 function trustFetch(): typeof fetch {
   return ((input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url.includes('/v1/trust/tsa')) return Promise.resolve(jsonResponse(TSA_CATALOG));
+    const parsed = new URL(url, 'http://localhost');
+    if (parsed.pathname === '/v1/trust/tsa') {
+      return Promise.resolve(
+        jsonResponse(
+          hasTrustQuery(parsed.searchParams)
+            ? TSA_CATALOG.records.filter((record) =>
+                tsaMatchesFixtureQuery(record, parsed.searchParams),
+              )
+            : TSA_CATALOG,
+        ),
+      );
+    }
     if (url.includes('/v1/trust/status')) return Promise.resolve(jsonResponse(SUMMARY));
     if (url.includes('/v1/trust/providers/p-multicert'))
       return Promise.resolve(jsonResponse(PROVIDER_DETAIL));
@@ -289,7 +387,17 @@ function trustFetch(): typeof fetch {
         detail ? jsonResponse(detail) : jsonResponse({ error: 'unknown service' }, 404),
       );
     }
-    if (url.includes('/v1/trust/catalog')) return Promise.resolve(jsonResponse(CATALOG));
+    if (parsed.pathname === '/v1/trust/catalog') {
+      return Promise.resolve(
+        jsonResponse(
+          hasTrustQuery(parsed.searchParams)
+            ? CATALOG.providers
+                .flatMap((provider) => provider.services)
+                .filter((service) => serviceMatchesFixtureQuery(service, parsed.searchParams))
+            : CATALOG,
+        ),
+      );
+    }
     return Promise.reject(new Error(`no stub for ${url}`));
   }) as typeof fetch;
 }
@@ -318,7 +426,8 @@ describe('Ferramentas — TSL trust catalog', () => {
   it('renders TSA diagnostics and filters timestamp authority records', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    vi.stubGlobal('fetch', trustFetch());
+    const fetchMock = vi.fn(trustFetch());
+    vi.stubGlobal('fetch', fetchMock);
     renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
 
     const acceptedHash = TSA_CATALOG.summary.accepted_hash.digest;
@@ -347,7 +456,20 @@ describe('Ferramentas — TSL trust catalog', () => {
     fireEvent.change(screen.getByLabelText('Procurar registos TSA'), {
       target: { value: 'qtst' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /Qualified Timestamping Authority/i }));
+    fireEvent.change(document.querySelector('#tsa-type-filter') as HTMLSelectElement, {
+      target: { value: 'qtst' },
+    });
+    await waitFor(() =>
+      expect(
+        requestMatching(fetchMock, '/v1/trust/tsa', {
+          search: 'qtst',
+          service_type: 'TSA/QTST',
+        }),
+      ).toBe(true),
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Qualified Timestamping Authority/i }),
+    );
 
     const subjectName = await screen.findByText(
       'CN=Qualified Timestamping Authority,O=Cartorio Notarial,C=PT',
@@ -394,15 +516,28 @@ describe('Ferramentas — TSL trust catalog', () => {
   });
 
   it('shows empty states for structured no-match filters', async () => {
-    vi.stubGlobal('fetch', trustFetch());
+    const fetchMock = vi.fn(trustFetch());
+    vi.stubGlobal('fetch', fetchMock);
     renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
 
     fireEvent.change(await screen.findByLabelText('Procurar na lista de confiança TSL'), {
       target: { value: 'qualified' },
     });
+    fireEvent.change(document.querySelector('#trust-type-filter') as HTMLSelectElement, {
+      target: { value: 'caqc' },
+    });
     const trustStatusFilter = document.querySelector('#trust-status-filter') as HTMLSelectElement;
     fireEvent.change(trustStatusFilter, { target: { value: 'Other' } });
 
+    await waitFor(() =>
+      expect(
+        requestMatching(fetchMock, '/v1/trust/catalog', {
+          search: 'qualified',
+          service_type: 'CA/QC',
+          status: 'Other',
+        }),
+      ).toBe(true),
+    );
     expect(await screen.findByText('Sem resultados')).toBeTruthy();
     expect(screen.getByText(/Nenhum prestador ou serviço corresponde/)).toBeTruthy();
   });

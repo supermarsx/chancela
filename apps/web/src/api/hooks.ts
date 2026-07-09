@@ -66,6 +66,8 @@ import type {
   CreateApiKeyBody,
   DsrRequestView,
   SetBookLegalHoldBody,
+  TslCatalogSearchParams,
+  TsaCatalogSearchParams,
 } from './types';
 import { api } from './client';
 import { clearSessionToken, onSessionCleared, setSessionToken } from './session';
@@ -103,11 +105,11 @@ export const keys = {
     ['cae', 'children', code, revision] as const,
   trustStatus: ['trust', 'status'] as const,
   trustCatalog: ['trust', 'catalog'] as const,
-  trustSearch: (search: string) => ['trust', 'search', search] as const,
+  trustSearch: (params: TslCatalogSearchParams) => ['trust', 'search', params] as const,
   trustProvider: (id: string) => ['trust', 'provider', id] as const,
   trustService: (id: string) => ['trust', 'service', id] as const,
   tsaCatalog: ['trust', 'tsa'] as const,
-  tsaSearch: (search: string) => ['trust', 'tsa', 'search', search] as const,
+  tsaSearch: (params: TsaCatalogSearchParams) => ['trust', 'tsa', 'search', params] as const,
   lawManifest: ['law', 'manifest'] as const,
   lawCorpus: ['law', 'corpus'] as const,
   lawDiploma: (diploma: string) => ['law', 'corpus', diploma] as const,
@@ -956,13 +958,33 @@ export function useTrustCatalog() {
   });
 }
 
-export function useTrustCatalogSearch(search: string, limit?: number) {
-  const term = search.trim();
+function normalizeTrustSearchParams(params: TslCatalogSearchParams): TslCatalogSearchParams {
+  return {
+    ...params,
+    search: params.search?.trim() || undefined,
+  };
+}
+
+function hasTrustSearchParams(params: TslCatalogSearchParams): boolean {
+  return (
+    !!params.search ||
+    !!params.service_type ||
+    !!params.status ||
+    !!params.history ||
+    !!params.supply_point
+  );
+}
+
+export function useTrustCatalogSearch(
+  params: TslCatalogSearchParams,
+  enabled = true,
+) {
+  const normalized = normalizeTrustSearchParams(params);
   return useQuery({
-    queryKey: keys.trustSearch(term),
-    queryFn: () => api.searchTrustCatalog(term, limit),
-    enabled: term.length > 0,
-    placeholderData: (prev) => prev,
+    queryKey: keys.trustSearch(normalized),
+    queryFn: () => api.searchTrustCatalog(normalized),
+    enabled: enabled && hasTrustSearchParams(normalized),
+    staleTime: 60_000,
   });
 }
 
@@ -996,13 +1018,12 @@ export function useTsaCatalog() {
   });
 }
 
-export function useTsaCatalogSearch(search: string, limit?: number) {
-  const term = search.trim();
+export function useTsaCatalogSearch(params: TsaCatalogSearchParams, enabled = true) {
+  const normalized = normalizeTrustSearchParams(params);
   return useQuery({
-    queryKey: keys.tsaSearch(term),
-    queryFn: () => api.searchTsaCatalog(term, limit),
-    enabled: term.length > 0,
-    placeholderData: (prev) => prev,
+    queryKey: keys.tsaSearch(normalized),
+    queryFn: () => api.searchTsaCatalog(normalized),
+    enabled: enabled && hasTrustSearchParams(normalized),
     staleTime: 60_000,
   });
 }
