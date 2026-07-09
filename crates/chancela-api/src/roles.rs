@@ -3,9 +3,9 @@
 //!
 //! Mirrors the `users.json` discipline (atomic write-through, malformed-tolerant load,
 //! `#[serde(default)]` throughout the [`chancela_authz`] model): a `roles.json` array of
-//! [`Role`]s is loaded into a [`RoleCatalog`], the four seeded defaults are **ensured present** on
-//! load ([`ensure_seeded_defaults`]) with the protected **Owner** role always forced to its
-//! canonical, locked definition, and legacy `users.json` files are brought forward by
+//! [`Role`]s is loaded into a [`RoleCatalog`], the seeded defaults are **ensured present** on load
+//! ([`ensure_seeded_defaults`]) with the protected **Owner** role always forced to its canonical,
+//! locked definition, and legacy `users.json` files are brought forward by
 //! [`migrate_roles`] (sole/first user ⇒ Owner\@Global, the rest ⇒ Gestor\@Global) — idempotent and
 //! anti-lockout.
 //!
@@ -59,14 +59,14 @@ pub(crate) fn load_roles(path: &Path) -> Option<RoleCatalog> {
     }
 }
 
-/// Ensure the four seeded default roles are present in `catalog`, returning whether it was changed
+/// Ensure the seeded default roles are present in `catalog`, returning whether it was changed
 /// (so the caller persists exactly once, like the migration).
 ///
 /// - **Owner** is always forced to its canonical, protected, all-permissions definition — its
 ///   permission-set is *locked* (plan §2.2/§2.3), so a tampered `roles.json` can never weaken the
 ///   escalation ceiling. If the stored Owner already equals the canonical one this is a no-op.
-/// - **Gestor / Signatário / Leitor** are inserted only when **absent** — they are editable, so a
-///   customised one is never clobbered.
+/// - Non-Owner seeded roles are inserted only when **absent** — they are editable, so a customised
+///   one is never clobbered.
 pub(crate) fn ensure_seeded_defaults(catalog: &mut RoleCatalog) -> bool {
     let mut changed = false;
 
@@ -78,7 +78,10 @@ pub(crate) fn ensure_seeded_defaults(catalog: &mut RoleCatalog) -> bool {
     }
 
     // The editable defaults are seeded only if missing (never overwrite a customised role).
-    for role in [Role::gestor(), Role::signatario(), Role::leitor()] {
+    for role in chancela_authz::default_roles()
+        .into_iter()
+        .filter(|role| role.id != OWNER_ROLE_ID)
+    {
         if catalog.get(role.id).is_none() {
             catalog.insert(role);
             changed = true;
@@ -243,6 +246,11 @@ pub async fn resolve_principal_id(
     state: &AppState,
     actor: &CurrentActor,
 ) -> Result<UserId, ApiError> {
+    if actor.is_api_key() {
+        return Err(ApiError::Forbidden(
+            "chave API não abre uma sessão interativa".to_owned(),
+        ));
+    }
     let username = actor
         .session_username()
         .ok_or_else(|| ApiError::Unauthorized("sessão requerida".to_owned()))?;
@@ -794,7 +802,7 @@ mod tests {
 
         write_roles_atomic(&path, &cat).expect("write");
         let loaded = load_roles(&path).expect("load");
-        assert_eq!(loaded.len(), 5);
+        assert_eq!(loaded.len(), chancela_authz::default_roles().len() + 1);
         assert_eq!(loaded.owner().unwrap(), &Role::owner());
         assert_eq!(loaded.get(custom.id).unwrap(), &custom);
 
@@ -802,11 +810,14 @@ mod tests {
     }
 
     #[test]
-    fn ensure_seeded_defaults_seeds_all_four_when_empty() {
+    fn ensure_seeded_defaults_seeds_complete_catalog_when_empty() {
         let mut cat = RoleCatalog::new();
         assert!(ensure_seeded_defaults(&mut cat));
-        assert_eq!(cat.len(), 4);
+        assert_eq!(cat.len(), chancela_authz::default_roles().len());
         assert!(cat.owner().unwrap().protected);
+        for role in chancela_authz::default_roles() {
+            assert_eq!(cat.get(role.id), Some(&role), "missing {}", role.name);
+        }
         // Idempotent: a second pass changes nothing.
         assert!(!ensure_seeded_defaults(&mut cat));
     }
@@ -840,6 +851,32 @@ mod tests {
         assert_eq!(owner, &Role::owner());
         // The customised Gestor was NOT clobbered.
         assert_eq!(cat.get(GESTOR_ROLE_ID).unwrap(), &custom_gestor);
+    }
+
+    #[test]
+    fn ensure_seeded_defaults_inserts_missing_spec_roles_without_clobbering_custom_seed() {
+        let custom_api_client = Role {
+            id: chancela_authz::API_CLIENT_ROLE_ID,
+            name: "API Client Personalizado".to_owned(),
+            permission_set: [chancela_authz::Permission::EntityRead]
+                .into_iter()
+                .collect(),
+            protected: false,
+        };
+        let mut cat: RoleCatalog = [Role::owner(), custom_api_client.clone()]
+            .into_iter()
+            .collect();
+
+        assert!(ensure_seeded_defaults(&mut cat));
+        assert_eq!(cat.len(), chancela_authz::default_roles().len());
+        assert!(cat.get(chancela_authz::PLATFORM_ADMIN_ROLE_ID).is_some());
+        assert!(cat.get(chancela_authz::TENANT_ADMIN_ROLE_ID).is_some());
+        assert!(cat.get(chancela_authz::AUDITOR_ROLE_ID).is_some());
+        assert!(cat.get(chancela_authz::GUEST_ROLE_ID).is_some());
+        assert_eq!(
+            cat.get(chancela_authz::API_CLIENT_ROLE_ID),
+            Some(&custom_api_client)
+        );
     }
 
     #[test]

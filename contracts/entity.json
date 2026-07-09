@@ -6,10 +6,16 @@
   "seat": "Lisboa",
   "family": "CommercialCompany",
   "kind": "SociedadeAnonima",
+  "fiscal_year_end": "06-30",
   "profile": {
     "family": "CommercialCompany",
     "rule_pack_id": "csc-art63/v2",
-    "allowed_channels": ["Physical", "Hybrid", "Telematic", "WrittenResolution"],
+    "allowed_channels": [
+      "Physical",
+      "Hybrid",
+      "Telematic",
+      "WrittenResolution"
+    ],
     "signature_policy": "QualifiedPreferred",
     "template_family": "csc-commercial",
     "calendar_presets": [

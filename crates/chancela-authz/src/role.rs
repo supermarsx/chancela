@@ -1,10 +1,11 @@
 //! Roles as **data** (t64 plan §2.2) and the seeded defaults.
 //!
 //! A [`Role`] is a named, editable set of permissions — not a fixed enum. The *catalog* of verbs is
-//! code ([`crate::Permission`]); which verbs a role grants is stored data. Four roles are seeded on a
-//! fresh install: **Owner** (protected — all permissions, locked, undeletable), **Gestor**,
-//! **Signatário**, **Leitor**. Each seeded role has a **deterministic** id so assignments, migration
-//! and the protected-Owner checks are stable across seeds and processes.
+//! code ([`crate::Permission`]); which verbs a role grants is stored data. A conservative catalog is
+//! seeded on a fresh install: **Owner** (protected — all permissions, locked, undeletable),
+//! **Gestor**, **Signatário**, **Leitor**, **Platform Administrator**, **Tenant Administrator**,
+//! **Auditor**, **Guest** and **API Client**. Each seeded role has a **deterministic** id so
+//! assignments, migration and the protected-Owner checks are stable across seeds and processes.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -32,6 +33,18 @@ pub const GESTOR_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x676573746f720000_000
 pub const SIGNATARIO_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x7369676e61740000_0000000000000003));
 /// Stable id of the seeded **Leitor** role.
 pub const LEITOR_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x6c6569746f720000_0000000000000004));
+/// Stable id of the seeded **Platform Administrator** role.
+pub const PLATFORM_ADMIN_ROLE_ID: RoleId =
+    RoleId(Uuid::from_u128(0x706c617461646d00_0000000000000005));
+/// Stable id of the seeded **Tenant Administrator** role.
+pub const TENANT_ADMIN_ROLE_ID: RoleId =
+    RoleId(Uuid::from_u128(0x74656e61646d0000_0000000000000006));
+/// Stable id of the seeded **Auditor** role.
+pub const AUDITOR_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x61756469746f7200_0000000000000007));
+/// Stable id of the seeded **Guest** role.
+pub const GUEST_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x6775657374000000_0000000000000008));
+/// Stable id of the seeded **API Client** role.
+pub const API_CLIENT_ROLE_ID: RoleId = RoleId(Uuid::from_u128(0x617069636c6e7400_0000000000000009));
 
 /// A role: a named, editable permission-set. `protected` marks the Owner super-role — its
 /// `permission_set` is locked and it is undeletable (see [`Role::can_be_deleted`] /
@@ -160,9 +173,169 @@ impl Role {
             protected: false,
         }
     }
+
+    /// The seeded **Platform Administrator** role: broad administrative authority, including RBAC
+    /// meta-permissions, but not the Owner-only destructive reset/wipe verbs.
+    #[must_use]
+    pub fn platform_administrator() -> Self {
+        Role {
+            id: PLATFORM_ADMIN_ROLE_ID,
+            name: "Platform Administrator".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::EntityCreate,
+                Permission::EntityUpdate,
+                Permission::EntityRegistryImport,
+                Permission::EntityArchive,
+                Permission::BookRead,
+                Permission::BookOpen,
+                Permission::BookClose,
+                Permission::BookExport,
+                Permission::BookImport,
+                Permission::BookStartOver,
+                Permission::BookReopen,
+                Permission::ActRead,
+                Permission::ActDraft,
+                Permission::ActEdit,
+                Permission::ActAdvance,
+                Permission::ActArchive,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+                Permission::LedgerRead,
+                Permission::LedgerRecover,
+                Permission::DataBackup,
+                Permission::DataExport,
+                Permission::SettingsRead,
+                Permission::SettingsManage,
+                Permission::CaeRead,
+                Permission::CaeRefresh,
+                Permission::LawRead,
+                Permission::LawManage,
+                Permission::UserRead,
+                Permission::UserManage,
+                Permission::RoleManage,
+                Permission::RoleAssign,
+                Permission::DelegationGrant,
+                Permission::DelegationRevoke,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **Tenant Administrator** role: entity/book/act administration plus scoped
+    /// assignment/delegation, without global role-definition, user-management or platform settings
+    /// management.
+    #[must_use]
+    pub fn tenant_administrator() -> Self {
+        Role {
+            id: TENANT_ADMIN_ROLE_ID,
+            name: "Tenant Administrator".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::EntityUpdate,
+                Permission::BookRead,
+                Permission::BookOpen,
+                Permission::BookClose,
+                Permission::BookExport,
+                Permission::BookImport,
+                Permission::BookStartOver,
+                Permission::BookReopen,
+                Permission::ActRead,
+                Permission::ActDraft,
+                Permission::ActEdit,
+                Permission::ActAdvance,
+                Permission::ActArchive,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+                Permission::LedgerRead,
+                Permission::SettingsRead,
+                Permission::CaeRead,
+                Permission::LawRead,
+                Permission::UserRead,
+                Permission::RoleAssign,
+                Permission::DelegationGrant,
+                Permission::DelegationRevoke,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **Auditor** role: non-mutating inspection and export-style read access.
+    #[must_use]
+    pub fn auditor() -> Self {
+        Role {
+            id: AUDITOR_ROLE_ID,
+            name: "Auditor".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::BookExport,
+                Permission::ActRead,
+                Permission::LedgerRead,
+                Permission::SettingsRead,
+                Permission::CaeRead,
+                Permission::LawRead,
+                Permission::UserRead,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **Guest** role: minimal read-only access, excluding ledger/settings/users.
+    #[must_use]
+    pub fn guest() -> Self {
+        Role {
+            id: GUEST_ROLE_ID,
+            name: "Guest".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::ActRead,
+                Permission::CaeRead,
+                Permission::LawRead,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
+
+    /// The seeded **API Client** role: non-meta operational integration permissions suitable for
+    /// API-key role grants and later creator-bound attenuation.
+    #[must_use]
+    pub fn api_client() -> Self {
+        Role {
+            id: API_CLIENT_ROLE_ID,
+            name: "API Client".to_owned(),
+            permission_set: [
+                Permission::EntityRead,
+                Permission::BookRead,
+                Permission::BookExport,
+                Permission::ActRead,
+                Permission::ActDraft,
+                Permission::ActEdit,
+                Permission::ActAdvance,
+                Permission::SigningPerform,
+                Permission::DocumentGenerate,
+                Permission::LedgerRead,
+                Permission::CaeRead,
+                Permission::LawRead,
+            ]
+            .into_iter()
+            .collect(),
+            protected: false,
+        }
+    }
 }
 
-/// The seeded default roles, in a stable order (Owner, Gestor, Signatário, Leitor).
+/// The seeded default roles, in a stable order. The original four ids/order are preserved first for
+/// backwards compatibility.
 #[must_use]
 pub fn default_roles() -> Vec<Role> {
     vec![
@@ -170,6 +343,11 @@ pub fn default_roles() -> Vec<Role> {
         Role::gestor(),
         Role::signatario(),
         Role::leitor(),
+        Role::platform_administrator(),
+        Role::tenant_administrator(),
+        Role::auditor(),
+        Role::guest(),
+        Role::api_client(),
     ]
 }
 
@@ -187,7 +365,7 @@ impl RoleCatalog {
         Self::default()
     }
 
-    /// The seeded-default catalog (Owner/Gestor/Signatário/Leitor).
+    /// The seeded-default catalog.
     #[must_use]
     pub fn seeded_defaults() -> Self {
         default_roles().into_iter().collect()
@@ -240,6 +418,30 @@ impl FromIterator<Role> for RoleCatalog {
 mod tests {
     use super::*;
 
+    fn editable_seeded_roles() -> [Role; 8] {
+        [
+            Role::gestor(),
+            Role::signatario(),
+            Role::leitor(),
+            Role::platform_administrator(),
+            Role::tenant_administrator(),
+            Role::auditor(),
+            Role::guest(),
+            Role::api_client(),
+        ]
+    }
+
+    fn non_admin_seeded_roles() -> [Role; 6] {
+        [
+            Role::gestor(),
+            Role::signatario(),
+            Role::leitor(),
+            Role::auditor(),
+            Role::guest(),
+            Role::api_client(),
+        ]
+    }
+
     #[test]
     fn owner_holds_every_permission_and_is_protected() {
         let owner = Role::owner();
@@ -253,7 +455,7 @@ mod tests {
 
     #[test]
     fn non_owner_defaults_are_editable_and_deletable() {
-        for role in [Role::gestor(), Role::signatario(), Role::leitor()] {
+        for role in editable_seeded_roles() {
             assert!(!role.protected);
             assert!(role.can_be_deleted());
             assert!(role.can_edit_permission_set());
@@ -263,15 +465,15 @@ mod tests {
     #[test]
     fn default_roles_are_strict_subsets_of_owner() {
         let owner = Role::owner();
-        for role in [Role::gestor(), Role::signatario(), Role::leitor()] {
+        for role in editable_seeded_roles() {
             assert!(role.permission_set.is_subset(&owner.permission_set));
             assert!(role.permission_set.len() < owner.permission_set.len());
         }
     }
 
     #[test]
-    fn lesser_roles_exclude_meta_and_destructive() {
-        for role in [Role::gestor(), Role::signatario(), Role::leitor()] {
+    fn non_admin_roles_exclude_meta_and_destructive_permissions() {
+        for role in non_admin_seeded_roles() {
             for meta in Permission::META {
                 assert!(
                     !role.permission_set.contains(&meta),
@@ -287,10 +489,96 @@ mod tests {
     }
 
     #[test]
-    fn seeded_catalog_resolves_by_stable_id() {
+    fn administrative_roles_are_the_only_non_owner_defaults_with_meta() {
+        for role in [Role::platform_administrator(), Role::tenant_administrator()] {
+            assert!(
+                Permission::META
+                    .iter()
+                    .any(|meta| role.permission_set.contains(meta)),
+                "{} should carry scoped administrative meta permissions",
+                role.name
+            );
+        }
+
+        for role in non_admin_seeded_roles() {
+            assert!(
+                role.permission_set.iter().all(|p| !p.is_meta()),
+                "{} unexpectedly carries meta permissions",
+                role.name
+            );
+        }
+    }
+
+    #[test]
+    fn api_client_role_is_api_key_compatible() {
+        let role = Role::api_client();
+        assert!(!role.permission_set.is_empty());
+        assert!(role.permission_set.iter().all(|p| !p.is_meta()));
+        for forbidden in [
+            Permission::UserManage,
+            Permission::SettingsManage,
+            Permission::LedgerRecover,
+            Permission::DataWipe,
+            Permission::DataStartOver,
+        ] {
+            assert!(
+                !role.permission_set.contains(&forbidden),
+                "API Client has {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn seeded_catalog_includes_spec_roles_by_stable_id() {
         let cat = RoleCatalog::seeded_defaults();
-        assert_eq!(cat.len(), 4);
+        assert_eq!(cat.len(), 9);
+
+        for (id, raw, name) in [
+            (
+                OWNER_ROLE_ID,
+                0x6f776e6572000000_0000000000000001,
+                "Proprietário",
+            ),
+            (
+                GESTOR_ROLE_ID,
+                0x676573746f720000_0000000000000002,
+                "Gestor",
+            ),
+            (
+                SIGNATARIO_ROLE_ID,
+                0x7369676e61740000_0000000000000003,
+                "Signatário",
+            ),
+            (
+                LEITOR_ROLE_ID,
+                0x6c6569746f720000_0000000000000004,
+                "Leitor",
+            ),
+            (
+                PLATFORM_ADMIN_ROLE_ID,
+                0x706c617461646d00_0000000000000005,
+                "Platform Administrator",
+            ),
+            (
+                TENANT_ADMIN_ROLE_ID,
+                0x74656e61646d0000_0000000000000006,
+                "Tenant Administrator",
+            ),
+            (
+                AUDITOR_ROLE_ID,
+                0x61756469746f7200_0000000000000007,
+                "Auditor",
+            ),
+            (GUEST_ROLE_ID, 0x6775657374000000_0000000000000008, "Guest"),
+            (
+                API_CLIENT_ROLE_ID,
+                0x617069636c6e7400_0000000000000009,
+                "API Client",
+            ),
+        ] {
+            assert_eq!(id.0, Uuid::from_u128(raw), "{name} id changed");
+            assert_eq!(cat.get(id).unwrap().name, name);
+        }
         assert_eq!(cat.owner().unwrap().id, OWNER_ROLE_ID);
-        assert_eq!(cat.get(GESTOR_ROLE_ID).unwrap().name, "Gestor");
     }
 }

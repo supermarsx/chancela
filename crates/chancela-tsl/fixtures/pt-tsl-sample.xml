@@ -11,6 +11,8 @@
     - TSP "DigitalSign ..." -> CA/QC, WITHDRAWN                => present but not qualified.
     - TSP "EGIA ..."        -> CA/QC, GRANTED, ForeSeals only  => present but not for e-sig.
     - TSP "Cartorio Notarial Timestamping" -> TSA/QTST, GRANTED => not a CA/QC (ignored for e-sig).
+      Also carries an accent-heavy alias, a supply point, and a revoked TSA/TST edge record
+      with a malformed status date and no service name.
 -->
 <TrustServiceStatusList
     xmlns="http://uri.etsi.org/02231/v2#"
@@ -23,7 +25,7 @@
     <TSLSequenceNumber>52</TSLSequenceNumber>
     <TSLType>http://uri.etsi.org/TrstSvc/TrustedList/TSLType/EUgeneric</TSLType>
     <SchemeOperatorName>
-      <Name xml:lang="pt">Gabinete Nacional de Seguranca</Name>
+      <Name xml:lang="pt">Gabinete Nacional de Segurança</Name>
       <Name xml:lang="en">National Security Authority</Name>
     </SchemeOperatorName>
     <SchemeName>
@@ -56,6 +58,8 @@
           <ServiceInformation>
             <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>
             <ServiceName>
+              <Name xml:lang="pt">MULTICERT CA para Assinatura Qualificada</Name>
+              <Name xml:lang="en">MULTICERT CA para Assinatura Qualificada</Name>
               <Name xml:lang="en">MULTICERT CA para Assinatura Qualificada</Name>
             </ServiceName>
             <ServiceDigitalIdentity>
@@ -120,7 +124,7 @@
               </DigitalId>
             </ServiceDigitalIdentity>
             <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/withdrawn</ServiceStatus>
-            <StatusStartingTime>2023-05-01T00:00:00Z</StatusStartingTime>
+            <StatusStartingTime>not-a-date</StatusStartingTime>
             <ServiceInformationExtensions>
               <Extension Critical="false">
                 <AdditionalServiceInformation>
@@ -171,8 +175,12 @@
     <TrustServiceProvider>
       <TSPInformation>
         <TSPName>
+          <Name xml:lang="pt">Cartório Âncora Carimbo do Tempo</Name>
           <Name xml:lang="en">Cartorio Notarial Timestamping</Name>
         </TSPName>
+        <TSPTradeName>
+          <Name xml:lang="pt">Âncora TSA São Tomé</Name>
+        </TSPTradeName>
       </TSPInformation>
       <TSPServices>
         <TSPService>
@@ -186,15 +194,33 @@
                 <X509SKI>QUFBQUFBQUFBQUFBQUFBQUFBQT0=</X509SKI>
               </DigitalId>
             </ServiceDigitalIdentity>
+            <ServiceSupplyPoints>
+              <ServiceSupplyPoint>http://tsa.cartorio.example.test/tsa/server</ServiceSupplyPoint>
+            </ServiceSupplyPoints>
             <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
             <StatusStartingTime>2019-01-01T00:00:00Z</StatusStartingTime>
+          </ServiceInformation>
+        </TSPService>
+        <TSPService>
+          <ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/TSA/TST</ServiceTypeIdentifier>
+            <ServiceDigitalIdentity>
+              <DigitalId>
+                <X509SubjectName>CN=Ancora Revoked TSA,O=Cartorio,C=PT</X509SubjectName>
+              </DigitalId>
+            </ServiceDigitalIdentity>
+            <ServiceSupplyPoints>
+              <ServiceSupplyPoint>http://tsa.cartorio.example.test/revogado</ServiceSupplyPoint>
+            </ServiceSupplyPoints>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/supervisionRevoked</ServiceStatus>
+            <StatusStartingTime>not-a-date</StatusStartingTime>
           </ServiceInformation>
         </TSPService>
       </TSPServices>
     </TrustServiceProvider>
 
   </TrustServiceProviderList>
-  <!-- The list's own XML-DSig signature. chancela-tsl does NOT validate it (SIG-11 is phase-2). -->
+  <!-- Deliberately invalid XML-DSig placeholder; catalog/tests must report it as advisory. -->
   <ds:Signature Id="TSL-Signature">
     <ds:SignedInfo>
       <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>

@@ -9,6 +9,18 @@
   "unresolved_compliance": 0,
   "ledger_length": 5,
   "ledger_valid": true,
+  "reminders": [
+    {
+      "due_date": "2026-03-31",
+      "severity": "Advisory",
+      "status": "Overdue",
+      "reason": "The commercial-company calendar preset \"Assembleia geral anual (CSC art. 376.º)\" points to an annual item by 2026-03-31 (using the default Dec 31 fiscal-year end because no fiscal_year_end is recorded). No sealed or archived Assembleia Geral act dated 2026 is recorded for this entity. Chancela cannot yet prove this annual calendar purpose, so this is advisory.",
+      "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+      "entity_name": "Encosto Estratégico, S.A.",
+      "source_rule": "csc-art376-annual",
+      "source_profile": "csc-commercial"
+    }
+  ],
   "recent_events": [
     {
       "id": "5c4d3e00-0000-4000-8000-000000000004",
@@ -21,6 +33,7 @@
       "payload_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "chains": ["global", "company:2f1c8e40-0000-4000-8000-000000000001"],
       "attestation": null
     }
   ]

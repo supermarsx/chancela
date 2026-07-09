@@ -31,6 +31,11 @@ pub struct SignatureValidationReport {
     /// For PAdES, whether the ByteRange covers the whole file except the `/Contents` value (the
     /// well-formed shape). `None` for detached CAdES.
     pub covers_whole_file: Option<bool>,
+    /// Embedded PAdES DSS/VRI evidence, if any. Empty for detached CAdES.
+    pub dss: chancela_pades::DssReport,
+    /// Technical local evidence marker: true only when a PAdES signature has B-T timestamp evidence
+    /// and embedded DSS OCSP/CRL material. This is not a legal B-LT sufficiency claim.
+    pub has_local_dss_revocation_evidence: bool,
 }
 
 /// Validate a produced [`SignatureArtifact`] and build its report (SIG-24).
@@ -55,6 +60,9 @@ pub fn validate_signature(
                 has_signature_timestamp: report.has_signature_timestamp,
                 evidentiary_level: artifact.evidentiary_level,
                 covers_whole_file: Some(report.covers_whole_file_except_contents),
+                has_local_dss_revocation_evidence: report.has_signature_timestamp
+                    && report.dss.has_revocation_evidence(),
+                dss: report.dss,
             })
         }
         SignatureFormat::CAdES => {
@@ -71,6 +79,8 @@ pub fn validate_signature(
                 has_signature_timestamp: artifact.timestamp_token_der.is_some(),
                 evidentiary_level: artifact.evidentiary_level,
                 covers_whole_file: None,
+                dss: chancela_pades::DssReport::default(),
+                has_local_dss_revocation_evidence: false,
             })
         }
         other => Err(SigningError::UnsupportedFormat(other)),

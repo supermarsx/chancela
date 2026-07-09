@@ -1,0 +1,14 @@
+{
+  "id": "8f7e6d50-0000-4000-8000-000000000010",
+  "act_id": "4b3c2d00-0000-4000-8000-000000000003",
+  "filename": "supporting-evidence.pdf",
+  "size_bytes": 52,
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "declared_content_type": "application/pdf",
+  "detected_content_type": "application/pdf",
+  "imported_at": "2026-07-09T10:15:30Z",
+  "imported_by": "amelia.marques",
+  "non_canonical": true,
+  "legal_notice": "Imported document preserved as non-canonical evidence only; it does not replace the generated PDF/A or signed PDF, and no legal validity, PDF/A conformance, or signature validity is claimed.",
+  "bytes_download": "/v1/documents/imported/8f7e6d50-0000-4000-8000-000000000010/bytes"
+}

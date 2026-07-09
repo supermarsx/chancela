@@ -447,6 +447,141 @@ fn whole_store_restore_verifies_before_swapping() {
 }
 
 #[test]
+fn encrypted_backup_hides_zip_and_sqlite_and_restores_sidecars() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, _act) = seed(&store);
+
+    let settings = dir.path().join("settings.json");
+    let apikeys = dir.path().join("apikeys.json");
+    let laws = dir.path().join("laws");
+    std::fs::write(&settings, br#"{"restored":true}"#).unwrap();
+    std::fs::write(&apikeys, br#"[{"prefix":"chk_restore"}]"#).unwrap();
+    std::fs::create_dir_all(&laws).unwrap();
+    std::fs::write(laws.join("csc.pdf"), b"%PDF restored law").unwrap();
+    let sidecars = vec![settings.clone(), apikeys.clone(), laws.clone()];
+
+    let backup = store
+        .backup_encrypted(dir.path(), &sidecars, "correct horse battery staple")
+        .expect("encrypted backup");
+    assert!(backup.path.ends_with(".cbackup"), "encrypted extension");
+    let encrypted_bytes = std::fs::read(&backup.path).unwrap();
+    assert!(!contains_subslice(&encrypted_bytes, b"PK"));
+    assert!(!contains_subslice(&encrypted_bytes, b"SQLite format 3"));
+    assert!(
+        !Path::new(&backup.path).with_extension("zip").exists(),
+        "plaintext zip artifact is removed after wrapping"
+    );
+
+    let extra = ledger
+        .append("amelia.marques", "settings", "settings.changed", None, b"x")
+        .clone();
+    store.persist(|tx| tx.append_event(&extra)).unwrap();
+    std::fs::write(&settings, br#"{"restored":false}"#).unwrap();
+    std::fs::write(&apikeys, br#"[{"prefix":"chk_live"}]"#).unwrap();
+    std::fs::remove_dir_all(&laws).unwrap();
+    std::fs::create_dir_all(&laws).unwrap();
+    std::fs::write(laws.join("stale.pdf"), b"stale").unwrap();
+
+    let outcome = store
+        .restore_encrypted_with_sidecars(
+            &mut ledger,
+            Path::new(&backup.path),
+            dir.path(),
+            "amelia.marques",
+            at(),
+            "correct horse battery staple",
+            &sidecars,
+        )
+        .expect("restore encrypted backup");
+    assert!(outcome.chain_verified);
+    let reloaded = store.load().unwrap();
+    assert_eq!(
+        reloaded.ledger.len(),
+        4,
+        "3 backed-up events + ledger.restored"
+    );
+    assert!(
+        !reloaded
+            .ledger
+            .events()
+            .iter()
+            .any(|e| e.kind == "settings.changed"),
+        "post-backup event is gone"
+    );
+    assert_eq!(std::fs::read(&settings).unwrap(), br#"{"restored":true}"#);
+    assert_eq!(
+        std::fs::read(&apikeys).unwrap(),
+        br#"[{"prefix":"chk_restore"}]"#
+    );
+    assert_eq!(
+        std::fs::read(laws.join("csc.pdf")).unwrap(),
+        b"%PDF restored law"
+    );
+    assert!(!laws.join("stale.pdf").exists(), "stale sidecar removed");
+}
+
+#[test]
+fn encrypted_restore_wrong_key_or_tamper_leaves_live_db_and_sidecars() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, _act) = seed(&store);
+    let apikeys = dir.path().join("apikeys.json");
+    std::fs::write(&apikeys, br#"[{"prefix":"chk_backup"}]"#).unwrap();
+    let sidecars = vec![apikeys.clone()];
+    let backup = store
+        .backup_encrypted(dir.path(), &sidecars, "right passphrase")
+        .expect("encrypted backup");
+
+    let extra = ledger
+        .append("amelia.marques", "settings", "settings.changed", None, b"x")
+        .clone();
+    store.persist(|tx| tx.append_event(&extra)).unwrap();
+    std::fs::write(&apikeys, br#"[{"prefix":"chk_live"}]"#).unwrap();
+    let live_len = store.load().unwrap().ledger.len();
+
+    let wrong = store.restore_encrypted_with_sidecars(
+        &mut ledger,
+        Path::new(&backup.path),
+        dir.path(),
+        "amelia.marques",
+        at(),
+        "wrong passphrase",
+        &sidecars,
+    );
+    assert!(matches!(wrong, Err(StoreError::BadBackup(_))));
+    assert_eq!(store.load().unwrap().ledger.len(), live_len);
+    assert_eq!(
+        std::fs::read(&apikeys).unwrap(),
+        br#"[{"prefix":"chk_live"}]"#
+    );
+
+    let mut tampered = std::fs::read(&backup.path).unwrap();
+    let last = tampered
+        .iter()
+        .rposition(|b| !b.is_ascii_whitespace())
+        .expect("non-empty envelope");
+    tampered[last] ^= 1;
+    let tampered_path = dir.path().join("tampered.cbackup");
+    std::fs::write(&tampered_path, tampered).unwrap();
+    let result = store.restore_encrypted_with_sidecars(
+        &mut ledger,
+        &tampered_path,
+        dir.path(),
+        "amelia.marques",
+        at(),
+        "right passphrase",
+        &sidecars,
+    );
+    assert!(matches!(result, Err(StoreError::BadBackup(_))));
+    assert_eq!(store.load().unwrap().ledger.len(), live_len);
+    assert_eq!(
+        std::fs::read(&apikeys).unwrap(),
+        br#"[{"prefix":"chk_live"}]"#
+    );
+}
+
+#[test]
 fn restore_rejects_a_backup_whose_chain_does_not_verify() {
     let dir = TempDir::new();
     {

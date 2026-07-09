@@ -29,6 +29,7 @@ pub mod book;
 pub mod document_model;
 pub mod entity;
 pub mod error;
+pub mod external_signing;
 pub mod profile;
 pub mod rules;
 pub mod seal;
@@ -40,7 +41,8 @@ pub use act::{
     SignatorySlot, VoteResult,
 };
 pub use book::{
-    Book, BookId, BookKind, BookState, NumberingScheme, TermoDeAbertura, TermoDeEncerramento,
+    Book, BookId, BookKind, BookState, LegalHold, NumberingScheme, TermoDeAbertura,
+    TermoDeEncerramento,
 };
 pub use document_model::{
     Block, DocumentModel, KvRow, LifecycleStage, Run, SignatureSlot, VoteRow,
@@ -49,6 +51,11 @@ pub use entity::{
     Entity, EntityFamily, EntityId, EntityKind, Majority, Nipc, Quorum, StatuteOverrides,
 };
 pub use error::{ActError, BookError, CoreError, NipcError, SealError};
+pub use external_signing::{
+    ExternalSignatureCompletionSummary, ExternalSignatureEnvelope, ExternalSignatureEnvelopeId,
+    ExternalSignatureEvidence, ExternalSignerSlot, ExternalSignerSlotId, ExternalSignerSlotStatus,
+    ExternalSigningError, ExternalSigningOrderPolicy,
+};
 pub use profile::{
     CalendarPreset, EntityProfile, ProfilePack, SignaturePolicyHint, profile_for, rule_pack_for,
 };

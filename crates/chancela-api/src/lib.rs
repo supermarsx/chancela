@@ -19,12 +19,30 @@
 //! - `POST /v1/acts`, `GET|PATCH /v1/acts/{id}`, `POST /v1/acts/{id}/advance`,
 //!   `GET /v1/acts/{id}/compliance`, `POST /v1/acts/{id}/seal`,
 //!   `POST /v1/acts/{id}/archive` — the ata lifecycle, compliance gate, and seal (§2.5).
+//! - `GET /v1/acts/{id}/document/office` — deterministic non-evidentiary DOCX working copy.
+//! - `POST /v1/documents/import/validate` — read-only structural import validation report.
+//! - `POST|GET /v1/documents/import[ed]`, `GET /v1/documents/imported/{id}[/bytes]` —
+//!   validated non-canonical imported document evidence.
 //! - `GET /v1/ledger/events`, `GET /v1/ledger/verify` — the audit feed and chain probe (§2.6).
+//! - `GET /v1/ledger/archive/document` — on-demand PDF/A archive export.
 //! - `GET /v1/dashboard` — WFL-40 counts and recent events (§2.7).
 //! - `GET|PUT /v1/settings` — the typed, versioned application settings document (§2.8).
-//! - `POST /v1/registry/lookup`, `GET /v1/entities/{id}/registry`,
+//! - `POST /v1/registry/lookup`, `GET /v1/registry/lookup`,
+//!   `GET|POST /v1/entities/{id}/registry`,
 //!   `POST /v1/entities/{id}/registry/import`, `POST /v1/entities/import-from-registry` —
-//!   certidão permanente consultation and import by access code (§2.7, LEG-20/21/22).
+//!   certidão permanente consultation/import and backend-owned auto-update planning (§2.7,
+//!   LEG-20/21/22).
+//! - `GET|POST /v1/privacy/users/{id}/dsr-requests`, `PATCH
+//!   /v1/privacy/dsr-requests/{id}`, `POST /v1/privacy/dsr-requests/{id}/complete` — GDPR/DSR
+//!   request tracking with JSON sidecar durability in data-dir mode and ledger-audited lifecycle
+//!   transitions.
+//! - `GET|POST /v1/privacy/processors`, `PATCH /v1/privacy/processors/{id}`,
+//!   `GET|POST /v1/privacy/dpias`, `PATCH /v1/privacy/dpias/{id}` — GDPR processor and DPIA
+//!   registers with JSON sidecar durability in data-dir mode and ledger-audited create/update
+//!   transitions.
+//! - `GET|POST /v1/privacy/retention-policies`, `PATCH /v1/privacy/retention-policies/{id}`,
+//!   `POST /v1/privacy/retention-policies/dry-run` — bounded retention policy register and
+//!   non-destructive applicability reporting.
 //!
 //! ## Serving the web UI
 //!
@@ -36,6 +54,9 @@
 
 mod actor;
 mod acts;
+mod apikeys;
+mod archive_package;
+mod arquivo;
 mod attestation;
 mod authz;
 mod backup;
@@ -45,21 +66,26 @@ mod cae;
 mod chronology;
 mod dashboard;
 mod data;
+mod database;
 mod delegations;
 mod documents;
 mod dto;
 mod entities;
 mod error;
+mod external_signing;
 mod hex;
 mod law;
 mod ledger;
+mod paper_import;
 mod password_policy;
+mod privacy;
 mod recovery;
 mod registry;
 mod roles;
 mod session;
 mod settings;
 mod signature;
+mod trust;
 mod users;
 
 use std::collections::HashMap;
@@ -68,13 +94,14 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::Router;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, OriginalUri, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, delete, get, patch, post};
 use chancela_cae::{CaeCatalog, CaeSource, CaeSourceChain};
 use chancela_cmd::ScmdTransport;
+use chancela_core::external_signing::{ExternalSignatureEnvelope, ExternalSignatureEnvelopeId};
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
 use chancela_csc::{CscConfig, CscTransport};
 use chancela_ledger::{Event, Ledger, LedgerError};
@@ -92,6 +119,10 @@ pub use authz::{
     Authorizer, authorizer, require_permission, require_permission_with, scope_of_act,
     scope_of_book, scope_of_entity,
 };
+pub use database::{
+    AppStateInitError, DB_KEY_ENV, DB_KEY_FILE_ENV, DatabaseEncryptionConfig,
+    DatabaseEncryptionConfigError, DatabaseEncryptionKeySource,
+};
 pub use delegations::{DelegationId, StoredDelegation};
 pub use error::ApiError;
 pub use law::{LawEntry, LawEntryView, LawStore, StoredLawInfo};
@@ -100,24 +131,26 @@ pub use roles::{
     last_owner_guard_ok, resolve_principal_id,
 };
 pub use settings::{
-    AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting, DocumentSettings, Locale,
-    OnboardingSettings, OrganizationSettings, Settings, SignatureFamily, SigningCmdSettings,
-    SigningSettings, ThemeMode,
+    AiSettings, AppearanceSettings, CaeSourceEntry, CatalogSettings, CmdEnvSetting,
+    DocumentSettings, Locale, OnboardingSettings, OrganizationSettings, RegistryAutoUpdateCadence,
+    RegistryAutoUpdateEntityDefaults, RegistryAutoUpdateSettings, RegistryAutoUpdateWeekday,
+    Settings, SignatureFamily, SigningCmdSettings, SigningSettings, ThemeMode,
 };
 pub use users::{User, UserId};
 
-/// Environment variable naming a data directory for on-disk persistence (currently
-/// `settings.json`). When unset, [`AppState::from_env`] falls back to walking up for an
-/// existing `chancela-data/` directory, and finally to pure in-memory state.
+/// Environment variable naming a data directory for on-disk persistence. When unset,
+/// [`AppState::from_env`] falls back to walking up for an existing `chancela-data/` directory,
+/// and finally to pure in-memory state.
 pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 
-/// Shared, in-memory application state (ARC-02 scaffold; no persistence yet).
+/// Shared application state: in-memory maps, plus optional data-dir/store-backed durability.
 ///
 /// Every field is `Arc<RwLock<..>>` so the state is cheap to clone into each handler and safe
 /// to mutate concurrently. Cloning an [`AppState`] shares the same underlying maps and ledger.
 /// Handlers that take several locks acquire them in the fixed order **entities → books → acts
-/// → registry_extracts → users → ledger** to avoid deadlock. The `cae` and `sessions` locks are
-/// independent, short-lived locks not part of that chain (a handler acquires and releases one
+/// → registry_extracts → registry_auto_updates → users → dsr_requests → processor_records →
+/// dpia_records → retention_policies → ledger** to avoid deadlock. The `cae` and `sessions` locks
+/// are independent, short-lived locks not part of that chain (a handler acquires and releases one
 /// before touching the ordered locks, or after — never interleaved with them).
 #[derive(Clone, Default)]
 pub struct AppState {
@@ -141,6 +174,9 @@ pub struct AppState {
     /// Registry extracts imported per entity, with provenance (LEG-22). In-memory like the
     /// rest of the scaffold state.
     pub registry_extracts: Arc<RwLock<HashMap<EntityId, RegistryExtract>>>,
+    /// Backend-owned commercial-registry auto-update state/evidence per entity. Metadata-only:
+    /// no full access codes and no frontend-supplied registry payloads are stored here.
+    pub registry_auto_updates: Arc<RwLock<HashMap<EntityId, registry::RegistryAutoUpdateState>>>,
     /// The active CAE catalog (contract §2.7). `Default` is the embedded both-revision dataset;
     /// [`AppState::with_data_dir`] prefers a valid `cae-catalog.json` cache, and
     /// `POST /v1/cae/refresh` swaps it in place.
@@ -172,6 +208,29 @@ pub struct AppState {
     /// Named user profiles for actor attribution (contract §2.8), keyed by [`UserId`]. `Default`
     /// empty; `with_data_dir`/`from_env` load `users.json`.
     pub users: Arc<RwLock<HashMap<UserId, User>>>,
+    /// First-class privacy/DSR request lifecycle records, keyed by request id. File-backed states
+    /// load and write these through `privacy-dsr-requests.json`; each create/complete transition is
+    /// still chained into the ledger.
+    pub dsr_requests: Arc<RwLock<HashMap<privacy::DsrRequestId, privacy::DsrRequest>>>,
+    /// Where `privacy-dsr-requests.json` is persisted, or `None` for in-memory request tracking.
+    pub dsr_requests_path: Option<Arc<PathBuf>>,
+    /// GDPR processor register records. File-backed states load and write these through
+    /// `privacy-processors.json`; create and update transitions are also chained into the ledger.
+    pub processor_records:
+        Arc<RwLock<HashMap<privacy::ProcessorRecordId, privacy::ProcessorRecord>>>,
+    /// DPIA register records. File-backed states load and write these through `privacy-dpias.json`;
+    /// create and update transitions are also chained into the ledger.
+    pub dpia_records: Arc<RwLock<HashMap<privacy::DpiaRecordId, privacy::DpiaRecord>>>,
+    /// Retention policy register records. File-backed states load and write these through
+    /// `retention-policies.json`; create and update transitions are also chained into the ledger.
+    pub retention_policies:
+        Arc<RwLock<HashMap<privacy::RetentionPolicyId, privacy::RetentionPolicyRecord>>>,
+    /// Where `privacy-processors.json` is persisted, or `None` for in-memory registers.
+    pub processor_records_path: Option<Arc<PathBuf>>,
+    /// Where `privacy-dpias.json` is persisted, or `None` for in-memory registers.
+    pub dpia_records_path: Option<Arc<PathBuf>>,
+    /// Where `retention-policies.json` is persisted, or `None` for in-memory registers.
+    pub retention_policies_path: Option<Arc<PathBuf>>,
     /// Where `users.json` is persisted, or `None` for in-memory profiles. Mirrors `persist_path`.
     pub users_path: Option<Arc<PathBuf>>,
     /// The scoped RBAC role catalog (t64): the seeded defaults + any custom roles. `Default` empty;
@@ -249,6 +308,18 @@ pub struct AppState {
     /// Backed by the durable `pending_cmd_sessions` table (rehydrated on boot), so a session survives
     /// a restart.
     pub pending_signatures: Arc<RwLock<HashMap<String, PendingCmdSession>>>,
+    /// External signer invitation tracking records, keyed by invite id. This is an envelope
+    /// workflow only: records retain a token hash and redacted hint, never the plaintext token, and
+    /// do not represent a completed legal signature.
+    pub external_signer_invites:
+        Arc<RwLock<HashMap<uuid::Uuid, signature::ExternalSignerInviteRecord>>>,
+    /// Core external-signing envelope records, keyed by envelope id. These are workflow/evidence
+    /// envelopes only: they record ordered signer slots, statuses, and evidence locators/digests;
+    /// they do not assert legal effect or qualified-signature status.
+    pub external_signing_envelopes:
+        Arc<RwLock<HashMap<ExternalSignatureEnvelopeId, ExternalSignatureEnvelope>>>,
+    /// Where `external-signing-envelopes.json` is persisted, or `None` for in-memory envelopes.
+    pub external_signing_envelopes_path: Option<Arc<PathBuf>>,
     /// Test/DI seam (t57-S3): an injected SCMD transport. `None` in production, where the signing
     /// handlers build a real `chancela_cmd::HttpScmdTransport` from the resolved [`CmdConfig`] and run
     /// it off the async runtime. Tests inject a `MockScmdTransport`-backed transport here so the
@@ -299,16 +370,49 @@ pub struct AppState {
     #[allow(clippy::type_complexity)]
     pub csc_transport:
         Option<Arc<dyn Fn(&CscConfig) -> Box<dyn CscTransport + Send> + Send + Sync>>,
+    /// API-key registry for MCP/integration bearer authentication, keyed by the key's non-secret
+    /// prefix. `with_data_dir` persists this to `apikeys.json`; pure in-memory states may still have
+    /// tests/embedders inject `chancela-apikey` records directly.
+    pub api_keys: Arc<RwLock<apikeys::ApiKeyRegistry>>,
+    /// Where `apikeys.json` is persisted, or `None` for pure in-memory API keys.
+    pub api_keys_path: Option<Arc<PathBuf>>,
+    /// Per-key token-bucket state for bearer requests. Reset on restart; policy lives on the key.
+    pub api_key_rate_limits: Arc<RwLock<apikeys::ApiKeyRateLimitBuckets>>,
+    /// Whether the durable SQLite store was opened with a configured SQLCipher key. False for
+    /// plaintext store mode and for pure in-memory state. The key itself is never stored here.
+    pub database_encryption_configured: bool,
 }
 
 impl AppState {
-    /// Build state whose settings are read from — and written back to — `data_dir/settings.json`.
+    /// Build state whose settings and JSON sidecars are read from — and written back to —
+    /// `data_dir`.
     ///
     /// A missing or unreadable file yields the default settings (the directory is created lazily
     /// on the first successful `PUT`); a present-but-malformed file also falls back to defaults
-    /// with a warning, so a bad file never blocks startup. All other state stays in-memory.
+    /// with a warning, so a bad file never blocks startup. Domain aggregates and the ledger are
+    /// rehydrated from the durable store when it opens successfully.
     pub fn with_data_dir(data_dir: impl Into<PathBuf>) -> Self {
-        let dir = data_dir.into();
+        Self::build_with_data_dir(data_dir.into(), DatabaseEncryptionConfig::plaintext())
+            .expect("plaintext data-dir startup must not fail closed")
+    }
+
+    /// Build state from `data_dir`, applying an explicit database encryption config. Invalid or
+    /// unavailable encryption fails closed instead of falling back to a misleading plaintext or
+    /// in-memory store.
+    pub fn try_with_data_dir(
+        data_dir: impl Into<PathBuf>,
+        database_encryption: DatabaseEncryptionConfig,
+    ) -> Result<Self, AppStateInitError> {
+        Self::build_with_data_dir(data_dir.into(), database_encryption)
+    }
+
+    fn build_with_data_dir(
+        dir: PathBuf,
+        database_encryption: DatabaseEncryptionConfig,
+    ) -> Result<Self, AppStateInitError> {
+        if database_encryption.is_configured() {
+            ensure_sqlcipher_feature_available()?;
+        }
         let settings_path = dir.join(settings::SETTINGS_FILE);
         let loaded = settings::load_settings(&settings_path).unwrap_or_default();
         let users_path = dir.join(users::USERS_FILE);
@@ -336,6 +440,24 @@ impl AppState {
         let delegations_path = dir.join(delegations::DELEGATIONS_FILE);
         let loaded_delegations =
             delegations::load_delegations(&delegations_path).unwrap_or_default();
+        let dsr_requests_path = dir.join(privacy::DSR_REQUESTS_FILE);
+        let loaded_dsr_requests =
+            privacy::load_dsr_requests(&dsr_requests_path).unwrap_or_default();
+        let processor_records_path = dir.join(privacy::PROCESSORS_FILE);
+        let loaded_processor_records =
+            privacy::load_processor_records(&processor_records_path).unwrap_or_default();
+        let dpia_records_path = dir.join(privacy::DPIAS_FILE);
+        let loaded_dpia_records =
+            privacy::load_dpia_records(&dpia_records_path).unwrap_or_default();
+        let retention_policies_path = dir.join(privacy::RETENTION_POLICIES_FILE);
+        let loaded_retention_policies =
+            privacy::load_retention_policies(&retention_policies_path).unwrap_or_default();
+        let api_keys_path = dir.join(apikeys::API_KEYS_FILE);
+        let loaded_api_keys = apikeys::load_api_keys(&api_keys_path).unwrap_or_default();
+        let external_signing_envelopes_path =
+            dir.join(external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE);
+        let loaded_external_signing_envelopes =
+            external_signing::load_envelopes(&external_signing_envelopes_path).unwrap_or_default();
         // Prefer a valid, newer `cae-catalog.json` cache over the embedded catalog (never errors).
         let catalog = chancela_cae::load_catalog(Some(&dir));
         // Law archive: the `laws/` subdir plus its state file (missing/malformed → empty archive).
@@ -350,6 +472,18 @@ impl AppState {
             roles_path: Some(Arc::new(roles_path)),
             delegations: Arc::new(RwLock::new(loaded_delegations)),
             delegations_path: Some(Arc::new(delegations_path)),
+            dsr_requests: Arc::new(RwLock::new(loaded_dsr_requests)),
+            dsr_requests_path: Some(Arc::new(dsr_requests_path)),
+            processor_records: Arc::new(RwLock::new(loaded_processor_records)),
+            processor_records_path: Some(Arc::new(processor_records_path)),
+            dpia_records: Arc::new(RwLock::new(loaded_dpia_records)),
+            dpia_records_path: Some(Arc::new(dpia_records_path)),
+            retention_policies: Arc::new(RwLock::new(loaded_retention_policies)),
+            retention_policies_path: Some(Arc::new(retention_policies_path)),
+            api_keys: Arc::new(RwLock::new(loaded_api_keys)),
+            api_keys_path: Some(Arc::new(api_keys_path)),
+            external_signing_envelopes: Arc::new(RwLock::new(loaded_external_signing_envelopes)),
+            external_signing_envelopes_path: Some(Arc::new(external_signing_envelopes_path)),
             cae: Arc::new(RwLock::new(catalog)),
             laws_dir: Some(Arc::new(laws_dir)),
             law_store: Arc::new(RwLock::new(law_store)),
@@ -361,7 +495,8 @@ impl AppState {
         // back to pure in-memory (`store` stays `None`) with a loud warning — durability is never
         // allowed to block startup (plan §D-boot); a broken but readable chain still boots and is
         // surfaced via `chain_status` (banner + `/health`).
-        match Store::open(&dir) {
+        let encrypted_store = database_encryption.is_configured();
+        match Store::open_with_options(&dir, database_encryption.store_open_options()) {
             Ok(store) => match store.load() {
                 Ok(loaded) => {
                     // Fail-loud gate (t54 §3.1): a broken boot chain enters DEGRADED read-only mode
@@ -393,19 +528,36 @@ impl AppState {
                     if let Ok(pending) = store.all_pending_cmd_sessions() {
                         state.pending_signatures = Arc::new(RwLock::new(pending));
                     }
+                    state.database_encryption_configured = encrypted_store;
                     state.store = Some(store);
                 }
-                Err(e) => eprintln!(
-                    "chancela-store: failed to load durable state from {} ({e}) — running \
+                Err(e) if encrypted_store => {
+                    return Err(AppStateInitError::StoreLoad {
+                        data_dir: dir.clone(),
+                        source: e,
+                    });
+                }
+                Err(e) => {
+                    eprintln!(
+                        "chancela-store: failed to load durable state from {} ({e}) — running \
+                         in-memory (the domain will NOT persist across restart)",
+                        dir.display()
+                    );
+                }
+            },
+            Err(e) if encrypted_store => {
+                return Err(AppStateInitError::StoreOpen {
+                    data_dir: dir.clone(),
+                    source: e,
+                });
+            }
+            Err(e) => {
+                eprintln!(
+                    "chancela-store: failed to open the durable store at {} ({e}) — running \
                      in-memory (the domain will NOT persist across restart)",
                     dir.display()
-                ),
-            },
-            Err(e) => eprintln!(
-                "chancela-store: failed to open the durable store at {} ({e}) — running in-memory \
-                 (the domain will NOT persist across restart)",
-                dir.display()
-            ),
+                );
+            }
         }
 
         // Resolve the CC co-location signal (t58-e2 / CC-B) from the environment the desktop shell
@@ -415,7 +567,7 @@ impl AppState {
         // provider LIST + non-secret selectors come from `CHANCELA_CSC_*` env vars, NOT the
         // web-asserted settings document (drift-safe). Empty when none are configured.
         state.csc_providers = Arc::new(signature::load_csc_providers_from_env());
-        state
+        Ok(state)
     }
 
     /// Durable write-through (t30 §D2): persist the last `event_count` events just appended to
@@ -502,8 +654,9 @@ impl AppState {
     }
 
     /// The whole-instance sidecar files bundled alongside the SQLite snapshot in a backup / export
-    /// archive and removed on a factory reset (t54 §2.11): `settings.json`, `users.json`, the CAE
-    /// cache, and the `laws/` archive. Mirrors [`backup::create_backup`]'s list. Empty when in-memory.
+    /// archive and removed on a factory reset (t54 §2.11): `settings.json`, user/RBAC/privacy/API
+    /// sidecars, the CAE cache, and the `laws/` archive. Mirrors [`backup::create_backup`]'s list.
+    /// Empty when in-memory.
     pub(crate) fn instance_sidecars(&self) -> Vec<PathBuf> {
         match self.data_dir() {
             Some(dir) => vec![
@@ -511,6 +664,12 @@ impl AppState {
                 dir.join(crate::users::USERS_FILE),
                 dir.join(crate::roles::ROLES_FILE),
                 dir.join(crate::delegations::DELEGATIONS_FILE),
+                dir.join(crate::privacy::DSR_REQUESTS_FILE),
+                dir.join(crate::privacy::PROCESSORS_FILE),
+                dir.join(crate::privacy::DPIAS_FILE),
+                dir.join(crate::privacy::RETENTION_POLICIES_FILE),
+                dir.join(crate::apikeys::API_KEYS_FILE),
+                dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
                 dir.join(chancela_cae::CACHE_FILE),
                 dir.join(crate::law::LAWS_DIR),
             ],
@@ -518,9 +677,8 @@ impl AppState {
         }
     }
 
-    /// Reload the domain read-models (entities / books / acts / registry extracts) from the durable
-    /// store into memory and drop the cached documents map (GETs fall back to the store), after a
-    /// whole-store restore so reads reflect the swapped-in state. A no-op when in-memory. Does NOT
+    /// Reload the durable DB read-models and file-backed instance sidecars after a whole-store
+    /// restore so the running API reflects the swapped-in files. A no-op when in-memory. Does NOT
     /// touch the ledger — the restore path already replaced it in lock-step.
     pub(crate) async fn reload_domain_memory(&self) -> Result<(), ApiError> {
         let Some(store) = &self.store else {
@@ -533,7 +691,52 @@ impl AppState {
         *self.books.write().await = loaded.books;
         *self.acts.write().await = loaded.acts;
         *self.registry_extracts.write().await = loaded.registry_extracts;
+        self.registry_auto_updates.write().await.clear();
         self.documents.write().await.clear();
+        self.external_signer_invites.write().await.clear();
+        self.external_signing_envelopes.write().await.clear();
+        if let Ok(signed) = store.all_signed_documents() {
+            *self.signed_documents.write().await = signed;
+        }
+        if let Ok(pending) = store.all_pending_cmd_sessions() {
+            *self.pending_signatures.write().await = pending;
+        }
+        if let Some(dir) = self.data_dir() {
+            *self.settings.write().await =
+                settings::load_settings(&dir.join(settings::SETTINGS_FILE)).unwrap_or_default();
+            *self.users.write().await =
+                users::load_users(&dir.join(users::USERS_FILE)).unwrap_or_default();
+
+            let mut role_catalog =
+                roles::load_roles(&dir.join(roles::ROLES_FILE)).unwrap_or_default();
+            roles::ensure_seeded_defaults(&mut role_catalog);
+            *self.roles.write().await = role_catalog;
+            *self.delegations.write().await =
+                delegations::load_delegations(&dir.join(delegations::DELEGATIONS_FILE))
+                    .unwrap_or_default();
+            *self.dsr_requests.write().await =
+                privacy::load_dsr_requests(&dir.join(privacy::DSR_REQUESTS_FILE))
+                    .unwrap_or_default();
+            *self.processor_records.write().await =
+                privacy::load_processor_records(&dir.join(privacy::PROCESSORS_FILE))
+                    .unwrap_or_default();
+            *self.dpia_records.write().await =
+                privacy::load_dpia_records(&dir.join(privacy::DPIAS_FILE)).unwrap_or_default();
+            *self.retention_policies.write().await =
+                privacy::load_retention_policies(&dir.join(privacy::RETENTION_POLICIES_FILE))
+                    .unwrap_or_default();
+            *self.api_keys.write().await =
+                apikeys::load_api_keys(&dir.join(apikeys::API_KEYS_FILE)).unwrap_or_default();
+            *self.external_signing_envelopes.write().await = external_signing::load_envelopes(
+                &dir.join(external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
+            )
+            .unwrap_or_default();
+            self.api_key_rate_limits.write().await.clear();
+            self.sessions.write().await.clear();
+            self.attestations.write().await.clear();
+            *self.cae.write().await = chancela_cae::load_catalog(Some(&dir));
+            *self.law_store.write().await = law::load_law_store(&dir.join(law::LAWS_DIR));
+        }
         Ok(())
     }
 
@@ -545,7 +748,12 @@ impl AppState {
         self.books.write().await.clear();
         self.acts.write().await.clear();
         self.registry_extracts.write().await.clear();
+        self.registry_auto_updates.write().await.clear();
         self.documents.write().await.clear();
+        self.signed_documents.write().await.clear();
+        self.pending_signatures.write().await.clear();
+        self.external_signer_invites.write().await.clear();
+        self.external_signing_envelopes.write().await.clear();
     }
 
     /// Clear ALL in-memory state to a blank first-run instance, to match a `BackendFactory` reset
@@ -555,8 +763,15 @@ impl AppState {
     pub(crate) async fn clear_all_memory(&self) {
         self.clear_domain_memory().await;
         self.users.write().await.clear();
+        self.dsr_requests.write().await.clear();
+        self.processor_records.write().await.clear();
+        self.dpia_records.write().await.clear();
+        self.retention_policies.write().await.clear();
         self.sessions.write().await.clear();
         self.attestations.write().await.clear();
+        self.api_keys.write().await.clear();
+        self.external_signing_envelopes.write().await.clear();
+        self.api_key_rate_limits.write().await.clear();
         // A blank first-run instance has the seeded default roles and no delegations (t64), matching
         // what a subsequent load of the wiped data dir would reseed.
         *self.roles.write().await = chancela_authz::RoleCatalog::seeded_defaults();
@@ -570,23 +785,37 @@ impl AppState {
     ///
     /// This is the one call a binary swaps in for [`AppState::default`] to gain persistence.
     pub fn from_env() -> Self {
+        Self::try_from_env()
+            .unwrap_or_else(|e| panic!("invalid Chancela startup configuration: {e}"))
+    }
+
+    /// Build state from process environment, including optional database encryption settings.
+    ///
+    /// `CHANCELA_DB_KEY` and `CHANCELA_DB_KEY_FILE` are fail-closed: invalid, ambiguous, empty, or
+    /// unsupported encrypted-store configuration returns an error instead of silently running
+    /// plaintext or in-memory.
+    pub fn try_from_env() -> Result<Self, AppStateInitError> {
+        let database_encryption = DatabaseEncryptionConfig::from_env()?;
         match Self::resolve_data_dir() {
-            Some(dir) => Self::with_data_dir(dir),
+            Some(dir) => Self::try_with_data_dir(dir, database_encryption),
             // Pure in-memory (no data dir): seed the RBAC catalog so the bootstrap first user's
             // Owner\@Global assignment resolves to real authority. Without this a fresh in-memory
             // instance would hold an Owner assignment against an EMPTY catalog (fail-closed →
             // no permissions anywhere), locking the operator out of their own instance (t64-E3).
             None => {
+                if database_encryption.is_configured() {
+                    return Err(AppStateInitError::DatabaseEncryptionRequiresDataDir);
+                }
                 let state = Self::default();
                 let seeded = Arc::new(RwLock::new(chancela_authz::RoleCatalog::seeded_defaults()));
-                AppState {
+                Ok(AppState {
                     roles: seeded,
                     // Honour the CC co-location signal even in the pure in-memory desktop dev path.
                     local_signing: signature::local_signing_from_env(),
                     // Resolve CSC providers from the environment (t59-s3) even in-memory.
                     csc_providers: Arc::new(signature::load_csc_providers_from_env()),
                     ..state
-                }
+                })
             }
         }
     }
@@ -610,13 +839,23 @@ impl AppState {
     }
 }
 
-/// Build the v1 API router over the supplied [`AppState`].
+#[cfg(feature = "sqlcipher")]
+fn ensure_sqlcipher_feature_available() -> Result<(), AppStateInitError> {
+    Ok(())
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+fn ensure_sqlcipher_feature_available() -> Result<(), AppStateInitError> {
+    Err(AppStateInitError::SqlcipherFeatureUnavailable)
+}
+
+/// Build the API router over the supplied [`AppState`].
 ///
-/// The returned router carries `/health` and the `/v1/*` endpoints only. Use [`app`] to also
-/// serve the web UI. The router is fully wired and can be served by a listener or exercised
-/// in tests via `tower::ServiceExt::oneshot`.
+/// The returned router carries `/health`, the canonical `/v1/*` endpoints, and the integration
+/// alias `/api/v1/*`. Use [`app`] to also serve the web UI. The router is fully wired and can be
+/// served by a listener or exercised in tests via `tower::ServiceExt::oneshot`.
 pub fn router(state: AppState) -> Router {
-    Router::new()
+    let api = Router::new()
         .route("/health", get(health))
         .route(
             "/v1/entities",
@@ -632,7 +871,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/v1/entities/{id}/registry",
-            get(registry::get_entity_registry),
+            get(registry::get_entity_registry).post(registry::request_registry_auto_update),
         )
         .route(
             "/v1/entities/{id}/registry/import",
@@ -642,11 +881,33 @@ pub fn router(state: AppState) -> Router {
             "/v1/entities/{id}/chronology",
             get(chronology::get_entity_chronology),
         )
-        .route("/v1/registry/lookup", post(registry::registry_lookup))
+        .route(
+            "/v1/registry/lookup",
+            get(registry::registry_auto_update_due_plan).post(registry::registry_lookup),
+        )
         .route("/v1/books", get(books::list_books).post(books::create_book))
         .route("/v1/books/{id}", get(books::get_book))
         .route("/v1/books/{id}/close", post(books::close_book))
         .route("/v1/books/{id}/acts", get(books::list_book_acts))
+        .route(
+            "/v1/books/paper-import/validate",
+            post(paper_import::validate_paper_book_import),
+        )
+        .route(
+            "/v1/books/{id}/legal-hold",
+            get(books::get_legal_hold)
+                .put(books::set_legal_hold)
+                .delete(books::clear_legal_hold),
+        )
+        .route(
+            "/v1/books/{id}/archive/package",
+            get(archive_package::export_book_archive_package),
+        )
+        .route(
+            "/v1/books/{id}/archive/disposal",
+            get(archive_package::get_book_disposal_status)
+                .post(archive_package::simulate_book_disposal),
+        )
         .route("/v1/acts", post(acts::draft_act))
         .route("/v1/acts/{id}", get(acts::get_act).patch(acts::patch_act))
         .route("/v1/acts/{id}/advance", post(acts::advance_act))
@@ -665,10 +926,42 @@ pub fn router(state: AppState) -> Router {
             "/v1/acts/{id}/document/generate",
             post(documents::generate_document),
         )
+        .route(
+            "/v1/acts/{id}/document/working-copy",
+            get(documents::export_working_copy),
+        )
+        .route(
+            "/v1/acts/{id}/document/office",
+            get(documents::export_office_document),
+        )
         .route("/v1/acts/{id}/document", get(documents::get_document_pdf))
         .route(
             "/v1/acts/{id}/document/bundle",
             get(documents::get_document_bundle),
+        )
+        .route(
+            "/v1/documents/import",
+            post(documents::import_document).layer(DefaultBodyLimit::max(
+                documents::DOCUMENT_IMPORT_VALIDATION_ENVELOPE_BYTES,
+            )),
+        )
+        .route(
+            "/v1/documents/imported",
+            get(documents::list_imported_documents),
+        )
+        .route(
+            "/v1/documents/imported/{id}",
+            get(documents::get_imported_document),
+        )
+        .route(
+            "/v1/documents/imported/{id}/bytes",
+            get(documents::get_imported_document_bytes),
+        )
+        .route(
+            "/v1/documents/import/validate",
+            post(documents::validate_document_import).layer(DefaultBodyLimit::max(
+                documents::DOCUMENT_IMPORT_VALIDATION_ENVELOPE_BYTES,
+            )),
         )
         .route(
             "/v1/acts/{id}/signature/cmd/initiate",
@@ -691,6 +984,41 @@ pub fn router(state: AppState) -> Router {
             post(signature::confirm_remote_signature),
         )
         .route(
+            "/v1/acts/{id}/signature/official/import",
+            post(signature::import_official_signature).layer(DefaultBodyLimit::max(
+                signature::OFFICIAL_SIGNATURE_IMPORT_ENVELOPE_BYTES,
+            )),
+        )
+        .route(
+            "/v1/acts/{id}/signature/external-invites",
+            get(signature::list_external_signer_invites)
+                .post(signature::create_external_signer_invite),
+        )
+        .route(
+            "/v1/acts/{id}/signature/external-invites/{invite_id}/revoke",
+            post(signature::revoke_external_signer_invite),
+        )
+        .route(
+            "/v1/acts/{id}/external-signing/envelopes",
+            get(external_signing::list_envelopes_for_act).post(external_signing::create_envelope),
+        )
+        .route(
+            "/v1/external-signing/envelopes/{id}",
+            get(external_signing::get_envelope).patch(external_signing::patch_envelope),
+        )
+        .route(
+            "/v1/signature/external-invites/lookup",
+            post(signature::lookup_external_signer_invite),
+        )
+        .route(
+            "/v1/signature/external-invites/document/working-copy",
+            post(signature::download_external_signer_invite_working_copy),
+        )
+        .route(
+            "/v1/signature/external-invites/respond",
+            post(signature::respond_external_signer_invite),
+        )
+        .route(
             "/v1/signature/providers",
             get(signature::list_signature_providers),
         )
@@ -704,6 +1032,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/templates", get(documents::list_templates))
         .route("/v1/ledger/events", get(ledger::list_ledger_events))
+        .route(
+            "/v1/ledger/archive/document",
+            get(arquivo::export_archive_document),
+        )
         .route("/v1/ledger/verify", get(ledger::verify_ledger))
         .route("/v1/ledger/integrity", get(recovery::get_integrity))
         .route(
@@ -728,6 +1060,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/cae/sections", get(cae::list_sections))
         .route("/v1/cae/{code}", get(cae::get_cae))
         .route("/v1/cae/{code}/children", get(cae::list_children))
+        .route("/v1/trust/status", get(trust::trust_status))
+        .route("/v1/trust/catalog", get(trust::trust_catalog))
+        .route("/v1/trust/tsa", get(trust::trust_tsa))
+        .route("/v1/trust/providers/{id}", get(trust::trust_provider))
+        .route("/v1/trust/services/{id}", get(trust::trust_service))
         .route("/v1/law", get(law::list_law))
         .route("/v1/law/corpus", get(law::list_law_corpus))
         .route("/v1/law/corpus/search", get(law::search_law_corpus))
@@ -755,6 +1092,54 @@ pub fn router(state: AppState) -> Router {
             post(users::generate_attestation_key).delete(users::remove_attestation_key),
         )
         .route("/v1/users/{id}/recovery", post(users::issue_recovery))
+        .route("/v1/privacy/users/{id}/export", get(privacy::export_user))
+        .route(
+            "/v1/privacy/users/{id}/dsr-requests",
+            get(privacy::list_dsr_requests_for_user).post(privacy::create_dsr_request),
+        )
+        .route(
+            "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/complete",
+            post(privacy::complete_user_dsr_request),
+        )
+        .route(
+            "/v1/privacy/dsr-requests/{id}",
+            patch(privacy::patch_dsr_request),
+        )
+        .route(
+            "/v1/privacy/dsr-requests/{id}/complete",
+            post(privacy::complete_dsr_request),
+        )
+        .route(
+            "/v1/privacy/processors",
+            get(privacy::list_processor_records).post(privacy::create_processor_record),
+        )
+        .route(
+            "/v1/privacy/processors/{id}",
+            patch(privacy::patch_processor_record),
+        )
+        .route(
+            "/v1/privacy/dpias",
+            get(privacy::list_dpia_records).post(privacy::create_dpia_record),
+        )
+        .route("/v1/privacy/dpias/{id}", patch(privacy::patch_dpia_record))
+        .route(
+            "/v1/privacy/retention-policies",
+            get(privacy::list_retention_policies).post(privacy::create_retention_policy),
+        )
+        .route(
+            "/v1/privacy/retention-policies/dry-run",
+            post(privacy::retention_policy_dry_run),
+        )
+        .route(
+            "/v1/privacy/retention-policies/{id}",
+            patch(privacy::patch_retention_policy),
+        )
+        .route(
+            "/v1/api-keys",
+            get(apikeys::list_api_keys).post(apikeys::create_api_key),
+        )
+        .route("/v1/api-keys/{id}", delete(apikeys::revoke_api_key))
+        .route("/v1/api-keys/{id}/rotate", post(apikeys::rotate_api_key))
         .route(
             "/v1/ledger/attestations/{seq}",
             get(ledger::get_attestation),
@@ -789,20 +1174,52 @@ pub fn router(state: AppState) -> Router {
                 .delete(session::delete_session),
         )
         // Own the entire `/v1` and `/health` namespaces: any unmatched path under them is a
-        // JSON 404, never a fall-through. Registered as low-priority catch-alls (matchit ranks
-        // the specific routes above them), so a stale binary or a typo'd path can never reach
-        // the SPA fallback in [`app`] and hand the web client `index.html` where it expects
-        // JSON (the "Unexpected token '<'" failure). Non-API paths keep the SPA fallback.
+        // JSON 404, never a fall-through. The same route table is mounted under `/api`, so these
+        // catch-alls also own `/api/v1` for integration clients. Registered as low-priority
+        // catch-alls (matchit ranks the specific routes above them), so a stale binary or a typo'd
+        // path can never reach the SPA fallback in [`app`] and hand the web client `index.html`
+        // where it expects JSON (the "Unexpected token '<'" failure). Non-API paths keep the SPA
+        // fallback.
         .route("/v1", any(unknown_api_route))
         .route("/v1/{*rest}", any(unknown_api_route))
         .route("/health/{*rest}", any(unknown_api_route))
+        // Credential ambiguity guard (MCP/API): a request may authenticate with either the web
+        // session header or a bearer API key, never both. This sits at router level so manual
+        // session-resolution endpoints are covered too.
+        .layer(middleware::from_fn(reject_mixed_credentials))
         // Degraded read-only gate (t54 §3.1): block ordinary mutations with 503 when the chain is
         // broken, leaving reads + the recovery/reset/export/quarantine-import endpoints open. Layered
         // BELOW `security_headers` (added after) so a 503 still carries the security headers.
         .layer(middleware::from_fn_with_state(state.clone(), degraded_gate))
         // Security response headers (t41 M2).
         .layer(middleware::from_fn(security_headers))
-        .with_state(state)
+        .with_state(state);
+
+    Router::new()
+        .merge(api.clone())
+        .route("/api", any(unknown_api_route))
+        .route("/api/", any(unknown_api_route))
+        .nest("/api", api)
+}
+
+async fn reject_mixed_credentials(
+    request: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    let has_session = request
+        .headers()
+        .get(actor::SESSION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .is_some_and(|v| !v.is_empty());
+    let bearer = apikeys::read_bearer_api_key(request.headers());
+    match bearer {
+        Ok(Some(_)) if has_session => {
+            ApiError::Unauthorized("use sessão ou chave API, não ambas".to_owned()).into_response()
+        }
+        Err(e) if has_session => e.into_response(),
+        _ => next.run(request).await,
+    }
 }
 
 /// Whether a request is exempt from the degraded (read-only) mutation gate (t54 §3.1).
@@ -822,8 +1239,10 @@ fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
         || path == "/v1/data/reset"
         || path == "/v1/data/start-over"
         || path == "/v1/books/import"
+        || path == "/v1/books/paper-import/validate"
         || path.starts_with("/v1/session")
         || (path.starts_with("/v1/books/") && path.ends_with("/export"))
+        || (path.starts_with("/v1/books/") && path.ends_with("/archive/disposal"))
 }
 
 /// Middleware enforcing the degraded read-only gate. When [`AppState::degraded`] is set, an ordinary
@@ -898,14 +1317,18 @@ async fn security_headers(request: axum::http::Request<axum::body::Body>, next: 
     response
 }
 
-/// Fallback for any unmatched path under an API namespace (`/v1`, `/v1/*`, `/health/*`).
+/// Fallback for any unmatched path under an API namespace (`/v1`, `/v1/*`, `/api/v1/*`,
+/// `/health/*`).
 ///
 /// Returns `404 {"error": "unknown API route: <method> <path>"}` so a client that reached a
 /// route the running binary does not serve — e.g. a UI newer than a stale server — gets a
 /// diagnosable JSON error instead of the single-page-app shell (see [`app`]).
-async fn unknown_api_route(method: axum::http::Method, uri: axum::http::Uri) -> Response {
+async fn unknown_api_route(
+    method: axum::http::Method,
+    OriginalUri(original_uri): OriginalUri,
+) -> Response {
     let body = serde_json::json!({
-        "error": format!("unknown API route: {} {}", method, uri.path()),
+        "error": format!("unknown API route: {} {}", method, original_uri.path()),
     });
     (StatusCode::NOT_FOUND, Json(body)).into_response()
 }
@@ -1076,6 +1499,13 @@ mod tests {
 
     fn patch_json(uri: &str, body: Value) -> Request<Body> {
         body_json("PATCH", uri, body)
+    }
+
+    fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+        if needle.is_empty() || haystack.len() < needle.len() {
+            return false;
+        }
+        haystack.windows(needle.len()).any(|w| w == needle)
     }
 
     /// A request builder carrying an `X-Chancela-Session` token.
@@ -1647,6 +2077,109 @@ mod tests {
         (status, ctype, bytes.to_vec())
     }
 
+    #[tokio::test]
+    async fn ledger_events_carry_chain_membership_and_filter_by_chain() {
+        let (state, entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let company_chain = format!("company:{entity_id}");
+        let book_chain = format!("book:{book_id}");
+
+        let (status, events) = send(state.clone(), get("/v1/ledger/events?limit=1000")).await;
+        assert_eq!(status, StatusCode::OK);
+        let arr = events.as_array().expect("events");
+        let entity_created = arr
+            .iter()
+            .find(|e| e["kind"] == "entity.created")
+            .expect("entity.created event");
+        assert_eq!(
+            entity_created["chains"],
+            json!(["global", company_chain.clone()])
+        );
+        let book_opened = arr
+            .iter()
+            .find(|e| e["kind"] == "book.opened")
+            .expect("book.opened event");
+        assert_eq!(
+            book_opened["chains"],
+            json!(["global", book_chain.clone(), company_chain])
+        );
+
+        let (status, filtered) = send(
+            state.clone(),
+            get(&format!("/v1/ledger/events?chain={book_chain}&limit=1000")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let filtered = filtered.as_array().expect("filtered events");
+        assert!(!filtered.is_empty(), "book chain has events");
+        assert!(
+            filtered.iter().all(|e| e["chains"]
+                .as_array()
+                .expect("chains")
+                .iter()
+                .any(|c| c == &json!(book_chain))),
+            "every returned event belongs to the requested book chain: {filtered:?}"
+        );
+        assert!(
+            filtered.iter().all(|e| e["kind"] != "entity.created"),
+            "entity genesis is not a member of the book chain: {filtered:?}"
+        );
+
+        let (status, body) = send(state, get("/v1/ledger/events?chain=not-a-chain")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("invalid chain")
+        );
+    }
+
+    #[tokio::test]
+    async fn ledger_archive_document_returns_pdfa_and_rejects_bad_chain() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let (status, ctype, bytes) = send_bytes(
+            state.clone(),
+            get(&format!(
+                "/v1/ledger/archive/document?chain=book:{book_id}&scope=book:{book_id}&kind=book.opened&limit=1"
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(ctype, "application/pdf; profile=PDF/A-2u");
+        assert!(bytes.starts_with(b"%PDF-"), "archive export is a PDF");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("<pdfaid:part>2</pdfaid:part>"));
+        assert!(text.contains("<pdfaid:conformance>U</pdfaid:conformance>"));
+
+        let (status, body) =
+            send(state, get("/v1/ledger/archive/document?chain=not-a-chain")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("invalid chain")
+        );
+    }
+
+    #[tokio::test]
+    async fn ledger_archive_document_requires_global_ledger_read() {
+        let state = fresh_state().await;
+        let user = seed_user(&state, "sem.ledger", vec![]).await;
+        let token = seed_session(&state, &user.to_string()).await;
+
+        let (status, body) = send_raw(
+            state,
+            with_session(get("/v1/ledger/archive/document"), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(
+            body["error"].as_str().expect("error").contains("permissão"),
+            "RBAC denial body: {body}"
+        );
+    }
+
     /// Draft an ata into `book_id`, fill mandatory (compliance-clean) contents, and advance it to
     /// Signing; returns the act id. Mirrors `full_lifecycle_happy_path`'s fill.
     async fn draft_fill_and_advance(state: &AppState, book_id: &str) -> String {
@@ -1775,6 +2308,528 @@ mod tests {
         // Preview does NOT persist: the PDF endpoint is still 404.
         let (status, _, _) = send_bytes(state, get(&format!("/v1/acts/{act_id}/document"))).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn working_copy_export_is_markdown_non_evidentiary_and_read_only() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        let (status, _, _) = send_raw_bytes(
+            state.clone(),
+            get(&format!("/v1/acts/{act_id}/document/working-copy")),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "working-copy export is session-gated"
+        );
+
+        let token = auth_token(&state).await;
+        let (status, sealed) = send(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+        let doc = &sealed["document"];
+        let doc_id = doc["id"].as_str().expect("document id");
+        let digest = doc["pdf_digest"].as_str().expect("pdf digest");
+
+        let (status, _, pdf_before) = send_bytes(
+            state.clone(),
+            with_session(get(&format!("/v1/acts/{act_id}/document")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, events_before) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events?limit=1000"), &token),
+        )
+        .await;
+
+        let (status, headers, body) = send_raw_bytes(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/acts/{act_id}/document/working-copy")),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            headers
+                .get("content-type")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("text/markdown")),
+            "working copy content-type is markdown: {headers:?}"
+        );
+        let disposition = headers
+            .get("content-disposition")
+            .and_then(|value| value.to_str().ok())
+            .expect("content-disposition");
+        assert!(
+            disposition.contains("working-copy") && disposition.contains(".md"),
+            "filename labels working copy: {disposition}"
+        );
+        let markdown = String::from_utf8(body).expect("markdown is utf-8");
+        assert!(markdown.contains("WORKING COPY - NON-EVIDENTIARY"));
+        assert!(markdown.contains("not the preserved signed original"));
+        assert!(markdown.contains(doc_id));
+        assert!(markdown.contains(digest));
+        assert!(markdown.contains("Ata da AG anual"));
+        assert!(markdown.contains("Sede social"));
+
+        let (status, _, pdf_after) = send_bytes(
+            state.clone(),
+            with_session(get(&format!("/v1/acts/{act_id}/document")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            pdf_after, pdf_before,
+            "working-copy export must not alter preserved PDF/A bytes"
+        );
+        let (_, events_after) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events?limit=1000"), &token),
+        )
+        .await;
+        assert_eq!(
+            events_after, events_before,
+            "working-copy export must not append ledger events"
+        );
+        let (_, verify) = send(state, with_session(get("/v1/ledger/verify"), &token)).await;
+        assert_eq!(verify["valid"], true, "ledger still verifies");
+    }
+
+    #[tokio::test]
+    async fn office_export_is_docx_deterministic_non_evidentiary_and_read_only() {
+        use std::io::Read;
+
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        let (status, _, _) = send_raw_bytes(
+            state.clone(),
+            get(&format!("/v1/acts/{act_id}/document/office")),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "office export is session-gated"
+        );
+
+        let token = auth_token(&state).await;
+        let (status, sealed) = send(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+        let doc = &sealed["document"];
+        let doc_id = doc["id"].as_str().expect("document id");
+        let digest = doc["pdf_digest"].as_str().expect("pdf digest");
+
+        let (_, events_before) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events?limit=1000"), &token),
+        )
+        .await;
+
+        let request = || with_session(get(&format!("/v1/acts/{act_id}/document/office")), &token);
+        let (status, headers, first) = send_raw_bytes(state.clone(), request()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        );
+        let disposition = headers
+            .get("content-disposition")
+            .and_then(|value| value.to_str().ok())
+            .expect("content-disposition");
+        assert!(
+            disposition.contains("office-working-copy") && disposition.contains(".docx"),
+            "filename labels office working copy: {disposition}"
+        );
+        assert!(first.starts_with(b"PK"), "DOCX is a zip package");
+
+        let (status, _, second) = send_raw_bytes(state.clone(), request()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(second, first, "office export bytes are deterministic");
+
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(first)).expect("valid docx");
+        let mut document_xml = String::new();
+        archive
+            .by_name("word/document.xml")
+            .expect("document part")
+            .read_to_string(&mut document_xml)
+            .expect("document xml reads");
+        assert!(document_xml.contains("WORKING COPY - NON-EVIDENTIARY"));
+        assert!(document_xml.contains("not the preserved signed original"));
+        assert!(document_xml.contains(doc_id));
+        assert!(document_xml.contains(digest));
+        assert!(document_xml.contains("Ata da AG anual"));
+
+        let (_, events_after) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events?limit=1000"), &token),
+        )
+        .await;
+        assert_eq!(
+            events_after, events_before,
+            "office export must not append ledger events"
+        );
+        let (_, verify) = send(state, with_session(get("/v1/ledger/verify"), &token)).await;
+        assert_eq!(verify["valid"], true, "ledger still verifies");
+    }
+
+    #[tokio::test]
+    async fn office_export_requires_a_preserved_document_and_rebuildable_model() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        let (status, _, _) = send_bytes(
+            state.clone(),
+            get(&format!("/v1/acts/{act_id}/document/office")),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "draft has no preserved document to export"
+        );
+
+        let orphan_act_id = ActId(Uuid::new_v4());
+        state.documents.write().await.insert(
+            orphan_act_id,
+            StoredDocument {
+                id: "orphan-document".to_owned(),
+                act_id: orphan_act_id,
+                template_id: "csc-ata-ag/v1".to_owned(),
+                pdf_digest: "00".repeat(32),
+                profile: crate::documents::PDFA_PROFILE.to_owned(),
+                created_at: time::OffsetDateTime::UNIX_EPOCH,
+                pdf_bytes: b"%PDF-1.7\n".to_vec(),
+            },
+        );
+
+        let (status, body) = send(
+            state,
+            get(&format!("/v1/acts/{orphan_act_id}/document/office")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("editable document model"),
+            "409 explains missing model: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn document_import_persists_lists_reads_and_survives_restart_without_replacing_canonical()
+    {
+        use base64::Engine;
+        use base64::engine::general_purpose::STANDARD as B64;
+
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let token = auth_token(&state).await;
+        let (_entity_id, book_id) = seed_entity_and_book(&state, &token).await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        let (status, sealed) = send(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "seal: {sealed}");
+        let (status, _, canonical_before) = send_bytes(
+            state.clone(),
+            with_session(get(&format!("/v1/acts/{act_id}/document")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let imported_pdf = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\nstartxref\n0\n%%EOF\n".to_vec();
+        let body = json!({
+            "act_id": act_id,
+            "filename": "supporting-evidence.pdf",
+            "content_type": "application/pdf",
+            "content_base64": B64.encode(&imported_pdf),
+            "access_code": "SECRET-SHOULD-BE-IGNORED"
+        });
+
+        let ledger_before = state.ledger.read().await.len();
+        let imports_before = state
+            .store
+            .as_ref()
+            .expect("store")
+            .imported_documents(None)
+            .expect("import list")
+            .len();
+        let (status, validation) = send(
+            state.clone(),
+            with_session(
+                post_json("/v1/documents/import/validate", body.clone()),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "validate: {validation}");
+        assert_eq!(validation["can_accept_non_canonical_import"], true);
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_before,
+            "validate stays read-only"
+        );
+        assert_eq!(
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .imported_documents(None)
+                .expect("import list")
+                .len(),
+            imports_before,
+            "validate must not create imported rows"
+        );
+
+        let (status, imported) = send(
+            state.clone(),
+            with_session(post_json("/v1/documents/import", body.clone()), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "import: {imported}");
+        let import_id = imported["id"].as_str().expect("import id").to_owned();
+        Uuid::parse_str(&import_id).expect("import id is uuid");
+        assert_eq!(imported["act_id"].as_str(), Some(act_id.as_str()));
+        assert_eq!(imported["filename"], "supporting-evidence.pdf");
+        assert_eq!(imported["detected_content_type"], "application/pdf");
+        assert_eq!(
+            imported["size_bytes"].as_u64(),
+            Some(imported_pdf.len() as u64)
+        );
+        assert_eq!(imported["non_canonical"], true);
+        assert!(
+            imported["legal_notice"]
+                .as_str()
+                .expect("notice")
+                .contains("does not replace")
+        );
+
+        {
+            let ledger = state.ledger.read().await;
+            let event = ledger.events().last().expect("import event");
+            assert_eq!(event.kind, "document.imported");
+            assert!(event.scope.contains(&format!("act:{act_id}")));
+            assert!(
+                event
+                    .scope
+                    .contains(&format!("imported-document:{import_id}"))
+            );
+        }
+
+        let (status, _, canonical_after) = send_bytes(
+            state.clone(),
+            with_session(get(&format!("/v1/acts/{act_id}/document")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            canonical_after, canonical_before,
+            "import must not replace the preserved PDF/A"
+        );
+
+        let (status, list) = send(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/documents/imported?act_id={act_id}")),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "list: {list}");
+        assert_eq!(list.as_array().expect("list").len(), 1);
+        assert_eq!(list[0]["id"].as_str(), Some(import_id.as_str()));
+
+        let (status, read) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/documents/imported/{import_id}")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "read: {read}");
+        assert_eq!(read, imported);
+        assert!(
+            !serde_json::to_string(&read)
+                .expect("read json")
+                .contains("SECRET-SHOULD-BE-IGNORED"),
+            "unknown secret fields are not reflected"
+        );
+
+        let (status, content_type, bytes) = send_bytes(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/documents/imported/{import_id}/bytes")),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(content_type, "application/pdf");
+        assert_eq!(bytes, imported_pdf);
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let restarted_token = auth_token(&restarted).await;
+        let (status, restarted_read) = send(
+            restarted.clone(),
+            with_session(
+                get(&format!("/v1/documents/imported/{import_id}")),
+                &restarted_token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "read after restart: {restarted_read}"
+        );
+        assert_eq!(restarted_read["id"].as_str(), Some(import_id.as_str()));
+        let (status, _, restarted_bytes) = send_bytes(
+            restarted,
+            with_session(
+                get(&format!("/v1/documents/imported/{import_id}/bytes")),
+                &restarted_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(restarted_bytes, imported_pdf);
+    }
+
+    #[tokio::test]
+    async fn document_import_fails_closed_on_auth_invalid_content_and_path_names() {
+        use base64::Engine;
+        use base64::engine::general_purpose::STANDARD as B64;
+        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let owner = auth_token(&state).await;
+        let pdf = b"%PDF-1.7\nstartxref\n0\n%%EOF\n".to_vec();
+        let good = json!({
+            "filename": "evidence.pdf",
+            "content_type": "application/pdf",
+            "content_base64": B64.encode(&pdf)
+        });
+
+        let (status, _) = send_raw(
+            state.clone(),
+            post_json("/v1/documents/import", good.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "session required");
+
+        let leitor = seed_user(
+            &state,
+            "document.reader",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let leitor_token = seed_session(&state, &leitor.to_string()).await;
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/documents/import", good.clone()),
+                &leitor_token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "Leitor cannot import: {body}"
+        );
+
+        let bad_name = json!({
+            "filename": "../secret.pdf",
+            "content_type": "application/pdf",
+            "content_base64": B64.encode(&pdf)
+        });
+        let (status, _) = send(
+            state.clone(),
+            with_session(post_json("/v1/documents/import", bad_name), &owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+        let empty = json!({
+            "filename": "empty.pdf",
+            "content_type": "application/pdf",
+            "content_base64": B64.encode(Vec::<u8>::new())
+        });
+        let (status, body) = send(
+            state.clone(),
+            with_session(post_json("/v1/documents/import", empty), &owner),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "empty rejected: {body}"
+        );
+
+        let not_pdf = json!({
+            "filename": "note.txt",
+            "content_type": "text/plain",
+            "content_base64": B64.encode(b"not a pdf")
+        });
+        let (status, body) = send(
+            state.clone(),
+            with_session(post_json("/v1/documents/import", not_pdf), &owner),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "non-pdf rejected: {body}"
+        );
+
+        assert!(
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .imported_documents(None)
+                .expect("import list")
+                .is_empty(),
+            "failed imports must not persist rows"
+        );
+        assert!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .all(|event| event.kind != "document.imported"),
+            "failed imports must not append ledger events"
+        );
     }
 
     #[tokio::test]
@@ -2402,8 +3457,59 @@ mod tests {
                     "env": "prod",
                     "application_id": "AMA-APP-0001",
                     "ama_cert_configured": true
+                },
+                "providers": [
+                    {
+                        "id": "cmd",
+                        "mode": "CMD",
+                        "label": "Chave Móvel Digital (CMD/SCMD)",
+                        "configured": true,
+                        "production_blocked": false,
+                        "local_only": false,
+                        "note": "Configured for AMA production. PIN/OTP are never stored."
+                    },
+                    {
+                        "id": "cc",
+                        "mode": "CC",
+                        "label": "Cartão de Cidadão",
+                        "configured": false,
+                        "production_blocked": false,
+                        "local_only": true,
+                        "note": "Requires a co-located desktop process and card reader; no PIN is stored."
+                    },
+                    {
+                        "id": "csc_qtsp",
+                        "mode": "CSC_QTSP",
+                        "label": "CSC/QTSP remote provider",
+                        "configured": false,
+                        "production_blocked": true,
+                        "local_only": false,
+                        "note": "No CSC/QTSP provider is configured in the environment."
+                    },
+                    {
+                        "id": "soft_pkcs12",
+                        "mode": "LOCAL_PKCS12",
+                        "label": "Local soft certificate (PKCS#12/PFX)",
+                        "configured": false,
+                        "production_blocked": true,
+                        "local_only": true,
+                        "note": "Local-only test/operator material; private key and passphrase are never captured in settings."
+                    }
+                ]
+            },
+            "registry_auto_update": {
+                "enabled": true,
+                "cadence": { "kind": "interval_hours", "hours": 12 },
+                "stale_threshold_hours": 168,
+                "min_backoff_minutes": 30,
+                "max_backoff_minutes": 240,
+                "max_attempts_per_run": 5,
+                "entity_defaults": {
+                    "enabled": true,
+                    "enabled_profiles": ["SociedadePorQuotas"]
                 }
             },
+            "ai": { "enabled": true },
             "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
             "onboarding": { "completed": false, "completed_at": null }
         })
@@ -2430,6 +3536,12 @@ mod tests {
         assert_eq!(body["signing"]["cmd"]["env"], "preprod");
         assert_eq!(body["signing"]["cmd"]["application_id"], Value::Null);
         assert_eq!(body["signing"]["cmd"]["ama_cert_configured"], false);
+        assert_eq!(body["signing"]["providers"][0]["mode"], "CMD");
+        assert_eq!(body["signing"]["providers"][0]["production_blocked"], true);
+        assert_eq!(body["signing"]["providers"][1]["mode"], "CC");
+        assert_eq!(body["signing"]["providers"][1]["local_only"], true);
+        assert_eq!(body["signing"]["providers"][2]["mode"], "CSC_QTSP");
+        assert_eq!(body["signing"]["providers"][3]["mode"], "LOCAL_PKCS12");
         // Trust-service URLs now default to the official Portuguese endpoints (not null).
         assert_eq!(
             body["signing"]["tsa_url"],
@@ -2440,6 +3552,7 @@ mod tests {
             "https://www.gns.gov.pt/media/TSLPT.xml"
         );
         assert_eq!(body["signing"]["require_qualified_for_seal"], false);
+        assert_eq!(body["ai"]["enabled"], false);
         assert_eq!(body["appearance"]["theme"], "system");
         assert_eq!(body["appearance"]["leather_texture"], true);
         assert_eq!(body["appearance"]["texture_intensity"], 60);
@@ -2477,6 +3590,7 @@ mod tests {
         assert_eq!(stored["organization"]["name"], "Solo");
         assert_eq!(stored["organization"]["default_actor"], "api");
         assert_eq!(stored["documents"]["locale"], "pt-PT");
+        assert_eq!(stored["ai"]["enabled"], false);
         assert_eq!(stored["appearance"]["texture_intensity"], 60);
         // Omitted trust URLs and button_texture inherit the official/textured defaults.
         assert_eq!(
@@ -2508,7 +3622,7 @@ mod tests {
 
     #[test]
     fn settings_old_document_inherits_new_defaults_and_preserves_null() {
-        // An older settings.json that predates these fields: it omits button_texture and
+        // An older settings.json that predates these fields: it omits ai, button_texture and
         // tsa_url entirely, and stores tsl_url as an explicit null.
         let old = json!({
             "schema_version": 1,
@@ -2527,6 +3641,11 @@ mod tests {
         assert_eq!(parsed.signing.tsl_url, None);
         // Omitted additive appearance flag inherits its default (textured buttons on).
         assert!(parsed.appearance.button_texture);
+        // Omitted tenant AI/MCP controls default off.
+        assert!(!parsed.ai.enabled);
+        // Omitted registry auto-update policy defaults fail-closed.
+        assert!(!parsed.registry_auto_update.enabled);
+        assert!(!parsed.registry_auto_update.entity_defaults.enabled);
     }
 
     #[tokio::test]
@@ -2564,6 +3683,33 @@ mod tests {
         let (status, body) = send(AppState::default(), put_json("/v1/settings", bad)).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn settings_put_invalid_registry_auto_update_values_are_422() {
+        let mut bad_cadence = sample_settings();
+        bad_cadence["registry_auto_update"]["cadence"] =
+            json!({ "kind": "interval_hours", "hours": 0 });
+        let (status, body) = send(AppState::default(), put_json("/v1/settings", bad_cadence)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("registry_auto_update.cadence.hours")
+        );
+
+        let mut bad_backoff = sample_settings();
+        bad_backoff["registry_auto_update"]["min_backoff_minutes"] = json!(60);
+        bad_backoff["registry_auto_update"]["max_backoff_minutes"] = json!(30);
+        let (status, body) = send(AppState::default(), put_json("/v1/settings", bad_backoff)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("min_backoff_minutes")
+        );
     }
 
     #[tokio::test]
@@ -4402,6 +5548,7 @@ mod tests {
                 &format!("/v1/acts/{act_id}"),
                 json!({
                     "meeting_date": "2026-03-30",
+                    "meeting_time": "10:00",
                     "place": "Hall do prédio",
                     "attendance_reference": "Folha de presenças",
                     "deliberations": "Aprovado o orçamento anual.",
@@ -4889,6 +6036,11 @@ mod tests {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
         let _ = seal_one(&state).await;
+        std::fs::write(
+            tmp.dir.join(crate::apikeys::API_KEYS_FILE),
+            br#"[{"prefix":"chk_manifest"}]"#,
+        )
+        .expect("api key sidecar");
 
         let (status, manifest) = send(state.clone(), post_json("/v1/backup", json!({}))).await;
         assert_eq!(status, StatusCode::OK);
@@ -4905,6 +6057,7 @@ mod tests {
         assert!(manifest["ledger_length"].as_u64().expect("length") >= 4);
         let files = manifest["files"].as_array().expect("files");
         assert!(files.iter().any(|f| f["name"] == "chancela.db"));
+        assert!(files.iter().any(|f| f["name"] == "apikeys.json"));
 
         // The archive really exists on disk under backups/.
         let path = manifest["path"].as_str().expect("path");
@@ -4922,6 +6075,97 @@ mod tests {
                 .iter()
                 .any(|e| e["kind"] == "backup.created"),
             "a backup.created event was appended"
+        );
+    }
+
+    #[tokio::test]
+    async fn backup_with_passphrase_returns_encrypted_envelope() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let _ = seal_one(&state).await;
+
+        let (status, manifest) = send(
+            state,
+            post_json(
+                "/v1/backup",
+                json!({ "passphrase": "correct horse battery staple" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let path = manifest["path"].as_str().expect("path");
+        assert!(path.ends_with(".cbackup"), "encrypted path: {path}");
+        let bytes = std::fs::read(path).expect("encrypted backup exists");
+        assert!(chancela_store::is_encrypted_backup(&bytes));
+        assert!(!contains_subslice(&bytes, b"PK"));
+        assert!(!contains_subslice(&bytes, b"SQLite format 3"));
+        assert!(
+            chancela_store::decrypt_backup_envelope(&bytes, "correct horse battery staple").is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn restore_endpoint_accepts_encrypted_backup_passphrase() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let _ = seal_one(&state).await;
+        let settings = tmp.dir.join(crate::settings::SETTINGS_FILE);
+        std::fs::write(&settings, br#"{"schema_version":1}"#).expect("settings sidecar");
+
+        let (_, manifest) = send(
+            state.clone(),
+            post_json(
+                "/v1/backup",
+                json!({ "passphrase": "correct horse battery staple" }),
+            ),
+        )
+        .await;
+        let archive = manifest["path"].as_str().expect("path").to_owned();
+
+        {
+            let mut ledger = state.ledger.write().await;
+            ledger.append("api", "settings", "settings.changed", None, b"after backup");
+            state
+                .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+                .expect("persist post-backup event");
+        }
+        std::fs::write(
+            &settings,
+            br#"{"schema_version":1,"appearance":{"theme":"dark"}}"#,
+        )
+        .expect("mutate settings sidecar");
+
+        let (status, restored) = send(
+            state.clone(),
+            post_json(
+                "/v1/ledger/recovery/restore",
+                json!({
+                    "archive": archive,
+                    "passphrase": "correct horse battery staple"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "restore response: {restored}");
+        assert_eq!(
+            std::fs::read(&settings).unwrap(),
+            br#"{"schema_version":1}"#
+        );
+        let loaded = state.store.as_ref().unwrap().load().unwrap();
+        assert!(
+            !loaded
+                .ledger
+                .events()
+                .iter()
+                .any(|e| e.kind == "settings.changed"),
+            "post-backup event is absent after restore"
+        );
+        assert!(
+            loaded
+                .ledger
+                .events()
+                .iter()
+                .any(|e| e.kind == "ledger.restored")
         );
     }
 
@@ -5139,7 +6383,15 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
-        // Within the 1s window even the correct password is refused with 429.
+        {
+            let uid = crate::users::UserId(Uuid::parse_str(&id).expect("uuid"));
+            let mut backoff = state.signin_backoff.write().await;
+            let entry = backoff
+                .get_mut(&uid)
+                .expect("wrong password records sign-in backoff");
+            entry.next_allowed_at = time::OffsetDateTime::now_utc() + time::Duration::seconds(30);
+        }
+        // Within the backoff window even the correct password is refused with 429.
         let (status, body) = send(
             state.clone(),
             post_json(
@@ -6194,10 +7446,13 @@ mod tests {
                 .any(|p| p == "ledger.read")
         );
 
-        // The catalog now lists the 4 seeded defaults + the new one.
+        // The catalog now lists the seeded defaults + the new one.
         let (status, list) = send(state.clone(), get("/v1/roles")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(list.as_array().expect("roles").len(), 5);
+        assert_eq!(
+            list.as_array().expect("roles").len(),
+            chancela_authz::default_roles().len() + 1
+        );
 
         // The frozen verb catalog is introspectable by any session.
         let (status, cat) = send(state.clone(), get("/v1/permissions")).await;
@@ -6217,11 +7472,14 @@ mod tests {
         assert_eq!(patched["name"], json!("Auditor Sénior"));
         assert_eq!(patched["permissions"].as_array().expect("perms").len(), 1);
 
-        // Delete it; the catalog returns to the 4 seeded defaults.
+        // Delete it; the catalog returns to the seeded defaults.
         let (status, _) = send(state.clone(), delete(&format!("/v1/roles/{id}"))).await;
         assert_eq!(status, StatusCode::NO_CONTENT);
         let (_, list) = send(state.clone(), get("/v1/roles")).await;
-        assert_eq!(list.as_array().expect("roles").len(), 4);
+        assert_eq!(
+            list.as_array().expect("roles").len(),
+            chancela_authz::default_roles().len()
+        );
     }
 
     #[tokio::test]
@@ -6634,6 +7892,114 @@ mod tests {
                 .iter()
                 .any(|p| p["permission"] == "act.advance")
         );
+    }
+
+    #[tokio::test]
+    async fn e4_delegation_start_and_legal_basis_roundtrip() {
+        use chancela_authz::{
+            NoBooks, OWNER_ROLE_ID, Permission, RoleAssignment, Scope, has_permission,
+        };
+        use time::format_description::well_known::Rfc3339;
+
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+
+        let owner = seed_user(
+            &state,
+            "owner.a",
+            vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let tok = seed_session(&state, &owner.to_string()).await;
+        let grantee = seed_user(&state, "amelia.marques", vec![]).await;
+        let g_tok = seed_session(&state, &grantee.to_string()).await;
+
+        let starts_at_time = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+        let starts_at = starts_at_time.format(&Rfc3339).expect("fmt");
+        let legal_basis = "board resolution ROL-11";
+
+        let (status, view) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/delegations",
+                    json!({
+                        "to": grantee.to_string(),
+                        "permission": "act.read",
+                        "scope": { "kind": "global" },
+                        "starts_at": starts_at,
+                        "legal_basis": legal_basis
+                    }),
+                ),
+                &tok,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(view["starts_at"], json!(starts_at));
+        assert_eq!(view["legal_basis"], json!(legal_basis));
+        let del_id = view["id"].as_str().expect("id").to_owned();
+
+        let (status, list) =
+            send_raw(state.clone(), with_session(get("/v1/delegations"), &tok)).await;
+        assert_eq!(status, StatusCode::OK);
+        let listed = list
+            .as_array()
+            .expect("delegations")
+            .iter()
+            .find(|d| d["id"] == del_id)
+            .expect("listed delegation");
+        assert_eq!(listed["starts_at"], json!(starts_at));
+        assert_eq!(listed["legal_basis"], json!(legal_basis));
+
+        let persisted: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(tmp.dir.join(crate::delegations::DELEGATIONS_FILE)).expect("read"),
+        )
+        .expect("delegations json");
+        let saved = persisted
+            .as_array()
+            .expect("persisted delegations")
+            .iter()
+            .find(|d| d["id"] == del_id)
+            .expect("persisted delegation");
+        assert!(saved.get("starts_at").is_some());
+        assert_eq!(saved["legal_basis"], json!(legal_basis));
+        let loaded = crate::delegations::load_delegations(
+            &tmp.dir.join(crate::delegations::DELEGATIONS_FILE),
+        )
+        .expect("load delegations");
+        let loaded = loaded
+            .values()
+            .find(|d| d.id.0.to_string() == del_id)
+            .expect("loaded delegation");
+        assert_eq!(loaded.inner.starts_at, starts_at_time);
+        assert_eq!(loaded.inner.legal_basis.as_deref(), Some(legal_basis));
+
+        let (_, perms_before) = send_raw(
+            state.clone(),
+            with_session(get("/v1/session/permissions"), &g_tok),
+        )
+        .await;
+        assert!(
+            !perms_before["permissions"]
+                .as_array()
+                .expect("perms")
+                .iter()
+                .any(|p| p["permission"] == "act.read" && p["source"] == "delegation")
+        );
+
+        let eff = crate::roles::effective_permissions_for(
+            &state,
+            grantee,
+            starts_at_time + time::Duration::seconds(1),
+        )
+        .await;
+        assert!(has_permission(
+            &eff,
+            Permission::ActRead,
+            Scope::Global,
+            &NoBooks
+        ));
     }
 
     /// Set `target`'s first password as a self-service op (open a session as the target).

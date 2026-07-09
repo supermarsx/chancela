@@ -11,9 +11,10 @@ use chancela_cmd::{MockScmdTransport, ScmdClient};
 use chancela_signing::provider::OTP_STEP_LEVEL;
 use chancela_signing::{
     BaselineProfile, CmdProvider, DocumentInput, EvidentiaryLevel, MockProvider, SignOptions,
-    SignatureEnvelope, SignatureFormat, SignatureRequest, SignerCapacity, SignerProvider,
-    SigningError, SigningFamily, SigningJob, SigningOrder, StaticTrustPolicy, TrustedListStatus,
-    is_complete, pending_slots, record_manual_signature, sign_slot,
+    SignatureArtifact, SignatureEnvelope, SignatureFormat, SignatureRequest, SignerCapacity,
+    SignerProvider, SigningError, SigningFamily, SigningJob, SigningOrder, StaticTrustPolicy,
+    TrustedListStatus, is_complete, pending_slots, record_manual_signature, sign_slot,
+    validate_signature,
 };
 
 fn fixed_time() -> OffsetDateTime {
@@ -374,23 +375,57 @@ fn cmd_otp_is_a_confirmation_step_never_the_signature() {
 }
 
 #[test]
-fn unsupported_format_and_input_mismatch_are_reported() {
+fn xades_and_asic_signing_remain_explicitly_unsupported() {
     let provider = MockProvider::deterministic_rsa(SigningFamily::CartaoDeCidadao);
     let digest = [12u8; 32];
 
-    // XAdES is recognised by the vocabulary but not yet produced.
-    let mut xades = SignatureEnvelope::new(
-        SigningOrder::Parallel,
-        vec![request(
-            SigningFamily::CartaoDeCidadao,
-            SignatureFormat::XAdES,
-            BaselineProfile::B_B,
-        )],
-    );
-    assert_eq!(
-        sign_slot(&mut xades, 0, cades_job(&provider, None, &digest)).unwrap_err(),
-        SigningError::UnsupportedFormat(SignatureFormat::XAdES)
-    );
+    for format in [SignatureFormat::XAdES, SignatureFormat::ASiC] {
+        let mut env = SignatureEnvelope::new(
+            SigningOrder::Parallel,
+            vec![request(
+                SigningFamily::CartaoDeCidadao,
+                format,
+                BaselineProfile::B_B,
+            )],
+        );
+        assert_eq!(
+            sign_slot(&mut env, 0, cades_job(&provider, None, &digest)).unwrap_err(),
+            SigningError::UnsupportedFormat(format)
+        );
+        assert!(
+            env.artifacts.is_empty(),
+            "{format:?} must not produce an artifact"
+        );
+    }
+}
+
+#[test]
+fn xades_and_asic_validation_remain_explicitly_unsupported() {
+    for format in [SignatureFormat::XAdES, SignatureFormat::ASiC] {
+        let artifact = SignatureArtifact {
+            id: uuid::Uuid::nil(),
+            slot: 0,
+            family: SigningFamily::CartaoDeCidadao,
+            format,
+            profile: BaselineProfile::B_B,
+            evidentiary_level: EvidentiaryLevel::Qualified,
+            signed_at: Some(fixed_time()),
+            signature: b"recognized-but-unavailable".to_vec(),
+            trusted_list_status: None,
+            timestamp_token_der: None,
+        };
+
+        assert_eq!(
+            validate_signature(&artifact, Some(&[0u8; 32])).unwrap_err(),
+            SigningError::UnsupportedFormat(format)
+        );
+    }
+}
+
+#[test]
+fn input_mismatch_is_reported_for_supported_formats() {
+    let provider = MockProvider::deterministic_rsa(SigningFamily::CartaoDeCidadao);
+    let digest = [12u8; 32];
 
     // A PAdES request fed a bare digest (instead of PDF bytes) is an input mismatch.
     let mut pades = SignatureEnvelope::new(

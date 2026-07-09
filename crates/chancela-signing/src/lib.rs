@@ -36,6 +36,7 @@ pub mod pipeline;
 pub mod policy;
 pub mod provider;
 pub mod remote;
+pub mod soft_cert;
 pub mod validate;
 
 pub use cc::{CcSignedPdf, sign_pdf_cc};
@@ -46,15 +47,23 @@ pub use envelope::{
     DocumentInput, SigningJob, is_complete, pending_slots, record_manual_signature, sign_slot,
 };
 pub use mock::MockProvider;
-pub use pipeline::{TimestampProvider, sign_detached_cades, sign_pdf_pades};
+pub use pipeline::{
+    TimestampProvider, attach_pdf_dss, sign_detached_cades, sign_pdf_pades, timestamp_pdf,
+    timestamp_pdf_with_url,
+};
 pub use policy::{StaticTrustPolicy, TrustPolicy, TslTrustPolicy};
 pub use provider::{CmdProvider, SignerProvider, SmartcardProvider};
 pub use remote::{RemoteInitiate, RemoteSignSession, RemoteSigningSource};
+pub use soft_cert::{
+    Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError, SoftCertificateIdentity,
+};
 pub use validate::{SignatureValidationReport, validate_signature};
 
 // Re-export the pieces of the underlying stack callers most often name through this crate.
 pub use chancela_cades::{RawSignature, SignatureAlgorithm};
-pub use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_signature};
+pub use chancela_pades::{
+    DssEvidence, DssReport, PreparedSignature, SignOptions, embed_signature, prepare_signature,
+};
 pub use chancela_tsa::{Timestamp, TsaClient};
 
 /// The four signing families the product MUST natively support (SIG-01).
@@ -96,8 +105,9 @@ impl SigningFamily {
     }
 }
 
-/// Advanced/Qualified Electronic Signature container formats the subsystem MUST support
-/// (SIG-20): PAdES for PDFs, XAdES/CAdES/ASiC for structured or detached workflows.
+/// Advanced/Qualified Electronic Signature container formats the subsystem vocabulary recognises
+/// (SIG-20). PAdES and detached CAdES are implemented in this crate; XAdES and ASiC are recognised
+/// explicitly but remain unavailable and return [`SigningError::UnsupportedFormat`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SignatureFormat {
@@ -347,6 +357,9 @@ pub enum SigningError {
     /// A signing device/service (smartcard, CMD, mock) failed to produce a signature.
     #[error("signer provider failure: {0}")]
     Provider(String),
+    /// PKCS#12/software-certificate loading or signing failed.
+    #[error("software certificate error: {0}")]
+    SoftCertificate(SoftCertificateError),
     /// CAdES/CMS assembly or validation failed (`chancela-cades`).
     #[error("CAdES/CMS error: {0}")]
     Cades(String),

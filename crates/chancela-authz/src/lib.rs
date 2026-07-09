@@ -37,8 +37,9 @@ pub use assignment::RoleAssignment;
 pub use delegation::{Delegation, UserId};
 pub use permission::Permission;
 pub use role::{
-    GESTOR_ROLE_ID, LEITOR_ROLE_ID, OWNER_ROLE_ID, Role, RoleCatalog, RoleId, SIGNATARIO_ROLE_ID,
-    default_roles,
+    API_CLIENT_ROLE_ID, AUDITOR_ROLE_ID, GESTOR_ROLE_ID, GUEST_ROLE_ID, LEITOR_ROLE_ID,
+    OWNER_ROLE_ID, PLATFORM_ADMIN_ROLE_ID, Role, RoleCatalog, RoleId, SIGNATARIO_ROLE_ID,
+    TENANT_ADMIN_ROLE_ID, default_roles,
 };
 pub use scope::{BookId, BookScope, EntityId, NoBooks, Scope, scope_covers};
 
@@ -101,8 +102,8 @@ impl ScopedPermissionSet {
 ///
 /// - Each [`RoleAssignment`] contributes its role's whole permission-set at the assignment's scope
 ///   (a missing role in the catalog contributes nothing — fail-closed).
-/// - Each **active** (non-revoked, non-expired) [`Delegation`] whose `to == principal` contributes
-///   its single permission at its scope, into the *delegated* bucket.
+/// - Each **active** (started, non-revoked, non-expired) [`Delegation`] whose `to == principal`
+///   contributes its single permission at its scope, into the *delegated* bucket.
 ///
 /// `delegations` may be the full delegation table; only those addressed to `principal` are consulted.
 #[must_use]
@@ -360,6 +361,37 @@ mod tests {
         let after = effective_permissions(principal, &[], &cat, &[d], epoch() + Duration::hours(2));
         assert!(!has_permission(
             &after,
+            Permission::ActRead,
+            Scope::Global,
+            &NoBooks
+        ));
+    }
+
+    #[test]
+    fn future_delegation_contributes_nothing_until_start() {
+        let principal = uid(1);
+        let cat = RoleCatalog::new();
+        let starts_at = epoch() + Duration::hours(1);
+        let d = Delegation::new(uid(9), principal, Permission::ActRead, Scope::Global)
+            .starting_at(starts_at);
+
+        let before = effective_permissions(
+            principal,
+            &[],
+            &cat,
+            std::slice::from_ref(&d),
+            starts_at - Duration::seconds(1),
+        );
+        assert!(!has_permission(
+            &before,
+            Permission::ActRead,
+            Scope::Global,
+            &NoBooks
+        ));
+
+        let at_start = effective_permissions(principal, &[], &cat, &[d], starts_at);
+        assert!(has_permission(
+            &at_start,
             Permission::ActRead,
             Scope::Global,
             &NoBooks

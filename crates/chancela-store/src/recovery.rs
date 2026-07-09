@@ -28,7 +28,7 @@
 //! whether that chain re-verified clean. A per-book import is therefore a **verified historical
 //! record / restore vehicle**, not a re-activation onto the live, appendable spine.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -41,7 +41,8 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::{
-    BackupFile, BackupManifest, DB_FILE, Store, StoreError, Tx, hex, open_connection, utc_stamp,
+    BackupFile, BackupManifest, DB_FILE, Store, StoreError, Tx, decrypt_backup_envelope, hex,
+    is_encrypted_backup, open_connection, utc_stamp,
 };
 
 /// The frozen portable-bundle format tag (a `.zip`); see the module docs and plan §2.4.
@@ -222,6 +223,16 @@ pub struct RestoreOutcome {
     pub ledger_head: Option<String>,
     /// Always `true` on success (the snapshot verified `Ok` before the swap).
     pub chain_verified: bool,
+}
+
+struct VerifiedRestoreZip<'a> {
+    ledger: &'a mut Ledger,
+    archive: &'a Path,
+    data_dir: &'a Path,
+    actor: &'a str,
+    at: OffsetDateTime,
+    archive_bytes: &'a [u8],
+    sidecars: &'a [PathBuf],
 }
 
 // =================================================================================================
@@ -652,8 +663,93 @@ impl Store {
         actor: &str,
         at: OffsetDateTime,
     ) -> Result<RestoreOutcome, StoreError> {
+        self.restore_with_sidecars(ledger, archive, data_dir, actor, at, &[])
+    }
+
+    /// Whole-store restore from a plaintext legacy zip, also replacing the supplied instance
+    /// sidecars. Sidecar replacements are staged only after the archive and snapshot verify.
+    pub fn restore_with_sidecars(
+        &self,
+        ledger: &mut Ledger,
+        archive: &Path,
+        data_dir: &Path,
+        actor: &str,
+        at: OffsetDateTime,
+        sidecars: &[PathBuf],
+    ) -> Result<RestoreOutcome, StoreError> {
         let archive_bytes = std::fs::read(archive)?;
-        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&archive_bytes))
+        if is_encrypted_backup(&archive_bytes) {
+            return Err(StoreError::BadBackup(
+                "encrypted backup requires an explicit passphrase".to_owned(),
+            ));
+        }
+        self.restore_from_verified_zip_bytes(VerifiedRestoreZip {
+            ledger,
+            archive,
+            data_dir,
+            actor,
+            at,
+            archive_bytes: &archive_bytes,
+            sidecars,
+        })
+    }
+
+    /// Whole-store restore from an encrypted backup envelope. The passphrase is supplied
+    /// explicitly by the caller; no local sidecar or account recovery phrase is consulted.
+    pub fn restore_encrypted(
+        &self,
+        ledger: &mut Ledger,
+        archive: &Path,
+        data_dir: &Path,
+        actor: &str,
+        at: OffsetDateTime,
+        passphrase: &str,
+    ) -> Result<RestoreOutcome, StoreError> {
+        self.restore_encrypted_with_sidecars(ledger, archive, data_dir, actor, at, passphrase, &[])
+    }
+
+    /// Whole-store restore from an encrypted backup envelope, replacing the supplied sidecars after
+    /// decryption, member-digest verification, and snapshot ledger verification all succeed.
+    // Keep parity with the plaintext sidecar restore plus explicit caller-supplied passphrase; the
+    // shared restore implementation below receives a compact context struct.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore_encrypted_with_sidecars(
+        &self,
+        ledger: &mut Ledger,
+        archive: &Path,
+        data_dir: &Path,
+        actor: &str,
+        at: OffsetDateTime,
+        passphrase: &str,
+        sidecars: &[PathBuf],
+    ) -> Result<RestoreOutcome, StoreError> {
+        let envelope_bytes = std::fs::read(archive)?;
+        let archive_bytes = decrypt_backup_envelope(&envelope_bytes, passphrase)?;
+        self.restore_from_verified_zip_bytes(VerifiedRestoreZip {
+            ledger,
+            archive,
+            data_dir,
+            actor,
+            at,
+            archive_bytes: &archive_bytes,
+            sidecars,
+        })
+    }
+
+    fn restore_from_verified_zip_bytes(
+        &self,
+        restore: VerifiedRestoreZip<'_>,
+    ) -> Result<RestoreOutcome, StoreError> {
+        let VerifiedRestoreZip {
+            ledger,
+            archive,
+            data_dir,
+            actor,
+            at,
+            archive_bytes,
+            sidecars,
+        } = restore;
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes))
             .map_err(|e| StoreError::BadBackup(format!("not a readable zip: {e}")))?;
 
         // Manifest.
@@ -667,8 +763,11 @@ impl Store {
                 .map_err(|e| StoreError::BadBackup(format!("bad manifest: {e}")))?
         };
 
-        // Verify every member digest BEFORE trusting the archive.
+        // Verify every member digest BEFORE trusting the archive, and keep the verified bytes for
+        // the later db/sidecar staging phase.
+        let mut verified_members = BTreeMap::<String, Vec<u8>>::new();
         for f in &manifest.files {
+            validate_backup_member_name(&f.name)?;
             let mut member = zip
                 .by_name(&f.name)
                 .map_err(|_| StoreError::BadBackup(format!("archive missing member {}", f.name)))?;
@@ -680,17 +779,19 @@ impl Store {
                     f.name
                 )));
             }
+            if verified_members.insert(f.name.clone(), bytes).is_some() {
+                return Err(StoreError::BadBackup(format!(
+                    "manifest lists duplicate member {}",
+                    f.name
+                )));
+            }
         }
 
         // Extract the snapshot db and verify its ledger verifies Ok BEFORE the swap.
-        let db_bytes = {
-            let mut m = zip
-                .by_name(DB_FILE)
-                .map_err(|_| StoreError::BadBackup(format!("archive has no {DB_FILE}")))?;
-            let mut b = Vec::new();
-            m.read_to_end(&mut b)?;
-            b
-        };
+        let db_bytes = verified_members
+            .get(DB_FILE)
+            .ok_or_else(|| StoreError::BadBackup(format!("archive has no {DB_FILE}")))?
+            .clone();
         let verify_dir = data_dir.join(format!(".restore-verify-{}", utc_stamp(at)));
         let _ = std::fs::remove_dir_all(&verify_dir);
         std::fs::create_dir_all(&verify_dir)?;
@@ -706,7 +807,14 @@ impl Store {
             ));
         }
 
-        // Atomic swap: free the live file, write the verified snapshot, reopen the connection.
+        // Stage sidecar bytes after all archive verification and before touching live state. If
+        // this fails, the live DB and sidecars are still untouched.
+        let sidecar_stage = data_dir.join(format!(".restore-sidecars-{}", utc_stamp(at)));
+        let _ = std::fs::remove_dir_all(&sidecar_stage);
+        let staged_roots = stage_backup_sidecars(&sidecar_stage, &verified_members)?;
+
+        // Atomic db swap plus sidecar replacement: free the live file, write the verified snapshot,
+        // replace sidecar roots from the staging dir, then reopen the connection.
         {
             let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             let placeholder = rusqlite::Connection::open_in_memory()?;
@@ -717,8 +825,10 @@ impl Store {
             let _ = std::fs::remove_file(data_dir.join(format!("{DB_FILE}-wal")));
             let _ = std::fs::remove_file(data_dir.join(format!("{DB_FILE}-shm")));
             std::fs::write(&db, &db_bytes)?;
+            replace_live_sidecars(data_dir, &sidecar_stage, &staged_roots, sidecars)?;
             *guard = open_connection(data_dir)?;
         }
+        let _ = std::fs::remove_dir_all(&sidecar_stage);
 
         // Load the restored chain, record the restore (chained), and hand the caller the new ledger.
         let restored = self.load()?;
@@ -1233,6 +1343,108 @@ fn compute_bundle_digest(manifest: &BundleManifest) -> Result<String, StoreError
     m.bundle_digest = String::new();
     m.signature = None;
     Ok(hex(&Sha256::digest(serde_json::to_vec(&m)?)))
+}
+
+fn validate_backup_member_name(name: &str) -> Result<(), StoreError> {
+    if name.is_empty() || name.contains('\\') {
+        return Err(StoreError::BadBackup(format!(
+            "unsafe archive member name {name:?}"
+        )));
+    }
+    let path = Path::new(name);
+    if path.is_absolute() {
+        return Err(StoreError::BadBackup(format!(
+            "unsafe archive member name {name:?}"
+        )));
+    }
+    let mut saw_component = false;
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(_) => saw_component = true,
+            _ => {
+                return Err(StoreError::BadBackup(format!(
+                    "unsafe archive member name {name:?}"
+                )));
+            }
+        }
+    }
+    if !saw_component {
+        return Err(StoreError::BadBackup(format!(
+            "unsafe archive member name {name:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn stage_backup_sidecars(
+    stage: &Path,
+    members: &BTreeMap<String, Vec<u8>>,
+) -> Result<BTreeSet<PathBuf>, StoreError> {
+    let mut roots = BTreeSet::new();
+    for (name, bytes) in members {
+        if name == DB_FILE || name == "manifest.json" {
+            continue;
+        }
+        validate_backup_member_name(name)?;
+        let mut components = Path::new(name).components();
+        let Some(std::path::Component::Normal(root)) = components.next() else {
+            return Err(StoreError::BadBackup(format!(
+                "unsafe archive member name {name:?}"
+            )));
+        };
+        roots.insert(PathBuf::from(root));
+        let dest = stage.join(name);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(dest, bytes)?;
+    }
+    Ok(roots)
+}
+
+fn replace_live_sidecars(
+    data_dir: &Path,
+    stage: &Path,
+    staged_roots: &BTreeSet<PathBuf>,
+    sidecars: &[PathBuf],
+) -> Result<(), StoreError> {
+    let mut roots = staged_roots.clone();
+    for sidecar in sidecars {
+        if let Some(name) = sidecar.file_name() {
+            roots.insert(PathBuf::from(name));
+            remove_path_if_exists(sidecar)?;
+        }
+    }
+    for root in roots {
+        if root.as_os_str().is_empty() || root.as_path() == Path::new(DB_FILE) {
+            continue;
+        }
+        let src = stage.join(&root);
+        if !src.exists() {
+            continue;
+        }
+        let dst = data_dir.join(&root);
+        remove_path_if_exists(&dst)?;
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::rename(&src, &dst)?;
+    }
+    Ok(())
+}
+
+fn remove_path_if_exists(path: &Path) -> Result<(), StoreError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {
+            std::fs::remove_dir_all(path)?;
+        }
+        Ok(_) => {
+            std::fs::remove_file(path)?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(StoreError::Io(e)),
+    }
+    Ok(())
 }
 
 /// Write the bundle `.zip` (manifest.json first, then members in the given deterministic order) to

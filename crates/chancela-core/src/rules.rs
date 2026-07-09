@@ -6,8 +6,10 @@
 //! against its entity and returns [`ComplianceIssue`]s; sealing consults it (see
 //! [`crate::seal::seal_act`]).
 
-use crate::act::{Act, MeetingChannel, SignatoryCapacity, VoteResult};
-use crate::entity::{Entity, EntityKind, StatuteOverrides};
+use crate::act::{
+    Act, AttendanceWeight, MeetingChannel, PresenceMode, SignatoryCapacity, VoteResult,
+};
+use crate::entity::{Entity, EntityFamily, EntityKind, StatuteOverrides};
 
 /// Severity of a compliance issue (LEG-05).
 ///
@@ -178,6 +180,278 @@ fn channel_warning(act: &Act, entity: &Entity, prefix: &str) -> Option<Complianc
     }
 }
 
+/// The weighted-voting unit a family can validate from today's attendance model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WeightKind {
+    Capital,
+    Permilage,
+}
+
+impl WeightKind {
+    fn for_entity(entity: &Entity) -> Option<Self> {
+        match entity.family {
+            EntityFamily::CommercialCompany => Some(Self::Capital),
+            EntityFamily::Condominium => Some(Self::Permilage),
+            EntityFamily::Association | EntityFamily::Foundation | EntityFamily::Cooperative => {
+                None
+            }
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Capital => "capital",
+            Self::Permilage => "permilagem",
+        }
+    }
+
+    fn vote_total_rule(self, prefix: &str) -> String {
+        match self {
+            Self::Capital => format!("{prefix}/capital-vote-total"),
+            Self::Permilage => format!("{prefix}/permilage-vote-total"),
+        }
+    }
+
+    fn partial_rule(self, prefix: &str) -> String {
+        match self {
+            Self::Capital => format!("{prefix}/capital-weights-partial"),
+            Self::Permilage => format!("{prefix}/permilage-weights-partial"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WeightedAttendanceSummary {
+    kind: WeightKind,
+    present_rows: u32,
+    present_weight: u128,
+    expected_weight_rows: u32,
+    other_weight_rows: u32,
+    missing_weight_rows: u32,
+}
+
+impl WeightedAttendanceSummary {
+    fn has_weight_metadata(self) -> bool {
+        self.expected_weight_rows > 0 || self.other_weight_rows > 0
+    }
+
+    fn is_complete(self) -> bool {
+        self.other_weight_rows == 0 && self.missing_weight_rows == 0
+    }
+
+    fn can_use_weight(self) -> bool {
+        self.is_complete()
+            && self.expected_weight_rows > 0
+            && self.expected_weight_rows == self.present_rows
+    }
+}
+
+fn attendance_summary(act: &Act, kind: WeightKind) -> Option<WeightedAttendanceSummary> {
+    if act.attendees.is_empty() {
+        return None;
+    }
+
+    let mut summary = WeightedAttendanceSummary {
+        kind,
+        present_rows: 0,
+        present_weight: 0,
+        expected_weight_rows: 0,
+        other_weight_rows: 0,
+        missing_weight_rows: 0,
+    };
+
+    for attendee in act
+        .attendees
+        .iter()
+        .filter(|a| a.presence != PresenceMode::Absent)
+    {
+        summary.present_rows += 1;
+        match (kind, attendee.weight) {
+            (WeightKind::Capital, Some(AttendanceWeight::Capital(value))) => {
+                summary.expected_weight_rows += 1;
+                summary.present_weight += u128::from(value);
+            }
+            (WeightKind::Permilage, Some(AttendanceWeight::Permilage(value))) => {
+                summary.expected_weight_rows += 1;
+                summary.present_weight += u128::from(value);
+            }
+            (_, Some(_)) => {
+                summary.other_weight_rows += 1;
+            }
+            (_, None) => {
+                summary.missing_weight_rows += 1;
+            }
+        }
+    }
+
+    Some(summary)
+}
+
+fn attendance_count(act: &Act) -> Option<u32> {
+    match (act.members_present, act.members_represented) {
+        (None, None) if act.attendees.is_empty() => None,
+        (None, None) => Some(
+            act.attendees
+                .iter()
+                .filter(|a| a.presence != PresenceMode::Absent)
+                .count() as u32,
+        ),
+        _ => Some(act.members_present.unwrap_or(0) + act.members_represented.unwrap_or(0)),
+    }
+}
+
+fn recorded_vote_total(vote: VoteResult) -> Option<u128> {
+    match vote {
+        VoteResult::Recorded {
+            em_favor,
+            contra,
+            abstencoes,
+        } => Some(u128::from(em_favor) + u128::from(contra) + u128::from(abstencoes)),
+        VoteResult::Unanimous => None,
+    }
+}
+
+/// Consistency checks that need no legal threshold: when a profile has a complete weighted
+/// attendance list and a resolution records an aggregate tally, the tally's total should match
+/// the present/represented weight. If no weight metadata was captured, the old unweighted path is
+/// left alone.
+fn weighted_vote_warnings(act: &Act, entity: &Entity, prefix: &str) -> Vec<ComplianceIssue> {
+    let Some(kind) = WeightKind::for_entity(entity) else {
+        return Vec::new();
+    };
+    let Some(summary) = attendance_summary(act, kind) else {
+        return Vec::new();
+    };
+    let recorded_items: Vec<_> = act
+        .deliberation_items
+        .iter()
+        .enumerate()
+        .filter_map(|(i, item)| {
+            item.vote
+                .and_then(recorded_vote_total)
+                .map(|total| (i, total))
+        })
+        .collect();
+
+    if recorded_items.is_empty() {
+        return Vec::new();
+    }
+
+    if !summary.has_weight_metadata() {
+        return Vec::new();
+    }
+
+    if !summary.is_complete() {
+        return vec![ComplianceIssue::warning(
+            &kind.partial_rule(prefix),
+            format!(
+                "the attendance list has partial or mismatched {} weights for present/represented \
+                 attendees; weighted vote totals cannot be verified from the captured rows",
+                kind.label()
+            ),
+        )];
+    }
+
+    recorded_items
+        .into_iter()
+        .filter(|(_, total)| *total != summary.present_weight)
+        .map(|(i, total)| {
+            ComplianceIssue::warning(
+                &kind.vote_total_rule(prefix),
+                format!(
+                    "deliberation item {} records {} total vote units, but the present/represented \
+                     {} total is {}; confirm the recorded tally uses the same weighted unit",
+                    i + 1,
+                    total,
+                    kind.label(),
+                    summary.present_weight
+                ),
+            )
+        })
+        .collect()
+}
+
+fn attendance_count_mismatch_warning(act: &Act, prefix: &str) -> Option<ComplianceIssue> {
+    let recorded_count = act.members_present.unwrap_or(0) + act.members_represented.unwrap_or(0);
+    if act.members_present.is_none() && act.members_represented.is_none() {
+        return None;
+    }
+
+    let row_count = act
+        .attendees
+        .iter()
+        .filter(|a| a.presence != PresenceMode::Absent)
+        .count() as u32;
+    if act.attendees.is_empty() || recorded_count == row_count {
+        return None;
+    }
+
+    Some(ComplianceIssue::warning(
+        &format!("{prefix}/attendance-count-mismatch"),
+        format!(
+            "present/represented counts record {recorded_count}, but the structured attendance \
+             list has {row_count} present/represented row(s); confirm which source controls \
+             quorum and vote review",
+        ),
+    ))
+}
+
+fn condominium_permilage_warnings(act: &Act) -> Vec<ComplianceIssue> {
+    let mut issues = Vec::new();
+    let mut present_total = 0_u32;
+    let mut has_present_permilage = false;
+
+    for attendee in act
+        .attendees
+        .iter()
+        .filter(|a| a.presence != PresenceMode::Absent)
+    {
+        if let Some(AttendanceWeight::Permilage(value)) = attendee.weight {
+            has_present_permilage = true;
+            present_total = present_total.saturating_add(value);
+            if value > 1000 {
+                issues.push(ComplianceIssue::warning(
+                    "DL268/permilage-value",
+                    format!(
+                        "attendance row {:?} records permilagem {value}, above the 1000 total \
+                         scale; confirm the captured fraction",
+                        attendee.name
+                    ),
+                ));
+            }
+        }
+    }
+
+    if has_present_permilage && present_total > 1000 {
+        issues.push(ComplianceIssue::warning(
+            "DL268/permilage-total",
+            format!(
+                "present/represented attendance permilagem totals {present_total}, above the \
+                 1000 total scale; confirm the captured fractions",
+            ),
+        ));
+    }
+
+    for slot in &act.signatories {
+        if slot.capacity == SignatoryCapacity::CondoOwner {
+            if let Some(value) = slot.permilage {
+                if value > 1000 {
+                    issues.push(ComplianceIssue::warning(
+                        "DL268/permilage-value",
+                        format!(
+                            "condómino {:?} records permilagem {value}, above the 1000 total \
+                             scale; confirm the captured fraction",
+                            slot.name
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    issues
+}
+
 /// CSC art. 63.º rule pack (**v2**) for the mandatory ata contents (ENT-C2 / LEG-03).
 ///
 /// Over the civil baseline (entity identity, date, place, attendance, substance) this pack
@@ -186,7 +460,9 @@ fn channel_warning(act: &Act, entity: &Entity, prefix: &str) -> Option<Complianc
 /// **voting results**, a **detached-document** beginning-of-proof advisory (ENT-C6), and the
 /// art. 377.º telematic-SA evidence Error (ENT-C4). Severities follow R2: only the chair and
 /// the art. 377.º evidence block; the rest are advisory so the free-text / historical / simple
-/// ata (R1/R3) and old persisted acts stay sealable.
+/// ata (R1/R3) and old persisted acts stay sealable. Capital-weighted vote checks are bounded
+/// consistency checks only: they fire when the attendance rows and recorded aggregate tallies carry
+/// enough weight metadata, and they do not invent any legal majority/quorum threshold.
 ///
 /// The type name is unchanged from v1 (callers importing `CscArt63RulePack` keep compiling);
 /// only the checks and the [`ID`](Self::ID) version tag grew.
@@ -251,6 +527,7 @@ impl RulePack for CscArt63RulePack {
 
         // Per-resolution voting results (only checkable on the structured path).
         issues.extend(missing_vote_warnings(act, "CSC-63"));
+        issues.extend(weighted_vote_warnings(act, entity, "CSC-63"));
 
         // Detached-document beginning-of-proof advisory (ENT-C6 / R7).
         if act.attachments.iter().any(|a| a.beginning_of_proof) {
@@ -289,8 +566,10 @@ impl RulePack for CscArt63RulePack {
 /// Condominium rule pack — DL 268/94 (rev. Lei 8/2022), the assembleia de condóminos.
 ///
 /// Distinct from the CSC pack: it does **not** require a mesa, an agenda, or art. 377.º. Over
-/// the civil baseline it warns on unrecorded per-resolution results and on a condómino
-/// signatory carrying no *permilagem* (ENT-D6 — metadata only; weighted tallies are deferred).
+/// the civil baseline it warns on unrecorded meeting time, per-resolution results, aggregate vote
+/// tallies that do not match captured attendance *permilagem*, contradictory attendance counts,
+/// impossible *permilagem* values/totals, and on a condómino signatory carrying no *permilagem*
+/// (ENT-D6). These are deterministic data-quality checks, not hard-coded legal thresholds.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CondominioRulePack;
 
@@ -307,8 +586,19 @@ impl RulePack for CondominioRulePack {
     fn check_act(&self, act: &Act, entity: &Entity) -> Vec<ComplianceIssue> {
         let mut issues = civil_baseline(act, entity, "DL268");
 
+        if act.meeting_time.is_none() {
+            issues.push(ComplianceIssue::warning(
+                "DL268/time",
+                "meeting time is missing; record it when available so the condominium minutes \
+                 identify the meeting occurrence precisely",
+            ));
+        }
+
         // Result of each deliberation (advisory).
         issues.extend(missing_vote_warnings(act, "DL268"));
+        issues.extend(weighted_vote_warnings(act, entity, "DL268"));
+        issues.extend(attendance_count_mismatch_warning(act, "DL268"));
+        issues.extend(condominium_permilage_warnings(act));
 
         // A condómino signatory should carry their permilagem (ENT-D6).
         for slot in &act.signatories {
@@ -413,50 +703,152 @@ impl RulePack for CooperativaRulePack {
 /// statutes, applied on top of the family pack by [`crate::profile::ProfilePack`].
 ///
 /// Only the knobs that can be genuinely checked against today's model fire: `majority`
-/// against structured [`VoteResult::Recorded`] tallies, and `quorum` against the present /
-/// represented counts. `convocation_notice_days` is stored/surfaced only (no dispatch date
-/// is modeled).
+/// against structured [`VoteResult::Recorded`] tallies, and `quorum` against captured
+/// attendance counts. `convocation_notice_days` is stored/surfaced only (no dispatch date
+/// is modeled). Use [`statute_findings_for_entity`] when the entity is known so the overlay
+/// can also use complete weighted attendance metadata.
 pub fn statute_findings(act: &Act, statute: &StatuteOverrides) -> Vec<ComplianceIssue> {
+    statute_findings_inner(act, None, statute)
+}
+
+pub(crate) fn statute_findings_for_entity(
+    act: &Act,
+    entity: &Entity,
+    statute: &StatuteOverrides,
+) -> Vec<ComplianceIssue> {
+    statute_findings_inner(act, Some(entity), statute)
+}
+
+fn statute_findings_inner(
+    act: &Act,
+    entity: Option<&Entity>,
+    statute: &StatuteOverrides,
+) -> Vec<ComplianceIssue> {
     let mut issues = Vec::new();
+    let weighted_attendance = entity
+        .and_then(WeightKind::for_entity)
+        .and_then(|kind| attendance_summary(act, kind));
 
     // Statutory majority: each non-unanimous recorded resolution must reach the fraction.
     if let Some(maj) = statute.majority {
-        for (i, item) in act.deliberation_items.iter().enumerate() {
-            if let Some(VoteResult::Recorded {
-                em_favor,
-                contra,
-                abstencoes,
-            }) = item.vote
-            {
-                let total = em_favor as u64 + contra as u64 + abstencoes as u64;
-                // em_favor / total >= numerator / denominator, in integer arithmetic. Use u128
-                // for the cross-multiply to prevent overflow when the counts are large.
-                if total > 0 {
-                    let favor: u128 = (em_favor as u64).into();
-                    let den: u128 = (maj.denominator as u64).into();
-                    let num: u128 = (maj.numerator as u64).into();
-                    let total_u128: u128 = total.into();
-                    if favor * den < num * total_u128 {
-                        issues.push(ComplianceIssue::warning(
-                            "STATUTE/majority",
-                            format!(
-                                "deliberation item {} carried with {em_favor}/{total} in favour, \
-                                 below the statutory majority of {}/{}",
-                                i + 1,
-                                maj.numerator,
-                                maj.denominator
-                            ),
-                        ));
+        if maj.denominator == 0 {
+            issues.push(ComplianceIssue::warning(
+                "STATUTE/majority-invalid",
+                "the statutes configure a majority fraction with denominator 0; the majority \
+                 overlay cannot be checked",
+            ));
+        } else {
+            let mut partial_weight_warning_emitted = false;
+            for (i, item) in act.deliberation_items.iter().enumerate() {
+                if let Some(VoteResult::Recorded {
+                    em_favor,
+                    contra,
+                    abstencoes,
+                }) = item.vote
+                {
+                    let total = u128::from(em_favor) + u128::from(contra) + u128::from(abstencoes);
+                    let mut weighted_unit = None;
+
+                    if let Some(summary) = weighted_attendance {
+                        if summary.has_weight_metadata() && !summary.is_complete() {
+                            if !partial_weight_warning_emitted {
+                                issues.push(ComplianceIssue::warning(
+                                    "STATUTE/majority-weight-unverified",
+                                    format!(
+                                        "the statutes set a majority, but the attendance list has \
+                                         partial or mismatched {} weights; weighted majority must \
+                                         be confirmed manually",
+                                        summary.kind.label()
+                                    ),
+                                ));
+                                partial_weight_warning_emitted = true;
+                            }
+                        } else if summary.can_use_weight() {
+                            if total == summary.present_weight {
+                                weighted_unit = Some(summary.kind.label());
+                            } else if summary.has_weight_metadata() {
+                                issues.push(ComplianceIssue::warning(
+                                    "STATUTE/majority-weight-unverified",
+                                    format!(
+                                        "deliberation item {} records {} total vote units, but the \
+                                         present/represented {} total is {}; weighted majority \
+                                         must be confirmed manually",
+                                        i + 1,
+                                        total,
+                                        summary.kind.label(),
+                                        summary.present_weight
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+
+                    // em_favor / total >= numerator / denominator, in integer arithmetic. Use
+                    // u128 for the cross-multiply to prevent overflow when the counts are large.
+                    // Abstentions remain in the denominator because the configured overlay is
+                    // checked against the recorded aggregate tally, not a hard-coded legal rule.
+                    if total > 0 {
+                        let favor = u128::from(em_favor);
+                        let den = u128::from(maj.denominator);
+                        let num = u128::from(maj.numerator);
+                        if favor * den < num * total {
+                            let unit_note = weighted_unit
+                                .map(|unit| format!(" {unit} vote units"))
+                                .unwrap_or_default();
+                            issues.push(ComplianceIssue::warning(
+                                "STATUTE/majority",
+                                format!(
+                                    "deliberation item {} carried with {em_favor}/{total}{} in \
+                                     favour, below the statutory majority of {}/{} \
+                                     (abstentions included in the recorded denominator)",
+                                    i + 1,
+                                    unit_note,
+                                    maj.numerator,
+                                    maj.denominator
+                                ),
+                            ));
+                        }
                     }
                 }
             }
         }
     }
 
-    // Statutory quorum: present + represented must meet the minimum, when counts exist.
+    // Statutory quorum: present + represented must meet the configured minimum, when counts or
+    // complete weighted attendance rows exist.
     if let Some(q) = statute.quorum {
-        match (act.members_present, act.members_represented) {
-            (None, None) => {
+        if let Some(summary) = weighted_attendance {
+            if summary.has_weight_metadata() && !summary.is_complete() {
+                issues.push(ComplianceIssue::warning(
+                    "STATUTE/quorum-weight-unverified",
+                    format!(
+                        "the statutes set a quorum, but the attendance list has partial or \
+                         mismatched {} weights; weighted quorum must be confirmed manually",
+                        summary.kind.label()
+                    ),
+                ));
+                return issues;
+            }
+
+            if summary.can_use_weight() {
+                let present = summary.present_weight;
+                if present < u128::from(q.min_present) {
+                    issues.push(ComplianceIssue::warning(
+                        "STATUTE/quorum",
+                        format!(
+                            "present/represented {} ({present}) is below the statutory quorum \
+                             of {}",
+                            summary.kind.label(),
+                            q.min_present
+                        ),
+                    ));
+                }
+                return issues;
+            }
+        }
+
+        match attendance_count(act) {
+            None => {
                 issues.push(ComplianceIssue::warning(
                     "STATUTE/quorum-unverified",
                     format!(
@@ -466,9 +858,7 @@ pub fn statute_findings(act: &Act, statute: &StatuteOverrides) -> Vec<Compliance
                     ),
                 ));
             }
-            _ => {
-                let present =
-                    act.members_present.unwrap_or(0) + act.members_represented.unwrap_or(0);
+            Some(present) => {
                 if present < q.min_present {
                     issues.push(ComplianceIssue::warning(
                         "STATUTE/quorum",
@@ -626,6 +1016,59 @@ mod tests {
     }
 
     #[test]
+    fn csc_pack_checks_capital_weighted_tally_when_supported() {
+        use crate::act::{AttendanceWeight, Attendee, DeliberationItem, PresenceMode};
+
+        let mut act = complete_act();
+        act.deliberation_items = vec![DeliberationItem {
+            agenda_number: Some(1),
+            text: "Aprovado o aumento de capital.".into(),
+            vote: Some(VoteResult::Recorded {
+                em_favor: 600_000,
+                contra: 400_000,
+                abstencoes: 0,
+            }),
+            statements: Vec::new(),
+        }];
+        act.attendees = vec![
+            Attendee {
+                name: "Sócia A".into(),
+                quality: SignatoryCapacity::Member,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Capital(600_000)),
+            },
+            Attendee {
+                name: "Sócio B".into(),
+                quality: SignatoryCapacity::Member,
+                presence: PresenceMode::Represented,
+                represented_by: Some("Sócia A".into()),
+                weight: Some(AttendanceWeight::Capital(400_000)),
+            },
+        ];
+
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id == "CSC-63/capital-vote-total"),
+            "matching capital-weighted tally should not warn: {issues:?}"
+        );
+
+        act.deliberation_items[0].vote = Some(VoteResult::Recorded {
+            em_favor: 6,
+            contra: 4,
+            abstencoes: 0,
+        });
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CSC-63/capital-vote-total")
+            .expect("count tally should not pass as capital-weighted");
+        assert_eq!(issue.severity, Severity::Warning);
+    }
+
+    #[test]
     fn missing_entity_name_flags_identification() {
         let mut entity = sa_entity();
         entity.name = "   ".into();
@@ -697,7 +1140,10 @@ mod tests {
 
     // ---- Non-CSC family packs ------------------------------------------------------------
 
-    use crate::act::{DeliberationItem, SignatoryCapacity, SignatorySlot, VoteResult};
+    use crate::act::{
+        AttendanceWeight, Attendee, DeliberationItem, PresenceMode, SignatoryCapacity,
+        SignatorySlot, VoteResult,
+    };
 
     fn family_entity(kind: EntityKind, name: &str) -> Entity {
         Entity::new(name, Nipc::parse("503004642").unwrap(), "Porto", kind)
@@ -707,6 +1153,7 @@ mod tests {
     fn condo_act() -> Act {
         let mut act = Act::draft(BookId::new(), "Ata da assembleia", MeetingChannel::Physical);
         act.meeting_date = Some(date!(2026 - 03 - 01));
+        act.meeting_time = Some(time!(21:00));
         act.place = Some("Hall do prédio".into());
         act.attendance_reference = Some("Folha de presenças".into());
         act.deliberation_items = vec![DeliberationItem {
@@ -741,6 +1188,27 @@ mod tests {
     }
 
     #[test]
+    fn condo_pack_flags_missing_meeting_date_and_time_separately() {
+        let e = family_entity(EntityKind::Condominio, "Condomínio");
+        let mut act = condo_act();
+        act.meeting_date = None;
+        act.meeting_time = None;
+        let issues = CondominioRulePack.check_act(&act, &e);
+
+        let date_issue = issues
+            .iter()
+            .find(|i| i.rule_id == "DL268/date")
+            .expect("missing date should be flagged by the civil baseline");
+        assert_eq!(date_issue.severity, Severity::Error);
+
+        let time_issue = issues
+            .iter()
+            .find(|i| i.rule_id == "DL268/time")
+            .expect("missing time should be flagged by the condominium pack");
+        assert_eq!(time_issue.severity, Severity::Warning);
+    }
+
+    #[test]
     fn condo_pack_warns_on_condo_owner_without_permilage() {
         let e = family_entity(EntityKind::Condominio, "Condomínio");
         let mut act = condo_act();
@@ -761,6 +1229,129 @@ mod tests {
         act.signatories[0].permilage = Some(125);
         let issues = CondominioRulePack.check_act(&act, &e);
         assert!(!issues.iter().any(|i| i.rule_id == "DL268/permilage"));
+    }
+
+    #[test]
+    fn condo_pack_warns_on_impossible_permilage_values_and_totals() {
+        let e = family_entity(EntityKind::Condominio, "Condomínio");
+        let mut act = condo_act();
+        act.attendees = vec![
+            Attendee {
+                name: "Fração A".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(700)),
+            },
+            Attendee {
+                name: "Fração B".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Represented,
+                represented_by: Some("Fração A".into()),
+                weight: Some(AttendanceWeight::Permilage(450)),
+            },
+            Attendee {
+                name: "Fração C".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Absent,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(900)),
+            },
+        ];
+        act.signatories.push(SignatorySlot {
+            name: "Fração D".into(),
+            capacity: SignatoryCapacity::CondoOwner,
+            signed: false,
+            permilage: Some(1001),
+        });
+
+        let issues = CondominioRulePack.check_act(&act, &e);
+        assert!(
+            issues.iter().any(|i| i.rule_id == "DL268/permilage-total"),
+            "present/represented permilage above 1000 should warn: {issues:?}"
+        );
+        assert!(
+            issues.iter().any(|i| i.rule_id == "DL268/permilage-value"),
+            "individual permilage above 1000 should warn: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn condo_pack_checks_recorded_votes_against_permilage_tally() {
+        let e = family_entity(EntityKind::Condominio, "Condomínio");
+        let mut act = condo_act();
+        act.deliberation_items[0].vote = Some(VoteResult::Recorded {
+            em_favor: 450,
+            contra: 250,
+            abstencoes: 0,
+        });
+        act.attendees = vec![
+            Attendee {
+                name: "Fração A".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(450)),
+            },
+            Attendee {
+                name: "Fração B".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Represented,
+                represented_by: Some("Fração A".into()),
+                weight: Some(AttendanceWeight::Permilage(250)),
+            },
+        ];
+
+        let issues = CondominioRulePack.check_act(&act, &e);
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id == "DL268/permilage-vote-total"),
+            "matching permilage tally should not warn: {issues:?}"
+        );
+
+        act.deliberation_items[0].vote = Some(VoteResult::Recorded {
+            em_favor: 2,
+            contra: 1,
+            abstencoes: 0,
+        });
+        let issues = CondominioRulePack.check_act(&act, &e);
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "DL268/permilage-vote-total")
+            .expect("count tally should not pass as permilage-weighted");
+        assert_eq!(issue.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn condo_pack_warns_when_quorum_counts_contradict_attendance_rows() {
+        let e = family_entity(EntityKind::Condominio, "Condomínio");
+        let mut act = condo_act();
+        act.members_present = Some(3);
+        act.members_represented = Some(1);
+        act.attendees = vec![
+            Attendee {
+                name: "Fração A".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(400)),
+            },
+            Attendee {
+                name: "Fração B".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Absent,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(300)),
+            },
+        ];
+
+        let issues = CondominioRulePack.check_act(&act, &e);
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "DL268/attendance-count-mismatch")
+            .expect("contradictory count and row metadata should warn");
+        assert_eq!(issue.severity, Severity::Warning);
     }
 
     #[test]

@@ -10,6 +10,7 @@ use der::Decode;
 use der::asn1::ObjectIdentifier;
 use sha2::{Digest, Sha256};
 
+use crate::dss::{self, DssReport};
 use crate::error::PadesError;
 use crate::pdf;
 
@@ -27,13 +28,23 @@ pub struct PdfSignatureReport {
     pub covered_len: usize,
     /// Total size of the signed PDF.
     pub total_len: usize,
+    /// End offset of the signed revision (`ByteRange[2] + ByteRange[3]`). Later incremental
+    /// updates, such as a DSS revision, may start after this offset.
+    pub signed_revision_len: usize,
     /// Whether the ByteRange starts at 0 and extends to the end of the file (only the `/Contents`
     /// value is excluded) — the well-formed PAdES shape.
     pub covers_whole_file_except_contents: bool,
+    /// Whether the ByteRange starts at 0 and extends to the end of the signed revision. This
+    /// remains true when a later incremental update appends caller-supplied DSS evidence.
+    pub covers_signed_revision_except_contents: bool,
+    /// Whether bytes exist after the signed revision, usually from a later incremental update.
+    pub has_later_incremental_updates: bool,
     /// The delegated CAdES validation result (signature verified, attributes consistent).
     pub cades: chancela_cades::CadesValidation,
     /// Whether an `id-aa-signatureTimeStampToken` unsigned attribute is present (PAdES-B-T).
     pub has_signature_timestamp: bool,
+    /// Embedded DSS/VRI evidence report from the latest PDF catalog.
+    pub dss: DssReport,
 }
 
 /// Validate the (first) PAdES signature in `pdf` (SIG-24).
@@ -81,7 +92,11 @@ pub fn validate_pdf_signature(pdf: &[u8]) -> Result<PdfSignatureReport, PadesErr
     let content_digest: [u8; 32] = hasher.finalize().into();
 
     let covered_len = l1 + l2;
-    let covers_whole_file_except_contents = s1 == 0 && s2 + l2 == total && s1 + l1 <= s2;
+    let signed_revision_len = s2 + l2;
+    let covers_signed_revision_except_contents = s1 == 0 && s1 + l1 <= s2;
+    let covers_whole_file_except_contents =
+        covers_signed_revision_except_contents && signed_revision_len == total;
+    let has_later_incremental_updates = signed_revision_len < total;
 
     // /Contents (lopdf gives the hex-decoded bytes; trim trailing zero padding to the DER length).
     let contents = sig
@@ -98,14 +113,19 @@ pub fn validate_pdf_signature(pdf: &[u8]) -> Result<PdfSignatureReport, PadesErr
     let cades = chancela_cades::validate_cades_b(cms_der, &content_digest)?;
 
     let has_signature_timestamp = detect_signature_timestamp(cms_der).unwrap_or(false);
+    let dss = dss::inspect_dss_document(&doc)?;
 
     Ok(PdfSignatureReport {
         byte_range,
         covered_len,
         total_len: total,
+        signed_revision_len,
         covers_whole_file_except_contents,
+        covers_signed_revision_except_contents,
+        has_later_incremental_updates,
         cades,
         has_signature_timestamp,
+        dss,
     })
 }
 

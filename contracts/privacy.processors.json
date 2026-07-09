@@ -1,0 +1,16 @@
+[
+  {
+    "id": "8b7c6d50-0000-4000-8000-000000000071",
+    "name": "Cloud Processor",
+    "purpose": "Application hosting and operational backups",
+    "legal_basis": "Data processing agreement under GDPR Article 28",
+    "data_categories": ["identification", "contact", "audit trail"],
+    "subprocessors": ["EU Backup SARL"],
+    "risk_level": "medium",
+    "status": "active",
+    "created_at": "2026-07-09T10:00:00Z",
+    "created_by": "amelia.marques",
+    "updated_at": "2026-07-09T11:30:00Z",
+    "updated_by": "amelia.marques"
+  }
+]

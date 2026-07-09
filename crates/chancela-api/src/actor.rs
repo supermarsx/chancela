@@ -1,4 +1,4 @@
-//! The `CurrentActor` extractor — resolves the ledger actor from a session (contract §2.8).
+//! The `CurrentActor` extractor — resolves the ledger actor from a session or API key.
 //!
 //! Every mutating handler records an `actor` on its ledger event (DAT-10). Historically that came
 //! from a request-body/query `actor` field defaulting to `"api"`. [`CurrentActor`] adds the
@@ -7,12 +7,11 @@
 //!
 //! ## Authentication (t41 security hardening)
 //!
-//! [`CurrentActor`] is a **fallible** extractor: an absent, unknown, expired, or inactive-user
-//! token yields `401 Unauthorized`. Every handler that takes `CurrentActor` as a parameter
-//! therefore requires a valid session — the API's mutation endpoints are no longer callable
-//! without authentication. The handful of endpoints that genuinely don't need auth (health,
-//! session create/inspect/delete, and `POST /v1/users` during first-run bootstrap) do NOT take
-//! `CurrentActor` and resolve the session manually where attribution is needed.
+//! [`CurrentActor`] is a **fallible** extractor: an absent, unknown, expired, inactive-user session
+//! token, or invalid bearer API key yields `401 Unauthorized`. Every handler that takes
+//! `CurrentActor` as a parameter therefore requires a valid credential. Session authentication is
+//! unchanged; API keys resolve to the same RBAC permission-set shape but never expose a session
+//! username, so self-service and step-up routes do not treat them as interactive users.
 //!
 //! ## Session expiry (t41 M3)
 //!
@@ -22,9 +21,11 @@
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
+use chancela_apikey::RequestPrincipal;
 use time::OffsetDateTime;
 
 use crate::AppState;
+use crate::apikeys::{read_bearer_api_key, resolve_bearer_principal};
 use crate::error::ApiError;
 
 /// The HTTP header carrying an opaque session token.
@@ -39,22 +40,45 @@ pub const SESSION_TTL_SECS: i64 = 24 * 60 * 60;
 /// returns `401`.
 #[derive(Debug, Clone, Default)]
 pub struct CurrentActor {
-    session_username: Option<String>,
+    credential: Option<ActorCredential>,
+}
+
+#[derive(Debug, Clone)]
+enum ActorCredential {
+    Session { username: String },
+    ApiKey { principal: RequestPrincipal },
 }
 
 impl CurrentActor {
     /// The resolved ledger actor: the session `username` when a valid session was presented,
     /// otherwise `request_actor` (which already carries its own default, e.g. `"api"`).
     pub fn resolve(&self, request_actor: &str) -> String {
-        match &self.session_username {
-            Some(username) => username.clone(),
+        match &self.credential {
+            Some(ActorCredential::Session { username }) => username.clone(),
+            Some(ActorCredential::ApiKey { principal }) => principal.actor_label.clone(),
             None => request_actor.to_owned(),
         }
     }
 
     /// The session `username`, if a valid session was presented.
     pub fn session_username(&self) -> Option<&str> {
-        self.session_username.as_deref()
+        match &self.credential {
+            Some(ActorCredential::Session { username }) => Some(username),
+            _ => None,
+        }
+    }
+
+    /// The resolved API-key principal, if this request authenticated with `Authorization: Bearer`.
+    pub(crate) fn api_key_principal(&self) -> Option<&RequestPrincipal> {
+        match &self.credential {
+            Some(ActorCredential::ApiKey { principal }) => Some(principal),
+            _ => None,
+        }
+    }
+
+    /// Whether the request authenticated with an API key instead of an interactive session.
+    pub(crate) fn is_api_key(&self) -> bool {
+        self.api_key_principal().is_some()
     }
 
     /// Build a [`CurrentActor`] from an already-resolved session username. Used where the session is
@@ -63,7 +87,7 @@ impl CurrentActor {
     /// present (t64-E3).
     pub(crate) fn from_session_username(username: Option<String>) -> Self {
         CurrentActor {
-            session_username: username,
+            credential: username.map(|username| ActorCredential::Session { username }),
         }
     }
 }
@@ -75,20 +99,32 @@ impl FromRequestParts<AppState> for CurrentActor {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let token = parts
-            .headers
-            .get(SESSION_HEADER)
-            .and_then(|v| v.to_str().ok())
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .ok_or_else(|| ApiError::Unauthorized("sessão requerida".to_owned()))?;
-
-        match resolve_session_actor(state, token).await? {
-            Some(username) => Ok(CurrentActor {
-                session_username: Some(username),
-            }),
-            None => Err(ApiError::Unauthorized("sessão inválida".to_owned())),
+        let session_token = read_session_token(parts);
+        let bearer = read_bearer_api_key(&parts.headers)?;
+        if session_token.is_some() && bearer.is_some() {
+            return Err(ApiError::Unauthorized(
+                "use sessão ou chave API, não ambas".to_owned(),
+            ));
         }
+
+        if let Some(token) = session_token {
+            return match resolve_session_actor(state, token).await? {
+                Some(username) => Ok(CurrentActor {
+                    credential: Some(ActorCredential::Session { username }),
+                }),
+                None => Err(ApiError::Unauthorized("sessão inválida".to_owned())),
+            };
+        }
+
+        if let Some(key) = bearer {
+            return Ok(CurrentActor {
+                credential: Some(ActorCredential::ApiKey {
+                    principal: resolve_bearer_principal(state, key).await?,
+                }),
+            });
+        }
+
+        Err(ApiError::Unauthorized("sessão requerida".to_owned()))
     }
 }
 

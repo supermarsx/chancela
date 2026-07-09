@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{SESSION_HEADER, SESSION_TTL_SECS, resolve_session_actor};
+use crate::apikeys::read_bearer_api_key;
 use crate::attestation::verify_secret;
 use crate::error::ApiError;
 use crate::users::{User, UserId, UserView};
@@ -273,7 +274,13 @@ pub async fn create_session(
 pub async fn get_session(
     State(state): State<AppState>,
     parts: axum::http::HeaderMap,
-) -> Json<SessionView> {
+) -> Result<Json<SessionView>, ApiError> {
+    if read_bearer_api_key(&parts)?.is_some() {
+        return Err(ApiError::Forbidden(
+            "chave API não abre uma sessão interativa".to_owned(),
+        ));
+    }
+
     let resolved: Option<(UserView, UserId)> = match parts
         .get(SESSION_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -302,7 +309,7 @@ pub async fn get_session(
         }
         None => (None, Vec::new()),
     };
-    Json(SessionView { user, permissions })
+    Ok(Json(SessionView { user, permissions }))
 }
 
 /// `GET /v1/session/permissions` — the current principal's role assignments (with scopes) and
@@ -360,7 +367,13 @@ pub async fn password_policy() -> Json<crate::password_policy::PasswordPolicyVie
 pub async fn delete_session(
     State(state): State<AppState>,
     parts: axum::http::HeaderMap,
-) -> StatusCode {
+) -> Result<StatusCode, ApiError> {
+    if read_bearer_api_key(&parts)?.is_some() {
+        return Err(ApiError::Forbidden(
+            "chave API não abre uma sessão interativa".to_owned(),
+        ));
+    }
+
     if let Some(token) = parts
         .get(SESSION_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -369,5 +382,5 @@ pub async fn delete_session(
     {
         state.sessions.write().await.remove(token);
     }
-    StatusCode::NO_CONTENT
+    Ok(StatusCode::NO_CONTENT)
 }

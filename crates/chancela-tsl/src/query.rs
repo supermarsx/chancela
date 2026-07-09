@@ -201,7 +201,8 @@ mod tests {
 
     use super::*;
     use crate::parse::{
-        FOR_ESIGNATURES, SVCTYPE_CA_QC, ServiceStatus, TrustServiceProvider, parse_tsl,
+        FOR_ESIGNATURES, LocalizedText, SVCTYPE_CA_QC, ServiceStatus, TrustServiceProvider,
+        parse_tsl,
     };
 
     const FIXTURE: &[u8] = include_bytes!("../fixtures/pt-tsl-sample.xml");
@@ -225,22 +226,45 @@ mod tests {
 
     fn list_with_identity(id: DigitalIdentity, starting: Option<OffsetDateTime>) -> TrustedList {
         TrustedList {
+            scheme_operator_name: String::new(),
+            scheme_operator_names: Vec::new(),
+            scheme_name: String::new(),
+            scheme_names: Vec::new(),
             scheme_territory: "PT".to_owned(),
             sequence_number: None,
             issue_date_time: None,
             next_update: None,
             providers: vec![TrustServiceProvider {
                 name: "p".to_owned(),
+                names: vec![LocalizedText {
+                    lang: Some("en".to_owned()),
+                    value: "p".to_owned(),
+                }],
+                trade_names: Vec::new(),
+                localized_trade_names: Vec::new(),
+                information_uris: Vec::new(),
                 services: vec![TrustService {
                     service_type: SVCTYPE_CA_QC.to_owned(),
                     name: "svc".to_owned(),
+                    names: vec![LocalizedText {
+                        lang: Some("en".to_owned()),
+                        value: "svc".to_owned(),
+                    }],
                     status: ServiceStatus::Granted,
                     status_starting_time: starting,
+                    status_starting_time_raw: starting.map(format_time_for_test),
                     digital_identities: vec![id],
                     additional_service_info: vec![FOR_ESIGNATURES.to_owned()],
+                    service_supply_points: Vec::new(),
+                    history: Vec::new(),
                 }],
             }],
         }
+    }
+
+    fn format_time_for_test(t: OffsetDateTime) -> String {
+        t.format(&time::format_description::well_known::Rfc3339)
+            .unwrap()
     }
 
     #[test]

@@ -23,7 +23,10 @@ use chancela_cades::{
 
 use crate::error::PadesError;
 use crate::sign::MAX_CONTENTS_BYTES;
-use crate::{SignOptions, add_signature_timestamp, sign_pdf, validate_pdf_signature};
+use crate::{
+    DssEvidence, SignOptions, add_dss_revision, add_signature_timestamp, inspect_dss, sign_pdf,
+    validate_pdf_signature,
+};
 
 // --- OIDs used only for the in-test self-signed certificates -------------------------------------
 
@@ -35,6 +38,13 @@ const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
     0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
     0x00, 0x04, 0x20,
 ];
+
+/// Public, synthetic DER fixture used as caller-supplied OCSP bytes in DSS tests. The PAdES layer
+/// preserves DER blobs but does not semantically validate revocation protocol payloads.
+const OCSP_DER_FIXTURE: &[u8] = &[0x30, 0x03, 0x02, 0x01, 0x05];
+
+/// Public, synthetic DER fixture used as caller-supplied CRL bytes in DSS tests.
+const CRL_DER_FIXTURE: &[u8] = &[0x30, 0x05, 0x06, 0x03, 0x2a, 0x03, 0x04];
 
 fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
@@ -227,6 +237,26 @@ fn sign_with(pdf: &[u8], signer: &TestSigner, opts: &SignOptions) -> Vec<u8> {
     .expect("sign_pdf")
 }
 
+fn add_fixture_timestamp(signed: &[u8]) -> Vec<u8> {
+    // Drive B-T from the bundled chancela-tsa OpenSSL fixture. The fixture covers a fixed digest;
+    // the embedding logic under test is independent of which digest the token attests, so the
+    // callback ignores the CMS-signature digest and stamps the fixture digest+nonce.
+    let tsa = chancela_tsa::TsaClient::new(chancela_tsa::MockTsaTransport::from_fixture());
+    let req = chancela_tsa::TimestampRequest::new(chancela_tsa::mock::FIXTURE_DIGEST)
+        .with_nonce(chancela_tsa::mock::FIXTURE_NONCE)
+        .without_certificate();
+    add_signature_timestamp(signed, |_sig_digest| tsa.stamp(&req)).expect("B-T")
+}
+
+fn fixture_dss_evidence(signer: &TestSigner) -> DssEvidence {
+    let issuer = TestSigner::new_rsa("PAdES DSS Issuer", 42);
+    DssEvidence {
+        certificates: vec![signer.cert_der(), issuer.cert_der()],
+        ocsp_responses: vec![OCSP_DER_FIXTURE.to_vec()],
+        crls: vec![CRL_DER_FIXTURE.to_vec()],
+    }
+}
+
 // --- Tests ---------------------------------------------------------------------------------------
 
 #[test]
@@ -338,14 +368,7 @@ fn b_t_signature_timestamp_embeds_and_validates() {
     let signer = TestSigner::new_rsa("PAdES BT", 7);
     let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
 
-    // Drive B-T from the bundled chancela-tsa OpenSSL fixture. The fixture covers a fixed digest;
-    // the embedding logic under test is independent of which digest the token attests, so the
-    // callback ignores the CMS-signature digest and stamps the fixture digest+nonce.
-    let tsa = chancela_tsa::TsaClient::new(chancela_tsa::MockTsaTransport::from_fixture());
-    let req = chancela_tsa::TimestampRequest::new(chancela_tsa::mock::FIXTURE_DIGEST)
-        .with_nonce(chancela_tsa::mock::FIXTURE_NONCE)
-        .without_certificate();
-    let with_ts = add_signature_timestamp(&signed, |_sig_digest| tsa.stamp(&req)).expect("B-T");
+    let with_ts = add_fixture_timestamp(&signed);
 
     let report = validate_pdf_signature(&with_ts).expect("validate B-T");
     assert!(
@@ -355,6 +378,83 @@ fn b_t_signature_timestamp_embeds_and_validates() {
     // Adding the unsigned attribute must not disturb the ByteRange / B-B signature.
     assert!(report.covers_whole_file_except_contents);
     assert_eq!(report.cades.signer_cert_der, signer.cert_der());
+}
+
+#[test]
+fn dss_revision_appends_to_b_t_and_reports_counts_hashes() {
+    let signer = TestSigner::new_rsa("PAdES DSS", 8);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let with_ts = add_fixture_timestamp(&signed);
+    let evidence = fixture_dss_evidence(&signer);
+
+    let with_dss = add_dss_revision(&with_ts, &evidence).expect("DSS append");
+    let repeated = add_dss_revision(&with_ts, &evidence).expect("deterministic DSS append");
+
+    assert_ne!(with_dss, with_ts);
+    assert!(with_dss.starts_with(&with_ts));
+    assert_eq!(with_dss, repeated);
+
+    let report = validate_pdf_signature(&with_dss).expect("validate B-T + DSS");
+    assert!(report.has_signature_timestamp);
+    assert!(report.covers_signed_revision_except_contents);
+    assert!(!report.covers_whole_file_except_contents);
+    assert!(report.has_later_incremental_updates);
+    assert_eq!(report.signed_revision_len, with_ts.len());
+    assert_eq!(report.total_len, with_dss.len());
+    assert!(report.dss.present);
+    assert_eq!(report.dss.vri_count, 1);
+    assert_eq!(report.dss.certificate_count(), 2);
+    assert_eq!(report.dss.ocsp_count(), 1);
+    assert_eq!(report.dss.crl_count(), 1);
+    assert_eq!(report.dss.ocsp_hashes, vec![sha256(OCSP_DER_FIXTURE)]);
+    assert_eq!(report.dss.crl_hashes, vec![sha256(CRL_DER_FIXTURE)]);
+
+    let direct_dss = inspect_dss(&with_dss).expect("inspect DSS");
+    assert_eq!(direct_dss, report.dss);
+}
+
+#[test]
+fn dss_revision_keeps_signed_revision_tamper_detection() {
+    let signer = TestSigner::new_rsa("PAdES DSS Tamper", 9);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let with_ts = add_fixture_timestamp(&signed);
+    let evidence = fixture_dss_evidence(&signer);
+    let mut with_dss = add_dss_revision(&with_ts, &evidence).expect("DSS append");
+
+    // Flip a byte in the signed revision. The later DSS revision remains parseable, but the
+    // ByteRange digest no longer matches the embedded CMS.
+    with_dss[11] ^= 0xff;
+    let err = validate_pdf_signature(&with_dss).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            PadesError::Cades(chancela_cades::CadesError::MessageDigestMismatch)
+        ),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn empty_dss_evidence_is_rejected() {
+    let signer = TestSigner::new_rsa("PAdES Empty DSS", 10);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+
+    let err = add_dss_revision(&signed, &DssEvidence::default()).unwrap_err();
+    assert!(matches!(err, PadesError::DssEvidenceEmpty), "got {err:?}");
+}
+
+#[test]
+fn existing_dss_is_rejected_in_this_slice() {
+    let signer = TestSigner::new_rsa("PAdES Existing DSS", 11);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let evidence = fixture_dss_evidence(&signer);
+    let with_dss = add_dss_revision(&signed, &evidence).expect("first DSS append");
+
+    let err = add_dss_revision(&with_dss, &evidence).unwrap_err();
+    assert!(
+        matches!(err, PadesError::ExistingDssUnsupported),
+        "got {err:?}"
+    );
 }
 
 #[test]

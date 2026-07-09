@@ -20,6 +20,9 @@ path = "src/main.rs"
 # them against the real cargo-built binary. Mirrors the house `network-tests`/`hardware-tests`
 # double-gate; the npm script `test:e2e` selects exactly this feature.
 e2e = []
+# Optional SQLCipher support for encrypted at-rest SQLite stores. The default remains plaintext
+# bundled SQLite; configuring CHANCELA_DB_KEY/CHANCELA_DB_KEY_FILE without this feature fails closed.
+sqlcipher = ["chancela-api/sqlcipher", "chancela-store/sqlcipher"]
 
 [dependencies]
 chancela-api = { workspace = true }
@@ -37,6 +40,7 @@ tokio = { workspace = true }
 # workspace; dev-deps always compile, so the harness compiles under `cargo test --workspace`.
 reqwest = { workspace = true }
 serde_json = { workspace = true }
+chancela-archive = { workspace = true }
 # t30-e4 acceptance journeys only. `zip` + `sha2` unpack a `POST /v1/backup` archive in-test and
 # recompute its per-file digests (backup/restore journey); `rusqlite` flips a byte in a stored
 # event row to prove a tampered chain boots but reports `ledger_verified: false` (tamper journey).

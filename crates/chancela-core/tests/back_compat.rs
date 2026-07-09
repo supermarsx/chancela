@@ -45,6 +45,18 @@ const OLD_SHAPE_ENTITY_JSON: &str = r#"{
     "kind": "SociedadeAnonima"
 }"#;
 
+/// A pre-retention book JSON: no `legal_hold` key.
+const OLD_SHAPE_BOOK_JSON: &str = r#"{
+    "id": "00000000-0000-0000-0000-000000000004",
+    "entity_id": "00000000-0000-0000-0000-000000000003",
+    "kind": "AssembleiaGeral",
+    "state": "Created",
+    "termo_abertura": null,
+    "termo_encerramento": null,
+    "last_ata_number": 0,
+    "predecessor": null
+}"#;
+
 #[test]
 fn old_shape_act_json_deserializes_with_defaults() {
     let act: Act = serde_json::from_str(OLD_SHAPE_ACT_JSON).expect("old-shape act deserializes");
@@ -77,6 +89,13 @@ fn old_shape_entity_json_deserializes_with_statute_none() {
         "a bare-string NIPC is validated"
     );
     assert!(entity.is_consistent());
+}
+
+#[test]
+fn old_shape_book_json_deserializes_with_no_legal_hold() {
+    let book: Book =
+        serde_json::from_str(OLD_SHAPE_BOOK_JSON).expect("old-shape book deserializes");
+    assert!(book.legal_hold.is_none());
 }
 
 #[test]

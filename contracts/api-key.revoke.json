@@ -1,0 +1,16 @@
+{
+  "id": "7a6b5c40-0000-4000-8000-000000000065",
+  "name": "Ledger export",
+  "prefix": "chk_0123456789ab",
+  "grant": {
+    "kind": "permissions",
+    "permissions": ["ledger.read"],
+    "scope": { "kind": "global" }
+  },
+  "created_by": "6d5e4f00-0000-4000-8000-000000000005",
+  "created_at": "2026-07-09T10:00:00Z",
+  "expires_at": "2026-12-31T23:59:59Z",
+  "revoked": true,
+  "active": false,
+  "rate_limit": { "rpm": 120, "burst": 10 }
+}

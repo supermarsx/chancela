@@ -1,0 +1,16 @@
+[
+  {
+    "id": "8b7c6d50-0000-4000-8000-000000000072",
+    "title": "Marketing profiling assessment",
+    "purpose": "Segment contacts for corporate communication campaigns",
+    "legal_basis": "Legitimate interest assessment",
+    "data_categories": ["contact", "behavioural"],
+    "subprocessors": ["Analytics Processor SA"],
+    "risk_level": "high",
+    "status": "under_review",
+    "created_at": "2026-07-09T10:15:00Z",
+    "created_by": "amelia.marques",
+    "updated_at": "2026-07-09T11:45:00Z",
+    "updated_by": "amelia.marques"
+  }
+]

@@ -13,12 +13,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use chancela_core::{
     Act, ActId, AttendanceWeight, Attendee, Book, BookKind, Convening, ConveningRecipient,
-    DispatchChannel, Entity, EntityKind, MeetingChannel, Nipc, PresenceMode, SecondCall,
+    DispatchChannel, Entity, EntityKind, LegalHold, MeetingChannel, Nipc, PresenceMode, SecondCall,
     SignatoryCapacity,
 };
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
-use chancela_store::{Store, StoreError, StoredDocument};
+#[cfg(feature = "sqlcipher")]
+use chancela_store::StoreOpenOptions;
+use chancela_store::{
+    Store, StoreError, StoredDocument, StoredImportedDocument, StoredImportedDocumentMeta,
+};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
@@ -114,6 +118,27 @@ fn sample_document(id: &str, act_id: ActId, bytes: &[u8]) -> StoredDocument {
     }
 }
 
+fn sample_imported_document(
+    id: &str,
+    act_id: Option<ActId>,
+    bytes: &[u8],
+) -> StoredImportedDocument {
+    StoredImportedDocument {
+        meta: StoredImportedDocumentMeta {
+            id: id.to_string(),
+            act_id,
+            filename: Some("evidence.pdf".to_string()),
+            declared_content_type: Some("application/pdf".to_string()),
+            detected_content_type: "application/pdf".to_string(),
+            sha256: hex(&Sha256::digest(bytes)),
+            size_bytes: bytes.len(),
+            imported_at: OffsetDateTime::from_unix_timestamp(1_780_000_000).unwrap(),
+            imported_by: "amelia.marques".to_string(),
+        },
+        bytes: bytes.to_vec(),
+    }
+}
+
 /// Append an event to `ledger` and persist it (event-only), returning the appended event.
 fn persist_event(store: &Store, ledger: &mut Ledger, scope: &str, kind: &str) -> Event {
     let event = ledger
@@ -148,6 +173,65 @@ fn open_creates_db_and_reopen_is_idempotent() {
     assert!(dir.path().join("chancela.db").exists());
     let reopened = Store::open(dir.path()).expect("reopen");
     assert_eq!(reopened.load().expect("reload").chain_status, Ok(0));
+}
+
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn sqlcipher_keyed_open_creates_encrypted_db_and_reopens_with_same_key() {
+    let dir = TempDir::new();
+    let options = StoreOpenOptions::new().with_encryption_key("correct horse battery staple");
+    let entity = sample_entity("SQLCipher, Lda");
+
+    {
+        let store = Store::open_with_options(dir.path(), options.clone()).expect("keyed open");
+        store
+            .persist(|tx| tx.upsert_entity(&entity))
+            .expect("persist encrypted row");
+    }
+
+    let db_bytes = std::fs::read(dir.path().join("chancela.db")).expect("read db file");
+    assert!(
+        !db_bytes.starts_with(b"SQLite format 3"),
+        "keyed SQLCipher database must not have a plaintext SQLite header"
+    );
+
+    let reopened = Store::open_with_options(dir.path(), options).expect("reopen with same key");
+    let loaded = reopened.load().expect("load encrypted db");
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+}
+
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn sqlcipher_wrong_key_fails_loudly() {
+    let dir = TempDir::new();
+    let correct = StoreOpenOptions::new().with_encryption_key("right passphrase");
+    Store::open_with_options(dir.path(), correct).expect("create encrypted db");
+
+    let wrong = StoreOpenOptions::new().with_encryption_key("wrong passphrase");
+    let result = Store::open_with_options(dir.path(), wrong);
+    assert!(
+        matches!(result, Err(StoreError::EncryptionKeyRejected { .. })),
+        "wrong SQLCipher key must be a typed loud error, got {result:?}"
+    );
+}
+
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn sqlcipher_corrupt_keyed_database_fails_loudly() {
+    let dir = TempDir::new();
+    let options = StoreOpenOptions::new().with_encryption_key("right passphrase");
+    Store::open_with_options(dir.path(), options.clone()).expect("create encrypted db");
+
+    let db = dir.path().join("chancela.db");
+    let mut bytes = std::fs::read(&db).expect("read encrypted db");
+    bytes[32] ^= 0xA5;
+    std::fs::write(&db, bytes).expect("corrupt encrypted db");
+
+    let result = Store::open_with_options(dir.path(), options);
+    assert!(
+        matches!(result, Err(StoreError::EncryptionKeyRejected { .. })),
+        "corrupt keyed database must be a typed loud error, got {result:?}"
+    );
 }
 
 #[test]
@@ -308,6 +392,43 @@ fn full_round_trip_survives_drop_and_reopen() {
     assert_eq!(loaded.registry_extracts, expected_extracts);
     assert_eq!(loaded.chain_status, Ok(4));
     assert_eq!(loaded.ledger.len(), 4);
+}
+
+#[test]
+fn book_legal_hold_survives_drop_and_reopen_without_schema_churn() {
+    let dir = TempDir::new();
+    let entity = sample_entity("Retencao, Lda");
+    let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    book.legal_hold = Some(LegalHold {
+        reason: "litigation preservation request".to_owned(),
+        actor: "archive.owner".to_owned(),
+        set_at: OffsetDateTime::from_unix_timestamp(1_782_921_600).unwrap(),
+    });
+
+    {
+        let store = Store::open(dir.path()).expect("open");
+        store.persist(|tx| tx.upsert_book(&book)).unwrap();
+    }
+
+    let store = Store::open(dir.path()).expect("reopen");
+    let loaded = store.load().expect("reload");
+    assert_eq!(
+        loaded
+            .books
+            .get(&book.id)
+            .and_then(|book| book.legal_hold.as_ref()),
+        book.legal_hold.as_ref()
+    );
+
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let stamped: String = raw
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stamped, "5", "book JSON metadata did not require DDL");
 }
 
 #[test]
@@ -537,8 +658,9 @@ fn backup_reflects_a_broken_chain_without_failing() {
 fn schema_version_is_current() {
     // The documents table landed as schema v2; the `imported_books` isolation namespace (t54-E2)
     // landed as schema v3; the qualified-signing tables (`signed_documents` + `pending_cmd_sessions`,
-    // t57-S3) landed as schema v4. A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 4);
+    // t57-S3) landed as schema v4; non-canonical imported documents landed as schema v5. A fresh DB
+    // is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 5);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -549,7 +671,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "4");
+    assert_eq!(stamped, "5");
 }
 
 #[test]
@@ -679,7 +801,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
         raw.execute("DROP TABLE documents", []).unwrap();
     }
 
-    // Reopening upgrades forward: the additive DDL recreates `documents` (+ `imported_books`), the
+    // Reopening upgrades forward: the additive DDL recreates `documents` (+ import tables), the
     // stamp advances to the current version, and the pre-existing entity row is untouched.
     let store = Store::open(dir.path()).expect("reopen upgrades v1 -> current");
     {
@@ -691,7 +813,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "4", "stamp advanced forward");
+        assert_eq!(stamped, "5", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -742,6 +864,70 @@ fn a_document_survives_backup_and_restore() {
         .expect("document survived backup/restore");
     assert_eq!(read, doc);
     assert_eq!(read.pdf_bytes, FAKE_PDF);
+}
+
+#[test]
+fn imported_document_round_trips_lists_by_act_and_survives_reopen() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let act = Act::draft(
+        Book::new(
+            sample_entity("Encosto Estrategico Lda").id,
+            BookKind::AssembleiaGeral,
+        )
+        .id,
+        "Ata n.o 1",
+        MeetingChannel::Physical,
+    );
+    let linked = sample_imported_document(
+        "11111111-1111-4111-8111-111111111111",
+        Some(act.id),
+        FAKE_PDF,
+    );
+    let global = sample_imported_document(
+        "22222222-2222-4222-8222-222222222222",
+        None,
+        b"%PDF-1.7\nunlinked\n%%EOF",
+    );
+
+    store
+        .persist(|tx| {
+            tx.upsert_imported_document(&linked)?;
+            tx.upsert_imported_document(&global)
+        })
+        .expect("persist imported docs");
+
+    let by_id = store
+        .imported_document(&linked.meta.id)
+        .expect("read by id")
+        .expect("linked import present");
+    assert_eq!(by_id, linked);
+    assert_eq!(by_id.bytes, FAKE_PDF);
+    assert_eq!(by_id.meta.sha256, hex(&Sha256::digest(FAKE_PDF)));
+
+    let by_act = store.imported_documents(Some(act.id)).expect("list by act");
+    assert_eq!(by_act, vec![linked.meta.clone()]);
+
+    let all = store.imported_documents(None).expect("global list");
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().any(|meta| meta.id == linked.meta.id));
+    assert!(all.iter().any(|meta| meta.id == global.meta.id));
+    assert!(
+        store
+            .imported_document("33333333-3333-4333-8333-333333333333")
+            .unwrap()
+            .is_none()
+    );
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .imported_document(&linked.meta.id)
+            .unwrap()
+            .as_ref(),
+        Some(&linked)
+    );
 }
 
 #[test]
@@ -835,7 +1021,7 @@ fn populated_g1_g2_act(book_id: chancela_core::BookId) -> Act {
 /// the same blob with no DDL and no `schema_version` bump. This drives the real durability path
 /// (persist → drop → reopen → load) for both an act carrying the new fields and an old-shape act
 /// that leaves them defaulted, asserting full round-trip equality for each — and confirms the
-/// stamped schema version is unchanged (still v2) across the whole exercise.
+/// stamped schema version is unchanged (the current schema stamp) across the whole exercise.
 #[test]
 fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     let dir = TempDir::new();
@@ -869,7 +1055,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         let store = Store::open(dir.path()).expect("open");
         assert_eq!(
             stamp(dir.path()),
-            "4",
+            "5",
             "fresh db stamped at current version"
         );
         let mut ledger = Ledger::new();
@@ -906,7 +1092,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         // Store dropped here — the process "restarts". No migration ran; no DDL touched acts.
         assert_eq!(
             stamp(dir.path()),
-            "4",
+            "5",
             "no schema bump after writing G1/G2 acts"
         );
     }
@@ -915,7 +1101,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     let store = Store::open(dir.path()).expect("reopen");
     assert_eq!(
         stamp(dir.path()),
-        "4",
+        "5",
         "reopen did not bump the schema version"
     );
     let loaded = store.load().expect("reload");

@@ -35,6 +35,36 @@ async fn live_responses_match_the_canonical_contracts() {
     assert_eq!(status, 200);
     assert_shape("session", &session, &contract("session.json"));
 
+    // Password policy (session.password-policy.json). This is an unauthenticated onboarding
+    // contract, and the rule list is ordered/stable because the web checklist switches on the codes.
+    let (status, policy) = h.get_json_noauth("/v1/session/password-policy").await;
+    assert_eq!(status, 200);
+    let expected_policy = contract("session.password-policy.json");
+    let live_codes = policy["rules"]
+        .as_array()
+        .expect("password policy rules")
+        .iter()
+        .map(|r| r["code"].as_str().expect("password policy rule code"))
+        .collect::<Vec<_>>();
+    let expected_codes = expected_policy["rules"]
+        .as_array()
+        .expect("contract password policy rules")
+        .iter()
+        .map(|r| {
+            r["code"]
+                .as_str()
+                .expect("contract password policy rule code")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        live_codes, expected_codes,
+        "password policy rule codes/order drifted"
+    );
+    assert_eq!(
+        policy, expected_policy,
+        "password policy response drifted from session.password-policy.json"
+    );
+
     // An entity (entity.json).
     let (status, entity) = h
         .post_json_auth(
@@ -134,6 +164,16 @@ async fn live_responses_match_the_canonical_contracts() {
     let (status, cae_catalog) = h.get_json("/v1/cae").await;
     assert_eq!(status, 200);
     assert_shape("cae.catalog", &cae_catalog, &contract("cae.catalog.json"));
+
+    // TSL trust catalog (tsl.catalog.json): offline deterministic parse of cached/bundled TSL XML.
+    let (status, tsl_catalog) = h.get_json("/v1/trust/catalog").await;
+    assert_eq!(status, 200);
+    assert_shape("tsl.catalog", &tsl_catalog, &contract("tsl.catalog.json"));
+
+    // TSA diagnostics/catalog (tsa.status.json): configured URL + offline RFC 3161 fixture probe.
+    let (status, tsa_catalog) = h.get_json("/v1/trust/tsa").await;
+    assert_eq!(status, 200);
+    assert_shape("tsa.status", &tsa_catalog, &contract("tsa.status.json"));
 
     // The law archive manifest merged with store state (law.manifest.json). Nothing is fetched in
     // this journey, so the live entries report `stored: false` with null store fields — the

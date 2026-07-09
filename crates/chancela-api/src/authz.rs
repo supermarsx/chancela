@@ -103,17 +103,19 @@ pub async fn require_permission(
 /// run **many** checks (notably the per-row list filtering of note²) without re-resolving the stores
 /// or re-locking `state.books` for each row.
 pub struct Authorizer {
-    principal: UserId,
+    principal: Option<UserId>,
     eff: ScopedPermissionSet,
     relation: HashMap<AuthzBookId, AuthzEntityId>,
 }
 
 impl Authorizer {
-    /// The resolved acting principal (the session user). Used by the RBAC-management endpoints
-    /// (t64-E4) to attribute a delegation grantor and to authorise a grantor's own revoke.
-    #[must_use]
-    pub fn principal(&self) -> UserId {
-        self.principal
+    /// The resolved acting session principal. API-key principals are intentionally non-interactive:
+    /// they can pass ordinary permission gates but cannot stand in for a user on self-service or
+    /// session-only flows.
+    pub fn principal(&self) -> Result<UserId, ApiError> {
+        self.principal.ok_or_else(|| {
+            ApiError::Forbidden("chave API não abre uma sessão interativa".to_owned())
+        })
     }
 
     /// Does the principal hold `perm` covering `scope`?
@@ -170,11 +172,20 @@ impl Authorizer {
 /// relation). `401` without a session, `403` if the session names no active user. Used by the list
 /// endpoints for per-row filtering (note²) and available to any handler running several checks.
 pub async fn authorizer(state: &AppState, actor: &CurrentActor) -> Result<Authorizer, ApiError> {
+    if let Some(principal) = actor.api_key_principal() {
+        let relation = book_relation(state).await;
+        return Ok(Authorizer {
+            principal: None,
+            eff: principal.effective_permissions.clone(),
+            relation,
+        });
+    }
+
     let now = OffsetDateTime::now_utc();
     let (principal, eff) = effective_permissions_for_actor(state, actor, now).await?;
     let relation = book_relation(state).await;
     Ok(Authorizer {
-        principal,
+        principal: Some(principal),
         eff,
         relation,
     })
@@ -246,8 +257,18 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // The password strength ruleset — public knowledge the onboarding checklist renders before any
     // session exists (t68). Read-only, no secrets; mirrors the roster's unauth-onboarding rationale.
     ("/v1/session/password-policy", RouteClass::Exempt),
+    // External signer invite token envelope: token-authenticated, tracking-only, no canonical
+    // document bytes and no qualified-signature completion.
+    ("/v1/signature/external-invites/lookup", RouteClass::Exempt),
+    (
+        "/v1/signature/external-invites/document/working-copy",
+        RouteClass::Exempt,
+    ),
+    ("/v1/signature/external-invites/respond", RouteClass::Exempt),
     ("/v1", RouteClass::Exempt),
     ("/v1/{*rest}", RouteClass::Exempt),
+    ("/api", RouteClass::Exempt),
+    ("/api/", RouteClass::Exempt),
     ("/health/{*rest}", RouteClass::Exempt),
     // --- Any valid session (introspection for the web permissions context) ----------------------
     ("/v1/session/permissions", RouteClass::Session),
@@ -264,9 +285,13 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/books/{id}", RouteClass::Gated), // GET book.read@Book
     ("/v1/books/{id}/close", RouteClass::Gated), // POST book.close@Book
     ("/v1/books/{id}/acts", RouteClass::Gated), // GET book.read@Book
-    ("/v1/books/{id}/export", RouteClass::Gated), // POST book.export@Book
-    ("/v1/books/import", RouteClass::Gated), // POST book.import@Global
-    ("/v1/books/{id}/start-over", RouteClass::Gated), // POST book.start_over@Book + step-up
+    ("/v1/books/paper-import/validate", RouteClass::Gated), // POST book.import@Global (read-only)
+    ("/v1/books/{id}/legal-hold", RouteClass::Gated), // GET/PUT/DELETE book.export@Book
+    ("/v1/books/{id}/archive/package", RouteClass::Gated), // GET book.export@Book
+    ("/v1/books/{id}/archive/disposal", RouteClass::Gated), // GET/POST book.export@Book (dry-run only)
+    ("/v1/books/{id}/export", RouteClass::Gated),           // POST book.export@Book
+    ("/v1/books/import", RouteClass::Gated),                // POST book.import@Global
+    ("/v1/books/{id}/start-over", RouteClass::Gated),       // POST book.start_over@Book + step-up
     // --- Acts -----------------------------------------------------------------------------------
     ("/v1/acts", RouteClass::Gated), // POST act.draft@Book(body.book_id)
     ("/v1/acts/{id}", RouteClass::Gated), // GET act.read@Book · PATCH act.edit@Book
@@ -278,7 +303,14 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/document/preview", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/generate", RouteClass::Gated), // POST document.generate@Book
     ("/v1/acts/{id}/document", RouteClass::Gated), // GET act.read@Book
+    ("/v1/acts/{id}/document/working-copy", RouteClass::Gated), // GET act.read@Book
+    ("/v1/acts/{id}/document/office", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/bundle", RouteClass::Gated), // GET act.read@Book
+    ("/v1/documents/import", RouteClass::Gated), // POST document.generate@Global|Book
+    ("/v1/documents/imported", RouteClass::Gated), // GET act.read@Global|Book(act_id)
+    ("/v1/documents/imported/{id}", RouteClass::Gated), // GET act.read@import scope
+    ("/v1/documents/imported/{id}/bytes", RouteClass::Gated), // GET act.read@import scope
+    ("/v1/documents/import/validate", RouteClass::Gated), // POST act.read@Global (read-only validation)
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cc/sign", RouteClass::Gated), // POST signing.perform@Book (co-located)
@@ -291,12 +323,27 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/acts/{id}/signature/remote/{provider}/confirm",
         RouteClass::Gated,
     ), // POST signing.perform@Book
+    ("/v1/acts/{id}/signature/official/import", RouteClass::Gated), // POST signing.perform@Book
+    (
+        "/v1/acts/{id}/signature/external-invites",
+        RouteClass::Gated,
+    ), // GET/POST signing.perform@Book
+    (
+        "/v1/acts/{id}/signature/external-invites/{invite_id}/revoke",
+        RouteClass::Gated,
+    ), // POST signing.perform@Book
+    (
+        "/v1/acts/{id}/external-signing/envelopes",
+        RouteClass::Gated,
+    ), // GET/POST signing.perform@Book
+    ("/v1/external-signing/envelopes/{id}", RouteClass::Gated), // GET/PATCH signing.perform@Book(envelope.act_id)
     ("/v1/signature/providers", RouteClass::Gated), // GET signing.perform@Global (the picker)
     ("/v1/acts/{id}/signature", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/signed", RouteClass::Gated), // GET act.read@Book
     ("/v1/templates", RouteClass::Gated),           // GET act.read@Global
     // --- Ledger ---------------------------------------------------------------------------------
     ("/v1/ledger/events", RouteClass::Gated), // GET ledger.read@Global
+    ("/v1/ledger/archive/document", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/verify", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/integrity", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/attestations/{seq}", RouteClass::Gated), // GET ledger.read@Global
@@ -316,6 +363,11 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/cae/sections", RouteClass::Gated), // GET cae.read@Global
     ("/v1/cae/{code}", RouteClass::Gated),   // GET cae.read@Global
     ("/v1/cae/{code}/children", RouteClass::Gated), // GET cae.read@Global
+    ("/v1/trust/status", RouteClass::Gated), // GET cae.read@Global (read-only trust reference)
+    ("/v1/trust/catalog", RouteClass::Gated), // GET cae.read@Global (read-only trust reference)
+    ("/v1/trust/tsa", RouteClass::Gated),    // GET cae.read@Global (read-only TSA diagnostics)
+    ("/v1/trust/providers/{id}", RouteClass::Gated), // GET cae.read@Global
+    ("/v1/trust/services/{id}", RouteClass::Gated), // GET cae.read@Global
     ("/v1/law", RouteClass::Gated),          // GET law.read@Global
     ("/v1/law/corpus", RouteClass::Gated),   // GET law.read@Global (corpus reader)
     ("/v1/law/corpus/search", RouteClass::Gated), // GET law.read@Global (full-text search)
@@ -329,6 +381,25 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/users/{id}/secret", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
     ("/v1/users/{id}/attestation-key", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
     ("/v1/users/{id}/recovery", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
+    ("/v1/privacy/users/{id}/export", RouteClass::Gated), // GET user.manage@Global
+    ("/v1/privacy/users/{id}/dsr-requests", RouteClass::Gated), // GET/POST user.manage@Global
+    (
+        "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/complete",
+        RouteClass::Gated,
+    ), // POST user.manage@Global
+    ("/v1/privacy/dsr-requests/{id}", RouteClass::Gated), // PATCH user.manage@Global
+    ("/v1/privacy/dsr-requests/{id}/complete", RouteClass::Gated), // POST user.manage@Global
+    ("/v1/privacy/processors", RouteClass::Gated),  // GET/POST user.manage|settings.manage@Global
+    ("/v1/privacy/processors/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
+    ("/v1/privacy/dpias", RouteClass::Gated),       // GET/POST user.manage|settings.manage@Global
+    ("/v1/privacy/dpias/{id}", RouteClass::Gated),  // PATCH user.manage|settings.manage@Global
+    ("/v1/privacy/retention-policies", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
+    ("/v1/privacy/retention-policies/dry-run", RouteClass::Gated), // POST user.manage|settings.manage@Global, non-destructive
+    ("/v1/privacy/retention-policies/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
+    // --- API keys -------------------------------------------------------------------------------
+    ("/v1/api-keys", RouteClass::Gated), // GET/POST user.manage@Global + interactive session
+    ("/v1/api-keys/{id}", RouteClass::Gated), // DELETE user.manage@Global + interactive session
+    ("/v1/api-keys/{id}/rotate", RouteClass::Gated), // POST user.manage@Global + interactive session
     // --- RBAC management (t64-E4) ---------------------------------------------------------------
     ("/v1/roles", RouteClass::Gated), // GET list (any session) · POST role.manage@Global + subset
     ("/v1/roles/{id}", RouteClass::Gated), // PATCH/DELETE role.manage@Global + subset + protected-Owner
@@ -410,15 +481,64 @@ mod tests {
         }
     }
 
-    /// The three unauthenticated endpoints stay exempt (bootstrap-no-lockout: the roster + session
-    /// login must be reachable signed-out, and health is liveness).
+    /// The deliberate unauthenticated surface stays exempt (bootstrap/session liveness plus
+    /// token-authenticated external-invite tracking; no canonical document bytes or signing
+    /// completion).
     #[test]
-    fn the_exempt_set_is_exactly_the_unauth_surface() {
+    fn the_exempt_set_is_the_deliberate_unauth_surface() {
         assert_eq!(classify("/health"), Some(RouteClass::Exempt));
         assert_eq!(classify("/v1/session"), Some(RouteClass::Exempt));
         assert_eq!(classify("/v1/session/roster"), Some(RouteClass::Exempt));
+        assert_eq!(
+            classify("/v1/signature/external-invites/lookup"),
+            Some(RouteClass::Exempt)
+        );
+        assert_eq!(
+            classify("/v1/signature/external-invites/document/working-copy"),
+            Some(RouteClass::Exempt)
+        );
+        assert_eq!(
+            classify("/v1/signature/external-invites/respond"),
+            Some(RouteClass::Exempt)
+        );
         // Sensitive endpoints are never exempt.
         assert_eq!(classify("/v1/data/reset"), Some(RouteClass::Gated));
         assert_eq!(classify("/v1/entities"), Some(RouteClass::Gated));
+    }
+
+    #[test]
+    fn external_signer_invite_routes_are_classified_as_gated() {
+        assert_eq!(
+            classify("/v1/acts/{id}/signature/external-invites"),
+            Some(RouteClass::Gated)
+        );
+        assert_eq!(
+            classify("/v1/acts/{id}/signature/external-invites/{invite_id}/revoke"),
+            Some(RouteClass::Gated)
+        );
+    }
+
+    #[test]
+    fn external_signer_public_envelope_routes_are_classified_as_exempt() {
+        assert_eq!(
+            classify("/v1/signature/external-invites/lookup"),
+            Some(RouteClass::Exempt)
+        );
+        assert_eq!(
+            classify("/v1/signature/external-invites/document/working-copy"),
+            Some(RouteClass::Exempt)
+        );
+        assert_eq!(
+            classify("/v1/signature/external-invites/respond"),
+            Some(RouteClass::Exempt)
+        );
+    }
+
+    #[test]
+    fn office_document_export_route_is_classified_as_gated() {
+        assert_eq!(
+            classify("/v1/acts/{id}/document/office"),
+            Some(RouteClass::Gated)
+        );
     }
 }

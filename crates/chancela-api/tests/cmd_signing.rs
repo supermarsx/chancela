@@ -9,6 +9,8 @@
 //!
 //! Fictional example data only: "Encosto Estratégico, S.A." / "Amélia Marques" — never real names.
 
+mod common;
+
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
@@ -32,8 +34,11 @@ use x509_cert::time::Validity;
 use chancela_api::{AppState, router};
 use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
 use chancela_cmd::{CmdError, ScmdTransport};
+use chancela_core::ActId;
 use chancela_pades::validate_pdf_signature;
-use chancela_signing::{StaticTrustPolicy, TrustPolicy};
+use chancela_signing::{StaticTrustPolicy, TrustPolicy, TrustedListStatus};
+use common::tsa_http::MockTsaServer;
+use uuid::Uuid;
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
@@ -126,6 +131,7 @@ struct SmartCmdTransport {
     issuer_pem: String,
     captured_hash: Arc<Mutex<Option<Vec<u8>>>>,
     reject_otp: bool,
+    fail_action: Option<&'static str>,
 }
 
 impl SmartCmdTransport {
@@ -136,12 +142,23 @@ impl SmartCmdTransport {
             issuer_pem: issuer.cert_pem(),
             captured_hash: Arc::new(Mutex::new(None)),
             reject_otp,
+            fail_action: None,
         }
+    }
+
+    fn with_transport_error_on(mut self, action: &'static str) -> Self {
+        self.fail_action = Some(action);
+        self
     }
 }
 
 impl ScmdTransport for SmartCmdTransport {
     fn call(&self, action: &str, soap_body: &str) -> Result<String, CmdError> {
+        if matches!(self.fail_action, Some(fail) if fail == action) {
+            return Err(CmdError::Transport(format!(
+                "simulated SCMD outage at {action}"
+            )));
+        }
         if action == ACTION_GET_CERTIFICATE {
             Ok(get_certificate_response(&self.leaf_pem, &self.issuer_pem))
         } else if action == ACTION_CCMOVEL_SIGN {
@@ -248,17 +265,31 @@ impl Drop for TempDir {
 
 /// Build a durable state at `dir` with the injected transport + a granted trust policy + the CMD
 /// ApplicationId set (from "env"/settings). `reject` picks the OTP behaviour.
-async fn state_at(dir: &std::path::Path, transport: SmartCmdTransport, granted: bool) -> AppState {
+async fn state_at_with_trust_status(
+    dir: &std::path::Path,
+    transport: SmartCmdTransport,
+    trust_status: TrustedListStatus,
+) -> AppState {
     let mut state = AppState::with_data_dir(dir);
     state.cmd_transport = Some(Arc::new(transport));
-    let policy: Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync> = if granted {
-        Arc::new(|| Box::new(StaticTrustPolicy::granted()))
-    } else {
-        Arc::new(|| Box::new(StaticTrustPolicy::withdrawn()))
-    };
+    let policy: Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync> =
+        Arc::new(move || Box::new(StaticTrustPolicy::new(trust_status)));
     state.cmd_trust_policy = Some(policy);
-    state.settings.write().await.signing.cmd.application_id = Some(APP_ID.to_owned());
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.cmd.application_id = Some(APP_ID.to_owned());
+        settings.signing.tsa_url = None;
+    }
     state
+}
+
+async fn state_at(dir: &std::path::Path, transport: SmartCmdTransport, granted: bool) -> AppState {
+    let trust_status = if granted {
+        TrustedListStatus::Granted
+    } else {
+        TrustedListStatus::Withdrawn
+    };
+    state_at_with_trust_status(dir, transport, trust_status).await
 }
 
 /// Send one request through a fresh router; return (status, JSON body).
@@ -433,6 +464,74 @@ async fn seal_an_act(state: &AppState, token: &str) -> String {
     act_id
 }
 
+async fn create_user(state: &AppState, token: &str, username: &str) -> String {
+    let (status, user) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/users",
+            token,
+            json!({ "username": username, "display_name": username }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create user: {user}");
+    user["id"].as_str().expect("user id").to_owned()
+}
+
+async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usize {
+    let (status, events) = send(
+        state,
+        get_req(&format!("/v1/ledger/events?scope=act:{act_id}"), token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger events: {events}");
+    events
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "document.signed")
+        .count()
+}
+
+async fn assert_no_signed_artifact_or_event(state: &AppState, token: &str, act_id: &str) {
+    let (status, _) = send_bytes(
+        state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(signed_event_count(state, token, act_id).await, 0);
+    let (_, view) = send(
+        state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), token),
+    )
+    .await;
+    assert_ne!(view["status"], "signed");
+}
+
+async fn expire_pending_session(state: &AppState, session_id: &str) {
+    let mut pending = state
+        .store
+        .as_ref()
+        .unwrap()
+        .pending_cmd_session(session_id)
+        .unwrap()
+        .expect("pending session");
+    pending.expires_at = time::OffsetDateTime::now_utc() - time::Duration::seconds(1);
+    state
+        .store
+        .as_ref()
+        .unwrap()
+        .persist(|tx| tx.upsert_pending_cmd_session(&pending))
+        .unwrap();
+    state
+        .pending_signatures
+        .write()
+        .await
+        .insert(session_id.to_owned(), pending);
+}
+
 // --- tests ------------------------------------------------------------------------------------
 
 #[tokio::test]
@@ -513,7 +612,7 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
             "POST",
             &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
             &token,
-            json!({ "session_id": session_id, "otp": OTP }),
+            json!({ "session_id": session_id.clone(), "otp": OTP }),
         ),
     )
     .await;
@@ -567,6 +666,21 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
     assert_eq!(view["finalization"], "finalizado_qualificado");
     assert_eq!(view["signed"]["evidentiary_level"], "Qualified");
 
+    // The pending session is single-use: replaying the same confirm is refused and does not append a
+    // second `document.signed` event.
+    let (status, _) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
+            &token,
+            json!({ "session_id": session_id, "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+
     // A second signature over the already-signed act is refused (409).
     let (status, _) = send(
         &state,
@@ -579,6 +693,173 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn cmd_signing_timestamps_when_tsa_configured() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false);
+    let state = state_at(&dir.0, transport, true).await;
+    let tsa = MockTsaServer::granted();
+    state.settings.write().await.signing.tsa_url = Some(tsa.url().to_owned());
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "initiate: {init}");
+    let session_id = init["session_id"].as_str().unwrap().to_owned();
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
+            &token,
+            json!({ "session_id": session_id, "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "confirm: {done}");
+    assert_eq!(done["timestamp_token"], true);
+
+    let (status, signed_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let report = validate_pdf_signature(&signed_pdf).expect("timestamped PDF validates");
+    assert!(report.covers_whole_file_except_contents);
+    assert!(report.has_signature_timestamp, "PAdES-B-T timestamp");
+    assert_eq!(report.cades.signer_cert_der, leaf.cert.to_der().unwrap());
+
+    let stored = state
+        .signed_documents
+        .read()
+        .await
+        .get(&ActId(Uuid::parse_str(&act_id).unwrap()))
+        .cloned()
+        .expect("signed artifact stored");
+    assert!(
+        stored
+            .timestamp_token_der
+            .as_ref()
+            .map(|token| !token.is_empty())
+            .unwrap_or(false),
+        "timestamp token DER stored"
+    );
+    assert_eq!(
+        stored.signed_pdf_digest,
+        done["signed_pdf_digest"].as_str().unwrap()
+    );
+
+    let (_, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(view["signed"]["timestamp_token"], true);
+
+    assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+}
+
+#[tokio::test]
+async fn cmd_tsa_failure_leaves_no_signed_artifact() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false);
+    let state = state_at(&dir.0, transport, true).await;
+    let tsa = MockTsaServer::outage();
+    state.settings.write().await.signing.tsa_url = Some(tsa.url().to_owned());
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "initiate: {init}");
+    let session_id = init["session_id"].as_str().unwrap().to_owned();
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
+            &token,
+            json!({ "session_id": session_id, "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "TSA failure maps cleanly: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("carimbo temporal"),
+        "timestamp failure is explicit: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn cmd_initiate_rejects_withdrawn_and_unknown_trust_policy() {
+    for trust_status in [TrustedListStatus::Withdrawn, TrustedListStatus::Unknown] {
+        let dir = TempDir::new();
+        let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+        let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+        let transport = SmartCmdTransport::new(&leaf, &issuer, false);
+        let state = state_at_with_trust_status(&dir.0, transport, trust_status).await;
+        let (token, _uid) = bootstrap(&state).await;
+        let act_id = seal_an_act(&state, &token).await;
+
+        let (status, err) = send(
+            &state,
+            json_req(
+                "POST",
+                &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+                &token,
+                json!({ "phone": PHONE, "pin": PIN }),
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{trust_status:?} issuer must fail closed: {err}"
+        );
+        assert!(
+            err.to_string().contains(&format!("{trust_status:?}")),
+            "error reports trust outcome: {err}"
+        );
+        assert!(
+            state.pending_signatures.read().await.is_empty(),
+            "untrusted initiate must not create a pending signing session"
+        );
+        assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+    }
 }
 
 #[tokio::test]
@@ -653,6 +934,184 @@ async fn pending_session_survives_a_restart_and_confirms() {
 }
 
 #[tokio::test]
+async fn pending_session_rejects_unknown_session_wrong_actor_and_wrong_act() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false);
+    let state = state_at(&dir.0, transport, true).await;
+    let (owner, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &owner).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &owner,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "initiate: {init}");
+    let session_id = init["session_id"].as_str().unwrap().to_owned();
+
+    let (status, _) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
+            &owner,
+            json!({ "session_id": uuid::Uuid::new_v4().to_string(), "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let other_id = create_user(&state, &owner, "bruno.dias").await;
+    let other = open_session(&state, &other_id).await;
+    let (status, _) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
+            &other,
+            json!({ "session_id": session_id.clone(), "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let other_act = seal_an_act(&state, &owner).await;
+    let (status, _) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{other_act}/signature/cmd/confirm"),
+            &owner,
+            json!({ "session_id": session_id, "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    assert_no_signed_artifact_or_event(&state, &owner, &act_id).await;
+    assert_no_signed_artifact_or_event(&state, &owner, &other_act).await;
+}
+
+#[tokio::test]
+async fn expired_pending_session_returns_gone_and_leaves_no_signature() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false);
+    let state = state_at(&dir.0, transport, true).await;
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "initiate: {init}");
+    let session_id = init["session_id"].as_str().unwrap().to_owned();
+    expire_pending_session(&state, &session_id).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
+            &token,
+            json!({ "session_id": session_id.clone(), "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::GONE, "expired confirm: {err}");
+    assert!(
+        state
+            .store
+            .as_ref()
+            .unwrap()
+            .pending_cmd_session(&session_id)
+            .unwrap()
+            .is_none(),
+        "expired pending session is consumed"
+    );
+    assert!(
+        !state
+            .pending_signatures
+            .read()
+            .await
+            .contains_key(&session_id),
+        "expired pending session is removed from the live map"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn cmd_confirm_transport_error_maps_to_422_and_leaves_no_signature() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport =
+        SmartCmdTransport::new(&leaf, &issuer, false).with_transport_error_on(ACTION_VALIDATE_OTP);
+    let state = state_at(&dir.0, transport, true).await;
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "initiate: {init}");
+    let session_id = init["session_id"].as_str().unwrap().to_owned();
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
+            &token,
+            json!({ "session_id": session_id.clone(), "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "transport outage maps cleanly: {err}"
+    );
+    assert!(
+        err.to_string().contains("SCMD transport error"),
+        "transport cause is preserved without secrets: {err}"
+    );
+    assert!(
+        state
+            .store
+            .as_ref()
+            .unwrap()
+            .pending_cmd_session(&session_id)
+            .unwrap()
+            .is_some(),
+        "provider outage does not consume the retryable pending session"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
 async fn wrong_otp_is_a_clean_error_and_leaves_no_signature() {
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
@@ -695,19 +1154,7 @@ async fn wrong_otp_is_a_clean_error_and_leaves_no_signature() {
         "the OTP must not be echoed"
     );
 
-    // No signed variant was produced.
-    let (status, _) = send_bytes(
-        &state,
-        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    let (_, view) = send(
-        &state,
-        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
-    )
-    .await;
-    assert_ne!(view["status"], "signed");
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 
 #[tokio::test]

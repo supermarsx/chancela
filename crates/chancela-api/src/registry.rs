@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 
 use axum::Json;
+use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
@@ -28,19 +29,22 @@ use chancela_registry::{
     AccessCode, HttpRegistryTransport, LegalForm, RegistryExtract, RegistryTransport,
     parse_certidao,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{require_permission, scope_of_entity};
+use crate::authz::{authorizer, require_permission, scope_of_entity};
 use crate::dto::{
     EntityView, RegistryConflict, RegistryExtractView, RegistryImportReport, compute_expired,
+    read_redaction_for_actor,
 };
 use crate::error::ApiError;
+use crate::settings::RegistryAutoUpdateSettings;
 
 // --- Request bodies ----------------------------------------------------------------------
 
@@ -180,12 +184,16 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// Serialize the `registry.imported` ledger payload (LEG-22): the extract digest and the
 /// **masked** code only — never the full código de acesso.
 fn imported_payload(extract: &RegistryExtract) -> Result<Vec<u8>, ApiError> {
-    let extract_digest = sha256_hex(&serde_json::to_vec(extract)?);
+    let extract_digest = registry_extract_digest(extract)?;
     let payload = json!({
         "extract_digest": extract_digest,
         "code_masked": extract.provenance.access_code_masked,
     });
     Ok(serde_json::to_vec(&payload)?)
+}
+
+fn registry_extract_digest(extract: &RegistryExtract) -> Result<String, ApiError> {
+    Ok(sha256_hex(&serde_json::to_vec(extract)?))
 }
 
 /// Non-fatal import advisories (contract §2.7 `warnings`). An **expired** certidão (its
@@ -201,6 +209,290 @@ fn import_warnings(extract: &RegistryExtract) -> Vec<String> {
         }
     }
     warnings
+}
+
+// --- Registry auto-update foundation -----------------------------------------------------
+
+/// Worker-visible state for one entity's registry auto-update lifecycle.
+///
+/// This is deliberately metadata-only. It never stores the full access code or a frontend-supplied
+/// registry result; the audit event records only masked code + extract digest evidence.
+#[derive(Debug, Clone)]
+pub struct RegistryAutoUpdateState {
+    pub enabled_override: Option<bool>,
+    pub status: RegistryAutoUpdateStatus,
+    pub last_attempt_at: Option<OffsetDateTime>,
+    pub next_allowed_at: Option<OffsetDateTime>,
+    pub failure_count: u32,
+    pub last_error: Option<String>,
+    pub last_audit_event_seq: Option<u64>,
+    pub last_extract_digest: Option<String>,
+}
+
+impl Default for RegistryAutoUpdateState {
+    fn default() -> Self {
+        RegistryAutoUpdateState {
+            enabled_override: None,
+            status: RegistryAutoUpdateStatus::Idle,
+            last_attempt_at: None,
+            next_allowed_at: None,
+            failure_count: 0,
+            last_error: None,
+            last_audit_event_seq: None,
+            last_extract_digest: None,
+        }
+    }
+}
+
+/// Backend worker lifecycle labels. `Due` is computed in plans; the other labels may be persisted
+/// in worker state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistryAutoUpdateStatus {
+    #[default]
+    Idle,
+    Due,
+    Queued,
+    Running,
+    Completed,
+    Failed,
+    ManualRequired,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RegistryAutoUpdateDuePlan {
+    pub generated_at: String,
+    pub dry_run_only: bool,
+    pub config: RegistryAutoUpdateSettings,
+    pub due: Vec<RegistryAutoUpdateDueItem>,
+    pub skipped: RegistryAutoUpdateSkippedCounts,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RegistryAutoUpdateDueItem {
+    pub entity_id: String,
+    pub entity_name: String,
+    pub entity_profile: String,
+    pub retrieved_at: String,
+    pub age_hours: Option<i64>,
+    pub stale_threshold_hours: u16,
+    pub code_masked: String,
+    pub status: RegistryAutoUpdateStatus,
+    pub reason: String,
+    pub next_allowed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RegistryAutoUpdateSkippedCounts {
+    pub disabled: usize,
+    pub fresh: usize,
+    pub backoff: usize,
+    pub running: usize,
+    pub orphaned: usize,
+    pub capped: usize,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RegistryAutoUpdateAttemptRequest {
+    /// Let an operator retry a stale item before the backoff window elapses. This never bypasses
+    /// global/entity disabled flags.
+    force: bool,
+    /// Advisory only in this first slice: the backend is dry-run-only until a secure full-code source
+    /// exists.
+    dry_run: bool,
+    /// Optional operator note. Stored only in the audit payload if the attempt is accepted.
+    reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RegistryAutoUpdateAttemptView {
+    pub accepted: bool,
+    pub entity_id: String,
+    pub status: RegistryAutoUpdateStatus,
+    pub generated_at: String,
+    pub dry_run_only: bool,
+    pub reason: String,
+    pub last_attempt_at: Option<String>,
+    pub next_allowed_at: Option<String>,
+    pub failure_count: u32,
+    pub audit_event_seq: Option<u64>,
+}
+
+fn format_ts(ts: OffsetDateTime) -> String {
+    ts.format(&Rfc3339).unwrap_or_default()
+}
+
+fn parse_ts(raw: &str) -> Option<OffsetDateTime> {
+    OffsetDateTime::parse(raw, &Rfc3339).ok()
+}
+
+fn entity_profile(entity: &Entity) -> String {
+    kind_name(entity.kind).to_owned()
+}
+
+fn entity_auto_update_enabled(
+    entity: &Entity,
+    settings: &RegistryAutoUpdateSettings,
+    worker: Option<&RegistryAutoUpdateState>,
+) -> bool {
+    if let Some(enabled) = worker.and_then(|s| s.enabled_override) {
+        return enabled;
+    }
+    if !settings.entity_defaults.enabled {
+        return false;
+    }
+    let profile = entity_profile(entity);
+    let profiles = &settings.entity_defaults.enabled_profiles;
+    profiles.is_empty() || profiles.iter().any(|p| p.trim() == profile)
+}
+
+fn stale_status(
+    extract: &RegistryExtract,
+    settings: &RegistryAutoUpdateSettings,
+    now: OffsetDateTime,
+) -> (bool, Option<i64>, String) {
+    let Some(retrieved_at) = parse_ts(&extract.provenance.retrieved_at) else {
+        return (
+            true,
+            None,
+            "registry extract retrieved_at is missing or unparseable".to_owned(),
+        );
+    };
+    let age = now - retrieved_at;
+    let age_hours = age.whole_hours();
+    let threshold = time::Duration::hours(settings.stale_threshold_hours.into());
+    if age >= threshold {
+        (
+            true,
+            Some(age_hours),
+            format!(
+                "registry extract is {age_hours}h old; threshold is {}h",
+                settings.stale_threshold_hours
+            ),
+        )
+    } else {
+        (
+            false,
+            Some(age_hours),
+            format!(
+                "registry extract is {age_hours}h old; threshold is {}h",
+                settings.stale_threshold_hours
+            ),
+        )
+    }
+}
+
+fn backoff_duration(settings: &RegistryAutoUpdateSettings, failure_count: u32) -> time::Duration {
+    let base = i64::from(settings.min_backoff_minutes);
+    let max = i64::from(settings.max_backoff_minutes);
+    let shift = failure_count.saturating_sub(1).min(10);
+    let multiplier = 1_i64 << shift;
+    time::Duration::minutes((base.saturating_mul(multiplier)).min(max))
+}
+
+fn build_due_plan(
+    entities: &std::collections::HashMap<EntityId, Entity>,
+    extracts: &std::collections::HashMap<EntityId, RegistryExtract>,
+    states: &std::collections::HashMap<EntityId, RegistryAutoUpdateState>,
+    settings: RegistryAutoUpdateSettings,
+    now: OffsetDateTime,
+) -> RegistryAutoUpdateDuePlan {
+    let generated_at = format_ts(now);
+    let mut skipped = RegistryAutoUpdateSkippedCounts::default();
+    let mut due = Vec::new();
+    let mut capped = false;
+
+    if !settings.enabled {
+        skipped.disabled = extracts.len();
+        return RegistryAutoUpdateDuePlan {
+            generated_at,
+            dry_run_only: true,
+            config: settings,
+            due,
+            skipped,
+            notes: vec![
+                "registry auto-update is disabled in settings; no records are due".to_owned(),
+            ],
+        };
+    }
+
+    for (eid, extract) in extracts {
+        let Some(entity) = entities.get(eid) else {
+            skipped.orphaned += 1;
+            continue;
+        };
+        let state = states.get(eid);
+        if !entity_auto_update_enabled(entity, &settings, state) {
+            skipped.disabled += 1;
+            continue;
+        }
+        if let Some(state) = state {
+            if state.status == RegistryAutoUpdateStatus::Running
+                || state.status == RegistryAutoUpdateStatus::Queued
+            {
+                skipped.running += 1;
+                continue;
+            }
+            if state
+                .next_allowed_at
+                .is_some_and(|next_allowed| next_allowed > now)
+            {
+                skipped.backoff += 1;
+                continue;
+            }
+        }
+
+        let (is_stale, age_hours, reason) = stale_status(extract, &settings, now);
+        if !is_stale {
+            skipped.fresh += 1;
+            continue;
+        }
+        if due.len() >= usize::from(settings.max_attempts_per_run) {
+            skipped.capped += 1;
+            capped = true;
+            continue;
+        }
+
+        due.push(RegistryAutoUpdateDueItem {
+            entity_id: eid.to_string(),
+            entity_name: entity.name.clone(),
+            entity_profile: entity_profile(entity),
+            retrieved_at: extract.provenance.retrieved_at.clone(),
+            age_hours,
+            stale_threshold_hours: settings.stale_threshold_hours,
+            code_masked: extract.provenance.access_code_masked.clone(),
+            status: RegistryAutoUpdateStatus::Due,
+            reason,
+            next_allowed_at: state.and_then(|s| s.next_allowed_at).map(format_ts),
+        });
+    }
+
+    let mut notes = vec![
+        "dry-run-only: stored registry provenance intentionally contains only the masked access code"
+            .to_owned(),
+    ];
+    if capped {
+        notes.push("due list was capped by registry_auto_update.max_attempts_per_run".to_owned());
+    }
+
+    RegistryAutoUpdateDuePlan {
+        generated_at,
+        dry_run_only: true,
+        config: settings,
+        due,
+        skipped,
+        notes,
+    }
+}
+
+fn parse_auto_update_attempt(body: Bytes) -> Result<RegistryAutoUpdateAttemptRequest, ApiError> {
+    if body.is_empty() {
+        return Ok(RegistryAutoUpdateAttemptRequest::default());
+    }
+    serde_json::from_slice(&body)
+        .map_err(|e| ApiError::Unprocessable(format!("invalid registry auto-update request: {e}")))
 }
 
 // --- Cross-check -------------------------------------------------------------------------
@@ -239,7 +531,6 @@ fn cross_check(
         &mut applied,
         &mut conflicts,
     );
-
     // NIPC is never blank (validated at creation), so only a divergence is possible — and
     // overwriting requires the incoming NIPC to itself be valid (Nipc::parse).
     if let Some(incoming) = eff_nipc.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -320,10 +611,39 @@ pub async fn registry_lookup(
     Json(req): Json<RegistryLookupRequest>,
 ) -> Result<Json<RegistryExtractView>, ApiError> {
     // RBAC (t64-E3): a registry preview is an entity read, Global (no entity yet).
-    require_permission(&state, &actor, Permission::EntityRead, Scope::Global).await?;
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::EntityRead, Scope::Global)?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     let extract = consult(&state, &req.code, req.email.as_deref()).await?;
     let cae = state.cae.read().await;
-    Ok(Json(RegistryExtractView::build(&extract, &cae)))
+    Ok(Json(RegistryExtractView::build_with_redaction(
+        &extract, &cae, redaction,
+    )))
+}
+
+/// `GET /v1/registry/lookup` — backend-owned dry-run plan for registry auto-update work.
+///
+/// The path is intentionally an existing registry path: this first backend slice does not add a new
+/// route classification surface. The response is a plan/status view only; it never performs a live
+/// fetch and never asks the frontend to poll or provide registry result data.
+pub async fn registry_auto_update_due_plan(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<RegistryAutoUpdateDuePlan>, ApiError> {
+    require_permission(&state, &actor, Permission::EntityRead, Scope::Global).await?;
+    let settings = state.settings.read().await.registry_auto_update.clone();
+    settings.validate()?;
+
+    let entities = state.entities.read().await;
+    let extracts = state.registry_extracts.read().await;
+    let states = state.registry_auto_updates.read().await;
+    Ok(Json(build_due_plan(
+        &entities,
+        &extracts,
+        &states,
+        settings,
+        OffsetDateTime::now_utc(),
+    )))
 }
 
 /// `GET /v1/entities/{id}/registry` — the stored extract for an entity, or `404` if the entity
@@ -333,17 +653,218 @@ pub async fn get_entity_registry(
     Path(id): Path<Uuid>,
     actor: CurrentActor,
 ) -> Result<Json<RegistryExtractView>, ApiError> {
+    let eid = EntityId(id);
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::EntityRead, scope_of_entity(eid))?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
+    let extracts = state.registry_extracts.read().await;
+    let extract = extracts.get(&eid).ok_or(ApiError::NotFound)?;
+    let cae = state.cae.read().await;
+    Ok(Json(RegistryExtractView::build_with_redaction(
+        extract, &cae, redaction,
+    )))
+}
+
+/// `POST /v1/entities/{id}/registry` — accept one backend-owned auto-update attempt.
+///
+/// This endpoint accepts only worker control metadata (`force`, `dry_run`, `reason`). Raw HTML,
+/// parsed extracts, status completions, and other frontend-supplied heavy/provenance-free result
+/// data are rejected by `deny_unknown_fields`.
+pub async fn request_registry_auto_update(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    body: Bytes,
+) -> Result<(StatusCode, Json<RegistryAutoUpdateAttemptView>), ApiError> {
+    let eid = EntityId(id);
     require_permission(
         &state,
         &actor,
-        Permission::EntityRead,
-        scope_of_entity(EntityId(id)),
+        Permission::EntityRegistryImport,
+        scope_of_entity(eid),
     )
     .await?;
-    let extracts = state.registry_extracts.read().await;
-    let extract = extracts.get(&EntityId(id)).ok_or(ApiError::NotFound)?;
-    let cae = state.cae.read().await;
-    Ok(Json(RegistryExtractView::build(extract, &cae)))
+    let req = parse_auto_update_attempt(body)?;
+    let settings = state.settings.read().await.registry_auto_update.clone();
+    settings.validate()?;
+    let now = OffsetDateTime::now_utc();
+    let generated_at = format_ts(now);
+
+    let (
+        entity_for_enabled,
+        entity_name,
+        entity_profile_name,
+        retrieved_at,
+        code_masked,
+        extract_digest,
+        is_stale_initial,
+        stale_reason,
+    ) = {
+        let entities = state.entities.read().await;
+        let entity = entities.get(&eid).ok_or(ApiError::NotFound)?;
+        let extracts = state.registry_extracts.read().await;
+        let extract = extracts.get(&eid).ok_or(ApiError::NotFound)?;
+        let (is_stale, _, stale_reason) = stale_status(extract, &settings, now);
+        (
+            entity.clone(),
+            entity.name.clone(),
+            entity_profile(entity),
+            extract.provenance.retrieved_at.clone(),
+            extract.provenance.access_code_masked.clone(),
+            registry_extract_digest(extract)?,
+            is_stale,
+            stale_reason,
+        )
+    };
+
+    let mut states = state.registry_auto_updates.write().await;
+    let current_state = states.entry(eid).or_default();
+    let enabled = if settings.enabled {
+        entity_auto_update_enabled(&entity_for_enabled, &settings, Some(current_state))
+    } else {
+        false
+    };
+
+    if !enabled {
+        return Ok((
+            StatusCode::OK,
+            Json(RegistryAutoUpdateAttemptView {
+                accepted: false,
+                entity_id: eid.to_string(),
+                status: current_state.status,
+                generated_at,
+                dry_run_only: true,
+                reason: "registry auto-update is disabled for this entity".to_owned(),
+                last_attempt_at: current_state.last_attempt_at.map(format_ts),
+                next_allowed_at: current_state.next_allowed_at.map(format_ts),
+                failure_count: current_state.failure_count,
+                audit_event_seq: current_state.last_audit_event_seq,
+            }),
+        ));
+    }
+
+    if !req.force {
+        if current_state.status == RegistryAutoUpdateStatus::Running
+            || current_state.status == RegistryAutoUpdateStatus::Queued
+        {
+            return Ok((
+                StatusCode::OK,
+                Json(RegistryAutoUpdateAttemptView {
+                    accepted: false,
+                    entity_id: eid.to_string(),
+                    status: current_state.status,
+                    generated_at,
+                    dry_run_only: true,
+                    reason: "registry auto-update is already queued or running".to_owned(),
+                    last_attempt_at: current_state.last_attempt_at.map(format_ts),
+                    next_allowed_at: current_state.next_allowed_at.map(format_ts),
+                    failure_count: current_state.failure_count,
+                    audit_event_seq: current_state.last_audit_event_seq,
+                }),
+            ));
+        }
+        if let Some(next_allowed_at) = current_state.next_allowed_at {
+            if next_allowed_at > now {
+                return Ok((
+                    StatusCode::OK,
+                    Json(RegistryAutoUpdateAttemptView {
+                        accepted: false,
+                        entity_id: eid.to_string(),
+                        status: current_state.status,
+                        generated_at,
+                        dry_run_only: true,
+                        reason: "registry auto-update is in backoff".to_owned(),
+                        last_attempt_at: current_state.last_attempt_at.map(format_ts),
+                        next_allowed_at: current_state.next_allowed_at.map(format_ts),
+                        failure_count: current_state.failure_count,
+                        audit_event_seq: current_state.last_audit_event_seq,
+                    }),
+                ));
+            }
+        }
+        if !is_stale_initial {
+            return Ok((
+                StatusCode::OK,
+                Json(RegistryAutoUpdateAttemptView {
+                    accepted: false,
+                    entity_id: eid.to_string(),
+                    status: RegistryAutoUpdateStatus::Idle,
+                    generated_at,
+                    dry_run_only: true,
+                    reason: stale_reason,
+                    last_attempt_at: current_state.last_attempt_at.map(format_ts),
+                    next_allowed_at: current_state.next_allowed_at.map(format_ts),
+                    failure_count: current_state.failure_count,
+                    audit_event_seq: current_state.last_audit_event_seq,
+                }),
+            ));
+        }
+    }
+
+    current_state.status = RegistryAutoUpdateStatus::Running;
+    current_state.last_attempt_at = Some(now);
+    current_state.last_error = None;
+    current_state.last_extract_digest = Some(extract_digest.clone());
+
+    let actor = actor.resolve("api");
+    let manual_required = "stored registry provenance contains only the masked access code; run a manual import with a fresh code or add a secure code vault before live auto-refresh";
+    let payload = serde_json::to_vec(&json!({
+        "entity_id": eid.to_string(),
+        "entity_name": entity_name,
+        "entity_profile": entity_profile_name,
+        "attempted_at": generated_at,
+        "mode": if req.dry_run { "dry_run" } else { "worker" },
+        "outcome": "manual_required",
+        "reason": manual_required,
+        "operator_reason": req.reason,
+        "stale_reason": stale_reason,
+        "previous_retrieved_at": retrieved_at,
+        "previous_extract_digest": extract_digest,
+        "code_masked": code_masked,
+        "frontend_result_accepted": false
+    }))?;
+    let seq = {
+        let mut ledger = state.ledger.write().await;
+        ledger.append(
+            &actor,
+            &eid.to_string(),
+            "registry.auto_update.attempted",
+            Some("registry auto-update attempt"),
+            &payload,
+        );
+        let seq = ledger.events().last().map(|e| e.seq);
+        if let Err(e) = state.persist_write_through(&mut ledger, 1, |_tx| Ok(())) {
+            current_state.status = RegistryAutoUpdateStatus::Failed;
+            current_state.last_error = Some(format!("failed to persist audit event: {e:?}"));
+            return Err(e);
+        }
+        state.attest_latest(&attestor, &ledger).await;
+        seq
+    };
+
+    let failure_count = current_state.failure_count.saturating_add(1);
+    current_state.failure_count = failure_count;
+    current_state.status = RegistryAutoUpdateStatus::ManualRequired;
+    current_state.last_error = Some(manual_required.to_owned());
+    current_state.last_audit_event_seq = seq;
+    current_state.next_allowed_at = Some(now + backoff_duration(&settings, failure_count));
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(RegistryAutoUpdateAttemptView {
+            accepted: true,
+            entity_id: eid.to_string(),
+            status: current_state.status,
+            generated_at,
+            dry_run_only: true,
+            reason: manual_required.to_owned(),
+            last_attempt_at: current_state.last_attempt_at.map(format_ts),
+            next_allowed_at: current_state.next_allowed_at.map(format_ts),
+            failure_count: current_state.failure_count,
+            audit_event_seq: current_state.last_audit_event_seq,
+        }),
+    ))
 }
 
 /// `POST /v1/entities/{id}/registry/import` — enrich an existing entity from the extract, store
@@ -652,6 +1173,52 @@ mod tests {
         token
     }
 
+    async fn auth_token_for_role(
+        state: &AppState,
+        username: &str,
+        role_id: chancela_authz::RoleId,
+    ) -> String {
+        use crate::users::{User, UserId};
+        use chancela_authz::{RoleAssignment, RoleCatalog, Scope};
+        use time::format_description::well_known::Rfc3339;
+
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
+
+        let uid = UserId(uuid::Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: username.to_owned(),
+            display_name: username.to_owned(),
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: vec![RoleAssignment::new(role_id, Scope::Global)],
+        };
+        state.users.write().await.insert(uid, user);
+
+        let token = uuid::Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc();
+        state.sessions.write().await.insert(
+            token.clone(),
+            crate::session::SessionEntry {
+                user_id: uid,
+                unlocked_key: None,
+                expires_at: now + time::Duration::seconds(crate::actor::SESSION_TTL_SECS),
+            },
+        );
+        token
+    }
+
     fn get(uri: &str) -> Request<Body> {
         Request::builder()
             .uri(uri)
@@ -688,6 +1255,228 @@ mod tests {
         e["id"].as_str().expect("entity id").to_owned()
     }
 
+    async fn enable_registry_auto_update(state: &AppState, stale_threshold_hours: u16) {
+        let mut settings = crate::settings::Settings::default();
+        settings.registry_auto_update = crate::settings::RegistryAutoUpdateSettings {
+            enabled: true,
+            stale_threshold_hours,
+            min_backoff_minutes: 30,
+            max_backoff_minutes: 60,
+            max_attempts_per_run: 10,
+            entity_defaults: crate::settings::RegistryAutoUpdateEntityDefaults {
+                enabled: true,
+                enabled_profiles: Vec::new(),
+            },
+            ..Default::default()
+        };
+        *state.settings.write().await = settings;
+    }
+
+    async fn insert_entity_with_registry_extract(
+        state: &AppState,
+        name: &str,
+        retrieved_at: time::OffsetDateTime,
+    ) -> EntityId {
+        let entity = Entity::new(
+            name.to_owned(),
+            Nipc::parse("503004642").expect("valid NIPC"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        );
+        let eid = entity.id;
+        let retrieved = format_ts(retrieved_at);
+        let extract = parse_certidao(
+            &certidao_html(name, "503004642", "Sociedade por quotas", "Lisboa"),
+            "****-****-9012",
+            "mock://registry/certidao",
+            &retrieved,
+        )
+        .expect("fixture certidao parses");
+        state.entities.write().await.insert(eid, entity);
+        state.registry_extracts.write().await.insert(eid, extract);
+        eid
+    }
+
+    #[tokio::test]
+    async fn auto_update_due_plan_defaults_disabled_safe() {
+        let state = AppState::default();
+        let _stale = insert_entity_with_registry_extract(
+            &state,
+            "Stale Default, Lda",
+            time::OffsetDateTime::now_utc() - time::Duration::days(60),
+        )
+        .await;
+
+        let (status, plan) = send(state, get("/v1/registry/lookup")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(plan["config"]["enabled"], false);
+        assert_eq!(plan["config"]["entity_defaults"]["enabled"], false);
+        assert_eq!(plan["dry_run_only"], true);
+        assert_eq!(plan["due"].as_array().expect("due").len(), 0);
+        assert_eq!(plan["skipped"]["disabled"], 1);
+    }
+
+    #[tokio::test]
+    async fn auto_update_due_plan_selects_stale_and_ignores_fresh_and_disabled() {
+        let state = AppState::default();
+        enable_registry_auto_update(&state, 24).await;
+        let now = time::OffsetDateTime::now_utc();
+        let stale = insert_entity_with_registry_extract(
+            &state,
+            "Stale Due, Lda",
+            now - time::Duration::hours(48),
+        )
+        .await;
+        let _fresh = insert_entity_with_registry_extract(
+            &state,
+            "Fresh Ignored, Lda",
+            now - time::Duration::hours(1),
+        )
+        .await;
+        let disabled = insert_entity_with_registry_extract(
+            &state,
+            "Disabled Ignored, Lda",
+            now - time::Duration::hours(72),
+        )
+        .await;
+        state.registry_auto_updates.write().await.insert(
+            disabled,
+            RegistryAutoUpdateState {
+                enabled_override: Some(false),
+                ..Default::default()
+            },
+        );
+
+        let (status, plan) = send(state, get("/v1/registry/lookup")).await;
+        assert_eq!(status, StatusCode::OK);
+        let due = plan["due"].as_array().expect("due");
+        assert_eq!(due.len(), 1, "plan: {plan}");
+        assert_eq!(due[0]["entity_id"], stale.to_string());
+        assert_eq!(due[0]["status"], "due");
+        assert_eq!(plan["skipped"]["fresh"], 1);
+        assert_eq!(plan["skipped"]["disabled"], 1);
+    }
+
+    #[tokio::test]
+    async fn auto_update_attempt_audits_only_accepted_and_records_status_evidence() {
+        let state = AppState::default();
+        let entity = insert_entity_with_registry_extract(
+            &state,
+            "Attempt Evidence, Lda",
+            time::OffsetDateTime::now_utc() - time::Duration::hours(48),
+        )
+        .await;
+
+        let (status, rejected) = send(
+            state.clone(),
+            post_json(&format!("/v1/entities/{entity}/registry"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(rejected["accepted"], false);
+        assert_eq!(state.ledger.read().await.events().len(), 0);
+
+        enable_registry_auto_update(&state, 24).await;
+        let (status, accepted) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/entities/{entity}/registry"),
+                json!({ "reason": "nightly worker slice" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "accepted body: {accepted}");
+        assert_eq!(accepted["accepted"], true);
+        assert_eq!(accepted["status"], "manual_required");
+        assert_eq!(accepted["failure_count"], 1);
+        assert!(accepted["audit_event_seq"].is_number());
+        assert!(accepted["next_allowed_at"].is_string());
+
+        let events = state.ledger.read().await.events().to_vec();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, "registry.auto_update.attempted");
+        assert_eq!(events[0].scope, entity.to_string());
+
+        {
+            let statuses = state.registry_auto_updates.read().await;
+            let evidence = statuses.get(&entity).expect("status evidence stored");
+            assert_eq!(evidence.status, RegistryAutoUpdateStatus::ManualRequired);
+            assert_eq!(evidence.failure_count, 1);
+            assert!(evidence.last_attempt_at.is_some());
+            assert!(evidence.next_allowed_at.is_some());
+            assert_eq!(evidence.last_audit_event_seq, Some(events[0].seq));
+            assert!(evidence.last_extract_digest.is_some());
+        }
+
+        let (status, backed_off) = send(
+            state.clone(),
+            post_json(&format!("/v1/entities/{entity}/registry"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(backed_off["accepted"], false);
+        assert!(
+            backed_off["reason"]
+                .as_str()
+                .expect("reason")
+                .contains("backoff")
+        );
+        assert_eq!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .filter(|e| e.kind == "registry.auto_update.attempted")
+                .count(),
+            1,
+            "backoff rejection must not append a second audit event"
+        );
+    }
+
+    #[tokio::test]
+    async fn auto_update_rejects_frontend_supplied_result_data() {
+        let state = AppState::default();
+        enable_registry_auto_update(&state, 24).await;
+        let entity = insert_entity_with_registry_extract(
+            &state,
+            "Raw Payload Rejected, Lda",
+            time::OffsetDateTime::now_utc() - time::Duration::hours(48),
+        )
+        .await;
+
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/entities/{entity}/registry"),
+                json!({
+                    "status": "completed",
+                    "extract": { "firma": "Frontend Result, Lda" },
+                    "raw_html": "<html></html>"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("unknown field")
+        );
+        assert_eq!(state.ledger.read().await.events().len(), 0);
+        assert!(
+            state
+                .registry_auto_updates
+                .read()
+                .await
+                .get(&entity)
+                .is_none(),
+            "rejected raw result must not store worker status"
+        );
+    }
+
     #[tokio::test]
     async fn lookup_returns_view_with_masked_provenance_and_no_ledger_event() {
         let html = certidao_html(
@@ -708,6 +1497,7 @@ mod tests {
         assert_eq!(view["nipc"], "503004642");
         assert_eq!(view["legal_form"], "SociedadePorQuotas");
         assert_eq!(view["provenance"]["access_code_masked"], "****-****-9012");
+        assert_eq!(view["provenance"]["source_url"], "mock://registry/certidao");
         assert_eq!(
             view["provenance"]["raw_digest"]
                 .as_str()
@@ -719,6 +1509,230 @@ mod tests {
         // A preview lookup stores nothing and appends no ledger event.
         let (_, events) = send(state, get("/v1/ledger/events")).await;
         assert_eq!(events.as_array().expect("events").len(), 0);
+    }
+
+    #[tokio::test]
+    async fn guest_registry_redaction_hides_nested_identifiers_and_provenance() {
+        let state = state_with(MockRegistryTransport::from_fixture_constituicao());
+
+        let guest = auth_token_for_role(&state, "guest", chancela_authz::GUEST_ROLE_ID).await;
+        let (status, guest_view) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+                &guest,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(guest_view["nipc"].is_null());
+        assert!(guest_view["sede"].is_null());
+        assert_eq!(
+            guest_view["provenance"]["access_code_masked"],
+            crate::dto::REDACTED
+        );
+        assert_eq!(guest_view["provenance"]["source_url"], crate::dto::REDACTED);
+        assert_eq!(guest_view["provenance"]["raw_digest"], crate::dto::REDACTED);
+        assert!(guest_view["provenance"]["oficial"].is_null());
+        assert_eq!(guest_view["provenance"]["valid_until"], "2027-07-05");
+        assert_eq!(guest_view["inscricoes"][0]["text"], crate::dto::REDACTED);
+        assert_eq!(guest_view["anotacoes"][0]["number"], "1");
+        assert_eq!(guest_view["anotacoes"][0]["text"], crate::dto::REDACTED);
+
+        let payload = &guest_view["inscricoes"][0]["detail"]["payload"];
+        assert!(payload["nipc"].is_null());
+        assert!(payload["sede"].is_null());
+        assert_eq!(payload["capital"]["amount_text"], "100,00");
+        assert_eq!(
+            payload["socios"][0]["titular"]["name"],
+            crate::dto::REDACTED
+        );
+        assert!(payload["socios"][0]["titular"]["nif"].is_null());
+        assert!(payload["socios"][0]["titular"]["estado_civil"].is_null());
+        assert!(payload["socios"][0]["titular"]["nacionalidade"].is_null());
+        assert!(
+            payload["socios"][0]["titular"]["residencia"].is_null(),
+            "residencia redacted: {payload}"
+        );
+        assert_eq!(
+            payload["orgaos"][0]["members"][0]["name"],
+            crate::dto::REDACTED
+        );
+        assert!(payload["orgaos"][0]["members"][0]["nif"].is_null());
+        assert!(payload["orgaos"][0]["members"][0]["nacionalidade"].is_null());
+        assert!(payload["orgaos"][0]["members"][0]["residencia"].is_null());
+        assert_eq!(payload["orgaos"][0]["members"][0]["cargo"], "Gerente");
+
+        let redacted = guest_view.to_string();
+        assert!(!redacted.contains("503004642"), "NIPC leaked: {redacted}");
+        assert!(
+            !redacted.contains("999999990"),
+            "shareholder NIF leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("Rui Tavares Nogueira"),
+            "shareholder name leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("Portuguesa"),
+            "nationality leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("casado"),
+            "marital status leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("****-****-9012"),
+            "masked access code leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("1234-5678-9012"),
+            "grouped access code leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("123456789012"),
+            "bare access code leaked: {redacted}"
+        );
+
+        let leitor = auth_token_for_role(&state, "leitor", chancela_authz::LEITOR_ROLE_ID).await;
+        let (status, reader_view) = send_raw(
+            state,
+            with_session(
+                post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+                &leitor,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            reader_view["provenance"]["access_code_masked"],
+            "****-****-9012"
+        );
+        assert_eq!(
+            reader_view["provenance"]["source_url"],
+            "mock://registry/certidao"
+        );
+        assert_eq!(
+            reader_view["provenance"]["raw_digest"]
+                .as_str()
+                .expect("digest")
+                .len(),
+            64
+        );
+        assert_eq!(reader_view["provenance"]["oficial"], "Amélia Marques");
+        assert_eq!(
+            reader_view["inscricoes"][0]["detail"]["payload"]["nipc"],
+            "503004642"
+        );
+        assert_eq!(
+            reader_view["inscricoes"][0]["detail"]["payload"]["socios"][0]["titular"]["estado_civil"],
+            "casado"
+        );
+        assert_eq!(
+            reader_view["inscricoes"][0]["detail"]["payload"]["socios"][0]["titular"]["nacionalidade"],
+            "Portuguesa"
+        );
+        let annotation = reader_view["anotacoes"][0]["text"]
+            .as_str()
+            .expect("reader annotation text");
+        assert!(
+            annotation.starts_with("An. 1 - 20260501 - Publicado em http://publicacoes.mj.pt."),
+            "reader annotation keeps publication line: {annotation}"
+        );
+        assert!(
+            annotation.contains("Amélia Marques"),
+            "reader annotation keeps official footer: {annotation}"
+        );
+        assert!(
+            reader_view.to_string().contains("503004642"),
+            "normal reader keeps the NIPC"
+        );
+    }
+
+    #[tokio::test]
+    async fn guest_stored_registry_redaction_handles_missing_optional_detail() {
+        let html = certidao_html(
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Sociedade por quotas",
+            "Avenida da Liberdade, Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        let id = create_entity(
+            &state,
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Avenida da Liberdade, Lisboa",
+            "SociedadePorQuotas",
+        )
+        .await;
+
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/entities/{id}/registry/import"),
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let guest =
+            auth_token_for_role(&state, "guest.stored", chancela_authz::GUEST_ROLE_ID).await;
+        let (status, guest_view) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/entities/{id}/registry")), &guest),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(guest_view["nipc"].is_null());
+        assert!(guest_view["sede"].is_null());
+        assert_eq!(
+            guest_view["provenance"]["access_code_masked"],
+            crate::dto::REDACTED
+        );
+        assert_eq!(guest_view["provenance"]["source_url"], crate::dto::REDACTED);
+        assert_eq!(guest_view["provenance"]["raw_digest"], crate::dto::REDACTED);
+        let redacted = guest_view.to_string();
+        assert!(!redacted.contains("503004642"), "NIPC leaked: {redacted}");
+        assert!(
+            !redacted.contains("****-****-9012"),
+            "masked access code leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("1234-5678-9012"),
+            "grouped access code leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("123456789012"),
+            "bare access code leaked: {redacted}"
+        );
+
+        let leitor =
+            auth_token_for_role(&state, "leitor.stored", chancela_authz::LEITOR_ROLE_ID).await;
+        let (status, reader_view) = send_raw(
+            state,
+            with_session(get(&format!("/v1/entities/{id}/registry")), &leitor),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(reader_view["nipc"], "503004642");
+        assert_eq!(reader_view["sede"], "Avenida da Liberdade, Lisboa");
+        assert_eq!(
+            reader_view["provenance"]["access_code_masked"],
+            "****-****-9012"
+        );
+        assert_eq!(
+            reader_view["provenance"]["raw_digest"]
+                .as_str()
+                .expect("digest")
+                .len(),
+            64
+        );
+        assert!(
+            reader_view.to_string().contains("503004642"),
+            "normal reader keeps the NIPC"
+        );
     }
 
     #[tokio::test]
@@ -1109,6 +2123,8 @@ mod tests {
         let socios = detail["payload"]["socios"].as_array().expect("socios");
         assert_eq!(socios.len(), 2);
         assert_eq!(socios[0]["titular"]["name"], "Rui Tavares Nogueira");
+        assert_eq!(socios[0]["titular"]["estado_civil"], "casado");
+        assert_eq!(socios[0]["titular"]["nacionalidade"], "Portuguesa");
         let orgaos = detail["payload"]["orgaos"].as_array().expect("orgaos");
         assert!(
             orgaos[0]["name"]

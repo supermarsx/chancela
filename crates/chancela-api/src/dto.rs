@@ -14,6 +14,7 @@ use time::macros::format_description;
 use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
+use chancela_authz::{Permission, ScopedPermissionSet};
 use chancela_cae::CaeCatalog;
 use chancela_core::book::ClosingReason;
 use chancela_core::{
@@ -31,10 +32,74 @@ use chancela_registry::{
     RegistryOfficialSignature, RegistryProvenance,
 };
 
+use crate::AppState;
+use crate::actor::CurrentActor;
 use crate::cae::{CaeRefView, enrich_cae_ref};
 use crate::error::ApiError;
 use crate::hex::{hex, parse_hex32};
 use crate::registry::legal_form_name;
+
+/// Explicit marker used when a wire field is non-nullable but must be hidden from
+/// Guest/read-only-minimal callers. Nullable fields use `null` instead.
+pub(crate) const REDACTED: &str = "<redacted>";
+
+fn redacted() -> String {
+    REDACTED.to_owned()
+}
+
+/// Read-response privacy policy selected after RBAC has already allowed a read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadRedaction {
+    None,
+    Guest,
+}
+
+impl ReadRedaction {
+    #[must_use]
+    pub(crate) fn for_effective_permissions(effective: &ScopedPermissionSet) -> Self {
+        let mut grants = effective.all_grants().peekable();
+        if grants.peek().is_some()
+            && grants.all(|(permission, _)| {
+                matches!(
+                    permission,
+                    Permission::EntityRead
+                        | Permission::BookRead
+                        | Permission::ActRead
+                        | Permission::CaeRead
+                        | Permission::LawRead
+                )
+            })
+        {
+            ReadRedaction::Guest
+        } else {
+            ReadRedaction::None
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn is_guest(self) -> bool {
+        matches!(self, ReadRedaction::Guest)
+    }
+}
+
+/// Resolve the caller's effective authority into the read-response privacy policy.
+///
+/// Authorization is still performed by the handler's `require`/`permits` checks first; this helper
+/// only decides the response shape after a read has been allowed.
+pub(crate) async fn read_redaction_for_actor(
+    state: &AppState,
+    actor: &CurrentActor,
+) -> Result<ReadRedaction, ApiError> {
+    if let Some(principal) = actor.api_key_principal() {
+        return Ok(ReadRedaction::for_effective_permissions(
+            &principal.effective_permissions,
+        ));
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let (_, effective) = crate::roles::effective_permissions_for_actor(state, actor, now).await?;
+    Ok(ReadRedaction::for_effective_permissions(&effective))
+}
 
 // --- Date <-> ISO string helpers ---------------------------------------------------------
 
@@ -139,6 +204,7 @@ pub struct EntityView {
     pub seat: String,
     pub family: EntityFamily,
     pub kind: EntityKind,
+    pub fiscal_year_end: Option<String>,
     /// The entity's derived profile (ENT-02): rule pack id, allowed channels, signature-policy
     /// hint, template-family seed, calendar presets. Additive (t31 §2.4).
     pub profile: EntityProfileView,
@@ -156,9 +222,24 @@ impl From<&Entity> for EntityView {
             seat: e.seat.clone(),
             family: e.family,
             kind: e.kind,
+            fiscal_year_end: e.fiscal_year_end.clone(),
             profile: EntityProfileView::from(e.kind),
             statute: e.statute.clone(),
         }
+    }
+}
+
+impl EntityView {
+    /// Build an entity read view under the selected privacy policy.
+    #[must_use]
+    pub(crate) fn build(e: &Entity, redaction: ReadRedaction) -> Self {
+        let mut view = EntityView::from(e);
+        if redaction.is_guest() {
+            view.nipc = redacted();
+            view.nipc_validated = false;
+            view.seat = redacted();
+        }
+        view
     }
 }
 
@@ -1042,11 +1123,12 @@ pub struct ComplianceResponse {
     pub errors: u32,
     pub warnings: u32,
     pub seal_allowed: bool,
-    /// Convening-antecedence advisories (t61-E1) — **WARN-only, never blocking** (does not feed
-    /// `seal_allowed`). A warning fires only when the family's statutory antecedence threshold is
-    /// *resolved* to a `Days(min)` value AND the act's actual `convening.antecedence_days` is below
-    /// it; the check stays **dormant** (no entry) while the threshold is `[a definir]`. **Additive +
-    /// skip-serialized when empty** (drift-safe): existing compliance responses are unchanged.
+    /// Convening-antecedence advisories — **WARN-only, never blocking** (does not feed
+    /// `seal_allowed`). Statute advisories compare `entity.statute.convocation_notice_days` with
+    /// the act's actual `convening.antecedence_days` and also warn when the actual notice is
+    /// missing; family legal-threshold advisories stay dormant while their threshold is
+    /// `[a definir]`. **Additive + skip-serialized when empty** (drift-safe): existing compliance
+    /// responses are unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub convening_advisories: Vec<ConveningAdvisory>,
 }
@@ -1099,6 +1181,8 @@ pub struct LedgerEventView {
     pub payload_digest: String,
     pub prev_hash: String,
     pub hash: String,
+    /// Canonical chain ids this event belongs to, including the implicit `global` chain.
+    pub chains: Vec<String>,
     /// The attestation for this event, or `null`. Joined by the handler from the in-memory
     /// sidecar; `From<&Event>` alone leaves it `None`.
     pub attestation: Option<AttestationSummary>,
@@ -1117,14 +1201,22 @@ impl From<&Event> for LedgerEventView {
             payload_digest: hex(&e.payload_digest),
             prev_hash: hex(&e.prev_hash),
             hash: hex(&e.hash),
+            chains: ledger_event_chains(e),
             attestation: None,
         }
     }
 }
 
-/// Query for `GET /v1/ledger/events`: substring `scope` filter and last-N `limit`.
+pub(crate) fn ledger_event_chains(e: &Event) -> Vec<String> {
+    std::iter::once("global".to_owned())
+        .chain(e.links.iter().map(|link| link.chain.canonical()))
+        .collect()
+}
+
+/// Query for `GET /v1/ledger/events`: optional chain, substring `scope` filter, and last-N `limit`.
 #[derive(Deserialize)]
 pub struct LedgerQuery {
+    pub chain: Option<String>,
     pub scope: Option<String>,
     pub limit: Option<usize>,
 }
@@ -1144,7 +1236,23 @@ pub struct DashboardResponse {
     pub unresolved_compliance: usize,
     pub ledger_length: u64,
     pub ledger_valid: bool,
+    pub reminders: Vec<DashboardReminder>,
     pub recent_events: Vec<LedgerEventView>,
+}
+
+/// One bounded dashboard reminder/action item. These are advisory planning signals, not compliance
+/// gates; `source_rule` is the calendar/rule seed and `source_profile` is the entity profile facet
+/// that produced it.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardReminder {
+    pub due_date: String,
+    pub severity: String,
+    pub status: String,
+    pub reason: String,
+    pub entity_id: String,
+    pub entity_name: String,
+    pub source_rule: String,
+    pub source_profile: String,
 }
 
 // --- Registry views + report (§2.7) ------------------------------------------------------
@@ -1182,6 +1290,15 @@ impl From<&RegistryProvenance> for RegistryProvenanceView {
             valid_until: p.valid_until.clone(),
             expired: compute_expired(p.valid_until.as_deref(), today),
         }
+    }
+}
+
+impl RegistryProvenanceView {
+    fn redact_sensitive(&mut self) {
+        self.access_code_masked = redacted();
+        self.source_url = redacted();
+        self.raw_digest = redacted();
+        self.oficial = None;
     }
 }
 
@@ -1256,6 +1373,16 @@ impl From<&Person> for PersonView {
     }
 }
 
+impl PersonView {
+    fn redact_sensitive(&mut self) {
+        self.name = redacted();
+        self.nif = None;
+        self.estado_civil = None;
+        self.nacionalidade = None;
+        self.residencia = None;
+    }
+}
+
 /// Wire view of a [`Quota`] (share) and its holder.
 #[derive(Serialize)]
 pub struct QuotaView {
@@ -1272,6 +1399,12 @@ impl From<&Quota> for QuotaView {
     }
 }
 
+impl QuotaView {
+    fn redact_sensitive(&mut self) {
+        self.titular.redact_sensitive();
+    }
+}
+
 /// Wire view of a social organ ([`Organ`]) and its members.
 #[derive(Serialize)]
 pub struct OrganView {
@@ -1284,6 +1417,14 @@ impl From<&Organ> for OrganView {
         OrganView {
             name: o.name.clone(),
             members: o.members.iter().map(OrganMemberView::from).collect(),
+        }
+    }
+}
+
+impl OrganView {
+    fn redact_sensitive(&mut self) {
+        for member in &mut self.members {
+            member.redact_sensitive();
         }
     }
 }
@@ -1307,6 +1448,15 @@ impl From<&OrganMember> for OrganMemberView {
             nacionalidade: m.nacionalidade.clone(),
             residencia: m.residencia.as_ref().map(AddressView::from),
         }
+    }
+}
+
+impl OrganMemberView {
+    fn redact_sensitive(&mut self) {
+        self.name = redacted();
+        self.nif = None;
+        self.nacionalidade = None;
+        self.residencia = None;
     }
 }
 
@@ -1346,6 +1496,12 @@ impl From<&RegistryOfficialSignature> for RegistryOfficialSignatureView {
     }
 }
 
+impl RegistryOfficialSignatureView {
+    fn redact_sensitive(&mut self) {
+        self.oficial = None;
+    }
+}
+
 /// Wire view of a `CONSTITUIÇÃO DE SOCIEDADE` payload.
 #[derive(Serialize)]
 pub struct ConstitutionPayloadView {
@@ -1382,6 +1538,19 @@ impl From<&ConstitutionPayload> for ConstitutionPayloadView {
     }
 }
 
+impl ConstitutionPayloadView {
+    fn redact_sensitive(&mut self) {
+        self.nipc = None;
+        self.sede = None;
+        for socio in &mut self.socios {
+            socio.redact_sensitive();
+        }
+        for organ in &mut self.orgaos {
+            organ.redact_sensitive();
+        }
+    }
+}
+
 /// Wire view of a `DESIGNAÇÃO DE MEMBRO(S)` payload.
 #[derive(Serialize)]
 pub struct DesignationPayloadView {
@@ -1394,6 +1563,14 @@ impl From<&DesignationPayload> for DesignationPayloadView {
         DesignationPayloadView {
             orgaos: d.orgaos.iter().map(OrganView::from).collect(),
             deliberation_date: d.deliberation_date.clone(),
+        }
+    }
+}
+
+impl DesignationPayloadView {
+    fn redact_sensitive(&mut self) {
+        for organ in &mut self.orgaos {
+            organ.redact_sensitive();
         }
     }
 }
@@ -1412,6 +1589,14 @@ impl From<&CessationPayload> for CessationPayloadView {
             members: c.members.iter().map(OrganMemberView::from).collect(),
             cause: c.cause.clone(),
             date: c.date.clone(),
+        }
+    }
+}
+
+impl CessationPayloadView {
+    fn redact_sensitive(&mut self) {
+        for member in &mut self.members {
+            member.redact_sensitive();
         }
     }
 }
@@ -1438,6 +1623,12 @@ impl From<&AmendmentPayload> for AmendmentPayloadView {
     }
 }
 
+impl AmendmentPayloadView {
+    fn redact_sensitive(&mut self) {
+        self.new_sede = None;
+    }
+}
+
 /// Wire view of the per-act structured payload. Internally-tagged (`{ "type": … }`) mirroring the
 /// model's [`InscriptionPayload`]. A future (non-exhaustive) model variant maps to `None` — the
 /// raw `RegistryEvent.text` still carries everything, so the wire never loses the entry.
@@ -1460,6 +1651,15 @@ impl InscriptionPayloadView {
             InscriptionPayload::ContractAmendment(a) => Self::ContractAmendment(a.into()),
             _ => return None,
         })
+    }
+
+    fn redact_sensitive(&mut self) {
+        match self {
+            InscriptionPayloadView::Constitution(payload) => payload.redact_sensitive(),
+            InscriptionPayloadView::Designation(payload) => payload.redact_sensitive(),
+            InscriptionPayloadView::Cessation(payload) => payload.redact_sensitive(),
+            InscriptionPayloadView::ContractAmendment(payload) => payload.redact_sensitive(),
+        }
     }
 }
 
@@ -1488,6 +1688,17 @@ impl From<&InscriptionDetail> for InscriptionDetailView {
     }
 }
 
+impl InscriptionDetailView {
+    fn redact_sensitive(&mut self) {
+        if let Some(payload) = &mut self.payload {
+            payload.redact_sensitive();
+        }
+        for signature in &mut self.signatures {
+            signature.redact_sensitive();
+        }
+    }
+}
+
 /// Wire view of a publication annotation (`An. N`).
 #[derive(Serialize)]
 pub struct RegistryAnnotationView {
@@ -1505,6 +1716,12 @@ impl From<&RegistryAnnotation> for RegistryAnnotationView {
             publication_url: a.publication_url.clone(),
             text: a.text.clone(),
         }
+    }
+}
+
+impl RegistryAnnotationView {
+    fn redact_sensitive(&mut self) {
+        self.text = redacted();
     }
 }
 
@@ -1530,6 +1747,12 @@ impl From<&RegistryOfficer> for RegistryOfficerView {
     }
 }
 
+impl RegistryOfficerView {
+    fn redact_sensitive(&mut self) {
+        self.name = redacted();
+    }
+}
+
 /// Wire view of one numbered inscrição/averbamento (the ordered DOC-30 event feed).
 #[derive(Serialize)]
 pub struct RegistryEventView {
@@ -1552,6 +1775,15 @@ impl From<&RegistryEvent> for RegistryEventView {
             date: e.date.clone(),
             text: e.text.clone(),
             detail: e.detail.as_ref().map(InscriptionDetailView::from),
+        }
+    }
+}
+
+impl RegistryEventView {
+    fn redact_sensitive(&mut self) {
+        self.text = redacted();
+        if let Some(detail) = &mut self.detail {
+            detail.redact_sensitive();
         }
     }
 }
@@ -1605,6 +1837,34 @@ impl RegistryExtractView {
                 .collect(),
             provenance: RegistryProvenanceView::from(&e.provenance),
         }
+    }
+
+    /// Build an extract read view under the selected privacy policy.
+    pub(crate) fn build_with_redaction(
+        e: &RegistryExtract,
+        cae: &CaeCatalog,
+        redaction: ReadRedaction,
+    ) -> Self {
+        let mut view = Self::build(e, cae);
+        if redaction.is_guest() {
+            view.redact_sensitive();
+        }
+        view
+    }
+
+    fn redact_sensitive(&mut self) {
+        self.nipc = None;
+        self.sede = None;
+        for officer in &mut self.orgaos {
+            officer.redact_sensitive();
+        }
+        for event in &mut self.inscricoes {
+            event.redact_sensitive();
+        }
+        for annotation in &mut self.anotacoes {
+            annotation.redact_sensitive();
+        }
+        self.provenance.redact_sensitive();
     }
 }
 

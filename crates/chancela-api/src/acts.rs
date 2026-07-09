@@ -103,68 +103,79 @@ pub async fn patch_act(
         return Err(ApiError::Conflict(ActError::Sealed.to_string()));
     }
 
+    let mut next = act.clone();
     if let Some(title) = req.title {
-        act.title = title;
+        next.title = title;
     }
     if let Some(channel) = req.channel {
-        act.channel = channel;
+        next.channel = channel;
     }
     if let Some(meeting_date) = req.meeting_date {
-        act.meeting_date = match meeting_date {
+        next.meeting_date = match meeting_date {
             Some(s) => Some(crate::dto::parse_date(&s)?),
             None => None,
         };
     }
     if let Some(meeting_time) = req.meeting_time {
-        act.meeting_time = match meeting_time {
+        next.meeting_time = match meeting_time {
             Some(s) => Some(crate::dto::parse_time(&s)?),
             None => None,
         };
     }
     if let Some(place) = req.place {
-        act.place = place;
+        next.place = place;
     }
     if let Some(mesa) = req.mesa {
-        act.mesa = mesa.into();
+        next.mesa = mesa.into();
     }
     if let Some(agenda) = req.agenda {
-        act.agenda = agenda.into_iter().map(Into::into).collect();
+        next.agenda = agenda.into_iter().map(Into::into).collect();
     }
     if let Some(attendance_reference) = req.attendance_reference {
-        act.attendance_reference = attendance_reference;
+        next.attendance_reference = attendance_reference;
     }
     if let Some(members_present) = req.members_present {
-        act.members_present = members_present;
+        next.members_present = members_present;
     }
     if let Some(members_represented) = req.members_represented {
-        act.members_represented = members_represented;
+        next.members_represented = members_represented;
     }
     if let Some(referenced_documents) = req.referenced_documents {
-        act.referenced_documents = referenced_documents.into_iter().map(Into::into).collect();
+        next.referenced_documents = referenced_documents.into_iter().map(Into::into).collect();
     }
     if let Some(deliberations) = req.deliberations {
-        act.deliberations = deliberations;
+        next.deliberations = deliberations;
     }
     if let Some(deliberation_items) = req.deliberation_items {
-        act.deliberation_items = deliberation_items.into_iter().map(Into::into).collect();
+        next.deliberation_items = deliberation_items.into_iter().map(Into::into).collect();
     }
     if let Some(telematic_evidence) = req.telematic_evidence {
-        act.telematic_evidence = telematic_evidence;
+        next.telematic_evidence = telematic_evidence;
     }
     if let Some(attachments) = req.attachments {
         let mut converted = Vec::with_capacity(attachments.len());
         for a in attachments {
             converted.push(a.into_core()?);
         }
-        act.attachments = converted;
+        next.attachments = converted;
     }
     if let Some(signatories) = req.signatories {
-        act.signatories = signatories.into_iter().map(Into::into).collect();
+        let mut converted = Vec::with_capacity(signatories.len());
+        for signatory in signatories {
+            if let Some(p @ 1001..) = signatory.permilage {
+                return Err(ApiError::Unprocessable(format!(
+                    "signatory {:?}: permilage {p} exceeds 1000",
+                    signatory.name
+                )));
+            }
+            converted.push(signatory.into());
+        }
+        next.signatories = converted;
     }
     // G1 convening (double_option): absent ⇒ leave, explicit null ⇒ clear, value ⇒ replace. Parsing
     // (into_core) validates dates before any mutation (a malformed date ⇒ 422, act untouched).
     if let Some(convening) = req.convening {
-        act.convening = match convening {
+        next.convening = match convening {
             Some(c) => Some(c.into_core()?),
             None => None,
         };
@@ -176,8 +187,15 @@ pub async fn patch_act(
         for a in attendees {
             converted.push(a.into_core()?);
         }
-        act.attendees = converted;
+        next.attendees = converted;
     }
+
+    if let Some(store) = &state.store {
+        store.persist(|tx| tx.upsert_act(&next)).map_err(|e| {
+            ApiError::Internal(format!("failed to persist to the durable store: {e}"))
+        })?;
+    }
+    *act = next;
 
     Ok(Json(ActView::from(&*act)))
 }
@@ -291,15 +309,31 @@ fn antecedence_threshold_id(entity: &Entity) -> Option<&'static str> {
     }
 }
 
-/// Compute the convening-antecedence advisories for an act. Empty unless the act carries a
-/// convening, the family has a numeric threshold, that threshold is *resolved* to `Days(min)`, and
-/// the actual antecedence is below it. **Never blocks** (advisory only).
+const STATUTE_NOTICE_THRESHOLD_ID: &str = "entity.statute.convocation_notice_days";
+
+/// Compute the convening-antecedence advisories for an act. Statute notice advisories fire when
+/// the entity has a recorded statute minimum and the act's actual notice is below it or missing.
+/// The family-threshold path stays dormant unless its legal threshold is resolved. **Never blocks**
+/// (advisory only).
 fn convening_advisories_for(entity: &Entity, act: &Act) -> Vec<ConveningAdvisory> {
+    let actual_days = act.convening.as_ref().and_then(|c| c.antecedence_days);
+    let mut advisories = Vec::new();
+
+    if let Some(minimum_days) = entity
+        .statute
+        .as_ref()
+        .and_then(|statute| statute.convocation_notice_days)
+    {
+        if let Some(advisory) = statute_notice_advisory(minimum_days, actual_days) {
+            advisories.push(advisory);
+        }
+    }
+
     let Some(convening) = &act.convening else {
-        return Vec::new();
+        return advisories;
     };
     let Some(threshold_id) = antecedence_threshold_id(entity) else {
-        return Vec::new();
+        return advisories;
     };
     // The resolved minimum, or `None` while the threshold is `[a definir]` (dormant).
     let minimum_days = match chancela_templates::find_threshold(threshold_id).and_then(|t| t.value)
@@ -307,9 +341,46 @@ fn convening_advisories_for(entity: &Entity, act: &Act) -> Vec<ConveningAdvisory
         Some(chancela_templates::ThresholdValue::Days(n)) => Some(n),
         _ => None,
     };
-    antecedence_advisory(threshold_id, minimum_days, convening.antecedence_days)
-        .into_iter()
-        .collect()
+    advisories.extend(antecedence_advisory(
+        threshold_id,
+        minimum_days,
+        convening.antecedence_days,
+    ));
+    advisories
+}
+
+/// Statute notice advisory: a Warning when the recorded statute minimum cannot be verified from
+/// the act, or when the captured actual notice is below that minimum. Advisory only.
+fn statute_notice_advisory(
+    minimum_days: u16,
+    actual_days: Option<u16>,
+) -> Option<ConveningAdvisory> {
+    match actual_days {
+        Some(actual) if actual >= minimum_days => None,
+        Some(actual) => Some(ConveningAdvisory {
+            code: "convening.statute_notice.below_minimum".to_owned(),
+            severity: "Warning".to_owned(),
+            message: format!(
+                "Os estatutos registados exigem convocatória com pelo menos {minimum_days} dias \
+                 de antecedência; a ata regista {actual} dias. Aviso não bloqueante."
+            ),
+            threshold_id: STATUTE_NOTICE_THRESHOLD_ID.to_owned(),
+            actual_days: Some(actual),
+            minimum_days: Some(minimum_days),
+        }),
+        None => Some(ConveningAdvisory {
+            code: "convening.statute_notice.missing_actual".to_owned(),
+            severity: "Warning".to_owned(),
+            message: format!(
+                "Os estatutos registados exigem convocatória com pelo menos {minimum_days} dias \
+                 de antecedência, mas a ata não regista a antecedência efetiva. Confirme \
+                 manualmente. Aviso não bloqueante."
+            ),
+            threshold_id: STATUTE_NOTICE_THRESHOLD_ID.to_owned(),
+            actual_days: None,
+            minimum_days: Some(minimum_days),
+        }),
+    }
 }
 
 /// Pure antecedence check (unit-testable without the global registry): a `Warning` iff both the
@@ -627,7 +698,37 @@ pub async fn convening_dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chancela_core::Nipc;
+    use std::path::{Path as FsPath, PathBuf};
+
+    use axum::extract::State;
+    use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
+    use chancela_core::{Book, BookKind, MeetingChannel, Nipc};
+    use serde_json::json;
+    use time::format_description::well_known::Rfc3339;
+
+    use crate::users::{User, UserId};
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("chancela-api-acts-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("temp dir created");
+            TempDir { path }
+        }
+
+        fn path(&self) -> &FsPath {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
 
     fn entity_of(kind: EntityKind) -> Entity {
         Entity::new(
@@ -636,6 +737,234 @@ mod tests {
             "Rua das Amoreiras, n.º 12, 1250-020 Lisboa",
             kind,
         )
+    }
+
+    async fn seed_owner(state: &AppState) -> CurrentActor {
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
+        let uid = UserId(Uuid::new_v4());
+        let username = "patch.owner".to_owned();
+        let user = User {
+            id: uid,
+            username: username.clone(),
+            display_name: "Patch Owner".to_owned(),
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        };
+        state.users.write().await.insert(uid, user);
+        CurrentActor::from_session_username(Some(username))
+    }
+
+    #[tokio::test]
+    async fn patch_act_writes_working_state_through_without_ledger_event() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let act = Act::draft(book.id, "Draft title", MeetingChannel::Physical);
+
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| {
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)
+            })
+            .expect("seed persisted");
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act.clone());
+
+        let before_events = state.ledger.read().await.len();
+        let req: PatchAct = serde_json::from_value(json!({
+            "title": "Draft edit survives restart",
+            "deliberations": "Working text persisted before sealing."
+        }))
+        .expect("patch body");
+        let Json(view) = patch_act(State(state.clone()), Path(act.id.0), actor, Json(req))
+            .await
+            .expect("patch succeeds");
+
+        assert_eq!(view.title, "Draft edit survives restart");
+        assert_eq!(state.ledger.read().await.len(), before_events);
+
+        let restarted = AppState::with_data_dir(tmp.path());
+        let acts = restarted.acts.read().await;
+        let loaded = acts.get(&act.id).expect("act reloads");
+        assert_eq!(loaded.title, "Draft edit survives restart");
+        assert_eq!(
+            loaded.deliberations,
+            "Working text persisted before sealing."
+        );
+    }
+
+    #[test]
+    fn patch_permilage_rejects_non_numeric_wire_values() {
+        for (label, permilage) in [
+            ("numeric string", json!("250")),
+            ("non-numeric string", json!("duzentos")),
+            ("negative number", json!(-1)),
+            ("object", json!({ "value": 250 })),
+        ] {
+            let signatory_body = json!({
+                "signatories": [{
+                    "name": "Fração A",
+                    "capacity": "CondoOwner",
+                    "permilage": permilage.clone(),
+                }]
+            });
+            assert!(
+                serde_json::from_value::<PatchAct>(signatory_body).is_err(),
+                "signatory {label} must not deserialize as a u16 permilage"
+            );
+
+            let attendee_body = json!({
+                "attendees": [{
+                    "name": "Fração A",
+                    "quality": "CondoOwner",
+                    "presence": "InPerson",
+                    "weight": { "Permilage": permilage },
+                }]
+            });
+            assert!(
+                serde_json::from_value::<PatchAct>(attendee_body).is_err(),
+                "attendee {label} must not deserialize as a u32 permilage"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn patch_permilage_accepts_zero_and_rejects_over_1000() {
+        let state = AppState::default();
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::Condominio);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
+        let act_id = act.id;
+
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act);
+
+        let zero_req: PatchAct = serde_json::from_value(json!({
+            "signatories": [{
+                "name": "Fração A",
+                "capacity": "CondoOwner",
+                "permilage": 0
+            }]
+        }))
+        .expect("zero permilage request deserializes");
+        let Json(view) = patch_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            Json(zero_req),
+        )
+        .await
+        .expect("zero permilage is accepted");
+        assert_eq!(view.signatories[0].permilage, Some(0));
+
+        let attendee_zero_req: PatchAct = serde_json::from_value(json!({
+            "attendees": [{
+                "name": "Fração A",
+                "quality": "CondoOwner",
+                "presence": "InPerson",
+                "weight": { "Permilage": 0 }
+            }]
+        }))
+        .expect("zero attendee permilage request deserializes");
+        let Json(view) = patch_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            Json(attendee_zero_req),
+        )
+        .await
+        .expect("zero attendee permilage is accepted");
+        assert_eq!(
+            view.attendees[0].weight,
+            Some(chancela_core::AttendanceWeight::Permilage(0))
+        );
+
+        let too_high_req: PatchAct = serde_json::from_value(json!({
+            "signatories": [{
+                "name": "Fração B",
+                "capacity": "CondoOwner",
+                "permilage": 1001
+            }]
+        }))
+        .expect("over-limit permilage request deserializes before semantic validation");
+        let err = match patch_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            Json(too_high_req),
+        )
+        .await
+        {
+            Ok(_) => panic!("over-1000 permilage must be rejected"),
+            Err(err) => err,
+        };
+        match err {
+            ApiError::Unprocessable(msg) => {
+                assert!(msg.contains("permilage 1001 exceeds 1000"), "{msg}");
+            }
+            other => panic!("expected 422, got {other:?}"),
+        }
+
+        let too_high_attendee_req: PatchAct = serde_json::from_value(json!({
+            "attendees": [{
+                "name": "Fração B",
+                "quality": "CondoOwner",
+                "presence": "InPerson",
+                "weight": { "Permilage": 1001 }
+            }]
+        }))
+        .expect("over-limit attendee permilage deserializes before semantic validation");
+        let err = match patch_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor,
+            Json(too_high_attendee_req),
+        )
+        .await
+        {
+            Ok(_) => panic!("over-1000 attendee permilage must be rejected"),
+            Err(err) => err,
+        };
+        match err {
+            ApiError::Unprocessable(msg) => {
+                assert!(msg.contains("permilage 1001 exceeds 1000"), "{msg}");
+            }
+            other => panic!("expected 422, got {other:?}"),
+        }
+
+        let acts = state.acts.read().await;
+        let stored = acts.get(&act_id).expect("act remains stored");
+        assert_eq!(
+            stored.signatories[0].permilage,
+            Some(0),
+            "failed over-limit patch leaves the previous accepted value untouched"
+        );
+        assert_eq!(
+            stored.attendees[0].weight,
+            Some(chancela_core::AttendanceWeight::Permilage(0)),
+            "failed over-limit attendee patch leaves the previous accepted value untouched"
+        );
     }
 
     /// The pure antecedence check: a Warning only when a resolved minimum is strictly above the
@@ -659,6 +988,144 @@ mod tests {
         assert!(antecedence_advisory("x", None, Some(1)).is_none());
         // No actual antecedence recorded ⇒ nothing to compare.
         assert!(antecedence_advisory("x", Some(21), None).is_none());
+    }
+
+    #[test]
+    fn statute_notice_advisories_use_entity_statute_and_act_notice_days() {
+        let mut entity = entity_of(EntityKind::SociedadePorQuotas);
+        entity.statute = Some(chancela_core::StatuteOverrides {
+            convocation_notice_days: Some(8),
+            ..Default::default()
+        });
+        let mut act = Act::draft(
+            BookId(uuid::Uuid::nil()),
+            "Ata",
+            chancela_core::MeetingChannel::Physical,
+        );
+
+        act.convening = Some(chancela_core::Convening {
+            antecedence_days: Some(5),
+            ..Default::default()
+        });
+        let below = convening_advisories_for(&entity, &act);
+        assert_eq!(below.len(), 1);
+        assert_eq!(below[0].severity, "Warning");
+        assert_eq!(below[0].code, "convening.statute_notice.below_minimum");
+        assert_eq!(below[0].threshold_id, STATUTE_NOTICE_THRESHOLD_ID);
+        assert_eq!(below[0].actual_days, Some(5));
+        assert_eq!(below[0].minimum_days, Some(8));
+
+        act.convening = Some(chancela_core::Convening {
+            antecedence_days: None,
+            ..Default::default()
+        });
+        let missing = convening_advisories_for(&entity, &act);
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].code, "convening.statute_notice.missing_actual");
+        assert_eq!(missing[0].actual_days, None);
+        assert_eq!(missing[0].minimum_days, Some(8));
+
+        act.convening = Some(chancela_core::Convening {
+            antecedence_days: Some(8),
+            ..Default::default()
+        });
+        assert!(convening_advisories_for(&entity, &act).is_empty());
+    }
+
+    #[test]
+    fn statute_notice_advisory_edges_are_warn_only_and_skip_absent_minimums() {
+        let missing = statute_notice_advisory(8, None).expect("missing actual notice warns");
+        assert_eq!(missing.severity, "Warning");
+        assert_eq!(missing.code, "convening.statute_notice.missing_actual");
+        assert_eq!(missing.actual_days, None);
+        assert_eq!(missing.minimum_days, Some(8));
+
+        let below = statute_notice_advisory(8, Some(7)).expect("below minimum warns");
+        assert_eq!(below.severity, "Warning");
+        assert_eq!(below.code, "convening.statute_notice.below_minimum");
+        assert_eq!(below.actual_days, Some(7));
+        assert_eq!(below.minimum_days, Some(8));
+
+        assert!(statute_notice_advisory(8, Some(8)).is_none());
+        assert!(statute_notice_advisory(8, Some(9)).is_none());
+
+        let mut entity = entity_of(EntityKind::Associacao);
+        let act = Act::draft(
+            BookId(uuid::Uuid::nil()),
+            "Ata",
+            chancela_core::MeetingChannel::Physical,
+        );
+        entity.statute = Some(chancela_core::StatuteOverrides::default());
+        assert!(
+            convening_advisories_for(&entity, &act).is_empty(),
+            "a statute overlay without convocation_notice_days contributes no notice advisory"
+        );
+
+        entity.statute = None;
+        assert!(
+            convening_advisories_for(&entity, &act).is_empty(),
+            "no statute overlay contributes no statute notice advisory"
+        );
+
+        entity.statute = Some(chancela_core::StatuteOverrides {
+            convocation_notice_days: Some(8),
+            ..Default::default()
+        });
+        let advisories = convening_advisories_for(&entity, &act);
+        assert_eq!(advisories.len(), 1);
+        assert_eq!(
+            advisories[0].code,
+            "convening.statute_notice.missing_actual"
+        );
+    }
+
+    #[test]
+    fn statute_majority_counts_mixed_votes_and_abstentions_as_an_advisory() {
+        let mut entity = entity_of(EntityKind::SociedadeAnonima);
+        entity.statute = Some(chancela_core::StatuteOverrides {
+            majority: Some(chancela_core::Majority {
+                numerator: 2,
+                denominator: 3,
+            }),
+            ..Default::default()
+        });
+        let mut act = Act::draft(
+            BookId(uuid::Uuid::nil()),
+            "Ata",
+            chancela_core::MeetingChannel::Physical,
+        );
+        act.deliberation_items = vec![chancela_core::DeliberationItem {
+            agenda_number: Some(1),
+            text: "Deliberada a alteração estatutária.".to_owned(),
+            vote: Some(chancela_core::VoteResult::Recorded {
+                em_favor: 2,
+                contra: 0,
+                abstencoes: 2,
+            }),
+            statements: Vec::new(),
+        }];
+
+        let issues = rule_pack_for(&entity).check_act(&act, &entity);
+        let majority = issues
+            .iter()
+            .find(|i| i.rule_id == "STATUTE/majority")
+            .unwrap_or_else(|| panic!("2/4 should miss a 2/3 majority: {issues:?}"));
+        assert_eq!(majority.severity, Severity::Warning);
+        assert!(
+            majority.message.contains("2/4"),
+            "message should disclose the computed mixed total: {majority:?}"
+        );
+
+        act.deliberation_items[0].vote = Some(chancela_core::VoteResult::Recorded {
+            em_favor: 2,
+            contra: 0,
+            abstencoes: 1,
+        });
+        let issues = rule_pack_for(&entity).check_act(&act, &entity);
+        assert!(
+            !issues.iter().any(|i| i.rule_id == "STATUTE/majority"),
+            "2/3 exactly meets the statutory majority even with an abstention: {issues:?}"
+        );
     }
 
     /// Family → numeric-threshold mapping: CSC splits SA/quotas by kind; condominium + cooperative

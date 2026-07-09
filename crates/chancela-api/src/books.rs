@@ -11,8 +11,11 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_core::{
-    Book, BookId, EntityId, TermoDeAbertura, TermoDeEncerramento, open_and_seal_book,
+    Book, BookId, EntityId, LegalHold, TermoDeAbertura, TermoDeEncerramento, open_and_seal_book,
 };
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
 use chancela_authz::Permission;
@@ -22,6 +25,27 @@ use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_book, scope_of_entity};
 use crate::dto::{ActView, BookView, BooksQuery, CloseBook, CreateBook};
 use crate::error::ApiError;
+
+#[derive(Debug, Deserialize)]
+pub struct SetLegalHoldRequest {
+    reason: String,
+    #[serde(default = "default_actor")]
+    actor: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClearLegalHoldRequest {
+    #[serde(default = "default_actor")]
+    actor: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LegalHoldView {
+    legal_hold: bool,
+    reason: Option<String>,
+    actor: Option<String>,
+    set_at: Option<String>,
+}
 
 /// `POST /v1/books` — create a book and open it with a termo de abertura (WFL-10/11).
 pub async fn create_book(
@@ -286,4 +310,145 @@ pub async fn list_book_acts(
         (None, None) => std::cmp::Ordering::Equal,
     });
     Ok(Json(in_book.into_iter().map(ActView::from).collect()))
+}
+
+/// `GET /v1/books/{id}/legal-hold` — read the persisted book-level legal hold.
+pub async fn get_legal_hold(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<LegalHoldView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookExport,
+        scope_of_book(book_id),
+    )
+    .await?;
+    let books = state.books.read().await;
+    let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
+    Ok(Json(LegalHoldView::from(book.legal_hold.as_ref())))
+}
+
+/// `PUT /v1/books/{id}/legal-hold` — set or replace a persisted book-level legal hold.
+pub async fn set_legal_hold(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    Json(req): Json<SetLegalHoldRequest>,
+) -> Result<Json<LegalHoldView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookExport,
+        scope_of_book(book_id),
+    )
+    .await?;
+    let reason = req.reason.trim();
+    if reason.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "legal hold reason must not be empty".to_owned(),
+        ));
+    }
+    let actor = actor.resolve(&req.actor);
+    let hold = LegalHold {
+        reason: reason.to_owned(),
+        actor: actor.clone(),
+        set_at: OffsetDateTime::now_utc(),
+    };
+
+    let mut books = state.books.write().await;
+    let mut ledger = state.ledger.write().await;
+    let book = books.get_mut(&book_id).ok_or(ApiError::NotFound)?;
+    let mut next = book.clone();
+    next.legal_hold = Some(hold);
+    let payload = serde_json::to_vec(next.legal_hold.as_ref().expect("hold just set"))?;
+    let scope = format!("entity:{}/book:{}", next.entity_id, next.id);
+    crate::try_append_event(
+        &mut ledger,
+        &actor,
+        &scope,
+        "book.legal_hold.set",
+        None,
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&next))?;
+    *book = next;
+
+    Ok(Json(LegalHoldView::from(book.legal_hold.as_ref())))
+}
+
+/// `DELETE /v1/books/{id}/legal-hold` — clear the persisted book-level legal hold.
+pub async fn clear_legal_hold(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    body: Option<Json<ClearLegalHoldRequest>>,
+) -> Result<Json<LegalHoldView>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookExport,
+        scope_of_book(book_id),
+    )
+    .await?;
+    let req_actor = body
+        .as_ref()
+        .map(|Json(req)| req.actor.as_str())
+        .unwrap_or("system");
+    let actor = actor.resolve(req_actor);
+
+    let mut books = state.books.write().await;
+    let mut ledger = state.ledger.write().await;
+    let book = books.get_mut(&book_id).ok_or(ApiError::NotFound)?;
+    let mut next = book.clone();
+    next.legal_hold = None;
+    let payload = serde_json::to_vec(&serde_json::json!({
+        "legal_hold": false,
+        "actor": actor.clone(),
+        "cleared_at": rfc3339(OffsetDateTime::now_utc()),
+    }))?;
+    let scope = format!("entity:{}/book:{}", next.entity_id, next.id);
+    crate::try_append_event(
+        &mut ledger,
+        &actor,
+        &scope,
+        "book.legal_hold.cleared",
+        None,
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_book(&next))?;
+    *book = next;
+
+    Ok(Json(LegalHoldView::from(book.legal_hold.as_ref())))
+}
+
+impl From<Option<&LegalHold>> for LegalHoldView {
+    fn from(hold: Option<&LegalHold>) -> Self {
+        match hold {
+            Some(hold) => LegalHoldView {
+                legal_hold: true,
+                reason: Some(hold.reason.clone()),
+                actor: Some(hold.actor.clone()),
+                set_at: Some(rfc3339(hold.set_at)),
+            },
+            None => LegalHoldView {
+                legal_hold: false,
+                reason: None,
+                actor: None,
+                set_at: None,
+            },
+        }
+    }
+}
+
+fn rfc3339(value: OffsetDateTime) -> String {
+    value.format(&Rfc3339).unwrap_or_default()
+}
+
+fn default_actor() -> String {
+    "system".to_owned()
 }

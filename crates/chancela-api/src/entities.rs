@@ -7,12 +7,13 @@ use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{Entity, EntityId, EntityKind, Nipc, StatuteOverrides};
 use serde::Deserialize;
+use time::{Date, Month};
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{require_permission, scope_of_entity};
-use crate::dto::EntityView;
+use crate::authz::{authorizer, require_permission, scope_of_entity};
+use crate::dto::{EntityView, read_redaction_for_actor};
 use crate::error::ApiError;
 
 /// Justification recorded on the `entity.created` event when the NIPC-validation override stored
@@ -40,6 +41,8 @@ pub struct CreateEntity {
     /// or not.
     #[serde(default)]
     allow_invalid_nipc: bool,
+    /// Fiscal year end as `MM-DD`, if recorded for the entity.
+    fiscal_year_end: Option<String>,
 }
 
 /// Create an entity, record an `entity.created` ledger event, and return it with `201`.
@@ -58,7 +61,9 @@ pub async fn create_entity(
         Err(e) => return Err(e.into()),
     };
     let overridden = !nipc.is_validated();
-    let entity = Entity::new(req.name, nipc, req.seat, req.kind);
+    let fiscal_year_end = normalize_fiscal_year_end(req.fiscal_year_end)?;
+    let mut entity = Entity::new(req.name, nipc, req.seat, req.kind);
+    entity.fiscal_year_end = fiscal_year_end;
 
     // Digest the created entity into the audit chain before it becomes queryable, so the
     // ledger is the source of truth for "what happened" (DAT-10). The entity's own serialization
@@ -94,6 +99,8 @@ const STATUTE_UPDATE_JUSTIFICATION: &str = "entity statute overlay updated";
 pub struct PatchEntity {
     #[serde(default, deserialize_with = "crate::dto::double_option")]
     statute: Option<Option<StatuteOverrides>>,
+    #[serde(default, deserialize_with = "crate::dto::double_option")]
+    fiscal_year_end: Option<Option<String>>,
 }
 
 /// `PATCH /v1/entities/{id}` — edit the per-entity statute overlay (ENT-03), append an
@@ -127,6 +134,9 @@ pub async fn patch_entity(
     if let Some(statute) = req.statute {
         next.statute = statute;
     }
+    if let Some(fiscal_year_end) = req.fiscal_year_end {
+        next.fiscal_year_end = normalize_fiscal_year_end(fiscal_year_end)?;
+    }
 
     let scope = next.id.to_string();
     let payload = serde_json::to_vec(&next)?;
@@ -144,6 +154,29 @@ pub async fn patch_entity(
     Ok(Json(EntityView::from(&*entity)))
 }
 
+pub(crate) fn normalize_fiscal_year_end(value: Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    let Some((month, day)) = value.split_once('-') else {
+        return Err(invalid_fiscal_year_end());
+    };
+    if month.len() != 2 || day.len() != 2 {
+        return Err(invalid_fiscal_year_end());
+    }
+    let month = month.parse::<u8>().map_err(|_| invalid_fiscal_year_end())?;
+    let day = day.parse::<u8>().map_err(|_| invalid_fiscal_year_end())?;
+    let month = Month::try_from(month).map_err(|_| invalid_fiscal_year_end())?;
+    Date::from_calendar_date(2000, month, day).map_err(|_| invalid_fiscal_year_end())?;
+    let month_num = month as u8;
+    Ok(Some(format!("{month_num:02}-{day:02}")))
+}
+
+fn invalid_fiscal_year_end() -> ApiError {
+    ApiError::Unprocessable("fiscal_year_end must be MM-DD".to_owned())
+}
+
 /// List entities the caller may read (contract §2.3; RBAC list-filtering, plan §3.3 note²): requires
 /// a valid session and returns only rows the caller holds `entity.read` at (a Global reader sees all;
 /// an entity-scoped reader only their entity). No enumeration of unreadable rows — a caller with no
@@ -153,11 +186,12 @@ pub async fn list_entities(
     actor: CurrentActor,
 ) -> Result<Json<Vec<EntityView>>, ApiError> {
     let authz = crate::authz::authorizer(&state, &actor).await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     let entities = state.entities.read().await;
     let out = entities
         .values()
         .filter(|e| authz.permits(Permission::EntityRead, scope_of_entity(e.id)))
-        .map(EntityView::from)
+        .map(|e| EntityView::build(e, redaction))
         .collect();
     Ok(Json(out))
 }
@@ -168,16 +202,165 @@ pub async fn get_entity(
     Path(id): Path<Uuid>,
     actor: CurrentActor,
 ) -> Result<Json<EntityView>, ApiError> {
-    require_permission(
-        &state,
-        &actor,
-        Permission::EntityRead,
-        scope_of_entity(EntityId(id)),
-    )
-    .await?;
+    let authz = authorizer(&state, &actor).await?;
+    authz.require(Permission::EntityRead, scope_of_entity(EntityId(id)))?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     let entities = state.entities.read().await;
     entities
         .get(&EntityId(id))
-        .map(|e| Json(EntityView::from(e)))
+        .map(|e| Json(EntityView::build(e, redaction)))
         .ok_or(ApiError::NotFound)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{Body, to_bytes};
+    use axum::http::Request;
+    use chancela_authz::{
+        GUEST_ROLE_ID, LEITOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId, Scope,
+    };
+    use serde_json::{Value, json};
+    use tower::ServiceExt;
+
+    async fn send_raw(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
+        let response = crate::router(state)
+            .oneshot(req)
+            .await
+            .expect("router responds");
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body collects");
+        let value = if bytes.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(&bytes).expect("body is JSON")
+        };
+        (status, value)
+    }
+
+    fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
+        req.headers_mut().insert(
+            "x-chancela-session",
+            token.parse().expect("valid session header"),
+        );
+        req
+    }
+
+    fn get(uri: &str) -> Request<Body> {
+        Request::builder()
+            .uri(uri)
+            .body(Body::empty())
+            .expect("request builds")
+    }
+
+    fn post_json(uri: &str, body: Value) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .expect("request builds")
+    }
+
+    async fn token_for_role(state: &AppState, username: &str, role_id: RoleId) -> String {
+        use crate::users::{User, UserId};
+        use time::format_description::well_known::Rfc3339;
+
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
+
+        let uid = UserId(Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: username.to_owned(),
+            display_name: username.to_owned(),
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: vec![RoleAssignment::new(role_id, Scope::Global)],
+        };
+        state.users.write().await.insert(uid, user);
+
+        let token = Uuid::new_v4().to_string();
+        let now = time::OffsetDateTime::now_utc();
+        state.sessions.write().await.insert(
+            token.clone(),
+            crate::session::SessionEntry {
+                user_id: uid,
+                unlocked_key: None,
+                expires_at: now + time::Duration::seconds(crate::actor::SESSION_TTL_SECS),
+            },
+        );
+        token
+    }
+
+    #[tokio::test]
+    async fn guest_entity_redaction_hides_nipc_and_seat_while_leitor_keeps_them() {
+        let state = AppState::default();
+        let owner = token_for_role(&state, "owner", OWNER_ROLE_ID).await;
+        let (status, created) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Encosto Estratégico, S.A.",
+                        "nipc": "503004642",
+                        "seat": "Rua da Liberdade, Lisboa",
+                        "kind": "SociedadeAnonima",
+                    }),
+                ),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let id = created["id"].as_str().expect("entity id");
+
+        let guest = token_for_role(&state, "guest", GUEST_ROLE_ID).await;
+        let (status, guest_detail) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/entities/{id}")), &guest),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(guest_detail["nipc"], crate::dto::REDACTED);
+        assert_eq!(guest_detail["nipc_validated"], false);
+        assert_eq!(guest_detail["seat"], crate::dto::REDACTED);
+
+        let (status, guest_list) =
+            send_raw(state.clone(), with_session(get("/v1/entities"), &guest)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(guest_list[0]["nipc"], crate::dto::REDACTED);
+        assert_eq!(guest_list[0]["seat"], crate::dto::REDACTED);
+
+        let redacted = guest_list.to_string();
+        assert!(!redacted.contains("503004642"), "NIPC leaked: {redacted}");
+        assert!(
+            !redacted.contains("Rua da Liberdade"),
+            "seat leaked: {redacted}"
+        );
+
+        let leitor = token_for_role(&state, "leitor", LEITOR_ROLE_ID).await;
+        let (status, reader_detail) = send_raw(
+            state,
+            with_session(get(&format!("/v1/entities/{id}")), &leitor),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(reader_detail["nipc"], "503004642");
+        assert_eq!(reader_detail["nipc_validated"], true);
+        assert_eq!(reader_detail["seat"], "Rua da Liberdade, Lisboa");
+    }
 }

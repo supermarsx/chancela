@@ -11,8 +11,11 @@
 use time::OffsetDateTime;
 
 use chancela_cades::{assemble_cades_b, signed_attributes_digest};
-use chancela_pades::{SignOptions, add_signature_timestamp, sign_pdf};
-use chancela_tsa::{Timestamp, TimestampRequest, TsaClient, TsaTransport};
+use chancela_pades::{
+    DssEvidence, DssReport, SignOptions, add_dss_revision, add_signature_timestamp, inspect_dss,
+    sign_pdf,
+};
+use chancela_tsa::{HttpTsaTransport, Timestamp, TimestampRequest, TsaClient, TsaTransport};
 
 use crate::SigningError;
 use crate::provider::SignerProvider;
@@ -96,10 +99,58 @@ pub fn timestamp_pdf(
     Ok((out, token))
 }
 
+/// Upgrade a PAdES-B-B signed PDF to PAdES-B-T using an HTTP RFC 3161 TSA endpoint URL.
+pub fn timestamp_pdf_with_url(
+    signed_pdf: &[u8],
+    tsa_url: &str,
+) -> Result<(Vec<u8>, Vec<u8>), SigningError> {
+    let transport =
+        HttpTsaTransport::new(tsa_url).map_err(|e| SigningError::Timestamp(e.to_string()))?;
+    let client = TsaClient::new(transport);
+    use std::cell::RefCell;
+    // B-T only needs the signature timestamp token. Certificate/revocation material belongs to
+    // B-LT/B-LTA, which this adapter deliberately does not claim to collect.
+    let captured: RefCell<Option<Vec<u8>>> = RefCell::new(None);
+    let out = add_signature_timestamp(signed_pdf, |sig_digest: &[u8; 32]| {
+        let request = TimestampRequest::new(*sig_digest)
+            .with_generated_nonce()
+            .without_certificate();
+        let ts = client
+            .stamp(&request)
+            .map_err(|e| SigningError::Timestamp(e.to_string()))?;
+        *captured.borrow_mut() = Some(ts.token_der.clone());
+        Ok::<Timestamp, SigningError>(ts)
+    })
+    .map_err(pades_err)?;
+    let token = captured
+        .into_inner()
+        .ok_or_else(|| SigningError::Timestamp("timestamp callback did not run".to_string()))?;
+    Ok((out, token))
+}
+
+/// Append caller-supplied DSS/VRI evidence to a signed PAdES PDF.
+///
+/// This is a thin orchestration wrapper only: `chancela-pades` owns the PDF update and DSS report,
+/// and this function does not fetch revocation data or claim legal B-LT sufficiency.
+pub fn attach_pdf_dss(
+    signed_pdf: &[u8],
+    evidence: &DssEvidence,
+) -> Result<(Vec<u8>, DssReport), SigningError> {
+    let out = add_dss_revision(signed_pdf, evidence).map_err(pades_err)?;
+    let report = inspect_dss(&out).map_err(pades_err)?;
+    Ok((out, report))
+}
+
 fn cades_err(e: chancela_cades::CadesError) -> SigningError {
     SigningError::Cades(e.to_string())
 }
 
 fn pades_err(e: chancela_pades::PadesError) -> SigningError {
-    SigningError::Pades(e.to_string())
+    match e {
+        chancela_pades::PadesError::Timestamp(source) => {
+            SigningError::Timestamp(source.to_string())
+        }
+        chancela_pades::PadesError::Signer(source) => SigningError::Cades(source.to_string()),
+        other => SigningError::Pades(other.to_string()),
+    }
 }

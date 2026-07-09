@@ -29,9 +29,48 @@ fn sample_settings() -> Value {
                 "env": "preprod",
                 "application_id": null,
                 "ama_cert_configured": false
-            }
+            },
+            "providers": [
+                {
+                    "id": "cmd",
+                    "mode": "CMD",
+                    "label": "Chave Móvel Digital (CMD/SCMD)",
+                    "configured": false,
+                    "production_blocked": true,
+                    "local_only": false,
+                    "note": "Missing AMA ApplicationId/certificate; defaults to pre-production."
+                },
+                {
+                    "id": "cc",
+                    "mode": "CC",
+                    "label": "Cartão de Cidadão",
+                    "configured": false,
+                    "production_blocked": false,
+                    "local_only": true,
+                    "note": "Requires a co-located desktop process and card reader; no PIN is stored."
+                },
+                {
+                    "id": "csc_qtsp",
+                    "mode": "CSC_QTSP",
+                    "label": "CSC/QTSP remote provider",
+                    "configured": false,
+                    "production_blocked": true,
+                    "local_only": false,
+                    "note": "No CSC/QTSP provider is configured in the environment."
+                },
+                {
+                    "id": "soft_pkcs12",
+                    "mode": "LOCAL_PKCS12",
+                    "label": "Local soft certificate (PKCS#12/PFX)",
+                    "configured": false,
+                    "production_blocked": true,
+                    "local_only": true,
+                    "note": "Local-only test/operator material; private key and passphrase are never captured in settings."
+                }
+            ]
         },
         "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
+        "ai": { "enabled": false },
         "onboarding": { "completed": false, "completed_at": null }
     })
 }

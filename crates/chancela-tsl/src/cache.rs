@@ -86,6 +86,10 @@ mod tests {
 
     fn list_with_next_update(next_update: Option<OffsetDateTime>) -> TrustedList {
         TrustedList {
+            scheme_operator_name: String::new(),
+            scheme_operator_names: Vec::new(),
+            scheme_name: String::new(),
+            scheme_names: Vec::new(),
             scheme_territory: "PT".to_owned(),
             sequence_number: None,
             issue_date_time: None,

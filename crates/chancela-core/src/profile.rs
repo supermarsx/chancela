@@ -14,7 +14,7 @@ use crate::act::MeetingChannel;
 use crate::entity::{Entity, EntityFamily, EntityKind, StatuteOverrides};
 use crate::rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,
-    FundacaoRulePack, RulePack, statute_findings,
+    FundacaoRulePack, RulePack, statute_findings_for_entity,
 };
 
 /// Signature policy hint (ENT-02(c)). A **hint** only — signature enforcement is Wave D; this
@@ -165,7 +165,7 @@ impl RulePack for ProfilePack {
     fn check_act(&self, act: &crate::act::Act, entity: &Entity) -> Vec<ComplianceIssue> {
         let mut issues = self.family.check_act(act, entity);
         if let Some(statute) = &self.statute {
-            issues.extend(statute_findings(act, statute));
+            issues.extend(statute_findings_for_entity(act, entity, statute));
         }
         issues
     }
@@ -194,7 +194,10 @@ pub fn rule_pack_for(entity: &Entity) -> Box<dyn RulePack> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::act::{Act, DeliberationItem, MeetingChannel, VoteResult};
+    use crate::act::{
+        Act, AttendanceWeight, Attendee, DeliberationItem, MeetingChannel, PresenceMode,
+        SignatoryCapacity, VoteResult,
+    };
     use crate::book::BookId;
     use crate::entity::{Entity, EntityKind, Majority, Nipc, Quorum, StatuteOverrides};
     use time::macros::date;
@@ -306,6 +309,40 @@ mod tests {
     }
 
     #[test]
+    fn statute_majority_counts_abstentions_in_the_recorded_denominator() {
+        let mut e = entity(EntityKind::Associacao);
+        e.statute = Some(StatuteOverrides {
+            majority: Some(Majority {
+                numerator: 2,
+                denominator: 3,
+            }),
+            ..Default::default()
+        });
+        let mut act = structured_act(VoteResult::Recorded {
+            em_favor: 6,
+            contra: 2,
+            abstencoes: 2,
+        });
+
+        let issues = rule_pack_for(&e).check_act(&act, &e);
+        assert!(
+            issues.iter().any(|i| i.rule_id == "STATUTE/majority"),
+            "6/10 including abstentions should miss a 2/3 configured majority: {issues:?}"
+        );
+
+        act.deliberation_items[0].vote = Some(VoteResult::Recorded {
+            em_favor: 6,
+            contra: 2,
+            abstencoes: 0,
+        });
+        let issues = rule_pack_for(&e).check_act(&act, &e);
+        assert!(
+            !issues.iter().any(|i| i.rule_id == "STATUTE/majority"),
+            "6/8 should satisfy the configured 2/3 majority: {issues:?}"
+        );
+    }
+
+    #[test]
     fn statute_quorum_overlay_fires_below_min_and_reminds_without_counts() {
         let mut e = entity(EntityKind::Associacao);
         e.statute = Some(StatuteOverrides {
@@ -336,6 +373,101 @@ mod tests {
             !issues
                 .iter()
                 .any(|i| i.rule_id.starts_with("STATUTE/quorum"))
+        );
+    }
+
+    #[test]
+    fn statute_quorum_uses_complete_permilage_attendance_for_condo() {
+        let mut e = entity(EntityKind::Condominio);
+        e.statute = Some(StatuteOverrides {
+            quorum: Some(Quorum { min_present: 501 }),
+            ..Default::default()
+        });
+        let mut act = structured_act(VoteResult::Unanimous);
+        act.attendees = vec![
+            Attendee {
+                name: "Fração A".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(300)),
+            },
+            Attendee {
+                name: "Fração B".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Represented,
+                represented_by: Some("Fração A".into()),
+                weight: Some(AttendanceWeight::Permilage(200)),
+            },
+        ];
+
+        let issues = rule_pack_for(&e).check_act(&act, &e);
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "STATUTE/quorum")
+            .expect("500 permilage should miss a configured 501 quorum");
+        assert!(
+            issue.message.contains("permilagem"),
+            "weighted quorum message should identify the unit: {issue:?}"
+        );
+
+        if let Some(AttendanceWeight::Permilage(value)) = &mut act.attendees[1].weight {
+            *value = 201;
+        }
+        let issues = rule_pack_for(&e).check_act(&act, &e);
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id.starts_with("STATUTE/quorum")),
+            "501 permilage should satisfy the configured quorum: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn statute_quorum_falls_back_to_unweighted_attendance_when_no_weights_exist() {
+        let mut e = entity(EntityKind::Condominio);
+        e.statute = Some(StatuteOverrides {
+            quorum: Some(Quorum { min_present: 3 }),
+            ..Default::default()
+        });
+        let mut act = structured_act(VoteResult::Unanimous);
+        act.attendees = vec![
+            Attendee {
+                name: "Fração A".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: None,
+            },
+            Attendee {
+                name: "Fração B".into(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Represented,
+                represented_by: Some("Fração A".into()),
+                weight: None,
+            },
+        ];
+
+        let issues = rule_pack_for(&e).check_act(&act, &e);
+        assert!(issues.iter().any(|i| i.rule_id == "STATUTE/quorum"));
+        assert!(
+            !issues.iter().any(|i| i.rule_id.contains("weight")),
+            "no weight metadata should keep the unweighted fallback path: {issues:?}"
+        );
+
+        act.attendees.push(Attendee {
+            name: "Fração C".into(),
+            quality: SignatoryCapacity::CondoOwner,
+            presence: PresenceMode::InPerson,
+            represented_by: None,
+            weight: None,
+        });
+        let issues = rule_pack_for(&e).check_act(&act, &e);
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id.starts_with("STATUTE/quorum")),
+            "three unweighted attendee rows should satisfy the configured count quorum: {issues:?}"
         );
     }
 

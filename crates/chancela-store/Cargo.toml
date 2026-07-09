@@ -8,6 +8,13 @@ authors.workspace = true
 repository.workspace = true
 description = "Durable system of record for Chancela: embedded SQLite store (WAL) for the domain aggregates + hash-chained ledger, plus a VACUUM INTO hot-backup bundle (spec ARC-10/11/14, ARC-20 backup-half, SCP-D1)."
 
+[features]
+default = []
+# Optional whole-database encryption foundation. Keeps the default plain bundled SQLite build unless
+# explicitly requested by store tests / future packaging. Vendored OpenSSL avoids host OpenSSL
+# discovery/linker requirements for SQLCipher, especially on Windows.
+sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
+
 [dependencies]
 # Domain types persisted/loaded by the store. It depends on core (Entity/Book/Act ids),
 # ledger (Event/Ledger), and registry (RegistryExtract, held in LoadedState per the frozen §3.1
@@ -23,6 +30,9 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
+argon2 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+rand_core = { workspace = true }
 # Embedded SQLite (bundled = vendored C, static-linked). See root Cargo.toml / t30.md §D1.
 rusqlite = { workspace = true }
 # Hot-backup archive writer. See root Cargo.toml / t30.md §D6.

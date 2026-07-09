@@ -1,0 +1,76 @@
+{
+  "summary": {
+    "source": {
+      "kind": "Fixture",
+      "path": null,
+      "note": "parsed from bundled chancela-tsl fixture; no live TSL fetch attempted"
+    },
+    "scheme_operator_name": "National Security Authority",
+    "scheme_name": "PT:Supervision/Accreditation Status List of certification services from Certification Service Providers",
+    "scheme_territory": "PT",
+    "sequence_number": 52,
+    "issue_date_time": "2026-01-15T00:00:00Z",
+    "next_update": "2026-07-15T00:00:00Z",
+    "stale": false,
+    "validation": {
+      "checked_at": "2026-07-09T10:15:30Z",
+      "signature": "Invalid",
+      "error": "TSL XML-DSig signature is missing or malformed: missing Reference"
+    },
+    "providers": 4,
+    "services": 4,
+    "ca_qc_services": 4,
+    "qualified_esignature_services": 1,
+    "trusted_esignature_services": 0
+  },
+  "providers": [
+    {
+      "id": "tsp-example",
+      "name": "MULTICERT - Electronic Certification Services SA",
+      "trade_names": ["MULTICERT"],
+      "information_uris": ["https://www.multicert.com/"],
+      "analysis": {
+        "services": 1,
+        "granted_services": 1,
+        "withdrawn_services": 0,
+        "other_status_services": 0,
+        "services_with_history": 1,
+        "services_with_supply_points": 0,
+        "ca_qc_services": 1,
+        "qualified_esignature_services": 1,
+        "trusted_esignature_services": 0,
+        "duplicate_service_names": ["MULTICERT CA para Assinatura Qualificada"]
+      },
+      "services": [
+        {
+          "id": "svc-example",
+          "provider_id": "tsp-example",
+          "provider_name": "MULTICERT - Electronic Certification Services SA",
+          "name": "MULTICERT CA para Assinatura Qualificada",
+          "service_type": "http://uri.etsi.org/TrstSvc/Svctype/CA/QC",
+          "status": {
+            "kind": "Granted",
+            "uri": null
+          },
+          "status_starting_time": "2020-01-01T00:00:00Z",
+          "status_starting_time_raw": "2020-01-01T00:00:00Z",
+          "ca_qc": true,
+          "qualified_for_esignatures": true,
+          "trusted_for_esignatures": false,
+          "additional_service_info": [
+            "http://uri.etsi.org/TrstSvc/TrustedList/SvcInfoExt/ForeSignatures"
+          ],
+          "service_supply_points": [],
+          "history_count": 1,
+          "identities": {
+            "certificates": 1,
+            "subject_names": [
+              "CN=MULTICERT CA para Assinatura Qualificada,O=MULTICERT,L=Lisboa,C=PT"
+            ],
+            "subject_key_ids": ["84b78a4499dc5fa769175c6b8ba32b9b4d8528a6"]
+          }
+        }
+      ]
+    }
+  ]
+}

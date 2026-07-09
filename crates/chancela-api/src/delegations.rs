@@ -2,8 +2,9 @@
 //!
 //! Mirrors the `users.json` / `roles.json` discipline: an atomic write-through, a malformed-tolerant
 //! load, and `#[serde(default)]` throughout. A [`StoredDelegation`] wraps the frozen
-//! [`chancela_authz::Delegation`] security model (`from`/`to`/`permission`/`scope`/`expires_at`/
-//! `revoked`) and adds the durable **audit** fields the crate deliberately left to the API layer —
+//! [`chancela_authz::Delegation`] security model (`from`/`to`/`permission`/`scope`/`starts_at`/
+//! `expires_at`/`legal_basis`/`revoked`) and adds the durable **audit** fields the crate
+//! deliberately left to the API layer —
 //! a stable [`DelegationId`], the `granted_at` timestamp, and the `revoked_at`/`revoked_by`
 //! attribution recorded when a delegation is revoked (E4 wires the revoke endpoint).
 //!
@@ -45,8 +46,8 @@ impl std::fmt::Display for DelegationId {
 }
 
 /// A durable delegation record: the frozen [`chancela_authz::Delegation`] model (flattened, so the
-/// on-disk shape is `{ id, granted_at, from, to, permission, scope, expires_at?, revoked,
-/// revoked_at?, revoked_by? }`) plus the API-layer audit fields.
+/// on-disk shape is `{ id, granted_at, from, to, permission, scope, starts_at, expires_at?,
+/// legal_basis?, revoked, revoked_at?, revoked_by? }`) plus the API-layer audit fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredDelegation {
     /// Stable id (audit + revoke lookup).
@@ -161,9 +162,15 @@ pub struct GrantDelegation {
     pub to: Uuid,
     pub permission: Permission,
     pub scope: ScopeInput,
+    /// RFC 3339 start timestamp; absent ⇒ starts at grant time.
+    #[serde(default)]
+    pub starts_at: Option<String>,
     /// RFC 3339 expiry; absent ⇒ until revoked.
     #[serde(default)]
     pub expires_at: Option<String>,
+    /// Optional evidence/rationale for the grant.
+    #[serde(default)]
+    pub legal_basis: Option<String>,
 }
 
 /// A delegation rendered for the web (FROZEN for E7/t62). No secret material — only attribution,
@@ -176,8 +183,11 @@ pub struct DelegationView {
     pub permission: String,
     pub scope: ScopeView,
     pub granted_at: String,
+    pub starts_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legal_basis: Option<String>,
     pub revoked: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revoked_at: Option<String>,
@@ -194,7 +204,9 @@ impl From<&StoredDelegation> for DelegationView {
             permission: d.inner.permission.as_str().to_owned(),
             scope: ScopeView::from(d.inner.scope),
             granted_at: d.granted_at.clone(),
+            starts_at: d.inner.starts_at.format(&Rfc3339).unwrap_or_default(),
             expires_at: d.inner.expires_at.and_then(|t| t.format(&Rfc3339).ok()),
+            legal_basis: d.inner.legal_basis.clone(),
             revoked: d.inner.revoked,
             revoked_at: d.revoked_at.clone(),
             revoked_by: d.revoked_by.map(|u| u.0.to_string()),
@@ -227,7 +239,7 @@ pub async fn list_delegations(
     actor: CurrentActor,
 ) -> Result<Json<Vec<DelegationView>>, ApiError> {
     let authz = authorizer(&state, &actor).await?;
-    let principal = AuthzUserId(authz.principal().0);
+    let principal = AuthzUserId(authz.principal()?.0);
     let can_see_all = authz.permits(Permission::DelegationRevoke, Scope::Global);
 
     let table = state.delegations.read().await;
@@ -259,31 +271,29 @@ pub async fn grant_delegation(
         return Err(forbidden());
     }
 
-    let grantor = authz.principal();
+    let grantor = authz.principal()?;
     let grantee = UserId(req.to);
     if !state.users.read().await.contains_key(&grantee) {
         return Err(ApiError::NotFound);
     }
 
-    let expires_at = match &req.expires_at {
-        Some(s) => Some(OffsetDateTime::parse(s, &Rfc3339).map_err(|_| {
-            ApiError::Unprocessable("expires_at must be an RFC 3339 timestamp".to_owned())
-        })?),
-        None => None,
-    };
+    let granted_at_time = OffsetDateTime::now_utc();
+    let starts_at =
+        parse_optional_rfc3339(req.starts_at.as_deref(), "starts_at")?.unwrap_or(granted_at_time);
+    let expires_at = parse_optional_rfc3339(req.expires_at.as_deref(), "expires_at")?;
 
     let mut inner = Delegation::new(
         AuthzUserId(grantor.0),
         AuthzUserId(grantee.0),
         req.permission,
         scope,
-    );
+    )
+    .starting_at(starts_at)
+    .with_legal_basis(req.legal_basis);
     if let Some(exp) = expires_at {
         inner = inner.expiring_at(exp);
     }
-    let granted_at = OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .unwrap_or_default();
+    let granted_at = granted_at_time.format(&Rfc3339).unwrap_or_default();
     let stored = StoredDelegation::new(DelegationId(Uuid::new_v4()), granted_at, inner);
 
     state
@@ -317,7 +327,7 @@ pub async fn revoke_delegation(
 ) -> Result<Json<DelegationView>, ApiError> {
     let del_id = DelegationId(id);
     let authz = authorizer(&state, &actor).await?;
-    let principal = AuthzUserId(authz.principal().0);
+    let principal = AuthzUserId(authz.principal()?.0);
 
     let existing = state.delegations.read().await.get(&del_id).cloned();
     let existing = existing.ok_or(ApiError::NotFound)?;
@@ -356,6 +366,19 @@ pub async fn revoke_delegation(
     Ok(Json(view))
 }
 
+fn parse_optional_rfc3339(
+    value: Option<&str>,
+    field: &'static str,
+) -> Result<Option<OffsetDateTime>, ApiError> {
+    value
+        .map(|s| {
+            OffsetDateTime::parse(s, &Rfc3339).map_err(|_| {
+                ApiError::Unprocessable(format!("{field} must be an RFC 3339 timestamp"))
+            })
+        })
+        .transpose()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,7 +390,10 @@ mod tests {
     #[test]
     fn stored_delegation_round_trips_through_json() {
         let granted_at = OffsetDateTime::UNIX_EPOCH.format(&Rfc3339).unwrap();
-        let inner = Delegation::new(uid(1), uid(2), Permission::ActAdvance, Scope::Global);
+        let starts_at = OffsetDateTime::UNIX_EPOCH + time::Duration::hours(2);
+        let inner = Delegation::new(uid(1), uid(2), Permission::ActAdvance, Scope::Global)
+            .starting_at(starts_at)
+            .with_legal_basis(Some("board resolution 2026-07-09".to_owned()));
         let d = StoredDelegation::new(DelegationId(Uuid::from_u128(9)), granted_at, inner);
 
         let bytes = serde_json::to_vec(&[&d]).expect("serialize");
@@ -378,6 +404,11 @@ mod tests {
         assert!(obj.get("granted_at").is_some());
         assert!(obj.get("permission").is_some());
         assert!(obj.get("scope").is_some());
+        assert!(obj.get("starts_at").is_some());
+        assert_eq!(
+            obj.get("legal_basis").and_then(serde_json::Value::as_str),
+            Some("board resolution 2026-07-09")
+        );
         assert!(obj.get("revoked").is_some());
         // revoked_at / revoked_by are omitted while active.
         assert!(obj.get("revoked_at").is_none());
@@ -385,6 +416,27 @@ mod tests {
 
         let back: Vec<StoredDelegation> = serde_json::from_slice(&bytes).expect("deserialize");
         assert_eq!(back, vec![d]);
+    }
+
+    #[test]
+    fn legacy_stored_delegation_defaults_evidence_fields() {
+        let raw = serde_json::json!([{
+            "id": "00000000-0000-0000-0000-000000000009",
+            "granted_at": "2026-01-01T00:00:00Z",
+            "from": "00000000-0000-0000-0000-000000000001",
+            "to": "00000000-0000-0000-0000-000000000002",
+            "permission": "act.advance",
+            "scope": "Global",
+            "revoked": false
+        }]);
+
+        let back: Vec<StoredDelegation> = serde_json::from_value(raw).expect("legacy delegation");
+        assert_eq!(back[0].inner.starts_at, OffsetDateTime::UNIX_EPOCH);
+        assert_eq!(back[0].inner.legal_basis, None);
+
+        let view = DelegationView::from(&back[0]);
+        assert_eq!(view.starts_at, "1970-01-01T00:00:00Z");
+        assert_eq!(view.legal_basis, None);
     }
 
     #[test]

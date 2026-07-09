@@ -1,9 +1,12 @@
 //! Ledger endpoints (contract §2.6): the event feed and the chain-verify probe, plus the audit
 //! attestation join + per-event verify (plan t29 §4.6).
 
+use std::str::FromStr;
+
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use chancela_authz::{Permission, Scope};
+use chancela_ledger::ChainId;
 use serde::Serialize;
 
 use crate::AppState;
@@ -17,9 +20,10 @@ use crate::error::ApiError;
 const DEFAULT_LEDGER_LIMIT: usize = 100;
 const MAX_LEDGER_LIMIT: usize = 1000;
 
-/// `GET /v1/ledger/events?scope=&limit=` — events in append order, optionally filtered by a
-/// `scope` substring and trimmed to the last `limit` (clamped to max 1000, default 100 — t41 L3).
-/// Each event carries its `attestation` summary (joined from the in-memory sidecar by `seq`).
+/// `GET /v1/ledger/events?chain=&scope=&limit=` — events in append order, optionally narrowed to a
+/// chain, filtered by a `scope` substring, and trimmed to the last `limit` (clamped to max 1000,
+/// default 100 — t41 L3). Each event carries its chain membership and `attestation` summary (joined
+/// from the in-memory sidecar by `seq`).
 pub async fn list_ledger_events(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -27,9 +31,18 @@ pub async fn list_ledger_events(
 ) -> Result<Json<Vec<LedgerEventView>>, ApiError> {
     // RBAC (t64-E3): the audit feed is `ledger.read` at Global.
     require_permission(&state, &actor, Permission::LedgerRead, Scope::Global).await?;
+    let chain = q
+        .chain
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(parse_chain)
+        .transpose()?;
     let ledger = state.ledger.read().await;
     let attestations = state.attestations.read().await;
-    let mut events: Vec<&_> = ledger.events().iter().collect();
+    let mut events: Vec<&_> = match &chain {
+        Some(chain) => ledger.events_in_chain(chain),
+        None => ledger.events().iter().collect(),
+    };
     if let Some(scope) = &q.scope {
         events.retain(|e| e.scope.contains(scope.as_str()));
     }
@@ -49,6 +62,14 @@ pub async fn list_ledger_events(
             })
             .collect(),
     ))
+}
+
+fn parse_chain(raw: &str) -> Result<ChainId, ApiError> {
+    ChainId::from_str(raw).map_err(|_| {
+        ApiError::Unprocessable(format!(
+            "invalid chain {raw:?}; expected global, application, company:<id>, or book:<id>"
+        ))
+    })
 }
 
 /// Result of `GET /v1/ledger/verify`.

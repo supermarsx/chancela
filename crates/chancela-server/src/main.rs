@@ -21,6 +21,10 @@
 //!
 //! `CHANCELA_ADDR` (default `127.0.0.1:8080`; the Docker image sets `0.0.0.0:8080`) so a dev
 //! server is not reachable off-host by accident.
+//!
+//! At-rest database encryption is optional and feature-gated: when built with `--features
+//! sqlcipher`, configure either `CHANCELA_DB_KEY` or `CHANCELA_DB_KEY_FILE`. Invalid, ambiguous, or
+//! unsupported encryption configuration aborts startup without printing the key.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -48,7 +52,10 @@ async fn main() {
     // Resolve the settings data dir the same way `AppState::from_env` will, so the banner can
     // report whether settings persist to disk or live only in memory.
     let data_dir = chancela_api::AppState::resolve_data_dir();
-    let state = chancela_api::AppState::from_env();
+    let state = chancela_api::AppState::try_from_env().unwrap_or_else(|e| {
+        eprintln!("invalid Chancela startup configuration: {e}");
+        std::process::exit(2);
+    });
 
     // Kick off a best-effort background refresh of the CAE catalog. Non-blocking and offline-safe:
     // it no-ops without a configured `CHANCELA_CAE_URL` or while the cached table is still fresh,
@@ -80,10 +87,16 @@ async fn main() {
             _ => "chain verified".to_owned(),
         };
         let store = data_dir.as_deref().map(|dir| {
+            let encryption = if state.database_encryption_configured {
+                " · SQLCipher configured"
+            } else {
+                ""
+            };
             format!(
-                "{} · schema v{}",
+                "{} · schema v{}{}",
                 dir.join(chancela_store::DB_FILE).display(),
-                chancela_store::schema::SCHEMA_VERSION
+                chancela_store::schema::SCHEMA_VERSION,
+                encryption
             )
         });
         (format!("{ledger_len} events on disk · {chain}"), store)

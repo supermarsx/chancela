@@ -310,6 +310,10 @@ pub struct Entity {
     pub family: EntityFamily,
     /// Concrete legal type; must belong to `family`.
     pub kind: EntityKind,
+    /// Fiscal year end as `MM-DD`, when known. Optional for backward compatibility with stored
+    /// entities created before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fiscal_year_end: Option<String>,
     /// Per-entity statute overlay (ENT-03). Additive; `None` on the family default. Old-shape
     /// entity JSON (no `statute` key) deserializes with this as `None`.
     #[serde(default)]
@@ -336,6 +340,7 @@ impl Entity {
             seat: seat.into(),
             family: kind.family(),
             kind,
+            fiscal_year_end: None,
             statute: None,
         }
     }
@@ -517,5 +522,25 @@ mod tests {
         let entity: Entity = serde_json::from_str(json).expect("deserializes");
         // The declared family (CommercialCompany) disagrees with the kind's family (Condominium).
         assert!(!entity.is_consistent());
+    }
+
+    #[test]
+    fn old_entity_json_without_fiscal_year_end_stays_backward_compatible() {
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000000",
+            "name": "Encosto Estrategico, S.A.",
+            "nipc": "503004642",
+            "seat": "Lisboa",
+            "family": "CommercialCompany",
+            "kind": "SociedadeAnonima"
+        }"#;
+        let entity: Entity = serde_json::from_str(json).expect("old entity JSON deserializes");
+        assert_eq!(entity.fiscal_year_end, None);
+
+        let serialized = serde_json::to_string(&entity).expect("serializes");
+        assert!(
+            !serialized.contains("fiscal_year_end"),
+            "absent fiscal year end should not be serialized: {serialized}"
+        );
     }
 }

@@ -8,7 +8,13 @@ authors.workspace = true
 repository.workspace = true
 description = "Axum HTTP layer for Chancela: in-memory entity CRUD and ledger verification over the domain core (ARC-02, thin API)."
 
+[features]
+default = []
+sqlcipher = ["chancela-store/sqlcipher"]
+
 [dependencies]
+chancela-apikey = { workspace = true }
+chancela-archive = { workspace = true }
 chancela-authz = { workspace = true }
 chancela-core = { workspace = true }
 chancela-ledger = { workspace = true }
@@ -23,6 +29,7 @@ chancela-pades = { workspace = true }
 chancela-cmd = { workspace = true }
 chancela-csc = { workspace = true }
 chancela-smartcard = { workspace = true }
+chancela-tsa = { workspace = true }
 chancela-tsl = { workspace = true }
 argon2 = { workspace = true }
 axum = { workspace = true }
@@ -40,6 +47,7 @@ tokio = { workspace = true }
 tower-http = { workspace = true }
 uuid = { workspace = true }
 x509-cert = { workspace = true }
+zip = { workspace = true }
 zeroize = "1"
 
 [dev-dependencies]

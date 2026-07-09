@@ -65,4 +65,21 @@ pub enum PadesError {
     /// Long-term profiles (PAdES-B-LT / B-LTA, SIG-21 archival) are an explicit phase-2 follow-up.
     #[error("long-term PAdES profiles (B-LT / B-LTA) are not implemented (phase 2)")]
     LongTermNotImplemented,
+
+    /// A caller asked to append a DSS revision but supplied no OCSP or CRL material.
+    #[error("DSS evidence is empty: at least one OCSP response or CRL is required")]
+    DssEvidenceEmpty,
+
+    /// A caller-supplied DSS evidence blob is not a complete DER object.
+    #[error("invalid DSS {kind} DER at index {index}")]
+    InvalidDssEvidence {
+        /// Evidence kind (`certificate`, `OCSP response`, or `CRL`).
+        kind: &'static str,
+        /// Zero-based index in the caller-supplied list.
+        index: usize,
+    },
+
+    /// This local slice does not merge or replace a pre-existing DSS dictionary.
+    #[error("PDF already contains a DSS dictionary; DSS merge is not supported in this slice")]
+    ExistingDssUnsupported,
 }

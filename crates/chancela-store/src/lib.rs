@@ -38,9 +38,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use argon2::Argon2;
+use chacha20poly1305::aead::{Aead, Payload};
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
 use chancela_ledger::{ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError};
 use chancela_registry::RegistryExtract;
+use rand_core::{OsRng, RngCore};
 use rusqlite::{OptionalExtension, params};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -50,6 +54,29 @@ use time::format_description::well_known::Rfc3339;
 
 /// The database file created inside the data directory passed to [`Store::open`].
 pub const DB_FILE: &str = "chancela.db";
+
+/// Prefix identifying an encrypted whole-instance backup envelope.
+pub const BACKUP_ENVELOPE_MAGIC: &[u8] = b"chancela-backup-envelope/v1\n";
+const BACKUP_ENVELOPE_FORMAT: &str = "chancela-backup-envelope/v1";
+const BACKUP_KDF: &str = "argon2id-default";
+const BACKUP_AEAD: &str = "XChaCha20-Poly1305";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BackupEnvelopeHeader {
+    format: String,
+    kdf: String,
+    aead: String,
+    salt_hex: String,
+    nonce_hex: String,
+    plaintext_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BackupEnvelope {
+    #[serde(flatten)]
+    header: BackupEnvelopeHeader,
+    ciphertext_hex: String,
+}
 
 /// Errors surfaced by the durable store.
 #[derive(Debug, thiserror::Error)]
@@ -100,6 +127,18 @@ pub enum StoreError {
     /// export/start-over was not found in the store).
     #[error("not found: {0}")]
     NotFound(String),
+    /// A store encryption key was supplied to a build that was not compiled with SQLCipher support.
+    #[error(
+        "store encryption key supplied but this build was not compiled with the sqlcipher feature"
+    )]
+    EncryptionUnavailable,
+    /// SQLCipher refused the supplied key, or the database could not be authenticated with it.
+    #[error("store encryption key was rejected or the encrypted database is unreadable")]
+    EncryptionKeyRejected {
+        /// The lower-level SQLite error produced while authenticating the keyed database.
+        #[source]
+        source: rusqlite::Error,
+    },
 }
 
 /// A handle to the durable store. Cheap to clone (shares one connection via `Arc`) and lives in
@@ -113,6 +152,45 @@ pub struct Store {
     /// takes this lock for the (tiny, local) duration of its transaction. `pub(crate)` so the
     /// [`recovery`] module can swap the whole connection during a whole-store restore.
     pub(crate) conn: Arc<Mutex<rusqlite::Connection>>,
+}
+
+/// Options for opening the durable store.
+///
+/// By default no SQLCipher key is supplied, so [`Store::open`] and [`StoreOpenOptions::default`]
+/// preserve the existing plaintext SQLite behavior. When the `sqlcipher` feature is enabled and a
+/// key is supplied, the key is applied immediately after opening the SQLite handle and before any
+/// schema query, migration, or PRAGMA touches the database.
+#[derive(Clone, Default)]
+pub struct StoreOpenOptions {
+    encryption_key: Option<String>,
+}
+
+impl std::fmt::Debug for StoreOpenOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoreOpenOptions")
+            .field(
+                "encryption_key",
+                &self.encryption_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+impl StoreOpenOptions {
+    /// Build default open options (no at-rest encryption key).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Supply the SQLCipher passphrase for a keyed database open.
+    pub fn with_encryption_key(mut self, key: impl Into<String>) -> Self {
+        self.encryption_key = Some(key.into());
+        self
+    }
+
+    fn encryption_key(&self) -> Option<&str> {
+        self.encryption_key.as_deref()
+    }
 }
 
 /// Everything [`Store::load`] reconstructs from disk on boot: the four aggregate read-models, the
@@ -182,6 +260,123 @@ pub struct BackupFile {
     pub bytes: u64,
 }
 
+/// Return whether `bytes` look like a Chancela encrypted backup envelope.
+pub fn is_encrypted_backup(bytes: &[u8]) -> bool {
+    bytes.starts_with(BACKUP_ENVELOPE_MAGIC)
+}
+
+/// Encrypt an existing verified backup zip into a passphrase-protected envelope.
+///
+/// The caller supplies the passphrase explicitly; the store never reads a key from the data
+/// directory and never derives this from account/recovery credentials.
+pub fn encrypt_backup_envelope(
+    plaintext_zip: &[u8],
+    passphrase: &str,
+) -> Result<Vec<u8>, StoreError> {
+    if passphrase.is_empty() {
+        return Err(StoreError::BadBackup(
+            "backup passphrase must not be empty".to_owned(),
+        ));
+    }
+
+    let mut salt = [0u8; 16];
+    OsRng.fill_bytes(&mut salt);
+    let mut nonce = [0u8; 24];
+    OsRng.fill_bytes(&mut nonce);
+
+    let key = derive_backup_key(passphrase, &salt)?;
+    let cipher = XChaCha20Poly1305::new_from_slice(&key).map_err(|_| {
+        StoreError::BadBackup("could not initialize backup encryption key".to_owned())
+    })?;
+    let header = BackupEnvelopeHeader {
+        format: BACKUP_ENVELOPE_FORMAT.to_owned(),
+        kdf: BACKUP_KDF.to_owned(),
+        aead: BACKUP_AEAD.to_owned(),
+        salt_hex: hex(&salt),
+        nonce_hex: hex(&nonce),
+        plaintext_sha256: hex(&Sha256::digest(plaintext_zip)),
+    };
+    let aad = backup_envelope_aad(&header)?;
+    let ciphertext = cipher
+        .encrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: plaintext_zip,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| StoreError::BadBackup("backup encryption failed".to_owned()))?;
+
+    let envelope = BackupEnvelope {
+        header,
+        ciphertext_hex: hex(&ciphertext),
+    };
+    let mut out = Vec::from(BACKUP_ENVELOPE_MAGIC);
+    out.extend_from_slice(&serde_json::to_vec_pretty(&envelope)?);
+    out.push(b'\n');
+    Ok(out)
+}
+
+/// Decrypt a passphrase-protected backup envelope back to the legacy verified zip bytes.
+pub fn decrypt_backup_envelope(
+    envelope_bytes: &[u8],
+    passphrase: &str,
+) -> Result<Vec<u8>, StoreError> {
+    if passphrase.is_empty() {
+        return Err(StoreError::BadBackup(
+            "backup passphrase must not be empty".to_owned(),
+        ));
+    }
+    if !is_encrypted_backup(envelope_bytes) {
+        return Err(StoreError::BadBackup(
+            "backup is not an encrypted Chancela envelope".to_owned(),
+        ));
+    }
+    let json_bytes = &envelope_bytes[BACKUP_ENVELOPE_MAGIC.len()..];
+    let envelope: BackupEnvelope = serde_json::from_slice(json_bytes)
+        .map_err(|e| StoreError::BadBackup(format!("bad backup envelope: {e}")))?;
+    if envelope.header.format != BACKUP_ENVELOPE_FORMAT {
+        return Err(StoreError::BadBackup(format!(
+            "unsupported backup envelope format {}",
+            envelope.header.format
+        )));
+    }
+    if envelope.header.kdf != BACKUP_KDF || envelope.header.aead != BACKUP_AEAD {
+        return Err(StoreError::BadBackup(
+            "unsupported backup envelope crypto parameters".to_owned(),
+        ));
+    }
+
+    let salt = decode_fixed_hex::<16>(&envelope.header.salt_hex, "backup envelope salt")?;
+    let nonce = decode_fixed_hex::<24>(&envelope.header.nonce_hex, "backup envelope nonce")?;
+    let ciphertext = decode_hex(&envelope.ciphertext_hex, "backup envelope ciphertext")?;
+    let key = derive_backup_key(passphrase, &salt)?;
+    let cipher = XChaCha20Poly1305::new_from_slice(&key).map_err(|_| {
+        StoreError::BadBackup("could not initialize backup decryption key".to_owned())
+    })?;
+    let aad = backup_envelope_aad(&envelope.header)?;
+    let plaintext = cipher
+        .decrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: ciphertext.as_slice(),
+                aad: &aad,
+            },
+        )
+        .map_err(|_| {
+            StoreError::BadBackup(
+                "encrypted backup could not be authenticated or decrypted".to_owned(),
+            )
+        })?;
+    let digest = hex(&Sha256::digest(&plaintext));
+    if digest != envelope.header.plaintext_sha256 {
+        return Err(StoreError::BadBackup(
+            "backup envelope plaintext digest mismatch".to_owned(),
+        ));
+    }
+    Ok(plaintext)
+}
+
 /// A generated PDF/A document preserved alongside its sealed act (the `documents` table, schema v2;
 /// plan t48 §3.4/D4). Used symmetrically as the argument to [`Tx::upsert_document`] (write) and the
 /// return of [`Store::document_for_act`] / [`Store::document_by_id`] (read), so the api's
@@ -207,6 +402,41 @@ pub struct StoredDocument {
     pub created_at: OffsetDateTime,
     /// The PDF/A-2u bytes themselves.
     pub pdf_bytes: Vec<u8>,
+}
+
+/// Metadata for a validated, non-canonical document evidence import (`imported_documents`, schema
+/// v5). This is the list/read JSON surface and the ledger-event payload source: it intentionally
+/// excludes raw bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredImportedDocumentMeta {
+    /// The import id (primary key; generated by the API as a UUID string).
+    pub id: String,
+    /// Optional owning act scope. `None` means a global, unlinked evidence import.
+    pub act_id: Option<ActId>,
+    /// Optional sanitized display name. Never a filesystem path.
+    pub filename: Option<String>,
+    /// Caller/header MIME type, when supplied.
+    pub declared_content_type: Option<String>,
+    /// API structural detector result.
+    pub detected_content_type: String,
+    /// Lowercase-hex sha-256 of the imported bytes.
+    pub sha256: String,
+    /// Imported byte length.
+    pub size_bytes: usize,
+    /// When the API persisted the import (UTC).
+    pub imported_at: OffsetDateTime,
+    /// The resolved ledger actor that performed the import.
+    pub imported_by: String,
+}
+
+/// A validated, non-canonical document evidence import with retained bytes. These bytes live beside
+/// but never replace [`StoredDocument`] or [`StoredSignedDocument`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredImportedDocument {
+    /// The metadata row.
+    pub meta: StoredImportedDocumentMeta,
+    /// The retained uploaded bytes.
+    pub bytes: Vec<u8>,
 }
 
 /// The SIGNED PDF variant + qualified-signature metadata for a sealed act's document (the
@@ -279,10 +509,18 @@ impl Store {
     /// `foreign_keys=ON`, run the idempotent [`schema::ALL`] migration, and record/read
     /// `meta.schema_version`.
     ///
-    /// `data_dir` is the directory; the database file name is [`DB_FILE`]. (At-rest encryption,
-    /// A3, issues `PRAGMA key` here behind a build feature — no signature change.)
+    /// `data_dir` is the directory; the database file name is [`DB_FILE`].
     pub fn open(data_dir: &Path) -> Result<Store, StoreError> {
-        let conn = open_connection(data_dir)?;
+        Self::open_with_options(data_dir, StoreOpenOptions::default())
+    }
+
+    /// Open the store with explicit options. Supplying an encryption key requires the `sqlcipher`
+    /// feature; otherwise the call fails loudly with [`StoreError::EncryptionUnavailable`].
+    pub fn open_with_options(
+        data_dir: &Path,
+        options: StoreOpenOptions,
+    ) -> Result<Store, StoreError> {
+        let conn = open_connection_with_options(data_dir, &options)?;
         Ok(Store {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -419,6 +657,23 @@ impl Store {
             .transpose()
     }
 
+    /// Fetch all documents generated for `act_id`, oldest first. The api uses this to keep the
+    /// original sealed Ata as the canonical signing/download target even after later certidão or
+    /// extrato rows are generated for the same act.
+    pub fn documents_for_act(&self, act_id: ActId) -> Result<Vec<StoredDocument>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes \
+             FROM documents WHERE act_id = ?1 ORDER BY created_at ASC, rowid ASC",
+        )?;
+        let rows = stmt.query_map(params![act_id.to_string()], row_to_document)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
     /// Fetch a document by its own id (bytes + metadata), or `None` if unknown.
     pub fn document_by_id(&self, id: &str) -> Result<Option<StoredDocument>, StoreError> {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -427,6 +682,54 @@ impl Store {
              FROM documents WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_document)
+            .optional()?
+            .transpose()
+    }
+
+    /// List imported, non-canonical document evidence metadata, newest first. When `act_id` is
+    /// supplied, returns only imports linked to that act; otherwise returns the global feed.
+    pub fn imported_documents(
+        &self,
+        act_id: Option<ActId>,
+    ) -> Result<Vec<StoredImportedDocumentMeta>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut out = Vec::new();
+        if let Some(act_id) = act_id {
+            let mut stmt = guard.prepare(
+                "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
+                 sha256, size_bytes, imported_at, imported_by FROM imported_documents \
+                 WHERE act_id = ?1 ORDER BY imported_at DESC, rowid DESC",
+            )?;
+            let rows =
+                stmt.query_map(params![act_id.to_string()], row_to_imported_document_meta)?;
+            for row in rows {
+                out.push(row??);
+            }
+        } else {
+            let mut stmt = guard.prepare(
+                "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
+                 sha256, size_bytes, imported_at, imported_by FROM imported_documents \
+                 ORDER BY imported_at DESC, rowid DESC",
+            )?;
+            let rows = stmt.query_map([], row_to_imported_document_meta)?;
+            for row in rows {
+                out.push(row??);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Fetch one imported, non-canonical document evidence record by id, including retained bytes.
+    pub fn imported_document(
+        &self,
+        id: &str,
+    ) -> Result<Option<StoredImportedDocument>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT id, act_id, filename, declared_content_type, detected_content_type, sha256, \
+             size_bytes, imported_at, imported_by, bytes FROM imported_documents WHERE id = ?1",
+        )?;
+        stmt.query_row(params![id], row_to_imported_document)
             .optional()?
             .transpose()
     }
@@ -621,6 +924,33 @@ impl Store {
             files,
         })
     }
+
+    /// Take the normal verified backup zip, wrap it in an encrypted envelope, and return the same
+    /// manifest shape with `path`/`bytes` describing the encrypted artifact.
+    pub fn backup_encrypted(
+        &self,
+        data_dir: &Path,
+        sidecars: &[PathBuf],
+        passphrase: &str,
+    ) -> Result<BackupManifest, StoreError> {
+        let mut manifest = self.backup(data_dir, sidecars)?;
+        let plaintext_path = PathBuf::from(&manifest.path);
+        let result = (|| {
+            let zip_bytes = std::fs::read(&plaintext_path)?;
+            let envelope = encrypt_backup_envelope(&zip_bytes, passphrase)?;
+            let encrypted_path = plaintext_path.with_extension("cbackup");
+            let tmp_path = tmp_backup_path(&encrypted_path);
+            std::fs::write(&tmp_path, &envelope)?;
+            std::fs::rename(&tmp_path, &encrypted_path).inspect_err(|_| {
+                let _ = std::fs::remove_file(&tmp_path);
+            })?;
+            manifest.path = encrypted_path.to_string_lossy().into_owned();
+            manifest.bytes = std::fs::metadata(&encrypted_path)?.len();
+            Ok(manifest)
+        })();
+        let _ = std::fs::remove_file(&plaintext_path);
+        result
+    }
 }
 
 /// A transactional write handle passed to the [`Store::persist`] closure. Each method appends or
@@ -744,6 +1074,43 @@ impl Tx<'_> {
                 doc.profile,
                 created_at,
                 doc.pdf_bytes,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Upsert a validated, non-canonical imported document (`imported_documents`, schema v5).
+    /// Idempotent on the import id and intended to run in the same transaction as the
+    /// `document.imported` ledger event. This never touches the canonical generated `documents` row
+    /// nor the `signed_documents` variant.
+    pub fn upsert_imported_document(&self, doc: &StoredImportedDocument) -> Result<(), StoreError> {
+        let imported_at = doc
+            .meta
+            .imported_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let size_bytes = i64::try_from(doc.meta.size_bytes).map_err(|_| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "imported document size does not fit sqlite INTEGER",
+            ))
+        })?;
+        self.txn.execute(
+            "INSERT OR REPLACE INTO imported_documents \
+             (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
+              size_bytes, imported_at, imported_by, bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                doc.meta.id,
+                doc.meta.act_id.as_ref().map(ToString::to_string),
+                doc.meta.filename,
+                doc.meta.declared_content_type,
+                doc.meta.detected_content_type,
+                doc.meta.sha256,
+                size_bytes,
+                imported_at,
+                doc.meta.imported_by,
+                doc.bytes,
             ],
         )?;
         Ok(())
@@ -897,6 +1264,102 @@ fn row_to_document(
     })())
 }
 
+/// Map one `imported_documents` metadata row to [`StoredImportedDocumentMeta`]. Deferred inner
+/// `Result` lets timestamp / id / integer conversions surface as [`StoreError`].
+#[allow(clippy::type_complexity)]
+fn row_to_imported_document_meta(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredImportedDocumentMeta, StoreError>> {
+    let id: String = row.get(0)?;
+    let act_id_raw: Option<String> = row.get(1)?;
+    let filename: Option<String> = row.get(2)?;
+    let declared_content_type: Option<String> = row.get(3)?;
+    let detected_content_type: String = row.get(4)?;
+    let sha256: String = row.get(5)?;
+    let size_raw: i64 = row.get(6)?;
+    let imported_at_raw: String = row.get(7)?;
+    let imported_by: String = row.get(8)?;
+    Ok(imported_document_meta_from_raw(
+        id,
+        act_id_raw,
+        filename,
+        declared_content_type,
+        detected_content_type,
+        sha256,
+        size_raw,
+        imported_at_raw,
+        imported_by,
+    ))
+}
+
+/// Map one `imported_documents` full row to [`StoredImportedDocument`] (metadata + retained bytes).
+#[allow(clippy::type_complexity)]
+fn row_to_imported_document(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredImportedDocument, StoreError>> {
+    let id: String = row.get(0)?;
+    let act_id_raw: Option<String> = row.get(1)?;
+    let filename: Option<String> = row.get(2)?;
+    let declared_content_type: Option<String> = row.get(3)?;
+    let detected_content_type: String = row.get(4)?;
+    let sha256: String = row.get(5)?;
+    let size_raw: i64 = row.get(6)?;
+    let imported_at_raw: String = row.get(7)?;
+    let imported_by: String = row.get(8)?;
+    let bytes: Vec<u8> = row.get(9)?;
+    Ok((|| {
+        Ok(StoredImportedDocument {
+            meta: imported_document_meta_from_raw(
+                id,
+                act_id_raw,
+                filename,
+                declared_content_type,
+                detected_content_type,
+                sha256,
+                size_raw,
+                imported_at_raw,
+                imported_by,
+            )?,
+            bytes,
+        })
+    })())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn imported_document_meta_from_raw(
+    id: String,
+    act_id_raw: Option<String>,
+    filename: Option<String>,
+    declared_content_type: Option<String>,
+    detected_content_type: String,
+    sha256: String,
+    size_raw: i64,
+    imported_at_raw: String,
+    imported_by: String,
+) -> Result<StoredImportedDocumentMeta, StoreError> {
+    let size_bytes = usize::try_from(size_raw).map_err(|_| {
+        StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("stored imported document size {size_raw} is negative or too large"),
+        ))
+    })?;
+    let act_id = act_id_raw
+        .as_deref()
+        .map(parse_uuid_newtype::<ActId>)
+        .transpose()?;
+    Ok(StoredImportedDocumentMeta {
+        id,
+        act_id,
+        filename,
+        declared_content_type,
+        detected_content_type,
+        sha256,
+        size_bytes,
+        imported_at: parse_rfc3339(&imported_at_raw)?,
+        imported_by,
+    })
+}
+
 /// Map one `signed_documents` row to a [`StoredSignedDocument`]. Deferred inner `Result` (the
 /// `act_id` / timestamp conversions surface as [`StoreError`]) unwrapped by the caller's `.transpose()`.
 #[allow(clippy::type_complexity)]
@@ -1004,14 +1467,108 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     s
 }
 
+fn backup_envelope_aad(header: &BackupEnvelopeHeader) -> Result<Vec<u8>, StoreError> {
+    let mut aad = Vec::from(BACKUP_ENVELOPE_MAGIC);
+    aad.extend_from_slice(&serde_json::to_vec(header)?);
+    Ok(aad)
+}
+
+fn derive_backup_key(passphrase: &str, salt: &[u8]) -> Result<[u8; 32], StoreError> {
+    let mut key = [0u8; 32];
+    Argon2::default()
+        .hash_password_into(passphrase.as_bytes(), salt, &mut key)
+        .map_err(|e| StoreError::BadBackup(format!("backup key derivation failed: {e}")))?;
+    Ok(key)
+}
+
+fn decode_fixed_hex<const N: usize>(raw: &str, what: &str) -> Result<[u8; N], StoreError> {
+    let bytes = decode_hex(raw, what)?;
+    let len = bytes.len();
+    bytes
+        .try_into()
+        .map_err(|_| StoreError::BadBackup(format!("{what} is {len} bytes, expected {N}")))
+}
+
+fn decode_hex(raw: &str, what: &str) -> Result<Vec<u8>, StoreError> {
+    if raw.len() % 2 != 0 {
+        return Err(StoreError::BadBackup(format!(
+            "{what} is not valid hex: odd length"
+        )));
+    }
+    let mut out = Vec::with_capacity(raw.len() / 2);
+    for chunk in raw.as_bytes().chunks_exact(2) {
+        let hi = hex_nibble(chunk[0])
+            .ok_or_else(|| StoreError::BadBackup(format!("{what} is not valid lowercase hex")))?;
+        let lo = hex_nibble(chunk[1])
+            .ok_or_else(|| StoreError::BadBackup(format!("{what} is not valid lowercase hex")))?;
+        out.push((hi << 4) | lo);
+    }
+    Ok(out)
+}
+
+fn hex_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        _ => None,
+    }
+}
+
 /// Open (creating if absent) `<data_dir>/chancela.db`, apply the PRAGMAs + idempotent migration,
 /// gate the schema version, and ensure the `instance_id` stamp. Factored out of [`Store::open`] so
 /// the whole-store [`recovery`] restore can rebuild a fresh connection after swapping the db file.
 pub(crate) fn open_connection(data_dir: &Path) -> Result<rusqlite::Connection, StoreError> {
+    open_connection_with_options(data_dir, &StoreOpenOptions::default())
+}
+
+pub(crate) fn open_connection_with_options(
+    data_dir: &Path,
+    options: &StoreOpenOptions,
+) -> Result<rusqlite::Connection, StoreError> {
     std::fs::create_dir_all(data_dir)?;
     let conn = rusqlite::Connection::open(data_dir.join(DB_FILE))?;
+    apply_open_options(&conn, options)?;
     configure_and_migrate(&conn)?;
     Ok(conn)
+}
+
+#[cfg(feature = "sqlcipher")]
+fn apply_open_options(
+    conn: &rusqlite::Connection,
+    options: &StoreOpenOptions,
+) -> Result<(), StoreError> {
+    let Some(key) = options.encryption_key() else {
+        return Ok(());
+    };
+    if key.is_empty() {
+        return Err(StoreError::EncryptionKeyRejected {
+            source: rusqlite::Error::InvalidParameterName("empty sqlcipher key".to_owned()),
+        });
+    }
+
+    conn.pragma_update(None, "key", key)
+        .map_err(|source| StoreError::EncryptionKeyRejected { source })?;
+    verify_keyed_database(conn)
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+fn apply_open_options(
+    _conn: &rusqlite::Connection,
+    options: &StoreOpenOptions,
+) -> Result<(), StoreError> {
+    if options.encryption_key().is_some() {
+        return Err(StoreError::EncryptionUnavailable);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "sqlcipher")]
+fn verify_keyed_database(conn: &rusqlite::Connection) -> Result<(), StoreError> {
+    conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .map(|_| ())
+    .map_err(|source| StoreError::EncryptionKeyRejected { source })
 }
 
 /// Apply WAL/foreign-keys/busy-timeout PRAGMAs, run the idempotent [`schema::ALL`] DDL + the
@@ -1127,6 +1684,15 @@ pub(crate) fn utc_stamp(t: OffsetDateTime) -> String {
         t.minute(),
         t.second(),
     )
+}
+
+fn tmp_backup_path(path: &Path) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|s| s.to_os_string())
+        .unwrap_or_else(|| "chancela-backup.cbackup".into());
+    name.push(format!(".{}.tmp", uuid::Uuid::new_v4()));
+    path.with_file_name(name)
 }
 
 /// Add a single file to the zip, recording its sha256 and byte length in `files`.

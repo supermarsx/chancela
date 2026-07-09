@@ -7,7 +7,7 @@
 //! sequentially within it.
 
 use serde::{Deserialize, Serialize};
-use time::Date;
+use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::entity::EntityId;
@@ -119,6 +119,18 @@ pub struct TermoDeEncerramento {
     pub required_signatories: Vec<String>,
 }
 
+/// Active legal-hold metadata attached to a book.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LegalHold {
+    /// Free-text reason for the hold.
+    pub reason: String,
+    /// Actor that set the hold.
+    pub actor: String,
+    /// When the hold was set.
+    #[serde(with = "time::serde::rfc3339")]
+    pub set_at: OffsetDateTime,
+}
+
 /// A *livro de atas* for one organ of an entity.
 ///
 /// Constructed in the `Created` state; opened via [`Book::open`] and closed via
@@ -142,6 +154,9 @@ pub struct Book {
     pub last_ata_number: u64,
     /// Predecessor book, when this book continues a full/closed one (WFL-13).
     pub predecessor: Option<BookId>,
+    /// Active legal hold, if retention-driven disposal is blocked for this book.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legal_hold: Option<LegalHold>,
 }
 
 impl Book {
@@ -156,6 +171,7 @@ impl Book {
             termo_encerramento: None,
             last_ata_number: 0,
             predecessor: None,
+            legal_hold: None,
         }
     }
 

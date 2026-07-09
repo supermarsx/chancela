@@ -43,6 +43,9 @@ pub enum ServiceStatus {
     Granted,
     /// `Svcstatus/withdrawn` — withdrawn/no longer qualified.
     Withdrawn,
+    /// A revoked status URI (for example `supervisionRevoked` / `accreditationRevoked`), kept
+    /// verbatim because ETSI status vocabularies have several revoked-like forms.
+    Revoked(String),
     /// Any other (historical or national) status URI, kept verbatim for inspection.
     Other(String),
 }
@@ -52,9 +55,21 @@ impl ServiceStatus {
         match uri {
             STATUS_GRANTED => ServiceStatus::Granted,
             STATUS_WITHDRAWN => ServiceStatus::Withdrawn,
+            other if other.to_ascii_lowercase().contains("revoked") => {
+                ServiceStatus::Revoked(other.to_owned())
+            }
             other => ServiceStatus::Other(other.to_owned()),
         }
     }
+}
+
+/// A text value with its optional `xml:lang` language tag preserved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalizedText {
+    /// The `xml:lang` / `lang` attribute, if present.
+    pub lang: Option<String>,
+    /// The element text.
+    pub value: String,
 }
 
 /// One digital identity of a trust service (`ServiceDigitalIdentity/DigitalId`). A service may
@@ -70,24 +85,58 @@ pub enum DigitalIdentity {
     SubjectKeyId(Vec<u8>),
 }
 
+/// One historical service-information entry from `ServiceHistory/ServiceHistoryInstance`.
+///
+/// Current trust decisions deliberately ignore history, but retaining it lets catalog tooling
+/// explain withdrawn/revoked predecessors and makes search hits less surprising.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceHistoryEntry {
+    /// Historical `ServiceTypeIdentifier` URI.
+    pub service_type: String,
+    /// Preferred historical service name (English when available).
+    pub name: String,
+    /// Every historical `ServiceName/Name` value, including duplicates and language variants.
+    pub names: Vec<LocalizedText>,
+    /// Historical service status.
+    pub status: ServiceStatus,
+    /// Parsed historical `StatusStartingTime`, if parseable.
+    pub status_starting_time: Option<OffsetDateTime>,
+    /// Raw historical `StatusStartingTime`, retained when the date is malformed.
+    pub status_starting_time_raw: Option<String>,
+    /// Historical digital identities.
+    pub digital_identities: Vec<DigitalIdentity>,
+    /// Historical `AdditionalServiceInformation` URIs.
+    pub additional_service_info: Vec<String>,
+    /// Historical `ServiceSupplyPoint` values.
+    pub service_supply_points: Vec<String>,
+}
+
 /// A single trust service offered by a provider (a `TSPService`'s current `ServiceInformation`).
 ///
-/// `ServiceHistory` instances are intentionally **not** modelled here — only the current
-/// service information is retained, which is what the qualified-status query is defined over.
+/// The current service information is what the qualified-status query is defined over. Historical
+/// service information is retained in [`Self::history`] for diagnostics/search only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrustService {
     /// `ServiceTypeIdentifier` URI (e.g. [`SVCTYPE_CA_QC`]).
     pub service_type: String,
     /// Human-readable service name (English preferred).
     pub name: String,
+    /// Every `ServiceName/Name` value, including duplicates and language variants.
+    pub names: Vec<LocalizedText>,
     /// Current status.
     pub status: ServiceStatus,
     /// When the current status took effect (`StatusStartingTime`), if parseable.
     pub status_starting_time: Option<OffsetDateTime>,
+    /// Raw `StatusStartingTime`, retained when the date is malformed.
+    pub status_starting_time_raw: Option<String>,
     /// The service's digital identities (certs / subject names / SKIs).
     pub digital_identities: Vec<DigitalIdentity>,
     /// `AdditionalServiceInformation` URIs (used to tell e-signatures from e-seals/web-auth).
     pub additional_service_info: Vec<String>,
+    /// `ServiceSupplyPoint` endpoint values, if the TSL publishes them.
+    pub service_supply_points: Vec<String>,
+    /// Historical service-information entries. These never affect current qualified status.
+    pub history: Vec<ServiceHistoryEntry>,
 }
 
 impl TrustService {
@@ -125,6 +174,14 @@ impl TrustService {
 pub struct TrustServiceProvider {
     /// Provider name (English preferred).
     pub name: String,
+    /// Every `TSPName/Name` value, including language variants.
+    pub names: Vec<LocalizedText>,
+    /// Provider trade names / aliases, in document order.
+    pub trade_names: Vec<String>,
+    /// Provider trade names / aliases with language tags preserved.
+    pub localized_trade_names: Vec<LocalizedText>,
+    /// Provider information URIs.
+    pub information_uris: Vec<String>,
     /// The provider's trust services.
     pub services: Vec<TrustService>,
 }
@@ -132,6 +189,14 @@ pub struct TrustServiceProvider {
 /// A parsed Trusted List (`TrustServiceStatusList`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrustedList {
+    /// `SchemeOperatorName` (English preferred).
+    pub scheme_operator_name: String,
+    /// Every `SchemeOperatorName/Name` value, including language variants.
+    pub scheme_operator_names: Vec<LocalizedText>,
+    /// `SchemeName` (English preferred).
+    pub scheme_name: String,
+    /// Every `SchemeName/Name` value, including language variants.
+    pub scheme_names: Vec<LocalizedText>,
     /// `SchemeTerritory` (e.g. `PT`).
     pub scheme_territory: String,
     /// `TSLSequenceNumber`, if present.
@@ -155,8 +220,10 @@ impl TrustedList {
 
 /// Parse an ETSI TS 119 612 Trusted List from XML bytes.
 ///
-/// This does **not** validate the list's XML-DSig signature (SIG-11 is a phase-2 stub — see
-/// [`crate::source::validate_tsl_signature`]); it parses structure, status and identities only.
+/// This does **not** validate the list's XML-DSig signature; call
+/// [`crate::source::validate_tsl_signature`] separately when the parsed result is used for trust
+/// decisions. The parser only extracts structure, statuses, identities, history and catalog
+/// metadata.
 pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
     use quick_xml::events::Event;
 
@@ -167,6 +234,10 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
     let mut saw_root = false;
 
     let mut list = TrustedList {
+        scheme_operator_name: String::new(),
+        scheme_operator_names: Vec::new(),
+        scheme_name: String::new(),
+        scheme_names: Vec::new(),
         scheme_territory: String::new(),
         sequence_number: None,
         issue_date_time: None,
@@ -177,6 +248,7 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
     // In-flight builders.
     let mut cur_tsp: Option<TrustServiceProvider> = None;
     let mut cur_service: Option<TrustService> = None;
+    let mut cur_history: Option<ServiceHistoryEntry> = None;
     // xml:lang of the Name element currently open, to prefer English names.
     let mut cur_name_lang: Option<String> = None;
 
@@ -190,18 +262,18 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
                     "TrustServiceProvider" if !in_history(&stack) => {
                         cur_tsp = Some(TrustServiceProvider {
                             name: String::new(),
+                            names: Vec::new(),
+                            trade_names: Vec::new(),
+                            localized_trade_names: Vec::new(),
+                            information_uris: Vec::new(),
                             services: Vec::new(),
                         });
                     }
                     "TSPService" if !in_history(&stack) => {
-                        cur_service = Some(TrustService {
-                            service_type: String::new(),
-                            name: String::new(),
-                            status: ServiceStatus::Other(String::new()),
-                            status_starting_time: None,
-                            digital_identities: Vec::new(),
-                            additional_service_info: Vec::new(),
-                        });
+                        cur_service = Some(empty_trust_service());
+                    }
+                    "ServiceHistoryInstance" if cur_service.is_some() => {
+                        cur_history = Some(empty_history_entry());
                     }
                     "Name" => cur_name_lang = xml_lang(&e)?,
                     _ => {}
@@ -218,6 +290,7 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
                         &mut list,
                         cur_tsp.as_mut(),
                         cur_service.as_mut(),
+                        cur_history.as_mut(),
                     )?;
                 }
             }
@@ -225,6 +298,13 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
                 let name = local_name(e.name().as_ref());
                 stack.pop();
                 match name.as_str() {
+                    "ServiceHistoryInstance" => {
+                        if let (Some(history), Some(service)) =
+                            (cur_history.take(), cur_service.as_mut())
+                        {
+                            service.history.push(history);
+                        }
+                    }
                     "TSPService" if !in_history(&stack) => {
                         if let (Some(svc), Some(tsp)) = (cur_service.take(), cur_tsp.as_mut()) {
                             tsp.services.push(svc);
@@ -253,6 +333,35 @@ pub fn parse_tsl(xml: &[u8]) -> Result<TrustedList, TslError> {
     Ok(list)
 }
 
+fn empty_trust_service() -> TrustService {
+    TrustService {
+        service_type: String::new(),
+        name: String::new(),
+        names: Vec::new(),
+        status: ServiceStatus::Other(String::new()),
+        status_starting_time: None,
+        status_starting_time_raw: None,
+        digital_identities: Vec::new(),
+        additional_service_info: Vec::new(),
+        service_supply_points: Vec::new(),
+        history: Vec::new(),
+    }
+}
+
+fn empty_history_entry() -> ServiceHistoryEntry {
+    ServiceHistoryEntry {
+        service_type: String::new(),
+        name: String::new(),
+        names: Vec::new(),
+        status: ServiceStatus::Other(String::new()),
+        status_starting_time: None,
+        status_starting_time_raw: None,
+        digital_identities: Vec::new(),
+        additional_service_info: Vec::new(),
+        service_supply_points: Vec::new(),
+    }
+}
+
 /// Dispatch a text node to the right model field based on the element stack.
 fn handle_text(
     stack: &[String],
@@ -261,14 +370,26 @@ fn handle_text(
     list: &mut TrustedList,
     tsp: Option<&mut TrustServiceProvider>,
     service: Option<&mut TrustService>,
+    history: Option<&mut ServiceHistoryEntry>,
 ) -> Result<(), TslError> {
     let top = stack.last().map(String::as_str).unwrap_or("");
-    // Anything inside a ServiceHistory instance is ignored: only current info is modelled.
-    if in_history(stack) {
+    // Current trust decisions ignore history, but parser/search tooling keeps it structured.
+    if in_history_instance(stack) {
+        if let Some(history) = history {
+            handle_history_text(stack, text, name_lang, history)?;
+        }
         return Ok(());
     }
 
     match top {
+        "Name" if under(stack, "SchemeOperatorName") => {
+            set_preferred_name(&mut list.scheme_operator_name, text, name_lang);
+            push_localized_text(&mut list.scheme_operator_names, text, name_lang);
+        }
+        "Name" if under(stack, "SchemeName") => {
+            set_preferred_name(&mut list.scheme_name, text, name_lang);
+            push_localized_text(&mut list.scheme_names, text, name_lang);
+        }
         "SchemeTerritory" if under(stack, "SchemeInformation") => {
             list.scheme_territory = text.to_owned();
         }
@@ -284,6 +405,22 @@ fn handle_text(
         "Name" if under(stack, "TSPName") => {
             if let Some(tsp) = tsp {
                 set_preferred_name(&mut tsp.name, text, name_lang);
+                push_localized_text(&mut tsp.names, text, name_lang);
+            }
+        }
+        "Name" if under(stack, "TSPTradeName") => {
+            if let Some(tsp) = tsp {
+                push_localized_text(&mut tsp.localized_trade_names, text, name_lang);
+                if !tsp.trade_names.iter().any(|name| name == text) {
+                    tsp.trade_names.push(text.to_owned());
+                }
+            }
+        }
+        "URI" if under(stack, "TSPInformationURI") => {
+            if let Some(tsp) = tsp {
+                if !tsp.information_uris.iter().any(|uri| uri == text) {
+                    tsp.information_uris.push(text.to_owned());
+                }
             }
         }
         "ServiceTypeIdentifier" => {
@@ -294,6 +431,7 @@ fn handle_text(
         "Name" if under(stack, "ServiceName") => {
             if let Some(svc) = service {
                 set_preferred_name(&mut svc.name, text, name_lang);
+                push_localized_text(&mut svc.names, text, name_lang);
             }
         }
         "ServiceStatus" => {
@@ -303,6 +441,7 @@ fn handle_text(
         }
         "StatusStartingTime" => {
             if let Some(svc) = service {
+                svc.status_starting_time_raw = Some(text.to_owned());
                 svc.status_starting_time = parse_datetime(text);
             }
         }
@@ -331,6 +470,59 @@ fn handle_text(
                 svc.additional_service_info.push(text.to_owned());
             }
         }
+        "ServiceSupplyPoint" if under(stack, "ServiceSupplyPoints") => {
+            if let Some(svc) = service {
+                push_unique_string(&mut svc.service_supply_points, text);
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_history_text(
+    stack: &[String],
+    text: &str,
+    name_lang: Option<&str>,
+    history: &mut ServiceHistoryEntry,
+) -> Result<(), TslError> {
+    let top = stack.last().map(String::as_str).unwrap_or("");
+    match top {
+        "ServiceTypeIdentifier" => {
+            history.service_type = text.to_owned();
+        }
+        "Name" if under(stack, "ServiceName") => {
+            set_preferred_name(&mut history.name, text, name_lang);
+            push_localized_text(&mut history.names, text, name_lang);
+        }
+        "ServiceStatus" => {
+            history.status = ServiceStatus::from_uri(text);
+        }
+        "StatusStartingTime" => {
+            history.status_starting_time_raw = Some(text.to_owned());
+            history.status_starting_time = parse_datetime(text);
+        }
+        "X509Certificate" if under(stack, "DigitalId") => {
+            history
+                .digital_identities
+                .push(DigitalIdentity::Certificate(decode_base64(text)?));
+        }
+        "X509SubjectName" if under(stack, "DigitalId") => {
+            history
+                .digital_identities
+                .push(DigitalIdentity::SubjectName(text.to_owned()));
+        }
+        "X509SKI" if under(stack, "DigitalId") => {
+            history
+                .digital_identities
+                .push(DigitalIdentity::SubjectKeyId(decode_base64(text)?));
+        }
+        "URI" if under(stack, "AdditionalServiceInformation") => {
+            history.additional_service_info.push(text.to_owned());
+        }
+        "ServiceSupplyPoint" if under(stack, "ServiceSupplyPoints") => {
+            push_unique_string(&mut history.service_supply_points, text);
+        }
         _ => {}
     }
     Ok(())
@@ -345,9 +537,26 @@ fn set_preferred_name(slot: &mut String, text: &str, lang: Option<&str>) {
     }
 }
 
+fn push_localized_text(slot: &mut Vec<LocalizedText>, text: &str, lang: Option<&str>) {
+    slot.push(LocalizedText {
+        lang: lang.map(str::to_owned),
+        value: text.to_owned(),
+    });
+}
+
+fn push_unique_string(slot: &mut Vec<String>, text: &str) {
+    if !slot.iter().any(|value| value == text) {
+        slot.push(text.to_owned());
+    }
+}
+
 /// True when the element stack is inside a `ServiceHistory` subtree.
 fn in_history(stack: &[String]) -> bool {
     stack.iter().any(|s| s == "ServiceHistory")
+}
+
+fn in_history_instance(stack: &[String]) -> bool {
+    stack.iter().any(|s| s == "ServiceHistoryInstance")
 }
 
 /// True when `ancestor` appears anywhere in the (non-top) element stack.
@@ -473,10 +682,17 @@ mod tests {
         TrustService {
             service_type: SVCTYPE_CA_QC.to_owned(),
             name: "svc".to_owned(),
+            names: vec![LocalizedText {
+                lang: Some("en".to_owned()),
+                value: "svc".to_owned(),
+            }],
             status: ServiceStatus::Granted,
             status_starting_time: None,
+            status_starting_time_raw: None,
             digital_identities: Vec::new(),
             additional_service_info: info.into_iter().map(str::to_owned).collect(),
+            service_supply_points: Vec::new(),
+            history: Vec::new(),
         }
     }
 

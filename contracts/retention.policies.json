@@ -1,0 +1,19 @@
+[
+  {
+    "id": "8b7c6d50-0000-4000-8000-000000000073",
+    "name": "Signed PDF archive",
+    "scope": "document",
+    "category": "signed_pdf",
+    "schedule_id": "documents-signed-10y",
+    "retention_period": "P10Y",
+    "legal_basis": "Commercial recordkeeping obligation",
+    "disposal_action": "archive",
+    "status": "active",
+    "active": true,
+    "notes": "Register only; disposal execution is out of scope.",
+    "created_at": "2026-07-09T10:30:00Z",
+    "created_by": "amelia.marques",
+    "updated_at": "2026-07-09T12:00:00Z",
+    "updated_by": "amelia.marques"
+  }
+]

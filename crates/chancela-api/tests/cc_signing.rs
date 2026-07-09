@@ -16,6 +16,8 @@
 //! the CC flow (verify the request body carries no secret). Fictional example data only: "Encosto
 //! Estratégico, S.A." / "Amélia Marques" — never real names.
 
+mod common;
+
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -35,12 +37,16 @@ use x509_cert::time::Validity;
 
 use chancela_api::{AppState, router};
 use chancela_cades::{RawSignature, SignatureAlgorithm};
+use chancela_core::ActId;
 use chancela_pades::validate_pdf_signature;
 use chancela_signing::{
-    SignerProvider, SigningError, SmartcardProvider, StaticTrustPolicy, TrustPolicy,
+    DssEvidence, SignerProvider, SigningError, SmartcardProvider, StaticTrustPolicy, TrustPolicy,
+    TrustedListStatus, attach_pdf_dss,
 };
 use chancela_smartcard::token::{LABEL_AUTH_CERT, LABEL_SIGNATURE_CERT};
 use chancela_smartcard::{CertUsage, CryptoToken, MockToken, SmartcardError, TokenCertificate};
+use common::tsa_http::MockTsaServer;
+use uuid::Uuid;
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 const OID_ECDSA_WITH_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
@@ -48,6 +54,8 @@ const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
     0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
     0x00, 0x04, 0x20,
 ];
+const OCSP_DER_FIXTURE: &[u8] = &[0x30, 0x03, 0x02, 0x01, 0x05];
+const CRL_DER_FIXTURE: &[u8] = &[0x30, 0x05, 0x06, 0x03, 0x2a, 0x03, 0x04];
 
 // --- An in-test, key-backed CryptoToken standing in for a Cartão de Cidadão -----------------------
 
@@ -276,14 +284,26 @@ fn state_at(
     granted: bool,
     local: bool,
 ) -> AppState {
+    let trust_status = if granted {
+        TrustedListStatus::Granted
+    } else {
+        TrustedListStatus::Withdrawn
+    };
+    state_at_with_trust_status(dir, factory, trust_status, local)
+}
+
+fn state_at_with_trust_status(
+    dir: &std::path::Path,
+    factory: Option<CcProviderFactory>,
+    trust_status: TrustedListStatus,
+    local: bool,
+) -> AppState {
     let mut state = AppState::with_data_dir(dir);
     state.local_signing = local;
     state.cc_provider = factory;
-    let policy: Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync> = if granted {
-        Arc::new(|| Box::new(StaticTrustPolicy::granted()))
-    } else {
-        Arc::new(|| Box::new(StaticTrustPolicy::withdrawn()))
-    };
+    state.settings.try_write().unwrap().signing.tsa_url = None;
+    let policy: Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync> =
+        Arc::new(move || Box::new(StaticTrustPolicy::new(trust_status)));
     state.cmd_trust_policy = Some(policy);
     state
 }
@@ -455,6 +475,100 @@ async fn seal_an_act(state: &AppState, token: &str) -> String {
     act_id
 }
 
+async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usize {
+    let (status, events) = send(
+        state,
+        get_req(&format!("/v1/ledger/events?scope=act:{act_id}"), token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger events: {events}");
+    events
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == "document.signed")
+        .count()
+}
+
+async fn assert_no_signed_artifact_or_event(state: &AppState, token: &str, act_id: &str) {
+    let (status, _) = send_bytes(
+        state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(signed_event_count(state, token, act_id).await, 0);
+    let (_, view) = send(
+        state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), token),
+    )
+    .await;
+    assert_ne!(view["status"], "signed");
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest: [u8; 32] = Sha256::digest(bytes).into();
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn assert_signature_evidence_status(
+    view: &Value,
+    current_level: &str,
+    timestamp_present: bool,
+    expected_long_term_status: &str,
+) {
+    let evidence = &view["evidence"];
+    assert_eq!(evidence["current_level"], current_level);
+    assert_eq!(evidence["timestamp_evidence_present"], timestamp_present);
+    assert_eq!(evidence["dss_revocation_evidence_present"], false);
+    let expected_dss_status = if current_level == "Unsigned" {
+        "not_applicable"
+    } else {
+        "not_present"
+    };
+    assert_eq!(
+        evidence["dss_revocation_evidence_status"],
+        expected_dss_status
+    );
+    assert_eq!(evidence["dss"]["present"], false);
+    assert_eq!(evidence["dss"]["vri_count"], 0);
+    assert_eq!(evidence["dss"]["ocsp_count"], 0);
+    assert_eq!(evidence["dss"]["crl_count"], 0);
+    assert_eq!(
+        evidence["dss"]["inspection_status"],
+        if current_level == "Unsigned" {
+            "not_applicable"
+        } else {
+            "inspected_from_signed_pdf"
+        }
+    );
+    assert_eq!(evidence["local_b_lt_style_evidence_present"], false);
+    assert_eq!(evidence["production_b_lt_status"], "not_claimed");
+    assert_eq!(evidence["live_revocation_fetching"], false);
+    assert_eq!(evidence["legal_b_lt_claimed"], false);
+    assert_eq!(evidence["status_scope"], "technical_evidence_only");
+    assert!(
+        evidence.get("legal_qualification").is_none(),
+        "evidence status must not claim legal qualification: {evidence}"
+    );
+    let statuses = evidence["long_term_status"]
+        .as_array()
+        .expect("long_term_status array");
+    for expected in [
+        expected_long_term_status,
+        "lt_not_implemented",
+        "lt_production_not_claimed",
+        "lta_not_implemented",
+    ] {
+        assert!(
+            statuses
+                .iter()
+                .any(|status| status.as_str() == Some(expected)),
+            "missing {expected} in long_term_status: {evidence}"
+        );
+    }
+}
+
 // --- tests ----------------------------------------------------------------------------------------
 
 /// The whole CC round trip for a card generation: sign → validating signed PDF, `document.signed`
@@ -475,6 +589,7 @@ async fn cc_round_trip(card: CcTestCard) {
     )
     .await;
     assert_eq!(view["status"], "unsigned");
+    assert_signature_evidence_status(&view, "Unsigned", false, "not_configured");
 
     // Sign with the card — no secret in the body (the PIN is at the reader).
     let (status, done) = send(
@@ -540,6 +655,7 @@ async fn cc_round_trip(card: CcTestCard) {
     assert_eq!(view["finalization"], "finalizado_qualificado");
     assert_eq!(view["signed"]["family"], "CartaoDeCidadao");
     assert_eq!(view["signed"]["evidentiary_level"], "Qualified");
+    assert_signature_evidence_status(&view, "B-B", false, "not_configured");
 
     // A second signature over the already-signed act is refused (409).
     let (status, _) = send(
@@ -563,6 +679,222 @@ async fn cc_v1_rsa_sign_round_trip_produces_a_validating_signed_pdf() {
 #[tokio::test]
 async fn cc_v2_p256_sign_round_trip_produces_a_validating_signed_pdf() {
     cc_round_trip(CcTestCard::cc_v2()).await;
+}
+
+#[tokio::test]
+async fn cc_sign_timestamps_when_tsa_configured() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let signature_cert_der = card.signature_cert_der.clone();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let tsa = MockTsaServer::granted();
+    state.settings.write().await.signing.tsa_url = Some(tsa.url().to_owned());
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "capacity": "Administrador" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cc sign: {done}");
+    assert_eq!(done["timestamp_token"], true);
+
+    let (status, signed_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let report = validate_pdf_signature(&signed_pdf).expect("timestamped PDF validates");
+    assert!(report.covers_whole_file_except_contents);
+    assert!(report.has_signature_timestamp);
+    assert_eq!(report.cades.signer_cert_der, signature_cert_der);
+
+    let stored = state
+        .signed_documents
+        .read()
+        .await
+        .get(&ActId(Uuid::parse_str(&act_id).unwrap()))
+        .cloned()
+        .expect("signed artifact stored");
+    assert!(
+        stored
+            .timestamp_token_der
+            .as_ref()
+            .map(|token| !token.is_empty())
+            .unwrap_or(false),
+        "timestamp token DER stored"
+    );
+
+    let (_, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(view["signed"]["timestamp_token"], true);
+    assert_signature_evidence_status(&view, "B-T", true, "timestamped");
+}
+
+#[tokio::test]
+async fn cc_signature_status_reports_caller_supplied_dss_as_local_technical_evidence() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let signature_cert_der = card.signature_cert_der.clone();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let tsa = MockTsaServer::granted();
+    state.settings.write().await.signing.tsa_url = Some(tsa.url().to_owned());
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "capacity": "Administrador" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cc sign: {done}");
+    assert_eq!(done["timestamp_token"], true);
+
+    let act_uuid = ActId(Uuid::parse_str(&act_id).expect("act uuid"));
+    let mut stored = state
+        .signed_documents
+        .read()
+        .await
+        .get(&act_uuid)
+        .cloned()
+        .expect("signed artifact stored");
+    let dss_evidence = DssEvidence {
+        certificates: vec![signature_cert_der.clone()],
+        ocsp_responses: vec![OCSP_DER_FIXTURE.to_vec()],
+        crls: vec![CRL_DER_FIXTURE.to_vec()],
+    };
+    let (with_dss, dss_report) =
+        attach_pdf_dss(&stored.signed_pdf_bytes, &dss_evidence).expect("DSS append");
+    assert!(dss_report.present);
+    assert_eq!(dss_report.vri_count, 1);
+    assert_eq!(dss_report.certificate_count(), 1);
+    assert_eq!(dss_report.ocsp_count(), 1);
+    assert_eq!(dss_report.crl_count(), 1);
+
+    stored.signed_pdf_digest = sha256_hex(&with_dss);
+    stored.signed_pdf_bytes = with_dss;
+    state
+        .store
+        .as_ref()
+        .expect("store")
+        .persist(|tx| tx.upsert_signed_document(&stored))
+        .expect("DSS signed document persisted");
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(act_uuid, stored);
+
+    let (_, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    let evidence = &view["evidence"];
+    assert_eq!(evidence["current_level"], "B-LT-local");
+    assert_eq!(evidence["timestamp_evidence_present"], true);
+    assert_eq!(evidence["dss_revocation_evidence_present"], true);
+    assert_eq!(
+        evidence["dss_revocation_evidence_status"],
+        "present_local_technical_only"
+    );
+    assert_eq!(evidence["local_b_lt_style_evidence_present"], true);
+    assert_eq!(evidence["production_b_lt_status"], "not_claimed");
+    assert_eq!(evidence["live_revocation_fetching"], false);
+    assert_eq!(evidence["legal_b_lt_claimed"], false);
+    assert_eq!(evidence["status_scope"], "technical_evidence_only");
+    assert!(evidence.get("legal_qualification").is_none());
+    assert_eq!(evidence["dss"]["present"], true);
+    assert_eq!(evidence["dss"]["vri_count"], 1);
+    assert_eq!(evidence["dss"]["certificate_count"], 1);
+    assert_eq!(evidence["dss"]["ocsp_count"], 1);
+    assert_eq!(evidence["dss"]["crl_count"], 1);
+    assert_eq!(
+        evidence["dss"]["inspection_status"],
+        "inspected_from_signed_pdf"
+    );
+    assert_eq!(evidence["dss"]["revocation_evidence_present"], true);
+    assert_eq!(
+        evidence["dss"]["certificate_sha256"],
+        json!([sha256_hex(&signature_cert_der)])
+    );
+    assert_eq!(
+        evidence["dss"]["ocsp_sha256"],
+        json!([sha256_hex(OCSP_DER_FIXTURE)])
+    );
+    assert_eq!(
+        evidence["dss"]["crl_sha256"],
+        json!([sha256_hex(CRL_DER_FIXTURE)])
+    );
+    let statuses = evidence["long_term_status"]
+        .as_array()
+        .expect("long_term_status array");
+    for expected in [
+        "timestamped",
+        "lt_local_technical_evidence",
+        "lt_production_not_claimed",
+        "lta_not_implemented",
+    ] {
+        assert!(
+            statuses
+                .iter()
+                .any(|status| status.as_str() == Some(expected)),
+            "missing {expected} in long_term_status: {evidence}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cc_sign_rejects_withdrawn_and_unknown_trust_policy() {
+    for trust_status in [TrustedListStatus::Withdrawn, TrustedListStatus::Unknown] {
+        let dir = TempDir::new();
+        let card = CcTestCard::cc_v1();
+        let issuer = card.issuer_cert_der.clone();
+        let factory = provider_factory(card, Some(issuer));
+        let state = state_at_with_trust_status(&dir.0, Some(factory), trust_status, true);
+        let (token, _uid) = bootstrap(&state).await;
+        let act_id = seal_an_act(&state, &token).await;
+
+        let (status, err) = send(
+            &state,
+            json_req(
+                "POST",
+                &format!("/v1/acts/{act_id}/signature/cc/sign"),
+                &token,
+                json!({ "capacity": "Administrador" }),
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{trust_status:?} issuer must fail closed: {err}"
+        );
+        assert!(
+            err.to_string().contains(&format!("{trust_status:?}")),
+            "error reports trust outcome: {err}"
+        );
+        assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+    }
 }
 
 /// The co-location gate (CC-B): with `CHANCELA_LOCAL_SIGNING` absent (`local_signing == false`, a
@@ -597,13 +929,7 @@ async fn cc_sign_409_when_not_co_located() {
         "honest co-location message: {err}"
     );
 
-    // No signed variant was produced.
-    let (status, _) = send_bytes(
-        &state,
-        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 
 /// The RBAC gate: a session lacking `signing.perform` at the act's book is refused with 403 — even
@@ -678,13 +1004,7 @@ async fn cc_sign_403_for_role_without_signing_perm() {
         "no signing.perform → 403: {err}"
     );
 
-    // Nothing was signed.
-    let (status, _) = send_bytes(
-        &state,
-        get_req(&format!("/v1/acts/{act_id}/document/signed"), &owner),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_no_signed_artifact_or_event(&state, &owner, &act_id).await;
 }
 
 /// The provider-error mapping: an un-activated qualified signature (a real card failure mode) is
@@ -726,17 +1046,5 @@ async fn cc_sign_provider_error_maps_to_honest_error() {
         "a card failure is NOT reported as a CMS/PDF-assembly error: {msg}"
     );
 
-    // No signed variant was produced.
-    let (status, _) = send_bytes(
-        &state,
-        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token_s),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    let (_, view) = send(
-        &state,
-        get_req(&format!("/v1/acts/{act_id}/signature"), &token_s),
-    )
-    .await;
-    assert_ne!(view["status"], "signed");
+    assert_no_signed_artifact_or_event(&state, &token_s, &act_id).await;
 }

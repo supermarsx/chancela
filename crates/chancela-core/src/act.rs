@@ -137,8 +137,8 @@ pub struct SignatorySlot {
     pub signed: bool,
     /// For a condominium owner ([`SignatoryCapacity::CondoOwner`]), the owner's *permilagem*
     /// (millésimos, 0..=1000) — the fraction of the building this owner represents (ENT-D6).
-    /// Metadata only in this scaffold: permilage-weighted vote tallies are deferred. Defaults
-    /// to `None` (additive; old-shape signatories deserialize without it).
+    /// Used as auditable weight metadata where captured. Defaults to `None` (additive;
+    /// old-shape signatories deserialize without it).
     #[serde(default)]
     pub permilage: Option<u16>,
 }
@@ -172,7 +172,7 @@ pub struct DocumentReference {
 }
 
 /// A structured voting result for one resolution (CSC art. 63.º "voting results").
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VoteResult {
     /// Carried unanimously.
     Unanimous,
@@ -309,8 +309,8 @@ pub enum PresenceMode {
 }
 
 /// The voting weight an attendee carries. Companies weight by **capital**; condominiums weight
-/// by **permilagem** (millésimos). Weighted tallies themselves stay deferred (ENT-D6) — this
-/// carries the row datum, not the arithmetic.
+/// by **permilagem** (millésimos). Rule packs use these row data for bounded weighted
+/// quorum/tally checks when the captured attendance list is complete enough to support them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AttendanceWeight {
     /// Represented capital, in minor units (e.g. cents).

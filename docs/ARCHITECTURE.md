@@ -15,8 +15,10 @@ domain core drives three editions: an offline **desktop** monolith (Tauri v2), a
 
 > Honesty note carried throughout: Chancela **helps produce compliant records; it does not
 > create legal validity** out of an invalid meeting, missing powers, or a defective process.
-> The signing subsystem produces a **qualified electronic signature** (eIDAS art. 25 /
-> DL 12/2021 — handwritten-equivalent); the code makes no probative-value claim.
+> The signing subsystem can produce a **qualified electronic signature** only when the
+> deployment supplies the required qualified provider/certificate/hardware/onboarding path
+> (eIDAS art. 25 / DL 12/2021 — handwritten-equivalent); the code makes no probative-value
+> claim and creates no legal shortcut around those requirements.
 
 ---
 
@@ -32,8 +34,8 @@ DAG is acyclic and the domain/security crates never depend on `chancela-api`.
 |---|---|
 | `crates/chancela-core` | Domain model: `Entity`/`Book`/`Act`, sealing (`seal.rs`), rule packs + `EntityProfile` (`rules.rs`/`profile.rs`), and the frozen `DocumentModel`/`LifecycleStage` render seam (`document_model.rs`). Pure leaf. |
 | `crates/chancela-ledger` | Append-only, hash-chained, **multi-chain** event ledger (single file `lib.rs`). |
-| `crates/chancela-store` | Durable system of record: embedded SQLite store (`schema.rs`, `SCHEMA_VERSION = 4`), hot backup, and the whole integrity/recovery/portability plane (`recovery.rs`). Sits between the domain crates and the API; must not depend on `chancela-api`. |
-| `crates/chancela-archive` | Preservation-package model (DOC-20, spec 08). A **compiling stub** — fixes the export-package shape (checksums, provenance, rights/language metadata, signing evidence, retention/legal-hold) but `build_package` returns `ArchiveError::NotImplemented`. |
+| `crates/chancela-store` | Durable system of record: embedded SQLite store (`schema.rs`, `SCHEMA_VERSION = 5`), hot backup, imported-document evidence storage, and the whole integrity/recovery/portability plane (`recovery.rs`). Sits between the domain crates and the API; must not depend on `chancela-api`. |
+| `crates/chancela-archive` | Deterministic internal preservation-package builder (DOC-20, spec 08): ZIP manifest, checksums, provenance, rights/language metadata, signing/evidence sidecars, preservation level, retention/legal-hold metadata, and DGLAB-aligned producer/interchange metadata. It explicitly does not claim official DGLAB interchange or certification. |
 | `crates/chancela-api` | Axum HTTP layer over everything: DTOs, handlers, `AppState`, the router, the RBAC gate, and the degraded gate. |
 | `crates/chancela-server` | The `chancela-server` binary (`main.rs`); binds `127.0.0.1:8080` (`CHANCELA_ADDR`), serves the API + the web bundle from `apps/web/dist`. |
 
@@ -55,7 +57,7 @@ DAG is acyclic and the domain/security crates never depend on `chancela-api`.
 | `crates/chancela-cmd` | Chave Móvel Digital (AMA/SCMD) SOAP client (`ScmdClient`). |
 | `crates/chancela-smartcard` | Cartão de Cidadão local PC/SC + PKCS#11 token access. |
 | `crates/chancela-cades` | CAdES-B crypto/format foundation (signed attributes, `SignedData`). |
-| `crates/chancela-pades` | PAdES: sign an existing PDF by incremental update (B-B, B-T). |
+| `crates/chancela-pades` | PAdES: sign an existing PDF by incremental update (B-B, B-T) and append/report local caller-supplied DSS/VRI evidence. |
 | `crates/chancela-tsl` | Portuguese Trusted List (ETSI TS 119 612) ingest + QTSP qualification lookup. |
 | `crates/chancela-tsa` | RFC 3161 timestamp client. |
 
@@ -242,14 +244,54 @@ family with no template proceeds document-less), `generate_for_termo` (book open
 (gated on `Permission::DocumentGenerate`), `GET .../document/preview` (live model, works pre-seal),
 `GET .../document` (stored bytes), `GET .../document/bundle` (the DOC-03 preservation bundle whose
 `validation_report` slot is the reserved seam for future PAdES output), `GET /v1/templates`.
+`POST /v1/documents/import/validate` is a read-only candidate-import screen: raw bytes or
+JSON/base64 in, structured findings out (content type, size, SHA-256, PDF/PDF-A-ish markers, signed
+PDF/ByteRange signals). `POST /v1/documents/import` then persists an accepted candidate as
+**non-canonical imported evidence** in `imported_documents` (schema v5) and appends a
+`document.imported` event whose payload is metadata only. `GET /v1/documents/imported`,
+`GET /v1/documents/imported/{id}`, and `GET /v1/documents/imported/{id}/bytes` expose metadata and
+retained bytes through the document-read gate. This does not replace preserved canonical PDF/A
+documents, mutate signed records, or prove legal/signature validity.
+
+### Archive packages and working-copy exports
+
+- **Book preservation package** (`crates/chancela-api/src/archive_package.rs`):
+  `GET /v1/books/{id}/archive/package` streams a deterministic
+  `chancela-internal-preservation-package/v1` ZIP. It is read-only and does not append ledger
+  events. The package carries a `manifest.json`, PDF/A members, metadata sidecars, signed PDF
+  sidecars when present, signer certificate evidence, timestamp-token evidence when present, and
+  per-document validation/evidence reports. Signature evidence reports include embedded DSS/VRI
+  counts and SHA-256 hashes when a signed PDF carries caller-supplied DSS evidence; they also record
+  that live revocation fetching is false and no production/legal B-LT status is claimed. The
+  manifest includes structured producer and preservation-interchange metadata, but deliberately
+  records `official_dglab_interchange: false` and `dglab_certification_claimed: false`. Before
+  package build, the endpoint preflights the inventory for duplicate/non-canonical IDs, path-like
+  document metadata, missing or mismatched PDF bytes/digests, inconsistent signed-document sidecars,
+  empty timestamp tokens, and impossible signature timestamps; after build it revalidates the
+  generated ZIP manifest before returning bytes. The export also accepts
+  `legal_hold=true&legal_hold_reason=...` to mark that generated package as non-disposable and add
+  `evidence/legal-hold.json`.
+- **Book legal hold** (`GET|PUT|DELETE /v1/books/{id}/legal-hold`): stores active hold metadata on
+  the book aggregate (`reason`, `actor`, `set_at`), appends ledger events on set/clear, and feeds the
+  package retention metadata/evidence automatically while a hold is active.
+- **Working-copy Markdown** (`GET /v1/acts/{id}/document/working-copy`): returns `text/markdown`
+  for sealed-document review/editing convenience, with an explicit non-evidentiary warning and the
+  preserved PDF digest. It is gated like document reads, does not mutate the PDF/A bytes, and does
+  not append ledger events.
+- **Office working-copy DOCX** (`GET /v1/acts/{id}/document/office`): returns a deterministic
+  `application/vnd.openxmlformats-officedocument.wordprocessingml.document` artifact for sealed acts
+  that can be opened in office suites. It carries a non-evidentiary warning plus preserved-document
+  metadata; the canonical record remains the stored PDF/A or signed PDF. The route is read-only,
+  uses the document-read gate, and does not append ledger events.
 
 ---
 
 ## 4. Qualified signing
 
 Layered stack under `crates/chancela-signing` (vocabulary + wiring), with the crypto/format/trust
-crates below and `crates/chancela-api/src/signature.rs` on top. **CMD is the only path wired
-end-to-end in the API today.**
+crates below and `crates/chancela-api/src/signature.rs` on top. CMD, CC, and configured CSC
+providers are wired into the API, but live production use still depends on external credentials,
+hardware, and provider onboarding.
 
 ### The two seams
 
@@ -274,9 +316,13 @@ end-to-end in the API today.**
   SCMD service — `GetCertificate` → `CCMovelSign` (PIN, dispatches OTP) → `ValidateOtp` (OTP,
   returns a raw signature). Wired through both a sync `CmdProvider` and the resumable
   `CmdRemoteSource`/`cmd_initiate`+`cmd_confirm` (shared cores, byte-identical behaviour).
-- **CSC — Cloud Signature Consortium QTSP**: **planned, not implemented** (`chancela-csc`, a future
-  peer of `RemoteSigningSource`). No crate exists yet. (Note: the `csc-*` template files in the
-  repo are *Código das Sociedades Comerciais* content, unrelated to the CSC standard.)
+- **CSC — Cloud Signature Consortium QTSP** (`chancela-csc`): generic CSC v2 REST adapter
+  (`oauth2/token`, `credentials/list`, `credentials/info`, `credentials/sendOTP`,
+  `credentials/authorize`, `signatures/signHash`) implementing `RemoteSigningSource`. The API loads
+  configured provider ids from `CHANCELA_CSC_PROVIDERS` and secrets from
+  `CHANCELA_CSC_<PROVIDER>_*`; offline tests use mocked transports. Live QTSP operation is blocked
+  on each provider's sandbox/prod onboarding and credentials. (The `csc-*` template assets are
+  *Codigo das Sociedades Comerciais* content, unrelated to the CSC standard.)
 - **Manual** (handwritten scan) has no provider — `record_manual_signature` yields
   `EvidentiaryLevel::HandwrittenScanned`, never qualified, and must surface `MANUAL_WARNING`.
 
@@ -286,22 +332,42 @@ end-to-end in the API today.**
   `assemble_cades_b`, `validate_cades_b`. Algorithms `RsaPkcs1Sha256` (CC v1 + CMD) and
   `EcdsaP256Sha256` (CC v2). Crypto, not trust decisions.
 - **PAdES** (`chancela-pades`) — signs a PDF by incremental update (`prepare_signature` →
-  caller signs → `embed_signature`; `add_signature_timestamp` upgrades B-B→B-T). **B-B and B-T are
-  implemented; B-LT/B-LTA are phase-2** (`PadesError::LongTermNotImplemented`).
+  caller signs → `embed_signature`; `add_signature_timestamp` upgrades B-B→B-T). B-B and B-T are
+  implemented. The local core can append deterministic `/DSS` + `/VRI` incremental revisions from
+  caller-supplied DER evidence and report OCSP/CRL/certificate/VRI counts and hashes while keeping
+  validation scoped to the signed revision. This is still a technical local core: it does not fetch
+  live revocation data, merge existing DSS, add B-LTA archive timestamps, or make a production B-LT
+  legal sufficiency claim.
 - **TSL** (`chancela-tsl`) — ingests the Portuguese Trusted List (ETSI TS 119 612), validates its
   own XML-DSig on every refresh, and answers `is_qualified_for_esig` →
   `Granted`/`Withdrawn`/`Unknown`. Wired in via the `TrustPolicy` trait (`TslTrustPolicy` real,
   `StaticTrustPolicy` for tests).
+  `crates/chancela-api/src/trust.rs` also exposes a read-only catalog surface:
+  `GET /v1/trust/status`,
+  `/catalog?search=&service_type=&status=&history=&supply_point=&limit=`, `/providers/{id}`, and
+  `/services/{id}`. It parses cached TSL XML from the data directory when present, otherwise the
+  bundled fixture, and reports source, staleness, XML-DSig validation status, provider/service rows,
+  search results, and whether a qualified service is actually trusted by a valid list. The parser
+  preserves localized and duplicate names, malformed raw status dates, revoked-like statuses, supply
+  points, and service history for diagnostics/search; catalog search is token-aware and
+  accent-folded, and provider/detail views expose analysis counts, duplicate-service names, history,
+  raw dates, and supply-point evidence. It does **not** live-fetch the TSL or provide a
+  buy-certificate workflow.
 - **TSA** (`chancela-tsa`) — RFC 3161 timestamp client. Verifies token structure + binding
   (PKIStatus, TSTInfo, imprint/nonce match); the TSA's own signature/chain is deferred to TSL +
-  CAdES. Exposed via `TimestampProvider`.
+  CAdES. Exposed via `TimestampProvider`. The trust API adds
+  `GET /v1/trust/tsa?search=&service_type=&status=&history=&supply_point=&limit=`, a read-only
+  diagnostic surface: configured URL (credential-redacted), RFC 3161 profile, accepted hash, offline
+  fixture probe, timestamp-token metadata from the fixture, TSL validation status, policy analysis,
+  and searchable TSA/QTST records with trust/blocking analysis. It does not send a live timestamp
+  request.
 
 The **trust gate is fail-closed and identical across all paths**: if a `TrustPolicy` is supplied, a
 non-`Granted` issuer is rejected (`SigningError::UntrustedService`) *before* any signature is
 produced — before the card even prompts for a PIN. The qualified path must supply a policy (a
 missing TSL URL is a 422).
 
-### API state machine (`signature.rs`, CMD-only in v1)
+### API state machine (`signature.rs`)
 
 Wire states `"unsigned"` → `"pending"` → `"signed"`:
 
@@ -312,6 +378,33 @@ Wire states `"unsigned"` → `"pending"` → `"signed"`:
   the whole file except `/Contents`, and the embedded signer cert must equal the session's leaf —
   anti-substitution) → persists the signed document + a chained `document.signed` event and deletes
   the pending session in one commit → `signed`.
+- `POST /v1/acts/{id}/signature/cc/sign`: synchronous CC path over an injected or local smartcard
+  provider; the PIN stays at the reader / middleware boundary.
+- `POST /v1/acts/{id}/signature/remote/{provider}/initiate|confirm`: generic two-phase remote path
+  for `cmd` and configured CSC provider ids, using the same pending-session and signed-document
+  persistence discipline.
+- `POST|GET /v1/acts/{id}/signature/external-invites` and
+  `POST /v1/acts/{id}/signature/external-invites/{invite_id}/revoke`: sealed-act invitation
+  tracking only. Create returns a high-entropy token once; the stored record keeps only a SHA-256
+  hash plus a redacted hint, list/revoke never expose the secret, and revoked/expired invitation
+  status is visible. These endpoints do **not** contact an external provider or complete a legal
+  remote signature.
+- `POST /v1/signature/external-invites/lookup`,
+  `POST /v1/signature/external-invites/document/working-copy`, and
+  `POST /v1/signature/external-invites/respond`: unauthenticated token-body envelope for the
+  external landing page. Lookup reveals only safe invite/act/document metadata and a descriptor for
+  the optional working-copy artifact while the token is valid, unexpired, not revoked, and the act is
+  sealed. The working-copy endpoint returns non-canonical Markdown only; it never exposes canonical
+  PDF/A or signed-PDF bytes. Respond records accepted/declined acknowledgement and audit state only.
+  No token material or qualified-signature completion is returned.
+- `GET /v1/signature/providers`, `GET /v1/acts/{id}/signature`, and
+  `GET /v1/acts/{id}/document/signed` expose provider availability, state, and the signed variant.
+  The act signature status response includes a structured `evidence` object that reports the current
+  PAdES level (`Unsigned`, `B-B`, `B-T`, or local `B-LT-local` when timestamped DSS evidence is
+  embedded), timestamp presence, embedded DSS/VRI counts and SHA-256 hashes, and guardrails such as
+  `production_b_lt_status: "not_claimed"`, `legal_b_lt_claimed: false`, and
+  `live_revocation_fetching: false`. This is a technical status surface, not a production B-LT/B-LTA
+  or probative-value claim.
 
 PIN and OTP are transient, read into `Zeroizing`, consumed by their single call, and never
 persisted/logged/echoed.
@@ -327,9 +420,10 @@ What this honestly means: **sealing always succeeds and always produces the unsi
 regardless of the flag. The qualified signature is a distinct post-seal step. The flag only
 controls the finalization **status label** shown — it never blocks the seal. No endpoint sets the
 qualified status directly; it is *derived* from the presence of a validated `Qualified` signed
-variant, so it is unbypassable. The artifact is a **qualified electronic signature**; the code and
-docs make **no "valor probatório" claim** — the vocabulary is evidentiary *level* + trusted-list
-*status*, not probative-value assertions.
+variant, so it is unbypassable. A signature artifact is qualified only through a qualified
+provider/certificate path; the code and docs make **no "valor probatório" claim** and no shortcut
+around legal provider/certificate requirements — the vocabulary is evidentiary *level* +
+trusted-list *status*, not probative-value assertions.
 
 ### Off by default / external credentials
 
@@ -342,8 +436,14 @@ docs make **no "valor probatório" claim** — the vocabulary is evidentiary *le
   `network-tests` feature + `#[ignore]`.
 - **CC production** needs a physical card + reader + Autenticação.gov middleware (module path
   overridable via `CHANCELA_PTEID_PKCS11_MODULE`); real-card tests are `hardware-tests`-gated.
-- **TSL/TSA live fetches are feature-gated** and never run in CI.
-- CSC provider, PAdES B-LT/B-LTA, and XAdES/ASiC formats are **not built**.
+- **CSC production** needs per-QTSP onboarding, `CHANCELA_CSC_PROVIDERS`, each provider base URL,
+  and either client credentials or a user access token in `CHANCELA_CSC_<PROVIDER>_*`. Live tests are
+  `network-tests` + `#[ignore]`.
+- **TSL/TSA live network operations are feature-gated** and never run in CI; the trust UI's TSA
+  diagnostics use an offline fixture probe unless a signing path explicitly requests a timestamp.
+- Live revocation fetching, production PAdES B-LT/B-LTA, B-LTA archive timestamps, and XAdES/ASiC
+  formats are **not built**. Local embedded DSS/VRI append/inspection/reporting exists, but remains
+  technical evidence only.
 
 ---
 
@@ -363,9 +463,12 @@ docs make **no "valor probatório" claim** — the vocabulary is evidentiary *le
   coverage: `Global` covers all; `Entity(E)` covers itself + books it owns; `Book(B)` covers only
   itself. A scoped grant can never satisfy a `Global` check. Unknown book → fail-closed.
 - **Roles as data** (`role.rs`) — `Role { id, name, permission_set, protected }` + a `RoleCatalog`.
-  Four seeded defaults with deterministic ids: **Proprietário/Owner** (all perms, protected,
-  undeletable), **Gestor**, **Signatário**, **Leitor**. Protected roles cannot be edited or deleted.
-- **Delegation** (`delegation.rs`) — one permission at a scope, optional expiry, revocable.
+  Nine seeded defaults with deterministic ids: **Proprietário/Owner** (all perms, protected,
+  undeletable), **Gestor**, **Signatário**, **Leitor**, **Platform Administrator**,
+  **Tenant Administrator**, **Auditor**, **Guest**, and **API Client**. Protected roles cannot be
+  edited or deleted.
+- **Delegation** (`delegation.rs`) — one permission at a scope, `starts_at`, optional expiry,
+  optional `legal_basis` evidence/rationale, revocable.
 - **Effective authority + invariants** (`lib.rs`) — `effective_permissions(...)` builds a
   `ScopedPermissionSet` that **partitions role grants from delegated grants** (load-bearing).
   `has_permission` checks the union; `can_define_role`/`can_assign_role` enforce the subset
@@ -377,7 +480,8 @@ docs make **no "valor probatório" claim** — the vocabulary is evidentiary *le
 
 - **Stores** mirror the `users.json` discipline (atomic tmp+rename, malformed-tolerant, serde
   defaults): `roles.json` → `RoleCatalog` (always forces the canonical locked Owner); `delegations.json`
-  → `StoredDelegation` (frozen model + audit fields, revoked records retained).
+  → `StoredDelegation` (frozen model + `starts_at`/`legal_basis`, audit fields, revoked records
+  retained).
 - **No-lockout migration** (`migrate_roles`): every user with no assignments gets a default in one
   idempotent pass — earliest user → Owner@Global (only if none exists), everyone else →
   Gestor@Global. A newly created first user gets Owner@Global via `bootstrap_assignment`.
@@ -391,6 +495,28 @@ docs make **no "valor probatório" claim** — the vocabulary is evidentiary *le
   guard** parses `router()` and fails the build if any route is unclassified.
 - **Session surface** (`session.rs`): `GET /v1/session/permissions` returns `PermissionGrantView`
   (`permission`, `scope`, `source: role|delegation`) so the web can gate its own UI.
+- **Guest/read-minimal redaction** (`dto.rs`, `registry.rs`): after a read is authorized, callers
+  whose effective authority is only the minimal Guest-style read set receive redacted entity and
+  registry/certidão fields (`<redacted>` or `null` as appropriate). Normal reader roles keep the
+  full view. This is a first privacy slice, not a complete GDPR/DSR implementation.
+- **DSR backend slices** (`privacy.rs`): `GET /v1/privacy/users/{id}/export` is gated by
+  `user.manage@Global` and returns non-secret JSON for one user: export metadata, safe account
+  fields, role assignments, and authored/user-scoped ledger event references. The request lifecycle
+  lives at `POST|GET /v1/privacy/users/{id}/dsr-requests` plus complete/status-transition routes
+  under `/v1/privacy/dsr-requests/{id}`. It records export/rectification/erasure/restriction
+  requests, pending/completed status, timestamps and actors, optional operator reasons, bounded
+  execution evidence (`outcome`, execution actor/time, notes, affected record summaries, retention
+  and legal-basis reviews), data-dir JSON sidecar durability (`privacy-dsr-requests.json`), and
+  chained create/complete audit events. Sensitive credential markers in execution evidence are
+  rejected before mutation/audit. It deliberately excludes password and recovery verifiers, API-key
+  secrets, bearer tokens, and attestation private-key material.
+- **Processor and DPIA registers** (`privacy.rs`): `GET|POST|PATCH /v1/privacy/processors` and
+  `GET|POST|PATCH /v1/privacy/dpias` keep compliance registers under `AppState`, with JSON sidecar
+  durability (`privacy-processors.json`, `privacy-dpias.json`) when a data directory is configured.
+  Authorization accepts either `user.manage@Global` or `settings.manage@Global`; create/update paths
+  enforce strict `risk_level` (`low`, `medium`, `high`, `critical`) and `status` (`draft`, `active`,
+  `under_review`, `retired`) values and append audit ledger events. The current slice is operational
+  bookkeeping only: UI depth, retention automation, and legal review remain product work.
 
 ### Step-up re-auth composition
 
@@ -405,7 +531,9 @@ data start-over. RBAC gates *who*; step-up re-proves *the human at the keyboard*
 
 ## 6. Integration surface
 
-All off by default.
+The `/api/v1` namespace is live for integration clients. MCP remains off by default, but API-key
+lifecycle, persistence, bearer auth, and per-key HTTP rate limiting are now implemented operator
+features.
 
 ### API keys as attenuated principals (`crates/chancela-apikey`)
 
@@ -423,31 +551,58 @@ over-powerful key is impossible to construct. `resolve(...)` then re-intersects 
 the creator's **current** authority (minus meta) → **auto-attenuation**: if the creator is
 downgraded, the key silently loses that authority with no re-issue. Crucially, `resolve` returns a
 `RequestPrincipal` carrying the **same `ScopedPermissionSet` shape a session yields**, so one
-`require_permission_with` gate serves web, integration, and MCP with no bypass. A token-bucket
-**per-key rate limiter** (`ratelimit.rs`, default 60 rpm / 20 burst) rounds it out. Its own
-escalation battery denies every mint/resolve of excess authority.
+`require_permission_with` gate serves web, integration, and MCP with no bypass. The leaf crate also
+defines the token-bucket **per-key rate-limit model** (`ratelimit.rs`, default 60 rpm / 20 burst).
+Its own escalation battery denies every mint/resolve of excess authority.
+
+The API layer (`crates/chancela-api/src/apikeys.rs`) persists keys to `apikeys.json` when a data
+directory is configured and keeps an in-memory registry for pure ephemeral states. Interactive
+`user.manage@Global` sessions can list/create/revoke/rotate keys:
+`GET/POST /v1/api-keys`, `DELETE /v1/api-keys/{id}`,
+`POST /v1/api-keys/{id}/rotate`. Create/rotate return the plaintext secret exactly once; list,
+revocation, persistence, backups, and audit events expose only metadata/prefix/hash-backed records.
+HTTP bearer requests enforce the key's rate-limit policy before resolving the attenuated RBAC
+principal, returning 429 when the token bucket is exhausted. API-key principals cannot manage keys
+and cannot satisfy interactive-session or step-up-only routes.
 
 ### MCP server (`crates/chancela-mcp`)
 
 Off-by-default MCP server exposing platform ops as permission-gated tools. Hand-rolled **JSON-RPC
-2.0 over stdio** (no MCP SDK, no async runtime), protocol version `2025-06-18`. `catalog()` holds 16
-`McpTool` entries (`list_entities`, `create_entity`, `open_book`, `seal_act`, `generate_document`,
-`verify_ledger`, `search_law`, …), each tagged read-only vs write-controlled with a documented
-`permission`. **The MCP crate is an HTTP client of the integration API** (`ApiBridge` attaches
+2.0 over stdio** (no MCP SDK, no async runtime), protocol version `2025-06-18`. `catalog()` holds
+the current tool entries (`list_entities`, `create_entity`, `draft_minutes`,
+`generate_mermaid_graph`, `export_book_archive_package`, `export_act_working_copy`,
+`export_ledger_archive_document`, `trust_status`, `search_trust_catalog`, `search_law`, …), each
+tagged read-only vs write-controlled with a documented `permission`. `draft_minutes` is a
+closed-schema alias to `POST /acts`: it forwards caller-supplied `book_id`, `title`, `channel`,
+optional `retifies`, and optional `actor`, creates a draft only, and does not generate legal text.
+**The MCP crate is an HTTP client of the integration API**
+(`ApiBridge` attaches
 `Authorization: Bearer chk_...`, held privately, never logged) — one RBAC path, authz stays
 server-side. **Structurally off**: `McpConfig::default()` is `enabled = false`; a disabled config is
 refused at construction (`McpError::Disabled`) and `serve_stdio` returns immediately, building no
-transport and reading no stdin. Enabling also requires `CHANCELA_MCP_API_KEY`. Only stdio ships
-(HTTP/SSE reserved). Step-up-only destructive routes are structurally out of reach for a key
-principal (keys can never hold meta, and those routes require step-up credential proof).
+transport and reading no stdin. Enabling also requires `CHANCELA_MCP_API_KEY` and the tenant AI
+gate (`settings.ai.enabled`, surfaced to the MCP process as `CHANCELA_AI_ENABLED`) to be true. Only
+stdio ships (HTTP/SSE reserved). Step-up-only destructive routes are structurally out of reach for a
+key principal (keys can never hold meta, and those routes require step-up credential proof).
 
-### The planned `/api/v1` mount
+### Live `/api/v1` alias and bearer keys
 
-**Not yet mounted.** The live `chancela-api` router serves handlers at `/v1/*`. The `/api/v1` mount +
-the wiring of `chancela-apikey` into the API (an `AppState.api_keys` store, `apikey::resolve` behind
-`require_permission_with`, the rate limiter, and an `integration.enabled` extractor gate) are a
-planned addition. The reusable enforcement seam it targets already exists and is frozen. The MCP
-crate already points at `{base_url}/api/v1` in anticipation.
+`router(state)` builds the canonical `/v1/*` table and mounts the same table under `/api`, so
+`/api/v1/*` is a live alias. Unknown API paths under either namespace return JSON 404s instead of
+falling through to the SPA.
+
+Bearer authentication is wired at the router level:
+
+- `Authorization: Bearer chk_...` is parsed by `apikeys::read_bearer_api_key`.
+- malformed/unknown keys return 401; valid keys with insufficient grants return 403 through the same
+  `require_permission_with` path as sessions.
+- a request may carry a web session or a bearer key, never both.
+- session-only/self-service routes reject API-key principals even when the key has adjacent
+  permissions.
+
+This is enough for the MCP bridge and live integration tests to call `/api/v1` with real bearer
+keys. It still does not make a key an interactive administrator: keys are creator-bounded RBAC
+principals and cannot cross the session/step-up boundary.
 
 ---
 
@@ -521,15 +676,38 @@ hand-authored token stylesheet.
   and 11 machine-quality (pt-BR, da-DK, de-DE, fr-FR, fi-FI, sv-FI, it-IT, nl-NL, pl-PL, sv-SE,
   es-ES). All non-source catalogs code-split via dynamic `import()`; manifest in `registry.ts`.
 - **Settings sub-tabs** (`src/features/settings/SettingsPage.tsx`): a deep-linkable (`?sec=`)
-  segmented nav over 9 sections — aparência (default), identidade, documentos, assinaturas, gestão,
-  utilizadores, integridade (Livros & Integridade), dados (Gestão de Dados), sobre — with debounced
-  **autosave** (`useAutosave.ts`) doing a whole-document `PUT /v1/settings` and live
-  appearance/locale preview.
+  segmented nav over 13 sections — aparência (default), identidade, documentos, assinaturas,
+  gestão, privacidade, utilizadores, chaves API, funções, delegações, integridade (Livros &
+  Integridade), dados (Gestão de Dados), sobre. Settings document sections use debounced
+  **autosave** (`useAutosave.ts`) over `PUT /v1/settings`; API keys, roles, delegations, and
+  privacy processor/DPIA registers are standalone lifecycle surfaces with their own permission gates.
+- **Dashboard** (`src/features/dashboard/DashboardPage.tsx`): metrics, ledger-integrity status,
+  unresolved-compliance warning, profile-derived fiscal-year-aware advisory annual-calendar
+  reminders, and the newest-first recent-ledger feed from `GET /v1/dashboard`. The backend covers
+  encoded presets for SA/Lda-like commercial entities, associations, foundations, and cooperatives,
+  handles missing/invalid fiscal years and leap-day dates deterministically, and suppresses reminders
+  when a recent sealed/archive family-appropriate act already exists.
+- **Arquivo / ledger UI** (`src/features/ledger/`): verifies the ledger, lists events with
+  chain/scope filters, and downloads the same filtered view through
+  `GET /v1/ledger/archive/document` as PDF/A.
+- **Ferramentas trust catalog** (`src/features/ferramentas/TrustCatalogPage.tsx`): read-only TSL
+  explorer over the trust endpoints, with status/source/signature cards, search/filtering,
+  provider/service detail panes, TSA diagnostics, and searchable TSA/QTST records. It reflects
+  cached/fixture status honestly and has no live refresh, live TSA probe, or purchase flow.
+- **Document/signature panels** (`src/features/documents/`, `src/features/signing/`): sealed acts
+  expose canonical PDF/A download plus non-evidentiary Markdown and DOCX working-copy downloads.
+  The signing panel shows technical PAdES evidence status, provider flows, signed-PDF download, and
+  external signer invitation tracking with one-time token display and redacted list/revoke rows.
+  `/assinatura-externa` is the token landing page; it removes the token from the URL after first
+  read, can fetch a token-body non-evidentiary Markdown working copy for sealed acts, and records
+  acknowledgement only. It does not expose canonical PDF/A or signed-PDF downloads and does not
+  complete a legal signature.
 - **Onboarding / auth** (t44): `AuthGate` (`src/features/session/`) routes signed-in → app,
   no-user → `/bem-vindo`, users-but-signed-out → `SignIn`, reading the **unauthenticated** roster to
   avoid a 401 lockout. `OnboardingWizard` is a full-screen gilt sibling route
-  (welcome → org → user → password → key) that creates the first user, signs in, and PUTs the org
-  name + `onboarding.completed`.
+  (welcome → org → user → password → recovery phrase → finish) that creates the first user, signs
+  in, enforces the server password policy from `GET /v1/session/password-policy`, issues the
+  one-time recovery phrase while signed in, and PUTs the org name + `onboarding.completed`.
 - **Animations**: CSS-only in `theme.css`, gated by two kill-switches (`prefers-reduced-motion` and
   `data-safe-mode`) — a 300ms route-enter rise/fade keyed on pathname, an 11s leather "breathe",
   plus tooltip/toast entrances and button/card micro-transitions.
@@ -550,6 +728,10 @@ hand-authored token stylesheet.
   signing stack, recovery) carry in-crate **escalation/abuse batteries** and fail-closed defaults; a
   fail-closed route-coverage guard forces every new API route to be explicitly classified
   Exempt/Session/Gated. Lint is `clippy --all-targets -D warnings`.
+- **CI coverage.** GitHub Actions run Rust format/clippy/tests on Ubuntu, Windows, and macOS; web
+  format/lint/tests/build on Node 20 and 24; composed server E2E on every PR/push; Docker server
+  image builds on main; Playwright browser E2E on main or `run-browser-tests`; and Windows Tauri
+  desktop smoke on main or `run-desktop-tests`. Browser and desktop jobs upload failure artifacts.
 - **Authenticity / no-fabrication.** Two hard rules are enforced in code, not just convention:
   **law text** is never presented unless `Verified` against a complete DRE/EUR-Lex source (Pending
   articles render an explicit unverified marker); **legal thresholds** (quorums, majorities,
@@ -557,11 +739,12 @@ hand-authored token stylesheet.
   `[a definir: …]` marker, never a number. Compliance authority lives in rule packs, never templates
   (WFL-31).
 - **Honest security vocabulary.** The signing subsystem describes itself as producing a **qualified
-  electronic signature** and reasons about evidentiary *level* + trusted-list *status*; it makes no
-  probative-value ("valor probatório") claim. Sealing succeeds independently of signing; the
-  qualified status is *derived*, never asserted.
-- **Off-by-default posture.** The MCP server, the integration `/api/v1` surface (planned), qualified-
-  signing enforcement, and all network fetches (CMD, TSL/TSA, law, CAE, registry) are off or
-  feature-gated by default. Production qualified signing needs external credentials (AMA/SCMD for
-  CMD, a physical card + middleware for CC); flipping the PT law corpus to Verified needs
-  authoritative DRE PDFs.
+  electronic signature** only through the required qualified provider/certificate path and reasons
+  about evidentiary *level* + trusted-list *status*; it makes no probative-value ("valor
+  probatório") claim. Sealing succeeds independently of signing; the qualified status is *derived*,
+  never asserted.
+- **Off-by-default posture.** The MCP server, qualified-signing enforcement, live signing/provider
+  tests, and network fetches (CMD, TSL/TSA, law, CAE, registry) are off or feature-gated by default.
+  The `/api/v1` alias and API-key lifecycle are implemented, but production qualified signing still
+  needs external credentials (AMA/SCMD for CMD, per-QTSP credentials for CSC, a physical card +
+  middleware for CC); flipping the PT law corpus to Verified needs authoritative DRE PDFs.

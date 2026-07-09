@@ -2,7 +2,7 @@
 //! `GET`/`PUT` endpoints and optional file persistence.
 //!
 //! The settings document is the single place where operator-facing configuration lives —
-//! organization identity, document defaults, signing preferences, and appearance. It is
+//! organization identity, document defaults, signing preferences, AI/MCP controls, and appearance. It is
 //! **whole-document** on the wire: `PUT` replaces the entire [`Settings`] (simpler than a
 //! PATCH merge, and the Configurações UI always holds the full form). Every field carries a
 //! serde default so a partial or empty stored document still deserializes cleanly, which is
@@ -27,6 +27,7 @@ use axum::body::Bytes;
 use axum::extract::{Query, State};
 use chancela_cae::{CaeSourceFormat, PreferredOfficialSource};
 use chancela_core::NumberingScheme;
+use chancela_csc::CscSecrets;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -61,6 +62,14 @@ pub struct Settings {
     pub catalog: CatalogSettings,
     /// Signing preferences and trust-service endpoints.
     pub signing: SigningSettings,
+    /// Backend commercial-registry auto-update scheduling. Defaults disabled and non-invasive.
+    #[serde(
+        default,
+        skip_serializing_if = "RegistryAutoUpdateSettings::is_default"
+    )]
+    pub registry_auto_update: RegistryAutoUpdateSettings,
+    /// Tenant-level AI/MCP controls. Defaults off so older settings documents do not enable AI.
+    pub ai: AiSettings,
     /// Purely cosmetic front-end preferences (theme, leather texture).
     pub appearance: AppearanceSettings,
     /// First-use onboarding state (plan t29 §4.1): the authoritative "is the app set up?" signal.
@@ -75,10 +84,180 @@ impl Default for Settings {
             documents: DocumentSettings::default(),
             catalog: CatalogSettings::default(),
             signing: SigningSettings::default(),
+            registry_auto_update: RegistryAutoUpdateSettings::default(),
+            ai: AiSettings::default(),
             appearance: AppearanceSettings::default(),
             onboarding: OnboardingSettings::default(),
         }
     }
+}
+
+/// Commercial-registry auto-update controls.
+///
+/// This is only scheduling/state policy. The full certidao access code is still not stored in
+/// settings or registry provenance, so a worker can plan due records safely but cannot invent a
+/// live refresh without a future secure code source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RegistryAutoUpdateSettings {
+    /// Master switch. Default `false`: no background or worker-triggered update is due.
+    pub enabled: bool,
+    /// Simple backend cadence. It is advisory for the worker scheduler; handlers still re-check
+    /// stale/backoff state before accepting work.
+    pub cadence: RegistryAutoUpdateCadence,
+    /// How old an imported extract may be before it is considered stale.
+    pub stale_threshold_hours: u16,
+    /// First retry/backoff window after a failed or manual-required attempt.
+    pub min_backoff_minutes: u16,
+    /// Maximum retry/backoff window.
+    pub max_backoff_minutes: u16,
+    /// Hard cap for a single due-plan slice.
+    pub max_attempts_per_run: u16,
+    /// Defaults applied to entities that do not yet have a per-entity override.
+    pub entity_defaults: RegistryAutoUpdateEntityDefaults,
+}
+
+impl Default for RegistryAutoUpdateSettings {
+    fn default() -> Self {
+        RegistryAutoUpdateSettings {
+            enabled: false,
+            cadence: RegistryAutoUpdateCadence::default(),
+            stale_threshold_hours: 24 * 30,
+            min_backoff_minutes: 60,
+            max_backoff_minutes: 24 * 60,
+            max_attempts_per_run: 10,
+            entity_defaults: RegistryAutoUpdateEntityDefaults::default(),
+        }
+    }
+}
+
+impl RegistryAutoUpdateSettings {
+    pub(crate) fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        self.cadence.validate()?;
+        if !(1..=24 * 365).contains(&self.stale_threshold_hours) {
+            return Err(ApiError::Unprocessable(format!(
+                "registry_auto_update.stale_threshold_hours must be between 1 and 8760, got {}",
+                self.stale_threshold_hours
+            )));
+        }
+        if !(1..=7 * 24 * 60).contains(&self.min_backoff_minutes) {
+            return Err(ApiError::Unprocessable(format!(
+                "registry_auto_update.min_backoff_minutes must be between 1 and 10080, got {}",
+                self.min_backoff_minutes
+            )));
+        }
+        if !(1..=7 * 24 * 60).contains(&self.max_backoff_minutes) {
+            return Err(ApiError::Unprocessable(format!(
+                "registry_auto_update.max_backoff_minutes must be between 1 and 10080, got {}",
+                self.max_backoff_minutes
+            )));
+        }
+        if self.min_backoff_minutes > self.max_backoff_minutes {
+            return Err(ApiError::Unprocessable(
+                "registry_auto_update.min_backoff_minutes must be <= max_backoff_minutes"
+                    .to_owned(),
+            ));
+        }
+        if !(1..=100).contains(&self.max_attempts_per_run) {
+            return Err(ApiError::Unprocessable(format!(
+                "registry_auto_update.max_attempts_per_run must be between 1 and 100, got {}",
+                self.max_attempts_per_run
+            )));
+        }
+        for (i, profile) in self.entity_defaults.enabled_profiles.iter().enumerate() {
+            let trimmed = profile.trim();
+            if trimmed.is_empty() || trimmed.len() > 64 || trimmed.chars().any(char::is_control) {
+                return Err(ApiError::Unprocessable(format!(
+                    "registry_auto_update.entity_defaults.enabled_profiles[{i}] must be a non-empty profile name up to 64 non-control characters"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Simple cadence options, intentionally much smaller than cron.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RegistryAutoUpdateCadence {
+    /// Run at most once per N hours.
+    IntervalHours { hours: u16 },
+    /// Run once per UTC day near `hour_utc`.
+    Daily { hour_utc: u8 },
+    /// Run once per UTC week near `weekday` + `hour_utc`.
+    Weekly {
+        weekday: RegistryAutoUpdateWeekday,
+        hour_utc: u8,
+    },
+}
+
+impl Default for RegistryAutoUpdateCadence {
+    fn default() -> Self {
+        RegistryAutoUpdateCadence::IntervalHours { hours: 24 }
+    }
+}
+
+impl RegistryAutoUpdateCadence {
+    fn validate(&self) -> Result<(), ApiError> {
+        match self {
+            RegistryAutoUpdateCadence::IntervalHours { hours } => {
+                if !(1..=24 * 30).contains(hours) {
+                    return Err(ApiError::Unprocessable(format!(
+                        "registry_auto_update.cadence.hours must be between 1 and 720, got {hours}"
+                    )));
+                }
+            }
+            RegistryAutoUpdateCadence::Daily { hour_utc }
+            | RegistryAutoUpdateCadence::Weekly { hour_utc, .. } => {
+                if *hour_utc > 23 {
+                    return Err(ApiError::Unprocessable(format!(
+                        "registry_auto_update.cadence.hour_utc must be between 0 and 23, got {hour_utc}"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Weekday for the weekly registry auto-update cadence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RegistryAutoUpdateWeekday {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
+}
+
+/// Defaults applied when an entity has no explicit worker state override.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RegistryAutoUpdateEntityDefaults {
+    /// Whether entities are auto-update candidates by default. Default `false`.
+    pub enabled: bool,
+    /// Optional entity-profile allow-list. Empty means every entity profile is eligible when
+    /// `enabled` is true. The current backend profile is the entity kind name.
+    pub enabled_profiles: Vec<String>,
+}
+
+/// Tenant-level AI/MCP controls.
+///
+/// Additive and serde-defaulted: an older `settings.json` that omits this section deserializes with
+/// AI disabled. This is the operator-facing tenant switch; MCP's stdio process remains separately
+/// gated by its local environment config and does not read live settings over the network.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AiSettings {
+    /// Whether tenant-level AI/MCP functionality is enabled. Default `false`.
+    pub enabled: bool,
 }
 
 /// First-use onboarding flag (plan t29 §4.1). Additive, serde-defaulted, no `schema_version`
@@ -248,6 +427,10 @@ pub struct SigningSettings {
     /// ApplicationId secret material and the field-encryption certificate PEM come from the
     /// environment (`CHANCELA_CMD_*`), never this echoed settings document.
     pub cmd: SigningCmdSettings,
+    /// Read-only provider-mode metadata for the settings UI. This is stamped server-side from
+    /// non-secret config on GET/PUT; missing or stale client values are ignored.
+    #[serde(default = "default_signing_provider_metadata")]
+    pub providers: Vec<SigningProviderMetadata>,
 }
 
 impl Default for SigningSettings {
@@ -258,8 +441,79 @@ impl Default for SigningSettings {
             tsl_url: Some(DEFAULT_PT_TSL_URL.to_owned()),
             require_qualified_for_seal: false,
             cmd: SigningCmdSettings::default(),
+            providers: default_signing_provider_metadata(),
         }
     }
+}
+
+/// Non-secret provider-mode status surfaced in Settings -> Assinaturas.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SigningProviderMetadata {
+    /// Stable mode/provider id (`cmd`, `cc`, `csc_qtsp`, `soft_pkcs12`, or a CSC provider id).
+    pub id: String,
+    /// Broad provider mode (`CMD`, `CC`, `CSC_QTSP`, `LOCAL_PKCS12`).
+    pub mode: SigningProviderMode,
+    /// Human-readable label.
+    pub label: String,
+    /// Whether non-secret configuration/capability is present.
+    pub configured: bool,
+    /// Whether this mode is blocked for production use with the current configuration.
+    pub production_blocked: bool,
+    /// Whether this mode only works with a local desktop/API process.
+    pub local_only: bool,
+    /// Non-secret operational note for settings screens.
+    pub note: String,
+}
+
+/// Signing-provider mode names. Kept screaming-snake to read as metadata, not domain enum variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SigningProviderMode {
+    Cmd,
+    Cc,
+    CscQtsp,
+    LocalPkcs12,
+}
+
+fn default_signing_provider_metadata() -> Vec<SigningProviderMetadata> {
+    vec![
+        SigningProviderMetadata {
+            id: "cmd".to_owned(),
+            mode: SigningProviderMode::Cmd,
+            label: "Chave Móvel Digital (CMD/SCMD)".to_owned(),
+            configured: false,
+            production_blocked: true,
+            local_only: false,
+            note: "Missing AMA ApplicationId/certificate; defaults to pre-production.".to_owned(),
+        },
+        SigningProviderMetadata {
+            id: "cc".to_owned(),
+            mode: SigningProviderMode::Cc,
+            label: "Cartão de Cidadão".to_owned(),
+            configured: false,
+            production_blocked: false,
+            local_only: true,
+            note: "Requires a co-located desktop process and card reader; no PIN is stored.".to_owned(),
+        },
+        SigningProviderMetadata {
+            id: "csc_qtsp".to_owned(),
+            mode: SigningProviderMode::CscQtsp,
+            label: "CSC/QTSP remote provider".to_owned(),
+            configured: false,
+            production_blocked: true,
+            local_only: false,
+            note: "No CSC/QTSP provider is configured in the environment.".to_owned(),
+        },
+        SigningProviderMetadata {
+            id: "soft_pkcs12".to_owned(),
+            mode: SigningProviderMode::LocalPkcs12,
+            label: "Local soft certificate (PKCS#12/PFX)".to_owned(),
+            configured: false,
+            production_blocked: true,
+            local_only: true,
+            note: "Local-only test/operator material; private key and passphrase are never captured in settings.".to_owned(),
+        },
+    ]
 }
 
 /// Chave Móvel Digital signing configuration surfaced in the settings document (t57 F1).
@@ -407,7 +661,7 @@ impl Settings {
     /// Validate the ranges and URL shapes serde cannot express on its own. Enum and locale
     /// values are already validated by deserialization; this covers `texture_intensity`'s
     /// numeric range and the trust-service URLs. Returns `422` on any violation.
-    fn validate(&self) -> Result<(), ApiError> {
+    pub(crate) fn validate(&self) -> Result<(), ApiError> {
         if self.appearance.texture_intensity > 100 {
             return Err(ApiError::Unprocessable(format!(
                 "appearance.texture_intensity must be between 0 and 100, got {}",
@@ -452,6 +706,7 @@ impl Settings {
                 }
             }
         }
+        self.registry_auto_update.validate()?;
         Ok(())
     }
 }
@@ -467,6 +722,102 @@ fn is_http_url(s: &str) -> bool {
         Some(rest) => !rest.is_empty(),
         None => false,
     }
+}
+
+fn stamp_signing_provider_metadata(state: &AppState, settings: &mut Settings) {
+    let cmd_configured = settings
+        .signing
+        .cmd
+        .application_id
+        .as_deref()
+        .is_some_and(|id| !id.trim().is_empty());
+    let cmd_prod = settings.signing.cmd.env == CmdEnvSetting::Prod;
+    let cmd_production_blocked =
+        !cmd_configured || !cmd_prod || !settings.signing.cmd.ama_cert_configured;
+
+    let mut providers = vec![
+        SigningProviderMetadata {
+            id: "cmd".to_owned(),
+            mode: SigningProviderMode::Cmd,
+            label: "Chave Móvel Digital (CMD/SCMD)".to_owned(),
+            configured: cmd_configured,
+            production_blocked: cmd_production_blocked,
+            local_only: false,
+            note: if cmd_configured {
+                if cmd_production_blocked {
+                    "Configured for non-production or missing the AMA production certificate."
+                        .to_owned()
+                } else {
+                    "Configured for AMA production. PIN/OTP are never stored.".to_owned()
+                }
+            } else {
+                "Missing AMA ApplicationId/certificate; defaults to pre-production.".to_owned()
+            },
+        },
+        SigningProviderMetadata {
+            id: "cc".to_owned(),
+            mode: SigningProviderMode::Cc,
+            label: "Cartão de Cidadão".to_owned(),
+            configured: state.local_signing,
+            production_blocked: false,
+            local_only: true,
+            note: if state.local_signing {
+                "Local desktop signing is available; PIN entry stays at the card reader.".to_owned()
+            } else {
+                "Requires a co-located desktop process and card reader; no PIN is stored."
+                    .to_owned()
+            },
+        },
+    ];
+
+    if state.csc_providers.is_empty() {
+        providers.push(SigningProviderMetadata {
+            id: "csc_qtsp".to_owned(),
+            mode: SigningProviderMode::CscQtsp,
+            label: "CSC/QTSP remote provider".to_owned(),
+            configured: false,
+            production_blocked: true,
+            local_only: false,
+            note: "No CSC/QTSP provider is configured in the environment.".to_owned(),
+        });
+    } else {
+        let injected_transport = state.csc_transport.is_some();
+        for cfg in state.csc_providers.iter() {
+            let configured = injected_transport || CscSecrets::is_configured(&cfg.provider_id);
+            providers.push(SigningProviderMetadata {
+                id: cfg.provider_id.clone(),
+                mode: SigningProviderMode::CscQtsp,
+                label: cfg.display_name.clone(),
+                configured,
+                production_blocked: !configured || cfg.sandbox,
+                local_only: false,
+                note: if configured {
+                    if cfg.sandbox {
+                        "CSC/QTSP provider is configured in sandbox mode.".to_owned()
+                    } else {
+                        "CSC/QTSP provider is configured; secrets stay in the environment."
+                            .to_owned()
+                    }
+                } else {
+                    "CSC/QTSP provider metadata exists, but runtime credentials are missing."
+                        .to_owned()
+                },
+            });
+        }
+    }
+
+    providers.push(SigningProviderMetadata {
+        id: "soft_pkcs12".to_owned(),
+        mode: SigningProviderMode::LocalPkcs12,
+        label: "Local soft certificate (PKCS#12/PFX)".to_owned(),
+        configured: false,
+        production_blocked: true,
+        local_only: true,
+        note: "Local-only test/operator material; private key and passphrase are never captured in settings."
+            .to_owned(),
+    });
+
+    settings.signing.providers = providers;
 }
 
 // --- Persistence --------------------------------------------------------------------------
@@ -542,7 +893,9 @@ pub async fn get_settings(
 ) -> Result<Json<Settings>, ApiError> {
     // RBAC (t64-E3): reading settings is `settings.read` at Global.
     require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
-    Ok(Json(state.settings.read().await.clone()))
+    let mut settings = state.settings.read().await.clone();
+    stamp_signing_provider_metadata(&state, &mut settings);
+    Ok(Json(settings))
 }
 
 /// `PUT /v1/settings` — replace the whole settings document.
@@ -573,6 +926,7 @@ pub async fn put_settings(
         .map_err(|e| ApiError::Unprocessable(format!("invalid settings document: {e}")))?;
     // Always stamp the current schema version regardless of what the client sent.
     settings.schema_version = SETTINGS_SCHEMA_VERSION;
+    stamp_signing_provider_metadata(&state, &mut settings);
     settings.validate()?;
 
     // Persist before we acknowledge success, so we never report a write we did not make.

@@ -20,9 +20,9 @@
 //! ## Layering
 //!
 //! This crate owns PDF mechanics (incremental update, ByteRange arithmetic, `/Sig` dictionary,
-//! CMS embedding) and delegates all CMS assembly and cryptography to `chancela-cades`, and all
-//! RFC 3161 timestamp production to `chancela-tsa`. `chancela-signing` (t4-e8) wires the callbacks,
-//! selecting a signer provider and a TSA.
+//! CMS embedding, and caller-supplied DSS/VRI append mechanics) and delegates all CMS assembly and
+//! cryptography to `chancela-cades`, and all RFC 3161 timestamp production to `chancela-tsa`.
+//! `chancela-signing` (t4-e8) wires the callbacks, selecting a signer provider and a TSA.
 //!
 //! ## Input requirements (phase-1)
 //!
@@ -32,6 +32,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod dss;
 pub mod error;
 pub mod sign;
 pub mod validate;
@@ -41,6 +42,7 @@ mod pdf;
 #[cfg(test)]
 mod tests;
 
+pub use dss::{DssEvidence, DssReport, add_dss_revision, inspect_dss};
 pub use error::PadesError;
 pub use sign::{
     MAX_CONTENTS_BYTES, PreparedSignature, SignOptions, add_signature_timestamp, embed_signature,

@@ -1,0 +1,2545 @@
+//! Backend-first privacy / compliance endpoints.
+//!
+//! DSR exports are deliberately read-only and non-secret: they reuse safe user/accountability state
+//! and never serialize stored credential material. DSR requests, processor records, and DPIA
+//! records are kept in memory for ephemeral states and written through to JSON sidecars when a data
+//! directory is configured; each lifecycle transition is still chained into the ledger.
+
+use std::collections::HashMap;
+use std::path::{Path as FsPath, PathBuf};
+
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use chancela_authz::{Permission, RoleId, Scope};
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
+use uuid::Uuid;
+
+use crate::AppState;
+use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::authz::{authorizer, forbidden, require_permission};
+use crate::dto::LedgerEventView;
+use crate::error::ApiError;
+use crate::try_append_event;
+use crate::users::{User, UserId, UserView};
+
+const FORMAT_VERSION: u32 = 1;
+const DSR_CREATED_KIND: &str = "privacy.dsr.request.created";
+const DSR_COMPLETED_KIND: &str = "privacy.dsr.request.completed";
+const PROCESSOR_CREATED_KIND: &str = "privacy.processor.created";
+const PROCESSOR_UPDATED_KIND: &str = "privacy.processor.updated";
+const DPIA_CREATED_KIND: &str = "privacy.dpia.created";
+const DPIA_UPDATED_KIND: &str = "privacy.dpia.updated";
+const RETENTION_POLICY_CREATED_KIND: &str = "privacy.retention.policy.created";
+const RETENTION_POLICY_UPDATED_KIND: &str = "privacy.retention.policy.updated";
+const RETENTION_EXECUTION_REQUESTED_KIND: &str = "privacy.retention.execution.requested";
+pub(crate) const PROCESSORS_FILE: &str = "privacy-processors.json";
+pub(crate) const DPIAS_FILE: &str = "privacy-dpias.json";
+pub(crate) const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
+pub(crate) const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
+const MAX_DSR_EXECUTION_NOTE_CHARS: usize = 4096;
+const MAX_DSR_REVIEW_CHARS: usize = 2048;
+const MAX_DSR_AFFECTED_RECORDS: usize = 32;
+const MAX_DSR_AFFECTED_FIELD_CHARS: usize = 128;
+const MAX_DSR_AFFECTED_RECORD_COUNT: u64 = 1_000_000_000;
+const MAX_RETENTION_NAME_CHARS: usize = 160;
+const MAX_RETENTION_FIELD_CHARS: usize = 128;
+const MAX_RETENTION_TEXT_CHARS: usize = 4096;
+const MAX_RETENTION_EXECUTION_EVIDENCE_ITEMS: usize = 16;
+const MAX_RETENTION_EXECUTION_EVIDENCE_LABEL_CHARS: usize = 64;
+const SENSITIVE_EVIDENCE_MARKERS: &[&str] = &[
+    "password_hash",
+    "recovery_hash",
+    "recovery_phrase",
+    "api_key_secret",
+    "bearer_token",
+    "attestation_private_key",
+];
+
+#[derive(Serialize)]
+pub struct PrivacyExport {
+    pub exported_at: String,
+    pub scope: String,
+    pub format_version: u32,
+    pub redaction_notes: Vec<&'static str>,
+    pub exclusions: Vec<&'static str>,
+    pub user: ExportUser,
+    pub ledger_event_refs: Vec<LedgerEventView>,
+}
+
+#[derive(Serialize)]
+pub struct ExportUser {
+    #[serde(flatten)]
+    pub profile: UserView,
+    pub role_assignments: Vec<RoleAssignmentExport>,
+}
+
+#[derive(Serialize)]
+pub struct RoleAssignmentExport {
+    pub role_id: String,
+    pub scope: Scope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role_name: Option<String>,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DsrRequestId(pub Uuid);
+
+impl std::fmt::Display for DsrRequestId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DsrRequestType {
+    Export,
+    Rectification,
+    Erasure,
+    Restriction,
+}
+
+impl DsrRequestType {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "export" => Ok(Self::Export),
+            "rectification" => Ok(Self::Rectification),
+            "erasure" => Ok(Self::Erasure),
+            "restriction" => Ok(Self::Restriction),
+            _ => Err(ApiError::Unprocessable(
+                "invalid DSR request_type; expected export, rectification, erasure, or restriction"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DsrRequestStatus {
+    Pending,
+    Completed,
+}
+
+impl DsrRequestStatus {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "pending" => Ok(Self::Pending),
+            "completed" => Ok(Self::Completed),
+            _ => Err(ApiError::Unprocessable(
+                "invalid DSR status; expected pending or completed".to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DsrExecutionOutcome {
+    Fulfilled,
+    PartiallyFulfilled,
+    Rejected,
+    NoActionRequired,
+}
+
+impl DsrExecutionOutcome {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "fulfilled" => Ok(Self::Fulfilled),
+            "partially_fulfilled" => Ok(Self::PartiallyFulfilled),
+            "rejected" => Ok(Self::Rejected),
+            "no_action_required" => Ok(Self::NoActionRequired),
+            _ => Err(ApiError::Unprocessable(
+                "invalid DSR execution outcome; expected fulfilled, partially_fulfilled, rejected, or no_action_required"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DsrAffectedRecordSummary {
+    pub collection: String,
+    pub action: String,
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DsrRequest {
+    pub id: DsrRequestId,
+    pub subject_user_id: UserId,
+    pub request_type: DsrRequestType,
+    pub status: DsrRequestStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<DsrExecutionOutcome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_notes: Option<String>,
+    #[serde(default)]
+    pub affected_records: Vec<DsrAffectedRecordSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retention_review: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legal_basis_review: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct DsrRequestView {
+    pub id: String,
+    pub subject_user_id: String,
+    pub request_type: DsrRequestType,
+    pub status: DsrRequestStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<DsrExecutionOutcome>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executed_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_notes: Option<String>,
+    pub affected_records: Vec<DsrAffectedRecordSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_review: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legal_basis_review: Option<String>,
+}
+
+impl From<&DsrRequest> for DsrRequestView {
+    fn from(req: &DsrRequest) -> Self {
+        Self {
+            id: req.id.to_string(),
+            subject_user_id: req.subject_user_id.to_string(),
+            request_type: req.request_type,
+            status: req.status,
+            reason: req.reason.clone(),
+            created_at: req.created_at.clone(),
+            created_by: req.created_by.clone(),
+            completed_at: req.completed_at.clone(),
+            completed_by: req.completed_by.clone(),
+            completion_reason: req.completion_reason.clone(),
+            outcome: req.outcome,
+            executed_at: req.executed_at.clone(),
+            executed_by: req.executed_by.clone(),
+            execution_notes: req.execution_notes.clone(),
+            affected_records: req.affected_records.clone(),
+            retention_review: req.retention_review.clone(),
+            legal_basis_review: req.legal_basis_review.clone(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CreateDsrRequest {
+    #[serde(default, alias = "type")]
+    pub request_type: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PatchDsrRequest {
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default, alias = "completion_reason")]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub outcome: Option<String>,
+    #[serde(default)]
+    pub execution_notes: Option<String>,
+    #[serde(default)]
+    pub affected_records: Option<Vec<DsrAffectedRecordInput>>,
+    #[serde(default)]
+    pub retention_review: Option<String>,
+    #[serde(default)]
+    pub legal_basis_review: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+pub struct CompleteDsrRequest {
+    #[serde(default, alias = "completion_reason")]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub outcome: Option<String>,
+    #[serde(default)]
+    pub execution_notes: Option<String>,
+    #[serde(default)]
+    pub affected_records: Option<Vec<DsrAffectedRecordInput>>,
+    #[serde(default)]
+    pub retention_review: Option<String>,
+    #[serde(default)]
+    pub legal_basis_review: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DsrAffectedRecordInput {
+    #[serde(default)]
+    pub collection: Option<String>,
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub count: Option<u64>,
+}
+
+struct DsrExecutionInput {
+    completion_reason: Option<String>,
+    outcome: Option<String>,
+    execution_notes: Option<String>,
+    affected_records: Option<Vec<DsrAffectedRecordInput>>,
+    retention_review: Option<String>,
+    legal_basis_review: Option<String>,
+}
+
+impl From<CompleteDsrRequest> for DsrExecutionInput {
+    fn from(req: CompleteDsrRequest) -> Self {
+        Self {
+            completion_reason: req.reason,
+            outcome: req.outcome,
+            execution_notes: req.execution_notes,
+            affected_records: req.affected_records,
+            retention_review: req.retention_review,
+            legal_basis_review: req.legal_basis_review,
+        }
+    }
+}
+
+impl From<PatchDsrRequest> for DsrExecutionInput {
+    fn from(req: PatchDsrRequest) -> Self {
+        Self {
+            completion_reason: req.reason,
+            outcome: req.outcome,
+            execution_notes: req.execution_notes,
+            affected_records: req.affected_records,
+            retention_review: req.retention_review,
+            legal_basis_review: req.legal_basis_review,
+        }
+    }
+}
+
+struct ValidatedDsrExecution {
+    completion_reason: Option<String>,
+    outcome: DsrExecutionOutcome,
+    execution_notes: Option<String>,
+    affected_records: Vec<DsrAffectedRecordSummary>,
+    retention_review: Option<String>,
+    legal_basis_review: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ProcessorRecordId(pub Uuid);
+
+impl std::fmt::Display for ProcessorRecordId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DpiaRecordId(pub Uuid);
+
+impl std::fmt::Display for DpiaRecordId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrivacyRiskLevel {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+impl PrivacyRiskLevel {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "low" => Ok(Self::Low),
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            "critical" => Ok(Self::Critical),
+            _ => Err(ApiError::Unprocessable(
+                "invalid privacy risk_level; expected low, medium, high, or critical".to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrivacyRecordStatus {
+    Draft,
+    Active,
+    UnderReview,
+    Retired,
+}
+
+impl PrivacyRecordStatus {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "draft" => Ok(Self::Draft),
+            "active" => Ok(Self::Active),
+            "under_review" => Ok(Self::UnderReview),
+            "retired" => Ok(Self::Retired),
+            _ => Err(ApiError::Unprocessable(
+                "invalid privacy status; expected draft, active, under_review, or retired"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcessorRecord {
+    pub id: ProcessorRecordId,
+    pub name: String,
+    pub purpose: String,
+    pub legal_basis: String,
+    #[serde(default)]
+    pub data_categories: Vec<String>,
+    #[serde(default)]
+    pub subprocessors: Vec<String>,
+    pub risk_level: PrivacyRiskLevel,
+    pub status: PrivacyRecordStatus,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DpiaRecord {
+    pub id: DpiaRecordId,
+    pub title: String,
+    pub purpose: String,
+    pub legal_basis: String,
+    #[serde(default)]
+    pub data_categories: Vec<String>,
+    #[serde(default)]
+    pub subprocessors: Vec<String>,
+    pub risk_level: PrivacyRiskLevel,
+    pub status: PrivacyRecordStatus,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+#[derive(Serialize)]
+pub struct ProcessorRecordView {
+    pub id: String,
+    pub name: String,
+    pub purpose: String,
+    pub legal_basis: String,
+    pub data_categories: Vec<String>,
+    pub subprocessors: Vec<String>,
+    pub risk_level: PrivacyRiskLevel,
+    pub status: PrivacyRecordStatus,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+impl From<&ProcessorRecord> for ProcessorRecordView {
+    fn from(record: &ProcessorRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            name: record.name.clone(),
+            purpose: record.purpose.clone(),
+            legal_basis: record.legal_basis.clone(),
+            data_categories: record.data_categories.clone(),
+            subprocessors: record.subprocessors.clone(),
+            risk_level: record.risk_level,
+            status: record.status,
+            created_at: record.created_at.clone(),
+            created_by: record.created_by.clone(),
+            updated_at: record.updated_at.clone(),
+            updated_by: record.updated_by.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct DpiaRecordView {
+    pub id: String,
+    pub title: String,
+    pub purpose: String,
+    pub legal_basis: String,
+    pub data_categories: Vec<String>,
+    pub subprocessors: Vec<String>,
+    pub risk_level: PrivacyRiskLevel,
+    pub status: PrivacyRecordStatus,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+impl From<&DpiaRecord> for DpiaRecordView {
+    fn from(record: &DpiaRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            title: record.title.clone(),
+            purpose: record.purpose.clone(),
+            legal_basis: record.legal_basis.clone(),
+            data_categories: record.data_categories.clone(),
+            subprocessors: record.subprocessors.clone(),
+            risk_level: record.risk_level,
+            status: record.status,
+            created_at: record.created_at.clone(),
+            created_by: record.created_by.clone(),
+            updated_at: record.updated_at.clone(),
+            updated_by: record.updated_by.clone(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CreateProcessorRecord {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
+    pub legal_basis: Option<String>,
+    #[serde(default)]
+    pub data_categories: Vec<String>,
+    #[serde(default)]
+    pub subprocessors: Vec<String>,
+    #[serde(default)]
+    pub risk_level: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PatchProcessorRecord {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
+    pub legal_basis: Option<String>,
+    #[serde(default)]
+    pub data_categories: Option<Vec<String>>,
+    #[serde(default)]
+    pub subprocessors: Option<Vec<String>>,
+    #[serde(default)]
+    pub risk_level: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateDpiaRecord {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
+    pub legal_basis: Option<String>,
+    #[serde(default)]
+    pub data_categories: Vec<String>,
+    #[serde(default)]
+    pub subprocessors: Vec<String>,
+    #[serde(default)]
+    pub risk_level: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PatchDpiaRecord {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
+    pub legal_basis: Option<String>,
+    #[serde(default)]
+    pub data_categories: Option<Vec<String>>,
+    #[serde(default)]
+    pub subprocessors: Option<Vec<String>>,
+    #[serde(default)]
+    pub risk_level: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RetentionPolicyId(pub Uuid);
+
+impl std::fmt::Display for RetentionPolicyId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionPolicyStatus {
+    Draft,
+    Active,
+    Suspended,
+    Retired,
+}
+
+impl RetentionPolicyStatus {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "draft" => Ok(Self::Draft),
+            "active" => Ok(Self::Active),
+            "suspended" => Ok(Self::Suspended),
+            "retired" => Ok(Self::Retired),
+            _ => Err(ApiError::Unprocessable(
+                "invalid retention policy status; expected draft, active, suspended, or retired"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionDisposalAction {
+    Review,
+    Archive,
+    Anonymize,
+    Delete,
+    LegalHold,
+    NoAction,
+}
+
+impl RetentionDisposalAction {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "review" => Ok(Self::Review),
+            "archive" => Ok(Self::Archive),
+            "anonymize" | "anonymise" => Ok(Self::Anonymize),
+            "delete" => Ok(Self::Delete),
+            "legal_hold" => Ok(Self::LegalHold),
+            "no_action" | "none" => Ok(Self::NoAction),
+            _ => Err(ApiError::Unprocessable(
+                "invalid disposal_action; expected review, archive, anonymize, delete, legal_hold, or no_action"
+                    .to_owned(),
+            )),
+        }
+    }
+
+    fn is_destructive(self) -> bool {
+        matches!(self, Self::Delete | Self::Anonymize)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetentionPolicyRecord {
+    pub id: RetentionPolicyId,
+    pub name: String,
+    pub scope: String,
+    pub category: String,
+    pub schedule_id: String,
+    pub retention_period: String,
+    pub legal_basis: String,
+    pub disposal_action: RetentionDisposalAction,
+    pub status: RetentionPolicyStatus,
+    pub active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+#[derive(Serialize)]
+pub struct RetentionPolicyView {
+    pub id: String,
+    pub name: String,
+    pub scope: String,
+    pub category: String,
+    pub schedule_id: String,
+    pub retention_period: String,
+    pub legal_basis: String,
+    pub disposal_action: RetentionDisposalAction,
+    pub status: RetentionPolicyStatus,
+    pub active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+impl From<&RetentionPolicyRecord> for RetentionPolicyView {
+    fn from(record: &RetentionPolicyRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            name: record.name.clone(),
+            scope: record.scope.clone(),
+            category: record.category.clone(),
+            schedule_id: record.schedule_id.clone(),
+            retention_period: record.retention_period.clone(),
+            legal_basis: record.legal_basis.clone(),
+            disposal_action: record.disposal_action,
+            status: record.status,
+            active: record.active,
+            notes: record.notes.clone(),
+            created_at: record.created_at.clone(),
+            created_by: record.created_by.clone(),
+            updated_at: record.updated_at.clone(),
+            updated_by: record.updated_by.clone(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CreateRetentionPolicy {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub schedule_id: Option<String>,
+    #[serde(default)]
+    pub retention_period: Option<String>,
+    #[serde(default)]
+    pub legal_basis: Option<String>,
+    #[serde(default)]
+    pub disposal_action: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub active: Option<bool>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PatchRetentionPolicy {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub schedule_id: Option<String>,
+    #[serde(default)]
+    pub retention_period: Option<String>,
+    #[serde(default)]
+    pub legal_basis: Option<String>,
+    #[serde(default)]
+    pub disposal_action: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub active: Option<bool>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RetentionDryRunRequest {
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub record_id: Option<String>,
+    #[serde(default)]
+    pub execution_request: Option<RetentionExecutionRequest>,
+}
+
+#[derive(Deserialize)]
+pub struct RetentionExecutionRequest {
+    #[serde(default)]
+    pub requested_policy_id: Option<String>,
+    #[serde(default)]
+    pub operator_notes: Option<String>,
+    #[serde(default)]
+    pub evidence: Option<Vec<RetentionExecutionEvidenceInput>>,
+}
+
+#[derive(Deserialize)]
+pub struct RetentionExecutionEvidenceInput {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct RetentionDryRunReport {
+    pub mode: &'static str,
+    pub execution_supported: bool,
+    pub destructive_execution_supported: bool,
+    pub candidate: RetentionDryRunCandidate,
+    pub matched_count: usize,
+    pub matches: Vec<RetentionDryRunMatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_record: Option<RetentionExecutionRecord>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct RetentionDryRunCandidate {
+    pub scope: String,
+    pub category: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_id: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct RetentionDryRunMatch {
+    pub policy_id: String,
+    pub name: String,
+    pub scope: String,
+    pub category: String,
+    pub schedule_id: String,
+    pub retention_period: String,
+    pub disposal_action: RetentionDisposalAction,
+    pub status: RetentionPolicyStatus,
+    pub active: bool,
+    pub destructive_action: bool,
+    pub would_execute: bool,
+    pub reason: &'static str,
+}
+
+#[derive(Debug)]
+struct ValidatedRetentionExecutionRequest {
+    requested_policy_id: Option<RetentionPolicyId>,
+    operator_notes: Option<String>,
+    evidence: Vec<RetentionOperatorEvidence>,
+}
+
+#[derive(Serialize)]
+pub struct RetentionExecutionRecord {
+    pub id: String,
+    pub requested_at: String,
+    pub actor: String,
+    pub requested_policy: RetentionExecutionRequestedPolicy,
+    pub candidate: RetentionDryRunCandidate,
+    pub matched_records_summary: RetentionMatchedRecordsSummary,
+    pub legal_hold_blockers: Vec<RetentionLegalHoldBlocker>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator_notes: Option<String>,
+    pub operator_evidence: Vec<RetentionOperatorEvidence>,
+    pub outcome: RetentionExecutionOutcome,
+    pub block_reason: &'static str,
+    pub would_execute: bool,
+}
+
+#[derive(Serialize)]
+pub struct RetentionExecutionRequestedPolicy {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub found: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_period: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disposal_action: Option<RetentionDisposalAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<RetentionPolicyStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<bool>,
+    pub stale: bool,
+    pub matches_candidate: bool,
+    pub destructive_action: bool,
+}
+
+#[derive(Serialize)]
+pub struct RetentionMatchedRecordsSummary {
+    pub scope: String,
+    pub category: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_id: Option<String>,
+    pub record_count: usize,
+    pub policy_match_count: usize,
+    pub destructive_policy_count: usize,
+    pub policy_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct RetentionLegalHoldBlocker {
+    pub policy_id: String,
+    pub name: String,
+    pub schedule_id: String,
+    pub retention_period: String,
+    pub reason: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RetentionOperatorEvidence {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionExecutionOutcome {
+    BlockedMissingPolicy,
+    BlockedStalePolicy,
+    BlockedPolicyMismatch,
+    BlockedLegalHold,
+    BlockedDestructiveAction,
+    ManualReviewRequired,
+}
+
+pub(crate) fn load_dsr_requests(path: &FsPath) -> Option<HashMap<DsrRequestId, DsrRequest>> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<Vec<serde_json::Value>>(&bytes) {
+        Ok(list) => {
+            let mut loaded = HashMap::new();
+            for (idx, value) in list.into_iter().enumerate() {
+                match serde_json::from_value::<DsrRequest>(value) {
+                    Ok(request) => {
+                        loaded.insert(request.id, request);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "warning: {} has an invalid privacy DSR request at index {idx} ({e}); ignoring it",
+                            path.display()
+                        );
+                    }
+                }
+            }
+            Some(loaded)
+        }
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid privacy DSR request document ({e}); ignoring it",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+pub(crate) fn load_processor_records(
+    path: &FsPath,
+) -> Option<HashMap<ProcessorRecordId, ProcessorRecord>> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<Vec<ProcessorRecord>>(&bytes) {
+        Ok(list) => Some(list.into_iter().map(|record| (record.id, record)).collect()),
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid privacy processor document ({e}); ignoring it",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+pub(crate) fn load_dpia_records(path: &FsPath) -> Option<HashMap<DpiaRecordId, DpiaRecord>> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<Vec<DpiaRecord>>(&bytes) {
+        Ok(list) => Some(list.into_iter().map(|record| (record.id, record)).collect()),
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid privacy DPIA document ({e}); ignoring it",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+pub(crate) fn load_retention_policies(
+    path: &FsPath,
+) -> Option<HashMap<RetentionPolicyId, RetentionPolicyRecord>> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<Vec<RetentionPolicyRecord>>(&bytes) {
+        Ok(list) => Some(list.into_iter().map(|record| (record.id, record)).collect()),
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid retention policy document ({e}); ignoring it",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+pub(crate) fn write_dsr_requests_atomic(
+    path: &FsPath,
+    requests: &HashMap<DsrRequestId, DsrRequest>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut list: Vec<&DsrRequest> = requests.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    let json = serde_json::to_vec_pretty(&list).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, DSR_REQUESTS_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+pub(crate) fn write_processor_records_atomic(
+    path: &FsPath,
+    records: &HashMap<ProcessorRecordId, ProcessorRecord>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut list: Vec<&ProcessorRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    let json = serde_json::to_vec_pretty(&list).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, PROCESSORS_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+pub(crate) fn write_dpia_records_atomic(
+    path: &FsPath,
+    records: &HashMap<DpiaRecordId, DpiaRecord>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut list: Vec<&DpiaRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    let json = serde_json::to_vec_pretty(&list).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, DPIAS_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+pub(crate) fn write_retention_policies_atomic(
+    path: &FsPath,
+    records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut list: Vec<&RetentionPolicyRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    let json = serde_json::to_vec_pretty(&list).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, RETENTION_POLICIES_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+fn tmp_path(path: &FsPath, fallback: &str) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|s| s.to_os_string())
+        .unwrap_or_else(|| fallback.into());
+    name.push(format!(".{}.tmp", Uuid::new_v4()));
+    path.with_file_name(name)
+}
+
+async fn persist_dsr_requests(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.dsr_requests_path {
+        let requests = state.dsr_requests.read().await;
+        write_dsr_requests_atomic(path, &requests)
+            .map_err(|e| ApiError::Internal(format!("failed to persist DSR requests: {e}")))?;
+    }
+    Ok(())
+}
+
+async fn persist_processor_records(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.processor_records_path {
+        let records = state.processor_records.read().await;
+        write_processor_records_atomic(path, &records)
+            .map_err(|e| ApiError::Internal(format!("failed to persist processor records: {e}")))?;
+    }
+    Ok(())
+}
+
+async fn persist_dpia_records(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.dpia_records_path {
+        let records = state.dpia_records.read().await;
+        write_dpia_records_atomic(path, &records)
+            .map_err(|e| ApiError::Internal(format!("failed to persist DPIA records: {e}")))?;
+    }
+    Ok(())
+}
+
+async fn persist_retention_policies(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.retention_policies_path {
+        let records = state.retention_policies.read().await;
+        write_retention_policies_atomic(path, &records).map_err(|e| {
+            ApiError::Internal(format!("failed to persist retention policies: {e}"))
+        })?;
+    }
+    Ok(())
+}
+
+/// `GET /v1/privacy/users/{id}/export` — non-secret GDPR/DSR JSON export for one user.
+///
+/// Requires `user.manage` at Global. A caller without that authority receives the same generic 403
+/// as other RBAC gates; a caller that clears the gate receives the ordinary honest 404 for an
+/// unknown target, matching the local admin endpoints.
+pub async fn export_user(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<PrivacyExport>, ApiError> {
+    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+
+    let target = UserId(id);
+    let user = {
+        let users = state.users.read().await;
+        users.get(&target).cloned().ok_or(ApiError::NotFound)?
+    };
+
+    let role_assignments = role_assignments(&state, &user).await;
+    let ledger_event_refs = ledger_refs(&state, &user).await;
+
+    Ok(Json(PrivacyExport {
+        exported_at: OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .unwrap_or_default(),
+        scope: format!("user:{target}"),
+        format_version: FORMAT_VERSION,
+        redaction_notes: vec![
+            "credential verifiers and wrapped private key material are excluded",
+            "ledger entries are references only: payload digests and chain hashes, not payload bodies",
+        ],
+        exclusions: vec![
+            "password_hash",
+            "recovery_hash",
+            "recovery_phrase",
+            "api_key_secret",
+            "bearer_token",
+            "attestation_private_key",
+        ],
+        user: ExportUser {
+            profile: UserView::from(&user),
+            role_assignments,
+        },
+        ledger_event_refs,
+    }))
+}
+
+/// `POST /v1/privacy/users/{id}/dsr-requests` — create a tracked DSR request for a user.
+pub async fn create_dsr_request(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CreateDsrRequest>,
+) -> Result<(StatusCode, Json<DsrRequestView>), ApiError> {
+    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    let subject_user_id = UserId(id);
+    ensure_subject_exists(&state, subject_user_id).await?;
+
+    let request_type = req
+        .request_type
+        .as_deref()
+        .ok_or_else(|| ApiError::Unprocessable("request_type is required".to_owned()))
+        .and_then(DsrRequestType::parse)?;
+    let actor_name = actor.resolve("api");
+    let request = DsrRequest {
+        id: DsrRequestId(Uuid::new_v4()),
+        subject_user_id,
+        request_type,
+        status: DsrRequestStatus::Pending,
+        reason: clean_optional(req.reason),
+        created_at: now_rfc3339(),
+        created_by: actor_name.clone(),
+        completed_at: None,
+        completed_by: None,
+        completion_reason: None,
+        outcome: None,
+        executed_at: None,
+        executed_by: None,
+        execution_notes: None,
+        affected_records: Vec::new(),
+        retention_review: None,
+        legal_basis_review: None,
+    };
+    let view = DsrRequestView::from(&request);
+    state.dsr_requests.write().await.insert(request.id, request);
+    persist_dsr_requests(&state).await?;
+    record_dsr_event(
+        &state,
+        &view,
+        DSR_CREATED_KIND,
+        "DSR request created",
+        &actor_name,
+        &attestor,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `GET /v1/privacy/users/{id}/dsr-requests` — list tracked DSR requests for a user.
+pub async fn list_dsr_requests_for_user(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<DsrRequestView>>, ApiError> {
+    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    let subject_user_id = UserId(id);
+    ensure_subject_exists(&state, subject_user_id).await?;
+
+    let requests = state.dsr_requests.read().await;
+    let mut list: Vec<&DsrRequest> = requests
+        .values()
+        .filter(|req| req.subject_user_id == subject_user_id)
+        .collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    Ok(Json(list.into_iter().map(DsrRequestView::from).collect()))
+}
+
+/// `POST /v1/privacy/dsr-requests/{id}/complete` — mark a tracked DSR request complete.
+pub async fn complete_dsr_request(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    body: Option<Json<CompleteDsrRequest>>,
+) -> Result<Json<DsrRequestView>, ApiError> {
+    let req = body.map(|Json(req)| req).unwrap_or_default();
+    complete_dsr_request_inner(
+        &state,
+        DsrRequestId(id),
+        None,
+        DsrExecutionInput::from(req),
+        &actor,
+        &attestor,
+    )
+    .await
+}
+
+/// `POST /v1/privacy/users/{user_id}/dsr-requests/{request_id}/complete` — user-scoped complete.
+pub async fn complete_user_dsr_request(
+    State(state): State<AppState>,
+    Path((user_id, request_id)): Path<(Uuid, Uuid)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    body: Option<Json<CompleteDsrRequest>>,
+) -> Result<Json<DsrRequestView>, ApiError> {
+    let req = body.map(|Json(req)| req).unwrap_or_default();
+    complete_dsr_request_inner(
+        &state,
+        DsrRequestId(request_id),
+        Some(UserId(user_id)),
+        DsrExecutionInput::from(req),
+        &actor,
+        &attestor,
+    )
+    .await
+}
+
+/// `PATCH /v1/privacy/dsr-requests/{id}` — guarded status transition surface.
+pub async fn patch_dsr_request(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PatchDsrRequest>,
+) -> Result<Json<DsrRequestView>, ApiError> {
+    require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
+    let target_status = req
+        .status
+        .as_deref()
+        .ok_or_else(|| ApiError::Unprocessable("status is required".to_owned()))
+        .and_then(DsrRequestStatus::parse)?;
+    if target_status != DsrRequestStatus::Completed {
+        return Err(ApiError::Unprocessable(
+            "invalid DSR status transition; only pending to completed is allowed".to_owned(),
+        ));
+    }
+    complete_dsr_request_inner(
+        &state,
+        DsrRequestId(id),
+        None,
+        DsrExecutionInput::from(req),
+        &actor,
+        &attestor,
+    )
+    .await
+}
+
+/// `POST /v1/privacy/processors` — create a GDPR processor register record.
+pub async fn create_processor_record(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CreateProcessorRecord>,
+) -> Result<(StatusCode, Json<ProcessorRecordView>), ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+
+    let actor_name = actor.resolve("api");
+    let now = now_rfc3339();
+    let record = ProcessorRecord {
+        id: ProcessorRecordId(Uuid::new_v4()),
+        name: required_string(req.name, "name")?,
+        purpose: required_string(req.purpose, "purpose")?,
+        legal_basis: required_string(req.legal_basis, "legal_basis")?,
+        data_categories: sanitized_strings(req.data_categories, "data_categories", true)?,
+        subprocessors: sanitized_strings(req.subprocessors, "subprocessors", false)?,
+        risk_level: req
+            .risk_level
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("risk_level is required".to_owned()))
+            .and_then(PrivacyRiskLevel::parse)?,
+        status: req
+            .status
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("status is required".to_owned()))
+            .and_then(PrivacyRecordStatus::parse)?,
+        created_at: now.clone(),
+        created_by: actor_name.clone(),
+        updated_at: now,
+        updated_by: actor_name.clone(),
+    };
+    let view = ProcessorRecordView::from(&record);
+    state
+        .processor_records
+        .write()
+        .await
+        .insert(record.id, record);
+    persist_processor_records(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:processor:{}", view.id),
+        PROCESSOR_CREATED_KIND,
+        "Processor record created",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `GET /v1/privacy/processors` — list sanitized processor register records.
+pub async fn list_processor_records(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<ProcessorRecordView>>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let records = state.processor_records.read().await;
+    let mut list: Vec<&ProcessorRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    Ok(Json(
+        list.into_iter().map(ProcessorRecordView::from).collect(),
+    ))
+}
+
+/// `PATCH /v1/privacy/processors/{id}` — update a processor register record.
+pub async fn patch_processor_record(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PatchProcessorRecord>,
+) -> Result<Json<ProcessorRecordView>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+    let record_id = ProcessorRecordId(id);
+
+    let mut records = state.processor_records.write().await;
+    let mut record = records.get(&record_id).cloned().ok_or(ApiError::NotFound)?;
+    let changed = apply_processor_patch(&mut record, req, &actor_name)?;
+    if !changed {
+        return Err(ApiError::Unprocessable(
+            "at least one processor record field is required".to_owned(),
+        ));
+    }
+    let view = ProcessorRecordView::from(&record);
+    records.insert(record.id, record);
+    drop(records);
+    persist_processor_records(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:processor:{}", view.id),
+        PROCESSOR_UPDATED_KIND,
+        "Processor record updated",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok(Json(view))
+}
+
+/// `POST /v1/privacy/dpias` — create a DPIA register record.
+pub async fn create_dpia_record(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CreateDpiaRecord>,
+) -> Result<(StatusCode, Json<DpiaRecordView>), ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+
+    let actor_name = actor.resolve("api");
+    let now = now_rfc3339();
+    let record = DpiaRecord {
+        id: DpiaRecordId(Uuid::new_v4()),
+        title: required_string(req.title, "title")?,
+        purpose: required_string(req.purpose, "purpose")?,
+        legal_basis: required_string(req.legal_basis, "legal_basis")?,
+        data_categories: sanitized_strings(req.data_categories, "data_categories", true)?,
+        subprocessors: sanitized_strings(req.subprocessors, "subprocessors", false)?,
+        risk_level: req
+            .risk_level
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("risk_level is required".to_owned()))
+            .and_then(PrivacyRiskLevel::parse)?,
+        status: req
+            .status
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("status is required".to_owned()))
+            .and_then(PrivacyRecordStatus::parse)?,
+        created_at: now.clone(),
+        created_by: actor_name.clone(),
+        updated_at: now,
+        updated_by: actor_name.clone(),
+    };
+    let view = DpiaRecordView::from(&record);
+    state.dpia_records.write().await.insert(record.id, record);
+    persist_dpia_records(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:dpia:{}", view.id),
+        DPIA_CREATED_KIND,
+        "DPIA record created",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `GET /v1/privacy/dpias` — list sanitized DPIA register records.
+pub async fn list_dpia_records(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<DpiaRecordView>>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let records = state.dpia_records.read().await;
+    let mut list: Vec<&DpiaRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    Ok(Json(list.into_iter().map(DpiaRecordView::from).collect()))
+}
+
+/// `PATCH /v1/privacy/dpias/{id}` — update a DPIA register record.
+pub async fn patch_dpia_record(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PatchDpiaRecord>,
+) -> Result<Json<DpiaRecordView>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+    let record_id = DpiaRecordId(id);
+
+    let mut records = state.dpia_records.write().await;
+    let mut record = records.get(&record_id).cloned().ok_or(ApiError::NotFound)?;
+    let changed = apply_dpia_patch(&mut record, req, &actor_name)?;
+    if !changed {
+        return Err(ApiError::Unprocessable(
+            "at least one DPIA record field is required".to_owned(),
+        ));
+    }
+    let view = DpiaRecordView::from(&record);
+    records.insert(record.id, record);
+    drop(records);
+    persist_dpia_records(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:dpia:{}", view.id),
+        DPIA_UPDATED_KIND,
+        "DPIA record updated",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok(Json(view))
+}
+
+/// `POST /v1/privacy/retention-policies` — create a retention policy register record.
+pub async fn create_retention_policy(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CreateRetentionPolicy>,
+) -> Result<(StatusCode, Json<RetentionPolicyView>), ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+
+    let actor_name = actor.resolve("api");
+    let now = now_rfc3339();
+    let record = RetentionPolicyRecord {
+        id: retention_policy_id(req.id)?,
+        name: required_retention_segment(req.name, "name", MAX_RETENTION_NAME_CHARS)?,
+        scope: required_retention_segment(req.scope, "scope", MAX_RETENTION_FIELD_CHARS)?,
+        category: required_retention_segment(req.category, "category", MAX_RETENTION_FIELD_CHARS)?,
+        schedule_id: required_retention_segment(
+            req.schedule_id,
+            "schedule_id",
+            MAX_RETENTION_FIELD_CHARS,
+        )?,
+        retention_period: required_retention_segment(
+            req.retention_period,
+            "retention_period",
+            MAX_RETENTION_FIELD_CHARS,
+        )?,
+        legal_basis: required_sensitive_checked_text(
+            req.legal_basis,
+            "legal_basis",
+            MAX_RETENTION_TEXT_CHARS,
+        )?,
+        disposal_action: req
+            .disposal_action
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("disposal_action is required".to_owned()))
+            .and_then(RetentionDisposalAction::parse)?,
+        status: req
+            .status
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("status is required".to_owned()))
+            .and_then(RetentionPolicyStatus::parse)?,
+        active: req
+            .active
+            .ok_or_else(|| ApiError::Unprocessable("active is required".to_owned()))?,
+        notes: optional_sensitive_checked_text(req.notes, "notes", MAX_RETENTION_TEXT_CHARS)?,
+        created_at: now.clone(),
+        created_by: actor_name.clone(),
+        updated_at: now,
+        updated_by: actor_name.clone(),
+    };
+    let view = RetentionPolicyView::from(&record);
+    let mut records = state.retention_policies.write().await;
+    if records.contains_key(&record.id) {
+        return Err(ApiError::Conflict(
+            "retention policy id already exists".to_owned(),
+        ));
+    }
+    records.insert(record.id, record);
+    drop(records);
+    persist_retention_policies(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:retention-policy:{}", view.id),
+        RETENTION_POLICY_CREATED_KIND,
+        "Retention policy created",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `GET /v1/privacy/retention-policies` — list retention policy register records.
+pub async fn list_retention_policies(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<RetentionPolicyView>>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let records = state.retention_policies.read().await;
+    let mut list: Vec<&RetentionPolicyRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    Ok(Json(
+        list.into_iter().map(RetentionPolicyView::from).collect(),
+    ))
+}
+
+/// `PATCH /v1/privacy/retention-policies/{id}` — update a retention policy register record.
+pub async fn patch_retention_policy(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PatchRetentionPolicy>,
+) -> Result<Json<RetentionPolicyView>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+    let policy_id = RetentionPolicyId(id);
+
+    let mut records = state.retention_policies.write().await;
+    let mut record = records.get(&policy_id).cloned().ok_or(ApiError::NotFound)?;
+    let changed = apply_retention_policy_patch(&mut record, req, &actor_name)?;
+    if !changed {
+        return Err(ApiError::Unprocessable(
+            "at least one retention policy field is required".to_owned(),
+        ));
+    }
+    let view = RetentionPolicyView::from(&record);
+    records.insert(record.id, record);
+    drop(records);
+    persist_retention_policies(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:retention-policy:{}", view.id),
+        RETENTION_POLICY_UPDATED_KIND,
+        "Retention policy updated",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok(Json(view))
+}
+
+/// `POST /v1/privacy/retention-policies/dry-run` — match policies without executing disposal.
+pub async fn retention_policy_dry_run(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<RetentionDryRunRequest>,
+) -> Result<Json<RetentionDryRunReport>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+
+    let scope = required_retention_segment(req.scope, "scope", MAX_RETENTION_FIELD_CHARS)?;
+    let category = required_retention_segment(req.category, "category", MAX_RETENTION_FIELD_CHARS)?;
+    let record_id = retention_record_reference(req.record_id)?;
+    let execution_request = validate_retention_execution_request(req.execution_request)?;
+    let actor_name = actor.resolve("api");
+    let candidate = RetentionDryRunCandidate {
+        scope,
+        category,
+        record_id,
+    };
+
+    let records = state.retention_policies.read().await;
+    let mut list: Vec<&RetentionPolicyRecord> = records
+        .values()
+        .filter(|record| retention_policy_applies(record, &candidate.scope, &candidate.category))
+        .collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    let matches: Vec<RetentionDryRunMatch> = list
+        .into_iter()
+        .map(|record| RetentionDryRunMatch {
+            policy_id: record.id.to_string(),
+            name: record.name.clone(),
+            scope: record.scope.clone(),
+            category: record.category.clone(),
+            schedule_id: record.schedule_id.clone(),
+            retention_period: record.retention_period.clone(),
+            disposal_action: record.disposal_action,
+            status: record.status,
+            active: record.active,
+            destructive_action: record.disposal_action.is_destructive(),
+            would_execute: false,
+            reason: "scope/category matched an active policy; dry-run only",
+        })
+        .collect();
+    let matched_count = matches.len();
+    let execution_record = execution_request.map(|execution_request| {
+        build_retention_execution_record(
+            &actor_name,
+            &candidate,
+            &records,
+            &matches,
+            execution_request,
+        )
+    });
+    drop(records);
+
+    if let Some(record) = &execution_record {
+        let scope = format!("privacy:retention-execution:{}", record.id);
+        record_privacy_event(
+            &state,
+            &scope,
+            RETENTION_EXECUTION_REQUESTED_KIND,
+            "Retention execution request recorded without destructive execution",
+            &actor_name,
+            record,
+            &attestor,
+        )
+        .await?;
+    }
+    let mode = if execution_record.is_some() {
+        "execution_request"
+    } else {
+        "dry_run"
+    };
+
+    Ok(Json(RetentionDryRunReport {
+        mode,
+        execution_supported: false,
+        destructive_execution_supported: false,
+        candidate,
+        matched_count,
+        matches,
+        execution_record,
+    }))
+}
+
+async fn complete_dsr_request_inner(
+    state: &AppState,
+    request_id: DsrRequestId,
+    expected_subject: Option<UserId>,
+    execution: DsrExecutionInput,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+) -> Result<Json<DsrRequestView>, ApiError> {
+    require_permission(state, actor, Permission::UserManage, Scope::Global).await?;
+    let execution = validate_dsr_execution(execution)?;
+
+    let actor_name = actor.resolve("api");
+    let mut requests = state.dsr_requests.write().await;
+    let mut request = requests
+        .get(&request_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    if expected_subject.is_some_and(|subject| subject != request.subject_user_id) {
+        return Err(ApiError::NotFound);
+    }
+    if request.status != DsrRequestStatus::Pending {
+        return Err(ApiError::Conflict(
+            "DSR request is not pending; it cannot be completed again".to_owned(),
+        ));
+    }
+
+    let executed_at = now_rfc3339();
+    request.status = DsrRequestStatus::Completed;
+    request.completed_at = Some(executed_at.clone());
+    request.completed_by = Some(actor_name.clone());
+    request.completion_reason = execution.completion_reason;
+    request.outcome = Some(execution.outcome);
+    request.executed_at = Some(executed_at);
+    request.executed_by = Some(actor_name.clone());
+    request.execution_notes = execution.execution_notes;
+    request.affected_records = execution.affected_records;
+    request.retention_review = execution.retention_review;
+    request.legal_basis_review = execution.legal_basis_review;
+    let view = DsrRequestView::from(&request);
+    requests.insert(request.id, request);
+    drop(requests);
+    persist_dsr_requests(state).await?;
+    record_dsr_event(
+        state,
+        &view,
+        DSR_COMPLETED_KIND,
+        "DSR request completed",
+        &actor_name,
+        attestor,
+    )
+    .await?;
+
+    Ok(Json(view))
+}
+
+async fn require_privacy_record_manage(
+    state: &AppState,
+    actor: &CurrentActor,
+) -> Result<(), ApiError> {
+    let authz = authorizer(state, actor).await?;
+    if authz.permits(Permission::UserManage, Scope::Global)
+        || authz.permits(Permission::SettingsManage, Scope::Global)
+    {
+        Ok(())
+    } else {
+        Err(forbidden())
+    }
+}
+
+fn apply_processor_patch(
+    record: &mut ProcessorRecord,
+    req: PatchProcessorRecord,
+    actor_name: &str,
+) -> Result<bool, ApiError> {
+    let mut changed = false;
+    if let Some(name) = req.name {
+        record.name = clean_required(&name, "name")?;
+        changed = true;
+    }
+    if let Some(purpose) = req.purpose {
+        record.purpose = clean_required(&purpose, "purpose")?;
+        changed = true;
+    }
+    if let Some(legal_basis) = req.legal_basis {
+        record.legal_basis = clean_required(&legal_basis, "legal_basis")?;
+        changed = true;
+    }
+    if let Some(data_categories) = req.data_categories {
+        record.data_categories = sanitized_strings(data_categories, "data_categories", true)?;
+        changed = true;
+    }
+    if let Some(subprocessors) = req.subprocessors {
+        record.subprocessors = sanitized_strings(subprocessors, "subprocessors", false)?;
+        changed = true;
+    }
+    if let Some(risk_level) = req.risk_level {
+        record.risk_level = PrivacyRiskLevel::parse(&risk_level)?;
+        changed = true;
+    }
+    if let Some(status) = req.status {
+        record.status = PrivacyRecordStatus::parse(&status)?;
+        changed = true;
+    }
+    if changed {
+        record.updated_at = now_rfc3339();
+        record.updated_by = actor_name.to_owned();
+    }
+    Ok(changed)
+}
+
+fn apply_dpia_patch(
+    record: &mut DpiaRecord,
+    req: PatchDpiaRecord,
+    actor_name: &str,
+) -> Result<bool, ApiError> {
+    let mut changed = false;
+    if let Some(title) = req.title {
+        record.title = clean_required(&title, "title")?;
+        changed = true;
+    }
+    if let Some(purpose) = req.purpose {
+        record.purpose = clean_required(&purpose, "purpose")?;
+        changed = true;
+    }
+    if let Some(legal_basis) = req.legal_basis {
+        record.legal_basis = clean_required(&legal_basis, "legal_basis")?;
+        changed = true;
+    }
+    if let Some(data_categories) = req.data_categories {
+        record.data_categories = sanitized_strings(data_categories, "data_categories", true)?;
+        changed = true;
+    }
+    if let Some(subprocessors) = req.subprocessors {
+        record.subprocessors = sanitized_strings(subprocessors, "subprocessors", false)?;
+        changed = true;
+    }
+    if let Some(risk_level) = req.risk_level {
+        record.risk_level = PrivacyRiskLevel::parse(&risk_level)?;
+        changed = true;
+    }
+    if let Some(status) = req.status {
+        record.status = PrivacyRecordStatus::parse(&status)?;
+        changed = true;
+    }
+    if changed {
+        record.updated_at = now_rfc3339();
+        record.updated_by = actor_name.to_owned();
+    }
+    Ok(changed)
+}
+
+fn apply_retention_policy_patch(
+    record: &mut RetentionPolicyRecord,
+    req: PatchRetentionPolicy,
+    actor_name: &str,
+) -> Result<bool, ApiError> {
+    let mut changed = false;
+    if let Some(name) = req.name {
+        record.name = required_retention_segment(Some(name), "name", MAX_RETENTION_NAME_CHARS)?;
+        changed = true;
+    }
+    if let Some(scope) = req.scope {
+        record.scope = required_retention_segment(Some(scope), "scope", MAX_RETENTION_FIELD_CHARS)?;
+        changed = true;
+    }
+    if let Some(category) = req.category {
+        record.category =
+            required_retention_segment(Some(category), "category", MAX_RETENTION_FIELD_CHARS)?;
+        changed = true;
+    }
+    if let Some(schedule_id) = req.schedule_id {
+        record.schedule_id = required_retention_segment(
+            Some(schedule_id),
+            "schedule_id",
+            MAX_RETENTION_FIELD_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(retention_period) = req.retention_period {
+        record.retention_period = required_retention_segment(
+            Some(retention_period),
+            "retention_period",
+            MAX_RETENTION_FIELD_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(legal_basis) = req.legal_basis {
+        record.legal_basis = required_sensitive_checked_text(
+            Some(legal_basis),
+            "legal_basis",
+            MAX_RETENTION_TEXT_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(disposal_action) = req.disposal_action {
+        record.disposal_action = RetentionDisposalAction::parse(&disposal_action)?;
+        changed = true;
+    }
+    if let Some(status) = req.status {
+        record.status = RetentionPolicyStatus::parse(&status)?;
+        changed = true;
+    }
+    if let Some(active) = req.active {
+        record.active = active;
+        changed = true;
+    }
+    if let Some(notes) = req.notes {
+        record.notes =
+            optional_sensitive_checked_text(Some(notes), "notes", MAX_RETENTION_TEXT_CHARS)?;
+        changed = true;
+    }
+    if changed {
+        record.updated_at = now_rfc3339();
+        record.updated_by = actor_name.to_owned();
+    }
+    Ok(changed)
+}
+
+fn validate_retention_execution_request(
+    raw: Option<RetentionExecutionRequest>,
+) -> Result<Option<ValidatedRetentionExecutionRequest>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let requested_policy_id = raw
+        .requested_policy_id
+        .map(|value| parse_retention_policy_id(value, "execution_request.requested_policy_id"))
+        .transpose()?;
+    let operator_notes = optional_sensitive_checked_text(
+        raw.operator_notes,
+        "execution_request.operator_notes",
+        MAX_RETENTION_TEXT_CHARS,
+    )?;
+    let evidence = sanitize_retention_execution_evidence(raw.evidence)?;
+    Ok(Some(ValidatedRetentionExecutionRequest {
+        requested_policy_id,
+        operator_notes,
+        evidence,
+    }))
+}
+
+fn sanitize_retention_execution_evidence(
+    raw: Option<Vec<RetentionExecutionEvidenceInput>>,
+) -> Result<Vec<RetentionOperatorEvidence>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    if raw.len() > MAX_RETENTION_EXECUTION_EVIDENCE_ITEMS {
+        return Err(ApiError::Unprocessable(format!(
+            "execution_request.evidence must include at most {MAX_RETENTION_EXECUTION_EVIDENCE_ITEMS} entries"
+        )));
+    }
+
+    raw.into_iter()
+        .map(|item| {
+            let label = required_retention_segment(
+                item.label,
+                "execution_request.evidence.label",
+                MAX_RETENTION_EXECUTION_EVIDENCE_LABEL_CHARS,
+            )?;
+            let value = required_sensitive_checked_text(
+                item.value,
+                "execution_request.evidence.value",
+                MAX_RETENTION_TEXT_CHARS,
+            )?;
+            Ok(RetentionOperatorEvidence { label, value })
+        })
+        .collect()
+}
+
+fn build_retention_execution_record(
+    actor_name: &str,
+    candidate: &RetentionDryRunCandidate,
+    records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
+    matches: &[RetentionDryRunMatch],
+    request: ValidatedRetentionExecutionRequest,
+) -> RetentionExecutionRecord {
+    let requested_policy =
+        retention_requested_policy(candidate, records, request.requested_policy_id);
+    let legal_hold_blockers = retention_legal_hold_blockers(candidate, records);
+    let (outcome, block_reason) =
+        retention_execution_decision(&requested_policy, &legal_hold_blockers);
+
+    RetentionExecutionRecord {
+        id: Uuid::new_v4().to_string(),
+        requested_at: now_rfc3339(),
+        actor: actor_name.to_owned(),
+        requested_policy,
+        candidate: candidate.clone(),
+        matched_records_summary: retention_matched_records_summary(candidate, matches),
+        legal_hold_blockers,
+        operator_notes: request.operator_notes,
+        operator_evidence: request.evidence,
+        outcome,
+        block_reason,
+        would_execute: false,
+    }
+}
+
+fn retention_requested_policy(
+    candidate: &RetentionDryRunCandidate,
+    records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
+    requested_policy_id: Option<RetentionPolicyId>,
+) -> RetentionExecutionRequestedPolicy {
+    let Some(id) = requested_policy_id else {
+        return missing_retention_requested_policy(None);
+    };
+    let Some(record) = records.get(&id) else {
+        return missing_retention_requested_policy(Some(id.to_string()));
+    };
+    let matches_candidate = retention_value_matches(&record.scope, &candidate.scope)
+        && retention_value_matches(&record.category, &candidate.category);
+    let stale = !record.active || record.status != RetentionPolicyStatus::Active;
+    RetentionExecutionRequestedPolicy {
+        id: Some(id.to_string()),
+        found: true,
+        name: Some(record.name.clone()),
+        scope: Some(record.scope.clone()),
+        category: Some(record.category.clone()),
+        schedule_id: Some(record.schedule_id.clone()),
+        retention_period: Some(record.retention_period.clone()),
+        disposal_action: Some(record.disposal_action),
+        status: Some(record.status),
+        active: Some(record.active),
+        stale,
+        matches_candidate,
+        destructive_action: record.disposal_action.is_destructive(),
+    }
+}
+
+fn missing_retention_requested_policy(id: Option<String>) -> RetentionExecutionRequestedPolicy {
+    RetentionExecutionRequestedPolicy {
+        id,
+        found: false,
+        name: None,
+        scope: None,
+        category: None,
+        schedule_id: None,
+        retention_period: None,
+        disposal_action: None,
+        status: None,
+        active: None,
+        stale: false,
+        matches_candidate: false,
+        destructive_action: false,
+    }
+}
+
+fn retention_legal_hold_blockers(
+    candidate: &RetentionDryRunCandidate,
+    records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
+) -> Vec<RetentionLegalHoldBlocker> {
+    let mut blockers: Vec<&RetentionPolicyRecord> = records
+        .values()
+        .filter(|record| {
+            record.disposal_action == RetentionDisposalAction::LegalHold
+                && retention_policy_applies(record, &candidate.scope, &candidate.category)
+        })
+        .collect();
+    blockers.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    blockers
+        .into_iter()
+        .map(|record| RetentionLegalHoldBlocker {
+            policy_id: record.id.to_string(),
+            name: record.name.clone(),
+            schedule_id: record.schedule_id.clone(),
+            retention_period: record.retention_period.clone(),
+            reason: "active legal hold policy matches the candidate record",
+        })
+        .collect()
+}
+
+fn retention_matched_records_summary(
+    candidate: &RetentionDryRunCandidate,
+    matches: &[RetentionDryRunMatch],
+) -> RetentionMatchedRecordsSummary {
+    RetentionMatchedRecordsSummary {
+        scope: candidate.scope.clone(),
+        category: candidate.category.clone(),
+        record_id: candidate.record_id.clone(),
+        record_count: usize::from(candidate.record_id.is_some()),
+        policy_match_count: matches.len(),
+        destructive_policy_count: matches
+            .iter()
+            .filter(|record| record.destructive_action)
+            .count(),
+        policy_ids: matches
+            .iter()
+            .map(|record| record.policy_id.clone())
+            .collect(),
+    }
+}
+
+fn retention_execution_decision(
+    requested_policy: &RetentionExecutionRequestedPolicy,
+    legal_hold_blockers: &[RetentionLegalHoldBlocker],
+) -> (RetentionExecutionOutcome, &'static str) {
+    if !requested_policy.found {
+        return (
+            RetentionExecutionOutcome::BlockedMissingPolicy,
+            "requested retention policy is missing; execution requires operator review",
+        );
+    }
+    if requested_policy.stale {
+        return (
+            RetentionExecutionOutcome::BlockedStalePolicy,
+            "requested retention policy is not active; execution requires operator review",
+        );
+    }
+    if !requested_policy.matches_candidate {
+        return (
+            RetentionExecutionOutcome::BlockedPolicyMismatch,
+            "requested retention policy does not match the candidate scope/category",
+        );
+    }
+    if !legal_hold_blockers.is_empty() {
+        return (
+            RetentionExecutionOutcome::BlockedLegalHold,
+            "active legal hold blocks retention execution",
+        );
+    }
+    if requested_policy.destructive_action {
+        return (
+            RetentionExecutionOutcome::BlockedDestructiveAction,
+            "delete/anonymize execution is not enabled in this guarded slice",
+        );
+    }
+    (
+        RetentionExecutionOutcome::ManualReviewRequired,
+        "retention execution request is recorded for manual review only",
+    )
+}
+
+fn retention_policy_id(raw: Option<String>) -> Result<RetentionPolicyId, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(RetentionPolicyId(Uuid::new_v4()));
+    };
+    parse_retention_policy_id(raw, "id")
+}
+
+fn parse_retention_policy_id(raw: String, field: &str) -> Result<RetentionPolicyId, ApiError> {
+    let value = required_retention_segment(Some(raw), field, MAX_RETENTION_FIELD_CHARS)?;
+    Uuid::parse_str(&value)
+        .map(RetentionPolicyId)
+        .map_err(|_| ApiError::Unprocessable(format!("{field} must be a valid UUID")))
+}
+
+fn retention_record_reference(raw: Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(value) = clean_optional_bounded(raw, "record_id", MAX_RETENTION_FIELD_CHARS)? else {
+        return Ok(None);
+    };
+    reject_path_like_value(&value, "record_id")?;
+    Ok(Some(value))
+}
+
+fn required_retention_segment(
+    raw: Option<String>,
+    field: &str,
+    max_chars: usize,
+) -> Result<String, ApiError> {
+    let value = required_bounded_string(raw, field, max_chars)?;
+    reject_path_like_value(&value, field)?;
+    Ok(value)
+}
+
+fn required_sensitive_checked_text(
+    raw: Option<String>,
+    field: &str,
+    max_chars: usize,
+) -> Result<String, ApiError> {
+    let value = required_string(raw, field)?;
+    if value.chars().count() > max_chars {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be at most {max_chars} characters"
+        )));
+    }
+    reject_sensitive_evidence_markers(&value, field)?;
+    Ok(value)
+}
+
+fn optional_sensitive_checked_text(
+    raw: Option<String>,
+    field: &str,
+    max_chars: usize,
+) -> Result<Option<String>, ApiError> {
+    clean_optional_bounded(raw, field, max_chars)
+}
+
+fn reject_path_like_value(value: &str, field: &str) -> Result<(), ApiError> {
+    let lower = value.to_ascii_lowercase();
+    let looks_like_path = value.contains('/')
+        || value.contains('\\')
+        || value.contains('\0')
+        || lower.contains("..")
+        || lower.starts_with('~')
+        || value == "."
+        || value == ".."
+        || (value.len() >= 2
+            && value.as_bytes()[1] == b':'
+            && value.as_bytes()[0].is_ascii_alphabetic());
+    if looks_like_path {
+        Err(ApiError::Unprocessable(format!(
+            "{field} must not contain path-like values"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn retention_policy_applies(record: &RetentionPolicyRecord, scope: &str, category: &str) -> bool {
+    record.active
+        && record.status == RetentionPolicyStatus::Active
+        && retention_value_matches(&record.scope, scope)
+        && retention_value_matches(&record.category, category)
+}
+
+fn retention_value_matches(policy_value: &str, target: &str) -> bool {
+    let policy_value = policy_value.trim();
+    policy_value.eq_ignore_ascii_case(target) || policy_value.eq_ignore_ascii_case("all")
+}
+
+fn required_string(raw: Option<String>, field: &str) -> Result<String, ApiError> {
+    raw.ok_or_else(|| ApiError::Unprocessable(format!("{field} is required")))
+        .and_then(|value| clean_required(&value, field))
+}
+
+fn validate_dsr_execution(input: DsrExecutionInput) -> Result<ValidatedDsrExecution, ApiError> {
+    let outcome = input
+        .outcome
+        .as_deref()
+        .map(DsrExecutionOutcome::parse)
+        .transpose()?
+        .unwrap_or(DsrExecutionOutcome::Fulfilled);
+    Ok(ValidatedDsrExecution {
+        completion_reason: clean_optional(input.completion_reason),
+        outcome,
+        execution_notes: clean_optional_bounded(
+            input.execution_notes,
+            "execution_notes",
+            MAX_DSR_EXECUTION_NOTE_CHARS,
+        )?,
+        affected_records: sanitize_affected_records(input.affected_records)?,
+        retention_review: clean_optional_bounded(
+            input.retention_review,
+            "retention_review",
+            MAX_DSR_REVIEW_CHARS,
+        )?,
+        legal_basis_review: clean_optional_bounded(
+            input.legal_basis_review,
+            "legal_basis_review",
+            MAX_DSR_REVIEW_CHARS,
+        )?,
+    })
+}
+
+fn sanitize_affected_records(
+    raw: Option<Vec<DsrAffectedRecordInput>>,
+) -> Result<Vec<DsrAffectedRecordSummary>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    if raw.len() > MAX_DSR_AFFECTED_RECORDS {
+        return Err(ApiError::Unprocessable(format!(
+            "affected_records must include at most {MAX_DSR_AFFECTED_RECORDS} entries"
+        )));
+    }
+
+    raw.into_iter()
+        .map(|record| {
+            let collection = required_bounded_string(
+                record.collection,
+                "affected_records.collection",
+                MAX_DSR_AFFECTED_FIELD_CHARS,
+            )?;
+            let action = required_bounded_string(
+                record.action,
+                "affected_records.action",
+                MAX_DSR_AFFECTED_FIELD_CHARS,
+            )?;
+            let count = record.count.ok_or_else(|| {
+                ApiError::Unprocessable("affected_records.count is required".to_owned())
+            })?;
+            if count > MAX_DSR_AFFECTED_RECORD_COUNT {
+                return Err(ApiError::Unprocessable(format!(
+                    "affected_records.count must be at most {MAX_DSR_AFFECTED_RECORD_COUNT}"
+                )));
+            }
+            Ok(DsrAffectedRecordSummary {
+                collection,
+                action,
+                count,
+            })
+        })
+        .collect()
+}
+
+fn clean_required(raw: &str, field: &str) -> Result<String, ApiError> {
+    let value = raw.trim();
+    if value.is_empty() {
+        Err(ApiError::Unprocessable(format!("{field} is required")))
+    } else {
+        Ok(value.to_owned())
+    }
+}
+
+fn clean_optional(raw: Option<String>) -> Option<String> {
+    raw.and_then(|value| {
+        let value = value.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_owned())
+        }
+    })
+}
+
+fn clean_optional_bounded(
+    raw: Option<String>,
+    field: &str,
+    max_chars: usize,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = clean_optional(raw) else {
+        return Ok(None);
+    };
+    if value.chars().count() > max_chars {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be at most {max_chars} characters"
+        )));
+    }
+    reject_sensitive_evidence_markers(&value, field)?;
+    Ok(Some(value))
+}
+
+fn required_bounded_string(
+    raw: Option<String>,
+    field: &str,
+    max_chars: usize,
+) -> Result<String, ApiError> {
+    let value = required_string(raw, field)?;
+    if value.chars().count() > max_chars {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be at most {max_chars} characters"
+        )));
+    }
+    reject_sensitive_evidence_markers(&value, field)?;
+    Ok(value)
+}
+
+fn reject_sensitive_evidence_markers(value: &str, field: &str) -> Result<(), ApiError> {
+    let lower = value.to_ascii_lowercase();
+    if SENSITIVE_EVIDENCE_MARKERS
+        .iter()
+        .any(|marker| lower.contains(marker))
+    {
+        Err(ApiError::Unprocessable(format!(
+            "{field} must not include sensitive credential field names"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn sanitized_strings(
+    raw: Vec<String>,
+    field: &str,
+    require_non_empty: bool,
+) -> Result<Vec<String>, ApiError> {
+    let mut out: Vec<String> = Vec::new();
+    for item in raw {
+        let value = item.trim();
+        if value.is_empty() || out.iter().any(|existing| existing.as_str() == value) {
+            continue;
+        }
+        out.push(value.to_owned());
+    }
+    if require_non_empty && out.is_empty() {
+        Err(ApiError::Unprocessable(format!(
+            "{field} must include at least one non-empty value"
+        )))
+    } else {
+        Ok(out)
+    }
+}
+
+fn normalize_enum(raw: &str) -> String {
+    raw.trim().to_ascii_lowercase().replace(['-', ' '], "_")
+}
+
+async fn role_assignments(state: &AppState, user: &User) -> Vec<RoleAssignmentExport> {
+    let roles = state.roles.read().await;
+    user.role_assignments
+        .iter()
+        .map(|assignment| {
+            let role = roles.get(RoleId(assignment.role_id.0));
+            RoleAssignmentExport {
+                role_id: assignment.role_id.to_string(),
+                scope: assignment.scope,
+                role_name: role.map(|r| r.name.clone()),
+                permissions: role
+                    .map(|r| {
+                        r.permission_set
+                            .iter()
+                            .map(|p| p.as_str().to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            }
+        })
+        .collect()
+}
+
+async fn ledger_refs(state: &AppState, user: &User) -> Vec<LedgerEventView> {
+    let user_id = user.id.to_string();
+    let user_scope = format!("user:{user_id}");
+    let ledger = state.ledger.read().await;
+    ledger
+        .events()
+        .iter()
+        .filter(|event| {
+            event.actor == user.username || event.actor == user_id || event.scope == user_scope
+        })
+        .map(LedgerEventView::from)
+        .collect()
+}
+
+async fn ensure_subject_exists(state: &AppState, subject_user_id: UserId) -> Result<(), ApiError> {
+    if state.users.read().await.contains_key(&subject_user_id) {
+        Ok(())
+    } else {
+        Err(ApiError::NotFound)
+    }
+}
+
+async fn record_dsr_event(
+    state: &AppState,
+    view: &DsrRequestView,
+    kind: &str,
+    justification: &str,
+    actor_name: &str,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    let _requests = state.dsr_requests.write().await;
+    record_dsr_event_locked(state, view, kind, justification, actor_name, attestor).await
+}
+
+async fn record_dsr_event_locked(
+    state: &AppState,
+    view: &DsrRequestView,
+    kind: &str,
+    justification: &str,
+    actor_name: &str,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    let bytes = serde_json::to_vec(view)?;
+    let scope = format!("user:{}", view.subject_user_id);
+    let mut ledger = state.ledger.write().await;
+    try_append_event(
+        &mut ledger,
+        actor_name,
+        &scope,
+        kind,
+        Some(justification),
+        &bytes,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |_tx| Ok(()))?;
+    state.attest_latest(attestor, &ledger).await;
+    Ok(())
+}
+
+async fn record_privacy_event<T: Serialize>(
+    state: &AppState,
+    scope: &str,
+    kind: &str,
+    justification: &str,
+    actor_name: &str,
+    view: &T,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    let bytes = serde_json::to_vec(view)?;
+    let mut ledger = state.ledger.write().await;
+    try_append_event(
+        &mut ledger,
+        actor_name,
+        scope,
+        kind,
+        Some(justification),
+        &bytes,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |_| Ok(()))?;
+    state.attest_latest(attestor, &ledger).await;
+    Ok(())
+}
+
+fn now_rfc3339() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_default()
+}

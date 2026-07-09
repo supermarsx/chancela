@@ -31,7 +31,10 @@
 ///   signing session (the non-secret `CmdSignSession` + `PreparedSignature` serde blobs) across the
 ///   `initiate`→`confirm` request pair. **Neither table ever stores a PIN or an OTP.** Forward-only,
 ///   additive: existing databases gain the tables via [`ALL`] and advance their stamp on next open.
-pub const SCHEMA_VERSION: i64 = 4;
+/// - **v5** — adds `imported_documents`: bounded, validated, non-canonical evidence imports. These
+///   rows preserve uploaded bytes and metadata without replacing the canonical PDF/A `documents`
+///   row or any `signed_documents` variant, and without making PDF/A/legal/signature-validity claims.
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -249,6 +252,42 @@ CREATE TABLE IF NOT EXISTS pending_cmd_sessions (
 pub const CREATE_PENDING_CMD_SESSIONS_ACT_IDX: &str =
     "CREATE INDEX IF NOT EXISTS idx_pending_cmd_sessions_act ON pending_cmd_sessions (act_id);";
 
+/// `imported_documents` — validated, **non-canonical** document evidence imports (schema v5).
+///
+/// These records preserve uploaded document bytes after the API's structural validation screen, but
+/// they deliberately live outside `documents` / `signed_documents`: an import is supporting evidence,
+/// not the canonical generated PDF/A nor a qualified signed variant. The metadata is enough to list,
+/// read, digest-check, and audit the import; the ledger event stores only this metadata, never bytes.
+///
+/// - `id` — fresh UUID minted by the API (primary key).
+/// - `act_id` — optional owning act scope; NULL means a global, unlinked evidence import.
+/// - `filename` — optional sanitized display name (never a path).
+/// - `declared_content_type` — caller/header MIME type, when supplied.
+/// - `detected_content_type` — API structural detector result.
+/// - `sha256` / `size_bytes` — digest and size of `bytes`.
+/// - `imported_at` / `imported_by` — storage metadata.
+/// - `bytes` — the retained uploaded document bytes.
+pub const CREATE_IMPORTED_DOCUMENTS: &str = "\
+CREATE TABLE IF NOT EXISTS imported_documents (
+    id                    TEXT PRIMARY KEY,
+    act_id                TEXT,
+    filename              TEXT,
+    declared_content_type TEXT,
+    detected_content_type TEXT NOT NULL,
+    sha256                TEXT NOT NULL,
+    size_bytes            INTEGER NOT NULL,
+    imported_at           TEXT NOT NULL,
+    imported_by           TEXT NOT NULL,
+    bytes                 BLOB NOT NULL
+) STRICT;";
+
+/// Index over `imported_documents.act_id` — feeds the act-scoped evidence feed.
+pub const CREATE_IMPORTED_DOCUMENTS_ACT_IDX: &str =
+    "CREATE INDEX IF NOT EXISTS idx_imported_documents_act ON imported_documents (act_id);";
+
+/// Index over `imported_documents.imported_at` — keeps the global list ordered without scanning.
+pub const CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_imported_documents_imported_at ON imported_documents (imported_at);";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -268,4 +307,7 @@ pub const ALL: &[&str] = &[
     CREATE_SIGNED_DOCUMENTS,
     CREATE_PENDING_CMD_SESSIONS,
     CREATE_PENDING_CMD_SESSIONS_ACT_IDX,
+    CREATE_IMPORTED_DOCUMENTS,
+    CREATE_IMPORTED_DOCUMENTS_ACT_IDX,
+    CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX,
 ];

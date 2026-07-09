@@ -18,13 +18,14 @@ cargo fmt -p chancela-signing --check
 - `src/lib.rs` unit tests (5): the preserved vocabulary invariants — family serde round-trip, the
   SIG-02 "only Qualified is a qualified signature" invariant, Manual-is-not-qualified, the B-LTA
   archival default, and the `chancela_tsl::QualifiedStatus → TrustedListStatus` 1:1 mapping.
-- `tests/envelope_flows.rs` (12): the orchestration behaviour with a **shape-only**
+- `tests/envelope_flows.rs` (14): the orchestration behaviour with a **shape-only**
   [`MockProvider`] and a `StaticTrustPolicy` — serial vs parallel completion and slot ordering,
   already-signed / out-of-range rejection, the **trusted-list policy gate** (withdrawn and unknown
   issuers are refused; granted is recorded on the artifact), missing-issuer handling, family
   mismatch, provider failure surfacing, manual-scan recording and path enforcement, the **SIG-02
   OTP-labelling invariant** (a `CmdProvider` reports `Qualified`, never `OtpConfirmation`, and the
-  OTP is confirmed exactly once), and unsupported-format / input-mismatch reporting.
+  OTP is confirmed exactly once), XAdES/ASiC unavailable-format reporting in signing and
+  validation, and supported-format input-mismatch reporting.
 - `tests/roundtrip.rs` (7): **cryptographic round-trips** driving a real in-test key through the
   pipeline — detached CAdES-B (RSA + P-256), PAdES-B-B, PAdES-B-T (timestamp embedded from the
   bundled `chancela-tsa` OpenSSL fixture), detached-CAdES timestamp as external evidence, a
@@ -52,8 +53,8 @@ cargo fmt -p chancela-signing --check
   enrichment (DSS/VRI, archival document timestamps, revocation) is phase-2, tracked by
   `chancela-pades` (`PadesError::LongTermNotImplemented`). The artifact records the profile
   *actually reached*, never the requested one.
-- **XAdES / ASiC formats:** recognised by the vocabulary (SIG-20) but not yet produced;
-  `sign_slot` returns `SigningError::UnsupportedFormat` for them.
+- **XAdES / ASiC formats:** recognised by the vocabulary (SIG-20) but unavailable in this crate;
+  `sign_slot` and `validate_signature` return `SigningError::UnsupportedFormat` for them.
 - **Smartcard issuer certificate:** a Cartão de Cidadão presents only the leaf, so
   `SmartcardProvider::issuer_certificate_der` returns `None`; a trust-policy gate over a smartcard
   slot therefore requires the issuing-CA certificate to be supplied out-of-band (a configured CA

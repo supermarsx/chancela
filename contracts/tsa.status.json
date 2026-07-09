@@ -1,0 +1,92 @@
+{
+  "summary": {
+    "configured_url": "http://ts.cartaodecidadao.pt/tsa/server",
+    "status": "Ready",
+    "status_message": "TSA URL configured; offline RFC 3161 fixture probe passed. No live TSA request was sent.",
+    "profile": {
+      "protocol": "RFC 3161 Time-Stamp Protocol",
+      "hash_algorithm": "SHA-256",
+      "request_content_type": "application/timestamp-query",
+      "response_content_type": "application/timestamp-reply",
+      "nonce_policy": "request nonce must be echoed when present",
+      "cert_req_default": true,
+      "accepted_policy": "Any"
+    },
+    "accepted_hash": {
+      "algorithm": "SHA-256",
+      "input": "abc",
+      "digest": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    },
+    "timestamp": {
+      "gen_time": "2023-06-07T11:26:26Z",
+      "policy": "1.2.3.4.1",
+      "serial_number": "04",
+      "token_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "token_bytes": 2048,
+      "tsa_certificate_embedded": false
+    },
+    "last_probe": {
+      "kind": "Fixture",
+      "status": "Passed",
+      "checked_at": "2026-07-09T10:15:30Z",
+      "request_der_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "response_der_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "request_matches_fixture": true,
+      "error": null
+    },
+    "tsl": {
+      "source": {
+        "kind": "Fixture",
+        "path": null,
+        "note": "parsed from bundled chancela-tsl fixture; no live TSL fetch attempted"
+      },
+      "signature": "Invalid",
+      "error": "TSL XML-DSig signature is missing or malformed: missing Reference"
+    },
+    "records": 1,
+    "granted_records": 1,
+    "trusted_records": 0,
+    "policy_analysis": {
+      "accepted_policy": "Any",
+      "fixture_policy": "1.2.3.4.1",
+      "fixture_policy_accepted": true,
+      "qualified_timestamp_records": 1,
+      "trusted_qualified_timestamp_records": 0,
+      "advisory": true
+    }
+  },
+  "records": [
+    {
+      "id": "svc-tsa-example",
+      "provider_id": "tsp-tsa-example",
+      "provider_name": "Cartorio Notarial Timestamping",
+      "name": "Qualified Timestamping Authority",
+      "service_type": "http://uri.etsi.org/TrstSvc/Svctype/TSA/QTST",
+      "status": {
+        "kind": "Granted",
+        "uri": null
+      },
+      "status_starting_time": "2019-01-01T00:00:00Z",
+      "status_starting_time_raw": "2019-01-01T00:00:00Z",
+      "qualified_timestamp_service": true,
+      "granted": true,
+      "effective": true,
+      "trusted": false,
+      "additional_service_info": [],
+      "service_supply_points": ["http://tsa.cartorio.example.test/tsa/server"],
+      "history_count": 0,
+      "identities": {
+        "certificates": 1,
+        "subject_names": [
+          "CN=Qualified Timestamping Authority,O=Cartorio Notarial,C=PT"
+        ],
+        "subject_key_ids": ["91b78a4499dc5fa769175c6b8ba32b9b4d8528a6"]
+      },
+      "analysis": {
+        "classification": "QualifiedTimestampService",
+        "trust_basis": "AdvisoryOnlyInvalidTslSignature",
+        "blocking_reasons": ["TSL signature is not valid; record is advisory"]
+      }
+    }
+  ]
+}

@@ -293,6 +293,8 @@ pub struct RestoreRequest {
     /// The backup archive to restore from: an absolute path, or a bare file name resolved under
     /// `<data_dir>/backups/`.
     pub archive: String,
+    /// Optional passphrase for encrypted `.cbackup` envelopes. Omit for legacy plaintext zips.
+    pub passphrase: Option<String>,
     #[serde(default = "default_actor")]
     pub actor: String,
 }
@@ -339,13 +341,27 @@ pub async fn restore_store(
     if !archive.exists() {
         return Err(ApiError::NotFound);
     }
+    let sidecars = state.instance_sidecars();
+    let passphrase = req.passphrase;
 
     let outcome = {
         let mut ledger = state.ledger.write().await;
         let at = OffsetDateTime::now_utc();
-        let outcome = store
-            .restore(&mut ledger, &archive, &data_dir, &actor, at)
-            .map_err(map_store_error)?;
+        let outcome = match passphrase.as_deref() {
+            Some(passphrase) => store.restore_encrypted_with_sidecars(
+                &mut ledger,
+                &archive,
+                &data_dir,
+                &actor,
+                at,
+                passphrase,
+                &sidecars,
+            ),
+            None => {
+                store.restore_with_sidecars(&mut ledger, &archive, &data_dir, &actor, at, &sidecars)
+            }
+        }
+        .map_err(map_store_error)?;
         crate::refresh_degraded(&state, &ledger).await;
         outcome
     };

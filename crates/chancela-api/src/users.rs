@@ -572,6 +572,12 @@ async fn authorize_secret_op_throttled(
     current_password: Option<&str>,
     recovery_phrase: Option<&str>,
 ) -> Result<SecretAuthz, ApiError> {
+    if actor.is_api_key() {
+        return Err(ApiError::Forbidden(
+            "chave API não abre uma sessão interativa".to_owned(),
+        ));
+    }
+
     // Self-service is only possible when the requester *is* the (existing) target. Never throttled,
     // never audited, never runs argon2 (the caller already holds the account).
     if requester_id == Some(target_id) && target.is_some() {

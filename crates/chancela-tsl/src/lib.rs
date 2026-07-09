@@ -30,6 +30,7 @@ pub mod cache;
 pub mod error;
 pub mod parse;
 pub mod query;
+pub mod record;
 pub mod source;
 
 pub(crate) mod xmldsig;
@@ -37,9 +38,14 @@ pub(crate) mod xmldsig;
 pub use cache::{CachedTsl, FALLBACK_TTL};
 pub use error::TslError;
 pub use parse::{
-    DigitalIdentity, ServiceStatus, TrustService, TrustServiceProvider, TrustedList, parse_tsl,
+    DigitalIdentity, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
+    TrustServiceProvider, TrustedList, parse_tsl,
 };
 pub use query::{QualifiedStatus, TslClient, qualified_esig_services, resolve_esig_status};
+pub use record::{
+    RecordIdentifier, RecordIdentifierKind, RecordSearch, RecordStatusKind, TslRecord,
+    filter_records, trust_service_records, tsa_records,
+};
 pub use source::{
     BytesTslSource, DEFAULT_PT_TSL_URL, ENV_TSL_URL, FileTslSource, HttpTslSource, TslSource,
     validate_tsl_signature,

@@ -10,16 +10,44 @@ use chancela_tsa::mock::{
     FIXTURE_DIGEST, FIXTURE_NONCE, FIXTURE_REQUEST_DER, FIXTURE_RESPONSE_DER, MockTsaTransport,
 };
 use chancela_tsa::verify::QualifiedTimestampPolicy;
-use chancela_tsa::{TimestampRequest, TsaClient, TsaError, verify_response};
+use chancela_tsa::{TimestampRequest, TsaClient, TsaError, TsaTransport, verify_response};
 
 /// The policy OID carried by the bundled OpenSSL fixture token (`tsa.cnf` `default_policy`).
 const FIXTURE_POLICY: &str = "1.2.3.4.1";
+/// DER encoding of `id-ct-TSTInfo` as it appears in the token's eContentType and signed attrs.
+const TST_INFO_OID_DER: &[u8] = &[
+    0x06, 0x0B, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x10, 0x01, 0x04,
+];
 
 fn fixture_request() -> TimestampRequest {
     // Match the bundled request exactly: certReq unset, explicit fixture nonce.
     TimestampRequest::new(FIXTURE_DIGEST)
         .without_certificate()
         .with_nonce(FIXTURE_NONCE)
+}
+
+fn fixture_with_tst_info_oid_last_arc(occurrence: usize, last_arc: u8) -> Vec<u8> {
+    let mut bytes = FIXTURE_RESPONSE_DER.to_vec();
+    let mut seen = 0;
+    for pos in 0..=bytes.len() - TST_INFO_OID_DER.len() {
+        if bytes[pos..].starts_with(TST_INFO_OID_DER) {
+            if seen == occurrence {
+                bytes[pos + TST_INFO_OID_DER.len() - 1] = last_arc;
+                return bytes;
+            }
+            seen += 1;
+        }
+    }
+    panic!("id-ct-TSTInfo OID occurrence {occurrence} not found");
+}
+
+#[derive(Debug, Clone)]
+struct OutageTransport;
+
+impl TsaTransport for OutageTransport {
+    fn send(&self, _der_req: &[u8]) -> Result<Vec<u8>, TsaError> {
+        Err(TsaError::Transport("simulated TSA outage".to_owned()))
+    }
 }
 
 #[test]
@@ -66,6 +94,16 @@ fn client_round_trip_via_mock_transport() {
 }
 
 #[test]
+fn client_surfaces_transport_outage() {
+    let client = TsaClient::new(OutageTransport);
+    let err = client.stamp(&fixture_request()).unwrap_err();
+    assert!(
+        matches!(err, TsaError::Transport(ref message) if message == "simulated TSA outage"),
+        "got {err:?}"
+    );
+}
+
+#[test]
 fn imprint_mismatch_is_rejected() {
     // Ask to timestamp a different digest than the fixture covers.
     let request = TimestampRequest::new([0x11; 32])
@@ -92,6 +130,53 @@ fn nonce_mismatch_is_rejected() {
     )
     .unwrap_err();
     assert!(matches!(err, TsaError::NonceMismatch), "got {err:?}");
+}
+
+#[test]
+fn rejected_pki_status_is_rejected_before_token_checks() {
+    // TimeStampResp ::= SEQUENCE { status = rejection(2), no token }.
+    let response_der = [0x30, 0x05, 0x30, 0x03, 0x02, 0x01, 0x02];
+    let err = verify_response(
+        &response_der,
+        &fixture_request(),
+        &QualifiedTimestampPolicy::Any,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, TsaError::Rejected { status: 2 }),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn granted_response_without_token_is_rejected() {
+    // TimeStampResp ::= SEQUENCE { status = granted(0), no token }.
+    let response_der = [0x30, 0x05, 0x30, 0x03, 0x02, 0x01, 0x00];
+    let err = verify_response(
+        &response_der,
+        &fixture_request(),
+        &QualifiedTimestampPolicy::Any,
+    )
+    .unwrap_err();
+    assert!(matches!(err, TsaError::MissingToken), "got {err:?}");
+}
+
+#[test]
+fn token_with_wrong_encapsulated_content_type_is_rejected() {
+    // Replace the token eContentType id-ct-TSTInfo with id-ct-authData (same DER length).
+    let bytes = fixture_with_tst_info_oid_last_arc(0, 0x02);
+    let err =
+        verify_response(&bytes, &fixture_request(), &QualifiedTimestampPolicy::Any).unwrap_err();
+    assert!(matches!(err, TsaError::NotTstInfo(_)), "got {err:?}");
+}
+
+#[test]
+fn signed_attribute_content_type_mismatch_is_rejected() {
+    // Replace only the SignerInfo content-type attribute value, leaving eContentType intact.
+    let bytes = fixture_with_tst_info_oid_last_arc(1, 0x02);
+    let err =
+        verify_response(&bytes, &fixture_request(), &QualifiedTimestampPolicy::Any).unwrap_err();
+    assert!(matches!(err, TsaError::ContentTypeMismatch), "got {err:?}");
 }
 
 #[test]

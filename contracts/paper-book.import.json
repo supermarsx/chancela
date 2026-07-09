@@ -1,0 +1,45 @@
+{
+  "report_kind": "paper_book_import_validation",
+  "dry_run": true,
+  "legal_notice": "Historical paper-book scans are classified as non-canonical evidence only. This report does not preserve the package, replace canonical digital minutes, or claim PDF/A, legal, or qualified-signature validity.",
+  "identity": {
+    "entity_ref": "entity-legacy-001",
+    "entity_name": "Encosto Estrategico, S.A.",
+    "entity_nipc": "503004642",
+    "book_ref": "ag-book-1968-1971"
+  },
+  "date_span": {
+    "from": "1968-01-01",
+    "to": "1971-12-31"
+  },
+  "package": {
+    "page_count": 240,
+    "source_filename": "ag-1968-1971.pdf",
+    "digest": "abababababababababababababababababababababababababababababababab",
+    "notes_present": true,
+    "notes_truncated": false
+  },
+  "candidate_classification": {
+    "classification": "historical_paper_book_non_canonical_evidence",
+    "non_canonical": true,
+    "historical_evidence": true,
+    "preservation_status": "not_preserved_by_validation",
+    "canonical_minutes_claimed": false,
+    "legal_validity_claimed": false,
+    "signature_validity_claimed": false,
+    "qualified_signature_claimed": false
+  },
+  "can_accept_as_import_candidate": true,
+  "required_operator_actions": [
+    "review_report",
+    "preserve_package_in_a_later_operator_action",
+    "link_to_canonical_records_without_replacing_them"
+  ],
+  "findings": [
+    {
+      "severity": "info",
+      "code": "report_only",
+      "message": "validation is read-only; no package, book, act, document, or ledger event was created"
+    }
+  ]
+}

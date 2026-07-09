@@ -1,0 +1,53 @@
+{
+  "exported_at": "2026-07-08T12:00:00Z",
+  "scope": "user:6d5e4f00-0000-4000-8000-000000000005",
+  "format_version": 1,
+  "redaction_notes": [
+    "credential verifiers and wrapped private key material are excluded",
+    "ledger entries are references only: payload digests and chain hashes, not payload bodies"
+  ],
+  "exclusions": [
+    "password_hash",
+    "recovery_hash",
+    "recovery_phrase",
+    "api_key_secret",
+    "bearer_token",
+    "attestation_private_key"
+  ],
+  "user": {
+    "id": "6d5e4f00-0000-4000-8000-000000000005",
+    "username": "amelia.marques",
+    "display_name": "Amélia Marques",
+    "created_at": "2026-07-07T10:15:30Z",
+    "active": true,
+    "has_secret": false,
+    "has_attestation_key": false,
+    "has_recovery_phrase": false,
+    "role_assignments": [
+      {
+        "role_id": "owner",
+        "scope": {
+          "kind": "global"
+        },
+        "role_name": "Proprietário",
+        "permissions": ["user.manage", "ledger.read"]
+      }
+    ]
+  },
+  "ledger_event_refs": [
+    {
+      "id": "5c4d3e00-0000-4000-8000-000000000004",
+      "seq": 7,
+      "actor": "amelia.marques",
+      "justification": "DSR request created",
+      "timestamp": "2026-07-08T09:00:00Z",
+      "scope": "user:6d5e4f00-0000-4000-8000-000000000005",
+      "kind": "privacy.dsr.request.created",
+      "payload_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "chains": ["global", "user:6d5e4f00-0000-4000-8000-000000000005"],
+      "attestation": null
+    }
+  ]
+}
