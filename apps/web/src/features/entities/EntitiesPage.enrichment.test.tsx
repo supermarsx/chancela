@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { BookView, Entity, LedgerEventView } from '../../api/types';
+import type { BookView, Entity, EntityRegistrySummary, LedgerEventView } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { EntitiesPage } from './EntitiesPage';
 
@@ -39,6 +39,61 @@ const ENTITY_B: Entity = {
   fiscal_year_end: null,
   profile: { ...PROFILE, family: 'Condominium', template_family: 'condo' },
   statute: null,
+};
+
+const REGISTRY_SUMMARY_A: EntityRegistrySummary = {
+  imported: true,
+  matricula: '99999/20200101',
+  data_constituicao: '2020-01-01',
+  capital: '5.000,00 EUR',
+  cae: [
+    {
+      code: '68110',
+      role: 'Principal',
+      designation: 'Compra e venda de bens imobiliários.',
+      level: 'Subclasse',
+      revision: 'Rev4',
+    },
+    {
+      code: '99999',
+      role: 'Secundario',
+      designation: null,
+      level: null,
+      revision: null,
+    },
+  ],
+  retrieved_at: '2026-07-07T10:15:30Z',
+  valid_until: '2027-07-05',
+  expired: false,
+  last_registry_change: {
+    label: 'CONSTITUIÇÃO DE SOCIEDADE',
+    date: '2020-01-01',
+    reference: '1/20200101',
+  },
+};
+
+const EXPIRED_REGISTRY_SUMMARY_B: EntityRegistrySummary = {
+  imported: true,
+  matricula: '11111/20190101',
+  data_constituicao: '2019-01-01',
+  capital: '1.000,00 EUR',
+  cae: [
+    {
+      code: '70220',
+      role: 'Principal',
+      designation: 'Outras atividades de consultoria para os negócios e a gestão.',
+      level: 'Subclasse',
+      revision: 'Rev4',
+    },
+  ],
+  retrieved_at: '2026-01-10T12:00:00Z',
+  valid_until: '2026-01-01',
+  expired: true,
+  last_registry_change: {
+    label: 'ALTERAÇÕES AO CONTRATO DE SOCIEDADE',
+    date: '2025-12-15',
+    reference: '2/20251215',
+  },
 };
 
 const OPEN_BOOK: BookView = {
@@ -227,15 +282,32 @@ afterEach(() => {
 
 describe('EntitiesPage enrichment and filtering', () => {
   it('surfaces fiscal year, current book and registry/change activity from entity summaries', async () => {
-    stubEntitiesPageFetch();
+    stubEntitiesPageFetch({
+      entities: [{ ...ENTITY_A, registry_summary: REGISTRY_SUMMARY_A }, ENTITY_B],
+    });
     renderWithProviders(<EntitiesPage />, ['/entidades']);
 
     expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText('Registo importado').length).toBeGreaterThan(0));
 
     expect(screen.getByRole('columnheader', { name: 'Fecho fiscal' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Matrícula' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Constituição' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Capital' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'CAE' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Registo' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Últ. registo' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Último livro' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Última alteração / atividade' })).toBeTruthy();
+    expect(screen.getByText('99999/20200101')).toBeTruthy();
+    expect(screen.getByText('2020-01-01')).toBeTruthy();
+    expect(screen.getByText('5.000,00 EUR')).toBeTruthy();
+    expect(screen.getByText('68110 principal')).toBeTruthy();
+    expect(screen.getByText('Compra e venda de bens imobiliários.')).toBeTruthy();
+    expect(screen.getByText('+1 CAE')).toBeTruthy();
+    expect(screen.getAllByText('Dentro da validade').length).toBeGreaterThan(1);
+    expect(screen.getByText(/Válido até 2027-07-05/)).toBeTruthy();
+    expect(screen.getByText('CONSTITUIÇÃO DE SOCIEDADE')).toBeTruthy();
     expect(screen.getByText('06-30')).toBeTruthy();
     expect(screen.getByText('12-31 (por omissão)')).toBeTruthy();
     expect(screen.getAllByText('Sociedade por Quotas').length).toBeGreaterThan(0);
@@ -255,9 +327,12 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getByRole('link', { name: 'Ver arquivo' }).getAttribute('href')).toBe('/arquivo');
   });
 
-  it('filters by folded search text, legal form, NIPC validation, book state and activity type', async () => {
+  it('filters by folded search text, legal form, NIPC validation, registry state, book state and activity type', async () => {
     stubEntitiesPageFetch({
-      entities: [ENTITY_A, { ...ENTITY_B, nipc_validated: false }],
+      entities: [
+        { ...ENTITY_A, registry_summary: REGISTRY_SUMMARY_A },
+        { ...ENTITY_B, nipc_validated: false },
+      ],
       ledger: [
         ledgerEvent(ENTITY_A, 'registry.imported', 2),
         ledgerEvent(ENTITY_B, 'entity.created', 3),
@@ -287,6 +362,18 @@ describe('EntitiesPage enrichment and filtering', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Registo'), { target: { value: 'imported' } });
+    expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
+    expect(screen.queryByText(ENTITY_B.name)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
+    await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Registo'), { target: { value: 'not-imported' } });
+    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
+    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
+    await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Livros'), { target: { value: 'open' } });
     expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
     expect(screen.queryByText(ENTITY_B.name)).toBeNull();
@@ -295,6 +382,39 @@ describe('EntitiesPage enrichment and filtering', () => {
     fireEvent.change(screen.getByLabelText('Atividade'), { target: { value: 'entity' } });
     expect(screen.queryByText(ENTITY_A.name)).toBeNull();
     expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+  });
+
+  it('filters registry freshness and searches registry-specific fields', async () => {
+    stubEntitiesPageFetch({
+      entities: [
+        { ...ENTITY_A, registry_summary: REGISTRY_SUMMARY_A },
+        { ...ENTITY_B, registry_summary: EXPIRED_REGISTRY_SUMMARY_B },
+      ],
+      ledger: [
+        ledgerEvent(ENTITY_A, 'registry.imported', 2),
+        ledgerEvent(ENTITY_B, 'registry.imported', 3),
+      ],
+    });
+    renderWithProviders(<EntitiesPage />, ['/entidades']);
+
+    expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText('Expirado').length).toBeGreaterThan(1));
+
+    fireEvent.change(screen.getByLabelText('Validade'), { target: { value: 'expired' } });
+    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
+    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
+    await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: '70220' } });
+    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
+    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
+    await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: '99999/20200101' } });
+    expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
+    expect(screen.queryByText(ENTITY_B.name)).toBeNull();
   });
 
   it('filters by book kind, last-book state and exact last-change type while exposing state totals', async () => {

@@ -20,8 +20,8 @@ use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{authorizer, require_permission, scope_of_book, scope_of_entity};
 use crate::dto::{
-    BookStateCountsView, BookView, EntityActivitySummaryView, EntityListItemView, EntityView,
-    LedgerEventView, read_redaction_for_actor,
+    BookStateCountsView, BookView, EntityActivitySummaryView, EntityListItemView,
+    EntityRegistrySummaryView, EntityView, LedgerEventView, read_redaction_for_actor,
 };
 use crate::error::ApiError;
 
@@ -210,6 +210,9 @@ pub async fn list_entities(
         .filter(|b| authz.permits(Permission::BookRead, scope_of_book(b.id)))
         .collect();
 
+    let registry_extracts = state.registry_extracts.read().await;
+    let cae = state.cae.read().await;
+    let today = time::OffsetDateTime::now_utc().date();
     let ledger = if authz.permits(Permission::LedgerRead, Scope::Global) {
         Some(state.ledger.read().await)
     } else {
@@ -226,6 +229,9 @@ pub async fn list_entities(
             activity_summary: summaries
                 .remove(&e.id)
                 .unwrap_or_else(empty_activity_summary),
+            registry_summary: registry_extracts
+                .get(&e.id)
+                .map(|extract| EntityRegistrySummaryView::build(extract, &cae, today)),
         })
         .collect();
     Ok(Json(out))

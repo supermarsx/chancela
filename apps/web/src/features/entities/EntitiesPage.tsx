@@ -23,6 +23,7 @@ import {
   type EntityBookStateCounts,
   type EntityFamily,
   type EntityKind,
+  type EntityRegistrySummary,
   type LedgerEventView,
 } from '../../api/types';
 import { useLocale, useT } from '../../i18n';
@@ -49,6 +50,8 @@ type BookKindFilter = 'all' | BookKind;
 type LastBookFilter = 'all' | BookState | 'none';
 type ActivityFilter = 'all' | 'registry' | 'entity' | 'book' | 'act' | 'document' | 'none';
 type ValidationFilter = 'all' | 'validated' | 'unvalidated';
+type RegistryImportFilter = 'all' | 'imported' | 'not-imported';
+type RegistryFreshnessFilter = 'all' | 'fresh' | 'expired' | 'no-expiry';
 
 interface EnrichedEntityRow {
   entity: Entity;
@@ -56,6 +59,7 @@ interface EnrichedEntityRow {
   lastBook: BookView | null;
   bookStateCounts: Record<BookState, number>;
   activity: LedgerEventView | null;
+  registry: EntityRegistrySummary | null;
   hasActivitySummary: boolean;
   searchText: string;
 }
@@ -103,6 +107,19 @@ const VALIDATION_FILTER_OPTIONS: { value: ValidationFilter; label: string }[] = 
   { value: 'all', label: 'Todos os NIPC' },
   { value: 'validated', label: 'NIPC validado' },
   { value: 'unvalidated', label: 'NIPC por validar' },
+];
+
+const REGISTRY_IMPORT_FILTER_OPTIONS: { value: RegistryImportFilter; label: string }[] = [
+  { value: 'all', label: 'Todo o registo' },
+  { value: 'imported', label: 'Importado' },
+  { value: 'not-imported', label: 'Não importado' },
+];
+
+const REGISTRY_FRESHNESS_FILTER_OPTIONS: { value: RegistryFreshnessFilter; label: string }[] = [
+  { value: 'all', label: 'Qualquer validade' },
+  { value: 'fresh', label: 'Dentro da validade' },
+  { value: 'expired', label: 'Expirado' },
+  { value: 'no-expiry', label: 'Sem validade' },
 ];
 
 function normalizeSearch(value: string): string {
@@ -184,6 +201,31 @@ function formatActivityTimestamp(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
+function formatDateValue(value: string | null | undefined, fallback = '—'): string {
+  return value ?? fallback;
+}
+
+function caeLabel(cae: EntityRegistrySummary['cae'][number]): string {
+  const suffix = cae.role === 'Principal' ? ' principal' : ' secundário';
+  return `${cae.code}${suffix}`;
+}
+
+function registryFreshnessTone(
+  registry: EntityRegistrySummary | null,
+): 'neutral' | 'accent' | 'ok' | 'warn' {
+  if (!registry) return 'neutral';
+  if (registry.expired === true) return 'warn';
+  if (registry.expired === false) return 'ok';
+  return 'accent';
+}
+
+function registryFreshnessLabel(registry: EntityRegistrySummary | null): string {
+  if (!registry) return 'Não importado';
+  if (registry.expired === true) return 'Expirado';
+  if (registry.expired === false) return 'Dentro da validade';
+  return 'Validade desconhecida';
+}
+
 function indexBooksByEntity(books: BookView[] | undefined): Map<string, BookView[]> {
   const byEntity = new Map<string, BookView[]>();
   for (const book of books ?? []) {
@@ -251,6 +293,7 @@ function buildSearchText(
   lastBook: BookView | null,
   stateCounts: Record<BookState, number>,
   activity: LedgerEventView | null,
+  registry: EntityRegistrySummary | null,
   locale: string,
 ): string {
   const searchableBooks =
@@ -283,6 +326,17 @@ function buildSearchText(
       activity?.kind ?? '',
       activity?.actor ?? '',
       activity?.scope ?? '',
+      registry ? 'registo importado' : 'registo não importado',
+      registry?.matricula ?? '',
+      registry?.data_constituicao ?? '',
+      registry?.capital ?? '',
+      registry?.retrieved_at ?? '',
+      registry?.valid_until ?? '',
+      registry ? registryFreshnessLabel(registry) : '',
+      ...(registry?.cae.flatMap((cae) => [cae.code, cae.role, cae.designation ?? '']) ?? []),
+      registry?.last_registry_change?.label ?? '',
+      registry?.last_registry_change?.date ?? '',
+      registry?.last_registry_change?.reference ?? '',
     ].join(' '),
   );
 }
@@ -330,6 +384,25 @@ function entityMatchesActivityKindFilter(
 function entityMatchesValidationFilter(entity: Entity, filter: ValidationFilter): boolean {
   if (filter === 'all') return true;
   return filter === 'validated' ? entity.nipc_validated : !entity.nipc_validated;
+}
+
+function entityMatchesRegistryImportFilter(
+  registry: EntityRegistrySummary | null,
+  filter: RegistryImportFilter,
+): boolean {
+  if (filter === 'all') return true;
+  return filter === 'imported' ? !!registry : !registry;
+}
+
+function entityMatchesRegistryFreshnessFilter(
+  registry: EntityRegistrySummary | null,
+  filter: RegistryFreshnessFilter,
+): boolean {
+  if (filter === 'all') return true;
+  if (!registry) return filter === 'no-expiry';
+  if (filter === 'fresh') return registry.expired === false;
+  if (filter === 'expired') return registry.expired === true;
+  return registry.valid_until === null || registry.expired === null;
 }
 
 function familyFilterOptions(entities: Entity[] | undefined): { value: string; label: string }[] {
@@ -439,6 +512,50 @@ function ActivitySummary({
   );
 }
 
+function RegistryFreshnessSummary({ registry }: { registry: EntityRegistrySummary | null }) {
+  if (!registry) {
+    return (
+      <span style={SUMMARY_STACK_STYLE}>
+        <Badge tone="neutral">Não importado</Badge>
+        <span className="muted">Sem certidão</span>
+      </span>
+    );
+  }
+  return (
+    <span style={SUMMARY_STACK_STYLE}>
+      <Badge tone={registryFreshnessTone(registry)}>{registryFreshnessLabel(registry)}</Badge>
+      <span className="muted">Obtido {formatDateValue(registry.retrieved_at)}</span>
+      <span className="muted">Válido até {formatDateValue(registry.valid_until)}</span>
+    </span>
+  );
+}
+
+function CaeSummary({ registry }: { registry: EntityRegistrySummary | null }) {
+  if (!registry || registry.cae.length === 0) return <span className="muted">—</span>;
+  const [first, ...rest] = registry.cae;
+  return (
+    <span style={SUMMARY_STACK_STYLE}>
+      <span className="mono">{caeLabel(first)}</span>
+      {first.designation ? <span className="muted">{first.designation}</span> : null}
+      {rest.length > 0 ? <span className="muted">+{rest.length} CAE</span> : null}
+    </span>
+  );
+}
+
+function LastRegistryChange({ registry }: { registry: EntityRegistrySummary | null }) {
+  const change = registry?.last_registry_change;
+  if (!change) return <span className="muted">—</span>;
+  return (
+    <span style={SUMMARY_STACK_STYLE}>
+      <span>{change.label}</span>
+      <span className="muted">
+        {formatDateValue(change.date)}
+        {change.reference ? ` · ${change.reference}` : ''}
+      </span>
+    </span>
+  );
+}
+
 export function EntitiesPage() {
   const t = useT();
   const locale = useLocale();
@@ -455,6 +572,9 @@ export function EntitiesPage() {
   const [lastBookFilter, setLastBookFilter] = useState<LastBookFilter>('all');
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all');
   const [activityKindFilter, setActivityKindFilter] = useState('all');
+  const [registryImportFilter, setRegistryImportFilter] = useState<RegistryImportFilter>('all');
+  const [registryFreshnessFilter, setRegistryFreshnessFilter] =
+    useState<RegistryFreshnessFilter>('all');
 
   const enrichedRows = useMemo<EnrichedEntityRow[]>(() => {
     const entities = data ?? [];
@@ -468,14 +588,24 @@ export function EntitiesPage() {
         ? bookStateCountsFromSummary(summary.book_state_counts)
         : bookStateCounts(entityBooks);
       const activity = summary?.last_change ?? null;
+      const registry = entity.registry_summary ?? null;
       return {
         entity,
         books: entityBooks,
         lastBook,
         bookStateCounts: stateCounts,
         activity,
+        registry,
         hasActivitySummary: !!summary,
-        searchText: buildSearchText(entity, entityBooks, lastBook, stateCounts, activity, locale),
+        searchText: buildSearchText(
+          entity,
+          entityBooks,
+          lastBook,
+          stateCounts,
+          activity,
+          registry,
+          locale,
+        ),
       };
     });
   }, [books.data, data, locale]);
@@ -483,10 +613,20 @@ export function EntitiesPage() {
   const query = normalizeSearch(deferredSearch.trim());
   const rows = useMemo(() => {
     return enrichedRows.filter(
-      ({ entity, books: entityBooks, lastBook, bookStateCounts, activity, searchText }) => {
+      ({
+        entity,
+        books: entityBooks,
+        lastBook,
+        bookStateCounts,
+        activity,
+        registry,
+        searchText,
+      }) => {
         if (family !== 'all' && entity.family !== family) return false;
         if (kind !== 'all' && entity.kind !== kind) return false;
         if (!entityMatchesValidationFilter(entity, validationFilter)) return false;
+        if (!entityMatchesRegistryImportFilter(registry, registryImportFilter)) return false;
+        if (!entityMatchesRegistryFreshnessFilter(registry, registryFreshnessFilter)) return false;
         if (!entityMatchesBookFilter(bookStateCounts, bookFilter)) return false;
         if (!entityMatchesBookKindFilter(entityBooks, bookKindFilter)) return false;
         if (!entityMatchesLastBookFilter(lastBook, lastBookFilter)) return false;
@@ -505,6 +645,8 @@ export function EntitiesPage() {
     kind,
     lastBookFilter,
     query,
+    registryFreshnessFilter,
+    registryImportFilter,
     validationFilter,
   ]);
 
@@ -517,6 +659,8 @@ export function EntitiesPage() {
     family !== 'all' ||
     kind !== 'all' ||
     validationFilter !== 'all' ||
+    registryImportFilter !== 'all' ||
+    registryFreshnessFilter !== 'all' ||
     bookFilter !== 'all' ||
     bookKindFilter !== 'all' ||
     lastBookFilter !== 'all' ||
@@ -528,6 +672,8 @@ export function EntitiesPage() {
     setFamily('all');
     setKind('all');
     setValidationFilter('all');
+    setRegistryImportFilter('all');
+    setRegistryFreshnessFilter('all');
     setBookFilter('all');
     setBookKindFilter('all');
     setLastBookFilter('all');
@@ -569,7 +715,7 @@ export function EntitiesPage() {
         }
       >
         {isLoading ? (
-          <SkeletonTable cols={8} />
+          <SkeletonTable cols={12} />
         ) : error ? (
           <ErrorNote error={error} />
         ) : !data || data.length === 0 ? (
@@ -619,6 +765,24 @@ export function EntitiesPage() {
                   value={validationFilter}
                   onChange={(e) => setValidationFilter(e.target.value as ValidationFilter)}
                   options={VALIDATION_FILTER_OPTIONS}
+                />
+              </Field>
+              <Field label="Registo" htmlFor="entities-registry-import-filter">
+                <Select
+                  id="entities-registry-import-filter"
+                  value={registryImportFilter}
+                  onChange={(e) => setRegistryImportFilter(e.target.value as RegistryImportFilter)}
+                  options={REGISTRY_IMPORT_FILTER_OPTIONS}
+                />
+              </Field>
+              <Field label="Validade" htmlFor="entities-registry-freshness-filter">
+                <Select
+                  id="entities-registry-freshness-filter"
+                  value={registryFreshnessFilter}
+                  onChange={(e) =>
+                    setRegistryFreshnessFilter(e.target.value as RegistryFreshnessFilter)
+                  }
+                  options={REGISTRY_FRESHNESS_FILTER_OPTIONS}
                 />
               </Field>
               <Field label="Livros" htmlFor="entities-book-filter">
@@ -685,6 +849,12 @@ export function EntitiesPage() {
                     <th>{t('entities.th.nipc')}</th>
                     <th>{t('entities.th.seat')}</th>
                     <th>{t('entities.th.form')}</th>
+                    <th>Matrícula</th>
+                    <th>Constituição</th>
+                    <th>Capital</th>
+                    <th>CAE</th>
+                    <th>Registo</th>
+                    <th>Últ. registo</th>
                     <th>Fecho fiscal</th>
                     <th>Último livro</th>
                     <th>Última alteração / atividade</th>
@@ -700,6 +870,7 @@ export function EntitiesPage() {
                     lastBook,
                     bookStateCounts: stateCounts,
                     activity,
+                    registry,
                     hasActivitySummary,
                   }) => (
                     <tr key={ent.id}>
@@ -713,6 +884,24 @@ export function EntitiesPage() {
                       <td>{ent.seat}</td>
                       <td>
                         <EntityContext entity={ent} />
+                      </td>
+                      <td>
+                        {registry?.matricula ? (
+                          <code className="mono">{registry.matricula}</code>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>{formatDateValue(registry?.data_constituicao)}</td>
+                      <td>{registry?.capital ?? <span className="muted">—</span>}</td>
+                      <td>
+                        <CaeSummary registry={registry} />
+                      </td>
+                      <td>
+                        <RegistryFreshnessSummary registry={registry} />
+                      </td>
+                      <td>
+                        <LastRegistryChange registry={registry} />
                       </td>
                       <td>
                         <code className="mono">{displayFiscalYearEnd(ent.fiscal_year_end)}</code>

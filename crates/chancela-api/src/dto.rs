@@ -186,6 +186,51 @@ impl From<&ComplianceIssue> for IssueView {
 
 // --- Entity view -------------------------------------------------------------------------
 
+impl RegistryChangeSummaryView {
+    fn from_event(e: &RegistryEvent) -> Option<Self> {
+        let label = e
+            .kind_hint
+            .clone()
+            .or_else(|| {
+                e.text
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .map(str::to_owned)
+            })
+            .or_else(|| {
+                e.number
+                    .as_ref()
+                    .map(|number| format!("Inscrição {number}"))
+            })?;
+        Some(RegistryChangeSummaryView {
+            label,
+            date: e.date.clone(),
+            reference: e.apresentacao.clone().or_else(|| e.number.clone()),
+        })
+    }
+}
+
+impl EntityRegistrySummaryView {
+    pub(crate) fn build(e: &RegistryExtract, cae: &CaeCatalog, today: Date) -> Self {
+        EntityRegistrySummaryView {
+            imported: true,
+            matricula: e.matricula.clone(),
+            data_constituicao: e.data_constituicao.clone(),
+            capital: e.effective_capital(),
+            cae: e.cae.iter().map(|r| enrich_cae_ref(r, cae)).collect(),
+            retrieved_at: e.provenance.retrieved_at.clone(),
+            valid_until: e.provenance.valid_until.clone(),
+            expired: compute_expired(e.provenance.valid_until.as_deref(), today),
+            last_registry_change: e
+                .inscricoes
+                .iter()
+                .rev()
+                .find_map(RegistryChangeSummaryView::from_event),
+        }
+    }
+}
+
 /// Response view of an [`Entity`] (contract §2.3).
 ///
 /// The API owns this wire shape rather than serializing the core `Entity` directly, so the NIPC
@@ -224,6 +269,30 @@ pub struct EntityActivitySummaryView {
     pub last_change: Option<LedgerEventView>,
 }
 
+/// Compact list-only registry rollup for one entity. The full extract remains available via
+/// `GET /v1/entities/{id}/registry`; this shape keeps the entities table useful without pushing
+/// a heavy per-row registry payload through the list endpoint.
+#[derive(Serialize)]
+pub struct EntityRegistrySummaryView {
+    pub imported: bool,
+    pub matricula: Option<String>,
+    pub data_constituicao: Option<String>,
+    pub capital: Option<String>,
+    pub cae: Vec<CaeRefView>,
+    pub retrieved_at: String,
+    pub valid_until: Option<String>,
+    pub expired: Option<bool>,
+    pub last_registry_change: Option<RegistryChangeSummaryView>,
+}
+
+/// The most recent registry-side change/event already available in the stored extract.
+#[derive(Serialize)]
+pub struct RegistryChangeSummaryView {
+    pub label: String,
+    pub date: Option<String>,
+    pub reference: Option<String>,
+}
+
 /// Stable count shape for an entity's readable books by lifecycle state.
 #[derive(Default, Serialize)]
 pub struct BookStateCountsView {
@@ -249,6 +318,7 @@ pub struct EntityListItemView {
     #[serde(flatten)]
     pub entity: EntityView,
     pub activity_summary: EntityActivitySummaryView,
+    pub registry_summary: Option<EntityRegistrySummaryView>,
 }
 
 impl From<&Entity> for EntityView {

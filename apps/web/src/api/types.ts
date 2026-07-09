@@ -201,6 +201,24 @@ export interface EntityActivitySummary {
   last_change: LedgerEventView | null;
 }
 
+export interface RegistryChangeSummary {
+  label: string;
+  date: string | null;
+  reference: string | null;
+}
+
+export interface EntityRegistrySummary {
+  imported: boolean;
+  matricula: string | null;
+  data_constituicao: string | null;
+  capital: string | null;
+  cae: CaeRefView[];
+  retrieved_at: string;
+  valid_until: string | null;
+  expired: boolean | null;
+  last_registry_change: RegistryChangeSummary | null;
+}
+
 export interface Entity {
   id: string;
   name: string;
@@ -218,6 +236,8 @@ export interface Entity {
   statute: StatuteOverrides | null;
   /** Present on `GET /v1/entities`; omitted by create/detail responses. */
   activity_summary?: EntityActivitySummary;
+  /** Present on GET /v1/entities; null when no certidão has been imported. */
+  registry_summary?: EntityRegistrySummary | null;
 }
 
 export interface BookView {
