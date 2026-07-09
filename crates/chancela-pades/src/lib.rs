@@ -17,8 +17,7 @@
 //! - **PAdES-B-LT / B-LTA** — not claimed as production-grade legal LTV. The crate can append
 //!   and inspect deterministic, caller-supplied `/DSS` + `/VRI` evidence via [`add_dss_revision`]
 //!   and [`inspect_dss`], but it does not fetch OCSP/CRL data, validate revocation freshness or
-//!   trust, merge an existing DSS, handle multi-signature VRI updates, or add archive document
-//!   timestamps.
+//!   trust, claim B-LT sufficiency, or add archive document timestamps.
 //!
 //! ## Layering
 //!
@@ -45,7 +44,9 @@ mod pdf;
 #[cfg(test)]
 mod tests;
 
-pub use dss::{DssEvidence, DssReport, add_dss_revision, inspect_dss};
+pub use dss::{
+    DssEvidence, DssReport, add_dss_revision, add_dss_revision_with_validation_time, inspect_dss,
+};
 pub use error::PadesError;
 pub use sign::{
     MAX_CONTENTS_BYTES, PreparedSignature, SignOptions, add_signature_timestamp, embed_signature,

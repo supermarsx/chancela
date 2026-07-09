@@ -24,8 +24,8 @@ use chancela_cades::{
 use crate::error::PadesError;
 use crate::sign::MAX_CONTENTS_BYTES;
 use crate::{
-    DssEvidence, SignOptions, add_dss_revision, add_signature_timestamp, inspect_dss, sign_pdf,
-    validate_pdf_signature,
+    DssEvidence, SignOptions, add_dss_revision, add_dss_revision_with_validation_time,
+    add_signature_timestamp, inspect_dss, sign_pdf, validate_pdf_signature,
 };
 
 // --- OIDs used only for the in-test self-signed certificates -------------------------------------
@@ -403,6 +403,10 @@ fn dss_revision_appends_to_b_t_and_reports_counts_hashes() {
     assert_eq!(report.total_len, with_dss.len());
     assert!(report.dss.present);
     assert_eq!(report.dss.vri_count, 1);
+    assert_eq!(report.dss.vri_keys.len(), 1);
+    assert_eq!(report.dss.vri_keys[0].len(), 64);
+    assert_eq!(report.dss.vri_tu_count, 0);
+    assert!(!report.dss.has_vri_tu());
     assert_eq!(report.dss.certificate_count(), 2);
     assert_eq!(report.dss.ocsp_count(), 1);
     assert_eq!(report.dss.crl_count(), 1);
@@ -444,17 +448,48 @@ fn empty_dss_evidence_is_rejected() {
 }
 
 #[test]
-fn existing_dss_is_rejected_in_this_slice() {
+fn existing_dss_is_merged_and_deduped() {
     let signer = TestSigner::new_rsa("PAdES Existing DSS", 11);
     let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
-    let evidence = fixture_dss_evidence(&signer);
+    let mut evidence = fixture_dss_evidence(&signer);
+    evidence.certificates.push(evidence.certificates[0].clone());
+    evidence.ocsp_responses.push(OCSP_DER_FIXTURE.to_vec());
+    evidence.crls.push(CRL_DER_FIXTURE.to_vec());
     let with_dss = add_dss_revision(&signed, &evidence).expect("first DSS append");
+    let first_cert_refs = dss_array_refs(&with_dss, b"Certs");
+    let first_ocsp_refs = dss_array_refs(&with_dss, b"OCSPs");
+    let first_crl_refs = dss_array_refs(&with_dss, b"CRLs");
 
-    let err = add_dss_revision(&with_dss, &evidence).unwrap_err();
-    assert!(
-        matches!(err, PadesError::ExistingDssUnsupported),
-        "got {err:?}"
-    );
+    let merged = add_dss_revision(&with_dss, &evidence).expect("merged DSS append");
+    let report = inspect_dss(&merged).expect("inspect merged DSS");
+
+    assert!(merged.starts_with(&with_dss));
+    assert_eq!(report.vri_count, 1);
+    assert_eq!(report.certificate_count(), 2);
+    assert_eq!(report.ocsp_count(), 1);
+    assert_eq!(report.crl_count(), 1);
+    assert_eq!(report.ocsp_hashes, vec![sha256(OCSP_DER_FIXTURE)]);
+    assert_eq!(report.crl_hashes, vec![sha256(CRL_DER_FIXTURE)]);
+    assert_eq!(dss_array_refs(&merged, b"Certs"), first_cert_refs);
+    assert_eq!(dss_array_refs(&merged, b"OCSPs"), first_ocsp_refs);
+    assert_eq!(dss_array_refs(&merged, b"CRLs"), first_crl_refs);
+}
+
+#[test]
+fn dss_validation_time_is_written_as_vri_tu_and_reported() {
+    let signer = TestSigner::new_rsa("PAdES DSS TU", 12);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let evidence = fixture_dss_evidence(&signer);
+
+    let with_dss = add_dss_revision_with_validation_time(&signed, &evidence, "D:20260709120000Z")
+        .expect("DSS append with TU");
+    let report = validate_pdf_signature(&with_dss).expect("validate DSS TU");
+
+    assert!(report.dss.present);
+    assert_eq!(report.dss.vri_count, 1);
+    assert_eq!(report.dss.vri_tu_count, 1);
+    assert!(report.dss.has_vri_tu());
+    assert!(crate_find(&with_dss, b"/TU (D:20260709120000Z)").is_some());
 }
 
 #[test]
@@ -538,4 +573,30 @@ fn a_pdf_with_an_existing_acroform_is_rejected() {
 /// Tiny helper: first occurrence of `needle` in `haystack` (tests avoid depending on `pdf` internals).
 fn crate_find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+fn dss_array_refs(pdf: &[u8], key: &[u8]) -> Vec<(u32, u16)> {
+    let doc = lopdf::Document::load_mem(pdf).expect("parse PDF");
+    let root = doc
+        .trailer
+        .get(b"Root")
+        .and_then(lopdf::Object::as_reference)
+        .expect("root");
+    let catalog = doc
+        .get_object(root)
+        .and_then(lopdf::Object::as_dict)
+        .expect("catalog");
+    let (_, dss_obj) = doc
+        .dereference(catalog.get(b"DSS").expect("DSS"))
+        .expect("DSS ref");
+    let dss = dss_obj.as_dict().expect("DSS dict");
+    let (_, array_obj) = doc
+        .dereference(dss.get(key).expect("array"))
+        .expect("array ref");
+    array_obj
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|item| item.as_reference().expect("stream ref"))
+        .collect()
 }
