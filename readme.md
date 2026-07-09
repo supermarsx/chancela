@@ -15,7 +15,9 @@ It is designed to run in three editions from a single Rust domain core:
 - a **browser** deployment.
 
 > Chancela **helps produce compliant records; it does not create legal validity** out of
-> an invalid meeting, missing powers, or a defective corporate process. See the
+> an invalid meeting, missing powers, or a defective corporate process. Qualified-signature
+> features still require the appropriate qualified provider/certificate/hardware/onboarding
+> path; Chancela does not create a legal shortcut around those requirements. See the
 > [specification index](spec.md) and its core-principle note.
 
 The full product and legal specification lives in [`spec.md`](spec.md) and the
@@ -24,28 +26,28 @@ using RFC 2119 requirement keywords).
 
 ## Repository map
 
-| Path | What it is |
-|---|---|
-| `Cargo.toml` | Rust workspace manifest (members under `crates/`) |
-| `crates/chancela-core` | Domain model: entities, books, acts, sealing, rule packs |
-| `crates/chancela-ledger` | Append-only, hash-chained event ledger |
-| `crates/chancela-signing` | Signature families / formats / trust (stubs per spec 04) |
-| `crates/chancela-archive` | Preservation packages and exports (stubs per spec 08) |
-| `crates/chancela-api` | Axum HTTP API layer over the domain core |
-| `crates/chancela-server` | Server binary (`chancela-server`) |
-| `apps/web` | Vite + React + TypeScript web shell (`@chancela/web`) |
-| `apps/desktop` | Tauri v2 desktop shell (own cargo workspace — see below) |
-| `docker/` | Dockerfile and Compose for the self-hosted edition |
-| `scripts/` | Per-platform orchestration scripts (`*.ps1` on Windows, `*.sh` elsewhere) |
-| `spec/`, `spec.md` | Product and legal specification |
+| Path                      | What it is                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| `Cargo.toml`              | Rust workspace manifest (members under `crates/`)                                      |
+| `crates/chancela-core`    | Domain model: entities, books, acts, sealing, rule packs                               |
+| `crates/chancela-ledger`  | Append-only, hash-chained event ledger                                                 |
+| `crates/chancela-signing` | Signing provider seams, formats, trust policy, and remote-signing wiring               |
+| `crates/chancela-archive` | Deterministic internal preservation-package builder; DGLAB interchange remains partial |
+| `crates/chancela-api`     | Axum HTTP API layer over the domain core (`/v1` plus `/api/v1` alias)                  |
+| `crates/chancela-server`  | Server binary (`chancela-server`)                                                      |
+| `apps/web`                | Vite + React + TypeScript web shell (`@chancela/web`)                                  |
+| `apps/desktop`            | Tauri v2 desktop shell (own cargo workspace — see below)                               |
+| `docker/`                 | Dockerfile and Compose for the self-hosted edition                                     |
+| `scripts/`                | Per-platform orchestration scripts (`*.ps1` on Windows, `*.sh` elsewhere)              |
+| `spec/`, `spec.md`        | Product and legal specification                                                        |
 
 ## Prerequisites
 
-| Tool | Version |
-|---|---|
-| Rust (`cargo` + `rustup`) | stable (edition 2024; `rust-version` 1.85) — https://rustup.rs |
-| Node.js (`node` + `npm`) | Node **>= 20** — https://nodejs.org |
-| `tar` | ships with Windows 10+, macOS, and Linux (used by `npm run package`) |
+| Tool                      | Version                                                              |
+| ------------------------- | -------------------------------------------------------------------- |
+| Rust (`cargo` + `rustup`) | stable (edition 2024; `rust-version` 1.85) — https://rustup.rs       |
+| Node.js (`node` + `npm`)  | Node **>= 20** — https://nodejs.org                                  |
+| `tar`                     | ships with Windows 10+, macOS, and Linux (used by `npm run package`) |
 
 Docker is only needed for the container edition; it is not required for local development.
 
@@ -81,8 +83,9 @@ startup and on `/`.
 Set **`CHANCELA_DATA_DIR`** to make the app durable: entities, books, acts, registry
 extracts and the hash-chained ledger are written to a SQLite store (`chancela.db`) in that
 directory, alongside the JSON sidecars (`settings.json`, `users.json`, `cae-catalog.json`,
-and the `laws/` archive). The desktop app defaults this to its per-app data directory and
-logs the path at startup. **Without** a data dir the server runs entirely in memory and
+`roles.json`, `delegations.json`, `apikeys.json`, and the `laws/` archive).
+The desktop app defaults this to its per-app data directory and logs the path at startup.
+**Without** a data dir the server runs entirely in memory and
 everything except those sidecars is lost on restart — the startup banner and `GET /health`
 (`persistent`, `ledger_length`, `ledger_verified`) say which mode is active. On boot the
 durable chain is re-verified; a tampered or truncated store still starts, but the banner and
@@ -133,26 +136,30 @@ chains that compose with `&&` in both `cmd` and POSIX shells. The `backup`/`rest
 are standalone operator tools run directly (not via npm) — see
 [Data, backup and restore](#data-backup-and-restore).
 
-| Script | Does |
-|---|---|
-| `npm run init` | Check toolchain + versions, then `npm install` |
-| `npm run dev` | Run server + web dev server concurrently (Ctrl+C stops both) |
-| `npm run lint` | `lint:rust` then `lint:web` |
-| `npm run lint:rust` | `cargo clippy --workspace --all-targets -- -D warnings` |
-| `npm run lint:web` | ESLint over `apps/web` |
-| `npm run format` | `cargo fmt --all` then Prettier over `apps/web` |
-| `npm run format:check` | `cargo fmt --all --check` then Prettier check |
-| `npm run test` | `test:rust` then `test:web` |
-| `npm run test:rust` | `cargo test --workspace` |
-| `npm run test:web` | Vitest over `apps/web` |
-| `npm run build` | `build:rust` then `build:web` |
-| `npm run build:rust` | `cargo build --workspace --release` |
-| `npm run build:web` | Production web bundle to `apps/web/dist` |
-| `npm run package` | Build, then assemble `dist/chancela-<version>-<platform>-<arch>.tar.gz` |
+| Script                      | Does                                                                    |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `npm run init`              | Check toolchain + versions, then `npm install`                          |
+| `npm run dev`               | Run server + web dev server concurrently (Ctrl+C stops both)            |
+| `npm run lint`              | `lint:rust` then `lint:web`                                             |
+| `npm run lint:rust`         | `cargo clippy --workspace --all-targets -- -D warnings`                 |
+| `npm run lint:web`          | ESLint over `apps/web`                                                  |
+| `npm run format`            | `cargo fmt --all` then Prettier over `apps/web`                         |
+| `npm run format:check`      | `cargo fmt --all --check` then Prettier check                           |
+| `npm run test`              | `test:rust` then `test:web`                                             |
+| `npm run test:rust`         | `cargo test --workspace`                                                |
+| `npm run test:web`          | Vitest over `apps/web`                                                  |
+| `npm run build`             | `build:rust` then `build:web`                                           |
+| `npm run build:rust`        | `cargo build --workspace --release`                                     |
+| `npm run build:web`         | Production web bundle to `apps/web/dist`                                |
+| `npm run build:docker`      | Build the self-hosted server image (`chancela-server:local`)            |
+| `npm run test:docker:smoke` | Run the server image and assert `/health` reports durable persistence   |
+| `npm run package`           | Build, then assemble `dist/chancela-<version>-<platform>-<arch>.tar.gz` |
 
-`npm run package` stages the release server binary, the web bundle, the README, and the
-license into `dist/chancela-<version>-<platform>-<arch>/` and compresses it with the
-system `tar`. Inspect the result with `tar -tzf dist/chancela-*.tar.gz`.
+`npm run package` stages the release server binary, the optional host-ops `chancela`
+CLI, the web bundle, core operator scripts, the README, and the license into
+`dist/chancela-<version>-<platform>-<arch>/`. It also writes `manifest.json` and
+`SHA256SUMS` with SHA-256 digests for the packaged files, then compresses the directory
+with the system `tar`. Inspect the result with `tar -tzf dist/chancela-*.tar.gz`.
 
 ## Docker (self-hosted edition)
 
@@ -160,13 +167,18 @@ Build the container image from the repository root (the build context must be th
 root so the Dockerfile can reach every crate and the web app):
 
 ```sh
-docker build -f docker/Dockerfile -t chancela .
-docker compose -f docker/docker-compose.yml up
+npm run build:docker
+npm run test:docker:smoke
+docker compose -f docker/docker-compose.yml up --build
 ```
 
-Inside the container the server binds `0.0.0.0:8080` (`CHANCELA_ADDR`) and exposes a
-`/health` endpoint. See [`docker/`](docker/) for the hardening details (read-only rootfs,
-dropped capabilities, non-root user).
+Inside the container the server binds `0.0.0.0:8080` (`CHANCELA_ADDR`) and stores durable
+state under `/var/lib/chancela` (`CHANCELA_DATA_DIR`). Compose mounts the named
+`chancela-data` volume there; if you use `docker run` directly, mount a persistent host
+directory or volume to that path. The `/health` endpoint should report
+`persistent: true`, `ledger_verified: true`, and a numeric `store_schema_version`. See
+[`docker/`](docker/) for the hardening details (read-only rootfs, dropped capabilities,
+non-root user).
 
 ## Desktop edition
 

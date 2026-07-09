@@ -28,12 +28,13 @@ services:
     environment:
       # Bind on all interfaces inside the container (host maps the port below).
       CHANCELA_ADDR: 0.0.0.0:8080
+      # Keep the server in durable mode; /health must report persistent: true.
+      CHANCELA_DATA_DIR: /var/lib/chancela
     ports:
       - "8080:8080"
     volumes:
-      # Durable data directory for future local-first storage (ARC-10/14).
-      # The scaffold server is in-memory, so this is currently unused; it is
-      # declared here so a writable, persistent path exists once storage lands.
+      # Durable SQLite store plus JSON sidecars. The image creates this path as
+      # the non-root runtime user so an empty named volume is writable.
       - chancela-data:/var/lib/chancela
     healthcheck:
       test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]

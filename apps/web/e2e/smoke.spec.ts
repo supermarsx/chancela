@@ -4,7 +4,7 @@
  * CAE catalog search returns results from the embedded dataset. None of these depend on
  * the journey's mutations, so they run in isolation against a freshly-booted server.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { signInAt } from './auth';
 
 test('boots the SPA with the leather background and the six-tab bar', async ({ page }) => {
@@ -70,7 +70,7 @@ test('Configurações sub-tabs switch sections and deep-link via ?sec=', async (
 });
 
 test('safe mode (?safe=1) shows the banner and bypasses the appearance layer', async ({ page }) => {
-  await page.goto('/?safe=1');
+  await signInAt(page, '/?safe=1');
 
   // The persistent safe-mode banner is visible with its exit action.
   await expect(page.getByText('Modo de segurança', { exact: true })).toBeVisible();
@@ -82,9 +82,9 @@ test('safe mode (?safe=1) shows the banner and bypasses the appearance layer', a
 });
 
 test('Legislação shelf filters live via search in Ferramentas', async ({ page }) => {
-  await signInAt(page, '/ferramentas?tool=legislacao');
+  await signInAt(page, '/ferramentas?tool=legislacao&leg=prateleira');
 
-  // The law shelf renders (a known theme heading, incl. the new t34 group).
+  // The curated law shelf renders (a known theme heading, incl. the new t34 group).
   await expect(page.getByRole('heading', { name: 'Registo e identificação' })).toBeVisible();
 
   // Search folds accents/case and filters the cards live (query without accents matches

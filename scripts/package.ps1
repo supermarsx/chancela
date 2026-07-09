@@ -1,8 +1,9 @@
 # Chancela release packager (Windows / PowerShell).
 #
 # 1. Runs the full release build (`npm run build`: cargo release + web bundle).
-# 2. Stages the server binary, the web dist, README and license into dist/<stem>/.
-# 3. Compresses that directory into dist/<stem>.tar.gz with the system `tar`.
+# 2. Stages binaries, the web dist, operator scripts, README and license into dist/<stem>/.
+# 3. Writes manifest.json and SHA256SUMS into the staged package.
+# 4. Compresses that directory into dist/<stem>.tar.gz with the system `tar`.
 #
 # <stem> = chancela-<version>-<platform>-<arch>. Version is read from
 # package.json; platform is `windows` here; arch is x64 / arm64.
@@ -65,7 +66,123 @@ foreach ($doc in @('readme.md', 'license.md')) {
     if (Test-Path $src) { Copy-Item $src ([System.IO.Path]::Combine($stageDir, $doc)) }
 }
 
-# 3. Compress via system tar. Run *inside* dist/ with relative names so the
+$cliName = 'chancela.exe'
+$cliSrc = [System.IO.Path]::Combine($repoRoot, 'target', 'release', $cliName)
+if (Test-Path $cliSrc) {
+    Copy-Item $cliSrc ([System.IO.Path]::Combine($stageDir, $cliName))
+} else {
+    Write-Host "`nWarning: host ops CLI binary not found at $cliSrc - packaging without chancela."
+}
+
+$scriptNames = @(
+    'backup.ps1', 'backup.sh',
+    'restore.ps1', 'restore.sh',
+    'init.ps1', 'init.sh',
+    'dev.ps1', 'dev.sh',
+    'package.ps1', 'package.sh'
+)
+$scriptStageDir = [System.IO.Path]::Combine($stageDir, 'scripts')
+foreach ($scriptName in $scriptNames) {
+    $src = [System.IO.Path]::Combine($repoRoot, 'scripts', $scriptName)
+    if (Test-Path $src) {
+        if (-not (Test-Path $scriptStageDir)) {
+            New-Item -ItemType Directory -Path $scriptStageDir -Force | Out-Null
+        }
+        Copy-Item $src ([System.IO.Path]::Combine($scriptStageDir, $scriptName))
+    }
+}
+
+function Get-RelativePackagePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    $pathFull = [System.IO.Path]::GetFullPath($Path)
+    $rootUri = New-Object System.Uri($rootFull)
+    $pathUri = New-Object System.Uri($pathFull)
+    [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($pathUri).ToString()).Replace('\', '/')
+}
+
+function Get-PackageFileKind {
+    param([Parameter(Mandatory = $true)][string]$RelativePath)
+
+    $name = [System.IO.Path]::GetFileName($RelativePath)
+    if ($name -in @('chancela-server.exe', 'chancela.exe')) { return 'binary' }
+    if ($RelativePath -like 'web/*') { return 'asset' }
+    if ($RelativePath -like 'scripts/*') { return 'script' }
+    if ($name -in @('readme.md', 'license.md')) { return 'document' }
+    return 'asset'
+}
+
+function Get-Sha256File {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hashBytes = $sha256.ComputeHash($stream)
+            -join ($hashBytes | ForEach-Object { $_.ToString('x2') })
+        } finally {
+            $sha256.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+$gitCommit = $null
+try {
+    $gitCommitCandidate = (& git -C $repoRoot rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $gitCommitCandidate) {
+        $gitCommit = ($gitCommitCandidate | Select-Object -First 1).Trim()
+    }
+} catch {
+    $gitCommit = $null
+}
+
+$includedFiles = Get-ChildItem -Path $stageDir -Recurse -File |
+    Where-Object { $_.Name -notin @('manifest.json', 'SHA256SUMS') } |
+    Sort-Object FullName |
+    ForEach-Object {
+        $relativePath = Get-RelativePackagePath -Root $stageDir -Path $_.FullName
+        [pscustomobject][ordered]@{
+            path = $relativePath
+            kind = Get-PackageFileKind -RelativePath $relativePath
+            size = $_.Length
+            sha256 = Get-Sha256File -Path $_.FullName
+        }
+    }
+
+$manifest = [pscustomobject][ordered]@{
+    version = $version
+    platform = $platform
+    arch = $arch
+    gitCommit = $gitCommit
+    generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+    included = $includedFiles
+    checksums = [pscustomobject][ordered]@{
+        algorithm = 'SHA-256'
+        files = $includedFiles
+    }
+}
+
+$manifestPath = [System.IO.Path]::Combine($stageDir, 'manifest.json')
+$manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+$sumPath = [System.IO.Path]::Combine($stageDir, 'SHA256SUMS')
+$sumLines = Get-ChildItem -Path $stageDir -Recurse -File |
+    Where-Object { $_.Name -ne 'SHA256SUMS' } |
+    Sort-Object FullName |
+    ForEach-Object {
+        $relativePath = Get-RelativePackagePath -Root $stageDir -Path $_.FullName
+        "{0}  *{1}" -f (Get-Sha256File -Path $_.FullName), $relativePath
+    }
+$sumLines | Set-Content -LiteralPath $sumPath -Encoding ASCII
+
+# 4. Compress via system tar. Run *inside* dist/ with relative names so the
 # archive holds a single top dir (<stem>/) and — critically on Windows — no
 # argument contains a drive-letter colon. GNU tar treats `F:\...` as a remote
 # `host:path` (bsdtar does not); relative names keep both implementations happy.

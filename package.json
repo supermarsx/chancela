@@ -14,18 +14,24 @@
   "scripts": {
     "init": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/init.ps1']:['scripts/init.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\"",
     "dev": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/dev.ps1']:['scripts/dev.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\"",
+    "check:versions": "node scripts/check-versions.mjs",
     "lint": "npm run lint:rust && npm run lint:web",
-    "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
+    "lint:rust": "cargo clippy --workspace --all-targets --locked -- -D warnings",
     "lint:web": "npm run lint --workspace apps/web",
     "format": "cargo fmt --all && npm run format --workspace apps/web",
     "format:check": "cargo fmt --all --check && npm run format:check --workspace apps/web",
     "test": "npm run test:rust && npm run test:web",
-    "test:rust": "cargo test --workspace",
+    "test:rust": "cargo test --workspace --locked",
     "test:web": "npm run test --workspace apps/web",
-    "test:e2e": "cargo test -p chancela-server --features e2e",
+    "test:e2e": "cargo test -p chancela-server --features e2e --locked",
+    "test:browser": "npm run test:browser --workspace apps/web",
+    "test:desktop:rust": "npm run test:rust --prefix apps/desktop",
+    "test:desktop:smoke": "npm run test:smoke --prefix apps/desktop",
     "build": "npm run build:rust && npm run build:web",
-    "build:rust": "cargo build --workspace --release",
+    "build:rust": "cargo build --workspace --release --locked",
     "build:web": "npm run build --workspace apps/web",
+    "build:docker": "docker build -f docker/Dockerfile.server -t chancela-server:local .",
+    "test:docker:smoke": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/docker-smoke.ps1']:['scripts/docker-smoke.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\"",
     "package": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/package.ps1']:['scripts/package.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\""
   }
 }

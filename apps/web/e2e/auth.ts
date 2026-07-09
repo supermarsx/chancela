@@ -5,15 +5,16 @@
  * the app chrome.
  *
  * The suite runs serially against ONE shared server (`workers: 1`), so the first spec to
- * run onboards the shared **operador** (a passwordless first user); later specs — and each
- * fresh page, whose in-memory token is gone — find users already exist and just pick the
- * operator from the roster (a passwordless one-click sign-in). {@link signInAt} handles
- * both paths, so any spec can call it regardless of order.
+ * run onboards the shared **operador** (now with the mandatory password + recovery phrase);
+ * later specs — and each fresh page, whose in-memory token is gone — find users already
+ * exist and sign in through the roster. {@link signInAt} handles both paths, so any spec can
+ * call it regardless of order.
  */
 import type { Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
 export const OPERATOR = { username: 'operador', displayName: 'Operador' };
+export const OPERATOR_PASSWORD = 'Str0ng!Vault9';
 
 /**
  * Navigate to `route` and end up signed in as the shared operator, on that route.
@@ -46,7 +47,7 @@ async function settledOnWizard(page: Page): Promise<boolean> {
   return welcome.isVisible();
 }
 
-/** Complete the first-run wizard: organization → passwordless operator → skip password. */
+/** Complete the first-run wizard: organization → operator → password → recovery phrase. */
 async function completeOnboarding(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Começar' }).click();
   await page.getByLabel('Nome da organização').fill('Cartório de Testes');
@@ -54,14 +55,32 @@ async function completeOnboarding(page: Page): Promise<void> {
   await page.getByLabel('Nome de utilizador').fill(OPERATOR.username);
   await page.getByLabel('Nome a apresentar (opcional)').fill(OPERATOR.displayName);
   await page.getByRole('button', { name: 'Seguinte' }).click();
-  // Skip the optional password (a passwordless operator signs in with one click later).
-  await page.getByRole('button', { name: 'Ignorar' }).click();
+  await expect(page.getByRole('heading', { name: 'Palavra-passe obrigatória' })).toBeVisible();
+  await page.getByLabel('Palavra-passe', { exact: true }).fill(OPERATOR_PASSWORD);
+  await page.getByLabel('Confirmar palavra-passe').fill(OPERATOR_PASSWORD);
+  const passwordNext = page.getByRole('button', { name: 'Seguinte' });
+  await expect(passwordNext).toBeEnabled();
+  await passwordNext.click();
+  await expect(
+    page.getByRole('heading', { name: 'Frase de recuperação obrigatória' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Entrar no Chancela' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Gerar frase de recuperação' }).click();
+  await expect(page.locator('.access-manager__recovery-phrase code')).toBeVisible();
+  await page.getByRole('button', { name: 'Entrar no Chancela' }).click();
   // Landed in the app.
   await expect(page.getByTestId('tab-bar')).toBeVisible();
 }
 
-/** On the sign-in surface, pick the passwordless operator (one click signs in). */
+/** On the sign-in surface, pick the operator and enter the shared password when prompted. */
 async function pickOperator(page: Page): Promise<void> {
-  await page.getByText(OPERATOR.displayName, { exact: true }).click();
+  await page.getByRole('listitem').filter({ hasText: OPERATOR.displayName }).first().click();
+  const password = page.getByLabel('Palavra-passe', { exact: true });
+  const appChrome = page.getByTestId('tab-bar');
+  await expect(password.or(appChrome)).toBeVisible();
+  if (await password.isVisible()) {
+    await password.fill(OPERATOR_PASSWORD);
+    await page.getByRole('button', { name: 'Entrar' }).click();
+  }
   await expect(page.getByTestId('tab-bar')).toBeVisible();
 }

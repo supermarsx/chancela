@@ -1173,8 +1173,8 @@ export function useUpdateUser(id: string) {
 /**
  * The current session (`GET /v1/session`), read from the in-memory token. On a fresh
  * page load the token is gone (it is never persisted — see `./session`), so this
- * resolves to `{ user: null }` until a user is picked; that is the intended v1
- * behaviour. The picker keys its display off this query.
+ * resolves to `{ user: null, permissions: [] }` until a user is picked; that is the
+ * intended v1 behaviour. The picker keys its display off this query.
  *
  * This hook is always mounted at the app shell (via `CurrentUserPicker` in `layout`),
  * so it is the natural place to register the 401-clear listener: when the API client
@@ -1186,7 +1186,7 @@ export function useSession() {
   const qc = useQueryClient();
   useEffect(() => {
     return onSessionCleared(() => {
-      qc.setQueryData(keys.session, { user: null });
+      qc.setQueryData(keys.session, { user: null, permissions: [] });
       void qc.invalidateQueries({ queryKey: keys.session });
     });
   }, [qc]);
@@ -1231,20 +1231,19 @@ export interface SignInArgs {
 
 /**
  * Sign in as a user (`POST /v1/session`, t29). The issued token is stored in memory so
- * every subsequent request carries it; the session query is primed with the returned
- * user so the shell updates immediately. A password is sent only for `has_secret` users;
- * a wrong/missing password is a **401** and too many attempts a **429** (backoff) — the
- * caller surfaces those distinctly.
+ * every subsequent request carries it; the session query is primed with a full session
+ * read so RBAC-gated UI has the effective permission grants immediately. A password is
+ * sent only for `has_secret` users; a wrong/missing password is a **401** and too many
+ * attempts a **429** (backoff) — the caller surfaces those distinctly.
  */
 export function useCreateSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ userId, password }: SignInArgs) =>
       api.createSession({ user_id: userId, password }),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setSessionToken(result.token);
-      qc.setQueryData(keys.session, { user: result.user });
-      void qc.invalidateQueries({ queryKey: keys.session });
+      qc.setQueryData(keys.session, await api.getSession());
       // Now signed in, the auth-gated user list becomes readable — refetch it so the
       // management page / picker have the full UserView set.
       void qc.invalidateQueries({ queryKey: keys.users });
@@ -1259,7 +1258,7 @@ export function useDeleteSession() {
     mutationFn: () => api.deleteSession(),
     onSuccess: () => {
       clearSessionToken();
-      qc.setQueryData(keys.session, { user: null });
+      qc.setQueryData(keys.session, { user: null, permissions: [] });
       void qc.invalidateQueries({ queryKey: keys.session });
     },
   });

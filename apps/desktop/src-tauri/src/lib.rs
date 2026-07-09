@@ -204,7 +204,7 @@ fn start_embedded_server_if_enabled(app: &tauri::App) -> Result<(), Box<dyn std:
     }
 
     let state = build_app_state(app);
-    let port = spawn_server(state)?;
+    let port = spawn_server(resolve_web_dist(app), state)?;
 
     // Desktop safe-mode entry (t26): when `CHANCELA_SAFE_MODE` is set we append the same
     // `?safe=1` the manual/browser escape hatch uses, so there is ONE mechanism the web
@@ -399,17 +399,19 @@ fn report_durable_store(state: &chancela_api::AppState, dir: &std::path::Path) {
 ///
 /// `state` carries the persistence choice made by [`build_app_state`].
 #[cfg(feature = "embedded-server")]
-fn spawn_server(state: chancela_api::AppState) -> Result<u16, Box<dyn std::error::Error>> {
+fn spawn_server(
+    web_dist: Option<std::path::PathBuf>,
+    state: chancela_api::AppState,
+) -> Result<u16, Box<dyn std::error::Error>> {
     use std::net::Ipv4Addr;
     use std::sync::mpsc;
 
-    let web_dist = resolve_web_dist();
     if let Some(dir) = &web_dist {
         eprintln!("chancela: serving embedded web UI from {}", dir.display());
     } else {
         eprintln!(
-            "chancela: no apps/web/dist found near the executable; \
-             embedded server runs API-only (build the web UI to get the interface)"
+            "chancela: no bundled web-dist resource or apps/web/dist found; \
+             embedded server runs API-only (build/package the web UI to get the interface)"
         );
     }
 
@@ -571,28 +573,30 @@ fn spawn_dev_server(state: chancela_api::AppState) {
     }
 }
 
-/// Locate the built web shell directory (`apps/web/dist`) for a run from the
-/// repo (e.g. `tauri build --no-bundle`, where the binary sits under
-/// `src-tauri/target/<profile>/`). Mirrors `chancela-server`'s resolver:
+/// Resource directory name used by `tauri.conf.json > bundle.resources`.
+#[cfg(feature = "embedded-server")]
+const BUNDLED_WEB_DIST_RESOURCE_DIR: &str = "web-dist";
+
+/// Locate the built web shell directory for the embedded server.
+///
+/// Resolution order:
 ///   1. `CHANCELA_WEB_DIST` override, if it points at a dir with an `index.html`.
-///   2. Walk up from the executable's directory, then the cwd, for
-///      `apps/web/dist/index.html`.
+///   2. Tauri's bundled resource copy (`web-dist/index.html`) in packaged apps.
+///   3. Walk up from the executable's directory, then the cwd, for
+///      `apps/web/dist/index.html` (repo / `--no-bundle` runs).
 ///
 /// Returns `None` (API-only) when nothing is found — the API still serves a
-/// helpful landing page. Embedding the assets into the binary for a full
-/// installer is future work; a `--no-bundle` run finds the on-disk build.
+/// helpful landing page.
 #[cfg(feature = "embedded-server")]
-fn resolve_web_dist() -> Option<std::path::PathBuf> {
-    use std::path::PathBuf;
+fn resolve_web_dist(app: &tauri::App) -> Option<std::path::PathBuf> {
+    use tauri::{path::BaseDirectory, Manager};
 
-    if let Ok(raw) = std::env::var("CHANCELA_WEB_DIST") {
-        let dir = PathBuf::from(raw);
-        if dir.join("index.html").is_file() {
-            return Some(dir);
-        }
-    }
+    let bundled_resource = app
+        .path()
+        .resolve(BUNDLED_WEB_DIST_RESOURCE_DIR, BaseDirectory::Resource)
+        .ok();
 
-    let mut starts: Vec<PathBuf> = Vec::new();
+    let mut starts = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             starts.push(dir.to_path_buf());
@@ -600,6 +604,34 @@ fn resolve_web_dist() -> Option<std::path::PathBuf> {
     }
     if let Ok(cwd) = std::env::current_dir() {
         starts.push(cwd);
+    }
+
+    resolve_web_dist_from_candidates(
+        std::env::var_os("CHANCELA_WEB_DIST"),
+        bundled_resource,
+        starts,
+    )
+}
+
+#[cfg(feature = "embedded-server")]
+fn resolve_web_dist_from_candidates(
+    env_override: Option<std::ffi::OsString>,
+    bundled_resource: Option<std::path::PathBuf>,
+    starts: impl IntoIterator<Item = std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+
+    if let Some(raw) = env_override {
+        let dir = PathBuf::from(raw);
+        if dir.join("index.html").is_file() {
+            return Some(dir);
+        }
+    }
+
+    if let Some(dir) = bundled_resource {
+        if dir.join("index.html").is_file() {
+            return Some(dir);
+        }
     }
 
     for start in starts {
@@ -612,4 +644,115 @@ fn resolve_web_dist() -> Option<std::path::PathBuf> {
     }
 
     None
+}
+
+#[cfg(all(test, feature = "embedded-server"))]
+mod tests {
+    use super::resolve_web_dist_from_candidates;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after the Unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "chancela-desktop-{name}-{}-{stamp}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).expect("test temp dir should be created");
+            Self { path }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn write_index(dir: &Path) {
+        std::fs::create_dir_all(dir).expect("web dist dir should be created");
+        std::fs::write(dir.join("index.html"), "<!doctype html>")
+            .expect("index.html should be written");
+    }
+
+    #[test]
+    fn resolve_web_dist_prefers_env_override() {
+        let tmp = TempDir::new("env");
+        let env_dist = tmp.path.join("env-dist");
+        let resource_dist = tmp.path.join("web-dist");
+        let repo_dist = tmp.path.join("repo").join("apps").join("web").join("dist");
+        let start = tmp.path.join("repo").join("src-tauri").join("target");
+        write_index(&env_dist);
+        write_index(&resource_dist);
+        write_index(&repo_dist);
+
+        let resolved = resolve_web_dist_from_candidates(
+            Some(env_dist.clone().into_os_string()),
+            Some(resource_dist),
+            [start],
+        );
+
+        assert_eq!(resolved, Some(env_dist));
+    }
+
+    #[test]
+    fn resolve_web_dist_prefers_bundled_resource_before_repo_walk() {
+        let tmp = TempDir::new("resource");
+        let invalid_env = tmp.path.join("missing-env-dist");
+        let resource_dist = tmp.path.join("web-dist");
+        let repo_dist = tmp.path.join("repo").join("apps").join("web").join("dist");
+        let start = tmp.path.join("repo").join("src-tauri").join("target");
+        write_index(&resource_dist);
+        write_index(&repo_dist);
+
+        let resolved = resolve_web_dist_from_candidates(
+            Some(invalid_env.into_os_string()),
+            Some(resource_dist.clone()),
+            [start],
+        );
+
+        assert_eq!(resolved, Some(resource_dist));
+    }
+
+    #[test]
+    fn resolve_web_dist_walks_repo_when_no_resource_exists() {
+        let tmp = TempDir::new("repo");
+        let repo = tmp.path.join("repo");
+        let repo_dist = repo.join("apps").join("web").join("dist");
+        let start = repo
+            .join("apps")
+            .join("desktop")
+            .join("src-tauri")
+            .join("target")
+            .join("release");
+        write_index(&repo_dist);
+        std::fs::create_dir_all(&start).expect("start dir should be created");
+
+        let resolved = resolve_web_dist_from_candidates(None, None, [start]);
+
+        assert_eq!(resolved, Some(repo_dist));
+    }
+
+    #[test]
+    fn resolve_web_dist_returns_none_without_index_html() {
+        let tmp = TempDir::new("missing");
+        let resource_dist = tmp.path.join("web-dist");
+        let repo_dist = tmp.path.join("repo").join("apps").join("web").join("dist");
+        let start = tmp.path.join("repo").join("target").join("release");
+        std::fs::create_dir_all(&resource_dist).expect("resource dir should be created");
+        std::fs::create_dir_all(&repo_dist).expect("repo dist dir should be created");
+        std::fs::create_dir_all(&start).expect("start dir should be created");
+
+        let resolved = resolve_web_dist_from_candidates(None, Some(resource_dist), [start]);
+
+        assert_eq!(resolved, None);
+    }
 }

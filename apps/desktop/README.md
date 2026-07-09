@@ -100,14 +100,15 @@ The v1 acceptance is a **runnable binary**, not a platform installer:
 
 ```bash
 cd apps/desktop
-npm run tauri build -- --no-bundle
+npm run build:no-bundle
 ```
 
 `--no-bundle` compiles the release binary and skips packaging. Its
 `beforeBuildCommand` first builds the web UI (`npm run build --workspace
 apps/web` → `apps/web/dist`, referenced by `frontendDist = ../../web/dist`,
-which is also embedded into the binary by `generate_context!`). The resulting
-executable is named after the crate (`chancela-desktop`), not the product name:
+which is also embedded into Tauri's asset resolver and configured as the
+`web-dist` bundle resource). The resulting executable is named after the crate
+(`chancela-desktop`), not the product name:
 
 ```
 src-tauri/target/release/chancela-desktop.exe   # Windows (`chancela-desktop` on macOS/Linux)
@@ -115,8 +116,59 @@ src-tauri/target/release/chancela-desktop.exe   # Windows (`chancela-desktop` on
 
 Run it directly. With the default `embedded-server` feature it starts the API+UI
 on a loopback port and opens the window against it — no server to start first.
-It resolves the on-disk `apps/web/dist` by walking up from the executable (or set
-`CHANCELA_WEB_DIST`); if none is found it serves API-only with a landing page.
+It resolves `CHANCELA_WEB_DIST` first, then a packaged Tauri resource named
+`web-dist`, then the on-disk `apps/web/dist` by walking up from the executable /
+cwd; if none is found it serves API-only with a landing page.
+
+### Smoke/package checks
+
+Cheap desktop checks are exposed as local npm scripts:
+
+```bash
+npm run test:rust
+npm run test:smoke
+npm run test:smoke:ci
+```
+
+`test:rust` runs `cargo test --manifest-path src-tauri/Cargo.toml`.
+
+`test:smoke` launches the existing release binary; it does **not** build one.
+It creates a fresh temp `CHANCELA_DATA_DIR` and a per-run WebView2 profile,
+starts the app with those env vars set only for the child process, verifies the
+embedded API/UI/ledger round-trip and a durable `chancela.db`, then removes the
+temp dirs. It is conservative by default: if another Chancela desktop/WebView2
+process is already running, it prints the blocking PID/path details and exits
+without killing it.
+
+`test:smoke:ci` is the same smoke run with `-KillOwnedProcesses`. That option
+only clears stale processes carrying the smoke command-line/temp-profile marker;
+ordinary user-launched Chancela instances remain blockers. This keeps the clean
+CI/reused-runner command straightforward:
+
+```powershell
+npm run test:smoke:ci
+```
+
+To inspect a run or point at a CI-provided empty directory, pass one explicitly:
+
+```powershell
+npm run test:smoke -- -DataDir F:\tmp\chancela-desktop-smoke
+```
+
+The explicit directory is created if absent, must be empty if present, and is
+left on disk.
+
+To exercise the "loose `--no-bundle` binary moved away from the repo" boundary:
+
+```powershell
+npm run test:smoke -- -MovedLooseBinary
+```
+
+That mode copies the release exe to a fresh temp directory, launches it with that
+directory as cwd. A moved no-bundle binary may legitimately serve API-only at
+`/` because it cannot walk from that temp directory back to the repo's
+`apps/web/dist`; pass `-WebDist <dir>` to set `CHANCELA_WEB_DIST` and require the
+SPA shell for the smoke run. Installers bundle `web-dist`.
 
 ### Full installers (MSI/NSIS/etc.)
 
@@ -129,6 +181,12 @@ this needs [WiX Toolset v3](https://wixtoolset.org/) for the MSI** (and/or NSIS
 for the `.exe` installer); the Tauri CLI downloads NSIS on first use but WiX must
 be installed separately. Bundling is **not** required for v1 and is not covered
 by this repo's build gate.
+
+Packaged installers include the built web UI as a Tauri resource copied to
+`web-dist`; the embedded server resolves that resource via Tauri's resource path
+and serves it from loopback. A loose `--no-bundle` binary copied away from the
+repo still needs `CHANCELA_WEB_DIST` or a matching on-disk dist next to a path the
+resolver can find.
 
 > Alternatively, if you have the Tauri CLI installed globally
 > (`cargo install tauri-cli --version '^2'`), you can use `cargo tauri dev` /
@@ -163,10 +221,12 @@ loopback. This is the **default** behaviour (the `embedded-server` feature).
 
 What `src/lib.rs` does at startup (outside dev mode):
 
-1. Resolve `apps/web/dist` — `CHANCELA_WEB_DIST`, else walk up from the
-   executable's directory / cwd (mirrors `chancela-server`). `None` ⇒ API-only.
-2. Build `chancela_api::app(AppState::default(), web_dist)` — the identical
-   router the browser client and `chancela-server` use (web UI + `/v1` + ledger).
+1. Resolve the web dist — `CHANCELA_WEB_DIST`, else the packaged Tauri
+   `web-dist` resource, else walk up from the executable's directory / cwd for
+   `apps/web/dist` (mirrors `chancela-server`). `None` ⇒ API-only.
+2. Build the app state from `CHANCELA_DATA_DIR` or the desktop per-app data dir,
+   then serve `chancela_api::app(state, web_dist)` — the identical router the
+   browser client and `chancela-server` use (web UI + `/v1` + ledger).
 3. On a dedicated thread owning a multi-thread Tokio runtime, bind
    `127.0.0.1:0` (an OS-chosen free loopback port) and `axum::serve` it forever.
 4. Navigate the `main` WebView window to `http://127.0.0.1:<port>/`.
@@ -180,16 +240,16 @@ shell with none of them, expecting an external API at the configured URL.
 Rust-side `WebviewWindow::navigate` is not capability-gated, so
 `capabilities/default.json` (`core:default`) is sufficient.
 
-> State is in-memory and resets on exit (no persistence yet). Embedding
-> `apps/web/dist` into the binary for a self-contained installer (so a bundled
-> app needs no on-disk `dist`) is future work; a `--no-bundle` run from the repo
-> finds the build on disk.
+> Packaged installers are self-contained for web UI assets via the bundled
+> `web-dist` resource. A `--no-bundle` run from the repo still finds
+> `apps/web/dist` on disk; a loose binary copied elsewhere needs
+> `CHANCELA_WEB_DIST` or a colocated resource copy.
 
 ## Notes for later hardening
 
-- `tauri.conf.json` sets `app.security.csp = null`. Define a restrictive
-  Content-Security-Policy before shipping (must allow the loopback origin the
-  embedded server navigates to).
+- `tauri.conf.json` sets a restrictive `app.security.csp` for the embedded
+  loopback app (`default-src 'self'`, loopback `connect-src`, no objects or
+  frames). Keep it in sync when adding external resources or new Tauri origins.
 - `identifier` is `pt.chancela.desktop`. Confirm the final bundle identifier
   (mobile targets, if added per `ARC-04`, need their own).
 - Mobile (Android/iOS) is supported by the same crate via the `staticlib`/

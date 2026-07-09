@@ -104,7 +104,7 @@ export function SignIn() {
     try {
       const result = await api.createSession({ user_id: user.id });
       setSessionToken(result.token);
-      qc.setQueryData(keys.session, { user: result.user });
+      qc.setQueryData(keys.session, await api.getSession());
       void qc.invalidateQueries({ queryKey: keys.roster });
       void qc.invalidateQueries({ queryKey: keys.users });
       toast.success(t('toast.signin.bootstrap'));

@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: Package (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            artifact-suffix: linux
+          - name: Windows
+            os: windows-latest
+            artifact-suffix: windows
+          - name: macOS
+            os: macos-latest
+            artifact-suffix: macos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PC/SC system deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Check release metadata versions
+        run: npm run check:versions
+
+      - name: Build and stage package
+        run: npm run package
+
+      - name: Collect manifest and checksum metadata
+        id: collect
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $tarballs = @(Get-ChildItem -Path dist -Filter 'chancela-*.tar.gz' -File)
+          if ($tarballs.Count -ne 1) {
+              $found = if ($tarballs.Count -eq 0) { '<none>' } else { ($tarballs.Name -join ', ') }
+              throw "Expected exactly one dist/chancela-*.tar.gz package artifact; found $found"
+          }
+
+          $tarball = $tarballs[0]
+          $stem = $tarball.Name -replace '\.tar\.gz$', ''
+          $stageDir = Join-Path $tarball.DirectoryName $stem
+          $manifestPath = Join-Path $stageDir 'manifest.json'
+          $packageSumsPath = Join-Path $stageDir 'SHA256SUMS'
+
+          if (-not (Test-Path -LiteralPath $stageDir -PathType Container)) {
+              throw "Expected staged package directory not found: $stageDir"
+          }
+          if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+              throw "Expected package manifest not found: $manifestPath"
+          }
+          if (-not (Test-Path -LiteralPath $packageSumsPath -PathType Leaf)) {
+              throw "Expected package checksums not found: $packageSumsPath"
+          }
+
+          $metadataDir = Join-Path 'dist' "$stem-release-metadata"
+          New-Item -ItemType Directory -Path $metadataDir -Force | Out-Null
+
+          $manifestOut = Join-Path $metadataDir "$stem-manifest.json"
+          $packageSumsOut = Join-Path $metadataDir "$stem-package-SHA256SUMS"
+          $tarballSumsOut = Join-Path $metadataDir "$stem-tarball-SHA256SUMS"
+          $releaseSummaryOut = Join-Path $metadataDir "$stem-release-artifact.json"
+
+          Copy-Item -LiteralPath $manifestPath -Destination $manifestOut
+          Copy-Item -LiteralPath $packageSumsPath -Destination $packageSumsOut
+
+          $tarballHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $tarball.FullName).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath $tarballSumsOut -Encoding ASCII -Value "$tarballHash  *$($tarball.Name)"
+
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $summary = [ordered]@{
+              package = $tarball.Name
+              packageSha256 = $tarballHash
+              version = $manifest.version
+              platform = $manifest.platform
+              arch = $manifest.arch
+              source = [ordered]@{
+                  ref = $env:GITHUB_REF
+                  sha = $env:GITHUB_SHA
+                  runId = $env:GITHUB_RUN_ID
+                  runAttempt = $env:GITHUB_RUN_ATTEMPT
+              }
+              signing = [ordered]@{
+                  configured = $false
+                  note = 'No code signing or notarization step is configured in this workflow.'
+              }
+          }
+          $summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $releaseSummaryOut -Encoding UTF8
+
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### Release package"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Package: ``$($tarball.Name)``"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- SHA-256: ``$tarballHash``"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Code signing/notarization: not configured; uploaded artifacts are unsigned package outputs."
+
+          "package=dist/$($tarball.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "metadata=$metadataDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chancela-package-${{ matrix.artifact-suffix }}
+          path: ${{ steps.collect.outputs.package }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload manifest and checksum artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chancela-release-metadata-${{ matrix.artifact-suffix }}
+          path: ${{ steps.collect.outputs.metadata }}
+          if-no-files-found: error
+          retention-days: 30

@@ -6,7 +6,11 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "build:no-bundle": "tauri build --no-bundle",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
+    "test:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1",
+    "test:smoke:ci": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1 -KillOwnedProcesses"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

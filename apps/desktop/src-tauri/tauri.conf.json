@@ -34,6 +34,9 @@
     "category": "Business",
     "shortDescription": "Livro de Atas Digital",
     "longDescription": "Chancela — Portugal-first corporate records and signing platform (livro de atas, corporate acts ledger and archive).",
+    "resources": {
+      "../../web/dist": "web-dist"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

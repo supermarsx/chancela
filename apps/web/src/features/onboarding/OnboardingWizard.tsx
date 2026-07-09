@@ -100,7 +100,7 @@ export function OnboardingWizard() {
       // Sign in passwordless right away so the remaining (session-gated) steps work.
       const result = await api.createSession({ user_id: user.id });
       setSessionToken(result.token);
-      qc.setQueryData(keys.session, { user: result.user });
+      qc.setQueryData(keys.session, await api.getSession());
       setUserId(user.id);
       void qc.invalidateQueries({ queryKey: keys.roster });
       void qc.invalidateQueries({ queryKey: keys.users });

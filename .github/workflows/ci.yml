@@ -1,9 +1,11 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
@@ -11,6 +13,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Metadata: cheap release metadata guard that fails before heavier builds.
+  # ---------------------------------------------------------------------------
+  metadata:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check release versions
+        run: npm run check:versions
+
   # ---------------------------------------------------------------------------
   # Rust: format, lint (deny warnings) and test on all three desktop platforms.
   # ---------------------------------------------------------------------------
@@ -42,16 +61,14 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (deny warnings)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   # ---------------------------------------------------------------------------
-  # Web: lint, test and build the @chancela/web workspace on supported Node LTS.
-  # No lockfile is committed at scaffold time, so `npm ci` falls back to
-  # `npm install`, and npm caching is intentionally left off (it requires a
-  # lockfile to key on).
+  # Web: format, lint, test and build the @chancela/web workspace on supported
+  # Node LTS, using the committed root npm lockfile.
   # ---------------------------------------------------------------------------
   web:
     name: Web (Node ${{ matrix.node }})
@@ -67,9 +84,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+
+      - name: Format check
+        run: npm run format:check --workspace apps/web
 
       - name: Lint
         run: npm run lint --workspace apps/web
@@ -81,13 +103,16 @@ jobs:
         run: npm run build --workspace apps/web
 
   # ---------------------------------------------------------------------------
-  # Docker: prove the server image builds. Kept off pull requests (the release
-  # build is slow) so PR feedback stays fast; it gates pushes to main. No push.
+  # Docker: prove the server image builds and boots with durable persistence.
+  # Kept off pull requests (the release build is slow) so PR feedback stays
+  # fast; it gates pushes to main and can be run manually. No push.
   # ---------------------------------------------------------------------------
   docker:
-    name: Docker build (server)
+    name: Docker build + smoke (server)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
@@ -100,9 +125,72 @@ jobs:
           context: .
           file: docker/Dockerfile.server
           push: false
+          load: true
           tags: chancela-server:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke server container
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          data_dir="$(mktemp -d)"
+          chmod 777 "$data_dir"
+          container=""
+
+          cleanup() {
+            local status=$?
+            if [ "$status" -ne 0 ] && [ -n "$container" ]; then
+              docker logs "$container" || true
+            fi
+            if [ -n "$container" ]; then
+              docker rm -f "$container" >/dev/null 2>&1 || true
+            fi
+            rm -rf "$data_dir"
+          }
+          trap cleanup EXIT
+
+          container="$(docker run -d \
+            --name "chancela-server-ci-${{ github.run_id }}-${{ github.run_attempt }}" \
+            -p 127.0.0.1::8080 \
+            -e CHANCELA_DATA_DIR=/data \
+            -v "$data_dir:/data" \
+            chancela-server:ci)"
+
+          mapped="$(docker port "$container" 8080/tcp)"
+          health_url="http://${mapped}/health"
+          body=""
+
+          for _ in {1..60}; do
+            if body="$(curl -fsS "$health_url")"; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ -z "$body" ]; then
+            echo "server did not become healthy at $health_url" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$body"
+          HEALTH_BODY="$body" python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          health = json.loads(os.environ["HEALTH_BODY"])
+          checks = {
+              "status": health.get("status") == "ok",
+              "persistent": health.get("persistent") is True,
+              "ledger_verified": health.get("ledger_verified") is True,
+              "store_schema_version": isinstance(health.get("store_schema_version"), int),
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          if failed:
+              raise SystemExit(f"health smoke failed {failed}: {health!r}")
+          PY
 
   # ---------------------------------------------------------------------------
   # E2E: composed-system journeys that drive the REAL cargo-built
@@ -110,12 +198,16 @@ jobs:
   # behind the `e2e` cargo feature). This is the layer every layer-isolated unit
   # test missed — the stale-server / SPA-static-fallback bug. The harness writes
   # its own synthetic web dist and spawns in-process axum registry/CAE fixtures,
-  # so it needs no Node, no npm, and no apps/web build. ~7s locally, so it runs
-  # on every push and PR (ubuntu only; Windows e2e stays on the dev box).
+  # so it needs no Node, no npm, and no apps/web build. It runs on Linux and
+  # Windows for every push and PR.
   # ---------------------------------------------------------------------------
   e2e:
-    name: E2E (composed server)
-    runs-on: ubuntu-latest
+    name: E2E (composed server, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -123,6 +215,7 @@ jobs:
       # install it defensively (matching the rust job) so a future transitive
       # pcsc dep can't break the link step here.
       - name: Install PC/SC system deps (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
 
       - name: Install Rust toolchain (stable)
@@ -132,28 +225,21 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run composed-system E2E journeys
-        run: cargo test -p chancela-server --features e2e
+        run: cargo test -p chancela-server --features e2e --locked
 
   # ---------------------------------------------------------------------------
-  # Browser E2E (Playwright, headless chromium): the only layer that reproduces
-  # the bug as the user saw it — a real browser parsing a real response — and
-  # the only one that catches UI-render/route regressions. `npm run test:browser`
-  # builds the release chancela-server + the web dist and drives the UI, so it is
-  # heavier than the `e2e` job. To keep PR latency sane it is gated to pushes on
-  # main and to PRs carrying the `run-browser-tests` label (opt-in per PR); when
-  # it runs it is blocking (no continue-on-error).
+  # Browser E2E core (Playwright, headless chromium): a normal PR/push gate for
+  # the stable browser specs that prove the real built server + web bundle work
+  # in Chromium. Edge and long-tail browser coverage remains in the labeled full
+  # suite below.
   # ---------------------------------------------------------------------------
-  browser:
-    name: Browser E2E (Playwright)
+  browser-core:
+    name: Browser E2E (Chromium core)
     runs-on: ubuntu-latest
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' &&
-       contains(github.event.pull_request.labels.*.name, 'run-browser-tests'))
     steps:
       - uses: actions/checkout@v4
 
-      # test:browser builds the release chancela-server; keep the pcsc dep in
+      # The browser run builds the release chancela-server; keep the pcsc dep in
       # place for the same defensive reason as the e2e job.
       - name: Install PC/SC system deps (Linux)
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
@@ -168,14 +254,203 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       # Downloads the chromium browser + its OS deps into the Playwright cache.
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
 
-      # cargo build --release -p chancela-server && npm run build && playwright test
-      - name: Run browser E2E
-        run: npm run test:browser --workspace apps/web
+      # Build the locked server + web dist, then run the stable core browser specs.
+      - name: Run core browser E2E
+        working-directory: apps/web
+        run: |
+          cargo build --release -p chancela-server --locked
+          npm run build
+          node e2e/run-playwright-with-cleanup-proof.mjs --project=chromium \
+            e2e/smoke.spec.ts \
+            e2e/session.spec.ts \
+            e2e/first-launch-onboarding.spec.ts \
+            e2e/journey.spec.ts
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-core-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Browser E2E full (Playwright, headless chromium): heavier edge/regression
+  # coverage. It is blocking when selected, but it stays on the main branch and
+  # PRs labeled `run-browser-tests` so the normal PR path is predictable.
+  # ---------------------------------------------------------------------------
+  browser-full:
+    name: Browser E2E (Chromium full)
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-browser-tests'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run full browser E2E
+        working-directory: apps/web
+        run: |
+          cargo build --release -p chancela-server --locked
+          npm run build
+          node e2e/run-playwright-with-cleanup-proof.mjs --project=chromium
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-full-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Live seam compile gates: compile the opt-in network/hardware test surfaces
+  # without running them. These commands intentionally use --no-run so CI proves
+  # live seams still build while avoiding real providers, networks, and readers.
+  # ---------------------------------------------------------------------------
+  live-seams:
+    name: Live seam compile (no-run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compile live network and hardware test seams
+        run: |
+          cargo test -p chancela-cae --features network-tests --locked --no-run
+          cargo test -p chancela-cmd --features network-tests --locked --no-run
+          cargo test -p chancela-csc --features network-tests --locked --no-run
+          cargo test -p chancela-law --features network-tests --locked --no-run
+          cargo test -p chancela-registry --features network-tests --locked --no-run
+          cargo test -p chancela-tsa --features network-tests --locked --no-run
+          cargo test -p chancela-tsl --features network-tests --locked --no-run
+          cargo test -p chancela-smartcard --features hardware-tests --locked --no-run
+
+  # ---------------------------------------------------------------------------
+  # Desktop Smoke (Tauri, Windows): builds the loose no-bundle desktop app and
+  # drives its embedded server through the PowerShell smoke script. It is heavier
+  # and Windows-specific, so it stays on the release-heavy path: push to main,
+  # or PRs labeled `run-desktop-tests`.
+  # ---------------------------------------------------------------------------
+  desktop:
+    name: Desktop Smoke (Windows)
+    runs-on: windows-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-desktop-tests'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache desktop cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/desktop/src-tauri -> target
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/desktop/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: npm ci --no-audit --no-fund
+
+      - name: Test desktop Rust
+        working-directory: apps/desktop
+        run: npm run test:rust
+
+      - name: Build desktop no-bundle
+        working-directory: apps/desktop
+        run: npm run build:no-bundle
+
+      - name: Run desktop smoke
+        shell: pwsh
+        working-directory: apps/desktop
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $smokeRoot = Join-Path $env:RUNNER_TEMP 'chancela-desktop-smoke'
+          $dataDir = Join-Path $smokeRoot 'data'
+          $logDir = Join-Path $smokeRoot 'logs'
+          New-Item -ItemType Directory -Path $dataDir, $logDir -Force | Out-Null
+
+          Start-Transcript -Path (Join-Path $logDir 'desktop-smoke.log') -Force
+          try {
+            npm run test:smoke -- -DataDir $dataDir
+            if ($LASTEXITCODE -ne 0) {
+              throw "Desktop smoke failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Stop-Transcript
+          }
+
+      - name: Upload desktop smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-smoke-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/chancela-desktop-smoke/
+            apps/desktop/src-tauri/target/release/*.exe
+            apps/desktop/src-tauri/target/release/*.pdb
+          if-no-files-found: ignore
+          retention-days: 7

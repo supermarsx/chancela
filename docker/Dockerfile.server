@@ -15,13 +15,18 @@
 #     surface (ARC-41 "minimal base images").
 #   - Runs as the distroless `nonroot` user (UID 65532) (ARC-41 non-root).
 #   - No credentials/config are copied in; runtime config comes from the
-#     environment (CHANCELA_ADDR) at start time (ARC-41 secrets at runtime).
+#     environment (CHANCELA_ADDR, CHANCELA_DATA_DIR) at start time (ARC-41
+#     secrets at runtime).
 #   - Designed to run with a read-only root filesystem (see docker-compose.yml):
 #     the process needs no writable image paths; scratch space is a tmpfs.
 
 ########################  Stage 1: Rust build  ########################
 FROM rust:1-slim-bookworm AS rust-build
 WORKDIR /build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libpcsclite-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the whole workspace (see .dockerignore for what is excluded: target,
 # node_modules, dist, apps/desktop, .git, .orchestration, ...).
@@ -33,7 +38,7 @@ COPY . .
 # unmounted.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
-    cargo build --release -p chancela-server \
+    cargo build --release -p chancela-server --locked \
     && cp target/release/chancela-server /chancela-server
 
 ########################  Stage 2: Web build  ########################
@@ -41,11 +46,16 @@ FROM node:22-slim AS web-build
 WORKDIR /app
 
 # Install dependencies first so the npm layer is cached independently of source
-# changes. No lockfile is committed at scaffold time, so use `npm install`.
-COPY package.json ./
+# changes, using the committed root npm lockfile.
+COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/
+# npm can omit Rollup's platform-native optional package when the lockfile was
+# authored on another OS. Install the exact optional version Rollup declares so
+# Vite can load its Linux native binding in this container.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install --no-audit --no-fund
+    npm ci --no-audit --no-fund \
+    && npm install --no-save --no-audit --no-fund \
+        @rollup/rollup-linux-x64-gnu@$(node -p "require('./node_modules/rollup/package.json').optionalDependencies['@rollup/rollup-linux-x64-gnu']")
 
 # Build the web workspace (@chancela/web) -> apps/web/dist.
 COPY . .
@@ -60,9 +70,13 @@ COPY --from=busybox:uclibc /bin/busybox /usr/bin/busybox
 
 COPY --from=rust-build /chancela-server /usr/local/bin/chancela-server
 COPY --from=web-build /app/apps/web/dist /srv/web
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/.keep
 
 # Bind on all interfaces inside the container; the host maps the port.
 ENV CHANCELA_ADDR=0.0.0.0:8080
+# Durable store path used by the Compose volume and CI smoke. Operators may
+# override it, but production containers should keep this on a persistent mount.
+ENV CHANCELA_DATA_DIR=/var/lib/chancela
 # Point the server at the web build copied to /srv/web above. The binary would also
 # auto-detect this path, but setting it explicitly makes the container's intent clear and
 # avoids any dependence on the working directory.

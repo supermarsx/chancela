@@ -8,6 +8,26 @@ import pkg from './package.json';
 // against the server's `/health` version to warn when the server binary is stale.
 const appVersion: string = pkg.version;
 
+function manualChunks(id: string): string | undefined {
+  if (!id.includes('node_modules')) {
+    return undefined;
+  }
+
+  if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
+    return 'vendor-react';
+  }
+  if (/[\\/]node_modules[\\/]react-router/.test(id)) {
+    return 'vendor-router';
+  }
+  if (/[\\/]node_modules[\\/]@tanstack[\\/]react-query[\\/]/.test(id)) {
+    return 'vendor-query';
+  }
+  if (/[\\/]node_modules[\\/]@tauri-apps[\\/]/.test(id)) {
+    return 'vendor-tauri';
+  }
+  return 'vendor';
+}
+
 // Vite 6 + @vitejs/plugin-react. Vitest config lives here (no separate file) so
 // `vitest` and `vite build` share one plugin pipeline. Dev port stays the Vite
 // default 5173 per the scaffold contract (Tauri devUrl points at it).
@@ -24,6 +44,13 @@ export default defineConfig({
     proxy: {
       '/v1': 'http://127.0.0.1:8080',
       '/health': 'http://127.0.0.1:8080',
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks,
+      },
     },
   },
   test: {

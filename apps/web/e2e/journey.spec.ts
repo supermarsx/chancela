@@ -12,7 +12,7 @@
  * sending the ledger actor back to the sign-in surface. Keeping to SPA navigation is what
  * proves the `X-Chancela-Session` → actor attribution end to end.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { OPERATOR, signInAt } from './auth';
 
 test('onboard → session → entity → book → ata → seal → Arquivo chain with actor', async ({
@@ -65,6 +65,8 @@ test('onboard → session → entity → book → ata → seal → Arquivo chain
   await page.getByLabel('Hora da reunião').fill('15:00');
   await page.getByLabel('Local').fill('Sede social');
   await page.getByLabel('Referência de presenças').fill('Lista de presenças anexa');
+  await page.getByLabel('Presentes').fill('3');
+  await page.getByLabel('Representados').fill('0');
   // The mesa presidente is the seal-unblocker for a commercial company (csc-art63/v2):
   // without it the compliance panel keeps a blocking «CSC-63/mesa-presidente» error.
   await page.getByLabel('Presidente da mesa').fill('Amélia Marques');

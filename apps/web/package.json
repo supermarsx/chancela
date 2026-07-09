@@ -12,7 +12,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,json,html}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,json,html}\"",
     "test": "vitest run",
-    "test:browser": "cargo build --release -p chancela-server && npm run build && playwright test"
+    "test:browser": "cargo build --release -p chancela-server --locked && npm run build && node e2e/run-playwright-with-cleanup-proof.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

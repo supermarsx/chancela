@@ -1,0 +1,175 @@
+/**
+ * Settings-hosted administration coverage: the users tab is the single roster surface,
+ * user lifecycle/access actions work in-browser, RBAC protects the final Owner, and the
+ * recovery/data-management confirmation gates render before any destructive submit.
+ */
+import { test, expect, type Locator, type Page } from './fixtures';
+import { OPERATOR, signInAt } from './auth';
+
+test('settings users, RBAC owner guard, and recovery/data confirmation gates', async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const suffix = Date.now().toString(36);
+  const username = `e2e.rbac.${suffix}`;
+  const displayName = `E2E RBAC ${suffix}`;
+  const renamed = `E2E RBAC Revisto ${suffix}`;
+  const password = 'Forte-Cofre7!Z';
+
+  await test.step('deep link /utilizadores lands on Configuracoes > Utilizadores', async () => {
+    await signInAt(page, '/utilizadores');
+
+    await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores$/);
+    await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
+    await expect(settingsSectionButton(page, 'Utilizadores')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByRole('heading', { name: 'Utilizadores' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Novo utilizador' })).toBeVisible();
+  });
+
+  await test.step('create and edit a user from the settings-hosted roster', async () => {
+    await page.getByRole('link', { name: 'Novo utilizador' }).click();
+    await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores&user=novo$/);
+
+    await page.getByLabel('Nome de utilizador').fill(username);
+    await page.getByLabel('Nome a apresentar (opcional)').fill(displayName);
+    await page.getByRole('button', { name: 'Criar utilizador' }).click();
+
+    await expect(page).toHaveURL(/\/configuracoes\?sec=utilizadores&user=[0-9a-f-]{36}$/);
+    await expect(page.getByRole('heading', { name: 'Identidade' })).toBeVisible();
+    await expect(page.getByLabel('Nome a apresentar')).toHaveValue(displayName);
+    await expect(userRow(page, username)).toContainText(displayName);
+
+    await page.getByLabel('Nome a apresentar').fill(renamed);
+    await page.getByRole('button', { name: 'Guardar nome' }).click();
+    await expect(page.getByLabel('Nome a apresentar')).toHaveValue(renamed);
+    await expect(userRow(page, username)).toContainText(renamed);
+  });
+
+  await test.step('self-service password and recovery phrase work for the new user', async () => {
+    await switchCurrentUser(page, renamed);
+    await expect(page.getByTestId('session-trigger')).toContainText(renamed);
+
+    const access = page.locator('section#acesso');
+    await expect(access.getByRole('heading', { name: 'Acesso e auditoria' })).toBeVisible();
+
+    const recoveryBlock = access.locator('.access-manager__block').nth(1);
+    await recoveryBlock.getByRole('button', { name: 'Gerar frase de recuperação' }).click();
+    await recoveryBlock.getByRole('button', { name: 'Gerar frase' }).click();
+
+    await expect(recoveryBlock.getByText('Guarde esta frase agora')).toBeVisible();
+    await expect(recoveryBlock.locator('.access-manager__recovery-phrase code')).toHaveText(
+      /.{32,}/,
+    );
+    await recoveryBlock.getByRole('button', { name: 'Concluído' }).click();
+    await expect(recoveryBlock.getByText('Guarde esta frase agora')).toHaveCount(0);
+
+    const passwordBlock = access.locator('.access-manager__block').nth(0);
+    await passwordBlock.getByRole('button', { name: 'Definir palavra-passe' }).click();
+    await passwordBlock.getByLabel('Nova palavra-passe').fill(password);
+    await passwordBlock.getByLabel('Confirmar palavra-passe').fill(password);
+    await passwordBlock.getByRole('button', { name: 'Guardar' }).click();
+    await expect(page.getByText('Palavra-passe definida.')).toBeVisible();
+    await expect(passwordBlock.getByLabel('Nova palavra-passe')).toHaveCount(0);
+  });
+
+  await test.step('operator can see access badges and deactivate the user from settings', async () => {
+    await signInAt(page, '/configuracoes?sec=utilizadores');
+
+    const row = userRow(page, username);
+    await expect(row).toContainText(renamed);
+    await expect(row).toContainText('Palavra-passe');
+    await expect(row).toContainText('Frase de recuperação');
+
+    await row.getByRole('button', { name: 'Desativar' }).click();
+    await expect(row).toContainText('Inativo');
+    await expect(row.getByRole('button', { name: 'Reativar' })).toBeVisible();
+  });
+
+  await test.step('RBAC refuses removing the final Owner assignment', async () => {
+    const operatorRow = userRow(page, OPERATOR.username);
+    await operatorRow.getByRole('button', { name: 'Editar' }).click();
+    await expect(page.getByRole('heading', { name: 'Identidade' })).toBeVisible();
+    await expect(page.getByLabel('Nome a apresentar')).toHaveValue(OPERATOR.displayName);
+
+    const assignments = cardByTitle(page, 'Funções atribuídas');
+    const ownerRow = assignments.getByRole('row').filter({ hasText: 'Proprietário' });
+    await expect(ownerRow).toContainText('Global');
+
+    await ownerRow.getByRole('button', { name: 'Remover' }).click();
+    await expect(page.getByText(/último Proprietário/)).toBeVisible();
+    await expect(ownerRow).toContainText('Proprietário');
+  });
+
+  await test.step('recovery and data-management modals expose their confirmation gates', async () => {
+    await page.getByTestId('tab-bar').getByRole('link', { name: 'Configurações' }).click();
+    await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
+
+    await selectSettingsSection(page, 'Livros & Integridade', 'integridade');
+    await page.getByRole('button', { name: 'Restaurar de cópia de segurança' }).click();
+    const restore = page.getByRole('dialog', { name: 'Restaurar de cópia de segurança' });
+    await expect(restore).toBeVisible();
+    await expect(restore.getByRole('button', { name: 'Restaurar' })).toBeDisabled();
+    await restore.getByLabel('Cópia de segurança (nome ou caminho)').fill('backup-e2e.zip');
+    await expect(restore.getByRole('button', { name: 'Restaurar' })).toBeEnabled();
+    await restore.getByRole('button', { name: 'Cancelar' }).click();
+    await expect(restore).toHaveCount(0);
+
+    await selectSettingsSection(page, 'Gestão de Dados', 'dados');
+    await page.getByRole('button', { name: 'Limpar dados' }).click();
+    const wipe = page.getByRole('dialog', { name: 'Limpar dados' });
+    await expect(wipe).toBeVisible();
+    await expect(wipe.getByLabel('Escreva LIMPAR DADOS para confirmar')).toBeVisible();
+    await expect(wipe.getByLabel('Palavra-passe')).toBeVisible();
+    await expect(wipe.getByText(/arquivo de exportação/)).toBeVisible();
+    await expect(wipe.getByRole('button', { name: 'Limpar dados' })).toBeDisabled();
+    await wipe.getByLabel('Escreva LIMPAR DADOS para confirmar').fill('LIMPAR');
+    await expect(wipe.getByText('O texto não corresponde.')).toBeVisible();
+    await wipe.getByLabel('Escreva LIMPAR DADOS para confirmar').fill('LIMPAR DADOS');
+    await expect(wipe.getByRole('button', { name: 'Limpar dados' })).toBeDisabled();
+    await wipe.getByRole('button', { name: 'Usar frase de recuperação' }).click();
+    await expect(wipe.getByLabel('Frase de recuperação')).toBeVisible();
+    await wipe.getByRole('button', { name: 'Cancelar' }).click();
+    await expect(wipe).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Reposição de fábrica' }).click();
+    const factory = page.getByRole('dialog', { name: 'Reposição de fábrica' });
+    await expect(factory).toBeVisible();
+    await expect(factory.getByLabel('Exportar antes de apagar (recomendado)')).toBeChecked();
+    await factory.getByLabel('Exportar antes de apagar (recomendado)').uncheck();
+    await expect(
+      factory.getByLabel('Tenho a minha própria cópia de segurança — não exportar'),
+    ).toBeVisible();
+    await expect(factory.getByRole('button', { name: 'Reposição de fábrica' })).toBeDisabled();
+    await factory.getByRole('button', { name: 'Cancelar' }).click();
+  });
+});
+
+function settingsSectionButton(page: Page, name: string): Locator {
+  return page
+    .getByRole('group', { name: 'Secções de configuração' })
+    .getByRole('button', { name, exact: true });
+}
+
+async function selectSettingsSection(page: Page, name: string, section: string): Promise<void> {
+  await settingsSectionButton(page, name).click();
+  await expect(page).toHaveURL(new RegExp(`[?&]sec=${section}`));
+}
+
+function cardByTitle(page: Page, title: string): Locator {
+  return page.locator('.panel').filter({ has: page.getByRole('heading', { name: title }) });
+}
+
+function userRow(page: Page, username: string): Locator {
+  return page.getByRole('row').filter({ hasText: username });
+}
+
+async function switchCurrentUser(page: Page, displayName: string): Promise<void> {
+  await page.getByTestId('session-trigger').click();
+  await page.getByRole('menuitemradio', { name: new RegExp(escapeRegExp(displayName)) }).click();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

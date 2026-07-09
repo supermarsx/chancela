@@ -2,8 +2,9 @@
 # Chancela release packager (POSIX / bash).
 #
 # 1. Runs the full release build (`npm run build`: cargo release + web bundle).
-# 2. Stages the server binary, the web dist, README and license into dist/<stem>/.
-# 3. Compresses that directory into dist/<stem>.tar.gz with the system `tar`.
+# 2. Stages binaries, the web dist, operator scripts, README and license into dist/<stem>/.
+# 3. Writes manifest.json and SHA256SUMS into the staged package.
+# 4. Compresses that directory into dist/<stem>.tar.gz with the system `tar`.
 #
 # <stem> = chancela-<version>-<platform>-<arch>. Version is read from
 # package.json; platform maps linux/macos/windows; arch is x64 / arm64.
@@ -73,7 +74,104 @@ for doc in readme.md license.md; do
     fi
 done
 
-# 3. Compress via system tar. Run *inside* dist/ with relative names so the
+cli_name='chancela'
+[ "$platform" = 'windows' ] && cli_name='chancela.exe'
+cli_src="$repo_root/target/release/$cli_name"
+if [ -f "$cli_src" ]; then
+    cp "$cli_src" "$stage_dir/$cli_name"
+else
+    printf '\nWarning: host ops CLI binary not found at %s - packaging without chancela.\n' "$cli_src" >&2
+fi
+
+script_stage_dir="$stage_dir/scripts"
+for script_name in \
+    backup.ps1 backup.sh \
+    restore.ps1 restore.sh \
+    init.ps1 init.sh \
+    dev.ps1 dev.sh \
+    package.ps1 package.sh
+do
+    if [ -f "$repo_root/scripts/$script_name" ]; then
+        mkdir -p "$script_stage_dir"
+        cp "$repo_root/scripts/$script_name" "$script_stage_dir/$script_name"
+    fi
+done
+
+git_commit=''
+if git_commit_candidate="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null)"; then
+    git_commit="$git_commit_candidate"
+fi
+
+node - "$stage_dir" "$version" "$platform" "$arch" "$git_commit" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const [stageDir, version, platform, arch, gitCommit] = process.argv.slice(2);
+
+function walk(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(dir, entry.name);
+    return entry.isDirectory() ? walk(fullPath) : [fullPath];
+  });
+}
+
+function relativePackagePath(filePath) {
+  return path.relative(stageDir, filePath).split(path.sep).join('/');
+}
+
+function fileKind(relativePath) {
+  const name = path.basename(relativePath);
+  if (['chancela-server', 'chancela-server.exe', 'chancela', 'chancela.exe'].includes(name)) {
+    return 'binary';
+  }
+  if (relativePath.startsWith('web/')) return 'asset';
+  if (relativePath.startsWith('scripts/')) return 'script';
+  if (['readme.md', 'license.md'].includes(name)) return 'document';
+  return 'asset';
+}
+
+function sha256(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+const included = walk(stageDir)
+  .map((filePath) => ({ filePath, relativePath: relativePackagePath(filePath) }))
+  .filter(({ relativePath }) => !['manifest.json', 'SHA256SUMS'].includes(relativePath))
+  .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+  .map(({ filePath, relativePath }) => ({
+    path: relativePath,
+    kind: fileKind(relativePath),
+    size: fs.statSync(filePath).size,
+    sha256: sha256(filePath),
+  }));
+
+const manifest = {
+  version,
+  platform,
+  arch,
+  gitCommit: gitCommit || null,
+  generatedAt: new Date().toISOString(),
+  included,
+  checksums: {
+    algorithm: 'SHA-256',
+    files: included,
+  },
+};
+
+fs.writeFileSync(path.join(stageDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+
+const sums = walk(stageDir)
+  .map((filePath) => ({ filePath, relativePath: relativePackagePath(filePath) }))
+  .filter(({ relativePath }) => relativePath !== 'SHA256SUMS')
+  .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+  .map(({ filePath, relativePath }) => `${sha256(filePath)}  *${relativePath}`)
+  .join('\n');
+
+fs.writeFileSync(path.join(stageDir, 'SHA256SUMS'), `${sums}\n`);
+NODE
+
+# 4. Compress via system tar. Run *inside* dist/ with relative names so the
 # archive holds a single top dir (<stem>/) and no argument is an absolute path.
 rm -f "$tarball"
 printf 'Compressing -> dist/%s.tar.gz ...\n' "$stem"

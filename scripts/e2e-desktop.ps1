@@ -3,20 +3,26 @@
     End-to-end smoke test for the Chancela desktop app's embedded server.
 
 .DESCRIPTION
-    Launches the packaged desktop binary, discovers the loopback port its embedded
-    HTTP server binds (by walking the launched process tree and scanning listening
-    TCP sockets), then drives a real HTTP round-trip against that server and asserts
-    the composed system behaves:
+    Launches the packaged desktop binary with a fresh CHANCELA_DATA_DIR, discovers
+    the loopback port its embedded HTTP server binds (by walking the launched process
+    tree and scanning listening TCP sockets), then drives a real HTTP round-trip
+    against that server and asserts the composed system behaves:
 
       * GET  /health              -> 200 JSON  {status:"ok"}
-      * GET  /                    -> 200 HTML   (the SPA shell, NOT JSON)
-      * GET  /v1/dashboard        -> 200 JSON
-      * POST /v1/users            -> a profile (actor for the ledger)
-      * POST /v1/session          -> a session token
+      * GET  /                    -> 200 HTML shell when a web dist resolves, otherwise
+                                     200 text/plain API-only landing
+      * GET  /v1/session/roster   -> 200 JSON, onboarding required for the fresh data dir
+      * GET  /v1/session/password-policy -> 200 JSON
+      * POST /v1/users            -> bootstrap first profile (only unauthenticated create)
+      * POST /v1/session          -> temporary bootstrap session token
+      * POST /v1/users/{id}/secret   -> mandatory password, with the session header
+      * POST /v1/users/{id}/recovery -> mandatory recovery phrase, with the session header
       * POST /v1/entities         -> 201 JSON, with the session header
-      * GET  /v1/entities         -> the created entity is listed
+      * GET  /v1/entities         -> the created entity is listed, with the session header
+      * GET  /v1/dashboard        -> 200 JSON, with the session header
       * ledger actor attribution  -> the entity.created event's actor == the session user
-      * GET  /v1/ledger/verify    -> the hash chain is valid
+      * GET  /v1/ledger/verify    -> the hash chain is valid, with the session header
+      * CHANCELA_DATA_DIR          -> a durable chancela.db was created there
       * GET  /v1/<unknown>        -> 404 JSON  {error:...}  (NOT the HTML shell)
 
     The last check is the regression guard for the bug this whole test program exists
@@ -39,6 +45,28 @@
 .PARAMETER StartTimeoutSeconds
     How long to wait for the embedded server to bind and answer /health. Default 40.
 
+.PARAMETER DataDir
+    Empty or absent data directory to pass to the launched app as CHANCELA_DATA_DIR.
+    Defaults to a fresh temp directory, removed at the end of the run. An explicit
+    DataDir is created if absent, must be empty if present, and is left on disk.
+
+.PARAMETER MovedLooseBinary
+    Copy ExePath to a fresh temp directory and launch that copy with its working
+    directory set there. This exercises the "loose --no-bundle binary moved away
+    from the repo" path. A loose moved no-bundle binary may legitimately be
+    API-only unless -WebDist is provided.
+
+.PARAMETER WebDist
+    Optional web build directory to pass to the launched app as CHANCELA_WEB_DIST.
+    When provided it must contain index.html, and the smoke expects GET / to serve
+    the SPA shell.
+
+.PARAMETER KillOwnedProcesses
+    Before launching, terminate only stale processes that are explicitly marked as
+    desktop smoke processes (the smoke command-line marker or temp WebView2 profile).
+    Generic Chancela desktop/WebView2 instances remain blockers and are never killed
+    by this option.
+
 .NOTES
     Honest boundary: this drives the embedded-server composition only. It does NOT
     interact with the native window (drag/click/paint) -- headed Tauri automation is
@@ -48,16 +76,18 @@
     directly (not Invoke-WebRequest) so non-2xx responses are inspected uniformly
     across both editions without the throw-on-error / body-extraction differences.
 
-    Do NOT run this while another Chancela desktop instance is open: cleanup reaps every
-    chancela-scoped process (the exe + its WebView2 helpers, matched by the app's WebView2
-    profile dir) that appeared during the run, which would also stop a concurrent instance.
-    The WebView2 EBWebView profile is single-instance locked, so two instances cannot run
-    against it at once regardless.
+    By default, pre-existing Chancela desktop/WebView2 processes are reported as
+    blockers and left running. Pass -KillOwnedProcesses only to clear stale processes
+    that a previous smoke run marked with its session/temp-profile marker.
 #>
 
 [CmdletBinding()]
 param(
     [string]$ExePath,
+    [string]$DataDir,
+    [switch]$MovedLooseBinary,
+    [string]$WebDist,
+    [switch]$KillOwnedProcesses,
     [int]$StartTimeoutSeconds = 40
 )
 
@@ -71,10 +101,104 @@ if (-not $ExePath) {
 
 if (-not (Test-Path -LiteralPath $ExePath)) {
     Write-Host "Desktop binary not found: $ExePath"
-    Write-Host "Build it first, e.g.:  cd apps/desktop; npm run tauri -- build --no-bundle"
+    Write-Host "Build it first, e.g.:  cd apps/desktop; npm run build:no-bundle"
     exit 1
 }
 $ExePath = (Resolve-Path -LiteralPath $ExePath).Path
+
+function New-OwnedTempDir {
+    param([Parameter(Mandatory = $true)][string]$Prefix)
+
+    $name = "{0}-{1}-{2}" -f $Prefix, $PID, ([Guid]::NewGuid().ToString('N').Substring(0, 8))
+    $path = Join-Path ([System.IO.Path]::GetTempPath()) $name
+    New-Item -ItemType Directory -Path $path -Force | Out-Null
+    return [System.IO.Path]::GetFullPath($path)
+}
+
+function Remove-OwnedTempDir {
+    param(
+        [string]$Path,
+        [Parameter(Mandatory = $true)][string]$Prefix
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return }
+    try {
+        $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+        $temp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\', '/')
+        $tempWithSep = $temp + [System.IO.Path]::DirectorySeparatorChar
+        $leaf = Split-Path -Leaf $full
+        $comparison = [StringComparison]::OrdinalIgnoreCase
+        if ($full.StartsWith($tempWithSep, $comparison) -and
+            $leaf.StartsWith($Prefix, $comparison) -and
+            (Test-Path -LiteralPath $full)) {
+            Remove-Item -LiteralPath $full -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    } catch { }
+}
+
+$SMOKE_PROCESS_MARKER = 'chancela-desktop-smoke'
+$SmokeSessionId = "{0}-{1}-{2}" -f $SMOKE_PROCESS_MARKER, $PID, ([Guid]::NewGuid().ToString('N').Substring(0, 12))
+$webViewDataDir = $null
+
+$removeDataDirOnExit = $false
+if ([string]::IsNullOrWhiteSpace($DataDir)) {
+    $DataDir = New-OwnedTempDir -Prefix 'chancela-desktop-smoke-data'
+    $removeDataDirOnExit = $true
+} else {
+    $DataDir = [System.IO.Path]::GetFullPath($DataDir)
+    if (Test-Path -LiteralPath $DataDir) {
+        $item = Get-Item -LiteralPath $DataDir
+        if (-not $item.PSIsContainer) {
+            Write-Host "DataDir exists but is not a directory: $DataDir"
+            exit 1
+        }
+        $entries = @(Get-ChildItem -LiteralPath $DataDir -Force -ErrorAction Stop | Select-Object -First 1)
+        if ($entries.Count -gt 0) {
+            Write-Host "DataDir must be empty for a hermetic smoke run: $DataDir"
+            exit 1
+        }
+    } else {
+        New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
+    }
+}
+
+$webDistForLaunch = $null
+if (-not [string]::IsNullOrWhiteSpace($WebDist)) {
+    $webDistForLaunch = [System.IO.Path]::GetFullPath($WebDist)
+}
+if ($webDistForLaunch) {
+    $indexPath = Join-Path $webDistForLaunch 'index.html'
+    if (-not (Test-Path -LiteralPath $indexPath)) {
+        Write-Host "WebDist must contain index.html: $webDistForLaunch"
+        Write-Host "Build it first, e.g.:  npm run build --workspace apps/web"
+        if ($removeDataDirOnExit) {
+            Remove-OwnedTempDir -Path $DataDir -Prefix 'chancela-desktop-smoke-data'
+        }
+        exit 1
+    }
+}
+
+$launchExePath = $ExePath
+$launchWorkingDir = Split-Path -Parent $launchExePath
+$looseRunDir = $null
+if ($MovedLooseBinary) {
+    try {
+        $looseRunDir = New-OwnedTempDir -Prefix 'chancela-desktop-smoke-loose'
+        $launchExePath = Join-Path $looseRunDir (Split-Path -Leaf $ExePath)
+        Copy-Item -LiteralPath $ExePath -Destination $launchExePath -Force
+        $launchWorkingDir = $looseRunDir
+    } catch {
+        if ($looseRunDir) {
+            Remove-OwnedTempDir -Path $looseRunDir -Prefix 'chancela-desktop-smoke-loose'
+        }
+        if ($removeDataDirOnExit) {
+            Remove-OwnedTempDir -Path $DataDir -Prefix 'chancela-desktop-smoke-data'
+        }
+        throw
+    }
+}
+
+$webViewDataDir = New-OwnedTempDir -Prefix 'chancela-desktop-smoke-webview'
 
 # --- HTTP plumbing -------------------------------------------------------------------------
 # HttpClient never throws on non-2xx, so status + body + content-type read the same way for a
@@ -128,35 +252,208 @@ function ConvertFrom-JsonSafe {
 }
 
 # --- process helpers -----------------------------------------------------------------------
-# Killing this run's process family is the tricky part. The desktop exe spawns msedgewebview2.exe
-# children (the WebView2 runtime) plus renderer/GPU grandchildren; these reparent when an
-# intermediate exits, so a point-in-time tree walk can miss them -- and a leaked WebView2 process
-# holds the EBWebView user-data-dir lock, which makes the *next* launch hang (the embedded server
-# never starts). A Windows Job Object would be the textbook fix, but a KILL_ON_JOB_CLOSE job
-# breaks WebView2: its helper processes need job breakaway, which a plain kill-on-close job denies,
-# so WebView2 init fails and no port is ever bound. WebView2 is also shared with the user's Edge,
-# so we cannot bulk-kill msedgewebview2 either.
-#
-# The working, precisely-scoped approach: match by identity, not tree position. The desktop's
-# WebView2 profile lives under a fixed, app-specific dir (the bundle id), so its helpers are
-# distinguishable from the user's Edge on the msedgewebview2 command line. We snapshot the
-# chancela-scoped PIDs *before* launch and, on cleanup, reap the launched tree plus any
-# chancela-scoped process that appeared *during* this run. (The EBWebView dir is single-instance
-# locked, so two chancela desktop instances cannot run at once anyway; do not run this script while
-# another chancela desktop instance is open -- the reap would also stop that one.)
+# WebView2 helpers can outlive or reparent away from the desktop launcher. The safe rule here is:
+# default runs never kill pre-existing Chancela processes, and cleanup only kills the launcher we
+# started plus descendants/session-marked WebView2 helpers. -KillOwnedProcesses extends that to
+# stale smoke-marked processes from earlier runs, but still never kills generic user instances.
 $WEBVIEW_PROFILE_MARKER = 'pt.chancela.desktop'   # Tauri bundle id -> %LOCALAPPDATA%\<id>\EBWebView
-$DesktopExeName = [System.IO.Path]::GetFileName($ExePath)
+$DesktopExeName = [System.IO.Path]::GetFileName($launchExePath)
+$ApiExeNames = @('chancela-server.exe')
+$script:OwnedProcessIds = @{}
 
-# PIDs of every process belonging to this app right now: the desktop exe (by its own basename) and
-# any msedgewebview2 whose --user-data-dir is this app's WebView2 profile (never the user's Edge).
-function Get-ChancelaProcessIds {
-    $ids = @()
+function Test-TextContains {
+    param([string]$Text, [string]$Needle)
+    if ([string]::IsNullOrEmpty($Text) -or [string]::IsNullOrEmpty($Needle)) { return $false }
+    return ($Text.IndexOf($Needle, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+}
+
+function Add-ProcessInfo {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Map,
+        [Parameter(Mandatory = $true)]$Process,
+        [Parameter(Mandatory = $true)][string]$Reason
+    )
+
+    $id = [int]$Process.ProcessId
+    if ($Map.ContainsKey($id)) {
+        if (-not (Test-TextContains -Text $Map[$id].Reason -Needle $Reason)) {
+            $Map[$id].Reason = "$($Map[$id].Reason); $Reason"
+        }
+        return
+    }
+
+    $Map[$id] = [pscustomobject]@{
+        ProcessId = $id
+        Name = [string]$Process.Name
+        ExecutablePath = [string]$Process.ExecutablePath
+        CommandLine = [string]$Process.CommandLine
+        Reason = $Reason
+    }
+}
+
+function Get-ChancelaProcesses {
+    $processes = @{}
+
     Get-CimInstance Win32_Process -Filter "Name='$DesktopExeName'" -ErrorAction SilentlyContinue |
-        ForEach-Object { $ids += [int]$_.ProcessId }
+        ForEach-Object { Add-ProcessInfo -Map $processes -Process $_ -Reason 'desktop executable name' }
+
+    foreach ($apiName in $ApiExeNames) {
+        Get-CimInstance Win32_Process -Filter "Name='$apiName'" -ErrorAction SilentlyContinue |
+            Where-Object { Test-TextContains -Text $_.CommandLine -Needle $SMOKE_PROCESS_MARKER } |
+            ForEach-Object { Add-ProcessInfo -Map $processes -Process $_ -Reason 'smoke-marked API process' }
+    }
+
     Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*$WEBVIEW_PROFILE_MARKER*" } |
-        ForEach-Object { $ids += [int]$_.ProcessId }
+        Where-Object {
+            (Test-TextContains -Text $_.CommandLine -Needle $WEBVIEW_PROFILE_MARKER) -or
+            (Test-TextContains -Text $_.CommandLine -Needle $SMOKE_PROCESS_MARKER)
+        } |
+        ForEach-Object {
+            $reason = if (Test-TextContains -Text $_.CommandLine -Needle $SMOKE_PROCESS_MARKER) {
+                'smoke-marked WebView2 helper'
+            } else {
+                'desktop WebView2 profile'
+            }
+            Add-ProcessInfo -Map $processes -Process $_ -Reason $reason
+        }
+
+    return @($processes.Values | Sort-Object ProcessId)
+}
+
+function Test-SmokeOwnedProcess {
+    param([Parameter(Mandatory = $true)]$Process)
+
+    $name = [string]$Process.Name
+    $cmd = [string]$Process.CommandLine
+    $exe = [string]$Process.ExecutablePath
+    if ($name -ieq $DesktopExeName) {
+        return ((Test-TextContains -Text $cmd -Needle $SMOKE_PROCESS_MARKER) -or
+            (Test-TextContains -Text $exe -Needle $SMOKE_PROCESS_MARKER))
+    }
+    if ($name -ieq 'msedgewebview2.exe') {
+        return (Test-TextContains -Text $cmd -Needle $SMOKE_PROCESS_MARKER)
+    }
+    foreach ($apiName in $ApiExeNames) {
+        if ($name -ieq $apiName) {
+            return (Test-TextContains -Text $cmd -Needle $SMOKE_PROCESS_MARKER)
+        }
+    }
+    return $false
+}
+
+function Test-CurrentSmokeProcess {
+    param([Parameter(Mandatory = $true)]$Process)
+
+    $cmd = [string]$Process.CommandLine
+    $exe = [string]$Process.ExecutablePath
+    if ((Test-TextContains -Text $cmd -Needle $SmokeSessionId) -or
+        (Test-TextContains -Text $cmd -Needle $webViewDataDir) -or
+        (Test-TextContains -Text $exe -Needle $SmokeSessionId) -or
+        (Test-TextContains -Text $exe -Needle $webViewDataDir)) {
+        return $true
+    }
+    if ($looseRunDir -and
+        ((Test-TextContains -Text $cmd -Needle $looseRunDir) -or
+         (Test-TextContains -Text $exe -Needle $looseRunDir))) {
+        return $true
+    }
+    return $false
+}
+
+function Get-SmokeOwnedProcesses {
+    $processes = @{}
+    $candidateNames = @($DesktopExeName, 'msedgewebview2.exe') + $ApiExeNames |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique
+
+    foreach ($name in $candidateNames) {
+        Get-CimInstance Win32_Process -Filter "Name='$name'" -ErrorAction SilentlyContinue |
+            Where-Object { Test-SmokeOwnedProcess -Process $_ } |
+            ForEach-Object { Add-ProcessInfo -Map $processes -Process $_ -Reason 'smoke-owned marker' }
+    }
+
+    return @($processes.Values | Sort-Object ProcessId)
+}
+
+function Get-CurrentSmokeProcesses {
+    $processes = @{}
+    $candidateNames = @($DesktopExeName, 'msedgewebview2.exe') + $ApiExeNames |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique
+
+    foreach ($name in $candidateNames) {
+        Get-CimInstance Win32_Process -Filter "Name='$name'" -ErrorAction SilentlyContinue |
+            Where-Object { Test-CurrentSmokeProcess -Process $_ } |
+            ForEach-Object { Add-ProcessInfo -Map $processes -Process $_ -Reason 'current smoke session marker' }
+    }
+
+    return @($processes.Values | Sort-Object ProcessId)
+}
+
+function Format-ProcessList {
+    param([object[]]$Processes)
+
+    $lines = @()
+    foreach ($p in @($Processes | Sort-Object ProcessId)) {
+        $path = if ([string]::IsNullOrWhiteSpace($p.ExecutablePath)) { '(unknown path)' } else { $p.ExecutablePath }
+        $cmd = if ([string]::IsNullOrWhiteSpace($p.CommandLine)) { '' } else { $p.CommandLine }
+        if ($cmd.Length -gt 260) { $cmd = $cmd.Substring(0, 257) + '...' }
+        $lines += ("  PID {0}: {1} - {2}; path={3}; cmd={4}" -f $p.ProcessId, $p.Name, $p.Reason, $path, $cmd)
+    }
+    return ($lines -join [Environment]::NewLine)
+}
+
+function Stop-ProcessIds {
+    param([int[]]$ProcessIds)
+
+    foreach ($id in @($ProcessIds | Where-Object { $_ -gt 0 } | Select-Object -Unique)) {
+        Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-LiveProcessIds {
+    param([int[]]$ProcessIds)
+
+    $live = @()
+    foreach ($id in @($ProcessIds | Where-Object { $_ -gt 0 } | Select-Object -Unique)) {
+        if (Get-Process -Id $id -ErrorAction SilentlyContinue) { $live += [int]$id }
+    }
+    return @($live)
+}
+
+function Add-OwnedProcessId {
+    param([int]$ProcessId)
+    if ($ProcessId -gt 0) { $script:OwnedProcessIds[[int]$ProcessId] = $true }
+}
+
+function Get-DescendantProcessIds {
+    param([int]$RootPid)
+
+    $ids = @()
+    Get-CimInstance Win32_Process -Filter "ParentProcessId=$RootPid" -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $child = [int]$_.ProcessId
+            $ids += $child
+            $ids += Get-DescendantProcessIds -RootPid $child
+        }
     return @($ids)
+}
+
+function Update-OwnedProcessIds {
+    param([int]$RootPid)
+
+    Add-OwnedProcessId -ProcessId $RootPid
+    Get-DescendantProcessIds -RootPid $RootPid | ForEach-Object { Add-OwnedProcessId -ProcessId $_ }
+    Get-CurrentSmokeProcesses | ForEach-Object { Add-OwnedProcessId -ProcessId $_.ProcessId }
+}
+
+function Get-CurrentOwnedProcessIds {
+    param([int]$RootPid)
+
+    Update-OwnedProcessIds -RootPid $RootPid
+    return @(($script:OwnedProcessIds.Keys | ForEach-Object { [int]$_ }) |
+        Where-Object { $_ -gt 0 } |
+        Select-Object -Unique)
 }
 
 # Tauri spawns WebView2 grandchildren; a plain Stop-Process on the launcher would orphan them.
@@ -179,17 +476,91 @@ function Add-Result {
     Write-Host ("  [{0}] {1} - {2}" -f $tag, $Check, $Detail)
 }
 
-Write-Host "Chancela desktop smoke - $ExePath`n"
+$script:LaunchEnvBackup = @{}
+function Set-LaunchEnvVar {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+    if (-not $script:LaunchEnvBackup.ContainsKey($Name)) {
+        $script:LaunchEnvBackup[$Name] =
+            [Environment]::GetEnvironmentVariable($Name, 'Process')
+    }
+    [Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
+}
+
+function Restore-LaunchEnvVars {
+    foreach ($name in @($script:LaunchEnvBackup.Keys)) {
+        $value = $script:LaunchEnvBackup[$name]
+        if ($null -eq $value) {
+            [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+        } else {
+            [Environment]::SetEnvironmentVariable($name, [string]$value, 'Process')
+        }
+    }
+    $script:LaunchEnvBackup.Clear()
+}
+
+Write-Host "Chancela desktop smoke - $launchExePath"
+if ($MovedLooseBinary) { Write-Host "  original exe  $ExePath" }
+Write-Host "  working dir   $launchWorkingDir"
+Write-Host "  data dir      $DataDir"
+Write-Host "  session       $SmokeSessionId"
+Write-Host "  webview data  $webViewDataDir"
+if ($webDistForLaunch) { Write-Host "  web dist      $webDistForLaunch" }
+if ($KillOwnedProcesses) { Write-Host "  cleanup       stale smoke-owned processes only" }
+Write-Host ''
 
 $proc = $null
-$preExistingPids = @()
 $aborted = $false
 $abortMsg = ''
 try {
     Write-Host "Launching desktop binary..."
-    # Snapshot any chancela processes that already exist so cleanup only reaps what THIS run spawns.
-    $preExistingPids = Get-ChancelaProcessIds
-    $proc = Start-Process -FilePath $ExePath -PassThru
+    if ($KillOwnedProcesses) {
+        $staleOwned = @(Get-SmokeOwnedProcesses)
+        if ($staleOwned.Count -gt 0) {
+            Write-Host "Stopping stale smoke-owned process(es) before launch:"
+            Write-Host (Format-ProcessList -Processes $staleOwned)
+            Stop-ProcessIds -ProcessIds @($staleOwned | ForEach-Object { [int]$_.ProcessId })
+            Start-Sleep -Milliseconds 500
+        }
+    }
+
+    # Any remaining Chancela desktop/WebView2 process is a blocker. Default behavior is
+    # conservative: report it and leave it running so we cannot stop a user's app instance.
+    $preExisting = @(Get-ChancelaProcesses)
+    if ($preExisting.Count -gt 0) {
+        $details = Format-ProcessList -Processes $preExisting
+        $ownedRemaining = @($preExisting | Where-Object { Test-SmokeOwnedProcess -Process $_ })
+        $hint = if ($ownedRemaining.Count -gt 0 -and -not $KillOwnedProcesses) {
+            "Rerun with -KillOwnedProcesses to clear only the smoke-marked process(es), or close the listed processes yourself."
+        } else {
+            "Close the listed process(es) before running the hermetic desktop smoke."
+        }
+        throw "pre-existing Chancela desktop/WebView2 process(es) detected before launch:`n$details`n$hint"
+    }
+    Set-LaunchEnvVar -Name 'CHANCELA_DATA_DIR' -Value $DataDir
+    if ($webDistForLaunch) {
+        Set-LaunchEnvVar -Name 'CHANCELA_WEB_DIST' -Value $webDistForLaunch
+    }
+    Set-LaunchEnvVar -Name 'WEBVIEW2_USER_DATA_FOLDER' -Value $webViewDataDir
+    $smokeArg = "--chancela-smoke-session=$SmokeSessionId"
+    $webViewArgs = $smokeArg
+    $existingWebViewArgs = [Environment]::GetEnvironmentVariable('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS', 'Process')
+    if (-not [string]::IsNullOrWhiteSpace($existingWebViewArgs)) {
+        $webViewArgs = "$existingWebViewArgs $webViewArgs"
+    }
+    Set-LaunchEnvVar -Name 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS' -Value $webViewArgs
+    try {
+        $proc = Start-Process `
+            -FilePath $launchExePath `
+            -WorkingDirectory $launchWorkingDir `
+            -ArgumentList @($smokeArg) `
+            -PassThru
+    } finally {
+        Restore-LaunchEnvVars
+    }
+    Add-OwnedProcessId -ProcessId $proc.Id
     Write-Host "  launched pid $($proc.Id)"
 
     # --- discover the embedded server port -------------------------------------------------
@@ -204,9 +575,9 @@ try {
             throw "the desktop binary exited during startup (exit code $($proc.ExitCode)). " +
                   "Is this a RELEASE build? A debug build skips the embedded server."
         }
-        # The embedded server binds in the main launched process; scan its sockets plus this app's
-        # other processes (belt-and-suspenders against any reparented socket owner).
-        $scanPids = @($proc.Id) + (Get-ChancelaProcessIds) | Select-Object -Unique
+        # The embedded server binds in the main launched process; scan only the process IDs known
+        # to belong to this smoke session so a concurrently-open app cannot be mistaken for ours.
+        $scanPids = Get-CurrentOwnedProcessIds -RootPid $proc.Id
         $listen = foreach ($p in $scanPids) {
             Get-NetTCPConnection -OwningProcess $p -State Listen -ErrorAction SilentlyContinue
         }
@@ -241,22 +612,40 @@ try {
         (($r.Status -eq 200) -and ($null -ne $j) -and ($j.status -eq 'ok')) `
         "status=$($r.Status) body=$(if ($j) { "ok, version=$($j.version)" } else { 'NOT JSON' })"
 
-    # 2. / -> the SPA shell (HTML, explicitly not JSON)
+    # 2. / -> either the SPA shell (when a web dist/resource resolves) or the API-only landing.
+    # A moved loose --no-bundle binary is not self-contained and, without -WebDist, cannot walk
+    # from its temp run dir back to apps/web/dist. That is a valid embedded-server mode.
     $r = Invoke-Probe -Method GET -Url "$base/"
     $looksHtml = ($r.Body -match '(?i)<!doctype html|<html')
+    $looksApiLanding = (($r.ContentType -eq 'text/plain') -and
+        ($r.Body -match 'Chancela API is running \(web UI not built\)'))
     $isJson = $null -ne (ConvertFrom-JsonSafe $r.Body)
-    Add-Result 'GET / -> HTML shell' `
-        (($r.Status -eq 200) -and $looksHtml -and (-not $isJson)) `
-        "status=$($r.Status) content-type=$($r.ContentType) html=$looksHtml"
+    $rootOk = (($r.Status -eq 200) -and (-not $isJson) -and
+        $(if ($webDistForLaunch) { $looksHtml } else { $looksHtml -or $looksApiLanding }))
+    Add-Result 'GET / -> shell or API-only landing' `
+        $rootOk `
+        "status=$($r.Status) content-type=$($r.ContentType) mode=$(if ($looksHtml) { 'html' } elseif ($looksApiLanding) { 'api-only' } else { 'unexpected' }) expectedHtml=$([bool]$webDistForLaunch)"
 
-    # 3. /v1/dashboard -> JSON (guard against HTML-instead-of-JSON)
-    $r = Invoke-Probe -Method GET -Url "$base/v1/dashboard"
+    # 3. Fresh hermetic data dir starts in onboarding mode.
+    $r = Invoke-Probe -Method GET -Url "$base/v1/session/roster"
     $j = ConvertFrom-JsonSafe $r.Body
-    Add-Result 'GET /v1/dashboard -> JSON' `
-        (($r.Status -eq 200) -and ($null -ne $j)) `
-        "status=$($r.Status) content-type=$($r.ContentType) json=$($null -ne $j)"
+    $onboardingRequired = ($null -ne $j) -and ($j.onboarding_required -eq $true)
+    $rosterEmpty = ($null -ne $j) -and (@($j.users).Count -eq 0)
+    Add-Result 'GET /v1/session/roster -> onboarding required' `
+        (($r.Status -eq 200) -and $onboardingRequired -and $rosterEmpty) `
+        "status=$($r.Status) onboarding_required=$(if ($j) { $j.onboarding_required } else { '?' }) users=$(if ($j) { @($j.users).Count } else { '?' })"
+    if (-not ($onboardingRequired -and $rosterEmpty)) {
+        throw "fresh DataDir did not report onboarding_required=true with an empty roster; refusing to smoke against a non-hermetic or already-onboarded instance"
+    }
 
-    # 4. Create a user (the actor recorded on the ledger).
+    # 4. Password policy is public so onboarding can render before a session exists.
+    $r = Invoke-Probe -Method GET -Url "$base/v1/session/password-policy"
+    $j = ConvertFrom-JsonSafe $r.Body
+    Add-Result 'GET /v1/session/password-policy -> JSON' `
+        (($r.Status -eq 200) -and ($null -ne $j) -and ($j.min_length -ge 1) -and ($null -ne $j.rules)) `
+        "status=$($r.Status) min_length=$(if ($j) { $j.min_length } else { '?' }) rules=$(if ($j -and $j.rules) { @($j.rules).Count } else { '?' })"
+
+    # 5. Bootstrap the first user. This is the only unauthenticated user create.
     $username = "smoke-$unique"
     $body = @{ username = $username; display_name = 'Smoke Test' } | ConvertTo-Json -Compress
     $r = Invoke-Probe -Method POST -Url "$base/v1/users" -Body $body
@@ -267,7 +656,7 @@ try {
         "status=$($r.Status) username=$username id=$userId"
     if (-not $userId) { throw "cannot continue the round-trip without a created user" }
 
-    # 5. Open a session for that user -> token.
+    # 6. Open the temporary passwordless bootstrap session. Later onboarding steps are auth-gated.
     $body = @{ user_id = $userId } | ConvertTo-Json -Compress
     $r = Invoke-Probe -Method POST -Url "$base/v1/session" -Body $body
     $j = ConvertFrom-JsonSafe $r.Body
@@ -278,7 +667,35 @@ try {
     if (-not $token) { throw "cannot continue the round-trip without a session token" }
     $sessionHeader = @{ 'X-Chancela-Session' = $token }
 
-    # 6. Create an entity, attributed to the session user.
+    # 7. Current onboarding requires a password and a one-time recovery phrase.
+    $password = 'N0tary!Vault7'
+    $body = @{ password = $password } | ConvertTo-Json -Compress
+    $r = Invoke-Probe -Method POST -Url "$base/v1/users/$userId/secret" -Body $body -Headers $sessionHeader
+    $j = ConvertFrom-JsonSafe $r.Body
+    Add-Result 'POST /v1/users/{id}/secret -> password set' `
+        (($r.Status -eq 200) -and ($null -ne $j) -and ($j.has_secret -eq $true)) `
+        "status=$($r.Status) has_secret=$(if ($j) { $j.has_secret } else { '?' })"
+
+    $body = @{ current_password = $password } | ConvertTo-Json -Compress
+    $r = Invoke-Probe -Method POST -Url "$base/v1/users/$userId/recovery" -Body $body -Headers $sessionHeader
+    $j = ConvertFrom-JsonSafe $r.Body
+    Add-Result 'POST /v1/users/{id}/recovery -> phrase issued' `
+        (($r.Status -eq 200) -and ($null -ne $j) -and ($j.has_recovery_phrase -eq $true) -and
+            (-not [string]::IsNullOrWhiteSpace($j.recovery_phrase))) `
+        "status=$($r.Status) has_recovery_phrase=$(if ($j) { $j.has_recovery_phrase } else { '?' }) phrase=$(if ($j -and $j.recovery_phrase) { 'yes' } else { 'no' })"
+
+    # 8. Re-open a normal password-backed session and use that token for gated API routes.
+    $body = @{ user_id = $userId; password = $password } | ConvertTo-Json -Compress
+    $r = Invoke-Probe -Method POST -Url "$base/v1/session" -Body $body
+    $j = ConvertFrom-JsonSafe $r.Body
+    $token = if ($j) { $j.token } else { $null }
+    Add-Result 'POST /v1/session with password -> token' `
+        (($r.Status -eq 200) -and (-not [string]::IsNullOrWhiteSpace($token))) `
+        "status=$($r.Status) user=$(if ($j) { $j.user.username } else { '?' }) token=$(if ($token) { 'yes' } else { 'no' })"
+    if (-not $token) { throw "cannot continue the round-trip without a password-backed session token" }
+    $sessionHeader = @{ 'X-Chancela-Session' = $token }
+
+    # 9. Create an entity, attributed to the session user.
     $body = @{
         name = 'Encosto Estrategico Lda'
         nipc = '503004642'
@@ -293,19 +710,26 @@ try {
         "status=$($r.Status) id=$entityId"
     if (-not $entityId) { throw "cannot continue the round-trip without a created entity" }
 
-    # 7. The entity is listed.
-    $r = Invoke-Probe -Method GET -Url "$base/v1/entities"
+    # 10. The entity is listed by an authenticated read.
+    $r = Invoke-Probe -Method GET -Url "$base/v1/entities" -Headers $sessionHeader
     $j = ConvertFrom-JsonSafe $r.Body
     $listed = ($null -ne $j) -and (@($j | Where-Object { $_.id -eq $entityId }).Count -gt 0)
     Add-Result 'GET /v1/entities -> lists it' `
         (($r.Status -eq 200) -and $listed) `
         "status=$($r.Status) count=$(if ($j) { @($j).Count } else { 0 }) found=$listed"
 
-    # 8. Ledger attribution: the entity.created event's actor is the session user. Assign the
+    # 11. /v1/dashboard is auth-gated; exercise it with the session token.
+    $r = Invoke-Probe -Method GET -Url "$base/v1/dashboard" -Headers $sessionHeader
+    $j = ConvertFrom-JsonSafe $r.Body
+    Add-Result 'GET /v1/dashboard -> JSON with session' `
+        (($r.Status -eq 200) -and ($null -ne $j) -and ($j.entities -ge 1)) `
+        "status=$($r.Status) content-type=$($r.ContentType) json=$($null -ne $j) entities=$(if ($j) { $j.entities } else { '?' })"
+
+    # 12. Ledger attribution: the entity.created event's actor is the session user. Assign the
     # filtered result with a direct @() (NOT via an if/else block): assigning the output of an
     # `if` statement enumerates the pipeline and would unroll a single-element array back to a
     # scalar, whose `.Count` is $null under Windows PowerShell 5.1. @($null | ...) is already [].
-    $r = Invoke-Probe -Method GET -Url "$base/v1/ledger/events?scope=$entityId"
+    $r = Invoke-Probe -Method GET -Url "$base/v1/ledger/events?scope=$entityId" -Headers $sessionHeader
     $j = ConvertFrom-JsonSafe $r.Body
     $created = @($j | Where-Object { $_.kind -eq 'entity.created' })
     $actorOk = ($created.Count -gt 0) -and ($created[0].actor -eq $username)
@@ -313,14 +737,22 @@ try {
         (($r.Status -eq 200) -and $actorOk) `
         "status=$($r.Status) actor=$(if ($created.Count) { $created[0].actor } else { '(no event)' }) expected=$username"
 
-    # 9. Ledger chain verifies.
-    $r = Invoke-Probe -Method GET -Url "$base/v1/ledger/verify"
+    # 13. Ledger chain verifies.
+    $r = Invoke-Probe -Method GET -Url "$base/v1/ledger/verify" -Headers $sessionHeader
     $j = ConvertFrom-JsonSafe $r.Body
     Add-Result 'GET /v1/ledger/verify -> valid' `
         (($r.Status -eq 200) -and ($null -ne $j) -and ($j.valid -eq $true)) `
         "status=$($r.Status) valid=$(if ($j) { $j.valid } else { '?' }) length=$(if ($j) { $j.length } else { '?' })"
 
-    # 10. THE REGRESSION GUARD: an unknown /v1 path is a JSON 404, never the HTML shell.
+    # 14. The app honoured the hermetic CHANCELA_DATA_DIR instead of falling back to
+    # the user's normal per-app desktop data directory or in-memory state.
+    $dbPath = Join-Path $DataDir 'chancela.db'
+    $dbExists = Test-Path -LiteralPath $dbPath
+    Add-Result 'CHANCELA_DATA_DIR -> durable store' `
+        $dbExists `
+        "path=$dbPath exists=$dbExists"
+
+    # 15. THE REGRESSION GUARD: an unknown /v1 path is a JSON 404, never the HTML shell.
     $r = Invoke-Probe -Method GET -Url "$base/v1/does-not-exist-$unique"
     $j = ConvertFrom-JsonSafe $r.Body
     $looksHtml = ($r.Body -match '(?i)<!doctype html|<html')
@@ -338,18 +770,26 @@ catch {
 }
 finally {
     if ($proc) {
-        Write-Host "`nStopping desktop process tree (pid $($proc.Id))..."
-        # 1. Kill the launched tree (fast path for the live parent + current descendants).
+        Write-Host "`nStopping smoke-owned desktop process(es) (launcher pid $($proc.Id))..."
+        try { Update-OwnedProcessIds -RootPid $proc.Id } catch { }
         try { if (-not $proc.HasExited) { Stop-Tree -RootPid $proc.Id } } catch { }
-        # 2. Reap any chancela-scoped process that appeared during this run (its own exe + this
-        #    app's WebView2 helpers) but did not exist before launch -- this catches reparented /
-        #    orphaned WebView2 processes the tree walk missed, without touching the user's Edge.
         Start-Sleep -Milliseconds 300
-        $leaked = @(Get-ChancelaProcessIds | Where-Object { $preExistingPids -notcontains $_ })
-        foreach ($lpid in $leaked) { Stop-Process -Id $lpid -Force -ErrorAction SilentlyContinue }
-        if ($leaked.Count -gt 0) { Write-Host "  reaped $($leaked.Count) orphaned WebView2/app process(es)" }
+        $remainingOwned = Get-LiveProcessIds -ProcessIds (Get-CurrentOwnedProcessIds -RootPid $proc.Id)
+        if ($remainingOwned.Count -gt 0) {
+            Stop-ProcessIds -ProcessIds $remainingOwned
+            Write-Host "  stopped $($remainingOwned.Count) current smoke-owned helper process(es)"
+        }
     }
     if ($script:Http) { $script:Http.Dispose() }
+    if ($looseRunDir) {
+        Remove-OwnedTempDir -Path $looseRunDir -Prefix 'chancela-desktop-smoke-loose'
+    }
+    if ($webViewDataDir) {
+        Remove-OwnedTempDir -Path $webViewDataDir -Prefix 'chancela-desktop-smoke-webview'
+    }
+    if ($removeDataDirOnExit) {
+        Remove-OwnedTempDir -Path $DataDir -Prefix 'chancela-desktop-smoke-data'
+    }
 }
 
 # --- summary -------------------------------------------------------------------------------
