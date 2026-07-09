@@ -152,7 +152,9 @@ describe('EntitiesPage', () => {
     expect(within(primary).queryByLabelText('NIPC')).toBeNull();
     expect(within(primary).queryByLabelText('Registo')).toBeNull();
 
-    const advanced = filters.querySelector('details.entities-advanced-filters') as HTMLDetailsElement;
+    const advanced = filters.querySelector(
+      'details.entities-advanced-filters',
+    ) as HTMLDetailsElement;
     expect(advanced).toBeTruthy();
     expect(advanced.open).toBe(false);
     expect(within(advanced).getByLabelText('NIPC')).toBeTruthy();
@@ -164,7 +166,7 @@ describe('EntitiesPage', () => {
     expect(within(advanced).getByLabelText('Última alteração')).toBeTruthy();
   });
 
-  it('renders the default entity table columns as one-line truncation cells', async () => {
+  it('renders the default entity table columns as compact clamped cells', async () => {
     const activity: LedgerEventView = {
       id: 'event-long-entity',
       seq: 1,
@@ -212,13 +214,17 @@ describe('EntitiesPage', () => {
     expect(within(cells[4]).getByRole('button', { name: 'Abrir' })).toBeTruthy();
 
     const typeLine = cells[2].querySelector('.entity-cell-line');
-    expect(typeLine?.textContent).toBe('Sociedade por Quotas');
+    expect(typeLine?.textContent).toBe('Lda.');
+    expect(typeLine?.className).toContain('entity-cell-line--compact');
+    expect(typeLine?.textContent).not.toContain('Sociedade por Quotas');
     expect(typeLine?.textContent).not.toContain('Regras');
     expect(typeLine?.getAttribute('title')).toContain('Sociedade por Quotas');
     expect(typeLine?.getAttribute('title')).toContain('Regras csc-art63/v2');
 
     const activityLine = cells[3].querySelector('.entity-cell-line');
+    expect(activityLine?.className).toContain('entity-cell-line--compact');
     expect(activityLine?.textContent).not.toContain(activity.actor);
+    expect(activityLine?.textContent).not.toContain('10:15');
     expect(activityLine?.getAttribute('title')).toContain('Entidade criada');
     expect(activityLine?.getAttribute('title')).toContain(activity.actor);
   });

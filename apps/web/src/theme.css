@@ -1370,6 +1370,8 @@ a.btn.btn--iconOnly {
 }
 
 .entities-filterbar {
+  min-width: 0;
+  max-width: 100%;
   overflow: visible;
   padding-bottom: 0;
 }
@@ -1379,6 +1381,8 @@ a.btn.btn--iconOnly {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .entities-filterbar__primary .field {
@@ -1397,6 +1401,8 @@ a.btn.btn--iconOnly {
 }
 
 .entities-advanced-filters {
+  min-width: 0;
+  max-width: 100%;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1427,9 +1433,35 @@ a.btn.btn--iconOnly {
   min-width: 0;
 }
 
+.entities-table {
+  min-width: 0;
+}
+
+.entities-table .table-wrap {
+  overflow-x: hidden;
+}
+
+.entities-table .table {
+  table-layout: fixed;
+  min-width: 0;
+}
+
 .entities-table .table th,
 .entities-table .table td {
-  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.entities-table .table th {
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+.entities-table .table th[data-entity-column='Actions'] {
+  width: 4.2rem;
+  text-align: right;
 }
 
 .entities-table__cell {
@@ -1469,20 +1501,29 @@ a.btn.btn--iconOnly {
   overflow: hidden;
 }
 
-.entities-table__cell--truncate > .truncate,
+.entities-table__cell--truncate > .truncate {
+  display: -webkit-box;
+  line-height: 1.25;
+  white-space: normal;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .entities-table__cell--truncate > .entity-cell-line {
   max-width: var(--entity-cell-max);
 }
 
 .entity-cell-line {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.18rem 0.45rem;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-height: 3.2em;
+  line-height: 1.25;
+  white-space: normal;
   vertical-align: middle;
 }
 
@@ -1511,8 +1552,12 @@ a.btn.btn--iconOnly {
 
 .entities-table__cell--actions {
   width: 1%;
+}
+
+.entities-table .table td.entities-table__cell--actions {
   overflow: visible;
   white-space: nowrap;
+  text-align: right;
 }
 
 .entities-table__actions {

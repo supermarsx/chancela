@@ -140,6 +140,15 @@ const ENTITY_COLUMN_LABEL_KEYS: Record<RegisteredEntityColumn, MessageKey> = {
   Actions: 'entities.columns.actions',
 };
 
+const COMPACT_ENTITY_KIND_LABELS: Partial<Record<EntityKind, string>> = {
+  SociedadeEmNomeColetivo: 'S.N.C.',
+  SociedadePorQuotas: 'Lda.',
+  SociedadeUnipessoalPorQuotas: 'Unip. Lda.',
+  SociedadeAnonima: 'S.A.',
+  SociedadeEmComanditaSimples: 'S.C.S.',
+  SociedadeEmComanditaPorAcoes: 'S.C.A.',
+};
+
 function normalizeSearch(value: string): string {
   return value
     .normalize('NFD')
@@ -265,6 +274,12 @@ function formatActivityTimestamp(value: string, locale: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(date);
+}
+
+function formatActivityDate(value: string, locale: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(date);
 }
 
 function formatDateValue(value: string | null | undefined, fallback = '—'): string {
@@ -530,6 +545,10 @@ function activityKindFilterOptions(
   ];
 }
 
+function compactEntityKindLabel(kind: EntityKind): string {
+  return COMPACT_ENTITY_KIND_LABELS[kind] ?? entityKindLabels[kind];
+}
+
 function EntityContext({ entity }: { entity: Entity }) {
   const details = joinCellParts([
     entityKindLabels[entity.kind],
@@ -538,8 +557,8 @@ function EntityContext({ entity }: { entity: Entity }) {
     entityTemplateFamily(entity),
   ]);
   return (
-    <CellLine title={details}>
-      <span className="entity-cell-line__primary">{entityKindLabels[entity.kind]}</span>
+    <CellLine title={details} className="entity-cell-line--compact entity-cell-line--type">
+      <span className="entity-cell-line__primary">{compactEntityKindLabel(entity.kind)}</span>
     </CellLine>
   );
 }
@@ -602,12 +621,13 @@ function ActivitySummary({
     );
   }
   const timestamp = formatActivityTimestamp(activity.timestamp, locale);
+  const activityDate = formatActivityDate(activity.timestamp, locale);
   const title = joinCellParts([activityLabel(activity.kind), timestamp, activity.actor]);
   return (
-    <CellLine title={title}>
+    <CellLine title={title} className="entity-cell-line--compact entity-cell-line--activity">
       <Badge tone={activityTone(activity.kind)}>{activityLabel(activity.kind)}</Badge>
       <span className="entity-cell-line__text muted">
-        <time dateTime={activity.timestamp}>{timestamp}</time>
+        <time dateTime={activity.timestamp}>{activityDate}</time>
       </span>
     </CellLine>
   );
@@ -1144,9 +1164,14 @@ export function EntitiesPage() {
                 <Table
                   head={
                     <tr>
-                      {visibleColumns.map((column) => (
-                        <th key={column}>{t(ENTITY_COLUMN_LABEL_KEYS[column])}</th>
-                      ))}
+                      {visibleColumns.map((column) => {
+                        const label = t(ENTITY_COLUMN_LABEL_KEYS[column]);
+                        return (
+                          <th key={column} data-entity-column={column} title={label}>
+                            {label}
+                          </th>
+                        );
+                      })}
                     </tr>
                   }
                 >

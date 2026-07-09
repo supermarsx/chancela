@@ -331,7 +331,10 @@ describe('EntitiesPage enrichment and filtering', () => {
     const entityRow = screen.getByText(ENTITY_A.name).closest('tr') as HTMLElement;
     const cells = within(entityRow).getAllByRole('cell');
     const typeLine = cells[3].querySelector('.entity-cell-line');
-    expect(typeLine?.textContent).toBe('Sociedade por Quotas');
+    expect(typeLine?.textContent).toBe('Lda.');
+    expect(typeLine?.className).toContain('entity-cell-line--compact');
+    expect(typeLine?.textContent).not.toContain('Sociedade por Quotas');
+    expect(typeLine?.getAttribute('title')).toContain('Sociedade por Quotas');
     expect(typeLine?.getAttribute('title')).toContain('Regras csc-art63/v2');
 
     const bookLink = screen.getByRole('link', { name: 'Assembleia Geral' });
@@ -343,6 +346,7 @@ describe('EntitiesPage enrichment and filtering', () => {
     expect(screen.getByText('1 livro · Aberto: 1')).toBeTruthy();
 
     const activityLine = cells[12].querySelector('.entity-cell-line');
+    expect(activityLine?.className).toContain('entity-cell-line--compact');
     expect(activityLine?.textContent).not.toContain('amelia.marques');
     expect(activityLine?.getAttribute('title')).toContain('amelia.marques');
     expect(screen.getAllByText('Sem livros').length).toBeGreaterThan(0);
