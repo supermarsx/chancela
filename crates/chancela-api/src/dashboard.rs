@@ -94,7 +94,7 @@ pub async fn dashboard(
         ledger_valid,
         today,
     );
-    let reminders = dashboard_reminders(&entities, &books, &acts, today);
+    let reminders = dashboard_reminders(&entities, &books, &acts, &registry_extracts, today);
 
     Ok(Json(DashboardResponse {
         entities: entities.len(),
@@ -579,11 +579,20 @@ fn dashboard_reminders(
     entities: &HashMap<EntityId, Entity>,
     books: &HashMap<BookId, Book>,
     acts: &HashMap<ActId, Act>,
+    registry_extracts: &HashMap<EntityId, RegistryExtract>,
     today: Date,
 ) -> Vec<DashboardReminder> {
     let mut reminders = entities
         .values()
-        .flat_map(|entity| annual_general_meeting_reminders(entity, books, acts, today))
+        .flat_map(|entity| {
+            annual_general_meeting_reminders(
+                entity,
+                books,
+                acts,
+                registry_extracts.get(&entity.id),
+                today,
+            )
+        })
         .collect::<Vec<_>>();
 
     reminders.sort_by(|a, b| {
@@ -602,6 +611,7 @@ fn annual_general_meeting_reminders(
     entity: &Entity,
     books: &HashMap<BookId, Book>,
     acts: &HashMap<ActId, Act>,
+    registry_extract: Option<&RegistryExtract>,
     today: Date,
 ) -> Vec<DashboardReminder> {
     if !entity.is_consistent() || !supports_profile_calendar_reminders(entity) {
@@ -613,7 +623,15 @@ fn annual_general_meeting_reminders(
         .calendar_presets
         .iter()
         .filter_map(|preset| {
-            profile_calendar_reminder(entity, &profile, preset, books, acts, today)
+            profile_calendar_reminder(
+                entity,
+                &profile,
+                preset,
+                books,
+                acts,
+                registry_extract,
+                today,
+            )
         })
         .collect()
 }
@@ -624,6 +642,7 @@ fn profile_calendar_reminder(
     preset: &CalendarPreset,
     books: &HashMap<BookId, Book>,
     acts: &HashMap<ActId, Act>,
+    registry_extract: Option<&RegistryExtract>,
     today: Date,
 ) -> Option<DashboardReminder> {
     let months_after_fiscal_year_end = preset.months_after_fiscal_year_end?;
@@ -632,6 +651,14 @@ fn profile_calendar_reminder(
     let fiscal_year_end = parsed_fiscal_year_end.unwrap_or(DEFAULT_FISCAL_YEAR_END);
     let due_date =
         annual_due_date_for_year(today.year(), fiscal_year_end, months_after_fiscal_year_end);
+    if is_before_first_applicable_annual_due(
+        registry_extract,
+        fiscal_year_end,
+        months_after_fiscal_year_end,
+        due_date,
+    ) {
+        return None;
+    }
     if has_recent_calendar_signal(entity, books, acts, due_date.year()) {
         return None;
     }
@@ -742,6 +769,40 @@ fn annual_due_date_for_year(
         fiscal_year_end_date(due_year, fiscal_year_end),
         months_after_fiscal_year_end,
     )
+}
+
+fn is_before_first_applicable_annual_due(
+    registry_extract: Option<&RegistryExtract>,
+    fiscal_year_end: FiscalYearEnd,
+    months_after_fiscal_year_end: u8,
+    due_date: Date,
+) -> bool {
+    let Some(constitution_date) = registry_extract
+        .and_then(|extract| extract.data_constituicao.as_deref())
+        .and_then(parse_dashboard_date)
+    else {
+        return false;
+    };
+    due_date
+        < first_applicable_annual_due_date(
+            constitution_date,
+            fiscal_year_end,
+            months_after_fiscal_year_end,
+        )
+}
+
+fn first_applicable_annual_due_date(
+    constitution_date: Date,
+    fiscal_year_end: FiscalYearEnd,
+    months_after_fiscal_year_end: u8,
+) -> Date {
+    let constitution_year_end = fiscal_year_end_date(constitution_date.year(), fiscal_year_end);
+    let first_fiscal_year_end = if constitution_year_end >= constitution_date {
+        constitution_year_end
+    } else {
+        fiscal_year_end_date(constitution_date.year() + 1, fiscal_year_end)
+    };
+    add_months_clamped(first_fiscal_year_end, months_after_fiscal_year_end)
 }
 
 fn fiscal_year_end_date(year: i32, fiscal_year_end: FiscalYearEnd) -> Date {
@@ -872,6 +933,12 @@ mod tests {
                 valid_until: valid_until.map(str::to_owned),
             },
         }
+    }
+
+    fn registry_extract_with_constitution_date(constitution_date: &str) -> RegistryExtract {
+        let mut extract = registry_extract(None);
+        extract.data_constituicao = Some(constitution_date.to_owned());
+        extract
     }
 
     #[test]
@@ -1108,6 +1175,7 @@ mod tests {
             &entities,
             &HashMap::new(),
             &HashMap::new(),
+            &HashMap::new(),
             date!(2026 - 07 - 09),
         );
 
@@ -1143,6 +1211,7 @@ mod tests {
             &entities,
             &HashMap::new(),
             &HashMap::new(),
+            &HashMap::new(),
             date!(2026 - 07 - 09),
         );
 
@@ -1167,6 +1236,7 @@ mod tests {
             &entities,
             &HashMap::new(),
             &HashMap::new(),
+            &HashMap::new(),
             date!(2026 - 01 - 15),
         );
 
@@ -1178,6 +1248,55 @@ mod tests {
                 .reason
                 .contains("recorded fiscal_year_end could not be read")
         );
+    }
+
+    #[test]
+    fn first_year_company_suppresses_pre_constitution_annual_reminder() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let mut entities = HashMap::new();
+        entities.insert(entity.id, entity.clone());
+        let registry_extracts = HashMap::from([(
+            entity.id,
+            registry_extract_with_constitution_date("2026-01-10"),
+        )]);
+
+        let reminders = dashboard_reminders(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &registry_extracts,
+            date!(2026 - 07 - 09),
+        );
+
+        assert!(
+            reminders.is_empty(),
+            "2026 dashboard must not report a 2025 fiscal-year annual item for a 2026 company"
+        );
+    }
+
+    #[test]
+    fn subsequent_year_company_still_emits_overdue_annual_reminder() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let mut entities = HashMap::new();
+        entities.insert(entity.id, entity.clone());
+        let registry_extracts = HashMap::from([(
+            entity.id,
+            registry_extract_with_constitution_date("2025-01-10"),
+        )]);
+
+        let reminders = dashboard_reminders(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &registry_extracts,
+            date!(2026 - 07 - 09),
+        );
+
+        assert_eq!(reminders.len(), 1);
+        assert_eq!(reminders[0].due_date, "2026-03-31");
+        assert_eq!(reminders[0].status, "Overdue");
+        assert_eq!(reminders[0].source_rule, "csc-art376-annual");
+        assert_eq!(reminders[0].entity_id, entity.id.to_string());
     }
 
     #[test]
@@ -1204,6 +1323,7 @@ mod tests {
 
         let reminders = dashboard_reminders(
             &entities,
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             date!(2026 - 01 - 15),
@@ -1239,7 +1359,13 @@ mod tests {
         let mut acts = HashMap::new();
         acts.insert(act.id, act);
 
-        let reminders = dashboard_reminders(&entities, &books, &acts, date!(2026 - 07 - 09));
+        let reminders = dashboard_reminders(
+            &entities,
+            &books,
+            &acts,
+            &HashMap::new(),
+            date!(2026 - 07 - 09),
+        );
 
         assert!(reminders.is_empty());
     }
@@ -1252,6 +1378,7 @@ mod tests {
 
         let reminders = dashboard_reminders(
             &entities,
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             date!(2026 - 07 - 09),
@@ -1268,6 +1395,7 @@ mod tests {
 
         let reminders = dashboard_reminders(
             &entities,
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             date!(2026 - 01 - 15),
@@ -1289,6 +1417,7 @@ mod tests {
 
         let reminders = dashboard_reminders(
             &entities,
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             date!(2026 - 01 - 15),
@@ -1323,6 +1452,7 @@ mod tests {
 
         let reminders = dashboard_reminders(
             &entities,
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             date!(2026 - 01 - 15),
