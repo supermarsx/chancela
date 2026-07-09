@@ -1,6 +1,8 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -121,6 +123,11 @@ fn write_response(stream: &mut TcpStream, status: &str, content_type: &str, body
 }
 
 fn response_for_request(der_req: &[u8]) -> Vec<u8> {
+    match openssl_response_for_request(der_req) {
+        Ok(response) => return response,
+        Err(err) => eprintln!("mock TSA OpenSSL response generation failed: {err}"),
+    }
+
     let (digest, nonce) = digest_and_nonce(der_req);
     let mut response = FIXTURE_RESPONSE_DER.to_vec();
     let tst_range = tst_info_range(&response);
@@ -134,6 +141,164 @@ fn response_for_request(der_req: &[u8]) -> Vec<u8> {
     let new_message_digest: [u8; 32] = Sha256::digest(new_tst).into();
     replace_once(&mut response, &old_message_digest, &new_message_digest);
     response
+}
+
+fn openssl_response_for_request(der_req: &[u8]) -> std::io::Result<Vec<u8>> {
+    let dir = OpensslTsaDir::new()?;
+    std::fs::write(dir.join("request.tsq"), der_req)?;
+    std::fs::write(dir.join("serial.txt"), b"01\n")?;
+    std::fs::write(dir.join("index.txt"), b"")?;
+    std::fs::write(dir.join("tsa.cnf"), tsa_config())?;
+
+    run_openssl(
+        &dir.path,
+        &[
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            "root.key",
+            "-out",
+            "root.pem",
+            "-sha256",
+            "-days",
+            "30",
+            "-subj",
+            "/CN=Chancela API Test TSA Root",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE,pathlen:0",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
+        ],
+    )?;
+    run_openssl(
+        &dir.path,
+        &[
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            "tsa.key",
+            "-out",
+            "tsa.csr",
+            "-subj",
+            "/CN=Chancela API Test TSA",
+        ],
+    )?;
+    std::fs::write(
+        dir.join("tsa.ext"),
+        "basicConstraints=critical,CA:FALSE\n\
+         keyUsage=critical,digitalSignature\n\
+         extendedKeyUsage=critical,timeStamping\n",
+    )?;
+    run_openssl(
+        &dir.path,
+        &[
+            "x509",
+            "-req",
+            "-in",
+            "tsa.csr",
+            "-CA",
+            "root.pem",
+            "-CAkey",
+            "root.key",
+            "-set_serial",
+            "2",
+            "-sha256",
+            "-days",
+            "30",
+            "-extfile",
+            "tsa.ext",
+            "-out",
+            "tsa.pem",
+        ],
+    )?;
+    run_openssl(
+        &dir.path,
+        &[
+            "ts",
+            "-reply",
+            "-queryfile",
+            "request.tsq",
+            "-inkey",
+            "tsa.key",
+            "-signer",
+            "tsa.pem",
+            "-out",
+            "response.tsr",
+            "-config",
+            "tsa.cnf",
+            "-section",
+            "tsa_config1",
+        ],
+    )?;
+    std::fs::read(dir.join("response.tsr"))
+}
+
+fn run_openssl(dir: &Path, args: &[&str]) -> std::io::Result<()> {
+    let output = Command::new("openssl")
+        .current_dir(dir)
+        .args(args)
+        .output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "openssl {:?} failed: {}{}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )))
+    }
+}
+
+fn tsa_config() -> &'static str {
+    r#"
+[tsa_config1]
+serial = serial.txt
+crypto_device = builtin
+signer_cert = tsa.pem
+certs = root.pem
+signer_key = tsa.key
+signer_digest = sha256
+default_policy = 1.2.3.4.1
+other_policies = 1.2.3.4.1
+digests = sha256
+accuracy = secs:1
+ordering = yes
+tsa_name = no
+ess_cert_id_chain = no
+ess_cert_id_alg = sha256
+"#
+}
+
+struct OpensslTsaDir {
+    path: PathBuf,
+}
+
+impl OpensslTsaDir {
+    fn new() -> std::io::Result<Self> {
+        let path = std::env::temp_dir().join(format!(
+            "chancela-api-mock-tsa-{}-{}",
+            std::process::id(),
+            time::OffsetDateTime::now_utc().unix_timestamp_nanos()
+        ));
+        std::fs::create_dir_all(&path)?;
+        Ok(Self { path })
+    }
+
+    fn join(&self, name: &str) -> PathBuf {
+        self.path.join(name)
+    }
+}
+
+impl Drop for OpensslTsaDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
 }
 
 fn digest_and_nonce(der_req: &[u8]) -> ([u8; 32], [u8; 8]) {
