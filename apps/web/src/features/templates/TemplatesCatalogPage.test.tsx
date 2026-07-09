@@ -38,6 +38,13 @@ describe('TemplatesCatalogPage', () => {
 
     renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
 
+    const filters = screen.getByRole('group', { name: 'Pesquisar e filtrar' });
+    const clearFilters = within(filters).getByRole('button', {
+      name: 'Limpar pesquisa e filtros',
+    }) as HTMLButtonElement;
+    expect(within(filters).getByLabelText('Pesquisa')).toBeTruthy();
+    expect(clearFilters.disabled).toBe(true);
+
     expect(await screen.findByText('csc-ata-ag/v1')).toBeTruthy();
     expect(screen.getByText('4 de 4 modelos')).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Escolher ata' })[0].getAttribute('href')).toBe(
@@ -48,12 +55,14 @@ describe('TemplatesCatalogPage', () => {
     fireEvent.change(screen.getByLabelText('Pesquisa'), {
       target: { value: ' CERTIDÃO ' },
     });
+    expect(clearFilters.disabled).toBe(false);
     expect(await screen.findByText('csc-certidao-ata/v1')).toBeTruthy();
     expect(screen.queryByText('csc-ata-ag/v1')).toBeNull();
     expect(screen.getByText('1 de 4 modelos')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Limpar pesquisa e filtros' }));
+    fireEvent.click(clearFilters);
     expect(await screen.findByText('csc-ata-ag/v1')).toBeTruthy();
+    expect(clearFilters.disabled).toBe(true);
 
     fireEvent.change(screen.getByLabelText('Família da entidade'), {
       target: { value: 'Association' },

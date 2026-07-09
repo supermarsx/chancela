@@ -3405,18 +3405,44 @@ a.btn--primary {
 .notification-center__popup {
   position: fixed;
   z-index: 960;
-  width: min(24rem, calc(100vw - 1.5rem));
+  width: min(22rem, calc(100vw - 1.5rem));
   overflow-y: auto;
   overscroll-behavior: contain;
   font-family: var(--font-sans);
+  font-size: 0.84rem;
+}
+
+.notification-center__popup .panel {
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.notification-center__popup .panel__head {
+  gap: 0.65rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.notification-center__popup .panel__title {
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.notification-center__popup .panel__body {
+  padding: 0.75rem;
+}
+
+.notification-center__title-badge {
+  display: inline-flex;
+  flex: none;
 }
 
 .notification-center__footer {
   display: flex;
   justify-content: flex-end;
-  margin-top: 0.8rem;
-  padding-top: 0.75rem;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
   border-top: 1px solid var(--border);
+  font-size: 0.8rem;
 }
 
 .notifications-list {
@@ -3428,7 +3454,8 @@ a.btn--primary {
 }
 
 .notifications-list--compact {
-  gap: 0.55rem;
+  gap: 0.4rem;
+  font-size: 0.82rem;
 }
 
 .notifications-list__item {
@@ -3440,7 +3467,7 @@ a.btn--primary {
 }
 
 .notifications-list--compact .notifications-list__item {
-  padding: 0.65rem 0.7rem;
+  padding: 0.5rem 0.55rem;
 }
 
 .notifications-list__item--accent {
@@ -3471,6 +3498,18 @@ a.btn--primary {
   overflow-wrap: anywhere;
 }
 
+.notifications-list--compact .notifications-list__head {
+  gap: 0.3rem 0.45rem;
+}
+
+.notifications-list--compact .notifications-list__title {
+  display: -webkit-box;
+  line-height: 1.24;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .notifications-list__detail {
   margin: 0.4rem 0 0;
   line-height: 1.45;
@@ -3479,7 +3518,10 @@ a.btn--primary {
 
 .notifications-list--compact .notifications-list__detail {
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1.32;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -3489,10 +3531,22 @@ a.btn--primary {
   font-size: 0.78rem;
 }
 
+.notifications-list--compact .notifications-list__meta {
+  gap: 0.25rem 0.45rem;
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+}
+
 .notifications-list__action {
   margin-top: 0.65rem;
   padding: 0.28rem 0.65rem;
   font-size: 0.76rem;
+}
+
+.notifications-list--compact .notifications-list__action {
+  margin-top: 0.45rem;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.72rem;
 }
 
 .notifications-list__empty {
@@ -4563,13 +4617,25 @@ a.btn--primary {
 
 /* --- Minutas / Templates catalog ---------------------------------------------- */
 .templates-controls {
-  display: grid;
-  gap: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1rem;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .templates-controls__search,
+.templates-controls__filters,
+.templates-controls__actions,
 .templates-controls__filters .field {
   min-width: 0;
+}
+
+.templates-controls__search {
+  flex: 1 1 19rem;
 }
 
 .templates-search-control {
@@ -4592,14 +4658,21 @@ a.btn--primary {
 }
 
 .templates-controls__filters {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(min(100%, 12rem), 1fr));
+  display: flex;
+  flex: 2 1 32rem;
+  flex-wrap: wrap;
   gap: 0.85rem;
-  align-items: end;
+  align-items: flex-end;
+}
+
+.templates-controls__filters .field {
+  flex: 1 1 12rem;
 }
 
 .templates-controls__actions {
   display: flex;
+  flex: 0 0 auto;
+  margin-left: auto;
   justify-content: flex-end;
 }
 
@@ -4684,8 +4757,25 @@ a.btn--primary {
 }
 
 @media (max-width: 720px) {
+  .templates-controls {
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .templates-controls__search,
+  .templates-controls__filters,
+  .templates-controls__actions {
+    flex-basis: 100%;
+  }
+
   .templates-controls__filters {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .templates-controls__filters .field {
+    width: 100%;
   }
 
   .templates-controls__actions {

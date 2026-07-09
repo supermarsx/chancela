@@ -110,7 +110,8 @@ export function TemplatesCatalogPage() {
       </InlineWarning>
 
       <Card title={t('templates.filters.title')}>
-        <div className="templates-controls">
+        <fieldset className="templates-controls">
+          <legend className="sr-only">{t('templates.filters.title')}</legend>
           <div className="templates-controls__search">
             <Field label={t('templates.search.label')} htmlFor="templates-search">
               <div className="templates-search-control">
@@ -179,7 +180,7 @@ export function TemplatesCatalogPage() {
               {t('templates.clearFilters')}
             </Button>
           </div>
-        </div>
+        </fieldset>
       </Card>
 
       <section className="stack--tight" aria-labelledby="templates-catalog-title">

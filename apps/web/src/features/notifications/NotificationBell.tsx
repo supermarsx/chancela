@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
 import { useT } from '../../i18n';
@@ -11,14 +20,23 @@ import {
 } from './notifications';
 
 const POPUP_LIMIT = 5;
+const POPUP_GAP = 8;
+const POPUP_MARGIN = 12;
 
 function compactCount(count: number): string {
   return count > 99 ? '99+' : String(count);
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
 export function NotificationBell() {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0, maxHeight: 0 });
   const { data, isLoading, error } = useDashboard();
   const notifications = useMemo(
     () => (data ? buildDashboardNotifications(data, t) : []),
@@ -30,18 +48,116 @@ export function NotificationBell() {
     actionableCount > 0
       ? t('notifications.bell.labelWithCount', { count: actionableCount })
       : t('notifications.bell.label');
+  const closePopup = useCallback(() => setOpen(false), []);
+
+  const repositionPopup = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+
+    const anchorRect = anchor.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const popupRect = popupRef.current?.getBoundingClientRect();
+    const fallbackWidth = Math.min(384, Math.max(0, viewportWidth - POPUP_MARGIN * 2));
+    const popupWidth = popupRect && popupRect.width > 0 ? popupRect.width : fallbackWidth;
+    const maxLeft = Math.max(POPUP_MARGIN, viewportWidth - popupWidth - POPUP_MARGIN);
+    const left = clamp(anchorRect.right - popupWidth, POPUP_MARGIN, maxLeft);
+    const top = anchorRect.bottom + POPUP_GAP;
+    const maxHeight = Math.max(0, viewportHeight - top - POPUP_MARGIN);
+
+    setPopupPosition((prev) =>
+      prev.left === left && prev.top === top && prev.maxHeight === maxHeight
+        ? prev
+        : { left, top, maxHeight },
+    );
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') closePopup();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open]);
+  }, [open, closePopup]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (anchorRef.current?.contains(target) || popupRef.current?.contains(target)) return;
+      closePopup();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open, closePopup]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    repositionPopup();
+    window.addEventListener('scroll', repositionPopup, true);
+    window.addEventListener('resize', repositionPopup);
+    return () => {
+      window.removeEventListener('scroll', repositionPopup, true);
+      window.removeEventListener('resize', repositionPopup);
+    };
+  }, [open, repositionPopup, isLoading, error, topItems.length]);
+
+  const popupStyle: CSSProperties = {
+    left: popupPosition.left,
+    top: popupPosition.top,
+  };
+  if (popupPosition.maxHeight > 0) popupStyle.maxHeight = popupPosition.maxHeight;
+
+  const popup = open ? (
+    <>
+      <div
+        className="notification-center__backdrop"
+        aria-hidden="true"
+        onClick={closePopup}
+      />
+      <div
+        ref={popupRef}
+        className="notification-center__popup"
+        role="dialog"
+        aria-label={t('notifications.title')}
+        style={popupStyle}
+      >
+        <Card
+          title={t('notifications.title')}
+          actions={
+            actionableCount > 0 ? (
+              <span className="notification-center__title-badge">
+                <Badge tone="accent">{compactCount(actionableCount)}</Badge>
+              </span>
+            ) : null
+          }
+        >
+          {isLoading ? (
+            <Loading />
+          ) : error ? (
+            <ErrorNote error={error} />
+          ) : (
+            <NotificationList
+              compact
+              items={topItems}
+              emptyTitle={t('notifications.popup.empty')}
+              onAction={closePopup}
+            />
+          )}
+          <div className="notification-center__footer">
+            <Link to="/notificacoes" onClick={closePopup}>
+              {t('notifications.viewAll')}
+            </Link>
+          </div>
+        </Card>
+      </div>
+    </>
+  ) : null;
 
   return (
-    <div className="notification-center">
+    <div className="notification-center" ref={anchorRef}>
       <Tooltip label={label} placement="bottom">
         <button
           type="button"
@@ -64,47 +180,7 @@ export function NotificationBell() {
         </button>
       </Tooltip>
 
-      {open ? (
-        <>
-          <div
-            className="notification-center__backdrop"
-            aria-hidden="true"
-            onClick={() => setOpen(false)}
-          />
-          <div
-            className="notification-center__popup"
-            role="dialog"
-            aria-label={t('notifications.title')}
-          >
-            <Card
-              title={t('notifications.title')}
-              actions={
-                actionableCount > 0 ? (
-                  <Badge tone="accent">{compactCount(actionableCount)}</Badge>
-                ) : null
-              }
-            >
-              {isLoading ? (
-                <Loading />
-              ) : error ? (
-                <ErrorNote error={error} />
-              ) : (
-                <NotificationList
-                  compact
-                  items={topItems}
-                  emptyTitle={t('notifications.popup.empty')}
-                  onAction={() => setOpen(false)}
-                />
-              )}
-              <div className="notification-center__footer">
-                <Link to="/notificacoes" onClick={() => setOpen(false)}>
-                  {t('notifications.viewAll')}
-                </Link>
-              </div>
-            </Card>
-          </div>
-        </>
-      ) : null}
+      {popup && typeof document !== 'undefined' ? createPortal(popup, document.body) : popup}
     </div>
   );
 }
