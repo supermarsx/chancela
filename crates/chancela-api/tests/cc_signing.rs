@@ -942,6 +942,70 @@ async fn dss_attach_requires_an_existing_signed_pdf() {
 }
 
 #[tokio::test]
+async fn cc_revocation_collection_endpoint_fails_closed_without_signer_revocation_uris() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer.clone()));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    state.settings.write().await.signing.tsa_url = None;
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "capacity": "Administrador" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cc sign: {done}");
+    let before_digest = done["signed_pdf_digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/dss/collect-revocation"),
+            &token,
+            json!({
+                "issuer_certificate": B64.encode(&issuer),
+                "validation_time": "2026-07-09T12:00:00Z",
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "revocation collection should fail closed: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .is_some_and(|msg| msg.contains("sem HTTP(S)") || msg.contains("no HTTP(S)")),
+        "unexpected error: {err}"
+    );
+
+    let (_, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(view["signed"]["signed_pdf_digest"], before_digest);
+    assert_eq!(view["evidence"]["current_level"], "B-B");
+    assert_eq!(view["evidence"]["dss_revocation_evidence_present"], false);
+    assert_eq!(view["evidence"]["live_revocation_fetching"], false);
+    assert_eq!(view["evidence"]["legal_b_lt_claimed"], false);
+}
+
+#[tokio::test]
 async fn cc_sign_rejects_withdrawn_and_unknown_trust_policy() {
     for trust_status in [TrustedListStatus::Withdrawn, TrustedListStatus::Unknown] {
         let dir = TempDir::new();

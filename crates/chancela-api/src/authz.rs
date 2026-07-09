@@ -334,6 +334,11 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cc/sign", RouteClass::Gated), // POST signing.perform@Book (co-located)
+    ("/v1/acts/{id}/signature/dss/attach", RouteClass::Gated), // POST signing.perform@Book
+    (
+        "/v1/acts/{id}/signature/dss/collect-revocation",
+        RouteClass::Gated,
+    ), // POST signing.perform@Book
     // Generic provider-parameterized remote signing (t59-s3): CMD + any configured CSC QTSP.
     (
         "/v1/acts/{id}/signature/remote/{provider}/initiate",

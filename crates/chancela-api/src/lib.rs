@@ -998,6 +998,11 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(signature::DSS_ATTACH_ENVELOPE_BYTES)),
         )
         .route(
+            "/v1/acts/{id}/signature/dss/collect-revocation",
+            post(signature::collect_revocation_evidence)
+                .layer(DefaultBodyLimit::max(signature::DSS_ATTACH_ENVELOPE_BYTES)),
+        )
+        .route(
             "/v1/acts/{id}/signature/remote/{provider}/initiate",
             post(signature::initiate_remote_signature),
         )

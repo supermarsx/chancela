@@ -56,8 +56,8 @@ use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_si
 use chancela_signing::{
     CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession, RemoteInitiate,
     RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider, TrustPolicy,
-    TrustedListStatus, TslTrustPolicy, attach_pdf_dss, cmd_confirm, cmd_initiate, sign_pdf_cc,
-    timestamp_pdf_with_url,
+    TrustedListStatus, TslTrustPolicy, attach_pdf_dss, attach_pdf_revocation_evidence, cmd_confirm,
+    cmd_initiate, sign_pdf_cc, timestamp_pdf_with_url,
 };
 use chancela_smartcard::Pkcs11Token;
 use chancela_store::{PendingCmdSession, StoredDocument, StoredSignedDocument};
@@ -1192,6 +1192,23 @@ pub struct DssAttachRequest {
     pub actor: Option<String>,
 }
 
+/// Body of `POST /v1/acts/{id}/signature/dss/collect-revocation`.
+///
+/// This live technical-upgrade seam uses the stored signer certificate from the signed artifact
+/// and this caller-supplied issuer certificate to validate fetched CRL/OCSP evidence before DSS/VRI
+/// attachment. It is deliberately opt-in and never claims production/legal B-LT.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DssCollectRevocationRequest {
+    #[serde(alias = "issuer_certificate_base64", alias = "issuer_cert_der_base64")]
+    pub issuer_certificate: String,
+    /// Optional RFC 3339 validation time. Defaults to now, rounded to whole seconds.
+    #[serde(default)]
+    pub validation_time: Option<String>,
+    #[serde(default)]
+    pub actor: Option<String>,
+}
+
 /// Response of a successful local DSS/VRI evidence attachment.
 #[derive(Serialize)]
 pub struct DssAttachResponse {
@@ -1204,6 +1221,35 @@ pub struct DssAttachResponse {
     pub production_b_lt_status: &'static str,
     pub legal_b_lt_claimed: bool,
     pub status_scope: &'static str,
+}
+
+/// Response of a successful validated revocation collection + DSS/VRI attachment.
+#[derive(Serialize)]
+pub struct DssCollectRevocationResponse {
+    pub document_id: String,
+    pub act_id: String,
+    pub signed_pdf_digest: String,
+    pub timestamp_token: bool,
+    pub evidence: SignatureEvidenceStatus,
+    pub evidentiary_level: &'static str,
+    pub production_b_lt_status: &'static str,
+    pub legal_b_lt_claimed: bool,
+    pub status_scope: &'static str,
+    pub revocation: CollectedRevocationEvidenceStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CollectedRevocationEvidenceStatus {
+    pub validation_time: String,
+    pub discovered_ocsp_urls: Vec<String>,
+    pub discovered_crl_urls: Vec<String>,
+    pub ocsp_count: usize,
+    pub crl_count: usize,
+    pub certificate_count: usize,
+    pub ocsp_sha256: Vec<String>,
+    pub crl_sha256: Vec<String>,
+    pub source_scope: &'static str,
+    pub legal_b_lt_claimed: bool,
 }
 
 /// `POST /v1/acts/{id}/signature/cc/sign` — a synchronous Cartão de Cidadão qualified signature.
@@ -1451,6 +1497,107 @@ pub async fn attach_dss_evidence(
         legal_b_lt_claimed: false,
         status_scope: TECHNICAL_EVIDENCE_ONLY,
         evidence: evidence_status,
+    }))
+}
+
+/// `POST /v1/acts/{id}/signature/dss/collect-revocation` — collect validated CRL/OCSP evidence and
+/// append it as local DSS/VRI technical evidence.
+///
+/// This is intentionally not part of the default signing completion path: it performs live
+/// revocation I/O only when explicitly requested by a caller with `signing.perform`, uses the
+/// already persisted signer certificate plus the supplied issuer certificate, writes `/TU`
+/// validation freshness metadata, and keeps `legal_b_lt_claimed=false`.
+pub async fn collect_revocation_evidence(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<DssCollectRevocationRequest>,
+) -> Result<Json<DssCollectRevocationResponse>, ApiError> {
+    let act_id = ActId(id);
+    let scope = scope_of_act(&state, act_id).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
+
+    let mut stored = load_signed(&state, act_id)
+        .await?
+        .ok_or_else(|| ApiError::Conflict("o ato ainda não tem PDF assinado".to_owned()))?;
+
+    validate_signed_pdf(&stored.signed_pdf_bytes, &stored.signer_cert_der)?;
+
+    let issuer_cert_der = decode_single_der_base64("issuer_certificate", &req.issuer_certificate)?;
+    let validation_time = match req.validation_time.as_deref() {
+        Some(raw) => parse_rfc3339(raw, "validation_time")?,
+        None => OffsetDateTime::now_utc()
+            .replace_nanosecond(0)
+            .unwrap_or_else(|_| OffsetDateTime::now_utc()),
+    };
+    let signer_cert_der = stored.signer_cert_der.clone();
+    let input_pdf = stored.signed_pdf_bytes.clone();
+    let (updated_pdf, collected) = tokio::task::spawn_blocking(move || {
+        let provider = chancela_signing::RevocationEvidenceProvider::http();
+        let collected = provider
+            .collect_for_signer(&signer_cert_der, &issuer_cert_der, validation_time)
+            .map_err(map_revocation_collect_error)?;
+        let (updated_pdf, _) =
+            attach_pdf_revocation_evidence(&input_pdf, &collected).map_err(map_dss_attach_error)?;
+        Ok::<_, ApiError>((updated_pdf, collected))
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("revocation collection task failed: {e}")))??;
+
+    let report =
+        validate_signed_pdf_with_incremental_updates(&updated_pdf, &stored.signer_cert_der)?;
+    let signed_pdf_digest = sha256_hex(&updated_pdf);
+    stored.signed_pdf_digest = signed_pdf_digest.clone();
+    stored.signed_pdf_bytes = updated_pdf;
+
+    let evidence_status = signature_evidence_status(Some(&stored));
+    let revocation_status = collected_revocation_status(&collected);
+    let audit_scope = act_audit_scope(&state, act_id).await?;
+    let event_payload = json!({
+        "act_id": act_id.to_string(),
+        "document_id": stored.document_id.clone(),
+        "signed_pdf_digest": signed_pdf_digest.clone(),
+        "evidentiary_level": evidence_status.current_level,
+        "status_scope": TECHNICAL_EVIDENCE_ONLY,
+        "production_b_lt_status": PRODUCTION_B_LT_NOT_CLAIMED,
+        "legal_b_lt_claimed": false,
+        "timestamp_token": report.has_signature_timestamp,
+        "dss": &evidence_status.dss,
+        "revocation": &revocation_status,
+    });
+    let payload = serde_json::to_vec(&event_payload)?;
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &audit_scope,
+            "document.signature.revocation_evidence_collected",
+            None,
+            &payload,
+        )?;
+        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        state.attest_latest(&attestor, &ledger).await;
+    }
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(act_id, stored.clone());
+
+    Ok(Json(DssCollectRevocationResponse {
+        document_id: stored.document_id,
+        act_id: act_id.to_string(),
+        signed_pdf_digest,
+        timestamp_token: evidence_status.timestamp_evidence_present,
+        evidentiary_level: evidence_status.current_level,
+        production_b_lt_status: PRODUCTION_B_LT_NOT_CLAIMED,
+        legal_b_lt_claimed: false,
+        status_scope: TECHNICAL_EVIDENCE_ONLY,
+        evidence: evidence_status,
+        revocation: revocation_status,
     }))
 }
 
@@ -3361,6 +3508,15 @@ fn dss_attach_evidence_from_request(
     Ok(evidence)
 }
 
+fn decode_single_der_base64(field: &str, value: &str) -> Result<Vec<u8>, ApiError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError::Unprocessable(format!("{field} is required")));
+    }
+    B64.decode(trimmed)
+        .map_err(|_| ApiError::Unprocessable(format!("{field} não é base64 DER válido")))
+}
+
 fn decode_der_base64_list(field: &str, values: Vec<String>) -> Result<Vec<Vec<u8>>, ApiError> {
     values
         .into_iter()
@@ -3381,6 +3537,37 @@ fn decode_der_base64_list(field: &str, values: Vec<String>) -> Result<Vec<Vec<u8
 
 fn map_dss_attach_error(e: chancela_signing::SigningError) -> ApiError {
     ApiError::Unprocessable(format!("falha ao anexar DSS/VRI local: {e}"))
+}
+
+fn map_revocation_collect_error(e: chancela_signing::RevocationError) -> ApiError {
+    ApiError::Unprocessable(format!(
+        "falha ao recolher evidência de revogação CRL/OCSP: {e}"
+    ))
+}
+
+fn collected_revocation_status(
+    evidence: &chancela_signing::RevocationEvidence,
+) -> CollectedRevocationEvidenceStatus {
+    CollectedRevocationEvidenceStatus {
+        validation_time: rfc3339(evidence.validation_time),
+        discovered_ocsp_urls: evidence.discovered.ocsp_urls.clone(),
+        discovered_crl_urls: evidence.discovered.crl_urls.clone(),
+        ocsp_count: evidence.dss.ocsp_responses.len(),
+        crl_count: evidence.dss.crls.len(),
+        certificate_count: evidence.dss.certificates.len(),
+        ocsp_sha256: evidence
+            .ocsp_sources
+            .iter()
+            .map(|source| crate::hex::hex(&source.sha256))
+            .collect(),
+        crl_sha256: evidence
+            .sources
+            .iter()
+            .map(|source| crate::hex::hex(&source.sha256))
+            .collect(),
+        source_scope: TECHNICAL_EVIDENCE_ONLY,
+        legal_b_lt_claimed: false,
+    }
 }
 
 /// Load the signed variant for an act (in-memory read model, falling back to the store on a miss).
