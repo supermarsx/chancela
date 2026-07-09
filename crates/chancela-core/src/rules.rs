@@ -23,6 +23,63 @@ pub enum Severity {
     Error,
 }
 
+/// Verification state of a legal basis attached to a compliance finding.
+///
+/// `Pending` means Chancela knows the structural citation but does not have complete,
+/// authenticity-gated source text for it. Do not display pending references as verified law text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegalBasisVerification {
+    /// Source text is complete and authenticity-gated.
+    Verified,
+    /// Structural citation only; no verified source text is claimed.
+    Pending,
+}
+
+/// Structured legal-basis/source reference for a compliance finding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegalBasis {
+    /// Stable source id aligned with the law corpus where possible (e.g., `"csc"`).
+    pub source_id: String,
+    /// Human-readable legal source label.
+    pub source_label: String,
+    /// Canonical article number when the rule maps to a specific article.
+    pub article: Option<String>,
+    /// Human-readable article label when known (e.g., `"Artigo 63.º"`).
+    pub article_label: Option<String>,
+    /// Display-ready citation assembled from the structured fields.
+    pub citation: String,
+    /// Whether the source text behind this citation is authenticity-gated.
+    pub verification: LegalBasisVerification,
+    /// Complete source URL only when a verified article has one.
+    pub source_url: Option<String>,
+    /// Mirrors the corpus authenticity gate: false for pending structural citations.
+    pub source_complete: bool,
+}
+
+impl LegalBasis {
+    fn pending_law(
+        source_id: &str,
+        source_label: &str,
+        article: Option<&str>,
+        article_label: Option<&str>,
+    ) -> Self {
+        let citation = match article_label {
+            Some(label) => format!("{source_label}, {label}"),
+            None => source_label.to_owned(),
+        };
+        LegalBasis {
+            source_id: source_id.to_owned(),
+            source_label: source_label.to_owned(),
+            article: article.map(str::to_owned),
+            article_label: article_label.map(str::to_owned),
+            citation,
+            verification: LegalBasisVerification::Pending,
+            source_url: None,
+            source_complete: false,
+        }
+    }
+}
+
 /// A single compliance finding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComplianceIssue {
@@ -32,6 +89,8 @@ pub struct ComplianceIssue {
     pub severity: Severity,
     /// Human-readable explanation.
     pub message: String,
+    /// Structured legal-basis/source references for the rule.
+    pub legal_basis: Vec<LegalBasis>,
 }
 
 impl ComplianceIssue {
@@ -40,6 +99,7 @@ impl ComplianceIssue {
             rule_id: rule_id.to_string(),
             severity: Severity::Error,
             message: message.into(),
+            legal_basis: legal_basis_for_rule(rule_id),
         }
     }
 
@@ -48,7 +108,51 @@ impl ComplianceIssue {
             rule_id: rule_id.to_string(),
             severity: Severity::Warning,
             message: message.into(),
+            legal_basis: legal_basis_for_rule(rule_id),
         }
+    }
+}
+
+fn legal_basis_for_rule(rule_id: &str) -> Vec<LegalBasis> {
+    match rule_id
+        .split_once('/')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(rule_id)
+    {
+        "CSC-63" => vec![LegalBasis::pending_law(
+            "csc",
+            "Código das Sociedades Comerciais",
+            Some("63"),
+            Some("Artigo 63.º"),
+        )],
+        "CSC-377" => vec![LegalBasis::pending_law(
+            "csc",
+            "Código das Sociedades Comerciais",
+            Some("377"),
+            Some("Artigo 377.º"),
+        )],
+        "DL268" => vec![LegalBasis::pending_law(
+            "dl-268-94",
+            "Decreto-Lei n.º 268/94, de 25 de outubro",
+            None,
+            None,
+        )],
+        "CC" => vec![LegalBasis::pending_law("cc", "Código Civil", None, None)],
+        "CCoop" if rule_id == "CCoop/one-member-one-vote" => {
+            vec![LegalBasis::pending_law(
+                "cod-cooperativo",
+                "Código Cooperativo",
+                Some("41"),
+                Some("Artigo 41.º"),
+            )]
+        }
+        "CCoop" => vec![LegalBasis::pending_law(
+            "cod-cooperativo",
+            "Código Cooperativo",
+            None,
+            None,
+        )],
+        _ => Vec::new(),
     }
 }
 
@@ -941,6 +1045,28 @@ mod tests {
     }
 
     #[test]
+    fn csc_findings_carry_pending_structural_legal_basis() {
+        let act = Act::draft(BookId::new(), "Rascunho", MeetingChannel::Physical);
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CSC-63/mesa-presidente")
+            .expect("missing mesa issue");
+        let basis = issue.legal_basis.first().expect("legal basis");
+
+        assert_eq!(basis.source_id, "csc");
+        assert_eq!(basis.article.as_deref(), Some("63"));
+        assert_eq!(basis.article_label.as_deref(), Some("Artigo 63.º"));
+        assert_eq!(
+            basis.citation,
+            "Código das Sociedades Comerciais, Artigo 63.º"
+        );
+        assert_eq!(basis.verification, LegalBasisVerification::Pending);
+        assert_eq!(basis.source_url, None);
+        assert!(!basis.source_complete);
+    }
+
+    #[test]
     fn missing_mesa_presidente_blocks_but_secretaries_only_warn() {
         // The chair is a mandatory art. 63.º element and blocks sealing; the secretaries are
         // advisory (small organs legitimately have none).
@@ -1081,10 +1207,13 @@ mod tests {
         let mut act = complete_act();
         act.channel = MeetingChannel::Telematic;
         let issues = CscArt63RulePack.check_act(&act, &sa_entity());
-        assert!(
-            issues
-                .iter()
-                .any(|i| i.rule_id == "CSC-377/telematic-evidence")
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CSC-377/telematic-evidence")
+            .expect("telematic evidence should be flagged");
+        assert_eq!(
+            issue.legal_basis.first().and_then(|b| b.article.as_deref()),
+            Some("377")
         );
 
         act.telematic_evidence = Some("Gravação e autenticação dos participantes.".into());
@@ -1184,7 +1313,19 @@ mod tests {
         let mut act = condo_act();
         act.deliberation_items[0].vote = None;
         let issues = CondominioRulePack.check_act(&act, &e);
-        assert!(issues.iter().any(|i| i.rule_id == "DL268/vote-result"));
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "DL268/vote-result")
+            .expect("missing vote result should warn");
+        let basis = issue.legal_basis.first().expect("DL 268 basis");
+        assert_eq!(basis.source_id, "dl-268-94");
+        assert_eq!(
+            basis.source_label,
+            "Decreto-Lei n.º 268/94, de 25 de outubro"
+        );
+        assert_eq!(basis.article, None);
+        assert_eq!(basis.verification, LegalBasisVerification::Pending);
+        assert!(!basis.source_complete);
     }
 
     #[test]
@@ -1412,11 +1553,15 @@ mod tests {
             abstencoes: 1,
         });
         let issues = CooperativaRulePack.check_act(&act, &e);
-        assert!(
-            issues
-                .iter()
-                .any(|i| i.rule_id == "CCoop/one-member-one-vote")
-        );
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CCoop/one-member-one-vote")
+            .expect("one-member-one-vote warning");
+        let basis = issue.legal_basis.first().expect("cooperative basis");
+        assert_eq!(basis.source_id, "cod-cooperativo");
+        assert_eq!(basis.article.as_deref(), Some("41"));
+        assert_eq!(basis.article_label.as_deref(), Some("Artigo 41.º"));
+        assert_eq!(basis.verification, LegalBasisVerification::Pending);
 
         // A unanimous (no tally) resolution does not trigger the note.
         act.deliberation_items[0].vote = Some(VoteResult::Unanimous);

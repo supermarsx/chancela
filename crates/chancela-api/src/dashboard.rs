@@ -11,6 +11,7 @@ use chancela_core::{
 };
 use chancela_law::LawCatalog;
 use chancela_registry::RegistryExtract;
+use chancela_store::{StoredFollowUp, StoredFollowUpStatus};
 use time::{Date, Month, OffsetDateTime};
 
 use crate::AppState;
@@ -34,10 +35,11 @@ pub async fn dashboard(
 ) -> Result<Json<DashboardResponse>, ApiError> {
     // RBAC (t64-E3): the dashboard aggregates act data → `act.read` at Global.
     require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
-    // entities → books → acts → registry_extracts → ledger (read locks; the global order).
+    // entities → books → acts → follow_ups → registry_extracts → ledger (read locks; the global order).
     let entities = state.entities.read().await;
     let books = state.books.read().await;
     let acts = state.acts.read().await;
+    let follow_ups = state.follow_ups.read().await;
     let registry_extracts = state.registry_extracts.read().await;
     let ledger = state.ledger.read().await;
 
@@ -96,7 +98,14 @@ pub async fn dashboard(
         ledger_valid,
         today,
     );
-    let reminders = dashboard_reminders(&entities, &books, &acts, &registry_extracts, today);
+    let reminders = dashboard_reminders_with_follow_ups(
+        &entities,
+        &books,
+        &acts,
+        &follow_ups,
+        &registry_extracts,
+        today,
+    );
 
     Ok(Json(DashboardResponse {
         entities: entities.len(),
@@ -905,6 +914,7 @@ fn ledger_link(
     entity_id.map(|id| format!("/v1/ledger/events?chain=company:{id}"))
 }
 
+#[cfg(test)]
 fn dashboard_reminders(
     entities: &HashMap<EntityId, Entity>,
     books: &HashMap<BookId, Book>,
@@ -912,18 +922,39 @@ fn dashboard_reminders(
     registry_extracts: &HashMap<EntityId, RegistryExtract>,
     today: Date,
 ) -> Vec<DashboardReminder> {
-    let mut reminders = entities
-        .values()
-        .flat_map(|entity| {
-            annual_general_meeting_reminders(
-                entity,
-                books,
-                acts,
-                registry_extracts.get(&entity.id),
-                today,
-            )
-        })
-        .collect::<Vec<_>>();
+    dashboard_reminders_with_follow_ups(
+        entities,
+        books,
+        acts,
+        &HashMap::new(),
+        registry_extracts,
+        today,
+    )
+}
+
+fn dashboard_reminders_with_follow_ups(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    follow_ups: &HashMap<String, StoredFollowUp>,
+    registry_extracts: &HashMap<EntityId, RegistryExtract>,
+    today: Date,
+) -> Vec<DashboardReminder> {
+    let mut reminders = follow_up_reminders(entities, books, acts, follow_ups, today);
+    reminders.extend(
+        entities
+            .values()
+            .flat_map(|entity| {
+                annual_general_meeting_reminders(
+                    entity,
+                    books,
+                    acts,
+                    registry_extracts.get(&entity.id),
+                    today,
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
 
     reminders.sort_by(|a, b| {
         a.due_date
@@ -935,6 +966,130 @@ fn dashboard_reminders(
     });
     reminders.truncate(DASHBOARD_REMINDER_LIMIT);
     reminders
+}
+
+fn follow_up_reminders(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    follow_ups: &HashMap<String, StoredFollowUp>,
+    today: Date,
+) -> Vec<DashboardReminder> {
+    follow_ups
+        .values()
+        .filter(|follow_up| follow_up.status == StoredFollowUpStatus::Open)
+        .filter_map(|follow_up| {
+            let due_date = follow_up.due_date?;
+            let act = acts.get(&follow_up.act_id)?;
+            let book = books.get(&act.book_id)?;
+            let entity = entities.get(&book.entity_id)?;
+            Some(follow_up_reminder(
+                entity, book, act, follow_up, due_date, today,
+            ))
+        })
+        .collect()
+}
+
+fn follow_up_reminder(
+    entity: &Entity,
+    book: &Book,
+    act: &Act,
+    follow_up: &StoredFollowUp,
+    due_date: Date,
+    today: Date,
+) -> DashboardReminder {
+    let due_date_text = format_date(due_date);
+    let status = reminder_status(today, due_date).to_owned();
+    let severity = match status.as_str() {
+        "Overdue" => "Warning",
+        "DueSoon" => "Info",
+        _ => "Advisory",
+    }
+    .to_owned();
+    let detail = follow_up
+        .detail
+        .as_deref()
+        .map(str::trim)
+        .filter(|detail| !detail.is_empty());
+    let assignee_display = follow_up
+        .assignee_display
+        .as_deref()
+        .or(follow_up.assignee.as_deref())
+        .map(str::trim)
+        .filter(|assignee| !assignee.is_empty())
+        .unwrap_or("");
+    let body_key = if detail.is_some() {
+        "notifications.reminder.followUp.body"
+    } else {
+        "notifications.reminder.followUp.bodyNoDetail"
+    };
+    let reason = match detail {
+        Some(detail) => format!(
+            "Follow-up \"{}\" for act \"{}\" is due on {}. {}",
+            follow_up.title, act.title, due_date_text, detail
+        ),
+        None => format!(
+            "Follow-up \"{}\" for act \"{}\" is due on {}.",
+            follow_up.title, act.title, due_date_text
+        ),
+    };
+
+    DashboardReminder {
+        due_date: due_date_text.clone(),
+        severity,
+        status,
+        reason,
+        entity_id: entity.id.to_string(),
+        entity_name: entity.name.clone(),
+        source_rule: "act-follow-up".to_owned(),
+        source_profile: format!("follow-up:{}", follow_up.id),
+        params: dashboard_alert_params([
+            ("follow_up_id", follow_up.id.clone()),
+            ("follow_up_title", follow_up.title.clone()),
+            (
+                "follow_up_detail",
+                detail.map(str::to_owned).unwrap_or_default(),
+            ),
+            ("act_id", act.id.to_string()),
+            ("act_title", act.title.clone()),
+            ("book_id", book.id.to_string()),
+            ("entity_id", entity.id.to_string()),
+            ("entity_name", entity.name.clone()),
+            ("due_date", due_date_text),
+            ("assignee", follow_up.assignee.clone().unwrap_or_default()),
+            ("assignee_display", assignee_display.to_owned()),
+            (
+                "agenda_number",
+                follow_up
+                    .agenda_number
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+            ),
+            (
+                "deliberation_index",
+                follow_up
+                    .deliberation_index
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
+            ),
+        ]),
+        law_refs: Vec::new(),
+        action: Some(dashboard_action(
+            "open_act_follow_up",
+            "notifications.reminder.followUp.action",
+            Some(format!("/v1/acts/{}/follow-ups", act.id)),
+            Some(format!("/atas/{}", act.id)),
+        )),
+        recommended_next_steps: vec![
+            "Open the act follow-up list.".to_owned(),
+            "Complete the follow-up row when the task is done.".to_owned(),
+        ],
+        i18n: Some(alert_i18n(
+            "notifications.reminder.followUp.title",
+            body_key,
+            Some("notifications.reminder.followUp.action"),
+        )),
+    }
 }
 
 fn annual_general_meeting_reminders(
@@ -1024,6 +1179,7 @@ fn profile_calendar_reminder(
         entity_name: entity.name.clone(),
         source_rule: preset.id.to_owned(),
         source_profile: profile.template_family.to_owned(),
+        params: BTreeMap::new(),
         law_refs: calendar_law_refs(profile.family, preset.id),
         action: Some(dashboard_action(
             "open_entity",
@@ -1032,6 +1188,7 @@ fn profile_calendar_reminder(
             Some(format!("/entidades/{}", entity.id)),
         )),
         recommended_next_steps: calendar_next_steps(profile.family),
+        i18n: None,
     })
 }
 
@@ -1712,6 +1869,101 @@ mod tests {
             reminder
                 .reason
                 .contains("default Dec 31 fiscal-year end because no fiscal_year_end is recorded")
+        );
+    }
+
+    #[test]
+    fn open_follow_ups_surface_as_act_routed_reminders_without_mutating_sealed_act() {
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut act = Act::draft(
+            book.id,
+            "Ata de aprovação de contas",
+            MeetingChannel::Physical,
+        );
+        act.state = ActState::Sealed;
+        let act_id = act.id;
+        let created_at = OffsetDateTime::UNIX_EPOCH;
+
+        let open = StoredFollowUp {
+            id: "follow-up-open".to_owned(),
+            act_id,
+            agenda_number: Some(2),
+            deliberation_index: Some(0),
+            title: "Enviar certidão ao contabilista".to_owned(),
+            detail: Some("Confirmar envio depois da assinatura externa.".to_owned()),
+            due_date: Some(date!(2026 - 07 - 01)),
+            assignee: Some("ana".to_owned()),
+            assignee_display: Some("Ana Silva".to_owned()),
+            status: StoredFollowUpStatus::Open,
+            created_at,
+            created_by: "operator".to_owned(),
+            completed_at: None,
+            completed_by: None,
+        };
+        let completed = StoredFollowUp {
+            id: "follow-up-completed".to_owned(),
+            status: StoredFollowUpStatus::Completed,
+            completed_at: Some(created_at),
+            completed_by: Some("operator".to_owned()),
+            ..open.clone()
+        };
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+        let books = HashMap::from([(book.id, book.clone())]);
+        let acts = HashMap::from([(act.id, act)]);
+        let follow_ups = HashMap::from([
+            (open.id.clone(), open.clone()),
+            (completed.id.clone(), completed),
+        ]);
+
+        let reminders = dashboard_reminders_with_follow_ups(
+            &entities,
+            &books,
+            &acts,
+            &follow_ups,
+            &HashMap::new(),
+            date!(2026 - 07 - 09),
+        );
+
+        let follow_up_reminders = reminders
+            .iter()
+            .filter(|reminder| reminder.source_rule == "act-follow-up")
+            .collect::<Vec<_>>();
+        assert_eq!(follow_up_reminders.len(), 1);
+        let reminder = follow_up_reminders[0];
+        assert_eq!(reminder.due_date, "2026-07-01");
+        assert_eq!(reminder.status, "Overdue");
+        assert_eq!(reminder.severity, "Warning");
+        assert_eq!(reminder.entity_id, entity.id.to_string());
+        assert_eq!(reminder.entity_name, entity.name);
+        assert_eq!(reminder.source_profile, "follow-up:follow-up-open");
+        assert_eq!(
+            reminder.params.get("follow_up_title").map(String::as_str),
+            Some("Enviar certidão ao contabilista")
+        );
+        assert_eq!(
+            reminder.params.get("act_title").map(String::as_str),
+            Some("Ata de aprovação de contas")
+        );
+        assert_eq!(
+            reminder.params.get("assignee_display").map(String::as_str),
+            Some("Ana Silva")
+        );
+        let expected_route = format!("/atas/{act_id}");
+        assert_eq!(
+            reminder
+                .action
+                .as_ref()
+                .map(|action| (action.kind.as_str(), action.route.as_deref())),
+            Some(("open_act_follow_up", Some(expected_route.as_str())))
+        );
+        assert_eq!(
+            reminder.i18n.as_ref().map(|i18n| i18n.title_key.as_str()),
+            Some("notifications.reminder.followUp.title")
+        );
+        assert_eq!(
+            acts.get(&act_id).map(|sealed| sealed.state),
+            Some(ActState::Sealed)
         );
     }
 

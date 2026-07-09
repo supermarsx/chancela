@@ -37,8 +37,8 @@ pub mod seal;
 pub use act::{
     Act, ActId, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
     Convening, ConveningRecipient, DeliberationItem, DispatchChannel, DocumentReference,
-    MeetingChannel, MemberStatement, Mesa, PresenceMode, SecondCall, SignatoryCapacity,
-    SignatorySlot, VoteResult,
+    MeetingChannel, MemberStatement, Mesa, PresenceMode, SealMetadata, SecondCall,
+    SignatoryCapacity, SignatorySlot, VoteResult,
 };
 pub use book::{
     Book, BookId, BookKind, BookState, LegalHold, NumberingScheme, TermoDeAbertura,
@@ -61,6 +61,6 @@ pub use profile::{
 };
 pub use rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,
-    FundacaoRulePack, RulePack, Severity, statute_findings,
+    FundacaoRulePack, LegalBasis, LegalBasisVerification, RulePack, Severity, statute_findings,
 };
 pub use seal::{SealOutcome, open_and_seal_book, seal_act};

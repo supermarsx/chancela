@@ -223,6 +223,10 @@ export const deDE: Catalog = {
   'notifications.reminder.annual.body':
     'There is no sealed or archived annual act for {entity_name} by {due_date}. This reminder is advisory and comes from {source_rule}.',
   'notifications.reminder.annual.action': 'Open entity',
+  'notifications.reminder.followUp.title': '{follow_up_title}',
+  'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
+  'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
+  'notifications.reminder.followUp.action': 'Open act',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
   'notifications.operation.title': 'Event {kind}',

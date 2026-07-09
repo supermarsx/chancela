@@ -140,6 +140,62 @@ describe('DashboardPage', () => {
     expect(screen.getAllByRole('row')).toHaveLength(2);
   });
 
+  it('renders open act follow-ups as localized act-routed reminders', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: [
+        {
+          due_date: '2026-07-01',
+          severity: 'Warning',
+          status: 'Overdue',
+          reason: 'Raw backend follow-up fallback.',
+          entity_id: 'entity-1',
+          entity_name: 'Acme, S.A.',
+          source_rule: 'act-follow-up',
+          source_profile: 'follow-up:fu-1',
+          params: {
+            follow_up_id: 'fu-1',
+            follow_up_title: 'Enviar certidão ao contabilista',
+            follow_up_detail: 'Confirmar envio depois da assinatura externa.',
+            act_id: 'act-1',
+            act_title: 'Ata de aprovação de contas',
+            entity_id: 'entity-1',
+            entity_name: 'Acme, S.A.',
+            due_date: '2026-07-01',
+          },
+          action: {
+            kind: 'open_act_follow_up',
+            label_key: 'notifications.reminder.followUp.action',
+            api_href: '/v1/acts/act-1/follow-ups',
+            route: null,
+          },
+          i18n: {
+            title_key: 'notifications.reminder.followUp.title',
+            body_key: 'notifications.reminder.followUp.body',
+            action_key: 'notifications.reminder.followUp.action',
+          },
+        },
+      ],
+      recent_events: [1].map(eventFor),
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    const item = within(queue).getByRole('listitem');
+    const link = within(item).getByRole('link', { name: 'Enviar certidão ao contabilista' });
+    expect(link.getAttribute('href')).toBe('/atas/act-1');
+    expect(
+      within(item).getByText(
+        'Acme, S.A. - Ata de aprovação de contas: Confirmar envio depois da assinatura externa.',
+      ),
+    ).toBeTruthy();
+    expect(within(item).queryByText('Raw backend follow-up fallback.')).toBeNull();
+    expect(within(item).getByText('Data 2026-07-01')).toBeTruthy();
+    expect(within(item).getByText('Fonte act-follow-up / follow-up:fu-1')).toBeTruthy();
+  });
+
   it('shows an empty work-queue state when dashboard data exposes no operator work', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
     renderWithProviders(<DashboardPage />);

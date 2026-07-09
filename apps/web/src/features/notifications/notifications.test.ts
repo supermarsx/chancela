@@ -338,6 +338,57 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.action).toEqual({ href: '/arquivo', label: 'Abrir arquivo' });
   });
 
+  it('renders act follow-up reminders with localized compact copy and act action metadata', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        reminders: [
+          reminder({
+            due_date: '2026-07-01',
+            status: 'Overdue',
+            severity: 'Warning',
+            reason: 'Raw backend follow-up fallback.',
+            source_rule: 'act-follow-up',
+            source_profile: 'follow-up:fu-1',
+            params: {
+              follow_up_id: 'fu-1',
+              follow_up_title: 'Enviar certidão ao contabilista',
+              follow_up_detail: 'Confirmar envio depois da assinatura externa.',
+              act_id: 'act-1',
+              act_title: 'Ata de aprovação de contas',
+              entity_id: 'entity-1',
+              entity_name: 'Acme, S.A.',
+              due_date: '2026-07-01',
+            },
+            action: {
+              kind: 'open_act_follow_up',
+              label_key: 'notifications.reminder.followUp.action',
+              api_href: '/v1/acts/act-1/follow-ups',
+              route: null,
+            },
+            i18n: {
+              title_key: 'notifications.reminder.followUp.title',
+              body_key: 'notifications.reminder.followUp.body',
+              action_key: 'notifications.reminder.followUp.action',
+            },
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'reminder',
+      tone: 'warn',
+      badge: 'Atrasado',
+      title: 'Enviar certidão ao contabilista',
+      detail:
+        'Acme, S.A. - Ata de aprovação de contas: Confirmar envio depois da assinatura externa.',
+      action: { href: '/atas/act-1', label: 'Abrir ata' },
+    });
+    expect(items[0]?.detail).not.toContain('Raw backend');
+  });
+
   it('prioritizes actionable alerts and reminders in the popup over recent operations', () => {
     const items = buildDashboardNotifications(
       dashboard({

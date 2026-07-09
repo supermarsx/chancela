@@ -30,6 +30,7 @@ const SOURCE_CONTAINER_KEYS = [
   'legal_sources',
   'legal_reference',
   'legal_references',
+  'legal_basis',
   'law_ref',
   'law_refs',
   'reference',
@@ -60,7 +61,7 @@ const LABEL_KEYS = [
   'anchor',
 ] as const;
 
-const AUTHORITY_KEYS = ['authority', 'diploma', 'legal_source', 'source'] as const;
+const AUTHORITY_KEYS = ['authority', 'diploma', 'legal_source', 'source', 'source_label'] as const;
 const ARTICLE_KEYS = ['article', 'article_label', 'article_ref', 'provision'] as const;
 
 function asRecord(value: unknown): MetadataRecord | null {
@@ -111,8 +112,13 @@ function parseSourceRecord(record: MetadataRecord): SourceReference | null {
 
   if (!label && !urlText) return null;
   const visible = label || urlText || '';
+  const pending =
+    record.verification === 'Pending' ||
+    record.source_complete === false ||
+    record.complete === false;
+  const pendingSuffix = pending ? ' · fonte pendente' : '';
   const unsafeUrl = urlText && !href && !visible.includes(urlText) ? ` (${urlText})` : '';
-  return { label: `${visible}${unsafeUrl}`, href };
+  return { label: `${visible}${pendingSuffix}${unsafeUrl}`, href };
 }
 
 function parseSourceValue(value: unknown): SourceReference[] {

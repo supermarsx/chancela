@@ -10,6 +10,7 @@ use time::{Date, Time};
 use uuid::Uuid;
 
 use crate::book::BookId;
+use crate::entity::{EntityFamily, EntityKind};
 use crate::error::ActError;
 
 /// Opaque identifier for an [`Act`].
@@ -341,6 +342,41 @@ pub struct Attendee {
     pub weight: Option<AttendanceWeight>,
 }
 
+/// Structured evidence of the rule pack/profile applied when an act was sealed (LEG-06/WFL-22).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SealMetadata {
+    /// Stable rule-pack id in force at sealing, including its version segment.
+    pub rule_pack_id: String,
+    /// Parsed version tag from [`SealMetadata::rule_pack_id`] (for example, `"v2"`).
+    pub version: String,
+    /// Entity family whose legal behavior selected the rule pack.
+    pub family: EntityFamily,
+    /// Entity profile/kind used to derive the family profile.
+    pub profile: EntityKind,
+}
+
+impl SealMetadata {
+    /// Build seal metadata from the dispatched rule-pack id and entity profile evidence.
+    pub fn new(rule_pack_id: impl Into<String>, family: EntityFamily, profile: EntityKind) -> Self {
+        let rule_pack_id = rule_pack_id.into();
+        let version = rule_pack_version(&rule_pack_id);
+        SealMetadata {
+            rule_pack_id,
+            version,
+            family,
+            profile,
+        }
+    }
+}
+
+fn rule_pack_version(rule_pack_id: &str) -> String {
+    rule_pack_id
+        .rsplit_once('/')
+        .and_then(|(_, version)| (!version.is_empty()).then_some(version))
+        .unwrap_or("unversioned")
+        .to_owned()
+}
+
 /// An **ata**. Mutable through the pre-seal states; frozen at sealing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Act {
@@ -397,6 +433,11 @@ pub struct Act {
     pub payload_digest: Option<[u8; 32]>,
     /// Sequence number of the seal event in the book's ledger, set at sealing.
     pub seal_event_seq: Option<u64>,
+    /// Structured LEG-06/WFL-22 metadata for the rule pack/profile applied at sealing. Absent on
+    /// unsealed acts and old sealed rows whose historical record only carried the ledger
+    /// justification string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seal_metadata: Option<SealMetadata>,
     /// When this act corrects an earlier sealed one, the retificação chain link (WFL-21).
     pub retifies: Option<ActId>,
     /// The convening (convocatória) record for this meeting (spec gap G1). Additive and
@@ -435,6 +476,7 @@ impl Act {
             ata_number: None,
             payload_digest: None,
             seal_event_seq: None,
+            seal_metadata: None,
             retifies: None,
             convening: None,
             attendees: Vec::new(),
@@ -522,6 +564,7 @@ impl Act {
         ata_number: u64,
         payload_digest: [u8; 32],
         seal_event_seq: u64,
+        seal_metadata: SealMetadata,
     ) -> Result<(), ActError> {
         if self.state != ActState::Signing {
             return Err(ActError::InvalidTransition {
@@ -532,6 +575,7 @@ impl Act {
         self.ata_number = Some(ata_number);
         self.payload_digest = Some(payload_digest);
         self.seal_event_seq = Some(seal_event_seq);
+        self.seal_metadata = Some(seal_metadata);
         self.state = ActState::Sealed;
         Ok(())
     }
@@ -544,6 +588,14 @@ mod tests {
 
     fn draft() -> Act {
         Act::draft(BookId::new(), "Ata n.º 1", MeetingChannel::Physical)
+    }
+
+    fn seal_metadata() -> SealMetadata {
+        SealMetadata::new(
+            "test-pack/v1",
+            EntityFamily::CommercialCompany,
+            EntityKind::SociedadeAnonima,
+        )
     }
 
     #[test]
@@ -587,7 +639,7 @@ mod tests {
     fn mark_sealed_requires_signing_then_freezes() {
         let mut act = draft();
         // Not yet in Signing.
-        assert!(act.mark_sealed(1, [0u8; 32], 0).is_err());
+        assert!(act.mark_sealed(1, [0u8; 32], 0, seal_metadata()).is_err());
 
         for state in [
             ActState::Review,
@@ -598,10 +650,14 @@ mod tests {
         ] {
             act.advance_to(state).unwrap();
         }
-        act.mark_sealed(7, [9u8; 32], 3).unwrap();
+        act.mark_sealed(7, [9u8; 32], 3, seal_metadata()).unwrap();
         assert_eq!(act.state, ActState::Sealed);
         assert_eq!(act.ata_number, Some(7));
         assert_eq!(act.seal_event_seq, Some(3));
+        assert_eq!(
+            act.seal_metadata.as_ref().map(|m| m.rule_pack_id.as_str()),
+            Some("test-pack/v1")
+        );
         assert!(!act.is_mutable());
     }
 
@@ -617,7 +673,7 @@ mod tests {
         ] {
             act.advance_to(state).unwrap();
         }
-        act.mark_sealed(1, [0u8; 32], 0).unwrap();
+        act.mark_sealed(1, [0u8; 32], 0, seal_metadata()).unwrap();
         assert!(matches!(
             act.set_deliberations("tampered"),
             Err(ActError::Sealed)
@@ -646,7 +702,7 @@ mod tests {
         ] {
             act.advance_to(state).unwrap();
         }
-        act.mark_sealed(1, [0u8; 32], 0).unwrap();
+        act.mark_sealed(1, [0u8; 32], 0, seal_metadata()).unwrap();
         act.archive().unwrap();
         assert_eq!(act.state, ActState::Archived);
     }

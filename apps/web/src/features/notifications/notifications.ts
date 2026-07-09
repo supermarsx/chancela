@@ -446,13 +446,18 @@ export function buildDashboardNotifications(
     const sourceRule = reminder.source_rule.trim() || t('dashboard.workQueue.rule.missing');
     const sourceProfile =
       reminder.source_profile.trim() || t('dashboard.workQueue.profile.missing');
+    const reason = reminder.reason.trim() || t('dashboard.workQueue.reminder.fallback');
     const copy = REMINDER_COPY[sourceRule];
-    const params = {
+    const i18nTitle = messageKey(reminder.i18n?.title_key);
+    const i18nBody = messageKey(reminder.i18n?.body_key);
+    const i18nAction = messageKey(reminder.i18n?.action_key);
+    const params: TParams = {
+      ...(reminder.params ?? {}),
       entity_name: entityName,
       due_date: reminderDateLabel(reminder.due_date, t),
       source_rule: sourceRule,
       source_profile: sourceProfile,
-      reason: reminder.reason.trim() || t('dashboard.workQueue.reminder.fallback'),
+      reason,
     };
 
     items.push({
@@ -462,8 +467,16 @@ export function buildDashboardNotifications(
       sortTime: dueDate ? parseDate(dueDate) : null,
       tone: reminderTone(reminder),
       badge: reminderStatusLabel(reminder.status, t),
-      title: copy ? t(copy.title, params) : t('notifications.reminder.unknown.title', params),
-      detail: copy ? t(copy.body, params) : t('notifications.reminder.unknown.body', params),
+      title: i18nTitle
+        ? t(i18nTitle, params)
+        : copy
+          ? t(copy.title, params)
+          : t('notifications.reminder.unknown.title', params),
+      detail: i18nBody
+        ? t(i18nBody, params)
+        : copy
+          ? t(copy.body, params)
+          : t('notifications.reminder.unknown.body', params),
       meta: [
         reminderDateMeta(reminder.due_date, t),
         t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
@@ -471,7 +484,7 @@ export function buildDashboardNotifications(
       action:
         actionFromMetadata(reminder.action, t) ??
         (entityId && copy
-          ? { href: `/entidades/${entityId}`, label: t(copy.action) }
+          ? { href: `/entidades/${entityId}`, label: t(i18nAction ?? copy.action) }
           : entityId
             ? { href: `/entidades/${entityId}`, label: t('notifications.action.openEntity') }
             : { href: SETTINGS_ROUTE, label: t('notifications.action.openSettings') }),

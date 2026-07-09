@@ -16,7 +16,7 @@ use chancela_ledger::Ledger;
 
 use crate::act::{
     Act, ActState, AgendaItem, Attachment, Attendee, Convening, DeliberationItem,
-    DocumentReference, MeetingChannel, Mesa, SignatorySlot,
+    DocumentReference, MeetingChannel, Mesa, SealMetadata, SignatorySlot,
 };
 use crate::book::{Book, TermoDeAbertura};
 use crate::entity::Entity;
@@ -32,6 +32,8 @@ pub struct SealOutcome {
     pub event_seq: u64,
     /// The frozen payload digest (sha-256), as computed by the ledger.
     pub payload_digest: [u8; 32],
+    /// Structured evidence of the rule pack/profile used for this seal (LEG-06/WFL-22).
+    pub seal_metadata: SealMetadata,
     /// Any `Warning`-severity issues that were acknowledged at sealing (LEG-05), retained
     /// so the acknowledgement is itself part of the record.
     pub acknowledged_warnings: Vec<ComplianceIssue>,
@@ -200,14 +202,16 @@ pub fn seal_act(
     let event = ledger.append(actor, &scope, "act.sealed", Some(&justification), &payload);
     let event_seq = event.seq;
     let payload_digest = event.payload_digest;
+    let seal_metadata = SealMetadata::new(rule_pack.id(), entity.family, entity.kind);
 
     // Freeze the act (Signing → Sealed).
-    act.mark_sealed(ata_number, payload_digest, event_seq)?;
+    act.mark_sealed(ata_number, payload_digest, event_seq, seal_metadata.clone())?;
 
     Ok(SealOutcome {
         ata_number,
         event_seq,
         payload_digest,
+        seal_metadata,
         acknowledged_warnings: warnings,
     })
 }
@@ -314,6 +318,17 @@ mod tests {
         assert_eq!(out1.ata_number, 1);
         assert_eq!(first.state, ActState::Sealed);
         assert_eq!(first.payload_digest, Some(out1.payload_digest));
+        assert_eq!(out1.seal_metadata.rule_pack_id, "csc-art63/v2");
+        assert_eq!(out1.seal_metadata.version, "v2");
+        assert_eq!(
+            out1.seal_metadata.family,
+            crate::entity::EntityFamily::CommercialCompany
+        );
+        assert_eq!(
+            out1.seal_metadata.profile,
+            crate::entity::EntityKind::SociedadeAnonima
+        );
+        assert_eq!(first.seal_metadata, Some(out1.seal_metadata.clone()));
 
         let mut second = ready_act(&book);
         let out2 = seal_act(
@@ -471,12 +486,14 @@ mod tests {
                 rule_id: "TEST/advisory".into(),
                 severity: crate::rules::Severity::Warning,
                 message: "advisory finding".into(),
+                legal_basis: Vec::new(),
             }];
             if self.also_errors {
                 issues.push(crate::rules::ComplianceIssue {
                     rule_id: "TEST/blocking".into(),
                     severity: crate::rules::Severity::Error,
                     message: "blocking finding".into(),
+                    legal_basis: Vec::new(),
                 });
             }
             issues

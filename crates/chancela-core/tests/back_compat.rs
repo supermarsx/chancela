@@ -72,6 +72,7 @@ fn old_shape_act_json_deserializes_with_defaults() {
     assert_eq!(act.members_represented, None);
     assert!(!act.attachments[0].beginning_of_proof);
     assert_eq!(act.signatories[0].permilage, None);
+    assert!(act.seal_metadata.is_none());
 
     // The free-text substance is intact and the act is still mutable / usable.
     assert_eq!(act.deliberations, "Aprovado o relatório de gestão.");

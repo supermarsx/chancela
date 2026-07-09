@@ -1077,7 +1077,7 @@ describe('contract fixtures parse through the real client', () => {
         source_profile: true,
       },
       'Dashboard.reminders[0]',
-      ['law_refs', 'action', 'recommended_next_steps'],
+      ['params', 'law_refs', 'action', 'recommended_next_steps', 'i18n'],
     );
     assertIsoDate(reminder.due_date, 'Dashboard.reminders[0].due_date');
     inEnum(['Advisory', 'Info', 'Warning'], reminder.severity, 'Dashboard.reminders[0].severity');
@@ -1126,6 +1126,26 @@ describe('contract fixtures parse through the real client', () => {
       );
     }
     expect(Array.isArray(reminder.recommended_next_steps)).toBe(true);
+    if (reminder.params !== undefined) {
+      expect(typeof reminder.params, 'Dashboard.reminders[0].params').toBe('object');
+      for (const [key, value] of Object.entries(reminder.params)) {
+        expect(key.length, 'Dashboard.reminders[0].params key should be non-empty').toBeGreaterThan(
+          0,
+        );
+        expect(typeof value, `Dashboard.reminders[0].params.${key} should be string`).toBe(
+          'string',
+        );
+      }
+    }
+    if (reminder.i18n !== null && reminder.i18n !== undefined) {
+      const reminderI18n = assertExactKeys<DashboardI18n>(
+        reminder.i18n,
+        { title_key: true, body_key: true, action_key: true },
+        'Dashboard.reminders[0].i18n',
+      );
+      expect(reminderI18n.title_key.length).toBeGreaterThan(0);
+      expect(reminderI18n.body_key.length).toBeGreaterThan(0);
+    }
     expect(Array.isArray(dash.recent_events)).toBe(true);
     // recent_events reuse the ledger event shape.
     assertExactKeys<LedgerEventView>(

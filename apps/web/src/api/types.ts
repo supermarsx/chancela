@@ -135,6 +135,7 @@ export const SIGNATORY_CAPACITIES = [
 export type SignatoryCapacity = (typeof SIGNATORY_CAPACITIES)[number];
 
 export type Severity = 'Warning' | 'Error';
+export type LegalBasisVerification = 'Verified' | 'Pending';
 
 // CAE — Classificação Portuguesa das Atividades Económicas (plan t14 §2.7). The wire
 // strings are the bare serde variant names from `chancela-cae`.
@@ -360,6 +361,18 @@ export interface ComplianceIssue {
   rule_id: string;
   severity: Severity;
   message: string;
+  legal_basis?: ComplianceLegalBasis[];
+}
+
+export interface ComplianceLegalBasis {
+  source_id: string;
+  source_label: string;
+  article: string | null;
+  article_label: string | null;
+  citation: string;
+  verification: LegalBasisVerification;
+  source_url: string | null;
+  source_complete: boolean;
 }
 
 export interface ConveningAdvisory {
@@ -691,9 +704,11 @@ export interface DashboardReminder {
   entity_name: string;
   source_rule: string;
   source_profile: string;
+  params?: Record<string, string>;
   law_refs?: DashboardLawReference[];
   action?: DashboardAction | null;
   recommended_next_steps?: string[];
+  i18n?: DashboardI18n | null;
 }
 
 // --- Registry / certidão permanente (§2.7, plan t11) ----------------------------

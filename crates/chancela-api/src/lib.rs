@@ -6002,6 +6002,13 @@ mod tests {
 
     // --- Durable store persistence (t30) --------------------------------------------------
 
+    fn assert_csc_seal_metadata(metadata: &Value) {
+        assert_eq!(metadata["rule_pack_id"], "csc-art63/v2");
+        assert_eq!(metadata["version"], "v2");
+        assert_eq!(metadata["family"], "CommercialCompany");
+        assert_eq!(metadata["profile"], "SociedadeAnonima");
+    }
+
     /// Drive a full create → open book → draft → fill → advance → seal against `state`,
     /// returning `(entity_id, book_id, act_id)` with the act sealed as ata n.º 1.
     async fn seal_one(state: &AppState) -> (String, String, String) {
@@ -6070,6 +6077,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(sealed["ata_number"], 1);
+        assert_csc_seal_metadata(&sealed["act"]["seal_metadata"]);
         (entity_id, book_id, act_id)
     }
 
@@ -6104,6 +6112,7 @@ mod tests {
             act["ata_number"], 1,
             "the sealed ata number survived the restart"
         );
+        assert_csc_seal_metadata(&act["seal_metadata"]);
 
         // The rehydrated chain verifies and the dashboard counts are intact.
         let (_, verify) = send(restarted.clone(), get("/v1/ledger/verify")).await;

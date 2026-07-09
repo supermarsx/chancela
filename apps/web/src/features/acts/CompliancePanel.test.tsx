@@ -152,6 +152,39 @@ describe('CompliancePanel legal-source references', () => {
     expect(screen.getByText('Regulamento interno, ponto 4')).toBeTruthy();
   });
 
+  it('renders structured legal_basis metadata as pending source references', () => {
+    const report = complianceReport({
+      issues: [
+        {
+          rule_id: 'CSC-63/mesa-presidente',
+          severity: 'Error',
+          message: 'A ata tem de identificar o presidente da mesa.',
+          legal_basis: [
+            {
+              source_id: 'csc',
+              source_label: 'Código das Sociedades Comerciais',
+              article: '63',
+              article_label: 'Artigo 63.º',
+              citation: 'Código das Sociedades Comerciais, Artigo 63.º',
+              verification: 'Pending',
+              source_url: null,
+              source_complete: false,
+            },
+          ],
+        },
+      ],
+      errors: 1,
+      seal_allowed: false,
+    });
+
+    render(<CompliancePanel report={report} />);
+
+    expect(
+      screen.getByText('Código das Sociedades Comerciais, Artigo 63.º · fonte pendente'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
   it('renders unsafe and non-http URL metadata as inert text', () => {
     const report = complianceReport({
       issues: [

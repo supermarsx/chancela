@@ -228,6 +228,10 @@ export const ptPT = {
   'notifications.reminder.annual.body':
     'Não há ato anual selado ou arquivado para {entity_name} em {due_date}. O lembrete é consultivo e deriva de {source_rule}.',
   'notifications.reminder.annual.action': 'Abrir entidade',
+  'notifications.reminder.followUp.title': '{follow_up_title}',
+  'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
+  'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
+  'notifications.reminder.followUp.action': 'Abrir ata',
   'notifications.reminder.unknown.title': '{entity_name}',
   'notifications.reminder.unknown.body': '{reason}',
   'notifications.operation.title': 'Evento {kind}',

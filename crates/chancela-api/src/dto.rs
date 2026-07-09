@@ -22,9 +22,10 @@ use chancela_core::book::ClosingReason;
 use chancela_core::{
     Act, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee, Book,
     BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient, DeliberationItem,
-    DispatchChannel, DocumentReference, Entity, EntityFamily, EntityKind, MeetingChannel,
-    MemberStatement, Mesa, NumberingScheme, PresenceMode, SecondCall, Severity, SignatoryCapacity,
-    SignatorySlot, SignaturePolicyHint, StatuteOverrides, VoteResult, profile_for,
+    DispatchChannel, DocumentReference, Entity, EntityFamily, EntityKind, LegalBasis,
+    LegalBasisVerification, MeetingChannel, MemberStatement, Mesa, NumberingScheme, PresenceMode,
+    SealMetadata, SecondCall, Severity, SignatoryCapacity, SignatorySlot, SignaturePolicyHint,
+    StatuteOverrides, VoteResult, profile_for,
 };
 use chancela_ledger::Event;
 use chancela_registry::{
@@ -164,6 +165,23 @@ pub struct IssueView {
     pub rule_id: String,
     pub severity: String,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legal_basis: Vec<LegalBasisView>,
+}
+
+/// Wire form of a compliance legal-basis reference. Pending references are structural only:
+/// `source_url` is `null` and `source_complete` is `false` unless the underlying corpus article is
+/// authenticity-gated.
+#[derive(Debug, Serialize, Clone)]
+pub struct LegalBasisView {
+    pub source_id: String,
+    pub source_label: String,
+    pub article: Option<String>,
+    pub article_label: Option<String>,
+    pub citation: String,
+    pub verification: String,
+    pub source_url: Option<String>,
+    pub source_complete: bool,
 }
 
 /// The contract's `Severity` encoding (§2.1): the bare variant name.
@@ -174,12 +192,35 @@ fn severity_str(s: Severity) -> &'static str {
     }
 }
 
+fn legal_basis_verification_str(v: LegalBasisVerification) -> &'static str {
+    match v {
+        LegalBasisVerification::Verified => "Verified",
+        LegalBasisVerification::Pending => "Pending",
+    }
+}
+
+impl From<&LegalBasis> for LegalBasisView {
+    fn from(b: &LegalBasis) -> Self {
+        LegalBasisView {
+            source_id: b.source_id.clone(),
+            source_label: b.source_label.clone(),
+            article: b.article.clone(),
+            article_label: b.article_label.clone(),
+            citation: b.citation.clone(),
+            verification: legal_basis_verification_str(b.verification).to_owned(),
+            source_url: b.source_url.clone(),
+            source_complete: b.source_complete,
+        }
+    }
+}
+
 impl From<&ComplianceIssue> for IssueView {
     fn from(i: &ComplianceIssue) -> Self {
         IssueView {
             rule_id: i.rule_id.clone(),
             severity: severity_str(i.severity).to_owned(),
             message: i.message.clone(),
+            legal_basis: i.legal_basis.iter().map(LegalBasisView::from).collect(),
         }
     }
 }
@@ -519,6 +560,26 @@ impl From<&SignatorySlot> for SignatoryView {
             capacity: s.capacity,
             signed: s.signed,
             permilage: s.permilage,
+        }
+    }
+}
+
+/// Wire view of the LEG-06/WFL-22 rule-pack/profile evidence recorded at sealing.
+#[derive(Serialize, Clone)]
+pub struct SealMetadataView {
+    pub rule_pack_id: String,
+    pub version: String,
+    pub family: EntityFamily,
+    pub profile: EntityKind,
+}
+
+impl From<&SealMetadata> for SealMetadataView {
+    fn from(metadata: &SealMetadata) -> Self {
+        SealMetadataView {
+            rule_pack_id: metadata.rule_pack_id.clone(),
+            version: metadata.version.clone(),
+            family: metadata.family,
+            profile: metadata.profile,
         }
     }
 }
@@ -1092,6 +1153,10 @@ pub struct ActView {
     pub ata_number: Option<u64>,
     pub payload_digest: Option<String>,
     pub seal_event_seq: Option<u64>,
+    /// Structured rule-pack/profile evidence recorded when the act was sealed (LEG-06/WFL-22).
+    /// Absent on unsealed acts and old sealed rows that predate this metadata slice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seal_metadata: Option<SealMetadataView>,
     pub retifies: Option<String>,
     /// The convening/dispatch record (G1), when set. **Skip-serialized when absent** (t61-E1
     /// drift-safe): an act without a convening emits **no** `convening` key, so response fixtures for
@@ -1137,6 +1202,7 @@ impl From<&Act> for ActView {
             ata_number: a.ata_number,
             payload_digest: a.payload_digest.as_ref().map(hex),
             seal_event_seq: a.seal_event_seq,
+            seal_metadata: a.seal_metadata.as_ref().map(SealMetadataView::from),
             retifies: a.retifies.map(|r| r.to_string()),
             convening: a.convening.as_ref().map(ConveningView::from),
             attendees: a.attendees.iter().map(AttendeeView::from).collect(),
@@ -1581,9 +1647,13 @@ pub struct DashboardReminder {
     pub entity_name: String,
     pub source_rule: String,
     pub source_profile: String,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, String>,
     pub law_refs: Vec<DashboardLawReference>,
     pub action: Option<DashboardAction>,
     pub recommended_next_steps: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub i18n: Option<DashboardI18n>,
 }
 
 // --- Registry views + report (§2.7) ------------------------------------------------------
@@ -2222,4 +2292,40 @@ pub struct RegistryImportReport {
     /// expired-certidão notice ("certidão expirada em <valid_until>"). Import still returns
     /// 200/201: an expired certidão is surfaced, not rejected.
     pub warnings: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn issue_view_serializes_pending_legal_basis_without_source_claims() {
+        let issue = ComplianceIssue {
+            rule_id: "CSC-63/mesa-presidente".to_owned(),
+            severity: Severity::Error,
+            message: "missing chair".to_owned(),
+            legal_basis: vec![LegalBasis {
+                source_id: "csc".to_owned(),
+                source_label: "Código das Sociedades Comerciais".to_owned(),
+                article: Some("63".to_owned()),
+                article_label: Some("Artigo 63.º".to_owned()),
+                citation: "Código das Sociedades Comerciais, Artigo 63.º".to_owned(),
+                verification: LegalBasisVerification::Pending,
+                source_url: None,
+                source_complete: false,
+            }],
+        };
+
+        let value = serde_json::to_value(IssueView::from(&issue)).expect("issue serializes");
+        assert_eq!(value["rule_id"], "CSC-63/mesa-presidente");
+        assert_eq!(value["severity"], "Error");
+        assert_eq!(value["legal_basis"][0]["source_id"], "csc");
+        assert_eq!(value["legal_basis"][0]["article"], "63");
+        assert_eq!(value["legal_basis"][0]["verification"], "Pending");
+        assert_eq!(
+            value["legal_basis"][0]["source_url"],
+            serde_json::Value::Null
+        );
+        assert_eq!(value["legal_basis"][0]["source_complete"], false);
+    }
 }

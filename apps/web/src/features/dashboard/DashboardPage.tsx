@@ -183,6 +183,14 @@ function routeFromAlert(alert: DashboardAlert): string | undefined {
   );
 }
 
+function routeFromReminder(reminder: DashboardReminder): string | undefined {
+  const metadataRoute =
+    frontendRouteFromApi(reminder.action?.route) ?? frontendRouteFromApi(reminder.action?.api_href);
+  if (metadataRoute) return metadataRoute;
+  const entityId = reminder.entity_id.trim();
+  return entityId ? `/entidades/${entityId}` : undefined;
+}
+
 function alertTone(alert: DashboardAlert): QueueTone {
   if (alert.severity === 'Error' || alert.code === 'ledger.integrity.review_required')
     return 'error';
@@ -299,6 +307,17 @@ function buildWorkQueue({
     const sourceRule = reminder.source_rule.trim() || t('dashboard.workQueue.rule.missing');
     const sourceProfile =
       reminder.source_profile.trim() || t('dashboard.workQueue.profile.missing');
+    const reason = reminder.reason.trim() || t('dashboard.workQueue.reminder.fallback');
+    const params: TParams = {
+      ...(reminder.params ?? {}),
+      entity_name: entityName,
+      due_date: reminderDateLabel(reminder.due_date, t),
+      source_rule: sourceRule,
+      source_profile: sourceProfile,
+      reason,
+    };
+    const titleKey = messageKey(reminder.i18n?.title_key);
+    const bodyKey = messageKey(reminder.i18n?.body_key);
 
     items.push({
       id: `reminder:${entityId}:${sourceRule}:${sourceProfile}:${dueDate}:${reminder.status}`,
@@ -306,13 +325,13 @@ function buildWorkQueue({
       sortTime,
       badge: reminderStatusLabel(reminder.status, t),
       tone: reminderTone(reminder),
-      title: entityName,
-      detail: reminder.reason.trim() || t('dashboard.workQueue.reminder.fallback'),
+      title: titleKey ? t(titleKey, params) : entityName,
+      detail: bodyKey ? t(bodyKey, params) : reason,
       meta: [
         reminderDateMeta(reminder.due_date, t),
         t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
       ],
-      href: entityId ? `/entidades/${entityId}` : undefined,
+      href: routeFromReminder(reminder),
     });
   }
 
