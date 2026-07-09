@@ -15,10 +15,18 @@ import {
   useClearBookLegalHold,
   useDownloadBookArchivePackage,
   useDownloadPaperBookImport,
+  useEntity,
   usePaperBookImports,
+  usePreservePaperBookImport,
   useSetBookLegalHold,
+  useValidatePaperBookImport,
 } from '../../api/hooks';
-import type { PaperBookImportView } from '../../api/types';
+import type {
+  BookView,
+  PaperBookImportPreservationReport,
+  PaperBookImportReport,
+  PaperBookImportView,
+} from '../../api/types';
 import {
   actStateLabels,
   bookKindLabels,
@@ -31,12 +39,14 @@ import { useT } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
+  Button,
   Card,
   EmptyState,
   ErrorNote,
   Field,
   Icon,
   InlineWarning,
+  Input,
   PageHeader,
   Skeleton,
   SkeletonDeflist,
@@ -71,6 +81,21 @@ function paperBookImportFilename(row: PaperBookImportView): string {
   const type = row.content_type.split(';')[0]?.trim().toLowerCase();
   const ext = type === 'application/pdf' ? 'pdf' : type === 'application/zip' ? 'zip' : 'bin';
   return `paper-book-import-${row.import_id}.${ext}`;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function LegalHoldPanel({ bookId }: { bookId: string }) {
@@ -189,10 +214,23 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
   );
 }
 
-function PaperBookImportsPanel({ bookRef }: { bookRef: string }) {
+function PaperBookImportsPanel({ book }: { book: BookView }) {
   const toast = useToast();
-  const imports = usePaperBookImports(bookRef);
+  const entity = useEntity(book.entity_id);
+  const imports = usePaperBookImports(book.id);
+  const validate = useValidatePaperBookImport();
+  const preserve = usePreservePaperBookImport();
   const download = useDownloadPaperBookImport();
+  const [file, setFile] = useState<File | null>(null);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [pageCount, setPageCount] = useState('');
+  const [sourceFilename, setSourceFilename] = useState('');
+  const [notes, setNotes] = useState('');
+  const [report, setReport] = useState<PaperBookImportReport | PaperBookImportPreservationReport | null>(
+    null,
+  );
+  const [formError, setFormError] = useState<unknown>(null);
 
   function onDownload(row: PaperBookImportView) {
     download.mutate(row.import_id, {
@@ -222,23 +260,193 @@ function PaperBookImportsPanel({ bookRef }: { bookRef: string }) {
   }
 
   const rows = imports.data ?? [];
+  const entityName = entity.data?.name ?? '';
+  const entityNipc = entity.data?.nipc ?? '';
+
+  function resetCandidate() {
+    setReport(null);
+    setFormError(null);
+  }
+
+  async function candidateBody() {
+    if (!file) throw new Error('Escolha o pacote digitalizado antes de validar.');
+    const bytes = await file.arrayBuffer();
+    const digest = await sha256Hex(bytes);
+    return {
+      entity_ref: book.entity_id,
+      entity_name: entityName,
+      entity_nipc: entityNipc,
+      book_ref: book.id,
+      date_from: dateFrom,
+      date_to: dateTo,
+      page_count: Number(pageCount),
+      source_filename: sourceFilename.trim() || file.name || null,
+      digest,
+      notes: notes.trim() || null,
+    };
+  }
+
+  async function onValidate() {
+    setFormError(null);
+    try {
+      const body = await candidateBody();
+      setReport(await validate.mutateAsync(body));
+    } catch (e) {
+      setFormError(e);
+      toast.error(e);
+    }
+  }
+
+  async function onPreserve() {
+    setFormError(null);
+    try {
+      if (!file) throw new Error('Escolha o pacote digitalizado antes de preservar.');
+      const bytes = await file.arrayBuffer();
+      const digest = await sha256Hex(bytes);
+      const body = await candidateBody();
+      setReport(await preserve.mutateAsync({
+        ...body,
+        digest,
+        content_base64: arrayBufferToBase64(bytes),
+        content_type: file.type || 'application/octet-stream',
+        declared_sha256: digest,
+        size_bytes: bytes.byteLength,
+      }));
+      toast.success('Pacote de livro em papel preservado como evidência não canónica.');
+    } catch (e) {
+      setFormError(e);
+      toast.error(e);
+    }
+  }
 
   return (
     <Card title="Importações de livro em papel preservadas">
-      {imports.isLoading ? (
-        <SkeletonTable cols={4} />
-      ) : imports.error ? (
-        <ErrorNote error={imports.error} />
-      ) : rows.length === 0 ? (
-        <EmptyState title="Sem importações preservadas">
-          <p>Não há pacotes de livro em papel preservados para esta referência de livro.</p>
-        </EmptyState>
-      ) : (
-        <div className="stack">
-          <InlineWarning tone="warn" title="Evidência não canónica">
-            Estes pacotes preservam cópias de livros em papel para consulta. Não substituem atas
-            digitais canónicas e não declaram validade legal, PDF/A ou assinatura qualificada.
+      <div className="stack">
+        <InlineWarning tone="warn" title="Evidência não canónica">
+          Estes pacotes preservam cópias de livros em papel para consulta. Não substituem atas
+          digitais canónicas e não declaram validade legal, PDF/A, validade de assinatura ou
+          assinatura qualificada.
+        </InlineWarning>
+
+        <form className="form">
+          <Field label="Pacote digitalizado" htmlFor="paper-import-file">
+            <Input
+              id="paper-import-file"
+              type="file"
+              accept="application/pdf,application/zip,application/octet-stream,.pdf,.zip"
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                setFile(next);
+                setSourceFilename(next?.name ?? '');
+                resetCandidate();
+              }}
+            />
+          </Field>
+          <div className="form-grid">
+            <Field label="Data inicial" htmlFor="paper-import-from">
+              <Input
+                id="paper-import-from"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  resetCandidate();
+                }}
+              />
+            </Field>
+            <Field label="Data final" htmlFor="paper-import-to">
+              <Input
+                id="paper-import-to"
+                type="date"
+                value={dateTo}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  resetCandidate();
+                }}
+              />
+            </Field>
+            <Field label="Páginas" htmlFor="paper-import-pages">
+              <Input
+                id="paper-import-pages"
+                type="number"
+                min="1"
+                value={pageCount}
+                onChange={(e) => {
+                  setPageCount(e.target.value);
+                  resetCandidate();
+                }}
+              />
+            </Field>
+            <Field label="Nome do ficheiro" htmlFor="paper-import-filename">
+              <Input
+                id="paper-import-filename"
+                value={sourceFilename}
+                onChange={(e) => {
+                  setSourceFilename(e.target.value);
+                  resetCandidate();
+                }}
+              />
+            </Field>
+          </div>
+          <Field label="Notas" htmlFor="paper-import-notes">
+            <TextArea
+              id="paper-import-notes"
+              rows={3}
+              value={notes}
+              placeholder="Ex.: digitalizado a partir do livro encadernado guardado no arquivo físico"
+              onChange={(e) => {
+                setNotes(e.target.value);
+                resetCandidate();
+              }}
+            />
+          </Field>
+          <p className="field__hint">
+            A entidade e o livro são preenchidos a partir deste detalhe: {entityName || '—'} ·{' '}
+            {entityNipc || '—'} · {book.id}
+          </p>
+          <div className="form__actions">
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Icon.Search />}
+              disabled={validate.isPending || preserve.isPending || entity.isLoading}
+              onClick={onValidate}
+            >
+              {validate.isPending ? 'A validar' : 'Validar sem preservar'}
+            </Button>
+            <GateButton
+              perm="book.import"
+              type="button"
+              variant="primary"
+              icon={<Icon.Tray />}
+              disabled={preserve.isPending || entity.isLoading}
+              onClick={onPreserve}
+            >
+              {preserve.isPending ? 'A preservar' : 'Preservar pacote'}
+            </GateButton>
+          </div>
+        </form>
+
+        {formError ? <ErrorNote error={formError} /> : null}
+        {report ? (
+          <InlineWarning tone="info" title="Relatório não canónico">
+            <p>{report.legal_notice}</p>
+            <p>
+              Estado: {report.candidate_classification.preservation_status}. Validade legal
+              declarada: não.
+            </p>
           </InlineWarning>
+        ) : null}
+
+        {imports.isLoading ? (
+          <SkeletonTable cols={4} />
+        ) : imports.error ? (
+          <ErrorNote error={imports.error} />
+        ) : rows.length === 0 ? (
+          <EmptyState title="Sem importações preservadas">
+            <p>Não há pacotes de livro em papel preservados para esta referência de livro.</p>
+          </EmptyState>
+        ) : (
           <Table
             head={
               <tr>
@@ -285,8 +493,8 @@ function PaperBookImportsPanel({ bookRef }: { bookRef: string }) {
               </tr>
             ))}
           </Table>
-        </div>
-      )}
+        )}
+      </div>
     </Card>
   );
 }
@@ -419,7 +627,7 @@ export function BookDetailPage() {
 
       <LegalHoldPanel bookId={b.id} />
 
-      <PaperBookImportsPanel bookRef={b.id} />
+      <PaperBookImportsPanel book={b} />
 
       <Card
         title={t('books.atas')}

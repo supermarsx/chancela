@@ -3102,6 +3102,35 @@ export interface PaperBookImportValidateBody {
   notes?: string | null;
 }
 
+export interface PaperBookImportPreserveBody extends PaperBookImportValidateBody {
+  content_base64: string;
+  content_type: string;
+  declared_sha256: string;
+  size_bytes: number;
+}
+
+export interface PaperBookPreservation {
+  status: 'preserved_non_canonical_package';
+  non_canonical: boolean;
+  sha256: string;
+  size_bytes: number;
+  content_type: string;
+  imported_at: string;
+  imported_by: string;
+  ocr_status: 'not_started' | string;
+  bytes_in_ledger_event: boolean;
+  legal_validity_claimed: boolean;
+}
+
+/** `POST /v1/books/paper-import` preservation report. */
+export interface PaperBookImportPreservationReport
+  extends Omit<PaperBookImportReport, 'report_kind' | 'dry_run'> {
+  report_kind: 'paper_book_import_preservation';
+  dry_run: false;
+  import_id: string;
+  preservation: PaperBookPreservation;
+}
+
 /** Preserved historical paper-book package metadata. Raw bytes are fetched via `bytes_download`. */
 export interface PaperBookImportView {
   import_id: string;

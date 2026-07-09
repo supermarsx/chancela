@@ -36,6 +36,8 @@ import type {
   LedgerArchiveDocumentParams,
   LedgerQueryParams,
   OpenBookBody,
+  PaperBookImportValidateBody,
+  PaperBookImportPreserveBody,
   RegistryAutoUpdateAttemptBody,
   RegistryImportBody,
   SealActBody,
@@ -348,6 +350,25 @@ export function usePaperBookImports(bookRef?: string) {
     queryFn: () => api.listPaperBookImports({ book_ref: bookRef }),
     enabled: bookRef !== '',
     retry: false,
+  });
+}
+
+export function useValidatePaperBookImport() {
+  return useMutation({
+    mutationFn: (body: PaperBookImportValidateBody) => api.validatePaperBookImport(body),
+  });
+}
+
+export function usePreservePaperBookImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PaperBookImportPreserveBody) => api.preservePaperBookImport(body),
+    onSuccess: (report) => {
+      void qc.invalidateQueries({
+        queryKey: keys.paperBookImports(report.identity.book_ref),
+      });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
   });
 }
 

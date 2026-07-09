@@ -94,6 +94,7 @@ function bookDetailFetch(extra?: (url: string, method: string) => Response | nul
     if (custom) return Promise.resolve(custom);
     if (url === '/v1/books/book-1') return Promise.resolve(jsonResponse(BOOK));
     if (url === '/v1/books/book-1/acts') return Promise.resolve(jsonResponse([]));
+    if (url === '/v1/entities/ent-1') return Promise.resolve(jsonResponse(ENTITY));
     if (url === '/v1/books/paper-import?book_ref=book-1') return Promise.resolve(jsonResponse([]));
     if (url === '/v1/books/book-1/legal-hold') {
       return Promise.resolve(
@@ -395,6 +396,151 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       method: 'GET',
       body: null,
     });
+  });
+
+  it('validates and preserves a scanned paper-book package as non-canonical evidence', async () => {
+    const digest = 'ab'.repeat(32);
+    const selectedBytes = new Uint8Array([37, 80, 68, 70]);
+    const preserved: PaperBookImportView = {
+      import_id: '22222222-2222-4222-8222-222222222222',
+      entity_ref: 'ent-1',
+      entity_name: 'Encosto Estratégico, Lda.',
+      entity_nipc: '503004642',
+      book_ref: 'book-1',
+      date_from: '1968-01-01',
+      date_to: '1971-12-31',
+      page_count: 240,
+      sha256: digest,
+      size_bytes: selectedBytes.byteLength,
+      content_type: 'application/pdf',
+      source_filename: 'ag-1968-1971.pdf',
+      notes: 'Digitalizado do livro encadernado.',
+      imported_at: '2026-07-09T10:00:00Z',
+      imported_by: 'paper.owner',
+      ocr_status: 'not_started',
+      non_canonical: true,
+      legal_validity_claimed: false,
+      signature_validity_claimed: false,
+      qualified_signature_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      bytes_download: '/v1/books/paper-import/22222222-2222-4222-8222-222222222222/bytes',
+    };
+    const validationReport = {
+      report_kind: 'paper_book_import_validation',
+      dry_run: true,
+      legal_notice:
+        'Historical paper-book scans are classified as non-canonical evidence only. This report does not preserve the package, replace canonical digital minutes, or claim PDF/A, legal, or qualified-signature validity.',
+      identity: {
+        entity_ref: 'ent-1',
+        entity_name: 'Encosto Estratégico, Lda.',
+        entity_nipc: '503004642',
+        book_ref: 'book-1',
+      },
+      date_span: { from: '1968-01-01', to: '1971-12-31' },
+      package: {
+        page_count: 240,
+        source_filename: 'ag-1968-1971.pdf',
+        digest,
+        notes_present: true,
+        notes_truncated: false,
+      },
+      candidate_classification: {
+        classification: 'historical_paper_book_non_canonical_evidence',
+        non_canonical: true,
+        historical_evidence: true,
+        preservation_status: 'not_preserved_by_validation',
+        canonical_minutes_claimed: false,
+        legal_validity_claimed: false,
+        signature_validity_claimed: false,
+        qualified_signature_claimed: false,
+      },
+      can_accept_as_import_candidate: true,
+      required_operator_actions: ['review_report'],
+      findings: [],
+    };
+    const preservationReport = {
+      ...validationReport,
+      report_kind: 'paper_book_import_preservation',
+      dry_run: false,
+      import_id: preserved.import_id,
+      legal_notice: preserved.legal_notice,
+      preservation: {
+        status: 'preserved_non_canonical_package',
+        non_canonical: true,
+        sha256: digest,
+        size_bytes: selectedBytes.byteLength,
+        content_type: 'application/pdf',
+        imported_at: '2026-07-09T10:00:00Z',
+        imported_by: 'paper.owner',
+        ocr_status: 'not_started',
+        bytes_in_ledger_event: false,
+        legal_validity_claimed: false,
+      },
+      candidate_classification: {
+        ...validationReport.candidate_classification,
+        preservation_status: 'preserved_non_canonical_package',
+      },
+    };
+    let rows: PaperBookImportView[] = [];
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse(rows);
+      }
+      if (url === '/v1/books/paper-import/validate' && method === 'POST') {
+        return jsonResponse(validationReport);
+      }
+      if (url === '/v1/books/paper-import' && method === 'POST') {
+        rows = [preserved];
+        return jsonResponse(preservationReport, 201);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+    vi.stubGlobal('crypto', {
+      subtle: {
+        digest: vi.fn().mockResolvedValue(new Uint8Array(32).fill(0xab).buffer),
+      },
+    });
+
+    renderAtBook();
+
+    const file = new File([selectedBytes], 'ag-1968-1971.pdf', { type: 'application/pdf' });
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: () => Promise.resolve(selectedBytes.buffer),
+    });
+    fireEvent.change(await screen.findByLabelText('Pacote digitalizado'), {
+      target: { files: [file] },
+    });
+    fireEvent.change(screen.getByLabelText('Data inicial'), { target: { value: '1968-01-01' } });
+    fireEvent.change(screen.getByLabelText('Data final'), { target: { value: '1971-12-31' } });
+    fireEvent.change(screen.getByLabelText('Páginas'), { target: { value: '240' } });
+    fireEvent.change(screen.getByLabelText('Notas'), {
+      target: { value: 'Digitalizado do livro encadernado.' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Validar sem preservar' }));
+    expect(await screen.findByText('Relatório não canónico')).toBeTruthy();
+    expect(screen.getByText(/não substituem atas digitais canónicas/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preservar pacote' }));
+
+    expect(
+      await screen.findByText('Pacote de livro em papel preservado como evidência não canónica.'),
+    ).toBeTruthy();
+    expect(await screen.findByText('ag-1968-1971.pdf')).toBeTruthy();
+    const preserveCall = calls.find(
+      (call) => call.url === '/v1/books/paper-import' && call.method === 'POST',
+    );
+    expect(preserveCall?.body).toMatchObject({
+      entity_ref: 'ent-1',
+      entity_name: 'Encosto Estratégico, Lda.',
+      entity_nipc: '503004642',
+      book_ref: 'book-1',
+      declared_sha256: digest,
+      size_bytes: 4,
+      content_type: 'application/pdf',
+    });
+    expect(preserveCall?.body?.content_base64).toBe('JVBERg==');
   });
 });
 

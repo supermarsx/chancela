@@ -65,6 +65,8 @@ import type {
   LedgerVerify,
   OpenBookBody,
   PaperBookImportReport,
+  PaperBookImportPreservationReport,
+  PaperBookImportPreserveBody,
   PaperBookImportView,
   PaperBookImportValidateBody,
   RegistryExtractView,
@@ -754,6 +756,8 @@ export const api = {
     postBytes<ImportOutcomeView>(`/v1/books/import${query({ policy })}`, bytes),
   validatePaperBookImport: (body: PaperBookImportValidateBody) =>
     post<PaperBookImportReport>('/v1/books/paper-import/validate', body),
+  preservePaperBookImport: (body: PaperBookImportPreserveBody) =>
+    post<PaperBookImportPreservationReport>('/v1/books/paper-import', body),
   listPaperBookImports: (params: { book_ref?: string } = {}) =>
     get<PaperBookImportView[]>(`/v1/books/paper-import${query(params)}`),
   getPaperBookImport: (id: string) =>
