@@ -164,10 +164,10 @@ describe('SubNav', () => {
     expect(screen.queryByRole('button', { name: 'Secções: scroll right' })).toBeNull();
     expect(cancel).toHaveBeenCalledWith(1);
 
-    const frame = nextFrame;
+    const frame = nextFrame as unknown as FrameRequestCallback | null;
     nextFrame = null;
     act(() => {
-      frame?.(16);
+      if (frame) frame(16);
     });
     expect(strip.scrollLeft).toBe(0);
   });
