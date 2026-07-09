@@ -626,10 +626,15 @@ dependencies = [
 name = "chancela-mcp"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "chancela-api",
+ "chancela-authz",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "time",
+ "tokio",
 ]
 
 [[package]]

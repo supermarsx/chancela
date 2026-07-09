@@ -16,8 +16,9 @@
 //!   key's principal (t65-E3). See [`bridge`].
 //! - **Extensible registry.** A tool is one [`registry::McpTool`] entry mapping a name → JSON input
 //!   schema → an `/api/v1` call → the permission the server enforces. See [`registry::catalog`].
-//! - **Off by default.** [`server::McpServer::from_config`] refuses a disabled config; nothing is
-//!   served, no I/O happens, zero surface. See [`config`].
+//! - **Off by default.** [`server::McpServer::from_config`] refuses unless both the process MCP
+//!   switch and tenant AI/MCP gate are enabled; nothing is served, no I/O happens, zero surface. See
+//!   [`config`].
 //!
 //! The live end-to-end wiring against a running `/api/v1` lands in t65-E3/E4/E5; this crate is
 //! buildable and unit-tested now against a mock HTTP transport.

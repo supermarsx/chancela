@@ -1,9 +1,9 @@
 //! `chancela-mcp` binary — launch the stdio MCP server from environment configuration.
 //!
-//! **Off by default.** With `CHANCELA_MCP_ENABLED` unset/false the process prints a short notice to
-//! stderr and exits 0 without serving anything (zero surface). When enabled it requires
-//! `CHANCELA_MCP_API_KEY` and serves newline-delimited JSON-RPC 2.0 over stdin/stdout, so an AI
-//! client (Claude Desktop / Claude Code) can launch it as an MCP server.
+//! **Off by default.** With `CHANCELA_MCP_ENABLED` or `CHANCELA_AI_ENABLED` unset/false the process
+//! prints a short notice to stderr and exits 0 without serving anything (zero surface). When both
+//! gates are enabled it requires `CHANCELA_MCP_API_KEY` and serves newline-delimited JSON-RPC 2.0
+//! over stdin/stdout, so an AI client (Claude Desktop / Claude Code) can launch it as an MCP server.
 //!
 //! stdout is reserved for the JSON-RPC protocol stream; all diagnostics go to stderr. The API key is
 //! never printed.
@@ -22,9 +22,9 @@ fn main() -> ExitCode {
         }
     };
 
-    if !config.enabled {
+    if !config.served() {
         eprintln!(
-            "chancela-mcp: disabled (set CHANCELA_MCP_ENABLED=1 and CHANCELA_MCP_API_KEY to enable). Not serving."
+            "chancela-mcp: disabled (set CHANCELA_AI_ENABLED=1, CHANCELA_MCP_ENABLED=1, and CHANCELA_MCP_API_KEY to enable). Not serving."
         );
         return ExitCode::SUCCESS;
     }

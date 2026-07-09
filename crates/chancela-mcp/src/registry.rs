@@ -74,6 +74,9 @@ pub enum ToolError {
     /// A `{name}` path placeholder had no corresponding argument.
     #[error("missing required argument: {0}")]
     MissingArgument(String),
+    /// A closed-schema tool received an argument it does not declare.
+    #[error("unknown argument: {0}")]
+    UnknownArgument(String),
     /// `arguments` was present but not a JSON object.
     #[error("arguments must be a JSON object")]
     ArgumentsNotObject,
@@ -92,6 +95,7 @@ pub fn resolve_call(tool: &McpTool, arguments: &Value) -> Result<ResolvedCall, T
     };
 
     let placeholders = path_placeholders(tool.call.path_template);
+    validate_arguments(tool, args_obj, &placeholders)?;
     let mut path = String::with_capacity(tool.call.path_template.len());
     let mut rest = std::collections::BTreeMap::new();
     if let Some(map) = args_obj {
@@ -154,6 +158,43 @@ pub fn resolve_call(tool: &McpTool, arguments: &Value) -> Result<ResolvedCall, T
     })
 }
 
+fn validate_arguments(
+    tool: &McpTool,
+    args_obj: Option<&serde_json::Map<String, Value>>,
+    placeholders: &[&str],
+) -> Result<(), ToolError> {
+    if let Some(required) = tool.input_schema.get("required").and_then(Value::as_array) {
+        for name in required.iter().filter_map(Value::as_str) {
+            let value = args_obj.and_then(|m| m.get(name));
+            if value.is_none_or(Value::is_null) {
+                return Err(ToolError::MissingArgument(name.to_string()));
+            }
+        }
+    }
+
+    if tool
+        .input_schema
+        .get("additionalProperties")
+        .and_then(Value::as_bool)
+        == Some(false)
+    {
+        let properties = tool
+            .input_schema
+            .get("properties")
+            .and_then(Value::as_object);
+        if let Some(args) = args_obj {
+            for name in args.keys() {
+                let declared = properties.is_some_and(|p| p.contains_key(name));
+                if !declared && !placeholders.contains(&name.as_str()) {
+                    return Err(ToolError::UnknownArgument(name.clone()));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Extract the `{name}` placeholder names from a path template.
 fn path_placeholders(template: &str) -> Vec<&str> {
     let mut out = Vec::new();
@@ -186,18 +227,68 @@ fn scalar_to_string(v: &Value) -> String {
 /// Adding a tool = one more entry here.
 pub fn catalog() -> Vec<McpTool> {
     use HttpMethod::*;
-    let obj = |props: Value, required: &[&str]| -> Value {
+    let obj_with_extra = |props: Value, required: &[&str], additional_properties: bool| -> Value {
         serde_json::json!({
             "type": "object",
             "properties": props,
             "required": required,
-            "additionalProperties": true,
+            "additionalProperties": additional_properties,
         })
     };
+    let obj = |props: Value, required: &[&str]| -> Value { obj_with_extra(props, required, true) };
+    let closed_obj =
+        |props: Value, required: &[&str]| -> Value { obj_with_extra(props, required, false) };
     let id_only = || {
         obj(
             serde_json::json!({ "id": { "type": "string", "description": "resource id" } }),
             &["id"],
+        )
+    };
+    let entity_id_only = || {
+        obj(
+            serde_json::json!({ "entity_id": { "type": "string", "description": "entity/company id" } }),
+            &["entity_id"],
+        )
+    };
+    let book_id_only = || {
+        obj(
+            serde_json::json!({ "book_id": { "type": "string", "description": "book id" } }),
+            &["book_id"],
+        )
+    };
+    let mermaid_graph_args = || {
+        obj(
+            serde_json::json!({
+                "entity_id": { "type": "string", "description": "entity/company id" },
+                "kind": {
+                    "type": "string",
+                    "enum": ["shareholders", "organs", "relationships"],
+                    "description": "Mermaid graph kind: shareholders, organs/managers, or relationships"
+                }
+            }),
+            &["entity_id", "kind"],
+        )
+    };
+    let draft_act_args = || {
+        closed_obj(
+            serde_json::json!({
+                "book_id": { "type": "string", "description": "target open book id" },
+                "title": { "type": "string", "description": "minutes title/subject" },
+                "channel": {
+                    "type": "string",
+                    "enum": ["Physical", "Hybrid", "Telematic", "WrittenResolution"],
+                    "description": "meeting or deliberation channel"
+                },
+                "retifies": {
+                    "type": "string",
+                    "description": "optional sealed act id this draft rectifies"
+                },
+                "actor": {
+                    "type": "string",
+                    "description": "optional actor label forwarded to the API; defaults server-side to api"
+                }
+            }),
+            &["book_id", "title", "channel"],
         )
     };
     let empty = || obj(serde_json::json!({}), &[]);
@@ -207,6 +298,18 @@ pub fn catalog() -> Vec<McpTool> {
             name: "list_entities",
             title: "List entities",
             description: "List the registered entities (companies/foundations), e.g. Encosto Estratégico Lda.",
+            access: ToolAccess::ReadOnly,
+            permission: "entity.read",
+            input_schema: empty(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/entities",
+            },
+        },
+        McpTool {
+            name: "list_companies",
+            title: "List companies",
+            description: "Alias for list_entities: list the registered entities (companies/foundations), e.g. Encosto Estratégico Lda.",
             access: ToolAccess::ReadOnly,
             permission: "entity.read",
             input_schema: empty(),
@@ -270,6 +373,30 @@ pub fn catalog() -> Vec<McpTool> {
             },
         },
         McpTool {
+            name: "get_company_timeline",
+            title: "Get company timeline",
+            description: "Alias for chronology: fetch the full chronological timeline of an entity/company.",
+            access: ToolAccess::ReadOnly,
+            permission: "entity.read",
+            input_schema: entity_id_only(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/entities/{entity_id}/chronology",
+            },
+        },
+        McpTool {
+            name: "generate_mermaid_graph",
+            title: "Generate Mermaid graph",
+            description: "Return one DOC-31 Mermaid chronology diagram for an entity/company.",
+            access: ToolAccess::ReadOnly,
+            permission: "entity.read",
+            input_schema: mermaid_graph_args(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/entities/{entity_id}/chronology",
+            },
+        },
+        McpTool {
             name: "list_books",
             title: "List books",
             description: "List record books.",
@@ -279,6 +406,18 @@ pub fn catalog() -> Vec<McpTool> {
             call: ToolCall {
                 method: Get,
                 path_template: "/books",
+            },
+        },
+        McpTool {
+            name: "export_book_archive_package",
+            title: "Export book preservation package",
+            description: "Download the read-only preservation ZIP package for a book. The API enforces book.export for the forwarded key.",
+            access: ToolAccess::ReadOnly,
+            permission: "book.export",
+            input_schema: book_id_only(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/books/{book_id}/archive/package",
             },
         },
         McpTool {
@@ -302,10 +441,19 @@ pub fn catalog() -> Vec<McpTool> {
             description: "Draft a new act (minutes/deliberation). Produces a DRAFT only — never a sealed act; human verification (AI-03) precedes sealing.",
             access: ToolAccess::WriteControlled,
             permission: "act.draft",
-            input_schema: obj(
-                serde_json::json!({ "book_id": { "type": "string" }, "kind": { "type": "string" } }),
-                &[],
-            ),
+            input_schema: draft_act_args(),
+            call: ToolCall {
+                method: Post,
+                path_template: "/acts",
+            },
+        },
+        McpTool {
+            name: "draft_minutes",
+            title: "Draft minutes",
+            description: "Alias for draft_act: create a new draft minutes/act through the existing POST /acts API path. This does not generate text; it only forwards caller-provided fields.",
+            access: ToolAccess::WriteControlled,
+            permission: "act.draft",
+            input_schema: draft_act_args(),
             call: ToolCall {
                 method: Post,
                 path_template: "/acts",
@@ -352,11 +500,23 @@ pub fn catalog() -> Vec<McpTool> {
             title: "Preview document",
             description: "Preview the rendered document for an act without generating a stored artifact.",
             access: ToolAccess::ReadOnly,
-            permission: "document.read",
+            permission: "act.read",
             input_schema: id_only(),
             call: ToolCall {
                 method: Get,
                 path_template: "/acts/{id}/document/preview",
+            },
+        },
+        McpTool {
+            name: "export_act_working_copy",
+            title: "Export act working copy",
+            description: "Return the read-only Markdown working-copy export for an act. This is non-evidentiary and does not replace the preserved PDF/A or signed PDF.",
+            access: ToolAccess::ReadOnly,
+            permission: "act.read",
+            input_schema: id_only(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/acts/{id}/document/working-copy",
             },
         },
         McpTool {
@@ -384,9 +544,101 @@ pub fn catalog() -> Vec<McpTool> {
             },
         },
         McpTool {
+            name: "export_ledger_archive_document",
+            title: "Export ledger archive document",
+            description: "Download the read-only PDF/A archive rendering of the ledger. Optional filters become query parameters.",
+            access: ToolAccess::ReadOnly,
+            permission: "ledger.read",
+            input_schema: obj(
+                serde_json::json!({
+                    "chain": { "type": "string", "description": "chain id: global, application, company:<id>, or book:<id>" },
+                    "scope": { "type": "string", "description": "substring scope filter" },
+                    "kind": { "type": "string", "description": "event kind, or comma-separated event kinds" },
+                    "actor": { "type": "string", "description": "exact actor filter" },
+                    "from": { "type": "string", "description": "inclusive lower timestamp bound: RFC 3339 or YYYY-MM-DD" },
+                    "to": { "type": "string", "description": "upper timestamp bound: RFC 3339 inclusive, or YYYY-MM-DD for the whole day" },
+                    "limit": { "type": "integer", "description": "last-N limit after filters" }
+                }),
+                &[],
+            ),
+            call: ToolCall {
+                method: Get,
+                path_template: "/ledger/archive/document",
+            },
+        },
+        McpTool {
+            name: "trust_status",
+            title: "Trust status",
+            description: "Fetch the local Trusted List status and validation summary.",
+            access: ToolAccess::ReadOnly,
+            permission: "cae.read",
+            input_schema: empty(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/trust/status",
+            },
+        },
+        McpTool {
+            name: "search_trust_catalog",
+            title: "Search trust catalog",
+            description: "Search the local Trusted List catalog, or return the provider catalog when no search term is supplied.",
+            access: ToolAccess::ReadOnly,
+            permission: "cae.read",
+            input_schema: obj(
+                serde_json::json!({
+                    "search": { "type": "string", "description": "provider or trust-service search text" },
+                    "limit": { "type": "integer", "description": "maximum number of search results" }
+                }),
+                &[],
+            ),
+            call: ToolCall {
+                method: Get,
+                path_template: "/trust/catalog",
+            },
+        },
+        McpTool {
+            name: "get_trust_provider",
+            title: "Get trust provider",
+            description: "Fetch a trusted-list provider by stable id.",
+            access: ToolAccess::ReadOnly,
+            permission: "cae.read",
+            input_schema: id_only(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/trust/providers/{id}",
+            },
+        },
+        McpTool {
+            name: "get_trust_service",
+            title: "Get trust service",
+            description: "Fetch a trusted-list service by stable id.",
+            access: ToolAccess::ReadOnly,
+            permission: "cae.read",
+            input_schema: id_only(),
+            call: ToolCall {
+                method: Get,
+                path_template: "/trust/services/{id}",
+            },
+        },
+        McpTool {
             name: "search_law",
             title: "Search legal texts",
             description: "Search the full-text law corpus (cited diplomas, article by article).",
+            access: ToolAccess::ReadOnly,
+            permission: "law.read",
+            input_schema: obj(
+                serde_json::json!({ "q": { "type": "string", "description": "free-text query" } }),
+                &[],
+            ),
+            call: ToolCall {
+                method: Get,
+                path_template: "/law",
+            },
+        },
+        McpTool {
+            name: "search_legal_texts",
+            title: "Search legal texts",
+            description: "Alias for search_law: search the full-text law corpus (cited diplomas, article by article).",
             access: ToolAccess::ReadOnly,
             permission: "law.read",
             input_schema: obj(
@@ -403,7 +655,7 @@ pub fn catalog() -> Vec<McpTool> {
             title: "List templates",
             description: "List the available document templates.",
             access: ToolAccess::ReadOnly,
-            permission: "template.read",
+            permission: "act.read",
             input_schema: empty(),
             call: ToolCall {
                 method: Get,
@@ -442,6 +694,88 @@ mod tests {
     }
 
     #[test]
+    fn draft_minutes_alias_is_write_controlled_and_routes_to_draft_act_api() {
+        let canonical = tool("draft_act");
+        let alias = tool("draft_minutes");
+        assert_eq!(alias.access, ToolAccess::WriteControlled);
+        assert_eq!(alias.permission, "act.draft");
+        assert_eq!(alias.input_schema, canonical.input_schema);
+        assert_eq!(
+            alias.input_schema["required"],
+            serde_json::json!(["book_id", "title", "channel"])
+        );
+        assert_eq!(
+            alias.input_schema["additionalProperties"],
+            Value::Bool(false)
+        );
+
+        let args = serde_json::json!({
+            "book_id": "book-7",
+            "title": "Ata da Assembleia Geral Anual",
+            "channel": "Physical",
+            "retifies": "act-3",
+            "actor": "mcp"
+        });
+        let call = resolve_call(&alias, &args).unwrap();
+        assert_eq!(call.method, HttpMethod::Post);
+        assert_eq!(call.path, "/acts");
+        assert!(call.query.is_empty());
+        assert_eq!(call.body, Some(args));
+    }
+
+    #[test]
+    fn draft_minutes_missing_required_and_unknown_args_are_fail_closed() {
+        let missing = resolve_call(
+            &tool("draft_minutes"),
+            &serde_json::json!({ "book_id": "book-7", "channel": "Physical" }),
+        )
+        .unwrap_err();
+        assert_eq!(missing, ToolError::MissingArgument("title".to_string()));
+
+        let unknown = resolve_call(
+            &tool("draft_minutes"),
+            &serde_json::json!({
+                "book_id": "book-7",
+                "title": "Ata",
+                "channel": "Physical",
+                "prompt": "draft this for me"
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(unknown, ToolError::UnknownArgument("prompt".to_string()));
+    }
+
+    #[test]
+    fn company_aliases_preserve_entity_read_routes_and_permissions() {
+        let list_alias = tool("list_companies");
+        assert_eq!(list_alias.access, ToolAccess::ReadOnly);
+        assert_eq!(list_alias.permission, "entity.read");
+        assert_eq!(list_alias.input_schema, tool("list_entities").input_schema);
+        let list_call = resolve_call(&list_alias, &Value::Null).unwrap();
+        assert_eq!(list_call.method, HttpMethod::Get);
+        assert_eq!(list_call.path, "/entities");
+        assert!(list_call.query.is_empty());
+        assert!(list_call.body.is_none());
+
+        let timeline_alias = tool("get_company_timeline");
+        assert_eq!(timeline_alias.access, ToolAccess::ReadOnly);
+        assert_eq!(timeline_alias.permission, "entity.read");
+        assert_eq!(
+            timeline_alias.input_schema["required"],
+            serde_json::json!(["entity_id"])
+        );
+        let timeline_call = resolve_call(
+            &timeline_alias,
+            &serde_json::json!({ "entity_id": "ent/pt 1" }),
+        )
+        .unwrap();
+        assert_eq!(timeline_call.method, HttpMethod::Get);
+        assert_eq!(timeline_call.path, "/entities/ent%2Fpt%201/chronology");
+        assert!(timeline_call.query.is_empty());
+        assert!(timeline_call.body.is_none());
+    }
+
+    #[test]
     fn path_placeholder_is_substituted_and_encoded() {
         let call =
             resolve_call(&tool("get_entity"), &serde_json::json!({ "id": "ab/12" })).unwrap();
@@ -461,6 +795,177 @@ mod tests {
         assert_eq!(call.path, "/law");
         assert_eq!(call.query, vec![("q".to_string(), "código".to_string())]);
         assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn legal_texts_alias_preserves_law_search_semantics() {
+        let alias = tool("search_legal_texts");
+        assert_eq!(alias.access, ToolAccess::ReadOnly);
+        assert_eq!(alias.permission, "law.read");
+        assert_eq!(alias.input_schema, tool("search_law").input_schema);
+        let call = resolve_call(&alias, &serde_json::json!({ "q": "sociedades" })).unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/law");
+        assert_eq!(
+            call.query,
+            vec![("q".to_string(), "sociedades".to_string())]
+        );
+        assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn trust_status_maps_to_status_route() {
+        let call = resolve_call(&tool("trust_status"), &Value::Null).unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/trust/status");
+        assert!(call.query.is_empty());
+        assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn search_trust_catalog_args_become_query_params() {
+        let call = resolve_call(
+            &tool("search_trust_catalog"),
+            &serde_json::json!({ "search": "multicert", "limit": 5 }),
+        )
+        .unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/trust/catalog");
+        assert_eq!(
+            call.query,
+            vec![
+                ("limit".to_string(), "5".to_string()),
+                ("search".to_string(), "multicert".to_string())
+            ]
+        );
+        assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn trust_detail_routes_substitute_and_encode_path_ids() {
+        let provider = resolve_call(
+            &tool("get_trust_provider"),
+            &serde_json::json!({ "id": "provider/pt 1" }),
+        )
+        .unwrap();
+        assert_eq!(provider.path, "/trust/providers/provider%2Fpt%201");
+
+        let service = resolve_call(
+            &tool("get_trust_service"),
+            &serde_json::json!({ "id": "service/qualified 1" }),
+        )
+        .unwrap();
+        assert_eq!(service.path, "/trust/services/service%2Fqualified%201");
+    }
+
+    #[test]
+    fn book_archive_package_routes_with_book_export_permission() {
+        let tool = tool("export_book_archive_package");
+        assert_eq!(tool.access, ToolAccess::ReadOnly);
+        assert_eq!(tool.permission, "book.export");
+
+        let call = resolve_call(&tool, &serde_json::json!({ "book_id": "book/pt 1" })).unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/books/book%2Fpt%201/archive/package");
+        assert!(call.query.is_empty());
+        assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn ledger_archive_document_filters_become_query_params() {
+        let call = resolve_call(
+            &tool("export_ledger_archive_document"),
+            &serde_json::json!({
+                "chain": "book:book-7",
+                "scope": "book:book-7",
+                "kind": "book.opened,document.generated",
+                "actor": "owner",
+                "from": "2026-07-01",
+                "to": "2026-07-09",
+                "limit": 1
+            }),
+        )
+        .unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/ledger/archive/document");
+        assert_eq!(
+            call.query,
+            vec![
+                ("actor".to_string(), "owner".to_string()),
+                ("chain".to_string(), "book:book-7".to_string()),
+                ("from".to_string(), "2026-07-01".to_string()),
+                (
+                    "kind".to_string(),
+                    "book.opened,document.generated".to_string()
+                ),
+                ("limit".to_string(), "1".to_string()),
+                ("scope".to_string(), "book:book-7".to_string()),
+                ("to".to_string(), "2026-07-09".to_string()),
+            ]
+        );
+        assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn act_working_copy_export_is_read_only_and_routes_to_markdown_endpoint() {
+        let tool = tool("export_act_working_copy");
+        assert_eq!(tool.access, ToolAccess::ReadOnly);
+        assert_eq!(tool.permission, "act.read");
+
+        let call = resolve_call(&tool, &serde_json::json!({ "id": "act/pt 1" })).unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/acts/act%2Fpt%201/document/working-copy");
+        assert!(call.query.is_empty());
+        assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn generate_mermaid_graph_routes_through_chronology_with_kind() {
+        let tool = tool("generate_mermaid_graph");
+        assert_eq!(tool.access, ToolAccess::ReadOnly);
+        assert_eq!(tool.permission, "entity.read");
+        assert_eq!(
+            tool.input_schema["required"],
+            serde_json::json!(["entity_id", "kind"])
+        );
+
+        let call = resolve_call(
+            &tool,
+            &serde_json::json!({ "entity_id": "ent/pt 1", "kind": "organs" }),
+        )
+        .unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/entities/ent%2Fpt%201/chronology");
+        assert_eq!(call.query, vec![("kind".to_string(), "organs".to_string())]);
+        assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn advisory_permissions_match_current_api_gates() {
+        assert_eq!(tool("chronology").permission, "entity.read");
+        assert_eq!(tool("generate_mermaid_graph").permission, "entity.read");
+        assert_eq!(tool("preview_document").permission, "act.read");
+        assert_eq!(tool("export_act_working_copy").permission, "act.read");
+        assert_eq!(tool("list_templates").permission, "act.read");
+        assert_eq!(
+            tool("export_book_archive_package").permission,
+            "book.export"
+        );
+        assert_eq!(
+            tool("export_ledger_archive_document").permission,
+            "ledger.read"
+        );
+
+        for name in [
+            "trust_status",
+            "search_trust_catalog",
+            "get_trust_provider",
+            "get_trust_service",
+        ] {
+            let trust_tool = tool(name);
+            assert_eq!(trust_tool.access, ToolAccess::ReadOnly);
+            assert_eq!(trust_tool.permission, "cae.read");
+        }
     }
 
     #[test]

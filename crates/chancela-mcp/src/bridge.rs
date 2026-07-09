@@ -6,6 +6,8 @@
 //! is RBAC-gated server-side by the key's principal (t65-E3). This module builds the request,
 //! attaches `Authorization: Bearer <key>`, and translates the HTTP status into an honest outcome
 //! (including 401/403/429). **The key is never logged and never placed in an error/outcome body.**
+//! Binary downloads are kept as bytes with their response metadata so the MCP layer can encode them
+//! explicitly instead of lossy-decoding archives/PDFs as text.
 //!
 //! The transport is abstracted behind [`HttpTransport`] so the whole bridge is unit-testable against
 //! a mock (asserting method + path + auth header) without a live server. [`ReqwestTransport`] is the
@@ -58,7 +60,38 @@ impl HttpRequest {
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
     pub status: u16,
-    pub body: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl HttpResponse {
+    /// Build a response with an arbitrary byte body.
+    pub fn bytes(status: u16, body: impl Into<Vec<u8>>) -> Self {
+        Self {
+            status,
+            headers: Vec::new(),
+            body: body.into(),
+        }
+    }
+
+    /// Build a response with UTF-8 text bytes.
+    pub fn text(status: u16, body: &str) -> Self {
+        Self::bytes(status, body.as_bytes().to_vec())
+    }
+
+    /// Attach a response header. Convenience for tests and custom transports.
+    pub fn with_header(mut self, name: &str, value: &str) -> Self {
+        self.headers.push((name.to_string(), value.to_string()));
+        self
+    }
+
+    /// Look up a response header value (case-insensitive).
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
 }
 
 /// The swappable HTTP transport seam.
@@ -93,13 +126,16 @@ pub enum BridgeError {
 }
 
 /// The successful (2xx) outcome of a bridged call, or a non-2xx status the tool layer reports as a
-/// tool error. `value` is the parsed JSON body when the body is valid JSON, else `None` (the raw
-/// text is still in `raw`).
+/// tool error. `value` is the parsed JSON body when the body is valid JSON; binary/non-JSON payloads
+/// remain available byte-for-byte in `bytes`.
 #[derive(Debug, Clone)]
 pub struct ApiOutcome {
     pub status: u16,
+    pub bytes: Vec<u8>,
     pub raw: String,
     pub value: Option<serde_json::Value>,
+    pub content_type: Option<String>,
+    pub content_disposition: Option<String>,
 }
 
 impl ApiOutcome {
@@ -113,6 +149,7 @@ impl ApiOutcome {
 pub struct ApiBridge<T: HttpTransport> {
     base_url: String,
     base_path: String,
+    api_key: String,
     auth_header: String,
     transport: T,
 }
@@ -121,10 +158,12 @@ impl<T: HttpTransport> ApiBridge<T> {
     /// Build a bridge from config + a transport. The `Authorization: Bearer <key>` header is
     /// composed once here and held privately; it is never logged.
     pub fn new(config: &McpConfig, transport: T) -> Self {
+        let api_key = config.api_key.expose().to_string();
         Self {
             base_url: config.base_url.trim_end_matches('/').to_string(),
             base_path: normalize_base_path(&config.base_path),
-            auth_header: format!("Bearer {}", config.api_key.expose()),
+            auth_header: format!("Bearer {api_key}"),
+            api_key,
             transport,
         }
     }
@@ -155,7 +194,7 @@ impl<T: HttpTransport> ApiBridge<T> {
         }
         let mut headers = vec![
             ("Authorization".to_string(), self.auth_header.clone()),
-            ("Accept".to_string(), "application/json".to_string()),
+            ("Accept".to_string(), "application/json, */*".to_string()),
         ];
         let body = body.map(|v| {
             headers.push(("Content-Type".to_string(), "application/json".to_string()));
@@ -181,18 +220,47 @@ impl<T: HttpTransport> ApiBridge<T> {
     ) -> Result<ApiOutcome, BridgeError> {
         let req = self.build(method, path, query, body);
         let resp = self.transport.send(&req)?;
+        let raw = self.scrub_response_text(&String::from_utf8_lossy(&resp.body));
+        let content_type = resp.header("Content-Type").map(str::to_owned);
+        let content_disposition = resp.header("Content-Disposition").map(str::to_owned);
+        let value = if should_parse_json(content_type.as_deref()) {
+            serde_json::from_str(&raw).ok()
+        } else {
+            None
+        };
         match resp.status {
-            401 => Err(BridgeError::Unauthorized { body: resp.body }),
-            403 => Err(BridgeError::Forbidden { body: resp.body }),
+            401 => Err(BridgeError::Unauthorized { body: raw }),
+            403 => Err(BridgeError::Forbidden { body: raw }),
             429 => Err(BridgeError::TooManyRequests {
                 retry_after: None,
-                body: resp.body,
+                body: raw,
             }),
             status => Ok(ApiOutcome {
                 status,
-                value: serde_json::from_str(&resp.body).ok(),
-                raw: resp.body,
+                bytes: resp.body,
+                raw,
+                value,
+                content_type,
+                content_disposition,
             }),
+        }
+    }
+
+    fn scrub_response_text(&self, text: &str) -> String {
+        text.replace(&self.auth_header, "Bearer <redacted>")
+            .replace(&self.api_key, "<redacted>")
+    }
+}
+
+fn should_parse_json(content_type: Option<&str>) -> bool {
+    match content_type {
+        None => true,
+        Some(value) => {
+            let media_type = value.split(';').next().unwrap_or(value).trim();
+            media_type.eq_ignore_ascii_case("application/json")
+                || media_type
+                    .rsplit_once('+')
+                    .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("json"))
         }
     }
 }
@@ -288,10 +356,24 @@ impl HttpTransport for ReqwestTransport {
             .send()
             .map_err(|e| BridgeError::Transport(e.to_string()))?;
         let status = resp.status().as_u16();
+        let headers = resp
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| (name.as_str().to_string(), value.to_string()))
+            })
+            .collect();
         let body = resp
-            .text()
+            .bytes()
             .map_err(|e| BridgeError::Transport(e.to_string()))?;
-        Ok(HttpResponse { status, body })
+        Ok(HttpResponse {
+            status,
+            headers,
+            body: body.to_vec(),
+        })
     }
 }
 
@@ -311,10 +393,14 @@ mod tests {
         fn new(status: u16, body: &str) -> Self {
             Self {
                 recorded: RefCell::new(Vec::new()),
-                response: HttpResponse {
-                    status,
-                    body: body.to_string(),
-                },
+                response: HttpResponse::text(status, body),
+            }
+        }
+
+        fn with_response(response: HttpResponse) -> Self {
+            Self {
+                recorded: RefCell::new(Vec::new()),
+                response,
             }
         }
     }
@@ -382,6 +468,31 @@ mod tests {
     }
 
     #[test]
+    fn execute_preserves_binary_body_and_content_type() {
+        let response = HttpResponse::bytes(200, vec![0, 159, 146, 150])
+            .with_header("Content-Type", "application/pdf; profile=PDF/A-2u")
+            .with_header(
+                "Content-Disposition",
+                "attachment; filename=\"arquivo-global.pdf\"",
+            );
+        let bridge = ApiBridge::new(&cfg(), MockTransport::with_response(response));
+        let out = bridge
+            .execute(HttpMethod::Get, "/ledger/archive/document", &[], None)
+            .unwrap();
+        assert!(out.is_success());
+        assert_eq!(out.bytes, vec![0, 159, 146, 150]);
+        assert_eq!(
+            out.content_type.as_deref(),
+            Some("application/pdf; profile=PDF/A-2u")
+        );
+        assert_eq!(
+            out.content_disposition.as_deref(),
+            Some("attachment; filename=\"arquivo-global.pdf\"")
+        );
+        assert_eq!(out.value, None);
+    }
+
+    #[test]
     fn post_sets_body_and_content_type() {
         let bridge = ApiBridge::new(&cfg(), MockTransport::new(201, "{}"));
         let body = serde_json::json!({"name": "Encosto Estratégico Lda"});
@@ -420,11 +531,31 @@ mod tests {
 
     #[test]
     fn bridge_errors_never_contain_the_key() {
-        let bridge = ApiBridge::new(&cfg(), MockTransport::new(401, "nope"));
+        let bridge = ApiBridge::new(
+            &cfg(),
+            MockTransport::new(
+                401,
+                "nope chk_ab12cd_secretsecret Bearer chk_ab12cd_secretsecret",
+            ),
+        );
         let err = bridge
             .execute(HttpMethod::Get, "/entities", &[], None)
             .unwrap_err();
         assert!(!format!("{err}").contains("secretsecret"));
         assert!(!format!("{err:?}").contains("secretsecret"));
+    }
+
+    #[test]
+    fn non_success_outcomes_scrub_the_key_from_body_text() {
+        let bridge = ApiBridge::new(
+            &cfg(),
+            MockTransport::new(500, r#"{"echo":"chk_ab12cd_secretsecret"}"#),
+        );
+        let out = bridge
+            .execute(HttpMethod::Get, "/entities", &[], None)
+            .unwrap();
+        assert_eq!(out.status, 500);
+        assert!(!out.raw.contains("secretsecret"));
+        assert_eq!(out.value, Some(serde_json::json!({"echo": "<redacted>"})));
     }
 }

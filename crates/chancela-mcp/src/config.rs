@@ -1,9 +1,10 @@
 //! MCP server configuration — read from the process environment when the server launches.
 //!
 //! **Off by default.** [`McpConfig::from_env`] yields `enabled = false` unless
-//! `CHANCELA_MCP_ENABLED` is explicitly truthy, and a disabled config never builds a running
-//! server (see [`crate::server`]). Every knob mirrors the frozen `Settings.mcp` contract in
-//! `.orchestration/plans/t65.md` §3.3.
+//! `CHANCELA_MCP_ENABLED` is explicitly truthy, and still requires `CHANCELA_AI_ENABLED` to be
+//! truthy before the server is served. A disabled config never builds a running server (see
+//! [`crate::server`]). The tenant AI flag is supplied by the launcher/config surface; this stdio
+//! server deliberately does not fetch live settings over the network.
 //!
 //! **The API key never appears in `Debug` output** — it is wrapped in [`Secret`], whose `Debug`
 //! renders `***`. Nothing in this crate logs the plaintext key.
@@ -78,6 +79,9 @@ impl EnabledTools {
 pub struct McpConfig {
     /// Master switch. `false` (default) ⇒ the server is not served; zero surface.
     pub enabled: bool,
+    /// Tenant-level AI/MCP gate mirrored from settings by the launcher/config surface. `false`
+    /// (default) wins over `enabled` and keeps the server inert.
+    pub tenant_ai_enabled: bool,
     /// Wire transport.
     pub transport: McpTransport,
     /// Base URL of the integration API the tools call, e.g. `http://127.0.0.1:8080`.
@@ -98,6 +102,7 @@ impl Default for McpConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            tenant_ai_enabled: false,
             transport: McpTransport::Stdio,
             base_url: "http://127.0.0.1:8080".to_string(),
             base_path: "/api/v1".to_string(),
@@ -114,6 +119,7 @@ impl McpConfig {
     /// | Var | Meaning | Default |
     /// |---|---|---|
     /// | `CHANCELA_MCP_ENABLED` | master switch (`1`/`true`/`yes`/`on`) | `false` |
+    /// | `CHANCELA_AI_ENABLED` | tenant AI/MCP gate mirrored from settings | `false` |
     /// | `CHANCELA_MCP_TRANSPORT` | `stdio` \| `http-sse` | `stdio` |
     /// | `CHANCELA_MCP_BASE_URL` | integration API base URL | `http://127.0.0.1:8080` |
     /// | `CHANCELA_MCP_BASE_PATH` | integration API base path | `/api/v1` |
@@ -127,6 +133,10 @@ impl McpConfig {
         let get = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
 
         let enabled = get("CHANCELA_MCP_ENABLED")
+            .as_deref()
+            .map(is_truthy)
+            .unwrap_or(false);
+        let tenant_ai_enabled = get("CHANCELA_AI_ENABLED")
             .as_deref()
             .map(is_truthy)
             .unwrap_or(false);
@@ -161,6 +171,7 @@ impl McpConfig {
 
         let config = Self {
             enabled,
+            tenant_ai_enabled,
             transport,
             base_url,
             base_path,
@@ -174,7 +185,7 @@ impl McpConfig {
 
     /// Validate cross-field invariants. Only enforced when `enabled` (a disabled config is inert).
     pub fn validate(&self) -> Result<(), McpError> {
-        if !self.enabled {
+        if !self.served() {
             return Ok(());
         }
         if !self.api_key.is_set() {
@@ -186,6 +197,14 @@ impl McpConfig {
             return Err(McpError::Config("base_url must not be empty".to_string()));
         }
         Ok(())
+    }
+
+    /// Whether this config should actually serve an MCP process.
+    ///
+    /// Both the process-level MCP switch and the tenant-level AI/MCP gate must be true. Keeping this
+    /// local avoids coupling the stdio server to live settings reads.
+    pub fn served(&self) -> bool {
+        self.enabled && self.tenant_ai_enabled
     }
 }
 
@@ -205,6 +224,8 @@ mod tests {
     fn default_is_disabled_with_no_key() {
         let c = McpConfig::default();
         assert!(!c.enabled);
+        assert!(!c.tenant_ai_enabled);
+        assert!(!c.served());
         assert!(!c.api_key.is_set());
         assert_eq!(c.transport, McpTransport::Stdio);
     }
@@ -227,9 +248,31 @@ mod tests {
     fn enabled_without_key_is_rejected() {
         let c = McpConfig {
             enabled: true,
+            tenant_ai_enabled: true,
             ..McpConfig::default()
         };
         assert!(matches!(c.validate(), Err(McpError::Config(_))));
+    }
+
+    #[test]
+    fn tenant_ai_gate_must_be_enabled_before_serving() {
+        let c = McpConfig {
+            enabled: true,
+            api_key: Secret::new("chk_ab12cd_secretsecret"),
+            ..McpConfig::default()
+        };
+        assert!(!c.served());
+        assert!(
+            c.validate().is_ok(),
+            "inert config should not require serving invariants"
+        );
+
+        let c = McpConfig {
+            tenant_ai_enabled: true,
+            ..c
+        };
+        assert!(c.served());
+        assert!(c.validate().is_ok());
     }
 
     #[test]
