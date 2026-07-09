@@ -3123,8 +3123,10 @@ export interface PaperBookPreservation {
 }
 
 /** `POST /v1/books/paper-import` preservation report. */
-export interface PaperBookImportPreservationReport
-  extends Omit<PaperBookImportReport, 'report_kind' | 'dry_run'> {
+export interface PaperBookImportPreservationReport extends Omit<
+  PaperBookImportReport,
+  'report_kind' | 'dry_run'
+> {
   report_kind: 'paper_book_import_preservation';
   dry_run: false;
   import_id: string;
@@ -3132,14 +3134,7 @@ export interface PaperBookImportPreservationReport
 }
 
 export type PaperBookOcrStatus =
-  | 'disabled'
-  | 'not_run'
-  | 'not_started'
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | string;
+  'disabled' | 'not_run' | 'not_started' | 'queued' | 'running' | 'completed' | 'failed' | string;
 
 export interface PaperBookOcrStatusUpdateBody {
   status: PaperBookOcrStatus;
@@ -3165,6 +3160,9 @@ export interface PaperBookImportView {
   book_ref: string;
   date_from: string;
   date_to: string;
+  /** Optional additive metadata for APIs that preserve the source package page span. */
+  page_from?: number | null;
+  page_to?: number | null;
   page_count: number;
   sha256: string;
   size_bytes: number;
@@ -3181,6 +3179,8 @@ export interface PaperBookImportView {
   legal_validity_claimed: boolean;
   signature_validity_claimed: boolean;
   qualified_signature_claimed: boolean;
+  /** Optional additive review marker. Older APIs omit it; the UI then renders a placeholder. */
+  manual_review_state?: string | null;
   legal_notice: string;
   bytes_download: string;
 }

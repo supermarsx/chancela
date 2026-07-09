@@ -334,6 +334,8 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       book_ref: 'book-1',
       date_from: '1968-01-01',
       date_to: '1971-12-31',
+      page_from: 12,
+      page_to: 251,
       page_count: 240,
       sha256: 'ab'.repeat(32),
       size_bytes: 2048,
@@ -351,6 +353,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       legal_validity_claimed: false,
       signature_validity_claimed: false,
       qualified_signature_claimed: false,
+      manual_review_state: 'needs_review',
       legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
       bytes_download: '/v1/books/paper-import/11111111-1111-4111-8111-111111111111/bytes',
     };
@@ -397,9 +400,15 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(await screen.findByText('Importações de livro em papel preservadas')).toBeTruthy();
     expect(await screen.findByText('ag-1968-1971.pdf')).toBeTruthy();
     expect(screen.getByText('1968-01-01 a 1971-12-31')).toBeTruthy();
+    expect(screen.getByText('Intervalo: 12 a 251')).toBeTruthy();
+    expect(screen.getByText('Revisão manual pendente')).toBeTruthy();
+    expect(screen.getByText(/Âmbito de arquivo: paper-book-import:11111111/i)).toBeTruthy();
     expect(screen.getByText(/não declaram validade legal/i)).toBeTruthy();
     expect(screen.getByText('OCR não executado')).toBeTruthy();
     expect(screen.getByText(/OCR: metadado apenas; texto armazenado: não/i)).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Editar metadados' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'Descarregar pacote' }));
 
@@ -562,6 +571,9 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       await screen.findByText('Pacote de livro em papel preservado como evidência não canónica.'),
     ).toBeTruthy();
     expect(await screen.findByText('ag-1968-1971.pdf')).toBeTruthy();
+    expect(screen.getByText('Intervalo: Intervalo de páginas não exposto pela API')).toBeTruthy();
+    expect(screen.getByText('Revisão manual não exposta pela API')).toBeTruthy();
+    expect(screen.getByText(/Edição de intervalo\/revisão: indisponível nesta API/i)).toBeTruthy();
     const preserveCall = calls.find(
       (call) => call.url === '/v1/books/paper-import' && call.method === 'POST',
     );

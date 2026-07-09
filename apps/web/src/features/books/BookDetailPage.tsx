@@ -105,6 +105,42 @@ function paperBookOcrStatusLabel(status: PaperBookOcrStatus): string {
   }
 }
 
+function paperBookReviewStateLabel(row: PaperBookImportView): string {
+  const state = row.manual_review_state?.trim();
+  if (!state) return 'Revisão manual não exposta pela API';
+  switch (state) {
+    case 'pending':
+    case 'needs_review':
+      return 'Revisão manual pendente';
+    case 'in_review':
+      return 'Em revisão manual';
+    case 'reviewed':
+    case 'accepted':
+      return 'Revisão manual concluída';
+    case 'rejected':
+      return 'Revisão manual rejeitada';
+    default:
+      return state;
+  }
+}
+
+function paperBookReviewTone(row: PaperBookImportView): 'neutral' | 'warn' | 'ok' | 'error' {
+  const state = row.manual_review_state?.trim();
+  if (!state) return 'neutral';
+  if (state === 'reviewed' || state === 'accepted') return 'ok';
+  if (state === 'rejected') return 'error';
+  return 'warn';
+}
+
+function paperBookPageRange(row: PaperBookImportView): string {
+  const from = row.page_from;
+  const to = row.page_to;
+  if (typeof from === 'number' && typeof to === 'number') return `${from} a ${to}`;
+  if (typeof from === 'number') return `desde ${from}`;
+  if (typeof to === 'number') return `até ${to}`;
+  return 'Intervalo de páginas não exposto pela API';
+}
+
 function canQueueOcr(status: PaperBookOcrStatus): boolean {
   return status === 'not_run' || status === 'not_started' || status === 'failed';
 }
@@ -254,9 +290,9 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
   const [pageCount, setPageCount] = useState('');
   const [sourceFilename, setSourceFilename] = useState('');
   const [notes, setNotes] = useState('');
-  const [report, setReport] = useState<PaperBookImportReport | PaperBookImportPreservationReport | null>(
-    null,
-  );
+  const [report, setReport] = useState<
+    PaperBookImportReport | PaperBookImportPreservationReport | null
+  >(null);
   const [formError, setFormError] = useState<unknown>(null);
 
   function onDownload(row: PaperBookImportView) {
@@ -338,14 +374,16 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
       const bytes = await file.arrayBuffer();
       const digest = await sha256Hex(bytes);
       const body = await candidateBody();
-      setReport(await preserve.mutateAsync({
-        ...body,
-        digest,
-        content_base64: arrayBufferToBase64(bytes),
-        content_type: file.type || 'application/octet-stream',
-        declared_sha256: digest,
-        size_bytes: bytes.byteLength,
-      }));
+      setReport(
+        await preserve.mutateAsync({
+          ...body,
+          digest,
+          content_base64: arrayBufferToBase64(bytes),
+          content_type: file.type || 'application/octet-stream',
+          declared_sha256: digest,
+          size_bytes: bytes.byteLength,
+        }),
+      );
       toast.success('Pacote de livro em papel preservado como evidência não canónica.');
     } catch (e) {
       setFormError(e);
@@ -360,6 +398,11 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
           Estes pacotes preservam cópias de livros em papel para consulta. Não substituem atas
           digitais canónicas e não declaram validade legal, PDF/A, validade de assinatura ou
           assinatura qualificada.
+        </InlineWarning>
+        <InlineWarning tone="info" title="Orientação para revisão">
+          Valide datas, contagem de páginas, fixidez e contexto do livro antes de preservar. A
+          ligação exibida aqui é apenas contextual: não cria nem altera cadeias de atas, nem
+          transforma a importação em ata digital canónica.
         </InlineWarning>
 
         <form className="form">
@@ -409,6 +452,18 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                   setPageCount(e.target.value);
                   resetCandidate();
                 }}
+              />
+            </Field>
+            <Field
+              label="Intervalo no pacote"
+              htmlFor="paper-import-page-range"
+              hint="A API atual preserva a contagem de páginas; intervalo inicial/final fica apenas como orientação local."
+            >
+              <Input
+                id="paper-import-page-range"
+                value={pageCount ? `1 a ${pageCount}` : 'Defina a contagem de páginas'}
+                disabled
+                readOnly
               />
             </Field>
             <Field label="Nome do ficheiro" htmlFor="paper-import-filename">
@@ -485,8 +540,8 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
             head={
               <tr>
                 <th>Ficheiro</th>
-                <th>Período</th>
-                <th>Fixidez</th>
+                <th>Contexto</th>
+                <th>Revisão e fixidez</th>
                 <th />
               </tr>
             }
@@ -502,25 +557,51 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                   </div>
                 </td>
                 <td>
-                  {row.date_from} a {row.date_to}
+                  <div className="stack--tight">
+                    <span>
+                      {row.date_from} a {row.date_to}
+                    </span>
+                    <span className="muted">Intervalo: {paperBookPageRange(row)}</span>
+                    <span className="muted">
+                      Livro: <Link to={`/livros/${row.book_ref}`}>{row.book_ref}</Link> · Entidade:{' '}
+                      {row.entity_name || row.entity_ref}
+                    </span>
+                    <span className="muted">
+                      Âmbito de arquivo: paper-book-import:{row.import_id}
+                    </span>
+                  </div>
                 </td>
                 <td>
                   <div className="stack--tight">
                     <Badge tone={row.non_canonical ? 'warn' : 'neutral'}>
                       {row.non_canonical ? 'Não canónico' : 'Importado'}
                     </Badge>
+                    <Badge tone={paperBookReviewTone(row)}>{paperBookReviewStateLabel(row)}</Badge>
                     <Badge tone={row.ocr_status === 'completed' ? 'ok' : 'neutral'}>
                       {paperBookOcrStatusLabel(row.ocr_status)}
                     </Badge>
                     <span className="muted">
-                      OCR: metadado apenas; texto armazenado: {row.ocr_text_stored ? 'sim' : 'não'}
-                      ; texto autoritativo: {row.authoritative_text_claimed ? 'sim' : 'não'}
+                      OCR: metadado apenas; texto armazenado: {row.ocr_text_stored ? 'sim' : 'não'};
+                      texto autoritativo: {row.authoritative_text_claimed ? 'sim' : 'não'}
+                    </span>
+                    <span className="muted">
+                      Edição de intervalo/revisão: indisponível nesta API; use notas e OCR como
+                      marcadores operacionais.
                     </span>
                     <span className="mono">{row.sha256.slice(0, 16)}...</span>
                   </div>
                 </td>
                 <td>
                   <div className="row-wrap">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      icon={<Icon.Pencil />}
+                      disabled
+                      title="A API atual não expõe edição de metadados de intervalo ou revisão manual."
+                    >
+                      Editar metadados
+                    </Button>
                     <GateButton
                       perm="book.import"
                       type="button"
