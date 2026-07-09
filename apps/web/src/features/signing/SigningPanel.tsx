@@ -75,6 +75,7 @@ import {
   EmptyState,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   InlineWarning,
   Input,
@@ -131,7 +132,33 @@ function longTermEvidenceLabel(status: string): string {
 function dssEvidenceLabel(evidence: SignatureEvidenceStatus): string {
   if (evidence.dss_revocation_evidence_present) return 'presente';
   if (evidence.dss_revocation_evidence_status === 'unsupported') return 'não suportado';
+  if (evidence.dss_revocation_evidence_status === 'not_present') return 'não presente';
   return evidence.dss_revocation_evidence_status;
+}
+
+function trustedListLabel(status: string): string {
+  if (status === 'Granted') return 'Reconhecido na lista';
+  if (status === 'Withdrawn') return 'Retirado da lista';
+  if (status === 'Unknown') return 'Sem confirmação da lista';
+  return status;
+}
+
+function trustedListTone(status: string): 'ok' | 'warn' {
+  return status === 'Granted' ? 'ok' : 'warn';
+}
+
+function evidenceLevelTone(level: string): 'neutral' | 'accent' | 'ok' {
+  if (level === 'B-T') return 'ok';
+  if (level === 'B-B') return 'accent';
+  return 'neutral';
+}
+
+function evidenceTimestampLabel(evidence: SignatureEvidenceStatus): string {
+  return evidence.timestamp_evidence_present ? 'Com selo temporal' : 'Sem selo temporal';
+}
+
+function evidenceTimestampTone(evidence: SignatureEvidenceStatus): 'ok' | 'neutral' {
+  return evidence.timestamp_evidence_present ? 'ok' : 'neutral';
 }
 
 function toLocalDateTimeInput(date: Date): string {
@@ -173,33 +200,126 @@ type Step =
   | { kind: 'cc' };
 
 function SignatureEvidenceSummary({ evidence }: { evidence: SignatureEvidenceStatus }) {
+  const longTerm = evidence.long_term_status.map(longTermEvidenceLabel);
   return (
-    <InlineWarning tone="info" title="Evidência técnica da assinatura">
-      <div className="stack--tight">
-        <dl className="deflist">
-          <div>
-            <dt>Nível observado</dt>
-            <dd>{evidenceLevelLabel(evidence.current_level)}</dd>
-          </div>
-          <div>
-            <dt>Carimbo temporal</dt>
-            <dd>{evidence.timestamp_evidence_present ? 'presente' : 'ausente'}</dd>
-          </div>
-          <div>
-            <dt>DSS / revogação</dt>
-            <dd>{dssEvidenceLabel(evidence)}</dd>
-          </div>
-          <div>
-            <dt>Longo prazo</dt>
-            <dd>{evidence.long_term_status.map(longTermEvidenceLabel).join('; ')}</dd>
-          </div>
-        </dl>
-        <p className="field__hint">
-          Apenas evidência técnica: Chancela não declara suporte B-LT/B-LTA nem validação legal de
-          longo prazo quando DSS/revogação está “não suportado”.
-        </p>
+    <section className="signing-evidence" aria-label="Evidência técnica da assinatura">
+      <div className="signing-evidence__head">
+        <div>
+          <p className="signing-kicker">Evidência técnica</p>
+          <p className="signing-evidence__title">O que foi encontrado no PDF assinado</p>
+        </div>
+        <div className="signing-evidence__badges" aria-label="Resumo da evidência técnica">
+          <Badge tone={evidenceLevelTone(evidence.current_level)}>
+            {evidenceLevelLabel(evidence.current_level)}
+          </Badge>
+          <Badge tone={evidenceTimestampTone(evidence)}>{evidenceTimestampLabel(evidence)}</Badge>
+        </div>
       </div>
-    </InlineWarning>
+      <dl className="deflist signing-deflist signing-deflist--compact">
+        <div>
+          <dt>
+            Nível observado
+            <FieldHelp
+              text="Perfil PAdES observado no ficheiro. É uma leitura técnica do PDF, não uma decisão jurídica sobre validade."
+              placement="bottom"
+            />
+          </dt>
+          <dd>{evidenceLevelLabel(evidence.current_level)}</dd>
+        </div>
+        <div>
+          <dt>
+            DSS / revogação
+            <FieldHelp
+              text="DSS contém dados de validação como certificados, OCSP ou CRL. Quando está ausente ou não suportado, a app não afirma validação de longo prazo."
+              placement="bottom"
+            />
+          </dt>
+          <dd>{dssEvidenceLabel(evidence)}</dd>
+        </div>
+        <div className="signing-deflist__wide">
+          <dt>
+            Longo prazo
+            <FieldHelp
+              text="B-LT/B-LTA exigem evidência de validação de longo prazo. Chancela só mostra o estado técnico observado."
+              placement="bottom"
+            />
+          </dt>
+          <dd>
+            {longTerm.length ? (
+              <span className="signing-chipline">
+                {longTerm.map((item) => (
+                  <span className="signing-chip" key={item}>
+                    {item}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              'Sem detalhes'
+            )}
+          </dd>
+        </div>
+      </dl>
+      <p className="field__hint">
+        Não é uma declaração de validade legal. É um resumo da evidência técnica disponível no
+        ficheiro e nos dados devolvidos pelo servidor.
+      </p>
+    </section>
+  );
+}
+
+function StatusSummary({
+  tone,
+  badge,
+  title,
+  children,
+}: {
+  tone: 'ok' | 'warn' | 'info';
+  badge: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className={`signing-status signing-status--${tone}`}>
+      <div className="signing-status__icon" aria-hidden="true">
+        {tone === 'ok' ? <Icon.Check /> : tone === 'warn' ? <Icon.Info /> : <Icon.PenNib />}
+      </div>
+      <div className="signing-status__body">
+        <div className="signing-status__topline">
+          <p className="signing-kicker">Estado da assinatura</p>
+          <Badge tone={tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : 'accent'}>{badge}</Badge>
+        </div>
+        <p className="signing-status__title">{title}</p>
+        <div className="signing-status__copy">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+function ProviderChoice({
+  title,
+  description,
+  badges,
+  disabledNote,
+  children,
+}: {
+  title: string;
+  description: string;
+  badges?: React.ReactNode;
+  disabledNote?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`signing-provider${disabledNote ? ' signing-provider--disabled' : ''}`}>
+      <div className="signing-provider__copy">
+        <div className="signing-provider__titleline">
+          <strong>{title}</strong>
+          {badges}
+        </div>
+        <p>{description}</p>
+        {disabledNote ? <p className="field__hint">{disabledNote}</p> : null}
+      </div>
+      <div className="signing-provider__action">{children}</div>
+    </div>
   );
 }
 
@@ -756,12 +876,22 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         ) : data?.status === 'signed' && data.signed ? (
           // --- SIGNED: the qualified-signature record + the signed-PDF download ----------------
           <div className="stack--tight">
-            <InlineWarning tone="info" title={t('signing.signed.title')}>
-              {qualifiedLabel(data.signed.family)}
-            </InlineWarning>
-            <dl className="deflist">
+            <StatusSummary tone="ok" badge="Assinada" title={t('signing.signed.title')}>
+              <p>{qualifiedLabel(data.signed.family)}</p>
+              <p>
+                Chancela mostra o registo técnico da assinatura e a evidência disponível; a
+                apreciação de validade jurídica depende do contexto e da verificação aplicável.
+              </p>
+            </StatusSummary>
+            <dl className="deflist signing-deflist">
               <div>
-                <dt>{t('signing.signed.signer')}</dt>
+                <dt>
+                  {t('signing.signed.signer')}
+                  <FieldHelp
+                    text="Sujeito do certificado usado na assinatura, tal como foi lido do certificado."
+                    placement="bottom"
+                  />
+                </dt>
                 <dd className="mono">{data.signed.signer_cert_subject ?? '—'}</dd>
               </div>
               <div>
@@ -774,10 +904,16 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               </div>
               {data.signed.trusted_list_status ? (
                 <div>
-                  <dt>{t('signing.signed.trustedList')}</dt>
+                  <dt>
+                    {t('signing.signed.trustedList')}
+                    <FieldHelp
+                      text="Estado técnico devolvido pela consulta da lista de confiança. Não substitui uma decisão jurídica."
+                      placement="bottom"
+                    />
+                  </dt>
                   <dd>
-                    <Badge tone={data.signed.trusted_list_status === 'Granted' ? 'ok' : 'warn'}>
-                      {data.signed.trusted_list_status}
+                    <Badge tone={trustedListTone(data.signed.trusted_list_status)}>
+                      {trustedListLabel(data.signed.trusted_list_status)}
                     </Badge>
                   </dd>
                 </div>
@@ -791,7 +927,13 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                 </dd>
               </div>
               <div>
-                <dt>{t('signing.signed.digest')}</dt>
+                <dt>
+                  {t('signing.signed.digest')}
+                  <FieldHelp
+                    text="SHA-256 do PDF assinado. Serve para comparação técnica do ficheiro."
+                    placement="bottom"
+                  />
+                </dt>
                 <dd>
                   <Digest value={data.signed.signed_pdf_digest} />
                 </dd>
@@ -943,9 +1085,9 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         ) : step.kind === 'cc' ? (
           // --- CC: the honest synchronous prompt (PIN is entered at the reader) -----------------
           <div className="stack--tight">
-            <InlineWarning tone="info" title={t('signing.cc.prompt.title')}>
-              {t('signing.cc.prompt.body')}
-            </InlineWarning>
+            <StatusSummary tone="info" badge="Cartão local" title={t('signing.cc.prompt.title')}>
+              <p>{t('signing.cc.prompt.body')}</p>
+            </StatusSummary>
             {ccSign.error ? <ErrorNote error={ccSign.error} /> : null}
             <div className="rowline">
               <Button
@@ -971,17 +1113,28 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
         ) : (
           // --- UNSIGNED: the honest state + the provider picker (CMD + CC + configured CSC QTSPs) -
           <div className="stack--tight">
-            <InlineWarning
+            <StatusSummary
               tone={data?.require_qualified_for_seal ? 'warn' : 'info'}
+              badge={data?.require_qualified_for_seal ? 'Obrigatória' : 'Por assinar'}
               title={t('signing.unsigned.title')}
             >
-              {data?.require_qualified_for_seal
-                ? t('signing.required.body')
-                : t('signing.unsigned.body')}
-            </InlineWarning>
-            <div className="stack--tight">
+              <p>
+                {data?.require_qualified_for_seal
+                  ? t('signing.required.body')
+                  : t('signing.unsigned.body')}
+              </p>
+            </StatusSummary>
+            <div className="signing-provider-list">
               {/* Chave Móvel Digital — always offered (its dedicated two-phase path). */}
-              <div className="rowline">
+              <ProviderChoice
+                title="Chave Móvel Digital"
+                description="Fluxo remoto em dois passos: PIN de assinatura e código SMS. Recomendado quando a CMD está ativa."
+                badges={
+                  isRecommended('cmd') ? (
+                    <Badge tone="accent">{t('signing.recommended')}</Badge>
+                  ) : null
+                }
+              >
                 <GateButton
                   perm="signing.perform"
                   scope={bookScope}
@@ -992,13 +1145,18 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                 >
                   {t('signing.start')}
                 </GateButton>
-                {isRecommended('cmd') ? (
-                  <Badge tone="accent">{t('signing.recommended')}</Badge>
-                ) : null}
-              </div>
+              </ProviderChoice>
               {/* Cartão de Cidadão — always offered unless a 409 proved this server is not co-located. */}
               {ccBlocked ? null : (
-                <div className="rowline">
+                <ProviderChoice
+                  title="Cartão de Cidadão"
+                  description="Assinatura local com leitor ligado à aplicação de secretária. O PIN nunca é pedido no browser."
+                  badges={
+                    isRecommended('cc') ? (
+                      <Badge tone="accent">{t('signing.recommended')}</Badge>
+                    ) : null
+                  }
+                >
                   <GateButton
                     perm="signing.perform"
                     scope={bookScope}
@@ -1009,16 +1167,32 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                   >
                     {t('signing.cc.start')}
                   </GateButton>
-                  {isRecommended('cc') ? (
-                    <Badge tone="accent">{t('signing.recommended')}</Badge>
-                  ) : null}
-                </div>
+                </ProviderChoice>
               )}
+              {providers.isLoading ? (
+                <p className="field__hint signing-provider-list__note">
+                  A carregar prestadores remotos configurados…
+                </p>
+              ) : providers.error ? (
+                <InlineWarning tone="info" title="Prestadores remotos indisponíveis">
+                  Pode continuar com Chave Móvel Digital ou Cartão de Cidadão. A lista de
+                  prestadores remotos não foi carregada nesta sessão.
+                </InlineWarning>
+              ) : null}
               {/* Every configured CSC QTSP (Multicert / DigitalSign / …) — the generic two-phase path.
                 An unconfigured provider is shown disabled with an honest «não configurado» note. */}
               {cscProviders.map((provider) =>
                 provider.configured ? (
-                  <div className="rowline" key={provider.id}>
+                  <ProviderChoice
+                    key={provider.id}
+                    title={provider.label}
+                    description="Prestador remoto qualificado. A app recolhe apenas a referência e encaminha a autorização para o prestador."
+                    badges={
+                      isRecommended('csc') ? (
+                        <Badge tone="accent">{t('signing.recommended')}</Badge>
+                      ) : null
+                    }
+                  >
                     <GateButton
                       perm="signing.perform"
                       scope={bookScope}
@@ -1031,12 +1205,14 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                     >
                       {t('signing.csc.start', { provider: provider.label })}
                     </GateButton>
-                    {isRecommended('csc') ? (
-                      <Badge tone="accent">{t('signing.recommended')}</Badge>
-                    ) : null}
-                  </div>
+                  </ProviderChoice>
                 ) : (
-                  <div className="rowline" key={provider.id}>
+                  <ProviderChoice
+                    key={provider.id}
+                    title={provider.label}
+                    description="Prestador remoto listado pelo servidor, mas ainda sem credenciais ativas nesta instalação."
+                    disabledNote={t('signing.csc.notConfigured')}
+                  >
                     <Button
                       type="button"
                       variant="secondary"
@@ -1046,8 +1222,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                     >
                       {t('signing.csc.start', { provider: provider.label })}
                     </Button>
-                    <span className="field__hint">{t('signing.csc.notConfigured')}</span>
-                  </div>
+                  </ProviderChoice>
                 ),
               )}
             </div>

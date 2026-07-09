@@ -294,12 +294,13 @@ describe('SigningPanel — signed status + download', () => {
 
     renderWithProviders(<SigningPanel act={sealedAct} />);
 
-    expect(await screen.findByText('Evidência técnica da assinatura')).toBeTruthy();
-    expect(screen.getByText('PAdES B-T')).toBeTruthy();
-    expect(screen.getByText('presente')).toBeTruthy();
+    expect(await screen.findByLabelText('Evidência técnica da assinatura')).toBeTruthy();
+    expect(screen.getAllByText('PAdES B-T').length).toBeGreaterThan(0);
+    expect(screen.getByText('Com selo temporal')).toBeTruthy();
     expect(screen.getByText(/B-LT não implementado/)).toBeTruthy();
     expect(screen.getByText(/B-LTA não implementado/)).toBeTruthy();
-    expect(screen.getByText(/Apenas evidência técnica/)).toBeTruthy();
+    expect(screen.getByText(/Não é uma declaração de validade legal/)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Ajuda' }).length).toBeGreaterThan(0);
   });
 });
 
@@ -570,12 +571,47 @@ describe('SigningPanel — CSC QTSP providers', () => {
 
     // CMD + CC are always offered; the configured QTSP is an enabled entry action.
     await screen.findByRole('button', { name: 'Assinar com Chave Móvel Digital' });
+    expect(screen.getByText('Estado da assinatura')).toBeTruthy();
+    expect(screen.getByText('Por assinar')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Fluxo remoto em dois passos: PIN de assinatura e código SMS. Recomendado quando a CMD está ativa.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/O PIN nunca é pedido no browser/)).toBeTruthy();
     const mc = await screen.findByRole('button', { name: 'Assinar com Multicert' });
     expect(mc.getAttribute('aria-disabled')).not.toBe('true');
+    expect(
+      screen.getByText(
+        'Prestador remoto qualificado. A app recolhe apenas a referência e encaminha a autorização para o prestador.',
+      ),
+    ).toBeTruthy();
     // The unconfigured QTSP is offered disabled with an honest «não configurado» note.
     const ds = screen.getByRole('button', { name: 'Assinar com DigitalSign' });
     expect((ds as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('não configurado')).toBeTruthy();
+  });
+
+  it('keeps built-in modes usable when the remote provider list cannot be loaded', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature/providers')) {
+        return json({ error: 'sem permissão para listar prestadores' }, 403);
+      }
+      if (url.endsWith('/signature')) return json(unsignedStatus);
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    expect(
+      await screen.findByRole('button', { name: 'Assinar com Chave Móvel Digital' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Assinar com Cartão de Cidadão' })).toBeTruthy();
+    expect(await screen.findByText('Prestadores remotos indisponíveis')).toBeTruthy();
+    expect(
+      screen.getByText(/Pode continuar com Chave Móvel Digital ou Cartão de Cidadão/),
+    ).toBeTruthy();
   });
 
   it('signs via a CSC QTSP through the generic two-phase flow to a signed record', async () => {
