@@ -63,7 +63,10 @@ pub use revocation::{
 pub use soft_cert::{
     Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError, SoftCertificateIdentity,
 };
-pub use validate::{SignatureValidationReport, validate_signature};
+pub use validate::{
+    SignatureValidationReport, TimestampQtstMatchReport, TimestampTrustDecision,
+    TimestampTrustPolicy, TimestampTrustReport, validate_signature, validate_timestamp_trust,
+};
 
 // Re-export the pieces of the underlying stack callers most often name through this crate.
 pub use chancela_cades::{RawSignature, SignatureAlgorithm};
