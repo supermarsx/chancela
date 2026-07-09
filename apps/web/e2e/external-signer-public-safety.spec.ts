@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from './fixtures';
 
 const secretToken = 'cxi_e2e_secret_token_history_safety_123';
+const revokedToken = 'cxi_e2e_revoked_secret_token_public_404_456';
 
 test('external signer public page scrubs token from URL/history and does not offer PDF downloads', async ({
   page,
@@ -56,6 +57,59 @@ test('external signer public page scrubs token from URL/history and does not off
     },
     { path: '/v1/signature/external-invites/document/working-copy', token: secretToken },
   ]);
+});
+
+test('external signer unavailable token is scrubbed and exposes no document actions', async ({
+  page,
+}) => {
+  const lookupTokens: string[] = [];
+  const unexpectedCalls: string[] = [];
+  const downloads: string[] = [];
+  page.on('download', (download) => downloads.push(download.suggestedFilename()));
+
+  await page.route('**/v1/signature/external-invites/lookup', async (route) => {
+    const body = await readJson(route);
+    lookupTokens.push(body.token ?? '');
+    await route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: `revoked token ${body.token ?? ''} must not render`,
+      }),
+    });
+  });
+  await page.route('**/v1/signature/external-invites/respond', async (route) => {
+    unexpectedCalls.push('/v1/signature/external-invites/respond');
+    await route.fulfill({ status: 500, body: 'unexpected respond call' });
+  });
+  await page.route('**/v1/signature/external-invites/document/working-copy', async (route) => {
+    unexpectedCalls.push('/v1/signature/external-invites/document/working-copy');
+    await route.fulfill({ status: 500, body: 'unexpected document call' });
+  });
+
+  await page.goto(`/assinatura-externa?token=${encodeURIComponent(revokedToken)}&utm_source=e2e`);
+
+  await expect(page.getByText('Convite indisponível')).toBeVisible();
+  await expect(
+    page.getByText(
+      'A ligação expirou, foi revogada ou não corresponde a um convite externo ativo.',
+    ),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/token=/);
+  expect(page.url()).not.toContain(revokedToken);
+  await expect(page.locator('body')).not.toContainText(revokedToken);
+  await expectNoPdfDownloads(page);
+  await expect(page.getByRole('button', { name: 'Aceitar acompanhamento' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Pré-visualizar cópia .md' })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByText('Ligação sem token')).toBeVisible();
+  await expect(page).not.toHaveURL(/token=/);
+  await expect(page.locator('body')).not.toContainText(revokedToken);
+
+  expect(lookupTokens).toEqual([revokedToken]);
+  expect(unexpectedCalls).toEqual([]);
+  expect(downloads).toEqual([]);
 });
 
 async function mockExternalSignerInvite(
