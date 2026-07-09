@@ -922,6 +922,15 @@ pub fn router(state: AppState) -> Router {
             patch(paper_import::update_paper_book_import_ocr_status),
         )
         .route(
+            "/v1/books/paper-import/{id}/ocr-drafts",
+            get(paper_import::list_paper_book_import_ocr_drafts)
+                .post(paper_import::create_paper_book_import_ocr_draft),
+        )
+        .route(
+            "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/review",
+            patch(paper_import::review_paper_book_import_ocr_draft),
+        )
+        .route(
             "/v1/books/paper-import/{id}/bytes",
             get(paper_import::get_paper_book_import_bytes),
         )

@@ -211,10 +211,56 @@ async fn update_ocr_status(
     .await
 }
 
+async fn create_ocr_draft(
+    state: &AppState,
+    token: &str,
+    import_id: &str,
+    body: Value,
+) -> (StatusCode, Value) {
+    send(
+        state,
+        json_req(
+            &format!("/v1/books/paper-import/{import_id}/ocr-drafts"),
+            token,
+            body,
+        ),
+    )
+    .await
+}
+
+async fn review_ocr_draft(
+    state: &AppState,
+    token: &str,
+    import_id: &str,
+    draft_id: &str,
+    body: Value,
+) -> (StatusCode, Value) {
+    send(
+        state,
+        patch_req(
+            &format!("/v1/books/paper-import/{import_id}/ocr-drafts/{draft_id}/review"),
+            token,
+            body,
+        ),
+    )
+    .await
+}
+
 async fn list_imports(state: &AppState, token: &str, query: &str) -> (StatusCode, Value) {
     send(
         state,
         get_req(&format!("/v1/books/paper-import{query}"), token),
+    )
+    .await
+}
+
+async fn list_ocr_drafts(state: &AppState, token: &str, import_id: &str) -> (StatusCode, Value) {
+    send(
+        state,
+        get_req(
+            &format!("/v1/books/paper-import/{import_id}/ocr-drafts"),
+            token,
+        ),
     )
     .await
 }
@@ -461,6 +507,178 @@ async fn paper_book_import_ocr_status_rejects_unknown_status_without_mutation() 
         .expect("store read")
         .expect("paper import row");
     assert_eq!(stored.meta.ocr_status.as_str(), "not_run");
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_draft_results_are_non_authoritative_and_reviewable() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let bytes = package_bytes();
+    let (status, created) = preserve(&state, &token, preserve_body(&bytes)).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let before = state.ledger.read().await.events().len();
+    let digest = hex(&Sha256::digest("Livro de atas digitalizado."));
+
+    let (status, draft) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "extracted_text": "Livro de atas digitalizado.",
+            "text_digest": digest,
+            "page_spans": [
+                { "start_page": 1, "end_page": 2 },
+                { "start_page": 5, "end_page": 5 }
+            ],
+            "confidence": 0.87,
+            "engine_name": "operator-supplied-ocr",
+            "engine_version": "0.1.0"
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "create OCR draft: {draft}");
+    assert_eq!(draft["import_id"], import_id);
+    assert_eq!(draft["extracted_text"], "Livro de atas digitalizado.");
+    assert_eq!(draft["text_digest"], digest);
+    assert_eq!(draft["page_spans"][0]["start_page"], 1);
+    assert_eq!(draft["page_spans"][0]["end_page"], 2);
+    assert_eq!(draft["confidence"], 0.87);
+    assert_eq!(draft["engine"]["name"], "operator-supplied-ocr");
+    assert_eq!(draft["review_status"], "unreviewed");
+    assert_eq!(draft["non_canonical"], true);
+    assert_eq!(draft["authoritative_text_claimed"], false);
+    assert_eq!(draft["canonical_minutes_claimed"], false);
+    assert_eq!(draft["legal_validity_claimed"], false);
+    assert!(
+        draft["draft_notice"]
+            .as_str()
+            .is_some_and(|notice| notice.contains("non-authoritative")),
+        "draft notice is explicit: {draft}"
+    );
+    let draft_id = draft["draft_id"].as_str().expect("draft id");
+
+    let (status, listed) = list_ocr_drafts(&state, &token, import_id).await;
+    assert_eq!(status, StatusCode::OK, "list drafts: {listed}");
+    let rows = listed.as_array().expect("draft list");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["draft_id"], draft_id);
+
+    let (status, reviewed) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        draft_id,
+        json!({ "review_status": "accepted", "review_note": "Checked against the scan." }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "review OCR draft: {reviewed}");
+    assert_eq!(reviewed["review_status"], "accepted");
+    assert_eq!(reviewed["review_note"], "Checked against the scan.");
+    assert!(reviewed["reviewed_at"].as_str().is_some());
+    assert!(reviewed["reviewed_by"].as_str().is_some());
+    assert_eq!(reviewed["authoritative_text_claimed"], false);
+    assert_eq!(reviewed["legal_validity_claimed"], false);
+
+    let ledger = state.ledger.read().await;
+    assert_eq!(
+        ledger.events().len(),
+        before + 2,
+        "draft create and review each append one metadata event"
+    );
+    assert_eq!(
+        ledger.events()[ledger.events().len() - 2].kind,
+        "paper_book_import.ocr_draft_created"
+    );
+    assert_eq!(
+        ledger.events().last().expect("last event").kind,
+        "paper_book_import.ocr_draft_reviewed"
+    );
+    drop(ledger);
+
+    let stored_import = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_import(import_id)
+        .expect("store read")
+        .expect("paper import row");
+    assert_eq!(stored_import.bytes, bytes);
+    assert_eq!(stored_import.meta.ocr_status.as_str(), "not_run");
+
+    let stored_draft = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_draft(draft_id)
+        .expect("draft read")
+        .expect("draft row");
+    assert_eq!(stored_draft.import_id, import_id);
+    assert_eq!(stored_draft.review_status.as_str(), "accepted");
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_draft_rejects_missing_text_and_bad_page_span_without_mutation() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let (status, created) = preserve(&state, &token, preserve_body(&package_bytes())).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let before = state.ledger.read().await.events().len();
+
+    let (status, body) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "page_spans": [{ "start_page": 1, "end_page": 1 }],
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing text/digest refused: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("extracted_text or text_digest")),
+        "error names text/digest requirement: {body}"
+    );
+
+    let (status, body) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "text_digest": "ab".repeat(32),
+            "page_spans": [{ "start_page": 1, "end_page": 999 }],
+            "confidence": 0.7,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "bad page span refused: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("page_count")),
+        "error names page_count bound: {body}"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        before,
+        "invalid OCR draft requests must not append ledger events"
+    );
 }
 
 #[tokio::test]

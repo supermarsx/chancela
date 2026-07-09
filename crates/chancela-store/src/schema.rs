@@ -41,7 +41,10 @@
 ///   token, policy/QTST and certificate-path inputs are available.
 /// - **v8** — adds `paper_book_imports`: preserved historical paper-book package bytes and
 ///   metadata. These rows are non-canonical evidence only and carry OCR hook status, not OCR output.
-pub const SCHEMA_VERSION: i64 = 8;
+/// - **v9** — adds `paper_book_ocr_drafts`: non-authoritative OCR draft results linked to
+///   preserved paper-book imports. These rows are review aids only and make no canonical or legal
+///   text claim.
+pub const SCHEMA_VERSION: i64 = 9;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -329,6 +332,35 @@ pub const CREATE_PAPER_BOOK_IMPORTS_BOOK_REF_IDX: &str =
 
 pub const CREATE_PAPER_BOOK_IMPORTS_IMPORTED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_paper_book_imports_imported_at ON paper_book_imports (imported_at);";
 
+/// `paper_book_ocr_drafts` — non-authoritative OCR draft result rows for preserved paper imports.
+///
+/// These rows are deliberately separate from the preserved package row: they may contain extracted
+/// text or only a digest of external OCR text, page spans, OCR engine metadata, confidence, and
+/// operator review status. They are never canonical minutes, legal text, or evidence of signature
+/// validity. Ledger events should reference metadata only and must not carry `extracted_text`.
+pub const CREATE_PAPER_BOOK_OCR_DRAFTS: &str = "\
+CREATE TABLE IF NOT EXISTS paper_book_ocr_drafts (
+    draft_id       TEXT PRIMARY KEY,
+    import_id      TEXT NOT NULL,
+    extracted_text TEXT,
+    text_digest    TEXT,
+    page_spans_json TEXT NOT NULL,
+    confidence     REAL,
+    engine_name    TEXT NOT NULL,
+    engine_version TEXT,
+    created_at     TEXT NOT NULL,
+    created_by     TEXT NOT NULL,
+    review_status  TEXT NOT NULL,
+    reviewed_at    TEXT,
+    reviewed_by    TEXT,
+    review_note    TEXT,
+    superseded_by  TEXT
+) STRICT;";
+
+pub const CREATE_PAPER_BOOK_OCR_DRAFTS_IMPORT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_paper_book_ocr_drafts_import ON paper_book_ocr_drafts (import_id);";
+
+pub const CREATE_PAPER_BOOK_OCR_DRAFTS_CREATED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_paper_book_ocr_drafts_created_at ON paper_book_ocr_drafts (created_at);";
+
 /// `follow_ups` — first-class task/follow-up rows tied to an act. These deliberately live outside
 /// the sealed [`chancela_core::Act`] JSON so post-deliberation task management never mutates the
 /// frozen evidentiary payload.
@@ -393,6 +425,9 @@ pub const ALL: &[&str] = &[
     CREATE_PAPER_BOOK_IMPORTS,
     CREATE_PAPER_BOOK_IMPORTS_BOOK_REF_IDX,
     CREATE_PAPER_BOOK_IMPORTS_IMPORTED_AT_IDX,
+    CREATE_PAPER_BOOK_OCR_DRAFTS,
+    CREATE_PAPER_BOOK_OCR_DRAFTS_IMPORT_IDX,
+    CREATE_PAPER_BOOK_OCR_DRAFTS_CREATED_AT_IDX,
     CREATE_FOLLOW_UPS,
     CREATE_FOLLOW_UPS_ACT_IDX,
     CREATE_FOLLOW_UPS_STATUS_IDX,

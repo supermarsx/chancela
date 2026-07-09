@@ -23,7 +23,8 @@ use chancela_store::StoreOpenOptions;
 use chancela_store::{
     Store, StoreError, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
     StoredImportedDocument, StoredImportedDocumentMeta, StoredPaperBookImport,
-    StoredPaperBookImportMeta, StoredPaperBookOcrStatus,
+    StoredPaperBookImportMeta, StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan,
+    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -162,6 +163,35 @@ fn sample_paper_book_import(id: &str, bytes: &[u8]) -> StoredPaperBookImport {
             ocr_status: StoredPaperBookOcrStatus::NotRun,
         },
         bytes: bytes.to_vec(),
+    }
+}
+
+fn sample_paper_book_ocr_draft(draft_id: &str, import_id: &str) -> StoredPaperBookOcrDraft {
+    StoredPaperBookOcrDraft {
+        draft_id: draft_id.to_string(),
+        import_id: import_id.to_string(),
+        extracted_text: Some("Ata manuscrita transcrita por OCR.".to_string()),
+        text_digest: Some(hex(&Sha256::digest("Ata manuscrita transcrita por OCR."))),
+        page_spans: vec![
+            StoredPaperBookOcrPageSpan {
+                start_page: 1,
+                end_page: 3,
+            },
+            StoredPaperBookOcrPageSpan {
+                start_page: 7,
+                end_page: 7,
+            },
+        ],
+        confidence: Some(0.82),
+        engine_name: "fixture-ocr".to_string(),
+        engine_version: Some("0.0.1".to_string()),
+        created_at: OffsetDateTime::from_unix_timestamp(1_780_000_002).unwrap(),
+        created_by: "amelia.marques".to_string(),
+        review_status: StoredPaperBookOcrReviewStatus::Unreviewed,
+        reviewed_at: None,
+        reviewed_by: None,
+        review_note: None,
+        superseded_by: None,
     }
 }
 
@@ -1215,6 +1245,89 @@ fn paper_book_import_ocr_status_updates_metadata_only() {
         .expect("paper-book import present");
     assert_eq!(by_id.meta.ocr_status, StoredPaperBookOcrStatus::Running);
     assert_eq!(by_id.bytes, original_bytes);
+}
+
+#[test]
+fn paper_book_ocr_draft_round_trips_and_reviews_without_mutating_import() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333335",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    let draft = sample_paper_book_ocr_draft(
+        "44444444-4444-4444-8444-444444444444",
+        &import.meta.import_id,
+    );
+    let original_import = import.clone();
+
+    store
+        .persist(|tx| {
+            tx.upsert_paper_book_import(&import)?;
+            tx.upsert_paper_book_ocr_draft(&draft)
+        })
+        .expect("persist import + OCR draft");
+
+    let by_id = store
+        .paper_book_ocr_draft(&draft.draft_id)
+        .expect("read draft")
+        .expect("draft present");
+    assert_eq!(by_id, draft);
+    assert_eq!(
+        by_id.review_status,
+        StoredPaperBookOcrReviewStatus::Unreviewed
+    );
+    assert_eq!(by_id.page_spans[0].start_page, 1);
+    assert_eq!(by_id.page_spans[0].end_page, 3);
+
+    let listed = store
+        .paper_book_ocr_drafts(&import.meta.import_id)
+        .expect("list drafts");
+    assert_eq!(listed, vec![draft.clone()]);
+
+    store
+        .persist(|tx| {
+            tx.review_paper_book_ocr_draft(
+                &draft.draft_id,
+                StoredPaperBookOcrReviewStatus::Accepted,
+                Some(OffsetDateTime::from_unix_timestamp(1_780_000_003).unwrap()),
+                Some("rui.secretario"),
+                Some("Checked against the scan."),
+                None,
+            )
+        })
+        .expect("review draft");
+
+    let reviewed = store
+        .paper_book_ocr_draft(&draft.draft_id)
+        .expect("read reviewed")
+        .expect("draft present");
+    assert_eq!(
+        reviewed.review_status,
+        StoredPaperBookOcrReviewStatus::Accepted
+    );
+    assert_eq!(reviewed.reviewed_by.as_deref(), Some("rui.secretario"));
+    assert_eq!(
+        reviewed.review_note.as_deref(),
+        Some("Checked against the scan.")
+    );
+
+    let unchanged_import = store
+        .paper_book_import(&import.meta.import_id)
+        .expect("read import")
+        .expect("import present");
+    assert_eq!(unchanged_import, original_import);
+
+    drop(store);
+    let reopened = Store::open(dir.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .paper_book_ocr_draft(&draft.draft_id)
+            .unwrap()
+            .expect("draft survived")
+            .review_status,
+        StoredPaperBookOcrReviewStatus::Accepted
+    );
 }
 
 #[test]

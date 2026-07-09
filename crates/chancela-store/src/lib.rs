@@ -522,6 +522,68 @@ pub struct StoredPaperBookImport {
     pub bytes: Vec<u8>,
 }
 
+/// One inclusive page span covered by a non-authoritative OCR draft result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredPaperBookOcrPageSpan {
+    pub start_page: u32,
+    pub end_page: u32,
+}
+
+/// Review status for a non-authoritative OCR draft result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredPaperBookOcrReviewStatus {
+    Unreviewed,
+    Accepted,
+    Rejected,
+    Superseded,
+}
+
+impl StoredPaperBookOcrReviewStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unreviewed => "unreviewed",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::Superseded => "superseded",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self, StoreError> {
+        match raw {
+            "unreviewed" => Ok(Self::Unreviewed),
+            "accepted" => Ok(Self::Accepted),
+            "rejected" => Ok(Self::Rejected),
+            "superseded" => Ok(Self::Superseded),
+            other => Err(StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid stored paper-book OCR review status {other:?}"),
+            ))),
+        }
+    }
+}
+
+/// Non-authoritative OCR draft result linked to a preserved paper-book import. It may carry
+/// extracted text or only the digest of externally held text; it is never canonical act text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredPaperBookOcrDraft {
+    pub draft_id: String,
+    pub import_id: String,
+    pub extracted_text: Option<String>,
+    pub text_digest: Option<String>,
+    pub page_spans: Vec<StoredPaperBookOcrPageSpan>,
+    pub confidence: Option<f64>,
+    pub engine_name: String,
+    pub engine_version: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub created_by: String,
+    pub review_status: StoredPaperBookOcrReviewStatus,
+    pub reviewed_at: Option<OffsetDateTime>,
+    pub reviewed_by: Option<String>,
+    pub review_note: Option<String>,
+    pub superseded_by: Option<String>,
+}
+
 /// Status of a persisted act follow-up. Serialized and stored with the contract's exact
 /// `Open`/`Completed` spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -989,6 +1051,42 @@ impl Store {
             params![status.as_str(), import_id],
         )?;
         Ok(changed > 0)
+    }
+
+    /// Fetch one non-authoritative OCR draft result by id.
+    pub fn paper_book_ocr_draft(
+        &self,
+        draft_id: &str,
+    ) -> Result<Option<StoredPaperBookOcrDraft>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
+             engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
+             reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts WHERE draft_id = ?1",
+        )?;
+        stmt.query_row(params![draft_id], row_to_paper_book_ocr_draft)
+            .optional()?
+            .transpose()
+    }
+
+    /// List non-authoritative OCR draft results for a preserved paper-book import, newest first.
+    pub fn paper_book_ocr_drafts(
+        &self,
+        import_id: &str,
+    ) -> Result<Vec<StoredPaperBookOcrDraft>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
+             engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
+             reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts \
+             WHERE import_id = ?1 ORDER BY created_at DESC, rowid DESC",
+        )?;
+        let rows = stmt.query_map(params![import_id], row_to_paper_book_ocr_draft)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
     }
 
     /// List follow-ups for an act, open items first, then oldest-created first.
@@ -1471,6 +1569,82 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Upsert a non-authoritative OCR draft result for a preserved historical paper-book import.
+    /// This never changes package bytes or canonical book/act/document rows.
+    pub fn upsert_paper_book_ocr_draft(
+        &self,
+        draft: &StoredPaperBookOcrDraft,
+    ) -> Result<(), StoreError> {
+        let created_at = draft
+            .created_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let reviewed_at = draft.reviewed_at.map(|t| {
+            t.format(&Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+        });
+        let page_spans_json = serde_json::to_string(&draft.page_spans)?;
+        self.txn.execute(
+            "INSERT OR REPLACE INTO paper_book_ocr_drafts \
+             (draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
+              engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
+              reviewed_by, review_note, superseded_by) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                draft.draft_id,
+                draft.import_id,
+                draft.extracted_text,
+                draft.text_digest,
+                page_spans_json,
+                draft.confidence,
+                draft.engine_name,
+                draft.engine_version,
+                created_at,
+                draft.created_by,
+                draft.review_status.as_str(),
+                reviewed_at,
+                draft.reviewed_by,
+                draft.review_note,
+                draft.superseded_by,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Update the review status and reviewer metadata for a non-authoritative OCR draft result.
+    pub fn review_paper_book_ocr_draft(
+        &self,
+        draft_id: &str,
+        status: StoredPaperBookOcrReviewStatus,
+        reviewed_at: Option<OffsetDateTime>,
+        reviewed_by: Option<&str>,
+        review_note: Option<&str>,
+        superseded_by: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let reviewed_at = reviewed_at.map(|t| {
+            t.format(&Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+        });
+        let changed = self.txn.execute(
+            "UPDATE paper_book_ocr_drafts SET review_status = ?1, reviewed_at = ?2, \
+             reviewed_by = ?3, review_note = ?4, superseded_by = ?5 WHERE draft_id = ?6",
+            params![
+                status.as_str(),
+                reviewed_at,
+                reviewed_by,
+                review_note,
+                superseded_by,
+                draft_id,
+            ],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::NotFound(format!(
+                "paper-book OCR draft {draft_id}"
+            )));
+        }
+        Ok(())
+    }
+
     /// Upsert an act-scoped follow-up/task row (`follow_ups`, schema v6). Intended to run in the
     /// same transaction as its `follow_up.*` ledger event.
     pub fn upsert_follow_up(&self, follow_up: &StoredFollowUp) -> Result<(), StoreError> {
@@ -1799,6 +1973,46 @@ fn row_to_paper_book_import(
     let meta = row_to_paper_book_import_meta(row)?;
     let bytes: Vec<u8> = row.get(16)?;
     Ok((|| Ok(StoredPaperBookImport { meta: meta?, bytes }))())
+}
+
+/// Map one `paper_book_ocr_drafts` row to [`StoredPaperBookOcrDraft`].
+fn row_to_paper_book_ocr_draft(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredPaperBookOcrDraft, StoreError>> {
+    let draft_id: String = row.get(0)?;
+    let import_id: String = row.get(1)?;
+    let extracted_text: Option<String> = row.get(2)?;
+    let text_digest: Option<String> = row.get(3)?;
+    let page_spans_json: String = row.get(4)?;
+    let confidence: Option<f64> = row.get(5)?;
+    let engine_name: String = row.get(6)?;
+    let engine_version: Option<String> = row.get(7)?;
+    let created_at_raw: String = row.get(8)?;
+    let created_by: String = row.get(9)?;
+    let review_status_raw: String = row.get(10)?;
+    let reviewed_at_raw: Option<String> = row.get(11)?;
+    let reviewed_by: Option<String> = row.get(12)?;
+    let review_note: Option<String> = row.get(13)?;
+    let superseded_by: Option<String> = row.get(14)?;
+    Ok((|| {
+        Ok(StoredPaperBookOcrDraft {
+            draft_id,
+            import_id,
+            extracted_text,
+            text_digest,
+            page_spans: serde_json::from_str(&page_spans_json)?,
+            confidence,
+            engine_name,
+            engine_version,
+            created_at: parse_rfc3339(&created_at_raw)?,
+            created_by,
+            review_status: StoredPaperBookOcrReviewStatus::parse(&review_status_raw)?,
+            reviewed_at: reviewed_at_raw.as_deref().map(parse_rfc3339).transpose()?,
+            reviewed_by,
+            review_note,
+            superseded_by,
+        })
+    })())
 }
 
 #[allow(clippy::too_many_arguments)]

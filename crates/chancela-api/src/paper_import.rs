@@ -12,7 +12,10 @@ use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
-use chancela_store::{StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrStatus};
+use chancela_store::{
+    StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrDraft,
+    StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -28,7 +31,10 @@ use crate::error::ApiError;
 const PAPER_BOOK_IMPORT_NOTICE: &str = "Historical paper-book scans are classified as non-canonical evidence only. This report does not preserve the package, replace canonical digital minutes, or claim PDF/A, legal, or qualified-signature validity.";
 const PAPER_BOOK_PRESERVATION_NOTICE: &str = "Historical paper-book package preserved as non-canonical evidence only. It does not replace canonical digital minutes and no PDF/A, legal-validity, signature-validity, or qualified-signature claim is made.";
 const PAPER_BOOK_OCR_STATUS_NOTICE: &str = "OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.";
+const PAPER_BOOK_OCR_DRAFT_NOTICE: &str = "OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.";
 const MAX_NOTES_CHARS: usize = 2_000;
+const MAX_OCR_TEXT_CHARS: usize = 1_000_000;
+const MAX_OCR_REVIEW_NOTE_CHARS: usize = 2_000;
 pub(crate) const PAPER_BOOK_IMPORT_MAX_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const PAPER_BOOK_IMPORT_ENVELOPE_BYTES: usize =
     PAPER_BOOK_IMPORT_MAX_BYTES * 4 / 3 + 64 * 1024;
@@ -106,6 +112,29 @@ pub struct PaperBookOcrStatusUpdateRequest {
     pub status: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaperBookOcrDraftPageSpanRequest {
+    pub start_page: u32,
+    pub end_page: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PaperBookOcrDraftCreateRequest {
+    pub extracted_text: Option<String>,
+    pub text_digest: Option<String>,
+    pub page_spans: Vec<PaperBookOcrDraftPageSpanRequest>,
+    pub confidence: Option<f64>,
+    pub engine_name: String,
+    pub engine_version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PaperBookOcrDraftReviewRequest {
+    pub review_status: String,
+    pub review_note: Option<String>,
+    pub superseded_by: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PaperBookOcrStatusView {
     pub import_id: String,
@@ -116,6 +145,42 @@ pub struct PaperBookOcrStatusView {
     pub authoritative_text_claimed: bool,
     pub legal_validity_claimed: bool,
     pub legal_notice: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PaperBookOcrDraftView {
+    pub draft_id: String,
+    pub import_id: String,
+    pub extracted_text: Option<String>,
+    pub text_digest: Option<String>,
+    pub page_spans: Vec<PaperBookOcrDraftPageSpanView>,
+    pub confidence: Option<f64>,
+    pub engine: PaperBookOcrEngineView,
+    pub created_at: String,
+    pub created_by: String,
+    pub review_status: &'static str,
+    pub reviewed_at: Option<String>,
+    pub reviewed_by: Option<String>,
+    pub review_note: Option<String>,
+    pub superseded_by: Option<String>,
+    pub draft_notice: &'static str,
+    pub non_canonical: bool,
+    pub authoritative_text_claimed: bool,
+    pub canonical_minutes_claimed: bool,
+    pub legal_validity_claimed: bool,
+    pub legal_notice: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookOcrDraftPageSpanView {
+    pub start_page: u32,
+    pub end_page: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookOcrEngineView {
+    pub name: String,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -363,6 +428,132 @@ pub async fn update_paper_book_import_ocr_status(
     update_paper_book_import_ocr_status_internal(state, actor, attestor, &id, status)
         .await
         .map(Json)
+}
+
+/// `POST /v1/books/paper-import/{id}/ocr-drafts` - store a non-authoritative OCR draft result
+/// linked to a preserved paper-book import. This does not run OCR and does not create canonical
+/// text.
+pub async fn create_paper_book_import_ocr_draft(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path(id): Path<String>,
+    Json(req): Json<PaperBookOcrDraftCreateRequest>,
+) -> Result<(StatusCode, Json<PaperBookOcrDraftView>), ApiError> {
+    let import = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    if state.store.is_none() {
+        return Err(ApiError::Unprocessable(
+            "paper-book OCR draft storage requires on-disk persistence".to_owned(),
+        ));
+    }
+    let draft = build_ocr_draft(req, &import.meta, &actor)?;
+    let payload = serde_json::to_vec(&paper_book_ocr_draft_event_payload(&draft, "created"))?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &draft.created_by,
+        &format!("paper-book-import:{}", import.meta.import_id),
+        "paper_book_import.ocr_draft_created",
+        None,
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_paper_book_ocr_draft(&draft))?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    Ok((StatusCode::CREATED, Json(paper_book_ocr_draft_view(&draft))))
+}
+
+/// `GET /v1/books/paper-import/{id}/ocr-drafts` - list non-authoritative OCR draft results for a
+/// preserved paper-book import.
+pub async fn list_paper_book_import_ocr_drafts(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<PaperBookOcrDraftView>>, ApiError> {
+    let import = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    let Some(store) = &state.store else {
+        return Ok(Json(Vec::new()));
+    };
+    let rows = store
+        .paper_book_ocr_drafts(&import.meta.import_id)
+        .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?;
+    Ok(Json(rows.iter().map(paper_book_ocr_draft_view).collect()))
+}
+
+/// `PATCH /v1/books/paper-import/{id}/ocr-drafts/{draft_id}/review` - update review metadata for
+/// a non-authoritative OCR draft result.
+pub async fn review_paper_book_import_ocr_draft(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path((id, draft_id)): Path<(String, String)>,
+    Json(req): Json<PaperBookOcrDraftReviewRequest>,
+) -> Result<Json<PaperBookOcrDraftView>, ApiError> {
+    let import = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    let draft_id = validate_import_id(&draft_id)?;
+    let status = parse_ocr_review_status(&req.review_status)?;
+    let review_note =
+        optional_limited_text(req.review_note, "review_note", MAX_OCR_REVIEW_NOTE_CHARS)?;
+    let superseded_by = optional_uuid_ref(req.superseded_by, "superseded_by")?;
+    if status == StoredPaperBookOcrReviewStatus::Superseded && superseded_by.is_none() {
+        return Err(ApiError::Unprocessable(
+            "superseded OCR draft reviews require superseded_by".to_owned(),
+        ));
+    }
+    if status != StoredPaperBookOcrReviewStatus::Superseded && superseded_by.is_some() {
+        return Err(ApiError::Unprocessable(
+            "superseded_by is only valid when review_status is superseded".to_owned(),
+        ));
+    }
+    let Some(store) = &state.store else {
+        return Err(ApiError::Unprocessable(
+            "paper-book OCR draft review requires on-disk persistence".to_owned(),
+        ));
+    };
+    let current = store
+        .paper_book_ocr_draft(&draft_id)
+        .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+    if current.import_id != import.meta.import_id {
+        return Err(ApiError::NotFound);
+    }
+
+    let reviewed_by = actor.resolve("api");
+    let reviewed_at = OffsetDateTime::now_utc();
+    let payload = serde_json::to_vec(&paper_book_ocr_draft_review_event_payload(
+        &current,
+        status,
+        &reviewed_by,
+        superseded_by.as_deref(),
+    ))?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &reviewed_by,
+        &format!("paper-book-import:{}", import.meta.import_id),
+        "paper_book_import.ocr_draft_reviewed",
+        None,
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| {
+        tx.review_paper_book_ocr_draft(
+            &draft_id,
+            status,
+            Some(reviewed_at),
+            Some(&reviewed_by),
+            review_note.as_deref(),
+            superseded_by.as_deref(),
+        )
+    })?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    let reviewed = store
+        .paper_book_ocr_draft(&draft_id)
+        .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(paper_book_ocr_draft_view(&reviewed)))
 }
 
 /// `GET /v1/books/paper-import/{id}/bytes` - download the preserved non-canonical package bytes.
@@ -632,6 +823,100 @@ fn parse_ocr_status(raw: &str) -> Result<StoredPaperBookOcrStatus, ApiError> {
     })
 }
 
+fn parse_ocr_review_status(raw: &str) -> Result<StoredPaperBookOcrReviewStatus, ApiError> {
+    StoredPaperBookOcrReviewStatus::parse(raw.trim()).map_err(|_| {
+        ApiError::Unprocessable(
+            "review_status must be one of unreviewed, accepted, rejected, or superseded".to_owned(),
+        )
+    })
+}
+
+fn build_ocr_draft(
+    req: PaperBookOcrDraftCreateRequest,
+    import: &StoredPaperBookImportMeta,
+    actor: &CurrentActor,
+) -> Result<StoredPaperBookOcrDraft, ApiError> {
+    let extracted_text =
+        optional_limited_text(req.extracted_text, "extracted_text", MAX_OCR_TEXT_CHARS)?;
+    let text_digest = optional_digest(req.text_digest)?;
+    if extracted_text.is_none() && text_digest.is_none() {
+        return Err(ApiError::Unprocessable(
+            "OCR draft requires extracted_text or text_digest".to_owned(),
+        ));
+    }
+    let page_spans = validate_ocr_page_spans(req.page_spans, import.page_count)?;
+    let confidence = validate_confidence(req.confidence)?;
+    let engine_name = required_text(Some(req.engine_name), "engine_name")?;
+    reject_secret_markers("engine_name", &engine_name)?;
+    let engine_version = optional_text(req.engine_version, "engine_version")?;
+    if let Some(version) = engine_version.as_deref() {
+        reject_secret_markers("engine_version", version)?;
+    }
+    Ok(StoredPaperBookOcrDraft {
+        draft_id: Uuid::new_v4().to_string(),
+        import_id: import.import_id.clone(),
+        extracted_text,
+        text_digest,
+        page_spans,
+        confidence,
+        engine_name,
+        engine_version,
+        created_at: OffsetDateTime::now_utc(),
+        created_by: actor.resolve("api"),
+        review_status: StoredPaperBookOcrReviewStatus::Unreviewed,
+        reviewed_at: None,
+        reviewed_by: None,
+        review_note: None,
+        superseded_by: None,
+    })
+}
+
+fn validate_ocr_page_spans(
+    raw: Vec<PaperBookOcrDraftPageSpanRequest>,
+    page_count: u32,
+) -> Result<Vec<StoredPaperBookOcrPageSpan>, ApiError> {
+    if raw.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "OCR draft page_spans must not be empty".to_owned(),
+        ));
+    }
+    let mut spans = Vec::with_capacity(raw.len());
+    for span in raw {
+        if span.start_page == 0 || span.end_page == 0 {
+            return Err(ApiError::Unprocessable(
+                "OCR draft page spans are 1-based and must be greater than zero".to_owned(),
+            ));
+        }
+        if span.start_page > span.end_page {
+            return Err(ApiError::Unprocessable(
+                "OCR draft page span start_page must be on or before end_page".to_owned(),
+            ));
+        }
+        if span.end_page > page_count {
+            return Err(ApiError::Unprocessable(format!(
+                "OCR draft page span end_page {} exceeds preserved package page_count {}",
+                span.end_page, page_count
+            )));
+        }
+        spans.push(StoredPaperBookOcrPageSpan {
+            start_page: span.start_page,
+            end_page: span.end_page,
+        });
+    }
+    Ok(spans)
+}
+
+fn validate_confidence(confidence: Option<f64>) -> Result<Option<f64>, ApiError> {
+    if let Some(value) = confidence {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(ApiError::Unprocessable(
+                "OCR draft confidence must be between 0 and 1".to_owned(),
+            ));
+        }
+    }
+    Ok(confidence)
+}
+
 fn paper_book_import_event_payload(meta: &StoredPaperBookImportMeta) -> serde_json::Value {
     json!({
         "import_id": meta.import_id,
@@ -657,6 +942,57 @@ fn paper_book_import_event_payload(meta: &StoredPaperBookImportMeta) -> serde_js
         "legal_validity_claimed": false,
         "signature_validity_claimed": false,
         "qualified_signature_claimed": false,
+    })
+}
+
+fn paper_book_ocr_draft_event_payload(
+    draft: &StoredPaperBookOcrDraft,
+    action: &'static str,
+) -> serde_json::Value {
+    json!({
+        "action": action,
+        "draft_id": draft.draft_id,
+        "import_id": draft.import_id,
+        "text_digest": draft.text_digest,
+        "extracted_text_stored": draft.extracted_text.is_some(),
+        "extracted_text_in_payload": false,
+        "page_spans": draft.page_spans.iter().map(|span| json!({
+            "start_page": span.start_page,
+            "end_page": span.end_page,
+        })).collect::<Vec<_>>(),
+        "confidence": draft.confidence,
+        "engine_name": draft.engine_name,
+        "engine_version": draft.engine_version,
+        "created_at": draft.created_at.format(&Rfc3339).unwrap_or_default(),
+        "created_by": draft.created_by,
+        "review_status": draft.review_status.as_str(),
+        "draft_notice": PAPER_BOOK_OCR_DRAFT_NOTICE,
+        "non_canonical": true,
+        "authoritative_text_claimed": false,
+        "canonical_minutes_claimed": false,
+        "legal_validity_claimed": false,
+    })
+}
+
+fn paper_book_ocr_draft_review_event_payload(
+    draft: &StoredPaperBookOcrDraft,
+    status: StoredPaperBookOcrReviewStatus,
+    reviewed_by: &str,
+    superseded_by: Option<&str>,
+) -> serde_json::Value {
+    json!({
+        "draft_id": draft.draft_id,
+        "import_id": draft.import_id,
+        "previous_review_status": draft.review_status.as_str(),
+        "review_status": status.as_str(),
+        "reviewed_by": reviewed_by,
+        "superseded_by": superseded_by,
+        "extracted_text_in_payload": false,
+        "draft_notice": PAPER_BOOK_OCR_DRAFT_NOTICE,
+        "non_canonical": true,
+        "authoritative_text_claimed": false,
+        "canonical_minutes_claimed": false,
+        "legal_validity_claimed": false,
     })
 }
 
@@ -708,6 +1044,43 @@ fn paper_book_import_view(meta: &StoredPaperBookImportMeta) -> PaperBookImportVi
         qualified_signature_claimed: false,
         legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
         bytes_download: format!("/v1/books/paper-import/{}/bytes", meta.import_id),
+    }
+}
+
+fn paper_book_ocr_draft_view(draft: &StoredPaperBookOcrDraft) -> PaperBookOcrDraftView {
+    PaperBookOcrDraftView {
+        draft_id: draft.draft_id.clone(),
+        import_id: draft.import_id.clone(),
+        extracted_text: draft.extracted_text.clone(),
+        text_digest: draft.text_digest.clone(),
+        page_spans: draft
+            .page_spans
+            .iter()
+            .map(|span| PaperBookOcrDraftPageSpanView {
+                start_page: span.start_page,
+                end_page: span.end_page,
+            })
+            .collect(),
+        confidence: draft.confidence,
+        engine: PaperBookOcrEngineView {
+            name: draft.engine_name.clone(),
+            version: draft.engine_version.clone(),
+        },
+        created_at: draft.created_at.format(&Rfc3339).unwrap_or_default(),
+        created_by: draft.created_by.clone(),
+        review_status: draft.review_status.as_str(),
+        reviewed_at: draft
+            .reviewed_at
+            .map(|t| t.format(&Rfc3339).unwrap_or_default()),
+        reviewed_by: draft.reviewed_by.clone(),
+        review_note: draft.review_note.clone(),
+        superseded_by: draft.superseded_by.clone(),
+        draft_notice: PAPER_BOOK_OCR_DRAFT_NOTICE,
+        non_canonical: true,
+        authoritative_text_claimed: false,
+        canonical_minutes_claimed: false,
+        legal_validity_claimed: false,
+        legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
     }
 }
 
@@ -804,6 +1177,34 @@ fn optional_text(value: Option<String>, field: &'static str) -> Result<Option<St
         )));
     }
     Ok(Some(value.to_owned()))
+}
+
+fn optional_limited_text(
+    value: Option<String>,
+    field: &'static str,
+    max_chars: usize,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = optional_text(value, field)? else {
+        return Ok(None);
+    };
+    if value.chars().count() > max_chars {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be at most {max_chars} characters"
+        )));
+    }
+    Ok(Some(value))
+}
+
+fn optional_uuid_ref(
+    value: Option<String>,
+    field: &'static str,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = optional_plain_ref(value, field)? else {
+        return Ok(None);
+    };
+    Uuid::parse_str(&value)
+        .map_err(|_| ApiError::Unprocessable(format!("{field} must be a UUID")))?;
+    Ok(Some(value))
 }
 
 fn optional_plain_ref(
