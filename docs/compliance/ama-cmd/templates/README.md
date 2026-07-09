@@ -9,6 +9,8 @@ certification, or legal compliance.
 ## Pack Contents
 
 - `CHECKLIST.md` - review checklist and evidence gates.
+- `IMPLEMENTATION-EVIDENCE-MAP.md` - generated map from AMA/CMD source
+  expectations to local implementation files and verification commands.
 - `manifest.json` - machine-readable pack status and evidence slots.
 - `sources/` - official source URL metadata.
 - `templates/` - fill-in Markdown templates for review material.
