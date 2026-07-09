@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "source_authority": "Diario da Republica Eletronico",
+  "approval_marker_required": "LEGAL_APPROVED_FOR_VERIFIED",
+  "captures": [
+    {
+      "diploma_id": "csc",
+      "official_page_url": "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975",
+      "eli": "https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101",
+      "captured_artifact_path": null,
+      "capture_timestamp": null,
+      "sha256": null,
+      "article_ids": ["255", "399"],
+      "reviewer_status": "Pending",
+      "legal_approval_status": "Pending",
+      "approval_marker": null
+    }
+  ]
+}

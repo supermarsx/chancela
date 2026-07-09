@@ -69,6 +69,32 @@ For each diploma, vendor the authentic Diário da República / EUR-Lex text and 
 | `eurlex/32016R0679.pt.html` | Regulamento (UE) 2016/679 (RGPD) | https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32016R0679 | `b27b27f500866926adcb775f2ac115eb075fc2ab8f7985101ea0fe5c68937c23` |
 | `eurlex/32024R1183.pt.html` | Regulamento (UE) 2024/1183 (eIDAS 2.0) | https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32024R1183 | `4c5bef3e6149a679888869e856ebe3728ae6cc3aff70b01e81f5d0c5bfc9eabf` |
 
+## DRE rendered capture workflow — CSC 255/399 scaffold
+
+The DRE consolidated-law portal is JS-rendered. For the Portuguese DRE diplomas, and specifically
+the priority CSC articles 255.º and 399.º, `Pending → Verified` is therefore a two-person operator
+workflow, not a curl-only generator step.
+
+The machine-readable control file is `dre-captures.manifest.json`. Each row records:
+
+- `official_page_url` — the rendered official DRE consolidated-law page.
+- `eli` — the DRE ELI resolver URL for the consolidated version being captured.
+- `captured_artifact_path` — repository-relative path under `data/source/` for the saved rendered
+  official artifact, once captured.
+- `capture_timestamp` — RFC 3339 timestamp for the capture.
+- `sha256` — lowercase sha256 of the captured artifact bytes.
+- `article_ids` — article ids covered by that artifact.
+- `reviewer_status` and `legal_approval_status` — explicit `Pending`, `Approved`, or `Rejected`.
+- `approval_marker` — must equal `LEGAL_APPROVED_FOR_VERIFIED` before generated DRE articles may
+  become `Verified`.
+
+Current CSC 255/399 status is intentionally `Pending`: no artifact path, timestamp, digest, reviewer
+approval, legal approval, or approval marker is present. `gen_law.py --check` validates this manifest
+and refuses any generated DRE article marked `Verified` unless the matching manifest row has an
+existing captured artifact, a matching sha256, both approvals, and the approval marker. The Rust
+`dre_capture_manifest` test independently pins the manifest shape and cross-checks the embedded
+corpus so accidental DRE verification without approval fails in CI.
+
 ## E1b-eu — the 3 EU regulations vendored VERBATIM from EUR-Lex — 2026-07-08
 
 **Outcome: all 3 EU-regulation diplomas are now authentic and Verified** — 153 articles vendored

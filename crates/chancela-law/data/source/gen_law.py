@@ -62,8 +62,11 @@ import json
 import os
 import re
 import sys
+from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+DRE_CAPTURE_MANIFEST = os.path.join(HERE, "dre-captures.manifest.json")
+LEGAL_APPROVAL_MARKER = "LEGAL_APPROVED_FOR_VERIFIED"
 
 # The loud placeholder a Pending article renders instead of a (never-fabricated) body. Kept in
 # sync with `UNVERIFIED_MARKER` in `src/model.rs`.
@@ -394,6 +397,105 @@ def build_verified_article(diploma_id, diploma_ref, src, number, heading, body, 
         "cross_refs": list(cross_refs),
     }
 
+def _is_non_empty_string(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_rfc3339_utc(value: str) -> bool:
+    if not _is_non_empty_string(value):
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return value.endswith("Z") or value.endswith("+00:00")
+
+
+def _load_dre_capture_manifest(path=DRE_CAPTURE_MANIFEST):
+    with open(path, "r", encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    if manifest.get("schema_version") != 1:
+        raise SystemExit("gen_law: DRE capture manifest schema_version must be 1")
+    if manifest.get("approval_marker_required") != LEGAL_APPROVAL_MARKER:
+        raise SystemExit(
+            f"gen_law: DRE capture manifest approval_marker_required must be {LEGAL_APPROVAL_MARKER!r}"
+        )
+    captures = manifest.get("captures")
+    if not isinstance(captures, list):
+        raise SystemExit("gen_law: DRE capture manifest captures must be an array")
+
+    by_article = {}
+    for i, capture in enumerate(captures):
+        prefix = f"gen_law: DRE capture manifest captures[{i}]"
+        for field in ["diploma_id", "official_page_url", "eli", "reviewer_status", "legal_approval_status"]:
+            if not _is_non_empty_string(capture.get(field)):
+                raise SystemExit(f"{prefix}.{field} must be a non-empty string")
+        if not str(capture["official_page_url"]).startswith("https://diariodarepublica.pt/"):
+            raise SystemExit(f"{prefix}.official_page_url must point at diariodarepublica.pt")
+        if not str(capture["eli"]).startswith("https://data.dre.pt/eli/"):
+            raise SystemExit(f"{prefix}.eli must be a data.dre.pt ELI")
+        article_ids = capture.get("article_ids")
+        if not isinstance(article_ids, list) or not article_ids or not all(_is_non_empty_string(a) for a in article_ids):
+            raise SystemExit(f"{prefix}.article_ids must be a non-empty string array")
+        for article_id in article_ids:
+            key = (capture["diploma_id"], article_id)
+            if key in by_article:
+                raise SystemExit(f"gen_law: duplicate DRE capture row for {key[0]}:{key[1]}")
+            by_article[key] = capture
+    return manifest, by_article
+
+
+def _verify_approved_capture(diploma_id: str, article_id: str, capture: dict):
+    label = f"{diploma_id}:{article_id}"
+    if capture.get("reviewer_status") != "Approved":
+        raise SystemExit(f"gen_law: refusing to mark {label} Verified without reviewer approval")
+    if capture.get("legal_approval_status") != "Approved":
+        raise SystemExit(f"gen_law: refusing to mark {label} Verified without legal approval")
+    if capture.get("approval_marker") != LEGAL_APPROVAL_MARKER:
+        raise SystemExit(f"gen_law: refusing to mark {label} Verified without {LEGAL_APPROVAL_MARKER}")
+    if not _is_rfc3339_utc(capture.get("capture_timestamp")):
+        raise SystemExit(f"gen_law: refusing to mark {label} Verified without RFC3339 capture_timestamp")
+    artifact_path = capture.get("captured_artifact_path")
+    if not _is_non_empty_string(artifact_path):
+        raise SystemExit(f"gen_law: refusing to mark {label} Verified without captured_artifact_path")
+    artifact_parts = artifact_path.replace("\\", "/").split("/")
+    if os.path.isabs(artifact_path) or ".." in artifact_parts:
+        raise SystemExit(f"gen_law: refusing to mark {label} Verified with unsafe artifact path")
+    full_path = os.path.join(HERE, artifact_path)
+    if not os.path.isfile(full_path):
+        raise SystemExit(f"gen_law: refusing to mark {label} Verified; missing artifact {artifact_path}")
+    expected_sha = capture.get("sha256")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(expected_sha or "")):
+        raise SystemExit(f"gen_law: refusing to mark {label} Verified without lowercase sha256")
+    with open(full_path, "rb") as fh:
+        got = hashlib.sha256(fh.read()).hexdigest()
+    if got != expected_sha:
+        raise SystemExit(
+            f"gen_law: refusing to mark {label} Verified; artifact sha256 mismatch\n"
+            f"  expected {expected_sha}\n  got      {got}"
+        )
+
+
+def guard_dre_verified_articles(diplomas):
+    """DRE-specific Pending→Verified guard. A generated DRE article may only be
+    Verified after an operator capture row names the official page URL, ELI,
+    artifact path, capture timestamp, sha256, article ids, reviewer approval,
+    legal approval, and the explicit approval marker."""
+    _manifest, by_article = _load_dre_capture_manifest()
+    for diploma in diplomas:
+        if diploma["id"] in EU_REG_SOURCES:
+            continue
+        for article in diploma["articles"]:
+            if article["verification"] != "Verified":
+                continue
+            key = (diploma["id"], article["number"])
+            capture = by_article.get(key)
+            if capture is None:
+                raise SystemExit(
+                    f"gen_law: refusing to mark {key[0]}:{key[1]} Verified without a DRE capture row"
+                )
+            _verify_approved_capture(key[0], key[1], capture)
+
 
 def build_corpus():
     diplomas = []
@@ -428,6 +530,7 @@ def build_corpus():
                 "articles": articles,
             }
         )
+    guard_dre_verified_articles(diplomas)
     return diplomas
 
 
