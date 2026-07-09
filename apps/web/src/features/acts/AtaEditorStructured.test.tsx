@@ -9,6 +9,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AtaEditorPage } from './AtaEditorPage';
+import { ataFieldHelp } from './fieldHelp';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
 import { ALLOW_ALL_PERMISSIONS, StaticPermissionsProvider } from '../session/permissions';
@@ -127,6 +128,24 @@ afterEach(() => {
 });
 
 describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
+  it('adds inline help to top-level meeting and free-text fields', async () => {
+    const shared = stateful({ ...baseAct, channel: 'Hybrid' });
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    expect(await screen.findByDisplayValue('Assembleia Geral Anual')).toBeTruthy();
+    expect(document.body.textContent).toContain(ataFieldHelp.title);
+    expect(document.body.textContent).toContain(ataFieldHelp.channel);
+    expect(document.body.textContent).toContain(ataFieldHelp.meetingDate);
+    expect(document.body.textContent).toContain(ataFieldHelp.meetingTime);
+    expect(document.body.textContent).toContain(ataFieldHelp.place);
+    expect(document.body.textContent).toContain(ataFieldHelp.attendanceReference);
+    expect(document.body.textContent).toContain(ataFieldHelp.membersPresent);
+    expect(document.body.textContent).toContain(ataFieldHelp.membersRepresented);
+    expect(document.body.textContent).toContain(ataFieldHelp.telematicEvidence);
+    expect(document.body.textContent).toContain(ataFieldHelp.deliberationsText);
+  });
+
   it('clears the mesa-presidente compliance error once the chair is filled and saved', async () => {
     const shared = stateful(baseAct);
     vi.stubGlobal('fetch', shared.fetchImpl);

@@ -265,6 +265,15 @@ describe('AtaEditorPage seal gating', () => {
     expect(screen.getByText(/tem de registar as deliberações/i)).toBeTruthy();
   });
 
+  it('keeps the seal action disabled until the act reaches Signing even when compliance is clean', async () => {
+    renderEditor({ ...baseAct, state: 'Draft' }, complianceReport());
+
+    const sealButton = await screen.findByRole<HTMLButtonElement>('button', { name: /selar ata/i });
+    expect(sealButton.disabled).toBe(true);
+    expect(screen.getByText(/só fica disponível no estado «Em assinatura»/i)).toBeTruthy();
+    expect(screen.queryByText(/está conforme e em assinatura/i)).toBeNull();
+  });
+
   it('enables the seal action when compliance is clean and the act is Signing', async () => {
     const report: ComplianceReport = {
       rule_pack: 'csc-art63/v2',

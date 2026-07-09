@@ -62,6 +62,7 @@ import {
   Digest,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   InlineWarning,
   Input,
@@ -74,6 +75,7 @@ import {
 } from '../../ui';
 import { CompliancePanel } from './CompliancePanel';
 import { FollowUpsPanel } from './FollowUpsPanel';
+import { ataFieldHelp } from './fieldHelp';
 import { ActDocumentPanel } from '../documents/ActDocumentPanel';
 import { SigningPanel } from '../signing/SigningPanel';
 import { GateButton, scopeBook, type CanScope } from '../session/permissions';
@@ -182,7 +184,12 @@ function MesaEditor({
   const secretarios = mesa.secretarios;
   return (
     <div className="form">
-      <Field label={t('acts.mesa.presidente')} htmlFor="ed-presidente" hint={t('acts.mesa.hint')}>
+      <Field
+        label={t('acts.mesa.presidente')}
+        htmlFor="ed-presidente"
+        hint={t('acts.mesa.hint')}
+        help={ataFieldHelp.mesaPresidente}
+      >
         <Input
           id="ed-presidente"
           value={mesa.presidente ?? ''}
@@ -191,7 +198,7 @@ function MesaEditor({
           onChange={(e) => onChange({ ...mesa, presidente: e.target.value })}
         />
       </Field>
-      <Field label={t('acts.mesa.secretarios')}>
+      <Field label={t('acts.mesa.secretarios')} help={ataFieldHelp.mesaSecretarios}>
         <div className="stack--tight">
           {secretarios.map((name, i) => (
             <div className="rowline" key={i}>
@@ -259,61 +266,63 @@ function AgendaEditor({
     onChange(renumber(next));
   };
   return (
-    <div className="stack--tight">
-      {agenda.map((item, i) => (
-        <div className="rowline" key={i}>
-          <span className="agenda__num">{item.number}.</span>
-          <Input
-            aria-label={t('acts.agenda.itemAria')}
-            placeholder={t('acts.agenda.placeholder')}
-            value={item.text}
-            disabled={disabled}
-            onChange={(e) =>
-              onChange(agenda.map((a, idx) => (idx === i ? { ...a, text: e.target.value } : a)))
-            }
-          />
-          {!disabled ? (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                icon={<Icon.ArrowUp />}
-                aria-label={t('acts.agenda.moveUp')}
-                disabled={i === 0}
-                onClick={() => swap(i, i - 1)}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                icon={<Icon.ArrowDown />}
-                aria-label={t('acts.agenda.moveDown')}
-                disabled={i === agenda.length - 1}
-                onClick={() => swap(i, i + 1)}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                icon={<Icon.Trash />}
-                onClick={() => onChange(renumber(agenda.filter((_, idx) => idx !== i)))}
-              >
-                {t('common.remove')}
-              </Button>
-            </>
-          ) : null}
-        </div>
-      ))}
-      {!disabled ? (
-        <Button
-          type="button"
-          variant="secondary"
-          icon={<Icon.Plus />}
-          onClick={() => onChange(renumber([...agenda, { number: agenda.length + 1, text: '' }]))}
-        >
-          {t('acts.agenda.add')}
-        </Button>
-      ) : null}
-      {agenda.length === 0 && disabled ? <p className="muted">{t('acts.agenda.none')}</p> : null}
-    </div>
+    <Field label={t('acts.agenda.itemAria')} help={ataFieldHelp.agendaItem}>
+      <div className="stack--tight">
+        {agenda.map((item, i) => (
+          <div className="rowline" key={i}>
+            <span className="agenda__num">{item.number}.</span>
+            <Input
+              aria-label={t('acts.agenda.itemAria')}
+              placeholder={t('acts.agenda.placeholder')}
+              value={item.text}
+              disabled={disabled}
+              onChange={(e) =>
+                onChange(agenda.map((a, idx) => (idx === i ? { ...a, text: e.target.value } : a)))
+              }
+            />
+            {!disabled ? (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.ArrowUp />}
+                  aria-label={t('acts.agenda.moveUp')}
+                  disabled={i === 0}
+                  onClick={() => swap(i, i - 1)}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.ArrowDown />}
+                  aria-label={t('acts.agenda.moveDown')}
+                  disabled={i === agenda.length - 1}
+                  onClick={() => swap(i, i + 1)}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.Trash />}
+                  onClick={() => onChange(renumber(agenda.filter((_, idx) => idx !== i)))}
+                >
+                  {t('common.remove')}
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ))}
+        {!disabled ? (
+          <Button
+            type="button"
+            variant="secondary"
+            icon={<Icon.Plus />}
+            onClick={() => onChange(renumber([...agenda, { number: agenda.length + 1, text: '' }]))}
+          >
+            {t('acts.agenda.add')}
+          </Button>
+        ) : null}
+        {agenda.length === 0 && disabled ? <p className="muted">{t('acts.agenda.none')}</p> : null}
+      </div>
+    </Field>
   );
 }
 
@@ -353,7 +362,7 @@ function VoteEditor({
 
   return (
     <div className="vote">
-      <Field label={t('acts.vote.mode')}>
+      <Field label={t('acts.vote.mode')} help={ataFieldHelp.voteMode}>
         <Select
           aria-label={t('acts.vote.mode')}
           value={mode}
@@ -369,7 +378,7 @@ function VoteEditor({
       </Field>
       {mode === 'Recorded' ? (
         <div className="rowline">
-          <Field label={t('acts.vote.emFavor')}>
+          <Field label={t('acts.vote.emFavor')} help={ataFieldHelp.voteCount}>
             <Input
               type="number"
               min={0}
@@ -379,7 +388,7 @@ function VoteEditor({
               onChange={(e) => setRecorded({ em_favor: num(e.target.value) })}
             />
           </Field>
-          <Field label={t('acts.vote.contra')}>
+          <Field label={t('acts.vote.contra')} help={ataFieldHelp.voteCount}>
             <Input
               type="number"
               min={0}
@@ -389,7 +398,7 @@ function VoteEditor({
               onChange={(e) => setRecorded({ contra: num(e.target.value) })}
             />
           </Field>
-          <Field label={t('acts.vote.abstencoes')}>
+          <Field label={t('acts.vote.abstencoes')} help={ataFieldHelp.voteCount}>
             <Input
               type="number"
               min={0}
@@ -420,50 +429,51 @@ function StatementsEditor({
   const update = (i: number, patch: Partial<ActMemberStatement>) =>
     onChange(statements.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
   return (
-    <div className="stack--tight">
-      <p className="card__label">{t('acts.statements')}</p>
-      {statements.map((s, i) => (
-        <div className="rowline" key={i}>
-          <Input
-            aria-label={t('acts.statements.memberAria')}
-            placeholder={t('acts.statements.memberPlaceholder')}
-            value={s.member}
-            disabled={disabled}
-            onChange={(e) => update(i, { member: e.target.value })}
-          />
-          <Input
-            aria-label={t('acts.statements.textAria')}
-            placeholder={t('acts.statements.textPlaceholder')}
-            value={s.text}
-            disabled={disabled}
-            onChange={(e) => update(i, { text: e.target.value })}
-          />
-          {!disabled ? (
-            <Button
-              type="button"
-              variant="ghost"
-              icon={<Icon.Trash />}
-              onClick={() => onChange(statements.filter((_, idx) => idx !== i))}
-            >
-              {t('common.remove')}
-            </Button>
-          ) : null}
-        </div>
-      ))}
-      {!disabled ? (
-        <Button
-          type="button"
-          variant="ghost"
-          icon={<Icon.Plus />}
-          onClick={() => onChange([...statements, { member: '', text: '' }])}
-        >
-          {t('acts.statements.add')}
-        </Button>
-      ) : null}
-      {statements.length === 0 && disabled ? (
-        <p className="muted">{t('acts.statements.none')}</p>
-      ) : null}
-    </div>
+    <Field label={t('acts.statements')} help={ataFieldHelp.statements}>
+      <div className="stack--tight">
+        {statements.map((s, i) => (
+          <div className="rowline" key={i}>
+            <Input
+              aria-label={t('acts.statements.memberAria')}
+              placeholder={t('acts.statements.memberPlaceholder')}
+              value={s.member}
+              disabled={disabled}
+              onChange={(e) => update(i, { member: e.target.value })}
+            />
+            <Input
+              aria-label={t('acts.statements.textAria')}
+              placeholder={t('acts.statements.textPlaceholder')}
+              value={s.text}
+              disabled={disabled}
+              onChange={(e) => update(i, { text: e.target.value })}
+            />
+            {!disabled ? (
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<Icon.Trash />}
+                onClick={() => onChange(statements.filter((_, idx) => idx !== i))}
+              >
+                {t('common.remove')}
+              </Button>
+            ) : null}
+          </div>
+        ))}
+        {!disabled ? (
+          <Button
+            type="button"
+            variant="ghost"
+            icon={<Icon.Plus />}
+            onClick={() => onChange([...statements, { member: '', text: '' }])}
+          >
+            {t('acts.statements.add')}
+          </Button>
+        ) : null}
+        {statements.length === 0 && disabled ? (
+          <p className="muted">{t('acts.statements.none')}</p>
+        ) : null}
+      </div>
+    </Field>
   );
 }
 
@@ -505,7 +515,10 @@ function DeliberationItemsEditor({
               </Button>
             ) : null}
           </div>
-          <Field label={t('acts.deliberationItems.agendaLink')}>
+          <Field
+            label={t('acts.deliberationItems.agendaLink')}
+            help={ataFieldHelp.structuredAgenda}
+          >
             <Select
               aria-label={t('acts.deliberationItems.agendaLink')}
               value={item.agenda_number == null ? '' : String(item.agenda_number)}
@@ -516,7 +529,7 @@ function DeliberationItemsEditor({
               }
             />
           </Field>
-          <Field label={t('acts.deliberationItems.textAria')}>
+          <Field label={t('acts.deliberationItems.textAria')} help={ataFieldHelp.structuredText}>
             <TextArea
               rows={3}
               aria-label={t('acts.deliberationItems.textAria')}
@@ -575,20 +588,30 @@ function ReferencedDocumentsEditor({
     <div className="stack--tight">
       {documents.map((doc, i) => (
         <div className="rowline" key={i}>
-          <Input
-            aria-label={t('acts.referencedDocuments.labelAria')}
-            placeholder={t('acts.referencedDocuments.labelPlaceholder')}
-            value={doc.label}
-            disabled={disabled}
-            onChange={(e) => update(i, { label: e.target.value })}
-          />
-          <Input
-            aria-label={t('acts.referencedDocuments.refAria')}
-            placeholder={t('acts.referencedDocuments.refPlaceholder')}
-            value={doc.reference ?? ''}
-            disabled={disabled}
-            onChange={(e) => update(i, { reference: orNull(e.target.value) })}
-          />
+          <Field
+            label={t('acts.referencedDocuments.labelAria')}
+            help={ataFieldHelp.referencedDocumentLabel}
+          >
+            <Input
+              aria-label={t('acts.referencedDocuments.labelAria')}
+              placeholder={t('acts.referencedDocuments.labelPlaceholder')}
+              value={doc.label}
+              disabled={disabled}
+              onChange={(e) => update(i, { label: e.target.value })}
+            />
+          </Field>
+          <Field
+            label={t('acts.referencedDocuments.refAria')}
+            help={ataFieldHelp.referencedDocumentRef}
+          >
+            <Input
+              aria-label={t('acts.referencedDocuments.refAria')}
+              placeholder={t('acts.referencedDocuments.refPlaceholder')}
+              value={doc.reference ?? ''}
+              disabled={disabled}
+              onChange={(e) => update(i, { reference: orNull(e.target.value) })}
+            />
+          </Field>
           {!disabled ? (
             <Button
               type="button"
@@ -635,46 +658,55 @@ function SignatoriesEditor({
     <div className="stack--tight">
       {signatories.map((s, i) => (
         <div className="rowline" key={i}>
-          <Input
-            aria-label={t('acts.signatoryNameAria')}
-            placeholder={t('acts.namePlaceholder')}
-            value={s.name}
-            disabled={disabled}
-            onChange={(e) => update(i, { name: e.target.value })}
-          />
-          <Select
-            aria-label={t('acts.capacityAria')}
-            value={s.capacity}
-            disabled={disabled}
-            onChange={(e) => update(i, { capacity: e.target.value as SignatoryCapacity })}
-            options={optionsFrom(SIGNATORY_CAPACITIES, signatoryCapacityLabels)}
-          />
-          {s.capacity === 'CondoOwner' ? (
+          <Field label={t('acts.signatoryNameAria')} help={ataFieldHelp.signatoryName}>
             <Input
-              className="input--permilage"
-              type="number"
-              min={0}
-              max={1000}
-              aria-label={t('acts.signatoryPermilageAria')}
-              placeholder={t('acts.signatoryPermilagePlaceholder')}
-              value={s.permilage ?? ''}
+              aria-label={t('acts.signatoryNameAria')}
+              placeholder={t('acts.namePlaceholder')}
+              value={s.name}
               disabled={disabled}
-              onChange={(e) =>
-                update(i, {
-                  permilage: e.target.value === '' ? null : Math.trunc(Number(e.target.value)),
-                })
-              }
+              onChange={(e) => update(i, { name: e.target.value })}
             />
-          ) : null}
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={s.signed}
+          </Field>
+          <Field label={t('acts.capacityAria')} help={ataFieldHelp.signatoryCapacity}>
+            <Select
+              aria-label={t('acts.capacityAria')}
+              value={s.capacity}
               disabled={disabled}
-              onChange={(e) => update(i, { signed: e.target.checked })}
-            />{' '}
-            {t('acts.signed')}
-          </label>
+              onChange={(e) => update(i, { capacity: e.target.value as SignatoryCapacity })}
+              options={optionsFrom(SIGNATORY_CAPACITIES, signatoryCapacityLabels)}
+            />
+          </Field>
+          {s.capacity === 'CondoOwner' ? (
+            <Field label={t('acts.signatoryPermilageAria')} help={ataFieldHelp.signatoryPermilage}>
+              <Input
+                className="input--permilage"
+                type="number"
+                min={0}
+                max={1000}
+                aria-label={t('acts.signatoryPermilageAria')}
+                placeholder={t('acts.signatoryPermilagePlaceholder')}
+                value={s.permilage ?? ''}
+                disabled={disabled}
+                onChange={(e) =>
+                  update(i, {
+                    permilage: e.target.value === '' ? null : Math.trunc(Number(e.target.value)),
+                  })
+                }
+              />
+            </Field>
+          ) : null}
+          <span className="field__labelrow">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={s.signed}
+                disabled={disabled}
+                onChange={(e) => update(i, { signed: e.target.checked })}
+              />{' '}
+              {t('acts.signed')}
+            </label>
+            <FieldHelp text={ataFieldHelp.signatorySigned} />
+          </span>
           {!disabled ? (
             <Button
               type="button"
@@ -723,34 +755,41 @@ function AttachmentsEditor({
     <div className="stack--tight">
       {attachments.map((a, i) => (
         <div className="rowline" key={i}>
-          <Input
-            aria-label={t('acts.attachmentDescAria')}
-            placeholder={t('acts.descPlaceholder')}
-            value={a.label}
-            disabled={disabled}
-            onChange={(e) => update(i, { label: e.target.value })}
-          />
-          <Select
-            aria-label={t('acts.attachmentKindAria')}
-            value={a.kind}
-            disabled={disabled}
-            onChange={(e) => update(i, { kind: e.target.value as AttachmentKind })}
-            options={optionsFrom(ATTACHMENT_KINDS, attachmentKindLabels)}
-          />
+          <Field label={t('acts.attachmentDescAria')} help={ataFieldHelp.attachmentLabel}>
+            <Input
+              aria-label={t('acts.attachmentDescAria')}
+              placeholder={t('acts.descPlaceholder')}
+              value={a.label}
+              disabled={disabled}
+              onChange={(e) => update(i, { label: e.target.value })}
+            />
+          </Field>
+          <Field label={t('acts.attachmentKindAria')} help={ataFieldHelp.attachmentKind}>
+            <Select
+              aria-label={t('acts.attachmentKindAria')}
+              value={a.kind}
+              disabled={disabled}
+              onChange={(e) => update(i, { kind: e.target.value as AttachmentKind })}
+              options={optionsFrom(ATTACHMENT_KINDS, attachmentKindLabels)}
+            />
+          </Field>
           {a.digest ? (
             <code className="mono" title={a.digest}>
               {a.digest.slice(0, 10)}…
             </code>
           ) : null}
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={a.beginning_of_proof ?? false}
-              disabled={disabled}
-              onChange={(e) => update(i, { beginning_of_proof: e.target.checked })}
-            />{' '}
-            {t('acts.attachment.beginningOfProof')}
-          </label>
+          <span className="field__labelrow">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={a.beginning_of_proof ?? false}
+                disabled={disabled}
+                onChange={(e) => update(i, { beginning_of_proof: e.target.checked })}
+              />{' '}
+              {t('acts.attachment.beginningOfProof')}
+            </label>
+            <FieldHelp text={ataFieldHelp.beginningOfProof} />
+          </span>
           {!disabled ? (
             <Button
               type="button"
@@ -934,6 +973,7 @@ export function AtaEditorPage() {
   }
 
   const sealAllowed = compliance.data?.seal_allowed ?? false;
+  const canSeal = a.state === 'Signing' && sealAllowed;
 
   return (
     <div className="stack">
@@ -994,7 +1034,7 @@ export function AtaEditorPage() {
           >
             {update.error ? <ErrorNote error={update.error} /> : null}
             <div className="form">
-              <Field label={t('acts.title')} htmlFor="ed-title">
+              <Field label={t('acts.title')} htmlFor="ed-title" help={ataFieldHelp.title}>
                 <Input
                   id="ed-title"
                   value={draft.title}
@@ -1002,7 +1042,7 @@ export function AtaEditorPage() {
                   onChange={(e) => set('title', e.target.value)}
                 />
               </Field>
-              <Field label={t('acts.channel')} htmlFor="ed-channel">
+              <Field label={t('acts.channel')} htmlFor="ed-channel" help={ataFieldHelp.channel}>
                 <Select
                   id="ed-channel"
                   value={draft.channel}
@@ -1012,7 +1052,11 @@ export function AtaEditorPage() {
                 />
               </Field>
               <div className="rowline">
-                <Field label={t('acts.meetingDate')} htmlFor="ed-date">
+                <Field
+                  label={t('acts.meetingDate')}
+                  htmlFor="ed-date"
+                  help={ataFieldHelp.meetingDate}
+                >
                   <Input
                     id="ed-date"
                     type="date"
@@ -1021,7 +1065,11 @@ export function AtaEditorPage() {
                     onChange={(e) => set('meeting_date', e.target.value)}
                   />
                 </Field>
-                <Field label={t('acts.meetingTime')} htmlFor="ed-time">
+                <Field
+                  label={t('acts.meetingTime')}
+                  htmlFor="ed-time"
+                  help={ataFieldHelp.meetingTime}
+                >
                   <Input
                     id="ed-time"
                     type="time"
@@ -1031,7 +1079,7 @@ export function AtaEditorPage() {
                   />
                 </Field>
               </div>
-              <Field label={t('acts.local')} htmlFor="ed-place">
+              <Field label={t('acts.local')} htmlFor="ed-place" help={ataFieldHelp.place}>
                 <Input
                   id="ed-place"
                   value={draft.place}
@@ -1039,7 +1087,11 @@ export function AtaEditorPage() {
                   onChange={(e) => set('place', e.target.value)}
                 />
               </Field>
-              <Field label={t('acts.attendanceRef')} htmlFor="ed-attendance">
+              <Field
+                label={t('acts.attendanceRef')}
+                htmlFor="ed-attendance"
+                help={ataFieldHelp.attendanceReference}
+              >
                 <Input
                   id="ed-attendance"
                   value={draft.attendance_reference}
@@ -1048,7 +1100,11 @@ export function AtaEditorPage() {
                 />
               </Field>
               <div className="rowline">
-                <Field label={t('acts.membersPresent')} htmlFor="ed-present">
+                <Field
+                  label={t('acts.membersPresent')}
+                  htmlFor="ed-present"
+                  help={ataFieldHelp.membersPresent}
+                >
                   <Input
                     id="ed-present"
                     type="number"
@@ -1058,7 +1114,11 @@ export function AtaEditorPage() {
                     onChange={(e) => set('members_present', e.target.value)}
                   />
                 </Field>
-                <Field label={t('acts.membersRepresented')} htmlFor="ed-represented">
+                <Field
+                  label={t('acts.membersRepresented')}
+                  htmlFor="ed-represented"
+                  help={ataFieldHelp.membersRepresented}
+                >
                   <Input
                     id="ed-represented"
                     type="number"
@@ -1074,6 +1134,7 @@ export function AtaEditorPage() {
                   label={t('acts.telematicEvidence')}
                   htmlFor="ed-telematic"
                   hint={t('acts.telematicEvidenceHint')}
+                  help={ataFieldHelp.telematicEvidence}
                 >
                   <Input
                     id="ed-telematic"
@@ -1105,7 +1166,12 @@ export function AtaEditorPage() {
           <Card title={t('acts.deliberacoes')}>
             <div className="delib">
               <div className="delib__edit">
-                <Field label={t('acts.text')} htmlFor="ed-delib" hint={t('acts.textHint')}>
+                <Field
+                  label={t('acts.text')}
+                  htmlFor="ed-delib"
+                  hint={t('acts.textHint')}
+                  help={ataFieldHelp.deliberationsText}
+                >
                   <TextArea
                     id="ed-delib"
                     rows={12}
@@ -1186,54 +1252,55 @@ export function AtaEditorPage() {
             ) : null}
           </Card>
 
-          {a.state === 'Signing' ? (
-            <InlineWarning tone="warn" title={t('acts.manualSignature.title')}>
-              {t('acts.manualSignature.body')}
-            </InlineWarning>
-          ) : null}
-
           <Card title={t('acts.sealing.title')}>
-            {seal.error ? <ErrorNote error={seal.error} /> : null}
-            {!readOnly ? (
-              <div className="stack--tight">
-                <p className="muted">
-                  {sealAllowed
-                    ? t('acts.sealing.ready')
-                    : a.state !== 'Signing'
+            <div className="stack--tight">
+              {a.state === 'Signing' ? (
+                <InlineWarning tone="warn" title={t('acts.manualSignature.title')}>
+                  {t('acts.manualSignature.body')}
+                </InlineWarning>
+              ) : null}
+              {seal.error ? <ErrorNote error={seal.error} /> : null}
+              {!readOnly ? (
+                <>
+                  <p className="muted">
+                    {a.state !== 'Signing'
                       ? t('acts.sealing.unavailableState')
-                      : t('acts.sealing.fixErrors')}
-                </p>
-                <GateButton
-                  perm="signing.perform"
-                  scope={bookScope}
-                  type="button"
-                  variant="primary"
-                  icon={<Icon.Seal />}
-                  disabled={!sealAllowed || seal.isPending}
-                  onClick={onSeal}
-                >
-                  {seal.isPending ? t('acts.sealing.sealing') : t('acts.sealing.seal')}
-                </GateButton>
-              </div>
-            ) : a.state === 'Sealed' ? (
-              <div className="stack--tight">
-                <p className="muted">{t('acts.sealed.archiveHint')}</p>
-                <GateButton
-                  perm="act.archive"
-                  scope={bookScope}
-                  type="button"
-                  variant="secondary"
-                  icon={<Icon.Archive />}
-                  disabled={archive.isPending}
-                  onClick={onArchive}
-                >
-                  {archive.isPending ? t('acts.archiving') : t('acts.archive')}
-                </GateButton>
-                {archive.error ? <ErrorNote error={archive.error} /> : null}
-              </div>
-            ) : (
-              <p className="muted">{t('acts.archived')}</p>
-            )}
+                      : sealAllowed
+                        ? t('acts.sealing.ready')
+                        : t('acts.sealing.fixErrors')}
+                  </p>
+                  <GateButton
+                    perm="signing.perform"
+                    scope={bookScope}
+                    type="button"
+                    variant="primary"
+                    icon={<Icon.Seal />}
+                    disabled={!canSeal || seal.isPending}
+                    onClick={onSeal}
+                  >
+                    {seal.isPending ? t('acts.sealing.sealing') : t('acts.sealing.seal')}
+                  </GateButton>
+                </>
+              ) : a.state === 'Sealed' ? (
+                <>
+                  <p className="muted">{t('acts.sealed.archiveHint')}</p>
+                  <GateButton
+                    perm="act.archive"
+                    scope={bookScope}
+                    type="button"
+                    variant="secondary"
+                    icon={<Icon.Archive />}
+                    disabled={archive.isPending}
+                    onClick={onArchive}
+                  >
+                    {archive.isPending ? t('acts.archiving') : t('acts.archive')}
+                  </GateButton>
+                  {archive.error ? <ErrorNote error={archive.error} /> : null}
+                </>
+              ) : (
+                <p className="muted">{t('acts.archived')}</p>
+              )}
+            </div>
           </Card>
         </div>
       </div>
