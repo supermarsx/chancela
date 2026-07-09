@@ -1,7 +1,7 @@
 # Testing — chancela-pades
 
-PAdES-B-B / B-T PDF signing, local caller-supplied DSS/VRI append/reporting, and structural
-validation (spec 04, SIG-21/22/24).
+PAdES-B-B / B-T PDF signing, local caller-supplied DSS/VRI and `/DocTimeStamp`
+append/reporting, and structural validation (spec 04, SIG-21/22/24).
 
 ## Run
 
@@ -14,8 +14,9 @@ cargo fmt   -p chancela-pades --check
 All tests are **offline and deterministic**. There are no hardware or network tests and no
 feature gates: signing keys/certificates are generated ephemerally in-test (no private keys are
 checked in), and the B-T signature timestamp is driven from `chancela-tsa`'s bundled OpenSSL
-RFC 3161 fixture via `MockTsaTransport::from_fixture()`. DSS tests use caller-supplied synthetic
-DER fixtures only; they do not fetch, freshness-check, or trust-validate OCSP/CRL data.
+RFC 3161 fixture via `MockTsaTransport::from_fixture()`. DSS and `/DocTimeStamp` tests use
+caller-supplied synthetic DER fixtures only; they do not fetch, freshness-check, or trust-validate
+OCSP/CRL or archive timestamp data.
 
 ## What the tests cover
 
@@ -29,6 +30,8 @@ DER fixtures only; they do not fetch, freshness-check, or trust-validate OCSP/CR
 | `sign_options_are_emitted` | `/T`, `/Reason`, `/M` strings from `SignOptions` land in the signed bytes |
 | `b_t_signature_timestamp_embeds_and_validates` | `add_signature_timestamp` inserts the `id-aa-signatureTimeStampToken` unsigned attribute; the signature still validates and the ByteRange is unchanged |
 | `dss_revision_appends_to_b_t_and_reports_counts_hashes` | `add_dss_revision` appends a deterministic `/DSS` + `/VRI` incremental update from caller-supplied DER evidence; validation still succeeds and reports certificate, OCSP, CRL, VRI, and evidence hashes |
+| `doc_timestamp_revision_appends_and_reports_without_lta_claim` | `add_doc_timestamp_revision` appends a deterministic `/DocTimeStamp` incremental update from caller-supplied fixture token bytes; validation still succeeds and reports timestamp presence/token hash without claiming B-LTA |
+| `invalid_doc_timestamp_token_is_rejected` | `/DocTimeStamp` append rejects empty or incomplete DER token bytes |
 | `dss_revision_keeps_signed_revision_tamper_detection` | tampering with the original signed revision still fails validation even when a later DSS revision remains parseable |
 | `empty_dss_evidence_is_rejected` / `existing_dss_is_merged_and_deduped` | local DSS append rejects missing revocation material, merges pre-existing DSS dictionaries, and deduplicates evidence by stream hash |
 | `validation_rejects_unsigned_pdf` | an unsigned PDF returns `PadesError::NoSignature` |
@@ -67,10 +70,11 @@ Broader inputs (xref streams, existing forms, multi-signature) are a documented 
 
 - **Production-grade PAdES-B-LT / B-LTA legal LTV** (SIG-21 archival default): local,
   caller-supplied DSS/VRI append, existing-DSS merge/dedupe, `/TU` metadata, technical revocation
-  evidence attachment, and reporting exist and are tested, but production B-LT/LTA sufficiency,
-  multi-signature VRI handling, and archive document timestamps (`/DocTimeStamp`) remain gaps. `PadesError::
+  evidence attachment, caller-supplied `/DocTimeStamp` archive timestamp append, and reporting
+  exist and are tested, but production B-LT/LTA sufficiency, multi-signature VRI handling, renewal
+  policy, timestamp-token semantic validation, and legal LTV claims remain gaps. `PadesError::
   LongTermNotImplemented` remains reserved for long-term profile entry points that are not part of
-  this local DSS slice.
+  this local evidence-preservation slice.
 - **TSA signature-value verification inside B-T**: `chancela-tsa` verifies the timestamp token
   structurally and by imprint binding, not its asymmetric signature (see that crate's TESTING.md).
   Full trust evaluation is `chancela-signing`'s job.

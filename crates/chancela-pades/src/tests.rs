@@ -24,8 +24,9 @@ use chancela_cades::{
 use crate::error::PadesError;
 use crate::sign::MAX_CONTENTS_BYTES;
 use crate::{
-    DssEvidence, SignOptions, add_dss_revision, add_dss_revision_with_validation_time,
-    add_signature_timestamp, inspect_dss, sign_pdf, validate_pdf_signature,
+    DssEvidence, SignOptions, add_doc_timestamp_revision, add_dss_revision,
+    add_dss_revision_with_validation_time, add_signature_timestamp, inspect_doc_timestamps,
+    inspect_dss, sign_pdf, validate_pdf_signature,
 };
 
 // --- OIDs used only for the in-test self-signed certificates -------------------------------------
@@ -45,6 +46,9 @@ const OCSP_DER_FIXTURE: &[u8] = &[0x30, 0x03, 0x02, 0x01, 0x05];
 
 /// Public, synthetic DER fixture used as caller-supplied CRL bytes in DSS tests.
 const CRL_DER_FIXTURE: &[u8] = &[0x30, 0x05, 0x06, 0x03, 0x2a, 0x03, 0x04];
+
+/// Public, synthetic complete DER fixture used as caller-supplied `/DocTimeStamp` token bytes.
+const DOC_TIMESTAMP_TOKEN_DER_FIXTURE: &[u8] = &[0x30, 0x03, 0x02, 0x01, 0x07];
 
 fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
@@ -276,6 +280,7 @@ fn rsa_sign_validates() {
     assert_eq!(report.cades.signer_cert_der, signer.cert_der());
     assert!(report.cades.signing_certificate_v2_present);
     assert!(!report.has_signature_timestamp);
+    assert!(!report.doc_timestamps.present);
     assert_eq!(
         report.cades.signing_time.map(|t| t.unix_timestamp()),
         Some(1_750_000_000)
@@ -415,6 +420,57 @@ fn dss_revision_appends_to_b_t_and_reports_counts_hashes() {
 
     let direct_dss = inspect_dss(&with_dss).expect("inspect DSS");
     assert_eq!(direct_dss, report.dss);
+}
+
+#[test]
+fn doc_timestamp_revision_appends_and_reports_without_lta_claim() {
+    let signer = TestSigner::new_rsa("PAdES DocTimeStamp", 13);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let with_ts = add_fixture_timestamp(&signed);
+    let evidence = fixture_dss_evidence(&signer);
+    let with_dss = add_dss_revision(&with_ts, &evidence).expect("DSS append");
+
+    let with_doc_ts =
+        add_doc_timestamp_revision(&with_dss, DOC_TIMESTAMP_TOKEN_DER_FIXTURE).expect("DTS append");
+    let repeated =
+        add_doc_timestamp_revision(&with_dss, DOC_TIMESTAMP_TOKEN_DER_FIXTURE).expect("repeat DTS");
+
+    assert_ne!(with_doc_ts, with_dss);
+    assert!(with_doc_ts.starts_with(&with_dss));
+    assert_eq!(with_doc_ts, repeated);
+    assert!(crate_find(&with_doc_ts, b"/Type /DocTimeStamp").is_some());
+    assert!(crate_find(&with_doc_ts, b"/SubFilter /ETSI.RFC3161").is_some());
+
+    let report = validate_pdf_signature(&with_doc_ts).expect("validate DTS revision");
+    assert!(report.has_signature_timestamp);
+    assert!(report.dss.present);
+    assert!(report.covers_signed_revision_except_contents);
+    assert!(!report.covers_whole_file_except_contents);
+    assert!(report.has_later_incremental_updates);
+    assert_eq!(report.total_len, with_doc_ts.len());
+    assert_eq!(report.signed_revision_len, with_ts.len());
+    assert!(report.doc_timestamps.present);
+    assert_eq!(report.doc_timestamps.count, 1);
+    assert_eq!(report.doc_timestamps.token_count(), 1);
+    assert_eq!(
+        report.doc_timestamps.token_hashes,
+        vec![sha256(DOC_TIMESTAMP_TOKEN_DER_FIXTURE)]
+    );
+
+    let direct = inspect_doc_timestamps(&with_doc_ts).expect("inspect DTS");
+    assert_eq!(direct, report.doc_timestamps);
+}
+
+#[test]
+fn invalid_doc_timestamp_token_is_rejected() {
+    let signer = TestSigner::new_rsa("PAdES Bad DocTimeStamp", 14);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+
+    let err = add_doc_timestamp_revision(&signed, b"not der").unwrap_err();
+    assert!(
+        matches!(err, PadesError::InvalidDocTimeStampToken),
+        "got {err:?}"
+    );
 }
 
 #[test]

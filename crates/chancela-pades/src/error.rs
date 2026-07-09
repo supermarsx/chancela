@@ -78,4 +78,8 @@ pub enum PadesError {
         /// Zero-based index in the caller-supplied list.
         index: usize,
     },
+
+    /// A caller-supplied `/DocTimeStamp` token is not a complete DER object.
+    #[error("invalid /DocTimeStamp timestamp token DER")]
+    InvalidDocTimeStampToken,
 }

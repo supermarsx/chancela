@@ -17,7 +17,9 @@
 //! - **PAdES-B-LT / B-LTA** — not claimed as production-grade legal LTV. The crate can append
 //!   and inspect deterministic, caller-supplied `/DSS` + `/VRI` evidence via [`add_dss_revision`]
 //!   and [`inspect_dss`], but it does not fetch OCSP/CRL data, validate revocation freshness or
-//!   trust, claim B-LT sufficiency, or add archive document timestamps.
+//!   trust, or claim B-LT sufficiency. It can also append and report caller-supplied
+//!   `/DocTimeStamp` archive timestamp revisions via [`add_doc_timestamp_revision`] /
+//!   [`inspect_doc_timestamps`], without renewal policy or B-LTA/legal LTV claims.
 //!
 //! ## Layering
 //!
@@ -34,6 +36,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod archive_timestamp;
 pub mod dss;
 pub mod error;
 pub mod sign;
@@ -44,6 +47,9 @@ mod pdf;
 #[cfg(test)]
 mod tests;
 
+pub use archive_timestamp::{
+    DocTimeStampReport, add_doc_timestamp_revision, inspect_doc_timestamps,
+};
 pub use dss::{
     DssEvidence, DssReport, add_dss_revision, add_dss_revision_with_validation_time, inspect_dss,
 };
