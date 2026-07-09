@@ -477,23 +477,30 @@ def _verify_approved_capture(diploma_id: str, article_id: str, capture: dict):
 
 
 def guard_dre_verified_articles(diplomas):
-    """DRE-specific Pending→Verified guard. A generated DRE article may only be
-    Verified after an operator capture row names the official page URL, ELI,
-    artifact path, capture timestamp, sha256, article ids, reviewer approval,
-    legal approval, and the explicit approval marker."""
+    """DRE-specific manifest guard. Every generated DRE article must have a
+    capture-manifest row pinned to the same official DRE page and ELI. A DRE
+    article may only be Verified after that row also names the artifact path,
+    capture timestamp, sha256, reviewer approval, legal approval, and explicit
+    approval marker."""
     _manifest, by_article = _load_dre_capture_manifest()
     for diploma in diplomas:
         if diploma["id"] in EU_REG_SOURCES:
             continue
         for article in diploma["articles"]:
-            if article["verification"] != "Verified":
-                continue
             key = (diploma["id"], article["number"])
             capture = by_article.get(key)
             if capture is None:
                 raise SystemExit(
-                    f"gen_law: refusing to mark {key[0]}:{key[1]} Verified without a DRE capture row"
+                    f"gen_law: DRE article {key[0]}:{key[1]} is missing from dre-captures.manifest.json"
                 )
+            if capture.get("official_page_url") != diploma["official_url"]:
+                raise SystemExit(
+                    f"gen_law: DRE capture row for {key[0]}:{key[1]} has stale official_page_url"
+                )
+            if capture.get("eli") != diploma.get("eli"):
+                raise SystemExit(f"gen_law: DRE capture row for {key[0]}:{key[1]} has stale ELI")
+            if article["verification"] != "Verified":
+                continue
             _verify_approved_capture(key[0], key[1], capture)
 
 

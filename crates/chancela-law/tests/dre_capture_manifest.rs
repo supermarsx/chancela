@@ -11,6 +11,14 @@ use serde::Deserialize;
 
 const MANIFEST: &str = include_str!("../data/source/dre-captures.manifest.json");
 const REQUIRED_APPROVAL_MARKER: &str = "LEGAL_APPROVED_FOR_VERIFIED";
+const DRE_DIPLOMA_IDS: &[&str] = &[
+    "csc",
+    "cc",
+    "dl-268-94",
+    "dl-76-a-2006",
+    "cod-cooperativo",
+    "lei-24-2012",
+];
 
 #[derive(Debug, Deserialize)]
 struct DreCaptureManifest {
@@ -81,6 +89,16 @@ fn dre_capture_manifest_has_required_operator_fields() {
             "{} legal_approval_status must be explicit",
             capture.diploma_id
         );
+        if capture.reviewer_status == "Pending" || capture.legal_approval_status == "Pending" {
+            assert!(
+                capture.captured_artifact_path.is_none()
+                    && capture.capture_timestamp.is_none()
+                    && capture.sha256.is_none()
+                    && capture.approval_marker.is_none(),
+                "{} Pending capture rows must not claim artifacts, digests, or approval markers",
+                capture.diploma_id
+            );
+        }
         for article_id in &capture.article_ids {
             assert!(
                 seen.insert((capture.diploma_id.as_str(), article_id.as_str())),
@@ -93,32 +111,66 @@ fn dre_capture_manifest_has_required_operator_fields() {
 }
 
 #[test]
-fn csc_255_399_capture_rows_exist_but_remain_pending() {
+fn all_pending_dre_articles_have_pending_capture_manifest_coverage() {
     let manifest = parse_manifest();
-    let csc = manifest
-        .captures
-        .iter()
-        .find(|c| c.diploma_id == "csc" && c.article_ids.as_slice() == ["255", "399"])
-        .expect("CSC 255/399 DRE capture row");
+    let capture_index = capture_index(&manifest);
+    let cat = LawCatalog::embedded();
 
-    assert_eq!(
-        csc.official_page_url,
-        "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975"
-    );
-    assert_eq!(
-        csc.eli,
-        "https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101"
-    );
-    assert_eq!(csc.reviewer_status, "Pending");
-    assert_eq!(csc.legal_approval_status, "Pending");
-    assert!(csc.captured_artifact_path.is_none());
-    assert!(csc.capture_timestamp.is_none());
-    assert!(csc.sha256.is_none());
-    assert!(csc.approval_marker.is_none());
+    for &diploma_id in DRE_DIPLOMA_IDS {
+        let diploma = cat
+            .diploma(diploma_id)
+            .unwrap_or_else(|| panic!("{diploma_id} must exist in embedded corpus"));
+        for article in &diploma.articles {
+            if article.is_verified() {
+                continue;
+            }
+            let capture = capture_index
+                .get(&(diploma_id, article.number.as_str()))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Pending DRE article {diploma_id}:{} must be listed in dre-captures.manifest.json",
+                        article.number
+                    )
+                });
+            assert_eq!(capture.official_page_url, diploma.official_url);
+            assert_eq!(Some(capture.eli.as_str()), diploma.eli.as_deref());
+            assert_eq!(capture.reviewer_status, "Pending");
+            assert_eq!(capture.legal_approval_status, "Pending");
+            assert!(capture.captured_artifact_path.is_none());
+            assert!(capture.capture_timestamp.is_none());
+            assert!(capture.sha256.is_none());
+            assert!(capture.approval_marker.is_none());
+        }
+    }
+}
+
+#[test]
+fn csc_priority_capture_articles_still_exist_but_remain_pending() {
+    let manifest = parse_manifest();
+    let capture_index = capture_index(&manifest);
 
     let cat = LawCatalog::embedded();
-    assert!(!cat.article("csc", "255").unwrap().is_verified());
-    assert!(!cat.article("csc", "399").unwrap().is_verified());
+    for article_id in ["255", "399"] {
+        let capture = capture_index
+            .get(&("csc", article_id))
+            .unwrap_or_else(|| panic!("CSC {article_id} DRE capture coverage"));
+        assert_eq!(
+            capture.official_page_url,
+            "https://diariodarepublica.pt/dr/legislacao-consolidada/decreto-lei/1986-34443975"
+        );
+        assert_eq!(
+            capture.eli,
+            "https://data.dre.pt/eli/dec-lei/262/1986/p/cons/20260101"
+        );
+        assert_eq!(capture.reviewer_status, "Pending");
+        assert_eq!(capture.legal_approval_status, "Pending");
+        assert!(capture.captured_artifact_path.is_none());
+        assert!(capture.capture_timestamp.is_none());
+        assert!(capture.sha256.is_none());
+        assert!(capture.approval_marker.is_none());
+
+        assert!(!cat.article("csc", article_id).unwrap().is_verified());
+    }
 }
 
 #[test]
@@ -150,6 +202,18 @@ fn any_dre_verified_article_requires_an_approved_capture_artifact() {
 
 fn parse_manifest() -> DreCaptureManifest {
     serde_json::from_str(MANIFEST).expect("DRE capture manifest parses")
+}
+
+fn capture_index<'a>(
+    manifest: &'a DreCaptureManifest,
+) -> HashMap<(&'a str, &'a str), &'a DreCapture> {
+    let mut index = HashMap::new();
+    for capture in &manifest.captures {
+        for article_id in &capture.article_ids {
+            index.insert((capture.diploma_id.as_str(), article_id.as_str()), capture);
+        }
+    }
+    index
 }
 
 fn approved_capture_index<'a>(

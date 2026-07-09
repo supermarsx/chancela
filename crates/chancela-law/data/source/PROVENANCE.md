@@ -69,13 +69,14 @@ For each diploma, vendor the authentic Diário da República / EUR-Lex text and 
 | `eurlex/32016R0679.pt.html` | Regulamento (UE) 2016/679 (RGPD) | https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32016R0679 | `b27b27f500866926adcb775f2ac115eb075fc2ab8f7985101ea0fe5c68937c23` |
 | `eurlex/32024R1183.pt.html` | Regulamento (UE) 2024/1183 (eIDAS 2.0) | https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32024R1183 | `4c5bef3e6149a679888869e856ebe3728ae6cc3aff70b01e81f5d0c5bfc9eabf` |
 
-## DRE rendered capture workflow — CSC 255/399 scaffold
+## DRE rendered capture workflow — PT-law pending capture manifest
 
 The DRE consolidated-law portal is JS-rendered. For the Portuguese DRE diplomas, and specifically
-the priority CSC articles 255.º and 399.º, `Pending → Verified` is therefore a two-person operator
-workflow, not a curl-only generator step.
+the 40 currently Pending PT-law articles across the six DRE-sourced diplomas, `Pending → Verified`
+is therefore a two-person operator workflow, not a curl-only generator step.
 
-The machine-readable control file is `dre-captures.manifest.json`. Each row records:
+The machine-readable control file is `dre-captures.manifest.json`. Each row is scoped to one
+DRE-sourced diploma and records:
 
 - `official_page_url` — the rendered official DRE consolidated-law page.
 - `eli` — the DRE ELI resolver URL for the consolidated version being captured.
@@ -88,12 +89,25 @@ The machine-readable control file is `dre-captures.manifest.json`. Each row reco
 - `approval_marker` — must equal `LEGAL_APPROVED_FOR_VERIFIED` before generated DRE articles may
   become `Verified`.
 
-Current CSC 255/399 status is intentionally `Pending`: no artifact path, timestamp, digest, reviewer
-approval, legal approval, or approval marker is present. `gen_law.py --check` validates this manifest
-and refuses any generated DRE article marked `Verified` unless the matching manifest row has an
-existing captured artifact, a matching sha256, both approvals, and the approval marker. The Rust
-`dre_capture_manifest` test independently pins the manifest shape and cross-checks the embedded
-corpus so accidental DRE verification without approval fails in CI.
+Current DRE status is intentionally `Pending` for all six PT-law diplomas: no artifact path,
+timestamp, digest, reviewer approval, legal approval, or approval marker is present. The manifest
+currently covers:
+
+| Diploma id | DRE capture status | Article ids |
+|---|---|---|
+| `csc` | Pending | 255, 399, 56, 58, 63, 246, 248, 250, 265, 270-A, 270-E, 376, 377, 386, 388 |
+| `cc` | Pending | 157, 173, 175, 184, 1414, 1424, 1430, 1432, 1433, 1436, 1438, 1438-A |
+| `dl-268-94` | Pending | 1, 2, 3, 4, 5, 6 |
+| `dl-76-a-2006` | Pending | 1, 2 |
+| `cod-cooperativo` | Pending | 33, 34, 41 |
+| `lei-24-2012` | Pending | 1, 5 |
+
+`gen_law.py --check` validates this manifest, requires every generated DRE article to have capture
+coverage pinned to the same official DRE page and ELI, and refuses any generated DRE article marked
+`Verified` unless the matching manifest row has an existing captured artifact, a matching sha256,
+both approvals, and the approval marker. The Rust `dre_capture_manifest` test independently pins the
+manifest shape and cross-checks the embedded corpus so accidental DRE verification without approval
+or missing pending capture coverage fails in CI.
 
 ## E1b-eu — the 3 EU regulations vendored VERBATIM from EUR-Lex — 2026-07-08
 
