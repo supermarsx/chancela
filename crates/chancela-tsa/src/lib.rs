@@ -31,6 +31,7 @@
 pub mod client;
 pub mod error;
 pub mod mock;
+pub mod path;
 pub mod request;
 pub mod transport;
 pub mod verify;
@@ -40,6 +41,7 @@ pub(crate) mod oid;
 pub use client::TsaClient;
 pub use error::TsaError;
 pub use mock::MockTsaTransport;
+pub use path::{CertificatePathValidation, validate_tsa_certificate_path};
 pub use request::TimestampRequest;
 pub use transport::{DEFAULT_PT_TSA_URL, HttpTsaTransport, TsaTransport};
 pub use verify::{QualifiedTimestampPolicy, Timestamp, verify_response};

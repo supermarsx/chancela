@@ -112,4 +112,8 @@ pub enum TsaError {
     /// The raw signature bytes were not valid for the declared algorithm.
     #[error("invalid TSA signature encoding")]
     InvalidSignatureEncoding,
+
+    /// The TSA certificate path could not be validated offline.
+    #[error("TSA certificate path validation failed: {0}")]
+    CertificatePath(String),
 }

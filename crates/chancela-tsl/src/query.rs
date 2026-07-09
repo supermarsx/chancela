@@ -32,6 +32,34 @@ pub enum QualifiedStatus {
     Unknown,
 }
 
+/// A TSL service that matched a QTST identity lookup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QtstServiceMatch {
+    /// Trust-service provider name.
+    pub provider_name: String,
+    /// Trust-service name.
+    pub service_name: String,
+    /// The raw service status resolved from the TSL.
+    pub service_status: crate::parse::ServiceStatus,
+    /// Whether the service is granted and effective at the lookup time.
+    pub granted_and_effective: bool,
+    /// Full DER certificate identities published for this service.
+    pub trust_anchor_ders: Vec<Vec<u8>>,
+}
+
+/// Detailed QTST lookup result, including DER anchors from granted matching services.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QtstMatchDetails {
+    /// Coarse qualified timestamp status.
+    pub status: QualifiedStatus,
+    /// Matching services, including withdrawn/not-yet-effective matches for diagnostics.
+    pub matches: Vec<QtstServiceMatch>,
+    /// DER certificate identities from matching granted/effective `TSA/QTST` services.
+    pub trust_anchor_ders: Vec<Vec<u8>>,
+    /// Whether the cached list was authenticated when this result came from [`TslClient`].
+    pub authenticated: bool,
+}
+
 /// The OID of the X.509 Subject Key Identifier extension (2.5.29.14).
 const SKI_OID: der::asn1::ObjectIdentifier = der::asn1::ObjectIdentifier::new_unwrap("2.5.29.14");
 
@@ -137,6 +165,64 @@ pub fn resolve_qtst_status(
         (_, true) => QualifiedStatus::Granted,
         (true, false) => QualifiedStatus::Withdrawn,
         (false, false) => QualifiedStatus::Unknown,
+    }
+}
+
+/// Resolve QTST match details and DER anchors for `tsa_cert_der`.
+///
+/// This is a technical offline lookup against the supplied parsed TSL. It does not validate a
+/// timestamp token or certificate path, and it does not make a legal qualification claim.
+pub fn resolve_qtst_match_details(
+    list: &TrustedList,
+    tsa_cert_der: &[u8],
+    now: OffsetDateTime,
+) -> QtstMatchDetails {
+    let tsa = CertificateId::from_der(tsa_cert_der);
+    let mut matches = Vec::new();
+    let mut trust_anchor_ders = Vec::new();
+    let mut granted = false;
+
+    for provider in &list.providers {
+        for service in provider.services.iter().filter(|s| tsa.matches(s)) {
+            let granted_and_effective =
+                service.is_tsa_qtst() && service.is_granted() && service.is_effective_at(now);
+            let service_anchor_ders = service
+                .digital_identities
+                .iter()
+                .filter_map(|id| match id {
+                    DigitalIdentity::Certificate(der) => Some(der.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if granted_and_effective {
+                granted = true;
+                for der in &service_anchor_ders {
+                    if !trust_anchor_ders.iter().any(|existing| existing == der) {
+                        trust_anchor_ders.push(der.clone());
+                    }
+                }
+            }
+            matches.push(QtstServiceMatch {
+                provider_name: provider.name.clone(),
+                service_name: service.name.clone(),
+                service_status: service.status.clone(),
+                granted_and_effective,
+                trust_anchor_ders: service_anchor_ders,
+            });
+        }
+    }
+
+    let status = match (matches.is_empty(), granted) {
+        (_, true) => QualifiedStatus::Granted,
+        (false, false) => QualifiedStatus::Withdrawn,
+        (true, false) => QualifiedStatus::Unknown,
+    };
+
+    QtstMatchDetails {
+        status,
+        matches,
+        trust_anchor_ders,
+        authenticated: true,
     }
 }
 
@@ -251,6 +337,30 @@ impl<S: TslSource> TslClient<S> {
             (QualifiedStatus::Granted, false) => QualifiedStatus::Unknown,
             (other, _) => other,
         })
+    }
+
+    /// Resolve detailed QTST status and DER trust anchors, refreshing the cache first if needed.
+    ///
+    /// If the cached TSL XML-DSig signature did not verify, `Granted` is downgraded to `Unknown`
+    /// and no trust anchors are returned. The unauthenticated matches remain visible for
+    /// diagnostics only.
+    pub fn qtst_match_details(
+        &mut self,
+        tsa_cert_der: &[u8],
+        now: OffsetDateTime,
+    ) -> Result<QtstMatchDetails, TslError> {
+        self.ensure_fresh(now)?;
+        let cache = self
+            .cache
+            .as_ref()
+            .expect("cache populated by ensure_fresh");
+        let mut details = resolve_qtst_match_details(cache.list(), tsa_cert_der, now);
+        details.authenticated = cache.signature_valid();
+        if details.status == QualifiedStatus::Granted && !cache.signature_valid() {
+            details.status = QualifiedStatus::Unknown;
+            details.trust_anchor_ders.clear();
+        }
+        Ok(details)
     }
 }
 
@@ -401,5 +511,21 @@ mod tests {
         );
         assert_eq!(qualified_timestamp_services(&list, NOW).len(), 1);
         assert_eq!(qualified_esig_services(&list, NOW).len(), 0);
+    }
+
+    #[test]
+    fn resolves_qtst_match_details_with_anchors() {
+        let list = list_with_service(
+            DigitalIdentity::Certificate(b"tsa-cert".to_vec()),
+            SVCTYPE_TSA_QTST,
+            None,
+            Vec::new(),
+        );
+
+        let details = resolve_qtst_match_details(&list, b"tsa-cert", NOW);
+        assert_eq!(details.status, QualifiedStatus::Granted);
+        assert_eq!(details.trust_anchor_ders, vec![b"tsa-cert".to_vec()]);
+        assert_eq!(details.matches.len(), 1);
+        assert!(details.matches[0].granted_and_effective);
     }
 }

@@ -72,6 +72,9 @@ pub struct Timestamp {
     pub policy: String,
     /// The TSA signing certificate DER, if the token embedded one (`certReq`).
     pub tsa_certificate_der: Option<Vec<u8>>,
+    /// Every X.509 certificate embedded in the token's CMS certificate set, in token order.
+    #[serde(default)]
+    pub embedded_certificate_ders: Vec<Vec<u8>>,
 }
 
 /// Parse and verify a DER `TimeStampResp` against the request that produced it.
@@ -163,6 +166,7 @@ pub fn verify_response(
         .as_ref()
         .map(|cert| cert.to_der().map_err(TsaError::Malformed))
         .transpose()?;
+    let embedded_certificate_ders = extract_embedded_certificates(&signed_data)?;
 
     // 9. CMS signature value, when dependencies and embedded material allow it. Tokens without an
     //    embedded certificate can still be structurally checked unless the request set certReq.
@@ -190,6 +194,7 @@ pub fn verify_response(
         serial_number: tst.serial_number.as_bytes().to_vec(),
         policy: tst.policy.to_string(),
         tsa_certificate_der,
+        embedded_certificate_ders,
     })
 }
 
@@ -252,6 +257,22 @@ fn extract_tsa_certificate(
     }
 
     Err(TsaError::SignerCertNotEmbedded)
+}
+
+fn extract_embedded_certificates(signed_data: &SignedData) -> Result<Vec<Vec<u8>>, TsaError> {
+    let Some(certificates) = &signed_data.certificates else {
+        return Ok(Vec::new());
+    };
+
+    certificates
+        .0
+        .iter()
+        .filter_map(|choice| match choice {
+            CertificateChoices::Certificate(certificate) => Some(certificate.to_der()),
+            _ => None,
+        })
+        .map(|der| der.map_err(TsaError::Malformed))
+        .collect()
 }
 
 fn certificate_matches_sid(cert: &Certificate, sid: &SignerIdentifier) -> Result<bool, TsaError> {

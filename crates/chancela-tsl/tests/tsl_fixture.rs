@@ -10,7 +10,7 @@ use chancela_tsl::parse::{FOR_ESEALS, FOR_ESIGNATURES, SVCTYPE_CA_QC};
 use chancela_tsl::{
     BytesTslSource, DigitalIdentity, FileTslSource, QualifiedStatus, ServiceStatus, TrustedList,
     TslClient, TslError, parse_tsl, qualified_esig_services, resolve_esig_status,
-    validate_tsl_signature,
+    resolve_qtst_match_details, validate_tsl_signature,
 };
 use time::OffsetDateTime;
 use time::macros::datetime;
@@ -313,6 +313,39 @@ fn client_downgrades_granted_to_unknown_when_signature_does_not_verify() {
         !client.cached().unwrap().signature_valid(),
         "fixture signature is not valid"
     );
+}
+
+#[test]
+fn qtst_match_details_return_anchors_and_downgrade_when_unauthenticated() {
+    let xml = br#"<TrustServiceStatusList>
+      <SchemeInformation><SchemeTerritory>PT</SchemeTerritory></SchemeInformation>
+      <TrustServiceProviderList>
+        <TrustServiceProvider>
+          <TSPInformation><TSPName><Name xml:lang="en">Unsigned TSA</Name></TSPName></TSPInformation>
+          <TSPServices><TSPService><ServiceInformation>
+            <ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/TSA/QTST</ServiceTypeIdentifier>
+            <ServiceName><Name xml:lang="en">Unsigned TSA QTST</Name></ServiceName>
+            <ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>
+            <ServiceDigitalIdentity><DigitalId><X509Certificate>dHNhLWNlcnQ=</X509Certificate></DigitalId></ServiceDigitalIdentity>
+          </ServiceInformation></TSPService></TSPServices>
+        </TrustServiceProvider>
+      </TrustServiceProviderList>
+    </TrustServiceStatusList>"#;
+    let cert = b"tsa-cert".to_vec();
+    let list = parse_tsl(xml).unwrap();
+    let raw = resolve_qtst_match_details(&list, &cert, NOW);
+    assert_eq!(raw.status, QualifiedStatus::Granted);
+    assert_eq!(raw.trust_anchor_ders, vec![cert.clone()]);
+    assert_eq!(raw.matches.len(), 1);
+    assert!(raw.matches[0].granted_and_effective);
+
+    let source = BytesTslSource::new(xml.to_vec());
+    let mut client = TslClient::new(source);
+    let details = client.qtst_match_details(&cert, NOW).unwrap();
+    assert_eq!(details.status, QualifiedStatus::Unknown);
+    assert!(details.trust_anchor_ders.is_empty());
+    assert!(!details.authenticated);
+    assert_eq!(details.matches.len(), 1);
 }
 
 #[test]

@@ -43,8 +43,9 @@ pub use parse::{
     TrustServiceProvider, TrustedList, parse_tsl,
 };
 pub use query::{
-    QualifiedStatus, TslClient, qualified_esig_services, qualified_timestamp_services,
-    resolve_esig_status, resolve_qtst_status,
+    QtstMatchDetails, QtstServiceMatch, QualifiedStatus, TslClient, qualified_esig_services,
+    qualified_timestamp_services, resolve_esig_status, resolve_qtst_match_details,
+    resolve_qtst_status,
 };
 pub use record::{
     RecordIdentifier, RecordIdentifierKind, RecordSearch, RecordStatusKind, TslRecord,
