@@ -563,7 +563,7 @@ fn book_legal_hold_survives_drop_and_reopen_without_schema_churn() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "6", "book JSON metadata did not require DDL");
+    assert_eq!(stamped, "7", "book JSON metadata did not require DDL");
 }
 
 #[test]
@@ -794,8 +794,9 @@ fn schema_version_is_current() {
     // The documents table landed as schema v2; the `imported_books` isolation namespace (t54-E2)
     // landed as schema v3; the qualified-signing tables (`signed_documents` + `pending_cmd_sessions`,
     // t57-S3) landed as schema v4; non-canonical imported documents landed as schema v5; act
-    // follow-ups landed as schema v6. A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 6);
+    // follow-ups landed as schema v6; signed timestamp-trust diagnostics landed as schema v7. A
+    // fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 7);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -806,7 +807,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "6");
+    assert_eq!(stamped, "7");
 }
 
 #[test]
@@ -948,7 +949,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "6", "stamp advanced forward");
+        assert_eq!(stamped, "7", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -1237,7 +1238,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         let store = Store::open(dir.path()).expect("open");
         assert_eq!(
             stamp(dir.path()),
-            "6",
+            "7",
             "fresh db stamped at current version"
         );
         let mut ledger = Ledger::new();
@@ -1274,7 +1275,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
         // Store dropped here — the process "restarts". No migration ran; no DDL touched acts.
         assert_eq!(
             stamp(dir.path()),
-            "6",
+            "7",
             "no schema bump after writing G1/G2 acts"
         );
     }
@@ -1283,7 +1284,7 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     let store = Store::open(dir.path()).expect("reopen");
     assert_eq!(
         stamp(dir.path()),
-        "6",
+        "7",
         "reopen did not bump the schema version"
     );
     let loaded = store.load().expect("reload");
@@ -1337,7 +1338,8 @@ fn sample_signed(act_id: ActId) -> StoredSignedDocument {
         signing_time: OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap(),
         signed_at: OffsetDateTime::from_unix_timestamp(1_750_000_050).unwrap(),
         signer_cert_der: vec![0x30, 0x82, 0x01, 0x02],
-        timestamp_token_der: None,
+        timestamp_token_der: Some(vec![0x30, 0x03, 0x01, 0x01, 0xff]),
+        timestamp_trust_report_json: Some(r#"{"decision":"rejected","policy_oid":"1.2.3.4","policy_oid_accepted":null,"tsa_certificate_embedded":false,"embedded_certificate_count":0,"qtst_status":"unknown","qtst_authenticated":false,"qtst_matches":[],"trust_anchor_count":0,"certificate_path_valid":false,"certificate_path_anchor_index":null,"certificate_path_len":null,"failure_reasons":["fixture"],"status_scope":"technical_evidence_only"}"#.to_owned()),
         signed_pdf_bytes: b"%PDF-1.7 signed".to_vec(),
     }
 }

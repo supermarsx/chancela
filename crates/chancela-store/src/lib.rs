@@ -542,6 +542,8 @@ pub struct StoredSignedDocument {
     pub signer_cert_der: Vec<u8>,
     /// An optional RFC 3161 timestamp token (DER), or `None` (a B-B signature has none).
     pub timestamp_token_der: Option<Vec<u8>>,
+    /// Optional technical timestamp-trust diagnostic report JSON captured at signing completion.
+    pub timestamp_trust_report_json: Option<String>,
     /// The signed PDF/A bytes.
     pub signed_pdf_bytes: Vec<u8>,
 }
@@ -888,7 +890,8 @@ impl Store {
         let mut stmt = guard.prepare(
             "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
              trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
-             timestamp_token_der, signed_pdf_bytes FROM signed_documents WHERE act_id = ?1",
+             timestamp_token_der, timestamp_trust_report_json, signed_pdf_bytes \
+             FROM signed_documents WHERE act_id = ?1",
         )?;
         stmt.query_row(params![act_id.to_string()], row_to_signed_document)
             .optional()?
@@ -902,7 +905,8 @@ impl Store {
         let mut stmt = guard.prepare(
             "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
              trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
-             timestamp_token_der, signed_pdf_bytes FROM signed_documents",
+             timestamp_token_der, timestamp_trust_report_json, signed_pdf_bytes \
+             FROM signed_documents",
         )?;
         let rows = stmt.query_map([], row_to_signed_document)?;
         let mut out = HashMap::new();
@@ -1314,8 +1318,8 @@ impl Tx<'_> {
             "INSERT OR REPLACE INTO signed_documents \
              (act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
               trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
-              timestamp_token_der, signed_pdf_bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+              timestamp_token_der, timestamp_trust_report_json, signed_pdf_bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 doc.act_id.to_string(),
                 doc.document_id,
@@ -1328,6 +1332,7 @@ impl Tx<'_> {
                 signed_at,
                 doc.signer_cert_der,
                 doc.timestamp_token_der,
+                doc.timestamp_trust_report_json,
                 doc.signed_pdf_bytes,
             ],
         )?;
@@ -1597,7 +1602,8 @@ fn row_to_signed_document(
     let signed_at_raw: String = row.get(8)?;
     let signer_cert_der: Vec<u8> = row.get(9)?;
     let timestamp_token_der: Option<Vec<u8>> = row.get(10)?;
-    let signed_pdf_bytes: Vec<u8> = row.get(11)?;
+    let timestamp_trust_report_json: Option<String> = row.get(11)?;
+    let signed_pdf_bytes: Vec<u8> = row.get(12)?;
     Ok((|| {
         Ok(StoredSignedDocument {
             act_id: parse_uuid_newtype::<ActId>(&act_id_raw)?,
@@ -1611,6 +1617,7 @@ fn row_to_signed_document(
             signed_at: parse_rfc3339(&signed_at_raw)?,
             signer_cert_der,
             timestamp_token_der,
+            timestamp_trust_report_json,
             signed_pdf_bytes,
         })
     })())
@@ -1840,6 +1847,20 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
         .unwrap_or(false);
     if !has_links {
         conn.execute_batch("ALTER TABLE events ADD COLUMN links TEXT NOT NULL DEFAULT '[]';")?;
+    }
+
+    let has_timestamp_trust_report: bool = conn
+        .prepare(
+            "SELECT COUNT(*) FROM pragma_table_info('signed_documents') \
+             WHERE name='timestamp_trust_report_json'",
+        )?
+        .query_row([], |row| row.get::<_, i64>(0))
+        .map(|n| n > 0)
+        .unwrap_or(false);
+    if !has_timestamp_trust_report {
+        conn.execute_batch(
+            "ALTER TABLE signed_documents ADD COLUMN timestamp_trust_report_json TEXT;",
+        )?;
     }
 
     // schema_version gate: reject a file written by a *newer* build (we don't know its layout);

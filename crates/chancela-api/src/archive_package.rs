@@ -230,14 +230,14 @@ struct TimestampTokenEvidence {
     sha256: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct TimestampTrustEvidenceReport {
-    decision: &'static str,
+    decision: String,
     policy_oid: String,
     policy_oid_accepted: Option<bool>,
     tsa_certificate_embedded: bool,
     embedded_certificate_count: usize,
-    qtst_status: &'static str,
+    qtst_status: String,
     qtst_authenticated: bool,
     qtst_matches: Vec<TimestampQtstMatchEvidenceReport>,
     trust_anchor_count: usize,
@@ -245,10 +245,10 @@ struct TimestampTrustEvidenceReport {
     certificate_path_anchor_index: Option<usize>,
     certificate_path_len: Option<usize>,
     failure_reasons: Vec<String>,
-    status_scope: &'static str,
+    status_scope: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct TimestampQtstMatchEvidenceReport {
     provider_name: String,
     service_name: String,
@@ -1141,6 +1141,19 @@ fn signature_evidence<'a>(
         .as_ref()
         .map(|token| sha256_hex(token));
     let has_timestamp = signed.timestamp_token_der.is_some();
+    let timestamp_trust = signed
+        .timestamp_trust_report_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str(json).ok());
+    let timestamp_trust_persistence = if has_timestamp {
+        if timestamp_trust.is_some() {
+            "persisted_technical_timestamp_trust_report"
+        } else {
+            "not_persisted_full_validator_inputs"
+        }
+    } else {
+        "not_applicable"
+    };
 
     SignatureEvidence {
         signed_pdf: SignedPdfEvidence {
@@ -1166,7 +1179,7 @@ fn signature_evidence<'a>(
             path: timestamp_token_path,
             sha256: timestamp_token_sha256,
         },
-        timestamp_trust: None,
+        timestamp_trust,
         dss: dss_evidence_report(&signed.signed_pdf_bytes, has_timestamp),
         persisted_validation: PersistedValidationEvidence {
             basis: "stored signed document metadata; signed routes persist this row only after SIG-24 validation succeeds",
@@ -1177,11 +1190,7 @@ fn signature_evidence<'a>(
             } else {
                 "not_present"
             },
-            timestamp_trust: if has_timestamp {
-                "not_persisted_full_validator_inputs"
-            } else {
-                "not_applicable"
-            },
+            timestamp_trust: timestamp_trust_persistence,
             cryptographic_revalidation_at_export: "not_performed",
         },
     }

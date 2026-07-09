@@ -52,17 +52,20 @@ use chancela_csc::{
     CscAuthorization, CscClient, CscConfig, CscError, CscRemoteSource, CscSecrets, CscTransport,
     HttpCscTransport,
 };
-use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_signature};
+use chancela_pades::{
+    PreparedSignature, SignOptions, add_signature_timestamp, embed_signature, prepare_signature,
+};
 use chancela_signing::{
     CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession, RemoteInitiate,
     RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider,
     TimestampTrustDecision, TimestampTrustPolicy, TimestampTrustReport, TrustPolicy,
     TrustedListStatus, TslTrustPolicy, attach_pdf_dss, attach_pdf_revocation_evidence, cmd_confirm,
-    cmd_initiate, sign_pdf_cc, timestamp_pdf_with_url, validate_timestamp_trust,
+    cmd_initiate, sign_pdf_cc, validate_timestamp_trust,
 };
 use chancela_smartcard::Pkcs11Token;
 use chancela_store::{PendingCmdSession, StoredDocument, StoredSignedDocument};
 use chancela_tsl::HttpTslSource;
+use chancela_tsl::TslClient;
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -272,10 +275,10 @@ pub struct SignatureEvidenceStatus {
     pub status_scope: &'static str,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimestampTrustEvidenceStatus {
     /// `"accepted"` or `"rejected"` from technical timestamp-trust validation.
-    pub decision: &'static str,
+    pub decision: String,
     /// `TSTInfo.policy` OID observed in the timestamp token.
     pub policy_oid: String,
     /// Whether the policy OID matched the local accepted-policy set; `None` means no local policy
@@ -285,7 +288,7 @@ pub struct TimestampTrustEvidenceStatus {
     pub tsa_certificate_embedded: bool,
     pub embedded_certificate_count: usize,
     /// Trusted-list/QTST status after unauthenticated granted statuses are downgraded.
-    pub qtst_status: &'static str,
+    pub qtst_status: String,
     /// Whether the QTST result came from an authenticated trusted list.
     pub qtst_authenticated: bool,
     pub qtst_matches: Vec<TimestampQtstMatchEvidenceStatus>,
@@ -294,10 +297,10 @@ pub struct TimestampTrustEvidenceStatus {
     pub certificate_path_anchor_index: Option<usize>,
     pub certificate_path_len: Option<usize>,
     pub failure_reasons: Vec<String>,
-    pub status_scope: &'static str,
+    pub status_scope: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimestampQtstMatchEvidenceStatus {
     pub provider_name: String,
     pub service_name: String,
@@ -1084,6 +1087,7 @@ pub async fn confirm_cmd_signature(
         signed_at,
         signer_cert_der: session.signing_cert_der.clone(),
         timestamp_token_der: final_pdf.timestamp_token_der.clone(),
+        timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
         signed_pdf_bytes: final_pdf.bytes,
     };
 
@@ -1405,6 +1409,7 @@ pub async fn sign_cc_signature(
         signed_at,
         signer_cert_der: cc.signing_cert_der.clone(),
         timestamp_token_der: final_pdf.timestamp_token_der.clone(),
+        timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
         signed_pdf_bytes: final_pdf.bytes,
     };
 
@@ -2131,6 +2136,7 @@ pub async fn confirm_remote_signature(
         signed_at,
         signer_cert_der: session.signing_cert_der.clone(),
         timestamp_token_der: final_pdf.timestamp_token_der.clone(),
+        timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
         signed_pdf_bytes: final_pdf.bytes,
     };
 
@@ -2639,6 +2645,7 @@ pub async fn import_official_signature(
         signed_at,
         signer_cert_der,
         timestamp_token_der: None,
+        timestamp_trust_report_json: None,
         signed_pdf_bytes: signed_pdf,
     };
 
@@ -2877,12 +2884,10 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
 fn timestamp_trust_status_from_persisted_metadata(
     signed: &StoredSignedDocument,
 ) -> Option<TimestampTrustEvidenceStatus> {
-    // Current signed-document persistence stores the raw timestamp token but not the verified
-    // `Timestamp` + authenticated `QtstMatchDetails` inputs needed to recompute the full
-    // certificate-path result after restart. Keep the wire/reporting seam explicit and nullable
-    // until those inputs are persisted by the signing completion path.
-    let _ = signed.timestamp_token_der.as_ref()?;
-    None
+    signed
+        .timestamp_trust_report_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str(json).ok())
 }
 
 /// Build the wire/status diagnostics for technical timestamp trust from already-verified
@@ -2910,12 +2915,12 @@ impl From<TimestampTrustReport> for TimestampTrustEvidenceStatus {
             _ => "unknown",
         };
         Self {
-            decision,
+            decision: decision.to_owned(),
             policy_oid: report.timestamp_policy_oid,
             policy_oid_accepted: report.policy_oid_accepted,
             tsa_certificate_embedded: report.tsa_certificate_embedded,
             embedded_certificate_count: report.embedded_certificate_count,
-            qtst_status,
+            qtst_status: qtst_status.to_owned(),
             qtst_authenticated: report.trusted_list_authenticated,
             qtst_matches: report
                 .qtst_matches
@@ -2932,7 +2937,7 @@ impl From<TimestampTrustReport> for TimestampTrustEvidenceStatus {
             certificate_path_anchor_index: report.certificate_path_anchor_index,
             certificate_path_len: report.certificate_path_len,
             failure_reasons: report.failure_reasons,
-            status_scope: TECHNICAL_EVIDENCE_ONLY,
+            status_scope: TECHNICAL_EVIDENCE_ONLY.to_owned(),
         }
     }
 }
@@ -3488,6 +3493,7 @@ async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
 struct FinalSignedPdf {
     bytes: Vec<u8>,
     timestamp_token_der: Option<Vec<u8>>,
+    timestamp_trust_report_json: Option<String>,
     report: chancela_pades::PdfSignatureReport,
 }
 
@@ -3500,19 +3506,22 @@ async fn finalize_signed_pdf(
     let mut out = FinalSignedPdf {
         bytes: signed_pdf,
         timestamp_token_der: None,
+        timestamp_trust_report_json: None,
         report,
     };
 
     let Some(tsa_url) = configured_tsa_url(state).await else {
         return Ok(out);
     };
+    let tsl_url = configured_tsl_url(state).await;
 
     let pdf = std::mem::take(&mut out.bytes);
-    let (stamped, token) = tokio::task::spawn_blocking(move || {
-        timestamp_pdf_with_url(&pdf, &tsa_url).map_err(map_timestamp_error)
-    })
-    .await
-    .map_err(|e| ApiError::Internal(format!("timestamp task failed: {e}")))??;
+    let (stamped, timestamp, timestamp_trust_report_json) =
+        tokio::task::spawn_blocking(move || {
+            timestamp_pdf_with_trust_report(&pdf, &tsa_url, tsl_url).map_err(map_timestamp_error)
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("timestamp task failed: {e}")))??;
 
     let report = validate_signed_pdf(&stamped, expected_signer_cert_der)?;
     if !report.has_signature_timestamp {
@@ -3521,9 +3530,48 @@ async fn finalize_signed_pdf(
         ));
     }
     out.bytes = stamped;
-    out.timestamp_token_der = Some(token);
+    out.timestamp_token_der = Some(timestamp.token_der);
+    out.timestamp_trust_report_json = timestamp_trust_report_json;
     out.report = report;
     Ok(out)
+}
+
+fn timestamp_pdf_with_trust_report(
+    signed_pdf: &[u8],
+    tsa_url: &str,
+    tsl_url: Option<String>,
+) -> Result<(Vec<u8>, chancela_tsa::Timestamp, Option<String>), chancela_signing::SigningError> {
+    let transport = chancela_tsa::HttpTsaTransport::new(tsa_url)
+        .map_err(|e| chancela_signing::SigningError::Timestamp(e.to_string()))?;
+    let client = chancela_tsa::TsaClient::new(transport);
+    let mut captured: Option<chancela_tsa::Timestamp> = None;
+    let stamped = add_signature_timestamp(signed_pdf, |sig_digest: &[u8; 32]| {
+        let request = chancela_tsa::TimestampRequest::new(*sig_digest).with_generated_nonce();
+        let ts = client
+            .stamp(&request)
+            .map_err(|e| chancela_signing::SigningError::Timestamp(e.to_string()))?;
+        captured = Some(ts.clone());
+        Ok::<chancela_tsa::Timestamp, chancela_signing::SigningError>(ts)
+    })
+    .map_err(|e| chancela_signing::SigningError::Pades(e.to_string()))?;
+    let timestamp = captured.ok_or_else(|| {
+        chancela_signing::SigningError::Timestamp("timestamp callback did not run".to_owned())
+    })?;
+    let report_json = timestamp_trust_report_json(&timestamp, tsl_url);
+    Ok((stamped, timestamp, report_json))
+}
+
+fn timestamp_trust_report_json(
+    timestamp: &chancela_tsa::Timestamp,
+    tsl_url: Option<String>,
+) -> Option<String> {
+    let tsa_cert = timestamp.tsa_certificate_der.as_deref()?;
+    let url = tsl_url.filter(|url| !url.trim().is_empty())?;
+    let mut tsl = TslClient::new(HttpTslSource::new(url));
+    let qtst = tsl.qtst_match_details(tsa_cert, timestamp.gen_time).ok()?;
+    let report =
+        timestamp_trust_evidence_status(timestamp, &qtst, &TimestampTrustPolicy::default());
+    serde_json::to_string(&report).ok()
 }
 
 fn validate_signed_pdf(
@@ -3576,6 +3624,24 @@ async fn configured_tsa_url(state: &AppState) -> Option<String> {
         .await
         .signing
         .tsa_url
+        .clone()
+        .and_then(|url| {
+            let trimmed = url.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_owned())
+            }
+        })
+}
+
+async fn configured_tsl_url(state: &AppState) -> Option<String> {
+    state
+        .settings
+        .read()
+        .await
+        .signing
+        .tsl_url
         .clone()
         .and_then(|url| {
             let trimmed = url.trim();
@@ -3839,6 +3905,7 @@ mod tests {
             signed_at: t,
             signer_cert_der: vec![1, 2, 3],
             timestamp_token_der,
+            timestamp_trust_report_json: None,
             signed_pdf_bytes: b"%PDF".to_vec(),
         }
     }
@@ -3896,6 +3963,42 @@ mod tests {
         assert_eq!(b_t.dss_revocation_evidence_status, "inspection_unavailable");
         assert_eq!(b_t.timestamp_trust, None);
         assert_eq!(b_t.status_scope, TECHNICAL_EVIDENCE_ONLY);
+    }
+
+    #[test]
+    fn signature_evidence_status_reloads_persisted_timestamp_trust_report() {
+        let mut doc = stored_signed_document(Some(b"timestamp-token".to_vec()));
+        doc.timestamp_trust_report_json = Some(
+            serde_json::to_string(&TimestampTrustEvidenceStatus {
+                decision: "rejected".to_owned(),
+                policy_oid: "1.2.3.4".to_owned(),
+                policy_oid_accepted: Some(false),
+                tsa_certificate_embedded: true,
+                embedded_certificate_count: 2,
+                qtst_status: "unknown".to_owned(),
+                qtst_authenticated: true,
+                qtst_matches: vec![TimestampQtstMatchEvidenceStatus {
+                    provider_name: "Provider".to_owned(),
+                    service_name: "QTST".to_owned(),
+                    granted_and_effective: false,
+                    trust_anchor_count: 1,
+                }],
+                trust_anchor_count: 1,
+                certificate_path_valid: false,
+                certificate_path_anchor_index: None,
+                certificate_path_len: None,
+                failure_reasons: vec!["fixture diagnostic".to_owned()],
+                status_scope: TECHNICAL_EVIDENCE_ONLY.to_owned(),
+            })
+            .unwrap(),
+        );
+
+        let status = signature_evidence_status(Some(&doc));
+        let trust = status.timestamp_trust.expect("persisted report");
+        assert_eq!(trust.policy_oid, "1.2.3.4");
+        assert_eq!(trust.policy_oid_accepted, Some(false));
+        assert_eq!(trust.qtst_matches[0].service_name, "QTST");
+        assert_eq!(trust.status_scope, TECHNICAL_EVIDENCE_ONLY);
     }
 
     #[test]

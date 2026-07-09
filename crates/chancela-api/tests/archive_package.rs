@@ -779,6 +779,7 @@ async fn archive_package_rejects_signed_metadata_for_the_wrong_document() {
         signed_at: datetime!(2026-04-01 12:01:00 UTC),
         signer_cert_der: b"fixture signer certificate DER".to_vec(),
         timestamp_token_der: None,
+        timestamp_trust_report_json: None,
         signed_pdf_bytes,
     };
     state
@@ -827,6 +828,7 @@ async fn archive_package_rejects_signed_metadata_with_impossible_dates() {
         signed_at: datetime!(2026-04-01 12:00:00 UTC),
         signer_cert_der: b"fixture signer certificate DER".to_vec(),
         timestamp_token_der: None,
+        timestamp_trust_report_json: None,
         signed_pdf_bytes,
     };
     state
@@ -960,6 +962,7 @@ async fn archive_package_reports_persisted_signature_metadata_as_evidence() {
     let signed_pdf_digest = sha256_hex(&signed_pdf_bytes);
     let signer_cert_digest = sha256_hex(&signer_cert_der);
     let timestamp_token_digest = sha256_hex(&timestamp_token_der);
+    let timestamp_trust_report_json = r#"{"decision":"rejected","policy_oid":"1.2.3.4","policy_oid_accepted":false,"tsa_certificate_embedded":true,"embedded_certificate_count":2,"qtst_status":"unknown","qtst_authenticated":true,"qtst_matches":[{"provider_name":"Provider","service_name":"QTST","granted_and_effective":false,"trust_anchor_count":1}],"trust_anchor_count":1,"certificate_path_valid":false,"certificate_path_anchor_index":null,"certificate_path_len":null,"failure_reasons":["fixture diagnostic"],"status_scope":"technical_evidence_only"}"#;
     let signed = StoredSignedDocument {
         act_id,
         document_id: sealed.document_id.clone(),
@@ -972,6 +975,7 @@ async fn archive_package_reports_persisted_signature_metadata_as_evidence() {
         signed_at: datetime!(2026-04-01 12:01:00 UTC),
         signer_cert_der: signer_cert_der.clone(),
         timestamp_token_der: Some(timestamp_token_der.clone()),
+        timestamp_trust_report_json: Some(timestamp_trust_report_json.to_owned()),
         signed_pdf_bytes: signed_pdf_bytes.clone(),
     };
     state
@@ -1092,12 +1096,36 @@ async fn archive_package_reports_persisted_signature_metadata_as_evidence() {
         timestamp_token_digest
     );
     assert_eq!(
+        report["signature"]["timestamp_trust"]["decision"],
+        "rejected"
+    );
+    assert_eq!(
+        report["signature"]["timestamp_trust"]["policy_oid"],
+        "1.2.3.4"
+    );
+    assert_eq!(
+        report["signature"]["timestamp_trust"]["qtst_matches"][0]["service_name"],
+        "QTST"
+    );
+    assert_eq!(
+        report["signature"]["timestamp_trust"]["status_scope"],
+        "technical_evidence_only"
+    );
+    assert_eq!(
         report["signature"]["persisted_validation"]["byte_range_covers_whole_file_except_contents"],
         "validated_before_persistence"
     );
     assert_eq!(
+        report["signature"]["persisted_validation"]["timestamp_trust"],
+        "persisted_technical_timestamp_trust_report"
+    );
+    assert_eq!(
         report["signature"]["persisted_validation"]["cryptographic_revalidation_at_export"],
         "not_performed"
+    );
+    assert_ne!(
+        report["signature"]["persisted_validation"]["timestamp_trust"],
+        "not_persisted_full_validator_inputs"
     );
     assert!(
         !String::from_utf8_lossy(members.get(&evidence_path).expect("evidence bytes"))
@@ -1164,6 +1192,7 @@ async fn archive_package_reports_embedded_dss_without_legal_b_lt_claim() {
         signed_at: datetime!(2026-04-01 12:02:00 UTC),
         signer_cert_der: signer_cert_der.clone(),
         timestamp_token_der: Some(timestamp_token_der),
+        timestamp_trust_report_json: None,
         signed_pdf_bytes: signed_pdf_with_dss,
     };
     state

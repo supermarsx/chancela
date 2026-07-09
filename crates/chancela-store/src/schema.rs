@@ -36,7 +36,10 @@
 ///   row or any `signed_documents` variant, and without making PDF/A/legal/signature-validity claims.
 /// - **v6** — adds `follow_ups`: first-class act-scoped task rows for post-deliberation work,
 ///   persisted outside sealed act JSON and audited through ledger events.
-pub const SCHEMA_VERSION: i64 = 6;
+/// - **v7** — adds `signed_documents.timestamp_trust_report_json`: a nullable, non-secret
+///   technical timestamp-trust diagnostic report captured at signing completion when the RFC 3161
+///   token, policy/QTST and certificate-path inputs are available.
+pub const SCHEMA_VERSION: i64 = 7;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -200,6 +203,7 @@ pub const CREATE_IMPORTED_BOOKS_BOOK_IDX: &str =
 /// - `signed_at` — RFC 3339, when the api completed the signature (storage metadata).
 /// - `signer_cert_der` — the signer leaf certificate (DER).
 /// - `timestamp_token_der` — an optional RFC 3161 timestamp token (DER), or NULL (B-B has none).
+/// - `timestamp_trust_report_json` — optional technical timestamp-trust diagnostic report JSON.
 /// - `signed_pdf_bytes` — the signed PDF/A bytes.
 pub const CREATE_SIGNED_DOCUMENTS: &str = "\
 CREATE TABLE IF NOT EXISTS signed_documents (
@@ -214,6 +218,7 @@ CREATE TABLE IF NOT EXISTS signed_documents (
     signed_at           TEXT NOT NULL,
     signer_cert_der     BLOB NOT NULL,
     timestamp_token_der BLOB,
+    timestamp_trust_report_json TEXT,
     signed_pdf_bytes    BLOB NOT NULL
 ) STRICT;";
 
