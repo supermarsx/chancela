@@ -149,6 +149,40 @@ jobs:
         run: npm run build --workspace apps/web
 
   # ---------------------------------------------------------------------------
+  # Recent landed checkpoint: focused regression lane for areas that landed in
+  # parallel and are easy to miss in broad jobs: API paper import,
+  # archive-package evidence including /DocTimeStamp, web contract/dashboard/i18n
+  # pins, validator corpus manifest integrity, and desktop Cargo.lock resolution.
+  # ---------------------------------------------------------------------------
+  recent-landed:
+    name: Recent landed checkpoint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run recent landed checkpoint
+        run: npm run test:checkpoint:recent-landed
+
+  # ---------------------------------------------------------------------------
   # Docker: prove the server image builds and boots with durable persistence.
   # Kept off pull requests (the release build is slow) so PR feedback stays
   # fast; it gates pushes to main and can be run manually. No push.
