@@ -903,9 +903,19 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/v1/books/paper-import",
-            post(paper_import::preserve_paper_book_import).layer(DefaultBodyLimit::max(
-                paper_import::PAPER_BOOK_IMPORT_ENVELOPE_BYTES,
-            )),
+            get(paper_import::list_paper_book_imports).post(
+                post(paper_import::preserve_paper_book_import).layer(DefaultBodyLimit::max(
+                    paper_import::PAPER_BOOK_IMPORT_ENVELOPE_BYTES,
+                )),
+            ),
+        )
+        .route(
+            "/v1/books/paper-import/{id}",
+            get(paper_import::get_paper_book_import),
+        )
+        .route(
+            "/v1/books/paper-import/{id}/bytes",
+            get(paper_import::get_paper_book_import_bytes),
         )
         .route(
             "/v1/books/{id}/legal-hold",

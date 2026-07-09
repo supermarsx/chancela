@@ -5,7 +5,10 @@
 //! canonical digital minutes or qualified signatures.
 
 use axum::Json;
-use axum::extract::State;
+use axum::body::Body;
+use axum::extract::{Path, Query, State};
+use axum::http::{StatusCode, header};
+use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
@@ -90,6 +93,37 @@ pub struct PaperBookImportPreservationReport {
     pub can_accept_as_import_candidate: bool,
     pub required_operator_actions: Vec<&'static str>,
     pub findings: Vec<PaperBookImportFinding>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PaperBookImportsQuery {
+    pub book_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookImportView {
+    pub import_id: String,
+    pub entity_ref: String,
+    pub entity_name: String,
+    pub entity_nipc: String,
+    pub book_ref: String,
+    pub date_from: String,
+    pub date_to: String,
+    pub page_count: u32,
+    pub sha256: String,
+    pub size_bytes: usize,
+    pub content_type: String,
+    pub source_filename: Option<String>,
+    pub notes: Option<String>,
+    pub imported_at: String,
+    pub imported_by: String,
+    pub ocr_status: &'static str,
+    pub non_canonical: bool,
+    pub legal_validity_claimed: bool,
+    pub signature_validity_claimed: bool,
+    pub qualified_signature_claimed: bool,
+    pub legal_notice: &'static str,
+    pub bytes_download: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -242,9 +276,58 @@ pub async fn preserve_paper_book_import(
     drop(ledger);
 
     Ok((
-        axum::http::StatusCode::CREATED,
+        StatusCode::CREATED,
         Json(preservation_report(validation, &stored.meta)),
     ))
+}
+
+/// `GET /v1/books/paper-import[?book_ref=...]` - list preserved paper-book import metadata.
+/// The response is metadata-only; retained package bytes are fetched through the explicit bytes
+/// route so they never ride in the list JSON body.
+pub async fn list_paper_book_imports(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Query(q): Query<PaperBookImportsQuery>,
+) -> Result<Json<Vec<PaperBookImportView>>, ApiError> {
+    require_permission_for_report(&state, &actor).await?;
+    let book_ref = optional_plain_ref(q.book_ref, "book_ref")?;
+    let Some(store) = &state.store else {
+        return Ok(Json(Vec::new()));
+    };
+    let rows = store
+        .paper_book_imports(book_ref.as_deref())
+        .map_err(|e| ApiError::Internal(format!("paper-book import store read failed: {e}")))?;
+    Ok(Json(rows.iter().map(paper_book_import_view).collect()))
+}
+
+/// `GET /v1/books/paper-import/{id}` - read preserved paper-book import metadata only.
+pub async fn get_paper_book_import(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Path(id): Path<String>,
+) -> Result<Json<PaperBookImportView>, ApiError> {
+    let stored = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    Ok(Json(paper_book_import_view(&stored.meta)))
+}
+
+/// `GET /v1/books/paper-import/{id}/bytes` - download the preserved non-canonical package bytes.
+pub async fn get_paper_book_import_bytes(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let stored = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    let filename = paper_book_download_filename(&stored.meta);
+    Response::builder()
+        .header(header::CONTENT_TYPE, stored.meta.content_type.as_str())
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        )
+        .body(Body::from(stored.bytes))
+        .map_err(|e| {
+            ApiError::Internal(format!("failed to build paper-book package response: {e}"))
+        })
 }
 
 async fn require_permission_for_report(
@@ -252,6 +335,22 @@ async fn require_permission_for_report(
     actor: &CurrentActor,
 ) -> Result<(), ApiError> {
     crate::authz::require_permission(state, actor, Permission::BookImport, Scope::Global).await
+}
+
+async fn load_paper_book_import_for_actor(
+    state: &AppState,
+    actor: &CurrentActor,
+    raw_id: &str,
+) -> Result<StoredPaperBookImport, ApiError> {
+    let id = validate_import_id(raw_id)?;
+    require_permission_for_report(state, actor).await?;
+    let Some(store) = &state.store else {
+        return Err(ApiError::NotFound);
+    };
+    store
+        .paper_book_import(&id)
+        .map_err(|e| ApiError::Internal(format!("paper-book import store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)
 }
 
 fn validate_candidate(
@@ -435,6 +534,65 @@ fn paper_book_import_event_payload(meta: &StoredPaperBookImportMeta) -> serde_js
         "signature_validity_claimed": false,
         "qualified_signature_claimed": false,
     })
+}
+
+fn paper_book_import_view(meta: &StoredPaperBookImportMeta) -> PaperBookImportView {
+    PaperBookImportView {
+        import_id: meta.import_id.clone(),
+        entity_ref: meta.entity_ref.clone(),
+        entity_name: meta.entity_name.clone(),
+        entity_nipc: meta.entity_nipc.clone(),
+        book_ref: meta.book_ref.clone(),
+        date_from: format_date(meta.date_from),
+        date_to: format_date(meta.date_to),
+        page_count: meta.page_count,
+        sha256: meta.sha256.clone(),
+        size_bytes: meta.size_bytes,
+        content_type: meta.content_type.clone(),
+        source_filename: meta.source_filename.clone(),
+        notes: meta.notes.clone(),
+        imported_at: meta.imported_at.format(&Rfc3339).unwrap_or_default(),
+        imported_by: meta.imported_by.clone(),
+        ocr_status: meta.ocr_status.as_str(),
+        non_canonical: true,
+        legal_validity_claimed: false,
+        signature_validity_claimed: false,
+        qualified_signature_claimed: false,
+        legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
+        bytes_download: format!("/v1/books/paper-import/{}/bytes", meta.import_id),
+    }
+}
+
+fn validate_import_id(raw: &str) -> Result<String, ApiError> {
+    let id = raw.trim();
+    if id.is_empty() || looks_path_like(id) {
+        return Err(ApiError::Unprocessable(
+            "invalid paper-book import id".to_owned(),
+        ));
+    }
+    Uuid::parse_str(id)
+        .map_err(|_| ApiError::Unprocessable("invalid paper-book import id".to_owned()))?;
+    Ok(id.to_owned())
+}
+
+fn paper_book_download_filename(meta: &StoredPaperBookImportMeta) -> String {
+    if let Some(filename) = meta.source_filename.as_deref() {
+        return filename.to_owned();
+    }
+    let ext = match meta
+        .content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "application/pdf" => "pdf",
+        "application/zip" => "zip",
+        _ => "bin",
+    };
+    format!("paper-book-import-{}.{}", meta.import_id, ext)
 }
 
 fn verify_package_fixity(

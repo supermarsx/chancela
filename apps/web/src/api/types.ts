@@ -3062,7 +3062,7 @@ export interface PaperBookImportClassification {
   classification: 'historical_paper_book_non_canonical_evidence';
   non_canonical: boolean;
   historical_evidence: boolean;
-  preservation_status: 'not_preserved_by_validation';
+  preservation_status: 'not_preserved_by_validation' | 'preserved_non_canonical_package';
   canonical_minutes_claimed: boolean;
   legal_validity_claimed: boolean;
   signature_validity_claimed: boolean;
@@ -3100,6 +3100,32 @@ export interface PaperBookImportValidateBody {
   source_filename?: string | null;
   digest?: string | null;
   notes?: string | null;
+}
+
+/** Preserved historical paper-book package metadata. Raw bytes are fetched via `bytes_download`. */
+export interface PaperBookImportView {
+  import_id: string;
+  entity_ref: string;
+  entity_name: string;
+  entity_nipc: string;
+  book_ref: string;
+  date_from: string;
+  date_to: string;
+  page_count: number;
+  sha256: string;
+  size_bytes: number;
+  content_type: string;
+  source_filename: string | null;
+  notes: string | null;
+  imported_at: string;
+  imported_by: string;
+  ocr_status: 'not_started' | string;
+  non_canonical: boolean;
+  legal_validity_claimed: boolean;
+  signature_validity_claimed: boolean;
+  qualified_signature_claimed: boolean;
+  legal_notice: string;
+  bytes_download: string;
 }
 
 /** `POST /v1/books/{id}/start-over` request (forward-writing lifecycle op; reason + a

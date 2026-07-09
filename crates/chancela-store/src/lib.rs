@@ -922,6 +922,40 @@ impl Store {
             .transpose()
     }
 
+    /// List preserved historical paper-book import metadata, newest first. When `book_ref` is
+    /// supplied, returns only imports linked to that operator-supplied book reference.
+    pub fn paper_book_imports(
+        &self,
+        book_ref: Option<&str>,
+    ) -> Result<Vec<StoredPaperBookImportMeta>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut out = Vec::new();
+        if let Some(book_ref) = book_ref {
+            let mut stmt = guard.prepare(
+                "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
+                 date_to, page_count, sha256, size_bytes, content_type, source_filename, notes, \
+                 imported_at, imported_by, ocr_status FROM paper_book_imports \
+                 WHERE book_ref = ?1 ORDER BY imported_at DESC, rowid DESC",
+            )?;
+            let rows = stmt.query_map(params![book_ref], row_to_paper_book_import_meta)?;
+            for row in rows {
+                out.push(row??);
+            }
+        } else {
+            let mut stmt = guard.prepare(
+                "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
+                 date_to, page_count, sha256, size_bytes, content_type, source_filename, notes, \
+                 imported_at, imported_by, ocr_status FROM paper_book_imports \
+                 ORDER BY imported_at DESC, rowid DESC",
+            )?;
+            let rows = stmt.query_map([], row_to_paper_book_import_meta)?;
+            for row in rows {
+                out.push(row??);
+            }
+        }
+        Ok(out)
+    }
+
     /// List follow-ups for an act, open items first, then oldest-created first.
     pub fn follow_ups_for_act(&self, act_id: ActId) -> Result<Vec<StoredFollowUp>, StoreError> {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -1664,10 +1698,10 @@ fn imported_document_meta_from_raw(
     })
 }
 
-/// Map one `paper_book_imports` full row to [`StoredPaperBookImport`] (metadata + retained bytes).
-fn row_to_paper_book_import(
+/// Map one `paper_book_imports` metadata row to [`StoredPaperBookImportMeta`].
+fn row_to_paper_book_import_meta(
     row: &rusqlite::Row<'_>,
-) -> rusqlite::Result<Result<StoredPaperBookImport, StoreError>> {
+) -> rusqlite::Result<Result<StoredPaperBookImportMeta, StoreError>> {
     let import_id: String = row.get(0)?;
     let entity_ref: String = row.get(1)?;
     let entity_name: String = row.get(2)?;
@@ -1684,36 +1718,78 @@ fn row_to_paper_book_import(
     let imported_at_raw: String = row.get(13)?;
     let imported_by: String = row.get(14)?;
     let ocr_status_raw: String = row.get(15)?;
+    Ok(paper_book_import_meta_from_raw(
+        import_id,
+        entity_ref,
+        entity_name,
+        entity_nipc,
+        book_ref,
+        date_from_raw,
+        date_to_raw,
+        page_count_raw,
+        sha256,
+        size_raw,
+        content_type,
+        source_filename,
+        notes,
+        imported_at_raw,
+        imported_by,
+        ocr_status_raw,
+    ))
+}
+
+/// Map one `paper_book_imports` full row to [`StoredPaperBookImport`] (metadata + retained bytes).
+fn row_to_paper_book_import(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredPaperBookImport, StoreError>> {
+    let meta = row_to_paper_book_import_meta(row)?;
     let bytes: Vec<u8> = row.get(16)?;
-    Ok((|| {
-        let size_bytes = usize::try_from(size_raw).map_err(|_| {
-            StoreError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("stored paper-book import size {size_raw} is negative or too large"),
-            ))
-        })?;
-        Ok(StoredPaperBookImport {
-            meta: StoredPaperBookImportMeta {
-                import_id,
-                entity_ref,
-                entity_name,
-                entity_nipc,
-                book_ref,
-                date_from: parse_date(&date_from_raw)?,
-                date_to: parse_date(&date_to_raw)?,
-                page_count: int_to_u32(page_count_raw)?,
-                sha256,
-                size_bytes,
-                content_type,
-                source_filename,
-                notes,
-                imported_at: parse_rfc3339(&imported_at_raw)?,
-                imported_by,
-                ocr_status: StoredPaperBookOcrStatus::parse(&ocr_status_raw)?,
-            },
-            bytes,
-        })
-    })())
+    Ok((|| Ok(StoredPaperBookImport { meta: meta?, bytes }))())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paper_book_import_meta_from_raw(
+    import_id: String,
+    entity_ref: String,
+    entity_name: String,
+    entity_nipc: String,
+    book_ref: String,
+    date_from_raw: String,
+    date_to_raw: String,
+    page_count_raw: i64,
+    sha256: String,
+    size_raw: i64,
+    content_type: String,
+    source_filename: Option<String>,
+    notes: Option<String>,
+    imported_at_raw: String,
+    imported_by: String,
+    ocr_status_raw: String,
+) -> Result<StoredPaperBookImportMeta, StoreError> {
+    let size_bytes = usize::try_from(size_raw).map_err(|_| {
+        StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("stored paper-book import size {size_raw} is negative or too large"),
+        ))
+    })?;
+    Ok(StoredPaperBookImportMeta {
+        import_id,
+        entity_ref,
+        entity_name,
+        entity_nipc,
+        book_ref,
+        date_from: parse_date(&date_from_raw)?,
+        date_to: parse_date(&date_to_raw)?,
+        page_count: int_to_u32(page_count_raw)?,
+        sha256,
+        size_bytes,
+        content_type,
+        source_filename,
+        notes,
+        imported_at: parse_rfc3339(&imported_at_raw)?,
+        imported_by,
+        ocr_status: StoredPaperBookOcrStatus::parse(&ocr_status_raw)?,
+    })
 }
 
 /// Map one `follow_ups` row to [`StoredFollowUp`]. Deferred inner `Result` lets timestamp, date,

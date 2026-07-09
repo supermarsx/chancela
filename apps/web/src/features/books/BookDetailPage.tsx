@@ -14,8 +14,11 @@ import {
   useBookLegalHold,
   useClearBookLegalHold,
   useDownloadBookArchivePackage,
+  useDownloadPaperBookImport,
+  usePaperBookImports,
   useSetBookLegalHold,
 } from '../../api/hooks';
+import type { PaperBookImportView } from '../../api/types';
 import {
   actStateLabels,
   bookKindLabels,
@@ -46,6 +49,28 @@ import { GateButton, GateButtonLink, scopeBook } from '../session/permissions';
 
 function preservationPackageFilename(bookId: string): string {
   return `chancela-preservation-book-${bookId}.zip`;
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return '—';
+  if (value < 1024) return `${value} bytes`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let amount = value;
+  let unit = 'bytes';
+  for (const candidate of units) {
+    amount /= 1024;
+    unit = candidate;
+    if (amount < 1024) break;
+  }
+  const decimals = amount >= 10 || Number.isInteger(amount) ? 0 : 1;
+  return `${amount.toFixed(decimals)} ${unit}`;
+}
+
+function paperBookImportFilename(row: PaperBookImportView): string {
+  if (row.source_filename?.trim()) return row.source_filename.trim();
+  const type = row.content_type.split(';')[0]?.trim().toLowerCase();
+  const ext = type === 'application/pdf' ? 'pdf' : type === 'application/zip' ? 'zip' : 'bin';
+  return `paper-book-import-${row.import_id}.${ext}`;
 }
 
 function LegalHoldPanel({ bookId }: { bookId: string }) {
@@ -160,6 +185,108 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
           </div>
         </form>
       </div>
+    </Card>
+  );
+}
+
+function PaperBookImportsPanel({ bookRef }: { bookRef: string }) {
+  const toast = useToast();
+  const imports = usePaperBookImports(bookRef);
+  const download = useDownloadPaperBookImport();
+
+  function onDownload(row: PaperBookImportView) {
+    download.mutate(row.import_id, {
+      onSuccess: async (blob) => {
+        try {
+          showSaveResult(
+            await saveBlobAs({
+              blob,
+              filename: paperBookImportFilename(row),
+              preferBrowserSavePicker: true,
+            }),
+          );
+        } catch (e) {
+          toast.error(e);
+        }
+      },
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  function showSaveResult(result: SaveBlobResult) {
+    if (result.kind === 'cancelled') {
+      toast.info(saveBlobResultMessage(result));
+      return;
+    }
+    toast.success(saveBlobResultMessage(result));
+  }
+
+  const rows = imports.data ?? [];
+
+  return (
+    <Card title="Importações de livro em papel preservadas">
+      {imports.isLoading ? (
+        <SkeletonTable cols={4} />
+      ) : imports.error ? (
+        <ErrorNote error={imports.error} />
+      ) : rows.length === 0 ? (
+        <EmptyState title="Sem importações preservadas">
+          <p>Não há pacotes de livro em papel preservados para esta referência de livro.</p>
+        </EmptyState>
+      ) : (
+        <div className="stack">
+          <InlineWarning tone="warn" title="Evidência não canónica">
+            Estes pacotes preservam cópias de livros em papel para consulta. Não substituem atas
+            digitais canónicas e não declaram validade legal, PDF/A ou assinatura qualificada.
+          </InlineWarning>
+          <Table
+            head={
+              <tr>
+                <th>Ficheiro</th>
+                <th>Período</th>
+                <th>Fixidez</th>
+                <th />
+              </tr>
+            }
+          >
+            {rows.map((row) => (
+              <tr key={row.import_id}>
+                <td>
+                  <div className="stack--tight">
+                    <span>{row.source_filename ?? row.import_id}</span>
+                    <span className="muted">
+                      {formatBytes(row.size_bytes)} · {row.content_type} · {row.page_count} páginas
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  {row.date_from} a {row.date_to}
+                </td>
+                <td>
+                  <div className="stack--tight">
+                    <Badge tone={row.non_canonical ? 'warn' : 'neutral'}>
+                      {row.non_canonical ? 'Não canónico' : 'Importado'}
+                    </Badge>
+                    <span className="mono">{row.sha256.slice(0, 16)}...</span>
+                  </div>
+                </td>
+                <td>
+                  <GateButton
+                    perm="book.import"
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.Tray />}
+                    disabled={download.isPending}
+                    onClick={() => onDownload(row)}
+                  >
+                    {download.isPending ? 'A descarregar' : 'Descarregar pacote'}
+                  </GateButton>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        </div>
+      )}
     </Card>
   );
 }
@@ -291,6 +418,8 @@ export function BookDetailPage() {
       </Card>
 
       <LegalHoldPanel bookId={b.id} />
+
+      <PaperBookImportsPanel bookRef={b.id} />
 
       <Card
         title={t('books.atas')}

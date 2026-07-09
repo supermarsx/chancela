@@ -65,6 +65,7 @@ import type {
   LedgerVerify,
   OpenBookBody,
   PaperBookImportReport,
+  PaperBookImportView,
   PaperBookImportValidateBody,
   RegistryExtractView,
   RegistryAutoUpdateAttemptBody,
@@ -753,6 +754,12 @@ export const api = {
     postBytes<ImportOutcomeView>(`/v1/books/import${query({ policy })}`, bytes),
   validatePaperBookImport: (body: PaperBookImportValidateBody) =>
     post<PaperBookImportReport>('/v1/books/paper-import/validate', body),
+  listPaperBookImports: (params: { book_ref?: string } = {}) =>
+    get<PaperBookImportView[]>(`/v1/books/paper-import${query(params)}`),
+  getPaperBookImport: (id: string) =>
+    get<PaperBookImportView>(`/v1/books/paper-import/${encodeURIComponent(id)}`),
+  fetchPaperBookImportBytes: (id: string) =>
+    fetchBlob(`/v1/books/paper-import/${encodeURIComponent(id)}/bytes`),
   startOverBook: (id: string, body: StartOverBookBody) =>
     post<StartOverBookResult>(`/v1/books/${id}/start-over`, body),
   // Data management (§2.11). Frontend-reset is client-only — it has NO endpoint here.

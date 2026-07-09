@@ -57,6 +57,20 @@ async fn send(state: &AppState, req: Request<Body>) -> (StatusCode, Value) {
     (status, value)
 }
 
+async fn send_bytes(
+    state: &AppState,
+    req: Request<Body>,
+) -> (StatusCode, Vec<u8>, header::HeaderMap) {
+    let resp = router(state.clone())
+        .oneshot(req)
+        .await
+        .expect("router responds");
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.expect("body");
+    (status, bytes.to_vec(), headers)
+}
+
 fn json_req(uri: &str, token: &str, body: Value) -> Request<Body> {
     Request::builder()
         .method("POST")
@@ -64,6 +78,15 @@ fn json_req(uri: &str, token: &str, body: Value) -> Request<Body> {
         .header(header::CONTENT_TYPE, "application/json")
         .header("x-chancela-session", token)
         .body(Body::from(body.to_string()))
+        .expect("request builds")
+}
+
+fn get_req(uri: &str, token: &str) -> Request<Body> {
+    Request::builder()
+        .method("GET")
+        .uri(uri)
+        .header("x-chancela-session", token)
+        .body(Body::empty())
         .expect("request builds")
 }
 
@@ -147,6 +170,14 @@ async fn validate(state: &AppState, token: &str, body: Value) -> (StatusCode, Va
 
 async fn preserve(state: &AppState, token: &str, body: Value) -> (StatusCode, Value) {
     send(state, json_req("/v1/books/paper-import", token, body)).await
+}
+
+async fn list_imports(state: &AppState, token: &str, query: &str) -> (StatusCode, Value) {
+    send(
+        state,
+        get_req(&format!("/v1/books/paper-import{query}"), token),
+    )
+    .await
 }
 
 #[tokio::test]
@@ -285,6 +316,99 @@ async fn paper_book_import_preserves_package_bytes_and_appends_metadata_only_eve
     assert_eq!(stored.bytes, bytes);
     assert_eq!(stored.meta.sha256, body["preservation"]["sha256"]);
     assert_eq!(stored.meta.ocr_status.as_str(), "not_started");
+}
+
+#[tokio::test]
+async fn paper_book_import_list_and_read_are_metadata_only_and_download_returns_bytes() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let bytes = package_bytes();
+    let (status, created) = preserve(&state, &token, preserve_body(&bytes)).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+
+    let (status, list) = list_imports(&state, &token, "").await;
+    assert_eq!(status, StatusCode::OK, "list: {list}");
+    let rows = list.as_array().expect("list array");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["import_id"], import_id);
+    assert_eq!(rows[0]["book_ref"], "ag-book-1968-1971");
+    assert_eq!(rows[0]["non_canonical"], true);
+    assert_eq!(rows[0]["legal_validity_claimed"], false);
+    assert_eq!(rows[0]["signature_validity_claimed"], false);
+    assert_eq!(rows[0]["qualified_signature_claimed"], false);
+    assert_eq!(
+        rows[0]["bytes_download"],
+        format!("/v1/books/paper-import/{import_id}/bytes")
+    );
+    assert!(
+        rows[0].get("bytes").is_none() && rows[0].get("content_base64").is_none(),
+        "metadata list must not expose retained bytes: {list}"
+    );
+
+    let (status, filtered) = list_imports(&state, &token, "?book_ref=ag-book-1968-1971").await;
+    assert_eq!(status, StatusCode::OK, "filtered list: {filtered}");
+    assert_eq!(filtered.as_array().expect("filtered").len(), 1);
+
+    let (status, empty) = list_imports(&state, &token, "?book_ref=other-book").await;
+    assert_eq!(status, StatusCode::OK, "empty filtered list: {empty}");
+    assert!(empty.as_array().expect("empty").is_empty());
+
+    let (status, meta) = send(
+        &state,
+        get_req(&format!("/v1/books/paper-import/{import_id}"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "metadata: {meta}");
+    assert_eq!(meta["import_id"], import_id);
+    assert!(meta.get("bytes").is_none() && meta.get("content_base64").is_none());
+
+    let (status, downloaded, headers) = send_bytes(
+        &state,
+        get_req(&format!("/v1/books/paper-import/{import_id}/bytes"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "download status");
+    assert_eq!(downloaded, bytes);
+    assert_eq!(
+        headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok()),
+        Some("application/pdf")
+    );
+    assert!(
+        headers
+            .get(header::CONTENT_DISPOSITION)
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|h| h.contains("ag-1968-1971.pdf")),
+        "download uses sanitized source filename: {headers:?}"
+    );
+}
+
+#[tokio::test]
+async fn paper_book_import_reads_reject_path_like_or_non_uuid_ids() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+
+    let (status, body) = send(
+        &state,
+        get_req("/v1/books/paper-import/not-a-uuid/bytes", &token),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "bad id refused: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("paper-book import id")),
+        "error names import id: {body}"
+    );
 }
 
 #[tokio::test]

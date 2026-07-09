@@ -82,6 +82,8 @@ export const keys = {
   book: (id: string) => ['books', id] as const,
   bookLegalHold: (id: string) => ['books', id, 'legal-hold'] as const,
   bookActs: (id: string) => ['books', id, 'acts'] as const,
+  paperBookImports: (bookRef?: string) =>
+    ['books', 'paper-imports', { bookRef: bookRef ?? null }] as const,
   act: (id: string) => ['acts', id] as const,
   compliance: (id: string) => ['acts', id, 'compliance'] as const,
   actFollowUps: (id: string) => ['acts', id, 'follow-ups'] as const,
@@ -338,6 +340,19 @@ export function useClearBookLegalHold(id: string) {
  */
 export function useDownloadBookArchivePackage(id: string) {
   return useMutation({ mutationFn: () => api.fetchBookArchivePackage(id) });
+}
+
+export function usePaperBookImports(bookRef?: string) {
+  return useQuery({
+    queryKey: keys.paperBookImports(bookRef),
+    queryFn: () => api.listPaperBookImports({ book_ref: bookRef }),
+    enabled: bookRef !== '',
+    retry: false,
+  });
+}
+
+export function useDownloadPaperBookImport() {
+  return useMutation({ mutationFn: (id: string) => api.fetchPaperBookImportBytes(id) });
 }
 
 // --- Acts -----------------------------------------------------------------------

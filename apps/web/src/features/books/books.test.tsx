@@ -22,6 +22,7 @@ import {
   type BookLegalHoldView,
   type BookView,
   type Entity,
+  type PaperBookImportView,
 } from '../../api/types';
 
 const ENTITY: Entity = {
@@ -93,6 +94,7 @@ function bookDetailFetch(extra?: (url: string, method: string) => Response | nul
     if (custom) return Promise.resolve(custom);
     if (url === '/v1/books/book-1') return Promise.resolve(jsonResponse(BOOK));
     if (url === '/v1/books/book-1/acts') return Promise.resolve(jsonResponse([]));
+    if (url === '/v1/books/paper-import?book_ref=book-1') return Promise.resolve(jsonResponse([]));
     if (url === '/v1/books/book-1/legal-hold') {
       return Promise.resolve(
         jsonResponse({ legal_hold: false, reason: null, actor: null, set_at: null }),
@@ -309,6 +311,90 @@ describe('BookDetailPage — preservation package download', () => {
 
     expect(await screen.findByText('sem documentos preservados para empacotar')).toBeTruthy();
     expect(saveFileMock.saveBlobAs).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookDetailPage — paper-book preserved imports', () => {
+  function renderAtBook() {
+    renderWithProviders(
+      <Routes>
+        <Route path="/livros/:id" element={<BookDetailPage />} />
+      </Routes>,
+      ['/livros/book-1'],
+    );
+  }
+
+  it('lists preserved paper-book import metadata and downloads retained package bytes', async () => {
+    const preserved: PaperBookImportView = {
+      import_id: '11111111-1111-4111-8111-111111111111',
+      entity_ref: 'ent-legacy',
+      entity_name: 'Encosto Estratégico, S.A.',
+      entity_nipc: '503004642',
+      book_ref: 'book-1',
+      date_from: '1968-01-01',
+      date_to: '1971-12-31',
+      page_count: 240,
+      sha256: 'ab'.repeat(32),
+      size_bytes: 2048,
+      content_type: 'application/pdf',
+      source_filename: 'ag-1968-1971.pdf',
+      notes: 'Digitalizado do livro encadernado.',
+      imported_at: '2026-07-09T10:00:00Z',
+      imported_by: 'paper.owner',
+      ocr_status: 'not_started',
+      non_canonical: true,
+      legal_validity_claimed: false,
+      signature_validity_claimed: false,
+      qualified_signature_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      bytes_download: '/v1/books/paper-import/11111111-1111-4111-8111-111111111111/bytes',
+    };
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-download',
+      filename: 'ag-1968-1971.pdf',
+      contentType: 'application/pdf',
+      bytes: 8,
+    });
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse([preserved]);
+      }
+      if (
+        url === '/v1/books/paper-import/11111111-1111-4111-8111-111111111111/bytes' &&
+        method === 'GET'
+      ) {
+        return new Response('pdfbytes', {
+          status: 200,
+          headers: { 'Content-Type': 'application/pdf' },
+        });
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByText('Importações de livro em papel preservadas')).toBeTruthy();
+    expect(await screen.findByText('ag-1968-1971.pdf')).toBeTruthy();
+    expect(screen.getByText('1968-01-01 a 1971-12-31')).toBeTruthy();
+    expect(screen.getByText(/não declaram validade legal/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Descarregar pacote' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as { blob: Blob; filename: string };
+    expect(saved.filename).toBe('ag-1968-1971.pdf');
+    expect(await blobText(saved.blob)).toBe('pdfbytes');
+    expect(calls).toContainEqual({
+      url: '/v1/books/paper-import?book_ref=book-1',
+      method: 'GET',
+      body: null,
+    });
+    expect(calls).toContainEqual({
+      url: '/v1/books/paper-import/11111111-1111-4111-8111-111111111111/bytes',
+      method: 'GET',
+      body: null,
+    });
   });
 });
 
