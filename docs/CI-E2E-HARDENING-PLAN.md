@@ -317,10 +317,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   `chancela-server.exe`, and operator scripts; package checksum verification passed.
 - Store hardening checks: `cargo test -p chancela-store --locked` passed after
   the feature-gated SQLCipher keyed-open foundation. The SQLCipher feature test
-  (`cargo test -p chancela-store --locked --features sqlcipher sqlcipher`) is
-  blocked on this Windows host because vendored OpenSSL rejects the available
-  Cygwin Perl for MSVC builds; CI needs a Windows-compatible Perl/OpenSSL setup
-  before this can be a required feature gate.
+  (`cargo test -p chancela-store --locked --features sqlcipher sqlcipher`) now
+  has a Windows CI lane that installs pinned Strawberry Perl before Rust/Cargo so
+  vendored OpenSSL sees a Windows-native Perl first on `PATH`.
 
 Full workspace format/clippy should be rerun before commit. The prior
 `paper_import.rs` compile blocker, retention dead-code warning set, TSL `record`

@@ -67,6 +67,52 @@ jobs:
         run: cargo test --workspace --locked
 
   # ---------------------------------------------------------------------------
+  # SQLCipher: compile and run the opt-in encrypted-store tests on Windows with
+  # a native Win32 Perl pinned ahead of vendored OpenSSL's build. Without this,
+  # openssl-src may discover an incompatible Unix/Cygwin perl.exe first.
+  # ---------------------------------------------------------------------------
+  sqlcipher:
+    name: SQLCipher feature (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native Perl for vendored OpenSSL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install strawberryperl --version=5.40.4.1 --no-progress --yes
+
+          $perlBin = 'C:\Strawberry\perl\bin'
+          $cBin = 'C:\Strawberry\c\bin'
+          if (-not (Test-Path (Join-Path $perlBin 'perl.exe'))) {
+            throw "Pinned Strawberry Perl was not installed at $perlBin"
+          }
+
+          "$perlBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "$cBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "PERL=$perlBin\perl.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $env:Path = "$perlBin;$cBin;$env:Path"
+          perl -MConfig -e 'print qq(perl=$^X\narch=$Config{archname}\nversion=$]\n)'
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run SQLCipher feature tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $perl = (Get-Command perl -ErrorAction Stop).Source
+          if ($perl -notlike 'C:\Strawberry\perl\bin\perl.exe') {
+            throw "Expected Strawberry Perl first on PATH, got $perl"
+          }
+          cargo test -p chancela-store --locked --features sqlcipher sqlcipher
+
+  # ---------------------------------------------------------------------------
   # Web: format, lint, test and build the @chancela/web workspace on supported
   # Node LTS, using the committed root npm lockfile.
   # ---------------------------------------------------------------------------
