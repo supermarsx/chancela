@@ -11,8 +11,9 @@
  * by geometry (returns the same ref when unchanged), so a re-render never re-triggers it.
  * `SubNav.test.tsx` is the regression guard.
  */
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useActiveLocale } from '../i18n';
+import { ArrowRight } from './icons';
 
 export interface SubNavItem<T extends string> {
   id: T;
@@ -39,12 +40,38 @@ interface Rect {
   height: number;
 }
 
+type ScrollEdge = 'start' | 'end';
+type ScrollSource = 'hover' | 'focus' | 'press';
+type ScrollDirection = -1 | 1;
+
+const AUTO_SCROLL_PX_PER_MS = 0.42;
+
+const emptyScrollSources = (): Record<ScrollSource, boolean> => ({
+  hover: false,
+  focus: false,
+  press: false,
+});
+
+const edgeDirection = (edge: ScrollEdge): ScrollDirection => (edge === 'start' ? -1 : 1);
+
+const directionEdge = (direction: ScrollDirection | null): ScrollEdge | null =>
+  direction === -1 ? 'start' : direction === 1 ? 'end' : null;
+
 export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }: SubNavProps<T>) {
   // A stable tag (not the `t` function) so the measure effect re-runs on a locale-driven
   // label-width change without running every render.
   const locale = useActiveLocale();
   const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef<{
+    direction: ScrollDirection | null;
+    frame: number | null;
+    lastTimestamp: number | null;
+  }>({ direction: null, frame: null, lastTimestamp: null });
+  const scrollSourcesRef = useRef<Record<ScrollEdge, Record<ScrollSource, boolean>>>({
+    start: emptyScrollSources(),
+    end: emptyScrollSources(),
+  });
   const [indicator, setIndicator] = useState<Rect | null>(null);
   // Whether the sub-tab strip is scrolled away from either edge — drives the fade shadows
   // that hint at more sub-tabs off-screen. Only shown when content actually overflows in
@@ -59,6 +86,88 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
     // Guard by value so a scroll that doesn't cross an edge threshold never re-renders.
     setOverflow((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
   }, []);
+
+  const stopAutoScroll = useCallback(() => {
+    const state = autoScrollRef.current;
+    if (state.frame !== null) window.cancelAnimationFrame(state.frame);
+    state.direction = null;
+    state.frame = null;
+    state.lastTimestamp = null;
+  }, []);
+
+  const stepAutoScroll = useCallback(
+    (timestamp: number) => {
+      const state = autoScrollRef.current;
+      const direction = state.direction;
+      const el = scrollRef.current;
+      if (!direction || !el) {
+        state.frame = null;
+        state.lastTimestamp = null;
+        return;
+      }
+
+      const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+      const current = Math.min(maxLeft, Math.max(0, el.scrollLeft));
+      const elapsed =
+        state.lastTimestamp === null
+          ? 16
+          : Math.min(Math.max(timestamp - state.lastTimestamp, 0), 32);
+      const next = Math.min(
+        maxLeft,
+        Math.max(0, current + direction * elapsed * AUTO_SCROLL_PX_PER_MS),
+      );
+      el.scrollLeft = next;
+      state.lastTimestamp = timestamp;
+      updateShadows();
+
+      if (next <= 0 || next >= maxLeft) {
+        state.direction = null;
+        state.frame = null;
+        state.lastTimestamp = null;
+        return;
+      }
+
+      state.frame = window.requestAnimationFrame(stepAutoScroll);
+    },
+    [updateShadows],
+  );
+
+  const startAutoScroll = useCallback(
+    (direction: ScrollDirection) => {
+      const state = autoScrollRef.current;
+      state.direction = direction;
+      state.lastTimestamp = null;
+      if (state.frame === null) state.frame = window.requestAnimationFrame(stepAutoScroll);
+    },
+    [stepAutoScroll],
+  );
+
+  const hasActiveSource = useCallback((edge: ScrollEdge) => {
+    const sources = scrollSourcesRef.current[edge];
+    return sources.hover || sources.focus || sources.press;
+  }, []);
+
+  const setScrollSource = useCallback(
+    (edge: ScrollEdge, source: ScrollSource, activeSource: boolean) => {
+      scrollSourcesRef.current[edge][source] = activeSource;
+
+      if (activeSource) {
+        startAutoScroll(edgeDirection(edge));
+        return;
+      }
+
+      const currentEdge = directionEdge(autoScrollRef.current.direction);
+      if (currentEdge && hasActiveSource(currentEdge)) return;
+
+      const otherEdge: ScrollEdge = edge === 'start' ? 'end' : 'start';
+      if (hasActiveSource(edge)) startAutoScroll(edgeDirection(edge));
+      else if (hasActiveSource(otherEdge)) startAutoScroll(edgeDirection(otherEdge));
+      else stopAutoScroll();
+    },
+    [hasActiveSource, startAutoScroll, stopAutoScroll],
+  );
+
+  useEffect(() => stopAutoScroll, [stopAutoScroll]);
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -89,12 +198,38 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
     return () => window.removeEventListener('resize', measure);
   }, [active, locale, updateShadows]);
 
+  const renderScrollButton = (edge: ScrollEdge) => {
+    const canScroll = edge === 'start' ? overflow.start : overflow.end;
+    const label = `${ariaLabel}: scroll ${edge === 'start' ? 'left' : 'right'}`;
+    return (
+      <button
+        type="button"
+        className={`subnav__scroll subnav__scroll--${edge}`}
+        aria-label={label}
+        disabled={!canScroll}
+        onMouseEnter={() => setScrollSource(edge, 'hover', true)}
+        onMouseLeave={() => setScrollSource(edge, 'hover', false)}
+        onFocus={() => setScrollSource(edge, 'focus', true)}
+        onBlur={() => setScrollSource(edge, 'focus', false)}
+        onPointerDown={() => setScrollSource(edge, 'press', true)}
+        onPointerUp={() => setScrollSource(edge, 'press', false)}
+        onPointerLeave={() => setScrollSource(edge, 'press', false)}
+        onPointerCancel={() => setScrollSource(edge, 'press', false)}
+      >
+        <ArrowRight />
+      </button>
+    );
+  };
+  const isScrollable = overflow.start || overflow.end;
+
   return (
     <div
       className="subnav-wrap"
+      data-scrollable={isScrollable ? 'true' : undefined}
       data-overflow-start={overflow.start ? 'true' : undefined}
       data-overflow-end={overflow.end ? 'true' : undefined}
     >
+      {isScrollable ? renderScrollButton('start') : null}
       <div
         className="subnav"
         role="group"
@@ -136,6 +271,7 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
           </button>
         ))}
       </div>
+      {isScrollable ? renderScrollButton('end') : null}
     </div>
   );
 }

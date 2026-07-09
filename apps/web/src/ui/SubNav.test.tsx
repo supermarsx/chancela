@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SubNav, type SubNavItem } from './SubNav';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const ITEMS: SubNavItem<'a' | 'b' | 'c'>[] = [
   { id: 'a', label: 'Alpha' },
@@ -15,6 +18,17 @@ const mk = (n: number): SubNavItem<'a' | 'b'>[] => [
   { id: 'a', label: `Alpha ${n}` },
   { id: 'b', label: 'Beta' },
 ];
+
+function setScrollMetrics(
+  el: HTMLElement,
+  metrics: { scrollLeft: number; clientWidth: number; scrollWidth: number },
+) {
+  Object.defineProperties(el, {
+    scrollLeft: { configurable: true, writable: true, value: metrics.scrollLeft },
+    clientWidth: { configurable: true, value: metrics.clientWidth },
+    scrollWidth: { configurable: true, value: metrics.scrollWidth },
+  });
+}
 
 describe('SubNav', () => {
   it('renders one pressed button per item and reports the selection', () => {
@@ -54,6 +68,85 @@ describe('SubNav', () => {
       <SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />,
     );
     expect(container.querySelector('.subnav__indicator')).toBeTruthy();
+  });
+
+  it('exposes accessible scroll arrows only when the strip overflows', () => {
+    render(<SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />);
+    const strip = screen.getByRole('group', { name: 'Secções' });
+
+    expect(screen.queryByRole('button', { name: 'Secções: scroll left' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Secções: scroll right' })).toBeNull();
+
+    setScrollMetrics(strip, { scrollLeft: 0, clientWidth: 100, scrollWidth: 300 });
+    fireEvent.scroll(strip);
+
+    expect(
+      screen.getByRole('button', { name: 'Secções: scroll left' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Secções: scroll right' }).hasAttribute('disabled'),
+    ).toBe(false);
+
+    strip.scrollLeft = 200;
+    fireEvent.scroll(strip);
+
+    expect(
+      screen.getByRole('button', { name: 'Secções: scroll left' }).hasAttribute('disabled'),
+    ).toBe(false);
+    expect(
+      screen.getByRole('button', { name: 'Secções: scroll right' }).hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('auto-scrolls smoothly while scroll arrows are hovered, focused, or pressed', () => {
+    let nextFrame: FrameRequestCallback | null = null;
+    let frameId = 0;
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      nextFrame = cb;
+      frameId += 1;
+      return frameId;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+
+    render(<SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />);
+    const strip = screen.getByRole('group', { name: 'Secções' });
+    setScrollMetrics(strip, { scrollLeft: 0, clientWidth: 100, scrollWidth: 300 });
+    fireEvent.scroll(strip);
+
+    const runFrame = (time: number) => {
+      const frame = nextFrame;
+      nextFrame = null;
+      expect(frame).toBeTruthy();
+      act(() => {
+        frame?.(time);
+      });
+    };
+    const rightArrow = () => screen.getByRole('button', { name: 'Secções: scroll right' });
+    const stopAndAssertStill = (event: () => void, time: number) => {
+      event();
+      const stoppedAt = strip.scrollLeft;
+      runFrame(time);
+      expect(strip.scrollLeft).toBe(stoppedAt);
+    };
+
+    fireEvent.mouseEnter(rightArrow());
+    runFrame(16);
+    expect(strip.scrollLeft).toBeGreaterThan(0);
+    stopAndAssertStill(() => fireEvent.mouseLeave(rightArrow()), 32);
+
+    strip.scrollLeft = 0;
+    fireEvent.scroll(strip);
+    fireEvent.focus(rightArrow());
+    runFrame(48);
+    expect(strip.scrollLeft).toBeGreaterThan(0);
+    stopAndAssertStill(() => fireEvent.blur(rightArrow()), 64);
+
+    strip.scrollLeft = 0;
+    fireEvent.scroll(strip);
+    fireEvent.pointerDown(rightArrow());
+    runFrame(80);
+    expect(strip.scrollLeft).toBeGreaterThan(0);
+    stopAndAssertStill(() => fireEvent.pointerUp(rightArrow()), 96);
   });
 
   // Regression for the user-reported "Maximum update depth exceeded" crash: the segmented

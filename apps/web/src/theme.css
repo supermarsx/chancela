@@ -3949,8 +3949,13 @@ a.btn--primary {
   margin-top: 1.1rem;
 }
 
+.subnav-wrap[data-scrollable='true'] {
+  padding-inline: 1.85rem;
+}
+
 .subnav-wrap > .subnav {
   margin-top: 0;
+  min-width: 0;
 }
 
 /* The fades sit above the buttons (z 1) and indicator (z 0), pinned to the pill's rounded
@@ -3993,9 +3998,62 @@ a.btn--primary {
   opacity: 1;
 }
 
+.subnav__scroll {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 1px solid var(--field-border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+  transform: translateY(-50%);
+  box-shadow: 0 0.2rem 0.65rem color-mix(in srgb, #000 18%, transparent);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.subnav__scroll--start {
+  left: 0.15rem;
+}
+
+.subnav__scroll--end {
+  right: 0.15rem;
+}
+
+.subnav__scroll--start .icon {
+  transform: rotate(180deg);
+}
+
+.subnav__scroll:disabled {
+  color: var(--text-muted);
+  border-color: var(--border);
+  cursor: default;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.subnav__scroll:not(:disabled):hover,
+.subnav__scroll:not(:disabled):focus-visible,
+.subnav__scroll:not(:disabled):active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .subnav-wrap::before,
-  .subnav-wrap::after {
+  .subnav-wrap::after,
+  .subnav__scroll {
     transition: none;
   }
 }
