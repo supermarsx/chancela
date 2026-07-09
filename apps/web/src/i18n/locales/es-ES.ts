@@ -118,6 +118,7 @@ export const esES: Catalog = {
   'nav.dashboard': 'Panel',
   'nav.entities': 'Entidades',
   'nav.books': 'Libros',
+  'nav.templates': 'Minutas',
   'nav.archive': 'Archivo',
   'nav.tools': 'Herramientas',
   'nav.settings': 'Configuración',
@@ -146,6 +147,57 @@ export const esES: Catalog = {
   'toast.regionLabel': 'Notificaciones',
   'toast.genericError': 'Se ha producido un error inesperado.',
 
+  // --- Notification center -------------------------------------------------------
+  'notifications.title': 'Notifications',
+  'notifications.bell.label': 'Notifications',
+  'notifications.bell.labelWithCount': '{count} pending notifications',
+  'notifications.viewAll': 'View all',
+  'notifications.popup.empty': 'No pending alerts or reminders.',
+  'notifications.empty': 'No notifications derived from the dashboard.',
+  'notifications.filter.all': 'All',
+  'notifications.filter.alerts': 'Alerts',
+  'notifications.filter.reminders': 'Reminders',
+  'notifications.filter.operations': 'Operations',
+  'notifications.badge.alert': 'Alert',
+  'notifications.badge.operation': 'Operation',
+  'notifications.action.openEntity': 'Open entity',
+  'notifications.action.openBook': 'Open book',
+  'notifications.action.openAct': 'Open minutes',
+  'notifications.action.openLedger': 'Open archive',
+  'notifications.action.openSettings': 'Open settings',
+  'notifications.alert.source': 'Source {source}',
+  'notifications.alert.unknown.title': 'Dashboard alert ({code})',
+  'notifications.alert.unknown.body':
+    'The dashboard flagged an alert without a specific translation. Technical detail: {message}',
+  'notifications.alert.fallbackDetail': 'The dashboard flagged this item for review.',
+  'notifications.alert.ledger.integrity.title': 'Check ledger chain',
+  'notifications.alert.ledger.integrity.body':
+    'The dashboard could not verify the ledger chain. Review integrity before relying on the audit history.',
+  'notifications.alert.ledger.integrity.action': 'Open archive',
+  'notifications.alert.act.compliance.title': 'Review minutes compliance',
+  'notifications.alert.act.compliance.body':
+    'Minutes {act_id} are in signing and have compliance checks that require review before sealing.',
+  'notifications.alert.act.compliance.action': 'Review minutes',
+  'notifications.alert.registry.expired.title': 'Permanent certificate expired',
+  'notifications.alert.registry.expired.body':
+    'The stored certificate expired on {valid_until}. Refresh registry data before using it as current evidence.',
+  'notifications.alert.registry.expired.action': 'Open entity',
+  'notifications.alert.registry.expiringSoon.title': 'Permanent certificate expiring soon',
+  'notifications.alert.registry.expiringSoon.body':
+    'The stored certificate expires on {valid_until} ({days_until} days). Plan a registry refresh before relying on it as current evidence.',
+  'notifications.alert.registry.expiringSoon.action': 'Open entity',
+  'notifications.reminder.annual.csc.title': 'Annual general meeting pending',
+  'notifications.reminder.annual.assoc.title': 'Annual general meeting pending',
+  'notifications.reminder.annual.fundacao.title': 'Annual review pending',
+  'notifications.reminder.annual.cooperativa.title': 'Annual general meeting pending',
+  'notifications.reminder.annual.body':
+    'There is no sealed or archived annual act for {entity_name} by {due_date}. This reminder is advisory and comes from {source_rule}.',
+  'notifications.reminder.annual.action': 'Open entity',
+  'notifications.reminder.unknown.title': '{entity_name}',
+  'notifications.reminder.unknown.body': '{reason}',
+  'notifications.operation.title': 'Event {kind}',
+  'notifications.operation.detail': '{actor} recorded an event in {scope}.',
+  'notifications.operation.meta': 'Sequence {seq}',
   // --- Controles de ventana (escritorio) -----------------------------------------
   'window.minimize': 'Minimizar',
   'window.restore': 'Restaurar',
@@ -866,7 +918,15 @@ export const esES: Catalog = {
   'enum.entityFamily.Association': 'Asociación',
   'enum.entityFamily.Foundation': 'Fundación',
   'enum.entityFamily.Cooperative': 'Cooperativa',
-  // Tipos de libro
+  // Lifecycle stages
+  'enum.lifecycleStage.Convocatoria': 'Convocatória',
+  'enum.lifecycleStage.TermoAbertura': 'Termo de abertura',
+  'enum.lifecycleStage.Reuniao': 'Reunião',
+  'enum.lifecycleStage.Deliberacao': 'Deliberação',
+  'enum.lifecycleStage.Ata': 'Ata',
+  'enum.lifecycleStage.Certidao': 'Certidão',
+  'enum.lifecycleStage.Extrato': 'Extrato',
+  'enum.lifecycleStage.TermoEncerramento': 'Termo de encerramento', // Tipos de libro
   'enum.bookKind.AssembleiaGeral': 'Junta General',
   'enum.bookKind.GerenciaAdministracao': 'Gerencia / Administración',
   'enum.bookKind.ConselhoFiscal': 'Consejo Fiscal',
@@ -1235,6 +1295,30 @@ export const esES: Catalog = {
   'documents.template.title': 'Plantilla aplicable',
   'documents.template.none': 'No hay plantilla disponible para esta familia y fase.',
   'documents.template.localeLabel': 'Idioma {locale}',
+  // --- Templates catalog ---------------------------------------------------------
+  'templates.title': 'Minutas',
+  'templates.lede': 'Consulte o catálogo de modelos por família, fase e idioma.',
+  'templates.openAct': 'Escolher ata',
+  'templates.noteTitle': 'Geração em contexto',
+  'templates.noteBody':
+    'A geração e a pré-visualização continuam dentro de cada ata. Abra um livro e escolha uma ata para aplicar o modelo ao registo atual.',
+  'templates.filters.title': 'Pesquisar e filtrar',
+  'templates.search.label': 'Pesquisar minutas',
+  'templates.search.placeholder': 'ID, família, fase ou idioma',
+  'templates.family.label': 'Família',
+  'templates.family.all': 'Todas as famílias',
+  'templates.stage.label': 'Fase',
+  'templates.stage.all': 'Todas as fases',
+  'templates.locale.label': 'Idioma',
+  'templates.locale.all': 'Todos os idiomas',
+  'templates.clearFilters': 'Limpar filtros',
+  'templates.catalog.title': 'Catálogo de minutas',
+  'templates.count': '{shown} de {total} modelos',
+  'templates.empty.title': 'Sem modelos encontrados',
+  'templates.empty.body': 'Altere a pesquisa ou limpe os filtros.',
+  'templates.card.id': 'Modelo',
+  'templates.card.family': 'Família',
+  'templates.card.stage': 'Fase',
   'toast.document.downloaded': 'PDF descargado.',
   // --- Qualified CMD signing (t57) ------------------------------------------------
   'settings.signing.family.hint': 'Recomendada: Chave Móvel Digital.',
@@ -1542,3 +1626,4 @@ export const esES: Catalog = {
   'books.open.guidanceBody':
     'Elija el libro que corresponde al órgano que se reúne y el esquema de numeración adecuado; los iconos de ayuda de cada campo explican las opciones. El método de firma usado al sellar las actas se configura en Configuración → Firmas.',
 };
+

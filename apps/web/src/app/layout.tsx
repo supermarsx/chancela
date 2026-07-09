@@ -17,6 +17,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LeatherBackground } from '../theme/LeatherBackground';
 import { AppearanceEffects } from '../theme/AppearanceEffects';
 import { TitleBar } from '../desktop/TitleBar';
+import { NotificationBell } from '../features/notifications/NotificationBell';
 import { CurrentUserPicker } from '../features/session/CurrentUserPicker';
 import { AuthGate } from '../features/session/AuthGate';
 import { PageErrorBoundary, ShellErrorBoundary } from './ErrorBoundary';
@@ -30,6 +31,7 @@ const NAV: { to: string; label: MessageKey; end?: boolean }[] = [
   { to: '/', label: 'nav.dashboard', end: true },
   { to: '/entidades', label: 'nav.entities' },
   { to: '/livros', label: 'nav.books' },
+  { to: '/minutas', label: 'nav.templates' },
   { to: '/arquivo', label: 'nav.archive' },
   { to: '/ferramentas', label: 'nav.tools' },
   { to: '/configuracoes', label: 'nav.settings' },
@@ -75,6 +77,7 @@ export function Layout() {
             ))}
           </div>
           <div className="topbar__session">
+            <NotificationBell />
             <CurrentUserPicker />
           </div>
         </nav>

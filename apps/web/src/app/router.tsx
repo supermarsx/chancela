@@ -18,7 +18,9 @@ import { BookDetailPage } from '../features/books/BookDetailPage';
 import { NewAtaPage } from '../features/books/NewAtaPage';
 import { CloseBookPage } from '../features/books/CloseBookPage';
 import { AtaEditorPage } from '../features/acts/AtaEditorPage';
+import { TemplatesCatalogPage } from '../features/templates/TemplatesCatalogPage';
 import { LedgerPage } from '../features/ledger/LedgerPage';
+import { NotificationsPage } from '../features/notifications/NotificationsPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { FerramentasPage } from '../features/ferramentas/FerramentasPage';
 import { CaePage } from '../features/cae/CaePage';
@@ -70,7 +72,10 @@ export const router = createBrowserRouter([
       { path: 'livros/:id/nova-ata', element: <NewAtaPage /> },
       { path: 'livros/:id/encerrar', element: <CloseBookPage /> },
       { path: 'atas/:id', element: <AtaEditorPage /> },
+      { path: 'minutas', element: <TemplatesCatalogPage /> },
+      { path: 'templates', element: <Navigate to="/minutas" replace /> },
       { path: 'arquivo', element: <LedgerPage /> },
+      { path: 'notificacoes', element: <NotificationsPage /> },
       { path: 'ferramentas', element: <FerramentasPage /> },
       { path: 'configuracoes', element: <SettingsPage /> },
       // `/cae` now redirects into Ferramentas (deep links preserved).

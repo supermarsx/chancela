@@ -257,6 +257,28 @@ export function Archive(props: IconProps) {
   );
 }
 
+/** notifications — a bell. */
+export function Bell(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6.5 10a5.5 5.5 0 0 1 11 0c0 4 1.5 5.2 2.2 6H4.3c.7-.8 2.2-2 2.2-6" />
+      <path d="M9.5 18.5a2.7 2.7 0 0 0 5 0" />
+      <path d="M10 5.1a2 2 0 0 1 4 0" />
+    </Icon>
+  );
+}
+
+/** reminders — a calendar page. */
+export function Calendar(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4.5" y="5.5" width="15" height="14" rx="1.5" />
+      <path d="M8 3.5v4M16 3.5v4M4.5 10h15" />
+      <path d="M8.5 13.5h2M13.5 13.5h2M8.5 16.5h2" />
+    </Icon>
+  );
+}
+
 /** tools / wrench (Ferramentas). */
 export function Wrench(props: IconProps) {
   return (

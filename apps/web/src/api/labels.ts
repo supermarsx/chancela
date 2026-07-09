@@ -21,6 +21,7 @@ import type {
   ClosingReason,
   EntityFamily,
   EntityKind,
+  LifecycleStage,
   Locale,
   MeetingChannel,
   NumberingScheme,
@@ -48,6 +49,7 @@ function enumLabels<K extends string>(ns: string): Record<K, string> {
 
 export const entityKindLabels = enumLabels<EntityKind>('entityKind');
 export const entityFamilyLabels = enumLabels<EntityFamily>('entityFamily');
+export const lifecycleStageLabels = enumLabels<LifecycleStage>('lifecycleStage');
 export const bookKindLabels = enumLabels<BookKind>('bookKind');
 export const bookStateLabels = enumLabels<BookState>('bookState');
 export const numberingSchemeLabels = enumLabels<NumberingScheme>('numberingScheme');

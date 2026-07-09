@@ -7,21 +7,21 @@
 import { test, expect } from './fixtures';
 import { signInAt } from './auth';
 
-test('boots the SPA with the leather background and the six-tab bar', async ({ page }) => {
+test('boots the SPA with the leather background and the seven-tab bar', async ({ page }) => {
   // The app is auth-gated (t44): onboard/sign in before the chrome renders.
   await signInAt(page, '/');
 
   // The fixed leather layer is rendered (settings default the texture on).
   await expect(page.getByTestId('leather-bg')).toBeAttached();
 
-  // The centered secondary tab bar carries exactly the six pinned PT-PT tabs (the
-  // Ferramentas tools surface joined the set in t22-web).
+  // The centered secondary tab bar carries exactly the seven pinned PT-PT tabs.
   const tabs = page.getByTestId('tab-bar').getByRole('link');
-  await expect(tabs).toHaveCount(6);
+  await expect(tabs).toHaveCount(7);
   await expect(tabs).toHaveText([
     'Painel',
     'Entidades',
     'Livros',
+    'Minutas',
     'Arquivo',
     'Ferramentas',
     'Configurações',

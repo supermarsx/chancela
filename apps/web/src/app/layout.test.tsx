@@ -4,7 +4,36 @@ import { Route, Routes } from 'react-router-dom';
 import { Layout } from './layout';
 import { EntitiesPage } from '../features/entities/EntitiesPage';
 import { renderWithProviders, fetchTable } from '../test/utils';
-import { DEFAULT_SETTINGS } from '../api/types';
+import { DEFAULT_SETTINGS, type Dashboard } from '../api/types';
+
+const shellDashboard: Dashboard = {
+  entities: 0,
+  books_open: 0,
+  books_total: 0,
+  acts_total: 0,
+  acts_draft: 0,
+  acts_awaiting_signature: 0,
+  acts_sealed: 0,
+  unresolved_compliance: 0,
+  ledger_length: 0,
+  ledger_valid: true,
+  current_work: {
+    open_books: [],
+    act_counts_by_state: {
+      Draft: 0,
+      Review: 0,
+      Convened: 0,
+      Deliberated: 0,
+      TextApproved: 0,
+      Signing: 0,
+      Sealed: 0,
+      Archived: 0,
+    },
+  },
+  alerts: [],
+  reminders: [],
+  recent_events: [],
+};
 
 afterEach(() => {
   cleanup();
@@ -35,6 +64,7 @@ describe('Layout', () => {
             },
           },
         },
+        { match: '/v1/dashboard', body: shellDashboard },
         { match: '/v1', body: [] },
       ]),
     );
@@ -50,11 +80,12 @@ describe('Layout', () => {
     // The masthead is gone; the brand now lives in the fixed secondary tab bar (rendered
     // once the AuthGate resolves the active session).
     expect(await screen.findByText('Chancela')).toBeTruthy();
-    // Six pinned tabs, including the Ferramentas tools surface (t22-web).
+    // Seven pinned tabs, including Minutas and the Ferramentas tools surface.
     for (const label of [
       'Painel',
       'Entidades',
       'Livros',
+      'Minutas',
       'Arquivo',
       'Ferramentas',
       'Configurações',
@@ -88,6 +119,7 @@ describe('Layout', () => {
             },
           },
         },
+        { match: '/v1/dashboard', body: shellDashboard },
         { match: '/v1', body: [] },
       ]),
     );
