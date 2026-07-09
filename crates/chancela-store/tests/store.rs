@@ -849,9 +849,10 @@ fn schema_version_is_current() {
     // The documents table landed as schema v2; the `imported_books` isolation namespace (t54-E2)
     // landed as schema v3; the qualified-signing tables (`signed_documents` + `pending_cmd_sessions`,
     // t57-S3) landed as schema v4; non-canonical imported documents landed as schema v5; act
-    // follow-ups landed as schema v6; signed timestamp-trust diagnostics landed as schema v7. A
-    // fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 7);
+    // follow-ups landed as schema v6; signed timestamp-trust diagnostics landed as schema v7;
+    // preserved paper-book imports landed as schema v8; paper-book OCR drafts landed as schema v9.
+    // A fresh DB is stamped with the current version.
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 9);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -862,7 +863,23 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "7");
+    assert_eq!(stamped, "9");
+    let ocr_draft_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_draft_table, 1);
+    let ocr_draft_import_index: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_paper_book_ocr_drafts_import'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_draft_import_index, 1);
 }
 
 #[test]
