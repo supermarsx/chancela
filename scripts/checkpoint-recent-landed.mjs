@@ -24,23 +24,20 @@ const checks = [
   },
   {
     name: "web contracts/dashboard/i18n matrix",
-    command: [
-      npmBin(),
-      [
-        "run",
-        "test",
-        "--workspace",
-        "apps/web",
-        "--",
-        "src/contracts/contracts.test.ts",
-        "src/features/dashboard/DashboardPage.test.tsx",
-        "src/i18n/i18n.test.ts",
-      ],
-    ],
+    command: npmCommand([
+      "run",
+      "test",
+      "--workspace",
+      "apps/web",
+      "--",
+      "src/contracts/contracts.test.ts",
+      "src/features/dashboard/DashboardPage.test.tsx",
+      "src/i18n/i18n.test.ts",
+    ]),
   },
   {
     name: "validator corpus manifest",
-    command: [npmBin(), ["run", "test:validator-corpus"]],
+    command: npmCommand(["run", "test:validator-corpus"]),
   },
   {
     name: "desktop Cargo.lock locked check",
@@ -83,8 +80,31 @@ for (const check of checks) {
   }
 }
 
-function npmBin() {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
+function npmCommand(args) {
+  return [process.execPath, [npmCliPath(), ...args]];
+}
+
+function npmCliPath() {
+  const envCli = process.env.npm_execpath;
+  if (envCli && isNpmCli(envCli) && existsSync(envCli)) {
+    return envCli;
+  }
+
+  const nodeDir = dirname(process.execPath);
+  const candidates = [
+    join(nodeDir, "node_modules/npm/bin/npm-cli.js"),
+    join(dirname(nodeDir), "lib/node_modules/npm/bin/npm-cli.js"),
+  ];
+  const npmCli = candidates.find((candidate) => existsSync(candidate));
+  assert.ok(
+    npmCli,
+    `npm CLI not found; checked npm_execpath and ${candidates.join(", ")}`,
+  );
+  return npmCli;
+}
+
+function isNpmCli(path) {
+  return path.replaceAll("\\", "/").endsWith("/npm-cli.js");
 }
 
 console.log("\nrecent landed checkpoint OK");
