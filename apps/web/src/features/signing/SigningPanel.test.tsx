@@ -87,10 +87,23 @@ function evidence(
       revocation_evidence_present: false,
       inspection_status: 'not_applicable',
     },
+    doc_timestamp: {
+      present: false,
+      count: 0,
+      token_sha256: [],
+      validations: [],
+      all_imprints_valid: false,
+      inspection_status: 'not_applicable',
+    },
     local_b_lt_style_evidence_present: false,
     production_b_lt_status: 'not_claimed',
     live_revocation_fetching: false,
     legal_b_lt_claimed: false,
+    legal_b_lta_claimed: false,
+    renewal_policy: {
+      status: 'not_configured',
+      action: 'manual_review',
+    },
     long_term_status,
     status_scope: 'technical_evidence_only',
   };

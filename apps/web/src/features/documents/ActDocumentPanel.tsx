@@ -29,7 +29,7 @@ import {
   useDownloadActDocumentOffice,
   useDownloadActDocumentWorkingCopy,
 } from '../../api/hooks';
-import { useT } from '../../i18n';
+import { useT, type TFunction } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
@@ -65,9 +65,6 @@ function slug(value: string): string {
   );
 }
 
-const IMPORT_NOTICE =
-  'Documentos importados ficam guardados como evidência ou referência não canónica. Não substituem o PDF/A preservado nem qualquer PDF assinado; a importação não declara validade legal, conformidade PDF/A ou validade de assinatura.';
-
 function importedDocumentsKey(actId: string) {
   return ['documents', 'imported', { actId }] as const;
 }
@@ -95,7 +92,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function readFileAsBase64(file: File): Promise<string> {
+function readFileAsBase64(file: File, t: TFunction): Promise<string> {
   if (typeof FileReader === 'undefined') {
     return file.arrayBuffer().then(arrayBufferToBase64);
   }
@@ -105,13 +102,13 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== 'string') {
-        reject(new Error('Não foi possível ler o ficheiro importado.'));
+        reject(new Error(t('documents.import.readError.imported')));
         return;
       }
       const base64 = result.includes(',') ? result.slice(result.indexOf(',') + 1) : result;
       resolve(base64);
     };
-    reader.onerror = () => reject(reader.error ?? new Error('Não foi possível ler o ficheiro.'));
+    reader.onerror = () => reject(reader.error ?? new Error(t('documents.import.readError.file')));
     reader.readAsDataURL(file);
   });
 }
@@ -120,8 +117,8 @@ function metadataText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-function formatBytes(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return 'Tamanho não indicado';
+function formatBytes(value: number, t: TFunction): string {
+  if (!Number.isFinite(value) || value < 0) return t('documents.import.sizeUnknown');
   if (value < 1024) return `${value} bytes`;
   const units = ['KB', 'MB', 'GB', 'TB'];
   let amount = value;
@@ -135,8 +132,8 @@ function formatBytes(value: number): string {
   return `${amount.toFixed(decimals)} ${unit}`;
 }
 
-function importedDisplayName(document: ImportedDocumentView): string {
-  return metadataText(document.filename) ?? 'Documento importado sem nome';
+function importedDisplayName(document: ImportedDocumentView, t: TFunction): string {
+  return metadataText(document.filename) ?? t('documents.import.unnamed');
 }
 
 function importedDownloadName(document: ImportedDocumentView): string {
@@ -159,6 +156,7 @@ function MetadataValue({ value, missing }: { value: unknown; missing: string }) 
 
 function ActDocumentMetadata({
   document,
+  t,
 }: {
   document: {
     id?: unknown;
@@ -166,56 +164,53 @@ function ActDocumentMetadata({
     profile?: unknown;
     created_at?: unknown;
   };
+  t: TFunction;
 }) {
   const createdAt = metadataText(document.created_at);
   return (
-    <div className="stack--tight" role="group" aria-label="Metadados e proveniência do documento">
-      <p className="card__label">Metadados do PDF/A</p>
+    <div className="stack--tight" role="group" aria-label={t('documents.metadata.aria')}>
+      <p className="card__label">{t('documents.metadata.title')}</p>
       <dl className="deflist deflist--tight">
         <div>
-          <dt>Documento</dt>
+          <dt>{t('documents.metadata.document')}</dt>
           <dd>
-            <MetadataValue value={document.id} missing="Não indicado no bundle" />
+            <MetadataValue value={document.id} missing={t('documents.metadata.missing')} />
           </dd>
         </div>
         <div>
-          <dt>Modelo</dt>
+          <dt>{t('documents.metadata.template')}</dt>
           <dd>
-            <MetadataValue value={document.template_id} missing="Não indicado no bundle" />
+            <MetadataValue value={document.template_id} missing={t('documents.metadata.missing')} />
           </dd>
         </div>
         <div>
-          <dt>Perfil PDF/A canónico</dt>
+          <dt>{t('documents.metadata.profile')}</dt>
           <dd>
-            <MetadataValue value={document.profile} missing="Não indicado no bundle" />
+            <MetadataValue value={document.profile} missing={t('documents.metadata.missing')} />
           </dd>
         </div>
         <div>
-          <dt>Gerado em</dt>
+          <dt>{t('documents.metadata.generatedAt')}</dt>
           <dd>
             {createdAt ? (
               <time className="mono" dateTime={createdAt}>
                 {createdAt}
               </time>
             ) : (
-              <span className="muted">Não indicado no bundle</span>
+              <span className="muted">{t('documents.metadata.missing')}</span>
             )}
           </dd>
         </div>
         <div>
-          <dt>Fonte legal</dt>
-          <dd className="muted">
-            Não fornecida pelo bundle do documento; nenhuma ligação foi criada.
-          </dd>
+          <dt>{t('documents.metadata.legalSource')}</dt>
+          <dd className="muted">{t('documents.metadata.legalSourceMissing')}</dd>
         </div>
         <div>
-          <dt>Limiar legal</dt>
-          <dd className="muted">Não fornecido pelo bundle do documento.</dd>
+          <dt>{t('documents.metadata.legalThreshold')}</dt>
+          <dd className="muted">{t('documents.metadata.legalThresholdMissing')}</dd>
         </div>
       </dl>
-      <p className="field__hint">
-        Estes são metadados de geração e preservação; não constituem verificação legal.
-      </p>
+      <p className="field__hint">{t('documents.metadata.hint')}</p>
     </div>
   );
 }
@@ -224,10 +219,12 @@ function ImportedDocumentDetails({
   document,
   error,
   isLoading,
+  t,
 }: {
   document: ImportedDocumentView | null;
   error: unknown;
   isLoading: boolean;
+  t: TFunction;
 }) {
   if (error) return <ErrorNote error={error} />;
   if (isLoading && !document) return <Skeleton height="7rem" />;
@@ -238,72 +235,80 @@ function ImportedDocumentDetails({
   const declaredType = metadataText(document.declared_content_type);
   const detectedType = metadataText(document.detected_content_type);
   const importedBy = metadataText(document.imported_by);
-  const legalNotice = metadataText(document.legal_notice) ?? IMPORT_NOTICE;
+  const legalNotice = metadataText(document.legal_notice) ?? t('documents.import.notice');
 
   return (
-    <div className="stack--tight" role="group" aria-label="Metadados do documento importado">
-      <p className="card__label">Leitura do documento importado</p>
+    <div className="stack--tight" role="group" aria-label={t('documents.import.metadataAria')}>
+      <p className="card__label">{t('documents.import.metadataTitle')}</p>
       <dl className="deflist deflist--tight">
         <div>
-          <dt>Ficheiro</dt>
+          <dt>{t('documents.import.file')}</dt>
           <dd>
             {filename ? (
               <Truncate text={filename} />
             ) : (
-              <span className="muted">Nome não fornecido pelo importador</span>
+              <span className="muted">{t('documents.import.filenameMissing')}</span>
             )}
           </dd>
         </div>
         <div>
-          <dt>Identificador</dt>
+          <dt>{t('documents.import.identifier')}</dt>
           <dd>
             <Truncate text={document.id} mono />
           </dd>
         </div>
         <div>
-          <dt>Natureza</dt>
+          <dt>{t('documents.import.nature')}</dt>
           <dd>
             <Badge tone={document.non_canonical ? 'warn' : 'neutral'}>
-              {document.non_canonical ? 'Não canónico' : 'Importado'}
+              {document.non_canonical
+                ? t('documents.import.nonCanonical')
+                : t('documents.import.imported')}
             </Badge>
           </dd>
         </div>
         <div>
-          <dt>Tamanho</dt>
-          <dd>{formatBytes(document.size_bytes)}</dd>
+          <dt>{t('documents.import.size')}</dt>
+          <dd>{formatBytes(document.size_bytes, t)}</dd>
         </div>
         <div>
-          <dt>Tipo declarado</dt>
-          <dd>{declaredType ?? <span className="muted">Não declarado</span>}</dd>
+          <dt>{t('documents.import.declaredType')}</dt>
+          <dd>
+            {declaredType ?? <span className="muted">{t('documents.import.notDeclared')}</span>}
+          </dd>
         </div>
         <div>
-          <dt>Tipo detetado</dt>
-          <dd>{detectedType ?? <span className="muted">Não indicado</span>}</dd>
+          <dt>{t('documents.import.detectedType')}</dt>
+          <dd>
+            {detectedType ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+          </dd>
         </div>
         <div>
-          <dt>Importado em</dt>
+          <dt>{t('documents.import.importedAt')}</dt>
           <dd>
             {importedAt ? (
               <time className="mono" dateTime={importedAt}>
                 {importedAt}
               </time>
             ) : (
-              <span className="muted">Não indicado</span>
+              <span className="muted">{t('documents.import.notIndicated')}</span>
             )}
           </dd>
         </div>
         <div>
-          <dt>Importado por</dt>
-          <dd>{importedBy ?? <span className="muted">Não indicado</span>}</dd>
+          <dt>{t('documents.import.importedBy')}</dt>
+          <dd>
+            {importedBy ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+          </dd>
         </div>
         <div>
-          <dt>SHA-256</dt>
+          <dt>{t('documents.import.sha256')}</dt>
           <dd>
             <Digest value={document.sha256} />
           </dd>
         </div>
         <div>
-          <dt>Aviso</dt>
+          <dt>{t('documents.import.warning')}</dt>
           <dd>{legalNotice}</dd>
         </div>
       </dl>
@@ -443,7 +448,7 @@ export function ActDocumentPanel({
   async function onImportFile(file: File) {
     setImportError(null);
     try {
-      const content_base64 = await readFileAsBase64(file);
+      const content_base64 = await readFileAsBase64(file, t);
       const body: ImportDocumentBody = {
         content_base64,
         content_type: metadataText(file.type),
@@ -451,7 +456,7 @@ export function ActDocumentPanel({
         act_id: act.id,
       };
       await importDocument.mutateAsync(body);
-      toast.success('Documento importado como evidência não canónica.');
+      toast.success(t('documents.import.toast.success'));
     } catch (e) {
       setImportError(e);
       toast.error(e);
@@ -503,7 +508,7 @@ export function ActDocumentPanel({
                 >
                   {workingCopyDownload.isPending
                     ? t('documents.download.pending')
-                    : 'Descarregar Markdown'}
+                    : t('documents.download.markdown')}
                 </Button>
                 <Button
                   type="button"
@@ -512,14 +517,13 @@ export function ActDocumentPanel({
                   disabled={officeDownload.isPending}
                   onClick={onDownloadOffice}
                 >
-                  {officeDownload.isPending ? t('documents.download.pending') : 'Descarregar DOCX'}
+                  {officeDownload.isPending
+                    ? t('documents.download.pending')
+                    : t('documents.download.docx')}
                 </Button>
               </div>
-              <p className="field__hint">
-                Markdown e DOCX são cópias de trabalho não probatórias para revisão; o PDF/A
-                preservado é o documento oficial.
-              </p>
-              <ActDocumentMetadata document={bundle.data.document} />
+              <p className="field__hint">{t('documents.download.workingCopyHint')}</p>
+              <ActDocumentMetadata document={bundle.data.document} t={t} />
               <p className="doc-integrity">
                 <span>{t('documents.digest.label')}</span>
                 <Digest value={bundle.data.document.pdf_digest} />
@@ -532,16 +536,14 @@ export function ActDocumentPanel({
           ) : null
         ) : null}
 
-        <section className="stack--tight" aria-label="Documentos importados de referência">
+        <section className="stack--tight" aria-label={t('documents.import.sectionAria')}>
           <div className="section-head">
             <div className="stack--tight">
-              <p className="card__label">Documentos importados</p>
-              <p className="field__hint">{IMPORT_NOTICE}</p>
-              <p className="field__hint">
-                O servidor valida o conteúdo antes de gravar; rejeições não são persistidas.
-              </p>
+              <p className="card__label">{t('documents.import.title')}</p>
+              <p className="field__hint">{t('documents.import.notice')}</p>
+              <p className="field__hint">{t('documents.import.serverValidation')}</p>
             </div>
-            <Badge tone="warn">Evidência não canónica</Badge>
+            <Badge tone="warn">{t('documents.import.nonCanonicalEvidence')}</Badge>
           </div>
 
           <div className="row-wrap">
@@ -549,7 +551,9 @@ export function ActDocumentPanel({
               <span className="btn__icon">
                 <Icon.Tray />
               </span>
-              {importDocument.isPending ? 'A importar...' : 'Importar evidência'}
+              {importDocument.isPending
+                ? t('documents.import.pending')
+                : t('documents.import.choose')}
               <input
                 type="file"
                 className="sr-only"
@@ -570,13 +574,13 @@ export function ActDocumentPanel({
           ) : importedDocuments.error ? (
             <ErrorNote error={importedDocuments.error} />
           ) : importList.length === 0 ? (
-            <EmptyState title="Nenhum documento importado">
-              <p>Esta ata ainda não tem evidência ou referência importada.</p>
+            <EmptyState title={t('documents.import.empty.title')}>
+              <p>{t('documents.import.empty.body')}</p>
             </EmptyState>
           ) : (
-            <ul className="plain-list" aria-label="Documentos importados">
+            <ul className="plain-list" aria-label={t('documents.import.listAria')}>
               {importList.map((document) => {
-                const displayName = importedDisplayName(document);
+                const displayName = importedDisplayName(document, t);
                 const detectedType = metadataText(document.detected_content_type);
                 const importedAt = metadataText(document.imported_at);
                 const selected = selectedImportId === document.id;
@@ -586,12 +590,14 @@ export function ActDocumentPanel({
                       <div className="stack--tight">
                         <p className="row-wrap">
                           <Badge tone={document.non_canonical ? 'warn' : 'neutral'}>
-                            {document.non_canonical ? 'Não canónico' : 'Importado'}
+                            {document.non_canonical
+                              ? t('documents.import.nonCanonical')
+                              : t('documents.import.imported')}
                           </Badge>
                           <Truncate text={displayName} />
                         </p>
                         <p className="chainrow__meta">
-                          {formatBytes(document.size_bytes)}
+                          {formatBytes(document.size_bytes, t)}
                           {detectedType ? ` · ${detectedType}` : ''}
                           {importedAt ? (
                             <>
@@ -608,7 +614,7 @@ export function ActDocumentPanel({
                           icon={<Icon.FileText />}
                           onClick={() => setSelectedImportId(document.id)}
                         >
-                          Ver metadados
+                          {t('documents.import.viewMetadata')}
                         </Button>
                         <Button
                           type="button"
@@ -617,7 +623,7 @@ export function ActDocumentPanel({
                           disabled={importedDownload.isPending}
                           onClick={() => void onDownloadImported(document)}
                         >
-                          Descarregar importado
+                          {t('documents.import.download')}
                         </Button>
                       </div>
                     </div>
@@ -632,6 +638,7 @@ export function ActDocumentPanel({
               document={selectedImport}
               error={selectedImportedDocument.error}
               isLoading={selectedImportedDocument.isLoading}
+              t={t}
             />
           ) : null}
         </section>

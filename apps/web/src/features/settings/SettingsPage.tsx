@@ -248,27 +248,34 @@ const ENTITY_COLUMN_LABEL_KEYS: Record<RegisteredEntityColumn, MessageKey> = {
 const isSettingsSection = (v: string | null): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
 
-function providerModeLabel(provider: SigningProviderMetadata): string {
+function providerModeLabel(provider: SigningProviderMetadata, t: ReturnType<typeof useT>): string {
   switch (provider.mode) {
     case 'CMD':
-      return 'CMD/SCMD';
+      return t('settings.signing.providerMode.cmd');
     case 'CC':
-      return 'Cartão de Cidadão';
+      return t('settings.signing.providerMode.cc');
     case 'CSC_QTSP':
-      return 'CSC/QTSP';
+      return t('settings.signing.providerMode.cscQtsp');
     case 'LOCAL_PKCS12':
-      return 'PKCS#12 local';
+      return t('settings.signing.providerMode.localPkcs12');
   }
 }
 
-function providerStatus(provider: SigningProviderMetadata): {
+function providerStatus(
+  provider: SigningProviderMetadata,
+  t: ReturnType<typeof useT>,
+): {
   tone: 'ok' | 'error' | 'accent' | 'warn';
   label: string;
 } {
-  if (provider.production_blocked) return { tone: 'error', label: 'Bloqueado em produção' };
-  if (provider.configured) return { tone: 'ok', label: 'Configurado' };
-  if (provider.local_only) return { tone: 'accent', label: 'Apenas local' };
-  return { tone: 'warn', label: 'Não configurado' };
+  if (provider.production_blocked) {
+    return { tone: 'error', label: t('settings.signing.providerStatus.productionBlocked') };
+  }
+  if (provider.configured)
+    return { tone: 'ok', label: t('settings.signing.providerStatus.configured') };
+  if (provider.local_only)
+    return { tone: 'accent', label: t('settings.signing.providerStatus.localOnly') };
+  return { tone: 'warn', label: t('settings.signing.providerStatus.unconfigured') };
 }
 
 export function SettingsPage() {
@@ -666,28 +673,29 @@ export function SettingsPage() {
                 <p className="field__hint">{t('settings.signing.note')}</p>
 
                 <div className="stack--tight">
-                  <p className="card__label">Modos de prestador configurados</p>
-                  <p className="field__hint">
-                    Metadados não secretos. A interface não recolhe chaves privadas, PINs,
-                    passphrases PKCS#12 ou OTPs nesta página.
-                  </p>
+                  <p className="card__label">{t('settings.signing.providers.title')}</p>
+                  <p className="field__hint">{t('settings.signing.providers.hint')}</p>
                   <dl className="deflist">
                     {draft.signing.providers.map((provider) => {
-                      const status = providerStatus(provider);
+                      const status = providerStatus(provider, t);
                       return (
                         <div key={provider.id}>
                           <dt>
                             {provider.label}
-                            <span className="muted"> · {providerModeLabel(provider)}</span>
+                            <span className="muted"> · {providerModeLabel(provider, t)}</span>
                           </dt>
                           <dd>
                             <span className="row-wrap">
                               <Badge tone={status.tone}>{status.label}</Badge>
                               {provider.configured && provider.production_blocked ? (
-                                <Badge tone="warn">Configuração incompleta</Badge>
+                                <Badge tone="warn">
+                                  {t('settings.signing.providerStatus.incomplete')}
+                                </Badge>
                               ) : null}
                               {provider.local_only ? (
-                                <Badge tone="accent">Apenas local</Badge>
+                                <Badge tone="accent">
+                                  {t('settings.signing.providerStatus.localOnly')}
+                                </Badge>
                               ) : null}
                             </span>
                             <span className="field__hint">{provider.note}</span>

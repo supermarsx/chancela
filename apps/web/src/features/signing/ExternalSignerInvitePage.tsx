@@ -8,6 +8,7 @@ import type {
 } from '../../api/types';
 import { Badge, Button, Digest, ErrorNote, Icon, InlineWarning, Loading, useToast } from '../../ui';
 import { TitleBar } from '../../desktop/TitleBar';
+import { useT, type TFunction } from '../../i18n';
 
 type LoadState =
   | { kind: 'missing' }
@@ -31,19 +32,21 @@ function formatDateTime(value?: string): string {
   }).format(date);
 }
 
-function statusBadge(status: ExternalSignerInviteStatus) {
-  if (status === 'pending') return <Badge tone="accent">Pendente</Badge>;
-  if (status === 'accepted') return <Badge tone="ok">Aceite</Badge>;
-  if (status === 'declined') return <Badge tone="warn">Declinado</Badge>;
-  if (status === 'expired') return <Badge tone="warn">Expirado</Badge>;
-  return <Badge tone="neutral">Revogado</Badge>;
+function statusBadge(status: ExternalSignerInviteStatus, t: TFunction) {
+  if (status === 'pending')
+    return <Badge tone="accent">{t('externalInvite.status.pending')}</Badge>;
+  if (status === 'accepted') return <Badge tone="ok">{t('externalInvite.status.accepted')}</Badge>;
+  if (status === 'declined')
+    return <Badge tone="warn">{t('externalInvite.status.declined')}</Badge>;
+  if (status === 'expired') return <Badge tone="warn">{t('externalInvite.status.expired')}</Badge>;
+  return <Badge tone="neutral">{t('externalInvite.status.revoked')}</Badge>;
 }
 
-function unavailableMessage(error: unknown) {
+function unavailableMessage(error: unknown, t: TFunction) {
   if (error instanceof ApiError && error.status === 404) {
     return (
-      <InlineWarning tone="error" title="Convite indisponível">
-        A ligação expirou, foi revogada ou não corresponde a um convite externo ativo.
+      <InlineWarning tone="error" title={t('externalInvite.unavailable.title')}>
+        {t('externalInvite.unavailable.body')}
       </InlineWarning>
     );
   }
@@ -51,6 +54,7 @@ function unavailableMessage(error: unknown) {
 }
 
 export function ExternalSignerInvitePage() {
+  const t = useT();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -96,7 +100,11 @@ export function ExternalSignerInvitePage() {
     try {
       const envelope = await api.respondExternalSignerInvite(token, decision);
       setLoad({ kind: 'ready', envelope });
-      toast.success(decision === 'accept' ? 'Resposta aceite registada.' : 'Declinação registada.');
+      toast.success(
+        decision === 'accept'
+          ? t('externalInvite.toast.accepted')
+          : t('externalInvite.toast.declined'),
+      );
     } catch (error) {
       toast.error(error);
     } finally {
@@ -123,69 +131,71 @@ export function ExternalSignerInvitePage() {
       <TitleBar />
       <div className="external-signature-page">
         <main className="external-signature-shell">
-          <p className="crumbs">Assinatura externa</p>
-          <h1>Convite externo</h1>
+          <p className="crumbs">{t('externalInvite.crumbs')}</p>
+          <h1>{t('externalInvite.title')}</h1>
 
           {load.kind === 'missing' ? (
-            <InlineWarning tone="error" title="Ligação sem token">
-              Abra a ligação completa enviada pelo operador da ata.
+            <InlineWarning tone="error" title={t('externalInvite.missingToken.title')}>
+              {t('externalInvite.missingToken.body')}
             </InlineWarning>
           ) : null}
 
-          {load.kind === 'loading' ? <Loading label="A validar convite..." /> : null}
-          {load.kind === 'error' ? unavailableMessage(load.error) : null}
+          {load.kind === 'loading' ? <Loading label={t('externalInvite.loading')} /> : null}
+          {load.kind === 'error' ? unavailableMessage(load.error, t) : null}
 
           {envelope ? (
             <section className="panel">
               <header className="panel__head">
                 <h2 className="panel__title">{envelope.act.title}</h2>
-                {statusBadge(envelope.status)}
+                {statusBadge(envelope.status, t)}
               </header>
               <div className="panel__body stack--tight">
-                <InlineWarning tone="info" title="Acompanhamento apenas">
-                  Este ecrã regista só a resposta ao convite externo. A aceitação é um
-                  reconhecimento de acompanhamento, não assina o PDF e não conclui assinatura
-                  qualificada.
+                <InlineWarning tone="info" title={t('externalInvite.tracking.title')}>
+                  {t('externalInvite.tracking.body')}
                 </InlineWarning>
 
                 <dl className="deflist external-signature-deflist">
                   <div>
-                    <dt>Entidade</dt>
+                    <dt>{t('externalInvite.field.entity')}</dt>
                     <dd>{envelope.act.entity_name}</dd>
                   </div>
                   <div>
-                    <dt>Livro</dt>
+                    <dt>{t('externalInvite.field.book')}</dt>
                     <dd>{envelope.act.book_kind}</dd>
                   </div>
                   <div>
-                    <dt>Ata</dt>
-                    <dd>{envelope.act.ata_number ? `n.º ${envelope.act.ata_number}` : '-'}</dd>
+                    <dt>{t('externalInvite.field.act')}</dt>
+                    <dd>
+                      {envelope.act.ata_number
+                        ? t('externalInvite.actNumber', { number: envelope.act.ata_number })
+                        : '-'}
+                    </dd>
                   </div>
                   <div>
-                    <dt>Reunião</dt>
+                    <dt>{t('externalInvite.field.meeting')}</dt>
                     <dd>{envelope.act.meeting_date ?? '-'}</dd>
                   </div>
                   <div>
-                    <dt>Destinatário</dt>
+                    <dt>{t('externalInvite.field.recipient')}</dt>
                     <dd>{envelope.recipient_name}</dd>
                   </div>
                   <div>
-                    <dt>Finalidade</dt>
+                    <dt>{t('externalInvite.field.purpose')}</dt>
                     <dd>{envelope.purpose}</dd>
                   </div>
                   {envelope.provider_hint ? (
                     <div>
-                      <dt>Referência</dt>
+                      <dt>{t('externalInvite.field.reference')}</dt>
                       <dd>{envelope.provider_hint}</dd>
                     </div>
                   ) : null}
                   <div>
-                    <dt>Expira em</dt>
+                    <dt>{t('externalInvite.field.expiresAt')}</dt>
                     <dd>{formatDateTime(envelope.expires_at)}</dd>
                   </div>
                   {envelope.responded_at ? (
                     <div>
-                      <dt>Resposta</dt>
+                      <dt>{t('externalInvite.field.response')}</dt>
                       <dd>{formatDateTime(envelope.responded_at)}</dd>
                     </div>
                   ) : null}
@@ -195,28 +205,27 @@ export function ExternalSignerInvitePage() {
                   <div className="stack--tight">
                     <dl className="deflist external-signature-deflist">
                       <div>
-                        <dt>Documento</dt>
+                        <dt>{t('externalInvite.document.id')}</dt>
                         <dd className="mono">{envelope.document.id}</dd>
                       </div>
                       <div>
-                        <dt>Modelo</dt>
+                        <dt>{t('externalInvite.document.template')}</dt>
                         <dd className="mono">{envelope.document.template_id}</dd>
                       </div>
                       <div>
-                        <dt>Perfil</dt>
+                        <dt>{t('externalInvite.document.profile')}</dt>
                         <dd className="mono">{envelope.document.profile}</dd>
                       </div>
                       <div>
-                        <dt>Digest PDF/A</dt>
+                        <dt>{t('externalInvite.document.digest')}</dt>
                         <dd>
                           <Digest value={envelope.document.pdf_digest} copyable={false} />
                         </dd>
                       </div>
                     </dl>
 
-                    <InlineWarning tone="info" title="Cópia não probatória">
-                      A pré-visualização disponível é Markdown não canónico. O PDF/A preservado e
-                      qualquer PDF assinado não são disponibilizados por este convite.
+                    <InlineWarning tone="info" title={t('externalInvite.workingCopy.title')}>
+                      {t('externalInvite.workingCopy.body')}
                     </InlineWarning>
 
                     <div className="form__actions">
@@ -228,8 +237,8 @@ export function ExternalSignerInvitePage() {
                         onClick={() => void previewWorkingCopy()}
                       >
                         {artifact.kind === 'loading'
-                          ? 'A carregar cópia...'
-                          : 'Pré-visualizar cópia .md'}
+                          ? t('externalInvite.workingCopy.loading')
+                          : t('externalInvite.workingCopy.preview')}
                       </Button>
                     </div>
 
@@ -241,17 +250,13 @@ export function ExternalSignerInvitePage() {
                     {artifact.kind === 'error' ? <ErrorNote error={artifact.error} /> : null}
                   </div>
                 ) : (
-                  <InlineWarning tone="warn" title="Documento indisponível">
-                    Este convite permite ver os metadados do ato, mas não há cópia de trabalho
-                    disponível para pré-visualização.
+                  <InlineWarning tone="warn" title={t('externalInvite.documentUnavailable.title')}>
+                    {t('externalInvite.documentUnavailable.body')}
                   </InlineWarning>
                 )}
 
                 {answered ? (
-                  <p className="field__hint">
-                    Resposta já registada para este convite. Este estado não é assinatura
-                    qualificada.
-                  </p>
+                  <p className="field__hint">{t('externalInvite.alreadyAnswered')}</p>
                 ) : (
                   <div className="form__actions">
                     <Button
@@ -261,7 +266,9 @@ export function ExternalSignerInvitePage() {
                       disabled={!!action}
                       onClick={() => void respond('accept')}
                     >
-                      {action === 'accept' ? 'A registar...' : 'Aceitar acompanhamento'}
+                      {action === 'accept'
+                        ? t('externalInvite.registering')
+                        : t('externalInvite.accept')}
                     </Button>
                     <Button
                       type="button"
@@ -270,7 +277,9 @@ export function ExternalSignerInvitePage() {
                       disabled={!!action}
                       onClick={() => void respond('decline')}
                     >
-                      {action === 'decline' ? 'A registar...' : 'Declinar'}
+                      {action === 'decline'
+                        ? t('externalInvite.registering')
+                        : t('externalInvite.decline')}
                     </Button>
                   </div>
                 )}

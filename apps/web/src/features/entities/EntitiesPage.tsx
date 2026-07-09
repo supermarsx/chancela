@@ -153,8 +153,8 @@ function normalizeSearch(value: string): string {
     .toLowerCase();
 }
 
-function displayFiscalYearEnd(value: string | null | undefined): string {
-  return value ? value : '12-31 (por omissão)';
+function displayFiscalYearEnd(value: string | null | undefined, t: TFunction): string {
+  return value ? value : t('entities.fiscalYearEnd.default');
 }
 
 function bookStateTone(state: BookView['state']): 'neutral' | 'accent' | 'ok' {
@@ -326,6 +326,7 @@ function buildSearchText(
   activity: LedgerEventView | null,
   registry: EntityRegistrySummary | null,
   locale: string,
+  t: TFunction,
 ): string {
   const searchableBooks =
     lastBook && !books.some((book) => book.id === lastBook.id) ? [lastBook, ...books] : books;
@@ -337,7 +338,7 @@ function buildSearchText(
       entity.seat,
       entityKindLabels[entity.kind],
       entityFamilyLabels[entity.family],
-      displayFiscalYearEnd(entity.fiscal_year_end),
+      displayFiscalYearEnd(entity.fiscal_year_end, t),
       entityRulePack(entity),
       entityTemplateFamily(entity),
       entity.nipc_validated ? 'NIPC validado' : 'NIPC por validar',
@@ -631,6 +632,7 @@ function EntityColumnCell({
   booksError,
   onOpen,
   openLabel,
+  t,
 }: {
   column: RegisteredEntityColumn;
   entity: Entity;
@@ -643,6 +645,7 @@ function EntityColumnCell({
   booksError: unknown;
   onOpen: () => void;
   openLabel: string;
+  t: TFunction;
 }) {
   switch (column) {
     case 'Name':
@@ -705,7 +708,7 @@ function EntityColumnCell({
     case 'FiscalYearEnd':
       return (
         <td>
-          <code className="mono">{displayFiscalYearEnd(entity.fiscal_year_end)}</code>
+          <code className="mono">{displayFiscalYearEnd(entity.fiscal_year_end, t)}</code>
         </td>
       );
     case 'LastBook':
@@ -784,10 +787,11 @@ export function EntitiesPage() {
           activity,
           registry,
           locale,
+          t,
         ),
       };
     });
-  }, [books.data, data, locale]);
+  }, [books.data, data, locale, t]);
 
   const query = normalizeSearch(deferredSearch.trim());
   const rows = useMemo(() => {
@@ -1091,6 +1095,7 @@ export function EntitiesPage() {
                           booksError={hasActivitySummary ? null : books.error}
                           onOpen={() => navigate(`/entidades/${ent.id}`)}
                           openLabel={t('common.open')}
+                          t={t}
                         />
                       ))}
                     </tr>

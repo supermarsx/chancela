@@ -18,7 +18,7 @@ import {
   useTrustService,
   useTrustStatus,
 } from '../../api/hooks';
-import { useT, type MessageKey } from '../../i18n';
+import { useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
   Button,
@@ -62,25 +62,25 @@ const TRUST_FILTERS: TrustFilter[] = [
   'caqc',
 ];
 
-const TRUST_TYPE_FILTERS: readonly { value: TrustTypeFilter; label: string }[] = [
-  { value: 'all', label: 'Todos os tipos' },
-  { value: 'caqc', label: 'CA/QC' },
-  { value: 'tsa', label: 'TSA' },
-  { value: 'qtst', label: 'TSA/QTST' },
-  { value: 'other', label: 'Outros' },
+const TRUST_TYPE_FILTERS: readonly { value: TrustTypeFilter; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: 'trust.type.all' },
+  { value: 'caqc', labelKey: 'trust.type.caqc' },
+  { value: 'tsa', labelKey: 'trust.type.tsa' },
+  { value: 'qtst', labelKey: 'trust.type.qtst' },
+  { value: 'other', labelKey: 'trust.type.other' },
 ];
 
-const TRUST_STATUS_FILTERS: readonly { value: TrustStatusFilter; label: string }[] = [
-  { value: 'all', label: 'Todos os estados' },
-  { value: 'Granted', label: 'Concedido' },
-  { value: 'Withdrawn', label: 'Retirado' },
-  { value: 'Other', label: 'Outro' },
+const TRUST_STATUS_FILTERS: readonly { value: TrustStatusFilter; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: 'trust.statusFilter.all' },
+  { value: 'Granted', labelKey: 'trust.service.status.Granted' },
+  { value: 'Withdrawn', labelKey: 'trust.service.status.Withdrawn' },
+  { value: 'Other', labelKey: 'trust.service.status.Other' },
 ];
 
-const TSA_TYPE_FILTERS: readonly { value: TsaTypeFilter; label: string }[] = [
-  { value: 'all', label: 'Todos os TSA' },
-  { value: 'qtst', label: 'Qualificado QTST' },
-  { value: 'tst', label: 'TST' },
+const TSA_TYPE_FILTERS: readonly { value: TsaTypeFilter; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: 'trust.tsa.type.all' },
+  { value: 'qtst', labelKey: 'trust.tsa.type.qtst' },
+  { value: 'tst', labelKey: 'trust.tsa.type.tst' },
 ];
 
 const TRUST_SEARCH_LIMIT = 500;
@@ -99,10 +99,17 @@ function includesTerm(values: Array<string | null | undefined>, term: string): b
 
 function optionValue<T extends string>(
   value: string | null,
-  options: readonly { value: T; label: string }[],
+  options: readonly { value: T; labelKey: MessageKey }[],
   fallback: T,
 ): T {
   return options.some((option) => option.value === value) ? (value as T) : fallback;
+}
+
+function localizedOptions<T extends string>(
+  options: readonly { value: T; labelKey: MessageKey }[],
+  t: TFunction,
+): { value: T; label: string }[] {
+  return options.map((option) => ({ value: option.value, label: t(option.labelKey) }));
 }
 
 function hasStructuredSearchParams(params: TslCatalogSearchParams): boolean {
@@ -200,6 +207,7 @@ function probeLabel(status: TsaProbeStatus): string {
 }
 
 function TsaRecordFlags({ record }: { record: TsaRecordView }) {
+  const t = useT();
   return (
     <span className="trust-flags">
       <ServiceStatusBadge status={record.status.kind} />
@@ -207,9 +215,11 @@ function TsaRecordFlags({ record }: { record: TsaRecordView }) {
       {record.trusted ? (
         <Badge tone="ok">TSL confiável</Badge>
       ) : (
-        <Badge tone="warn">Advisório</Badge>
+        <Badge tone="warn">{t('trust.flag.advisory')}</Badge>
       )}
-      {record.service_supply_points.length ? <Badge tone="neutral">Ponto</Badge> : null}
+      {record.service_supply_points.length ? (
+        <Badge tone="neutral">{t('trust.flag.supplyPoint')}</Badge>
+      ) : null}
     </span>
   );
 }
@@ -285,6 +295,7 @@ function tsaRecordMatchesStructuredFilters(
 }
 
 function TsaRecordDetail({ record }: { record: TsaRecordView }) {
+  const t = useT();
   return (
     <div className="trust-detail stack--tight">
       <div className="trust-detail__head">
@@ -318,7 +329,7 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
         </TrustKeyValueGrid>
       </TrustDetailSection>
 
-      <TrustDetailSection title="Pontos de serviço">
+      <TrustDetailSection title={t('trust.detail.supplyPoints')}>
         {record.service_supply_points.length ? (
           <ul className="trust-detail-list">
             {record.service_supply_points.map((point) => (
@@ -332,10 +343,10 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
         )}
       </TrustDetailSection>
 
-      <TrustDetailSection title="Histórico">
+      <TrustDetailSection title={t('trust.detail.history')}>
         <TrustKeyValueGrid>
           <div>
-            <dt>Entradas históricas</dt>
+            <dt>{t('trust.detail.historyEntries')}</dt>
             <dd className="mono">{record.history_count}</dd>
           </div>
           <div>
@@ -359,7 +370,7 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
         </TrustDetailSection>
       ) : null}
 
-      <TrustDetailSection title="Identidades">
+      <TrustDetailSection title={t('trust.detail.identities')}>
         <div className="trust-detail-subsection">
           <p className="field__label">Nomes de sujeito</p>
           {record.identities.subject_names.length ? (
@@ -392,6 +403,7 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
 }
 
 function TsaToolingPanel() {
+  const t = useT();
   const [params, setParams] = useSearchParams();
   const tsa = useTsaCatalog();
   const term = params.get('tsaQ') ?? '';
@@ -455,7 +467,7 @@ function TsaToolingPanel() {
   }
 
   return (
-    <Card title="TSA / RFC 3161">
+    <Card title={t('trust.tsa.title')}>
       {tsa.isLoading ? (
         <SkeletonDeflist rows={8} />
       ) : tsa.error ? (
@@ -465,7 +477,7 @@ function TsaToolingPanel() {
           <div
             className="trust-statusline trust-statusline--featured"
             role="group"
-            aria-label="Resumo TSA"
+            aria-label={t('trust.tsa.summary.aria')}
           >
             <div className="trust-statusline__item trust-statusline__item--wide">
               <span className="trust-statusline__label">URL configurado</span>
@@ -604,35 +616,39 @@ function TsaToolingPanel() {
                     type="search"
                     value={term}
                     onChange={(e) => setParam('tsaQ', e.target.value)}
-                    placeholder="Prestador, serviço, QTST, certificado…"
-                    aria-label="Procurar registos TSA"
+                    placeholder={t('trust.tsa.search.placeholder')}
+                    aria-label={t('trust.tsa.search.aria')}
                     autoComplete="off"
                   />
                 </div>
               </TrustControlPanel>
-              <div className="trust-filter-controls" role="group" aria-label="Filtros TSA">
-                <Field label="Tipo" htmlFor="tsa-type-filter">
+              <div
+                className="trust-filter-controls"
+                role="group"
+                aria-label={t('trust.tsa.filters.aria')}
+              >
+                <Field label={t('trust.filter.type')} htmlFor="tsa-type-filter">
                   <Select
                     id="tsa-type-filter"
                     value={typeFilter}
-                    options={TSA_TYPE_FILTERS}
+                    options={localizedOptions(TSA_TYPE_FILTERS, t)}
                     onChange={(e) =>
                       setParam('tsaType', e.target.value === 'all' ? null : e.target.value)
                     }
                   />
                 </Field>
-                <Field label="Estado" htmlFor="tsa-status-filter">
+                <Field label={t('trust.filter.status')} htmlFor="tsa-status-filter">
                   <Select
                     id="tsa-status-filter"
                     value={statusFilter}
-                    options={TRUST_STATUS_FILTERS}
+                    options={localizedOptions(TRUST_STATUS_FILTERS, t)}
                     onChange={(e) =>
                       setParam('tsaStatus', e.target.value === 'all' ? null : e.target.value)
                     }
                   />
                 </Field>
                 <Toggle
-                  label="Com ponto de serviço"
+                  label={t('trust.filter.withSupplyPoint')}
                   checked={supplyOnly}
                   onChange={(checked) => setBooleanParam('tsaSupply', checked)}
                 />
@@ -670,8 +686,8 @@ function TsaToolingPanel() {
                       ))}
                     </ul>
                   ) : (
-                    <EmptyState title="Sem registos TSA">
-                      <p>Nenhum serviço de selo temporal corresponde a “{term.trim()}”.</p>
+                    <EmptyState title={t('trust.tsa.empty.title')}>
+                      <p>{t('trust.tsa.empty.body', { term: term.trim() })}</p>
                     </EmptyState>
                   )}
                 </div>
@@ -681,8 +697,8 @@ function TsaToolingPanel() {
               {selected ? (
                 <TsaRecordDetail record={selected} />
               ) : (
-                <EmptyState title="Nenhum registo TSA selecionado">
-                  <p>Escolha um registo para ver metadados, pontos de serviço e identidades.</p>
+                <EmptyState title={t('trust.tsa.detail.empty.title')}>
+                  <p>{t('trust.tsa.detail.empty.body')}</p>
                 </EmptyState>
               )}
             </div>
@@ -708,11 +724,8 @@ function TrustStatusPanel() {
         <div className="stack--tight">
           <div className="trust-toolbar">
             <div>
-              <p className="trust-toolbar__title">Atualização da lista</p>
-              <p className="muted trust-source-note">
-                Importa a TSL configurada para cache local e mostra a validação que o backend
-                conseguiu executar.
-              </p>
+              <p className="trust-toolbar__title">{t('trust.refresh.title')}</p>
+              <p className="muted trust-source-note">{t('trust.refresh.body')}</p>
             </div>
             <Button
               type="button"
@@ -720,7 +733,7 @@ function TrustStatusPanel() {
               onClick={() => refresh.mutate({})}
               disabled={refresh.isPending}
             >
-              {refresh.isPending ? 'A importar…' : 'Atualizar TSL'}
+              {refresh.isPending ? t('trust.refresh.pending') : t('trust.refresh.action')}
             </Button>
           </div>
           {refresh.error ? <ErrorNote error={refresh.error} /> : null}
@@ -749,7 +762,7 @@ function TrustStatusPanel() {
           </div>
 
           {status.data.last_refresh ? (
-            <TrustDetailSection title="Última tentativa de importação">
+            <TrustDetailSection title={t('trust.refresh.lastAttempt')}>
               <TrustKeyValueGrid>
                 <div>
                   <dt>Resultado</dt>
@@ -1002,8 +1015,10 @@ function ServiceFlags({ service }: { service: TslServiceSummaryView }) {
         <Badge tone="ok">{t('trust.flag.qualified')}</Badge>
       ) : null}
       {service.trusted_for_esignatures ? <Badge tone="ok">{t('trust.flag.trusted')}</Badge> : null}
-      {service.history_count > 0 ? <Badge tone="neutral">Histórico</Badge> : null}
-      {service.service_supply_points.length ? <Badge tone="neutral">Ponto</Badge> : null}
+      {service.history_count > 0 ? <Badge tone="neutral">{t('trust.flag.history')}</Badge> : null}
+      {service.service_supply_points.length ? (
+        <Badge tone="neutral">{t('trust.flag.supplyPoint')}</Badge>
+      ) : null}
     </span>
   );
 }
@@ -1177,7 +1192,7 @@ function ServiceDetail({
         </TrustDetailSection>
       ) : null}
 
-      <TrustDetailSection title="Pontos de serviço">
+      <TrustDetailSection title={t('trust.detail.supplyPoints')}>
         {service.service_supply_points.length ? (
           <ul className="trust-detail-list">
             {service.service_supply_points.map((point) => (
@@ -1191,7 +1206,7 @@ function ServiceDetail({
         )}
       </TrustDetailSection>
 
-      <TrustDetailSection title="Histórico">
+      <TrustDetailSection title={t('trust.detail.history')}>
         <TrustKeyValueGrid>
           <div>
             <dt>Entradas históricas</dt>
@@ -1216,7 +1231,7 @@ function ServiceDetail({
         )}
       </TrustDetailSection>
 
-      <TrustDetailSection title="Identidades">
+      <TrustDetailSection title={t('trust.detail.identities')}>
         <div className="trust-detail-subsection">
           <p className="field__label">{t('trust.service.subjectNames')}</p>
           {service.identities.subject_names.length ? (
@@ -1276,8 +1291,7 @@ function TrustCatalogExplorer() {
     }),
     [filter, historyOnly, statusFilter, supplyOnly, term, typeFilter],
   );
-  const trustSearchEnabled =
-    filter !== 'providers' && hasStructuredSearchParams(trustSearchParams);
+  const trustSearchEnabled = filter !== 'providers' && hasStructuredSearchParams(trustSearchParams);
   const trustSearch = useTrustCatalogSearch(trustSearchParams, trustSearchEnabled);
   const trustSearchPending = trustSearchEnabled && trustSearch.isPending;
 
@@ -1381,34 +1395,34 @@ function TrustCatalogExplorer() {
             />
           </div>
           <TrustFilterPills active={filter} onSelect={selectFilter} />
-          <div className="trust-filter-controls" role="group" aria-label="Filtros TSL">
-            <Field label="Tipo" htmlFor="trust-type-filter">
+          <div className="trust-filter-controls" role="group" aria-label={t('trust.filters.aria')}>
+            <Field label={t('trust.filter.type')} htmlFor="trust-type-filter">
               <Select
                 id="trust-type-filter"
                 value={typeFilter}
-                options={TRUST_TYPE_FILTERS}
+                options={localizedOptions(TRUST_TYPE_FILTERS, t)}
                 onChange={(e) =>
                   setParam('trustType', e.target.value === 'all' ? null : e.target.value)
                 }
               />
             </Field>
-            <Field label="Estado" htmlFor="trust-status-filter">
+            <Field label={t('trust.filter.status')} htmlFor="trust-status-filter">
               <Select
                 id="trust-status-filter"
                 value={statusFilter}
-                options={TRUST_STATUS_FILTERS}
+                options={localizedOptions(TRUST_STATUS_FILTERS, t)}
                 onChange={(e) =>
                   setParam('trustStatus', e.target.value === 'all' ? null : e.target.value)
                 }
               />
             </Field>
             <Toggle
-              label="Com histórico"
+              label={t('trust.filter.withHistory')}
               checked={historyOnly}
               onChange={(checked) => setBooleanParam('trustHistory', checked)}
             />
             <Toggle
-              label="Com ponto de serviço"
+              label={t('trust.filter.withSupplyPoint')}
               checked={supplyOnly}
               onChange={(checked) => setBooleanParam('trustSupply', checked)}
             />
