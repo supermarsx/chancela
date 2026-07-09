@@ -70,7 +70,7 @@ describe('SubNav', () => {
     expect(container.querySelector('.subnav__indicator')).toBeTruthy();
   });
 
-  it('exposes accessible scroll arrows only when the strip overflows', () => {
+  it('exposes only usable scroll arrows for the current overflow edge', () => {
     render(<SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />);
     const strip = screen.getByRole('group', { name: 'Secções' });
 
@@ -80,22 +80,14 @@ describe('SubNav', () => {
     setScrollMetrics(strip, { scrollLeft: 0, clientWidth: 100, scrollWidth: 300 });
     fireEvent.scroll(strip);
 
-    expect(
-      screen.getByRole('button', { name: 'Secções: scroll left' }).hasAttribute('disabled'),
-    ).toBe(true);
-    expect(
-      screen.getByRole('button', { name: 'Secções: scroll right' }).hasAttribute('disabled'),
-    ).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Secções: scroll left' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Secções: scroll right' })).toBeTruthy();
 
     strip.scrollLeft = 200;
     fireEvent.scroll(strip);
 
-    expect(
-      screen.getByRole('button', { name: 'Secções: scroll left' }).hasAttribute('disabled'),
-    ).toBe(false);
-    expect(
-      screen.getByRole('button', { name: 'Secções: scroll right' }).hasAttribute('disabled'),
-    ).toBe(true);
+    expect(screen.getByRole('button', { name: 'Secções: scroll left' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Secções: scroll right' })).toBeNull();
   });
 
   it('auto-scrolls smoothly while scroll arrows are hovered, focused, or pressed', () => {

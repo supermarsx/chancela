@@ -169,6 +169,16 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
 
   useEffect(() => stopAutoScroll, [stopAutoScroll]);
 
+  useEffect(() => {
+    if (!overflow.start) scrollSourcesRef.current.start = emptyScrollSources();
+    if (!overflow.end) scrollSourcesRef.current.end = emptyScrollSources();
+
+    const currentEdge = directionEdge(autoScrollRef.current.direction);
+    if ((currentEdge === 'start' && !overflow.start) || (currentEdge === 'end' && !overflow.end)) {
+      stopAutoScroll();
+    }
+  }, [overflow.start, overflow.end, stopAutoScroll]);
+
   useLayoutEffect(() => {
     const measure = () => {
       const btn = btnRefs.current[active];
@@ -199,14 +209,12 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
   }, [active, locale, updateShadows]);
 
   const renderScrollButton = (edge: ScrollEdge) => {
-    const canScroll = edge === 'start' ? overflow.start : overflow.end;
     const label = `${ariaLabel}: scroll ${edge === 'start' ? 'left' : 'right'}`;
     return (
       <button
         type="button"
         className={`subnav__scroll subnav__scroll--${edge}`}
         aria-label={label}
-        disabled={!canScroll}
         onMouseEnter={() => setScrollSource(edge, 'hover', true)}
         onMouseLeave={() => setScrollSource(edge, 'hover', false)}
         onFocus={() => setScrollSource(edge, 'focus', true)}
@@ -229,7 +237,7 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
       data-overflow-start={overflow.start ? 'true' : undefined}
       data-overflow-end={overflow.end ? 'true' : undefined}
     >
-      {isScrollable ? renderScrollButton('start') : null}
+      {overflow.start ? renderScrollButton('start') : null}
       <div
         className="subnav"
         role="group"
@@ -271,7 +279,7 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
           </button>
         ))}
       </div>
-      {isScrollable ? renderScrollButton('end') : null}
+      {overflow.end ? renderScrollButton('end') : null}
     </div>
   );
 }
