@@ -12,7 +12,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chancela_core::{
-    Act, ActError, ActId, BookId, Entity, EntityFamily, EntityKind, Severity, rule_pack_for,
+    Act, ActError, ActId, Book, BookId, Entity, EntityFamily, EntityKind, Severity, rule_pack_for,
     seal_act,
 };
 use uuid::Uuid;
@@ -95,8 +95,12 @@ pub async fn patch_act(
     // RBAC (t64-E3): editing an act's working content is `act.edit` scoped to its book.
     let scope = scope_of_act(&state, ActId(id)).await;
     require_permission(&state, &actor, Permission::ActEdit, scope).await?;
+    // books -> acts. A closed/non-open book freezes all existing acts in it too.
+    let books = state.books.read().await;
     let mut acts = state.acts.write().await;
     let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
+    let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+    ensure_book_open_for_act_mutation(book)?;
 
     // Reject edits to a sealed/archived act (maps ActError::Sealed → 409).
     if !act.is_mutable() {
@@ -218,7 +222,9 @@ pub async fn advance_act(
     let mut ledger = state.ledger.write().await;
 
     let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
-    let entity_id = books.get(&act.book_id).map(|b| b.entity_id);
+    let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+    ensure_book_open_for_act_mutation(book)?;
+    let entity_id = book.entity_id;
 
     // Apply the transition to a clone, so the in-memory map is only mutated after the durable write
     // succeeds (nothing to roll back on a store failure). Invalid transition → 422 (contract §2.5).
@@ -226,10 +232,7 @@ pub async fn advance_act(
     next.advance_to(req.to)
         .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
 
-    let scope = match entity_id {
-        Some(eid) => format!("entity:{}/book:{}/act:{}", eid, next.book_id, next.id),
-        None => format!("book:{}/act:{}", next.book_id, next.id),
-    };
+    let scope = format!("entity:{}/book:{}/act:{}", entity_id, next.book_id, next.id);
     let justification = format!("advance to {:?}", req.to);
     let payload = serde_json::to_vec(&next)?;
     crate::try_append_event(
@@ -432,6 +435,7 @@ pub async fn seal_act_handler(
 
     let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
     let book = books.get_mut(&act.book_id).ok_or(ApiError::NotFound)?;
+    ensure_book_open_for_act_mutation(book)?;
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
 
     // Per-family dispatch (R4): seal against the pack selected from the entity's profile.
@@ -584,7 +588,9 @@ pub async fn archive_act(
     let mut ledger = state.ledger.write().await;
 
     let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
-    let entity_id = books.get(&act.book_id).map(|b| b.entity_id);
+    let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+    ensure_book_open_for_act_mutation(book)?;
+    let entity_id = book.entity_id;
 
     // Archive a clone (Sealed→Archived), committing to the map only after the durable write. Only a
     // sealed act can be archived, else 409.
@@ -592,10 +598,7 @@ pub async fn archive_act(
     next.archive()
         .map_err(|e| ApiError::Conflict(e.to_string()))?;
 
-    let scope = match entity_id {
-        Some(eid) => format!("entity:{}/book:{}/act:{}", eid, next.book_id, next.id),
-        None => format!("book:{}/act:{}", next.book_id, next.id),
-    };
+    let scope = format!("entity:{}/book:{}/act:{}", entity_id, next.book_id, next.id);
     let payload = serde_json::to_vec(&next)?;
     crate::try_append_event(&mut ledger, &actor, &scope, "act.archived", None, &payload)?;
     state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
@@ -632,11 +635,13 @@ pub async fn convening_dispatch(
     let mut ledger = state.ledger.write().await;
 
     let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
+    let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+    ensure_book_open_for_act_mutation(book)?;
     // A sealed/archived act's convening is frozen (maps ActError::Sealed → 409).
     if !act.is_mutable() {
         return Err(ApiError::Conflict(ActError::Sealed.to_string()));
     }
-    let entity_id = books.get(&act.book_id).map(|b| b.entity_id);
+    let entity_id = book.entity_id;
 
     // Stamp a clone; commit to the map only after the durable write succeeds.
     let mut next = act.clone();
@@ -674,10 +679,7 @@ pub async fn convening_dispatch(
         ));
     }
 
-    let scope = match entity_id {
-        Some(eid) => format!("entity:{}/book:{}/act:{}", eid, next.book_id, next.id),
-        None => format!("book:{}/act:{}", next.book_id, next.id),
-    };
+    let scope = format!("entity:{}/book:{}/act:{}", entity_id, next.book_id, next.id);
     let justification = format!("convening dispatched to {stamped} recipient(s)");
     let payload = serde_json::to_vec(&next)?;
     crate::try_append_event(
@@ -693,6 +695,16 @@ pub async fn convening_dispatch(
     *act = next;
 
     Ok(Json(ActView::from(&*act)))
+}
+
+fn ensure_book_open_for_act_mutation(book: &Book) -> Result<(), ApiError> {
+    if book.is_open() {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(format!(
+        "book {} is {:?}; acts in a non-open book are read-only",
+        book.id, book.state
+    )))
 }
 
 #[cfg(test)]
