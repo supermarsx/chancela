@@ -11,18 +11,21 @@ use quick_xml::events::Event;
 
 use crate::error::CmdError;
 
-/// `tempuri.org` — the WCF operation/message namespace.
-pub(crate) const NS_TEMPURI: &str = "http://tempuri.org/";
+/// AMA SCMD WCF operation/message namespace, as advertised by the upstream WSDL.
+pub(crate) const NS_AMA_SERVICE: &str = "http://Ama.Authentication.Service/";
 /// The data-contract namespace of the SCMD request/response members.
 pub(crate) const NS_CMD_DATA: &str =
     "http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService";
 
 /// SOAPAction for `GetCertificate`.
-pub const ACTION_GET_CERTIFICATE: &str = "http://tempuri.org/ICCMovelSign/GetCertificate";
+pub const ACTION_GET_CERTIFICATE: &str =
+    "http://Ama.Authentication.Service/CCMovelSignature/GetCertificate";
 /// SOAPAction for `CCMovelSign`.
-pub const ACTION_CCMOVEL_SIGN: &str = "http://tempuri.org/ICCMovelSign/CCMovelSign";
+pub const ACTION_CCMOVEL_SIGN: &str =
+    "http://Ama.Authentication.Service/CCMovelSignature/CCMovelSign";
 /// SOAPAction for `ValidateOtp`.
-pub const ACTION_VALIDATE_OTP: &str = "http://tempuri.org/ICCMovelSign/ValidateOtp";
+pub const ACTION_VALIDATE_OTP: &str =
+    "http://Ama.Authentication.Service/CCMovelSignature/ValidateOtp";
 
 /// Minimal XML text escaping for element content.
 fn xml_escape(s: &str) -> String {
@@ -54,7 +57,7 @@ pub(crate) fn get_certificate_envelope(application_id_b64: &str, user_id: &str) 
     </tem:GetCertificate>
   </s:Body>
 </s:Envelope>"#,
-        ns = NS_TEMPURI,
+        ns = NS_AMA_SERVICE,
         app = xml_escape(application_id_b64),
         user = xml_escape(user_id),
     )
@@ -86,7 +89,7 @@ pub(crate) fn ccmovel_sign_envelope(
     </tem:CCMovelSign>
   </s:Body>
 </s:Envelope>"#,
-        tem = NS_TEMPURI,
+        tem = NS_AMA_SERVICE,
         data = NS_CMD_DATA,
         app = xml_escape(application_id_b64),
         doc = xml_escape(doc_name),
@@ -115,7 +118,7 @@ pub(crate) fn validate_otp_envelope(
     </tem:ValidateOtp>
   </s:Body>
 </s:Envelope>"#,
-        ns = NS_TEMPURI,
+        ns = NS_AMA_SERVICE,
         otp = xml_escape(otp_field),
         pid = xml_escape(process_id),
         app = xml_escape(application_id_b64),
@@ -235,6 +238,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn soap_actions_match_upstream_wsdl() {
+        assert_eq!(
+            ACTION_GET_CERTIFICATE,
+            "http://Ama.Authentication.Service/CCMovelSignature/GetCertificate"
+        );
+        assert_eq!(
+            ACTION_CCMOVEL_SIGN,
+            "http://Ama.Authentication.Service/CCMovelSignature/CCMovelSign"
+        );
+        assert_eq!(
+            ACTION_VALIDATE_OTP,
+            "http://Ama.Authentication.Service/CCMovelSignature/ValidateOtp"
+        );
+    }
+
+    #[test]
     fn escapes_xml_special_chars() {
         assert_eq!(xml_escape("a<b>&\"'"), "a&lt;b&gt;&amp;&quot;&apos;");
     }
@@ -242,6 +261,7 @@ mod tests {
     #[test]
     fn get_certificate_envelope_has_action_fields() {
         let env = get_certificate_envelope("QVBQSUQ=", "+351 912345678");
+        assert!(env.contains(r#"xmlns:tem="http://Ama.Authentication.Service/""#));
         assert!(env.contains("<tem:GetCertificate>"));
         assert!(env.contains("<tem:applicationId>QVBQSUQ=</tem:applicationId>"));
         assert!(env.contains("<tem:userId>+351 912345678</tem:userId>"));

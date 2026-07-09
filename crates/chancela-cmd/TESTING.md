@@ -46,6 +46,9 @@ Prerequisites (see `tests/network.rs`):
 - `CHANCELA_CMD_ENV=preprod`
 - `CHANCELA_CMD_APPLICATION_ID=<opaque AMA-assigned string>` — obtained via AMA
   integration/certification (contact `eid@ama.pt`).
+- `CHANCELA_CMD_HTTP_BASIC_USERNAME=<AMA-issued BasicAuth username>` and
+  `CHANCELA_CMD_HTTP_BASIC_PASSWORD=<AMA-issued BasicAuth password>` — optional where AMA
+  permits unauthenticated preprod calls; required for PROD real HTTP transport.
 - `CHANCELA_CMD_TEST_PHONE=+351 XXXXXXXXX` — a phone registered for CMD in preprod.
 - `CHANCELA_CMD_AMA_CERT_PEM=<path>` (optional preprod; **required for PROD**) — AMA's
   field-encryption certificate PEM.
@@ -60,6 +63,8 @@ only.
 |---|---|---|
 | `CHANCELA_CMD_ENV` | `preprod` \| `prod` | `preprod` |
 | `CHANCELA_CMD_APPLICATION_ID` | opaque AMA ApplicationId (base64'd on the wire) | required |
+| `CHANCELA_CMD_HTTP_BASIC_USERNAME` | AMA-issued HTTP BasicAuth username for real transport | none (required for PROD) |
+| `CHANCELA_CMD_HTTP_BASIC_PASSWORD` | AMA-issued HTTP BasicAuth password for real transport | none (required for PROD) |
 | `CHANCELA_CMD_AMA_CERT_PEM` | path to AMA field-encryption cert PEM | none (cleartext preprod) |
 
 ## Field encryption (PROD) — status & caveat
@@ -67,7 +72,9 @@ only.
 The newer SCMD spec requires the mobile number, PIN, and OTP to be RSA-encrypted with AMA's
 public certificate before being placed in the request. This is implemented as
 `FieldEncryptor::AmaRsa` (RSA PKCS#1 v1.5 + base64), config-gated: **preprod runs cleartext**,
-**PROD requires** `CHANCELA_CMD_AMA_CERT_PEM` (a PROD config without it is rejected).
+**PROD requires** `CHANCELA_CMD_AMA_CERT_PEM`, `CHANCELA_CMD_HTTP_BASIC_USERNAME`, and
+`CHANCELA_CMD_HTTP_BASIC_PASSWORD` for real HTTP transport (a PROD transport config without
+them is rejected).
 
 Because this crate does not pull a `getrandom`-enabled RNG, the encryption entry points take a
 caller-supplied `rand_core::CryptoRngCore` (re-exported as `chancela_cmd::rand_core`).

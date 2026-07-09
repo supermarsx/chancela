@@ -29,7 +29,7 @@ pub mod mock;
 pub mod soap;
 pub mod transport;
 
-pub use config::{CmdConfig, CmdEnv, PREPROD_ENDPOINT, PROD_ENDPOINT};
+pub use config::{CmdBasicAuth, CmdConfig, CmdEnv, PREPROD_ENDPOINT, PROD_ENDPOINT};
 pub use error::CmdError;
 pub use field_encryption::FieldEncryptor;
 pub use flow::{CertificateChain, ProcessHandle, ScmdClient, SignRequest};

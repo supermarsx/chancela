@@ -3169,9 +3169,10 @@ fn build_trust_policy(
     Ok(Box::new(TslTrustPolicy::new(HttpTslSource::new(url))))
 }
 
-/// Resolve the effective [`CmdConfig`]: environment secrets win (ApplicationId + AMA cert PEM); the
-/// non-secret settings selectors (`signing.cmd.env` / `.application_id`) fill in when env is unset.
-/// A missing ApplicationId, or a prod config without the AMA cert, is a client-actionable 422.
+/// Resolve the effective [`CmdConfig`]: environment secrets win (ApplicationId + BasicAuth +
+/// AMA cert PEM); the non-secret settings selectors (`signing.cmd.env` / `.application_id`) fill
+/// in when env is unset. A missing ApplicationId, or a prod config without the AMA cert, is a
+/// client-actionable 422.
 async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
     let cmd = { state.settings.read().await.signing.cmd.clone() };
     // Env-supplied secrets (never from the settings JSON).
@@ -3190,10 +3191,13 @@ async fn resolve_cmd_config(state: &AppState) -> Result<CmdConfig, ApiError> {
         crate::settings::CmdEnvSetting::Preprod => CmdEnv::Preprod,
         crate::settings::CmdEnvSetting::Prod => CmdEnv::Prod,
     };
-    let ama_cert_pem = env_cfg.and_then(|c| c.ama_cert_pem);
+    let (basic_auth, ama_cert_pem) = env_cfg
+        .map(|c| (c.basic_auth, c.ama_cert_pem))
+        .unwrap_or((None, None));
     let cfg = CmdConfig {
         env,
         application_id,
+        basic_auth,
         ama_cert_pem,
     };
     // Validate the field-encryptor is buildable (PROD without the AMA cert is refused here).

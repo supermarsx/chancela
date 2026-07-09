@@ -518,11 +518,12 @@ fn default_signing_provider_metadata() -> Vec<SigningProviderMetadata> {
 
 /// Chave Móvel Digital signing configuration surfaced in the settings document (t57 F1).
 ///
-/// **Secrets never live here.** The AMA field-encryption certificate PEM and the ApplicationId are
-/// read from the environment (`CHANCELA_CMD_ENV` / `CHANCELA_CMD_APPLICATION_ID` /
-/// `CHANCELA_CMD_AMA_CERT_PEM`) by `chancela_cmd::CmdConfig::from_env`. This sub-object carries only
-/// the non-secret selectors an operator sees: which environment, the (non-secret) ApplicationId
-/// echo, and a read-only "is the AMA cert configured?" indicator.
+/// **Secrets never live here.** The AMA field-encryption certificate PEM and HTTP BasicAuth
+/// credentials are read from the environment (`CHANCELA_CMD_AMA_CERT_PEM`,
+/// `CHANCELA_CMD_HTTP_BASIC_USERNAME`, `CHANCELA_CMD_HTTP_BASIC_PASSWORD`) by
+/// `chancela_cmd::CmdConfig::from_env`. This sub-object carries only the non-secret selectors an
+/// operator sees: which environment, the (non-secret) ApplicationId echo, and a read-only "is the
+/// AMA cert configured?" indicator.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SigningCmdSettings {

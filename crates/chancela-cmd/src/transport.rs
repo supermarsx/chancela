@@ -28,6 +28,7 @@ pub trait ScmdTransport {
 /// Real SCMD transport: POSTs hand-built SOAP 1.1 over a blocking `reqwest` client.
 pub struct HttpScmdTransport {
     endpoint: String,
+    basic_auth: Option<crate::config::CmdBasicAuth>,
     client: reqwest::blocking::Client,
 }
 
@@ -46,13 +47,28 @@ impl HttpScmdTransport {
             .map_err(|e| CmdError::Transport(format!("failed to build HTTP client: {e}")))?;
         Ok(HttpScmdTransport {
             endpoint: endpoint.into(),
+            basic_auth: None,
             client,
         })
     }
 
+    /// Build a transport pointed at `endpoint` with HTTP BasicAuth credentials.
+    pub fn with_basic_auth(
+        endpoint: impl Into<String>,
+        basic_auth: crate::config::CmdBasicAuth,
+    ) -> Result<Self, CmdError> {
+        let mut transport = Self::new(endpoint)?;
+        transport.basic_auth = Some(basic_auth);
+        Ok(transport)
+    }
+
     /// Build a transport for the endpoint implied by `cfg`.
     pub fn from_config(cfg: &crate::config::CmdConfig) -> Result<Self, CmdError> {
-        Self::new(cfg.endpoint())
+        cfg.validate_http_transport()?;
+        match cfg.basic_auth.clone() {
+            Some(basic_auth) => Self::with_basic_auth(cfg.endpoint(), basic_auth),
+            None => Self::new(cfg.endpoint()),
+        }
     }
 }
 
@@ -60,14 +76,16 @@ impl ScmdTransport for HttpScmdTransport {
     fn call(&self, action: &str, soap_body: &str) -> Result<String, CmdError> {
         // WCF requires a non-empty, quoted SOAPAction matching the operation.
         let soap_action = format!("\"{action}\"");
-        let resp = self
+        let mut req = self
             .client
             .post(&self.endpoint)
             .header("Content-Type", "text/xml; charset=utf-8")
             .header("SOAPAction", soap_action)
-            .body(soap_body.to_owned())
-            .send()
-            .map_err(|e| CmdError::Transport(e.to_string()))?;
+            .body(soap_body.to_owned());
+        if let Some(auth) = &self.basic_auth {
+            req = req.basic_auth(&auth.username, Some(auth.password.as_str()));
+        }
+        let resp = req.send().map_err(|e| CmdError::Transport(e.to_string()))?;
         let status = resp.status();
         // Reject oversized bodies before buffering (t41-e4 H4). A declared Content-Length
         // over the limit is a fast-fail; an absent/chunked Content-Length is caught after
@@ -98,5 +116,77 @@ impl ScmdTransport for HttpScmdTransport {
             )));
         }
         Ok(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{CmdBasicAuth, CmdConfig, CmdEnv};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+
+    #[test]
+    fn sends_basic_auth_when_configured() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let (tx, rx) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0_u8; 4096];
+            let mut request = Vec::new();
+            loop {
+                let n = stream.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+                if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            tx.send(String::from_utf8_lossy(&request).into_owned())
+                .unwrap();
+            let body = "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body/></s:Envelope>";
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+
+        let transport = HttpScmdTransport::with_basic_auth(
+            endpoint,
+            CmdBasicAuth::new("ama-user", "ama-password"),
+        )
+        .unwrap();
+        let response = transport.call("urn:test-action", "<s:Envelope/>").unwrap();
+        assert!(response.contains("<s:Envelope"));
+        let request = rx.recv().unwrap();
+        server.join().unwrap();
+
+        let request_lower = request.to_ascii_lowercase();
+        assert!(request_lower.contains("soapaction: \"urn:test-action\""));
+        assert!(request_lower.contains("authorization: basic yw1hlxvzzxi6yw1hlxbhc3n3b3jk"));
+    }
+
+    #[test]
+    fn from_config_rejects_prod_without_basic_auth() {
+        let cfg = CmdConfig {
+            env: CmdEnv::Prod,
+            application_id: "APPID".to_string(),
+            basic_auth: None,
+            ama_cert_pem: Some(include_str!("../fixtures/ama_encryption_cert.pem").to_string()),
+        };
+
+        match HttpScmdTransport::from_config(&cfg) {
+            Err(CmdError::Config(msg)) => assert!(msg.contains("PROD HTTP transport requires")),
+            Err(other) => panic!("expected config error, got {other:?}"),
+            Ok(_) => panic!("expected config error"),
+        }
     }
 }

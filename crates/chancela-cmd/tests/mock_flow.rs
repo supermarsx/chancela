@@ -194,6 +194,7 @@ fn preprod_config_is_cleartext_prod_requires_cert() {
     let prod = CmdConfig {
         env: chancela_cmd::CmdEnv::Prod,
         application_id: "APPID".to_string(),
+        basic_auth: None,
         ama_cert_pem: None,
     };
     assert!(matches!(prod.field_encryptor(), Err(CmdError::Config(_))));
