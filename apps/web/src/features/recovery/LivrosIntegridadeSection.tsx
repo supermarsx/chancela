@@ -30,6 +30,7 @@ import type {
 } from '../../api/types';
 import { useT } from '../../i18n';
 import { bookStateLabels } from '../../api/labels';
+import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
   Card,
@@ -48,18 +49,6 @@ import {
 } from '../../ui';
 import { GateButton, scopeBook } from '../session/permissions';
 import { StartOverBookModal } from './StartOverBookModal';
-
-/** Trigger a browser download of a Blob with an explicit filename (mirrors ActDocumentPanel). */
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
 
 /** A friendly label for a canonical chain id (`global` | `application` | `company:…` | `book:…`). */
 function chainLabel(
@@ -191,11 +180,18 @@ export function LivrosIntegridadeSection() {
     return <Badge tone="ok">{t('integrity.report.healthy')}</Badge>;
   }, [report, t]);
 
+  function showSaveResult(result: SaveBlobResult) {
+    if (result.kind === 'cancelled') {
+      toast.info(saveBlobResultMessage(result));
+      return;
+    }
+    toast.success(saveBlobResultMessage(result));
+  }
+
   async function onExport(book: BookView) {
     try {
       const { blob } = await exportBook.mutateAsync(book.id);
-      triggerDownload(blob, `book-${book.id}.zip`);
-      toast.success(t('integrity.books.exported'));
+      showSaveResult(await saveBlobAs({ blob, filename: `book-${book.id}.zip` }));
     } catch (e) {
       toast.error(e);
     }

@@ -3,10 +3,19 @@
  * first by number, then drafts — the API orders them). While the book is Open, drafting an
  * ata (WFL-14) and closing the book (WFL-13) are neat buttons in the Atas panel header,
  * each opening its own route (`/livros/:id/nova-ata`, `/livros/:id/encerrar`) so the view
- * is no longer split by an aside (t13 item 7).
+ * is no longer split by an aside (t13 item 7). The page header also exposes the read-only
+ * Chancela internal preservation ZIP for this book.
  */
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useBook, useBookActs } from '../../api/hooks';
+import {
+  useBook,
+  useBookActs,
+  useBookLegalHold,
+  useClearBookLegalHold,
+  useDownloadBookArchivePackage,
+  useSetBookLegalHold,
+} from '../../api/hooks';
 import {
   actStateLabels,
   bookKindLabels,
@@ -16,25 +25,152 @@ import {
   numberingSchemeLabels,
 } from '../../api/labels';
 import { useT } from '../../i18n';
+import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
   Card,
   EmptyState,
   ErrorNote,
+  Field,
   Icon,
+  InlineWarning,
   PageHeader,
   Skeleton,
   SkeletonDeflist,
   SkeletonTable,
   Table,
+  TextArea,
+  useToast,
 } from '../../ui';
-import { GateButtonLink, scopeBook } from '../session/permissions';
+import { GateButton, GateButtonLink, scopeBook } from '../session/permissions';
+
+function preservationPackageFilename(bookId: string): string {
+  return `chancela-preservation-book-${bookId}.zip`;
+}
+
+function LegalHoldPanel({ bookId }: { bookId: string }) {
+  const toast = useToast();
+  const hold = useBookLegalHold(bookId);
+  const setHold = useSetBookLegalHold(bookId);
+  const clearHold = useClearBookLegalHold(bookId);
+  const [reason, setReason] = useState('');
+
+  useEffect(() => {
+    setReason(hold.data?.reason ?? '');
+  }, [hold.data?.reason]);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = reason.trim();
+    if (!trimmed) return;
+    setHold.mutate(
+      { reason: trimmed },
+      {
+        onSuccess: () => toast.success('Retenção legal aplicada.'),
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
+
+  function clear() {
+    clearHold.mutate(undefined, {
+      onSuccess: () => {
+        setReason('');
+        toast.success('Retenção legal removida.');
+      },
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  const active = hold.data?.legal_hold === true;
+  const busy = setHold.isPending || clearHold.isPending;
+
+  return (
+    <Card title="Retenção legal">
+      <div className="stack">
+        {hold.isLoading ? (
+          <SkeletonDeflist />
+        ) : hold.error ? (
+          <ErrorNote error={hold.error} />
+        ) : (
+          <>
+            <InlineWarning
+              tone={active ? 'warn' : 'info'}
+              title={active ? 'Ativa' : 'Sem retenção'}
+            >
+              A retenção legal bloqueia o descarte por regras de retenção enquanto estiver ativa.
+            </InlineWarning>
+            <dl className="deflist">
+              <div>
+                <dt>Estado</dt>
+                <dd>
+                  <Badge tone={active ? 'warn' : 'neutral'}>
+                    {active ? 'Retenção legal ativa' : 'Sem retenção legal'}
+                  </Badge>
+                </dd>
+              </div>
+              {hold.data?.actor ? (
+                <div>
+                  <dt>Ator</dt>
+                  <dd>{hold.data.actor}</dd>
+                </div>
+              ) : null}
+              {hold.data?.set_at ? (
+                <div>
+                  <dt>Definida em</dt>
+                  <dd>{hold.data.set_at}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </>
+        )}
+
+        <form className="form" onSubmit={submit}>
+          <Field label="Motivo da retenção legal" htmlFor="book-legal-hold-reason">
+            <TextArea
+              id="book-legal-hold-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="Ex.: litígio, auditoria ou pedido de autoridade"
+            />
+          </Field>
+          <div className="form__actions">
+            <GateButton
+              perm="book.export"
+              scope={scopeBook(bookId)}
+              type="submit"
+              variant="primary"
+              icon={<Icon.Scale />}
+              disabled={busy || reason.trim().length === 0}
+            >
+              {setHold.isPending ? 'A aplicar retenção' : 'Aplicar retenção legal'}
+            </GateButton>
+            <GateButton
+              perm="book.export"
+              scope={scopeBook(bookId)}
+              type="button"
+              variant="secondary"
+              icon={<Icon.Trash />}
+              disabled={busy || !active}
+              onClick={clear}
+            >
+              {clearHold.isPending ? 'A remover' : 'Remover retenção'}
+            </GateButton>
+          </div>
+        </form>
+      </div>
+    </Card>
+  );
+}
 
 export function BookDetailPage() {
   const t = useT();
+  const toast = useToast();
   const { id = '' } = useParams();
   const book = useBook(id);
   const acts = useBookActs(id);
+  const packageDownload = useDownloadBookArchivePackage(id);
 
   if (book.isLoading) {
     return (
@@ -55,6 +191,27 @@ export function BookDetailPage() {
   const b = book.data;
   const isOpen = b.state === 'Open';
 
+  function showSaveResult(result: SaveBlobResult) {
+    if (result.kind === 'cancelled') {
+      toast.info(saveBlobResultMessage(result));
+      return;
+    }
+    toast.success(saveBlobResultMessage(result));
+  }
+
+  function onDownloadPackage() {
+    packageDownload.mutate(undefined, {
+      onSuccess: async (blob) => {
+        try {
+          showSaveResult(await saveBlobAs({ blob, filename: preservationPackageFilename(b.id) }));
+        } catch (e) {
+          toast.error(e);
+        }
+      },
+      onError: (e) => toast.error(e),
+    });
+  }
+
   return (
     <div className="stack">
       <PageHeader
@@ -68,6 +225,21 @@ export function BookDetailPage() {
             {bookKindLabels[b.kind]}{' '}
             <Badge tone={isOpen ? 'ok' : 'neutral'}>{bookStateLabels[b.state]}</Badge>
           </>
+        }
+        actions={
+          <GateButton
+            perm="book.export"
+            scope={scopeBook(b.id)}
+            type="button"
+            variant="secondary"
+            icon={<Icon.Archive />}
+            disabled={packageDownload.isPending}
+            onClick={onDownloadPackage}
+          >
+            {packageDownload.isPending
+              ? t('books.preservationPackage.downloading')
+              : t('books.preservationPackage.download')}
+          </GateButton>
         }
       />
 
@@ -111,6 +283,8 @@ export function BookDetailPage() {
           ) : null}
         </dl>
       </Card>
+
+      <LegalHoldPanel bookId={b.id} />
 
       <Card
         title={t('books.atas')}

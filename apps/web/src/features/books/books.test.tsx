@@ -1,11 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders, fetchTable } from '../../test/utils';
+
+const saveFileMock = vi.hoisted(() => ({
+  saveBlobAs: vi.fn(),
+  saveBlobResultMessage: vi.fn(
+    (result: { filename: string }) =>
+      `Transferência iniciada pelo navegador: ${result.filename}. A pasta é definida pelo browser.`,
+  ),
+}));
+
+vi.mock('../../desktop/saveFile', () => saveFileMock);
+
+import { BookDetailPage } from './BookDetailPage';
 import { BooksPage } from './BooksPage';
 import { NewBookPage } from './NewBookPage';
 import { OpenBookForm } from './OpenBookForm';
-import { DEFAULT_SETTINGS, type Entity } from '../../api/types';
+import {
+  DEFAULT_SETTINGS,
+  type BookLegalHoldView,
+  type BookView,
+  type Entity,
+} from '../../api/types';
 
 const ENTITY: Entity = {
   id: 'ent-1',
@@ -26,9 +43,72 @@ const ENTITY: Entity = {
   statute: null,
 };
 
+const BOOK: BookView = {
+  id: 'book-1',
+  entity_id: 'ent-1',
+  kind: 'AssembleiaGeral',
+  state: 'Open',
+  purpose: 'Atas da Assembleia',
+  numbering_scheme: 'Sequential',
+  opening_date: '2026-01-01',
+  closing_date: null,
+  closing_reason: null,
+  last_ata_number: 0,
+  predecessor: null,
+  required_signatories_abertura: null,
+  required_signatories_encerramento: null,
+};
+
+interface RecordedCall {
+  url: string;
+  method: string;
+  body: Record<string, unknown> | null;
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}
+
+function bookDetailFetch(extra?: (url: string, method: string) => Response | null) {
+  const calls: RecordedCall[] = [];
+  const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null;
+    calls.push({ url, method, body });
+
+    const custom = extra?.(url, method);
+    if (custom) return Promise.resolve(custom);
+    if (url === '/v1/books/book-1') return Promise.resolve(jsonResponse(BOOK));
+    if (url === '/v1/books/book-1/acts') return Promise.resolve(jsonResponse([]));
+    if (url === '/v1/books/book-1/legal-hold') {
+      return Promise.resolve(
+        jsonResponse({ legal_hold: false, reason: null, actor: null, set_at: null }),
+      );
+    }
+    return Promise.reject(new Error(`no stub for ${url}`));
+  }) as typeof fetch;
+  return { fn, calls };
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  saveFileMock.saveBlobAs.mockReset();
+  saveFileMock.saveBlobResultMessage.mockClear();
 });
 
 describe('BooksPage', () => {
@@ -40,6 +120,145 @@ describe('BooksPage', () => {
     expect(abrir.getAttribute('href')).toBe('/livros/novo');
     // No inline open-book form on the list page.
     expect(screen.queryByLabelText('Tipo de livro')).toBeNull();
+  });
+});
+
+describe('BookDetailPage — preservation package download', () => {
+  function renderAtBook() {
+    renderWithProviders(
+      <Routes>
+        <Route path="/livros/:id" element={<BookDetailPage />} />
+      </Routes>,
+      ['/livros/book-1'],
+    );
+  }
+
+  it('saves the Chancela internal preservation package through the shared helper', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-download',
+      filename: 'chancela-preservation-book-book-1.zip',
+      contentType: 'application/zip',
+      bytes: 8,
+    });
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/book-1/archive/package' && method === 'GET') {
+        return new Response('zipbytes', {
+          status: 200,
+          headers: { 'Content-Type': 'application/zip' },
+        });
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Pacote de preservação Chancela' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as { blob: Blob; filename: string };
+    expect(saved.filename).toBe('chancela-preservation-book-book-1.zip');
+    expect(saved.blob).toBeInstanceOf(Blob);
+    expect(saved.blob.type).toBe('application/zip');
+    expect(await blobText(saved.blob)).toBe('zipbytes');
+    expect(calls).toContainEqual({
+      url: '/v1/books/book-1/archive/package',
+      method: 'GET',
+      body: null,
+    });
+    expect(saveFileMock.saveBlobResultMessage).toHaveBeenCalledWith({
+      kind: 'browser-download',
+      filename: 'chancela-preservation-book-book-1.zip',
+      contentType: 'application/zip',
+      bytes: 8,
+    });
+    expect(screen.queryByText(/DGLAB/i)).toBeNull();
+    expect(
+      await screen.findByText(
+        'Transferência iniciada pelo navegador: chancela-preservation-book-book-1.zip. A pasta é definida pelo browser.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('toasts the server error and does not create a fake package download', async () => {
+    const { fn } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/book-1/archive/package' && method === 'GET') {
+        return jsonResponse({ error: 'sem documentos preservados para empacotar' }, 409);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Pacote de preservação Chancela' }));
+
+    expect(await screen.findByText('sem documentos preservados para empacotar')).toBeTruthy();
+    expect(saveFileMock.saveBlobAs).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookDetailPage — legal hold', () => {
+  function renderAtBook() {
+    renderWithProviders(
+      <Routes>
+        <Route path="/livros/:id" element={<BookDetailPage />} />
+      </Routes>,
+      ['/livros/book-1'],
+    );
+  }
+
+  it('sets and clears a legal hold for the current book', async () => {
+    let hold: BookLegalHoldView = { legal_hold: false, reason: null, actor: null, set_at: null };
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/book-1/legal-hold' && method === 'GET') {
+        return jsonResponse(hold);
+      }
+      if (url === '/v1/books/book-1/legal-hold' && method === 'PUT') {
+        hold = {
+          legal_hold: true,
+          reason: 'litígio pendente',
+          actor: 'operator',
+          set_at: '2026-07-09T10:00:00Z',
+        };
+        return jsonResponse(hold);
+      }
+      if (url === '/v1/books/book-1/legal-hold' && method === 'DELETE') {
+        hold = { legal_hold: false, reason: null, actor: null, set_at: null };
+        return jsonResponse(hold);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByText('Sem retenção legal')).toBeTruthy();
+    expect(screen.getByText(/bloqueia o descarte por regras de retenção/i)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Motivo da retenção legal'), {
+      target: { value: 'litígio pendente' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar retenção legal' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url === '/v1/books/book-1/legal-hold' && c.method === 'PUT')).toBe(
+        true,
+      ),
+    );
+    const put = calls.find((c) => c.url === '/v1/books/book-1/legal-hold' && c.method === 'PUT');
+    expect(put?.body).toMatchObject({ reason: 'litígio pendente' });
+    expect(await screen.findByText('Retenção legal ativa')).toBeTruthy();
+    expect(await screen.findByText('Retenção legal aplicada.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remover retenção' }));
+
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url === '/v1/books/book-1/legal-hold' && c.method === 'DELETE'),
+      ).toBe(true),
+    );
+    expect(await screen.findByText('Retenção legal removida.')).toBeTruthy();
   });
 });
 

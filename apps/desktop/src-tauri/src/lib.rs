@@ -82,6 +82,12 @@ pub fn run() {
     // (see apps/web/src/desktop/relaunch.ts). Registered on all targets (t26).
     builder = builder.plugin(tauri_plugin_process::init());
 
+    // Native save dialog + byte write bridge for generated exports/downloads. The
+    // web helper first asks for a save path, then writes the Blob bytes to that
+    // dialog-selected path; browser builds keep using their download fallback.
+    builder = builder.plugin(tauri_plugin_dialog::init());
+    builder = builder.plugin(tauri_plugin_fs::init());
+
     builder
         .setup(|app| {
             start_embedded_server_if_enabled(app)?;

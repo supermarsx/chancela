@@ -54,6 +54,12 @@ tauri-plugin-opener = "2"
 # to the embedded-server remote origin in capabilities/default.json. Registered on all
 # targets (t26 crash handling).
 tauri-plugin-process = "2"
+# Native save dialogs for generated exports. The web client calls the matching
+# `@tauri-apps/plugin-dialog` API lazily from apps/web/src/desktop/saveFile.ts.
+tauri-plugin-dialog = "2"
+# Writes the bytes selected by the native save dialog. The dialog-selected path is
+# scoped at runtime by Tauri; the capability grants only the write_file command.
+tauri-plugin-fs = "2"
 
 # --- embedded-server feature deps (optional) ---------------------------------
 # Path deps on the workspace crates the browser client already talks to. They

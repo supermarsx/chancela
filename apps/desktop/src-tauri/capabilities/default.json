@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Baseline capability for the Chancela desktop shell. Grants Tauri core defaults plus the FULL window-control permission set the custom (decorationless) title bar drives: drag, minimize, maximize/unmaximize/toggle-maximize, close, position/size, and the double-click-to-maximize the drag region performs; and `opener:open-url` so external http(s) links open in the user's DEFAULT browser (allow-open-url grants the command, allow-default-urls grants the mailto/tel/http(s) URL scope open_url enforces); and `process:allow-restart` so the crash screen's 'Reiniciar aplicação' action can relaunch the process (t26). This is our own trusted first-party UI. The `remote` clause is REQUIRED because the shell serves that UI from an in-process embedded server and navigates the main window to it at http://127.0.0.1:<ephemeral-port> (and, in `tauri dev`, http://localhost:5173) — a REMOTE origin as far as the ACL is concerned. Without it, every `plugin:window|*` and `plugin:opener|*` IPC (start_dragging, minimize, toggle-maximize, close, is-maximized, open_url) is rejected by the ACL, so the title bar cannot drag, its buttons do nothing, and external links cannot reach the browser. Both patterns are loopback-only (unreachable off-device); the granted permissions are window control, external-URL opening, and core defaults only. Additional permissions (fs, dialog, shell, etc.) MUST still be added explicitly as features are built.",
+  "description": "Baseline capability for the Chancela desktop shell. Grants Tauri core defaults plus the FULL window-control permission set the custom (decorationless) title bar drives: drag, minimize, maximize/unmaximize/toggle-maximize, close, position/size, set-always-on-top, and the double-click-to-maximize the drag region performs; `opener:open-url` so external http(s) links open in the user's DEFAULT browser (allow-open-url grants the command, allow-default-urls grants the mailto/tel/http(s) URL scope open_url enforces); `process:allow-restart` so the crash screen's 'Reiniciar aplicação' action can relaunch the process (t26); and the export save bridge (`dialog:allow-save` + `fs:allow-write-file`) so generated files are written only after the user chooses a path in the native save dialog. This is our own trusted first-party UI. The `remote` clause is REQUIRED because the shell serves that UI from an in-process embedded server and navigates the main window to it at http://127.0.0.1:<ephemeral-port> (and, in `tauri dev`, http://localhost:5173) — a REMOTE origin as far as the ACL is concerned. Without it, every `plugin:window|*`, `plugin:opener|*`, `plugin:dialog|*`, `plugin:fs|*` and process IPC used here is rejected by the ACL. Both patterns are loopback-only (unreachable off-device); the granted file access is limited to the path scoped by the save dialog.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*", "http://localhost:*"]
@@ -21,8 +21,11 @@
     "core:window:allow-set-position",
     "core:window:allow-set-size",
     "core:window:allow-set-focus",
+    "core:window:allow-set-always-on-top",
     "opener:allow-open-url",
     "opener:allow-default-urls",
-    "process:allow-restart"
+    "process:allow-restart",
+    "dialog:allow-save",
+    "fs:allow-write-file"
   ]
 }

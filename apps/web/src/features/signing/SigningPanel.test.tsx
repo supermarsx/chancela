@@ -8,7 +8,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { SigningPanel } from './SigningPanel';
 import { renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
-import type { ActView, SignatureStatusView } from '../../api/types';
+import type { ActView, SignatureEvidenceStatus, SignatureStatusView } from '../../api/types';
 
 const sealedAct: ActView = {
   id: 'act-1',
@@ -40,6 +40,11 @@ const unsignedStatus: SignatureStatusView = {
   status: 'unsigned',
   finalization: 'finalizado',
   require_qualified_for_seal: false,
+  evidence: evidence('Unsigned', false, [
+    'not_configured',
+    'lt_not_implemented',
+    'lta_not_implemented',
+  ]),
 };
 
 const signedStatus: SignatureStatusView = {
@@ -57,12 +62,33 @@ const signedStatus: SignatureStatusView = {
     timestamp_token: false,
     download: '/v1/acts/act-1/document/signed',
   },
+  evidence: evidence('B-B', false, ['not_configured', 'lt_not_implemented', 'lta_not_implemented']),
 };
+
+function evidence(
+  current_level: string,
+  timestamp_evidence_present: boolean,
+  long_term_status: SignatureEvidenceStatus['long_term_status'],
+): SignatureEvidenceStatus {
+  return {
+    current_level,
+    timestamp_evidence_present,
+    dss_revocation_evidence_present: false,
+    dss_revocation_evidence_status: 'unsupported',
+    long_term_status,
+    status_scope: 'technical_evidence_only',
+  };
+}
 
 function json(body: unknown, status = 200): Promise<Response> {
   return Promise.resolve(
     new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }),
   );
+}
+
+function emptyInviteList(url: string, method = 'GET'): Promise<Response> | null {
+  if (url.includes('/signature/external-invites') && method === 'GET') return json([]);
+  return null;
 }
 
 afterEach(() => {
@@ -113,7 +139,7 @@ describe('SigningPanel — two-phase flow', () => {
           finalization: 'finalizado_qualificado',
         });
       }
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
@@ -165,7 +191,7 @@ describe('SigningPanel — two-phase flow', () => {
         }
         return json({ error: 'a Chave Móvel Digital recusou o pedido: OTP inválido' }, 422);
       }
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     renderWithProviders(<SigningPanel act={sealedAct} />);
@@ -216,22 +242,132 @@ describe('SigningPanel — signed status + download', () => {
           new Response(pdf, { status: 200, headers: { 'Content-Type': 'application/pdf' } }),
         );
       }
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
-    // jsdom lacks URL.createObjectURL — stub it for the download trigger.
+    // jsdom lacks URL.createObjectURL — stub it for the browser-save fallback.
     const createUrl = vi.fn(() => 'blob:signed');
     const revokeUrl = vi.fn();
     vi.stubGlobal(
       'URL',
       Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: revokeUrl }),
     );
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
 
     renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
 
     expect(await screen.findByText('CN=Amélia Marques,O=Encosto Estratégico Lda')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Descarregar PDF assinado' }));
     await waitFor(() => expect(createUrl).toHaveBeenCalled());
+    expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it('shows technical evidence status without implying B-LT/B-LTA support', async () => {
+    const timestampedStatus: SignatureStatusView = {
+      ...signedStatus,
+      signed: { ...signedStatus.signed!, timestamp_token: true },
+      evidence: evidence('B-T', true, ['timestamped', 'lt_not_implemented', 'lta_not_implemented']),
+    };
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature')) return json(timestampedStatus);
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    expect(await screen.findByText('Evidência técnica da assinatura')).toBeTruthy();
+    expect(screen.getByText('PAdES B-T')).toBeTruthy();
+    expect(screen.getByText('presente')).toBeTruthy();
+    expect(screen.getByText(/B-LT não implementado/)).toBeTruthy();
+    expect(screen.getByText(/B-LTA não implementado/)).toBeTruthy();
+    expect(screen.getByText(/Apenas evidência técnica/)).toBeTruthy();
+  });
+});
+
+describe('SigningPanel — external signer invites', () => {
+  it('lists invites, creates one with a one-time token, and revokes it', async () => {
+    const createdInvite = {
+      id: 'invite-1',
+      act_id: 'act-1',
+      recipient_name: 'Bruno Dias',
+      recipient_email: 'bruno@example.test',
+      provider_hint: 'manual-envelope',
+      purpose: 'Assinar a ata como administrador externo',
+      status: 'pending',
+      workflow: 'tracking_only',
+      token_hint: 'cxi_abcd...123456',
+      created_at: '2026-07-06T10:00:00Z',
+      created_by: 'amelia.marques',
+      expires_at: '2026-07-08T10:00:00Z',
+    };
+    let invites: unknown[] = [];
+    const bodies: unknown[] = [];
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/signature/external-invites') && method === 'GET') {
+        return json(invites);
+      }
+      if (url.endsWith('/signature/external-invites') && method === 'POST') {
+        bodies.push(JSON.parse(String(init?.body)));
+        invites = [createdInvite];
+        return json({ invite: createdInvite, token: 'cxi_fulltoken_1234567890' }, 201);
+      }
+      if (url.endsWith('/signature/external-invites/invite-1/revoke') && method === 'POST') {
+        invites = [
+          {
+            ...createdInvite,
+            status: 'revoked',
+            revoked_at: '2026-07-06T10:10:00Z',
+            revoked_by: 'amelia.marques',
+          },
+        ];
+        return json(invites[0]);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    expect(await screen.findByText('Convites de assinatura externa')).toBeTruthy();
+    expect(await screen.findByText('Sem convites externos')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Criar convite' }));
+    fireEvent.change(screen.getByLabelText('Nome do signatário'), {
+      target: { value: 'Bruno Dias' },
+    });
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'bruno@example.test' },
+    });
+    fireEvent.change(screen.getByLabelText('Prestador ou referência'), {
+      target: { value: 'manual-envelope' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar convite' }));
+
+    expect(await screen.findByText('Token do convite emitido uma vez')).toBeTruthy();
+    expect(screen.getByText('cxi_fulltoken_1234567890')).toBeTruthy();
+    expect(screen.getByText(/assinatura-externa\?token=cxi_fulltoken_1234567890/)).toBeTruthy();
+    expect(bodies[0]).toMatchObject({
+      recipient_name: 'Bruno Dias',
+      recipient_email: 'bruno@example.test',
+      provider_hint: 'manual-envelope',
+      purpose: 'Assinar a ata como signatário externo',
+    });
+
+    expect(await screen.findByText('Bruno Dias')).toBeTruthy();
+    expect(screen.getByText('Acompanhamento apenas')).toBeTruthy();
+    expect(screen.getByText('cxi_abcd...123456')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revogar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar revogação' }));
+
+    await waitFor(() => expect(screen.getByText('Revogado')).toBeTruthy());
   });
 });
 
@@ -252,6 +388,7 @@ const ccSignedStatus: SignatureStatusView = {
     timestamp_token: false,
     download: '/v1/acts/act-1/document/signed',
   },
+  evidence: evidence('B-B', false, ['not_configured', 'lt_not_implemented', 'lta_not_implemented']),
 };
 
 describe('SigningPanel — Cartão de Cidadão', () => {
@@ -277,7 +414,7 @@ describe('SigningPanel — Cartão de Cidadão', () => {
       if (url.endsWith('/signature') && method === 'GET') {
         return json(signed ? ccSignedStatus : unsignedStatus);
       }
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
@@ -309,7 +446,7 @@ describe('SigningPanel — Cartão de Cidadão', () => {
         );
       }
       if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     renderWithProviders(<SigningPanel act={sealedAct} />);
@@ -336,7 +473,7 @@ describe('SigningPanel — Cartão de Cidadão', () => {
         );
       }
       if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     renderWithProviders(<SigningPanel act={sealedAct} />);
@@ -355,7 +492,7 @@ describe('SigningPanel — Cartão de Cidadão', () => {
     vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.endsWith('/signature')) return json(unsignedStatus);
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     // A principal WITHOUT signing.perform: the CC action is present but inert (aria-disabled).
@@ -390,6 +527,7 @@ const cscSignedStatus: SignatureStatusView = {
     timestamp_token: false,
     download: '/v1/acts/act-1/document/signed',
   },
+  evidence: evidence('B-B', false, ['not_configured', 'lt_not_implemented', 'lta_not_implemented']),
 };
 
 /** A provider-list row builder (matches `SignatureProviderView`). */
@@ -409,7 +547,7 @@ describe('SigningPanel — CSC QTSP providers', () => {
         ]);
       }
       if (url.endsWith('/signature')) return json(unsignedStatus);
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     renderWithProviders(<SigningPanel act={sealedAct} />);
@@ -461,7 +599,7 @@ describe('SigningPanel — CSC QTSP providers', () => {
       if (url.endsWith('/signature') && method === 'GET') {
         return json(signed ? cscSignedStatus : unsignedStatus);
       }
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
@@ -497,7 +635,7 @@ describe('SigningPanel — CSC QTSP providers', () => {
         return json([provider('multicert', 'Multicert', 'QualifiedCertificate', true)]);
       }
       if (url.endsWith('/signature')) return json(unsignedStatus);
-      return Promise.reject(new Error(`no stub for ${url}`));
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
     }) as typeof fetch);
 
     renderWithProviders(
