@@ -140,12 +140,47 @@ function recordingFetch(responder: (r: Recorded) => Response): {
   return { fn, calls };
 }
 
+function deferredResponse(): {
+  fn: typeof fetch;
+  resolve: (response: Response) => void;
+} {
+  let resolvePending!: (response: Response) => void;
+  const pending = new Promise<Response>((r) => {
+    resolvePending = r;
+  });
+  const fn = (() => pending) as typeof fetch;
+  return { fn, resolve: (response) => resolvePending(response) };
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
 describe('ImportFromRegistryForm', () => {
+  it('renders a clear initial import form with the expected controls', () => {
+    renderWithProviders(<ImportFromRegistryForm />, ['/entidades/importar']);
+
+    expect(screen.getByText('Consulta')).toBeTruthy();
+    expect(screen.getByText('Aguardando código')).toBeTruthy();
+    expect(screen.getByText(/Crie a entidade a partir da certidão permanente/)).toBeTruthy();
+
+    const codeInput = screen.getByLabelText('Código da certidão permanente') as HTMLInputElement;
+    expect(codeInput.type).toBe('password');
+    expect(screen.getByRole('button', { name: 'Mostrar código' })).toBeTruthy();
+    expect(screen.getByLabelText('E-mail (opcional)')).toBeTruthy();
+
+    const submit = screen.getByRole('button', { name: /importar do registo/i });
+    expect(submit.hasAttribute('disabled')).toBe(true);
+
+    fireEvent.change(codeInput, { target: { value: FULL_CODE } });
+
+    expect(screen.getByText('Pronto')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: /importar do registo/i }).hasAttribute('disabled'),
+    ).toBe(false);
+  });
+
   it('imports by code and navigates to the newly created entity', async () => {
     const report: RegistryImportReport = {
       entity: ENTITY,
@@ -227,6 +262,37 @@ describe('ImportFromRegistryForm', () => {
 });
 
 describe('RegistryImportPanel', () => {
+  it('shows a provenance summary and next action after a successful enrichment', async () => {
+    const report: RegistryImportReport = {
+      entity: { ...ENTITY, id: 'ent-1' },
+      extract: EXTRACT,
+      applied: ['name', 'seat'],
+      conflicts: [],
+      warnings: [],
+    };
+    const { fn } = recordingFetch((r) =>
+      r.url.includes('/registry/import') ? jsonResponse(report) : jsonResponse([]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entidades/ent-1/importar']);
+
+    fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
+      target: { value: FULL_CODE },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /consultar e importar/i }));
+
+    expect(await screen.findByText('Resumo da importação')).toBeTruthy();
+    expect(screen.getByText('Proveniência')).toBeTruthy();
+    expect(screen.getByText(MASKED_CODE)).toBeTruthy();
+    expect(screen.getByText(EXTRACT.provenance.source_url)).toBeTruthy();
+    expect(screen.getByText('Campos atualizados')).toBeTruthy();
+    expect(screen.getByText('Próximo passo')).toBeTruthy();
+
+    const back = screen.getByRole('link', { name: /voltar à entidade/i }) as HTMLAnchorElement;
+    expect(back.getAttribute('href')).toBe('/entidades/ent-1');
+  });
+
   it('shows the conflict table and re-submits with overwrite:true on confirm', async () => {
     const withConflict: RegistryImportReport = {
       entity: { ...ENTITY, id: 'ent-1', name: 'Nome Original, Lda.' },
@@ -235,7 +301,7 @@ describe('RegistryImportPanel', () => {
       conflicts: [
         { field: 'name', current: 'Nome Original, Lda.', incoming: 'Encosto Estratégico, Lda.' },
       ],
-      warnings: [],
+      warnings: ['certidão expirada em 2025-01-01'],
     };
     const resolved: RegistryImportReport = {
       entity: ENTITY,
@@ -262,8 +328,11 @@ describe('RegistryImportPanel', () => {
 
     // The conflict table renders current vs incoming.
     expect(await screen.findByText('Divergências encontradas')).toBeTruthy();
+    expect(screen.getByText('Avisos da importação')).toBeTruthy();
+    expect(screen.getByText('certidão expirada em 2025-01-01')).toBeTruthy();
+    expect(screen.getByText('Requer confirmação')).toBeTruthy();
     expect(screen.getByText('Nome Original, Lda.')).toBeTruthy();
-    expect(screen.getByText('Encosto Estratégico, Lda.')).toBeTruthy();
+    expect(screen.getAllByText('Encosto Estratégico, Lda.').length).toBeGreaterThanOrEqual(1);
     // The field is shown by its PT-PT label.
     expect(screen.getByText('Denominação')).toBeTruthy();
 
@@ -286,6 +355,42 @@ describe('RegistryImportPanel', () => {
     expect(
       (await screen.findAllByText('Entidade atualizada a partir da certidão.')).length,
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it('keeps the loading and error state usable', async () => {
+    const deferred = deferredResponse();
+    vi.stubGlobal('fetch', deferred.fn);
+
+    renderWithProviders(<RegistryImportPanel entityId="ent-1" />, ['/entidades/ent-1/importar']);
+
+    const codeInput = screen.getByLabelText('Código da certidão permanente') as HTMLInputElement;
+    fireEvent.change(codeInput, { target: { value: FULL_CODE } });
+    fireEvent.click(screen.getByRole('button', { name: /consultar e importar/i }));
+
+    const status = await screen.findByRole('status');
+    expect(status.textContent).toContain('A consultar');
+    expect(
+      screen.getByRole('button', { name: /a consultar o registo/i }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(codeInput.value).toBe(FULL_CODE);
+
+    deferred.resolve(jsonResponse({ error: 'registry upstream failure: timeout' }, 502));
+
+    expect(await screen.findByText('Registo indisponível')).toBeTruthy();
+    expect(screen.getByText('Ação necessária')).toBeTruthy();
+    expect((screen.getByLabelText('Código da certidão permanente') as HTMLInputElement).value).toBe(
+      FULL_CODE,
+    );
+
+    fireEvent.change(screen.getByLabelText('Código da certidão permanente'), {
+      target: { value: '1111-2222-3333' },
+    });
+    expect((screen.getByLabelText('Código da certidão permanente') as HTMLInputElement).value).toBe(
+      '1111-2222-3333',
+    );
+    expect(
+      screen.getByRole('button', { name: /consultar e importar/i }).hasAttribute('disabled'),
+    ).toBe(false);
   });
 });
 

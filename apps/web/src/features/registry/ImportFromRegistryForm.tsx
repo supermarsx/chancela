@@ -11,10 +11,52 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useImportFromRegistry } from '../../api/hooks';
-import { Button, Card, Field, Icon, Input, useToast } from '../../ui';
+import { Badge, Button, Card, Field, Icon, Input, useToast } from '../../ui';
 import { useT } from '../../i18n';
 import { AccessCodeField } from './AccessCodeField';
 import { RegistryErrorNote } from './RegistryErrorNote';
+
+function ImportStatus({
+  pending,
+  hasError,
+  hasCode,
+}: {
+  pending: boolean;
+  hasError: boolean;
+  hasCode: boolean;
+}) {
+  if (pending) {
+    return (
+      <aside className="registry-import-state registry-import-state--active" role="status">
+        <p className="field__label">Estado</p>
+        <Badge tone="accent">A consultar</Badge>
+        <p>A certidão está a ser consultada. Mantenha esta página aberta.</p>
+      </aside>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <aside className="registry-import-state registry-import-state--error">
+        <p className="field__label">Estado</p>
+        <Badge tone="error">Ação necessária</Badge>
+        <p>Corrija o código ou e-mail e tente novamente.</p>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="registry-import-state">
+      <p className="field__label">Estado</p>
+      <Badge tone={hasCode ? 'ok' : 'neutral'}>{hasCode ? 'Pronto' : 'Aguardando código'}</Badge>
+      <p>
+        {hasCode
+          ? 'Pronto para consultar a certidão e criar a entidade.'
+          : 'Introduza o código da certidão permanente. O e-mail só é necessário quando pedido pelo registo.'}
+      </p>
+    </aside>
+  );
+}
 
 export function ImportFromRegistryForm() {
   const t = useT();
@@ -23,9 +65,11 @@ export function ImportFromRegistryForm() {
   const importFromRegistry = useImportFromRegistry();
   const [code, setCode] = useState('');
   const [email, setEmail] = useState('');
+  const hasCode = code.trim() !== '';
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!hasCode || importFromRegistry.isPending) return;
     importFromRegistry.mutate(
       { code, email: email.trim() || undefined },
       {
@@ -44,37 +88,51 @@ export function ImportFromRegistryForm() {
 
   return (
     <Card title={t('registry.importCard')}>
-      <form className="form" onSubmit={onSubmit}>
-        <p className="muted">{t('registry.import.intro')}</p>
-        <AccessCodeField id="import-code" value={code} onChange={setCode} />
-        <Field
-          label={t('registry.email.label')}
-          htmlFor="import-email"
-          hint={t('registry.email.hint')}
-        >
-          <Input
-            id="import-email"
-            type="email"
-            value={email}
-            autoComplete="off"
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={t('registry.email.placeholder')}
-          />
-        </Field>
-        {importFromRegistry.error ? <RegistryErrorNote error={importFromRegistry.error} /> : null}
-        <div className="form__actions">
-          <Button
-            type="submit"
-            variant="primary"
-            icon={<Icon.Tray />}
-            disabled={importFromRegistry.isPending || code.trim() === ''}
-          >
-            {importFromRegistry.isPending
-              ? t('registry.import.consulting')
-              : t('registry.import.submit')}
-          </Button>
+      <div className="registry-import-flow">
+        <div className="registry-import-flow__main">
+          <div className="registry-import-copy">
+            <p className="registry-import-copy__eyebrow">Consulta</p>
+            <p className="muted">{t('registry.import.intro')}</p>
+          </div>
+          <form className="form registry-import-form" onSubmit={onSubmit}>
+            <AccessCodeField id="import-code" value={code} onChange={setCode} />
+            <Field
+              label={t('registry.email.label')}
+              htmlFor="import-email"
+              hint={t('registry.email.hint')}
+            >
+              <Input
+                id="import-email"
+                type="email"
+                value={email}
+                autoComplete="off"
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t('registry.email.placeholder')}
+              />
+            </Field>
+            {importFromRegistry.error ? (
+              <RegistryErrorNote error={importFromRegistry.error} />
+            ) : null}
+            <div className="form__actions">
+              <Button
+                type="submit"
+                variant="primary"
+                icon={<Icon.Tray />}
+                disabled={importFromRegistry.isPending || !hasCode}
+              >
+                {importFromRegistry.isPending
+                  ? t('registry.import.consulting')
+                  : t('registry.import.submit')}
+              </Button>
+            </div>
+          </form>
         </div>
-      </form>
+        <ImportStatus
+          pending={importFromRegistry.isPending}
+          hasError={Boolean(importFromRegistry.error)}
+          hasCode={hasCode}
+        />
+      </div>
     </Card>
   );
 }

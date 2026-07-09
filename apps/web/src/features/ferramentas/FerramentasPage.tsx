@@ -1,14 +1,16 @@
 /**
  * Ferramentas (t22-web item 3) — the tools surface reached from the fixed tab bar.
  *
- * A sub-navigation (segmented control) switches between two consultation surfaces:
+ * A sub-navigation (segmented control) switches between three consultation surfaces:
  *  - **Catálogo CAE** (default) — the CAE explorer (search + revision switch + hierarchy
  *    drill-down) and the catalog's state + "Atualizar catálogo" refresh, relocated here
  *    from the former standalone /cae page, which now redirects in.
  *  - **Legislação** (t24) — a curated law shelf: the diplomas that ground the product,
  *    each with a faithful extract, official links and a last-reviewed date.
+ *  - **Lista de confiança** — the read-only TSL trust catalog/status surface for
+ *    checking the parsed scheme, provider and service trust metadata.
  *
- * Each tool is a deep-linkable sub-tab: the active one lives in the URL (`?tool=legislacao`);
+ * Each tool is a deep-linkable sub-tab: the active one lives in the URL (`?tool=...`);
  * its absence means the CAE surface, so `/cae` deep links and the CAE search flow open
  * unchanged. The CAE explorer's own `?code=`/`?rev=` params are independent and preserved
  * across switches. The `SECTIONS` list is the single extension point for future tools.
@@ -21,19 +23,26 @@ import { Icon, PageHeader } from '../../ui';
 import { CaeExplorer } from '../cae/CaeExplorer';
 import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
 import { LegislacaoPage } from '../legislacao/LegislacaoPage';
+import { TrustCatalogPage } from './TrustCatalogPage';
 
-type FerramentasSection = 'cae' | 'legislacao';
+type FerramentasSection = 'cae' | 'legislacao' | 'trust';
 
 const SECTIONS: { id: FerramentasSection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'cae', label: 'tools.section.cae', icon: <Icon.Layers /> },
   { id: 'legislacao', label: 'tools.section.legislacao', icon: <Icon.Scale /> },
+  { id: 'trust', label: 'tools.section.trust', icon: <Icon.Seal /> },
 ];
 
 export function FerramentasPage() {
   const t = useT();
   const locale = useActiveLocale();
   const [params, setParams] = useSearchParams();
-  const section: FerramentasSection = params.get('tool') === 'legislacao' ? 'legislacao' : 'cae';
+  const section: FerramentasSection =
+    params.get('tool') === 'legislacao'
+      ? 'legislacao'
+      : params.get('tool') === 'trust'
+        ? 'trust'
+        : 'cae';
 
   // A gilt indicator that glides to the active sub-tab (consistent with the top bar's
   // active-tab indicator). Measured from the active button so it works with the two
@@ -43,6 +52,7 @@ export function FerramentasPage() {
   const btnRefs = useRef<Record<FerramentasSection, HTMLButtonElement | null>>({
     cae: null,
     legislacao: null,
+    trust: null,
   });
   const [indicator, setIndicator] = useState<{
     left: number;
@@ -143,7 +153,9 @@ export function FerramentasPage() {
           the CAE explorer's own `?code=`/`?rev=` and Legislação's `?q=` param changes do
           NOT re-key (no distracting replay). Reduced-motion collapses the animation. */}
       <div className="route-transition" key={section} data-anim-key={section}>
-        {section === 'legislacao' ? (
+        {section === 'trust' ? (
+          <TrustCatalogPage />
+        ) : section === 'legislacao' ? (
           <LegislacaoPage />
         ) : (
           <div className="stack">
