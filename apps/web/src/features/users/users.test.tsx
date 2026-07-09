@@ -2,6 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
+
+const saveFileMock = vi.hoisted(() => ({
+  saveBlobAs: vi.fn(),
+  saveBlobResultMessage: vi.fn(
+    (result: { filename: string }) =>
+      `Transferência iniciada pelo navegador: ${result.filename}. A pasta é definida pelo browser.`,
+  ),
+}));
+
+vi.mock('../../desktop/saveFile', () => saveFileMock);
+
 import { LegacyNewUserRedirect, LegacyUserRedirect, LegacyUsersRedirect } from '../../app/router';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import { UsersList } from './UserListPage';
@@ -33,6 +44,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
   });
 }
 
@@ -72,6 +92,8 @@ function recordingFetch(responder: (r: Recorded) => Response): {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  saveFileMock.saveBlobAs.mockReset();
+  saveFileMock.saveBlobResultMessage.mockClear();
 });
 
 describe('username validation', () => {
@@ -339,21 +361,19 @@ describe('EditUserPanel (Configurações → Utilizadores → user) — identity
   });
 
   it('downloads the DSR/privacy JSON export without rendering its contents', async () => {
-    const createUrl = vi.fn().mockReturnValue('blob:dsr');
-    const revokeUrl = vi.fn();
-    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
-    const clickedDownloads: string[] = [];
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
-      this: HTMLAnchorElement,
-    ) {
-      clickedDownloads.push(this.download);
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-download',
+      filename: 'chancela-dsr-user-amelia.marques.json',
+      contentType: 'application/json',
+      bytes: 82,
     });
+    const exportPayload = {
+      user: { id: 'u1', username: 'amelia.marques' },
+      audit_marker: 'opaque-internal-value',
+    };
     const { fn, calls } = recordingFetch((r) => {
       if (r.url.endsWith('/v1/privacy/users/u1/export')) {
-        return jsonResponse({
-          user: { id: 'u1', username: 'amelia.marques' },
-          audit_marker: 'opaque-internal-value',
-        });
+        return jsonResponse(exportPayload);
       }
       if (r.url.endsWith('/v1/privacy/users/u1/dsr-requests')) return jsonResponse([]);
       if (r.url.endsWith('/v1/users/u1')) return jsonResponse(AMELIA);
@@ -365,17 +385,36 @@ describe('EditUserPanel (Configurações → Utilizadores → user) — identity
 
     fireEvent.click(await screen.findByRole('button', { name: 'Descarregar exportação DSR' }));
 
-    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(1));
-    expect(clickSpy).toHaveBeenCalled();
-    expect(revokeUrl).toHaveBeenCalledWith('blob:dsr');
-    expect(clickedDownloads).toEqual(['chancela-dsr-user-amelia.marques.json']);
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+      filters: { name: string; extensions: string[] }[];
+    };
+    expect(saved.filename).toBe('chancela-dsr-user-amelia.marques.json');
+    expect(saved.blob).toBeInstanceOf(Blob);
+    expect(saved.blob.type).toBe('application/json');
+    expect(saved.contentType).toBe('application/json');
+    expect(saved.filters).toEqual([{ name: 'JSON', extensions: ['json'] }]);
+    expect(await blobText(saved.blob)).toBe(JSON.stringify(exportPayload, null, 2));
     expect(calls).toContainEqual({
       url: '/v1/privacy/users/u1/export',
       method: 'GET',
       body: null,
     });
     expect(screen.queryByText('opaque-internal-value')).toBeNull();
-    expect(await screen.findByText('Exportação DSR/privacy descarregada.')).toBeTruthy();
+    expect(saveFileMock.saveBlobResultMessage).toHaveBeenCalledWith({
+      kind: 'browser-download',
+      filename: 'chancela-dsr-user-amelia.marques.json',
+      contentType: 'application/json',
+      bytes: 82,
+    });
+    expect(
+      await screen.findByText(
+        'Transferência iniciada pelo navegador: chancela-dsr-user-amelia.marques.json. A pasta é definida pelo browser.',
+      ),
+    ).toBeTruthy();
   });
 
   it('lists, creates, and completes DSR lifecycle requests', async () => {

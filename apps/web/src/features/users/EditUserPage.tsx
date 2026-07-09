@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   useCompleteUserDsrRequest,
   useCreateUserDsrRequest,
@@ -58,16 +59,11 @@ import {
   type UserView,
 } from '../../api/types';
 
-function triggerJsonDownload(data: unknown, filename: string) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+const DSR_EXPORT_CONTENT_TYPE = 'application/json';
+const DSR_EXPORT_FILTERS = [{ name: 'JSON', extensions: ['json'] }];
+
+function dsrExportBlob(data: unknown): Blob {
+  return new Blob([JSON.stringify(data, null, 2)], { type: DSR_EXPORT_CONTENT_TYPE });
 }
 
 function safeFilenamePart(value: string): string {
@@ -197,11 +193,30 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
   const completeRequest = useCompleteUserDsrRequest(user.id);
   const [requestType, setRequestType] = useState<DsrRequestType>('export');
 
+  function showSaveResult(result: SaveBlobResult) {
+    if (result.kind === 'cancelled') {
+      toast.info(saveBlobResultMessage(result));
+      return;
+    }
+    toast.success(saveBlobResultMessage(result));
+  }
+
   function download() {
     dsrExport.mutate(undefined, {
-      onSuccess: (data) => {
-        triggerJsonDownload(data, `chancela-dsr-user-${safeFilenamePart(user.username)}.json`);
-        toast.success('Exportação DSR/privacy descarregada.');
+      onSuccess: async (data) => {
+        try {
+          const filename = `chancela-dsr-user-${safeFilenamePart(user.username)}.json`;
+          showSaveResult(
+            await saveBlobAs({
+              blob: dsrExportBlob(data),
+              filename,
+              contentType: DSR_EXPORT_CONTENT_TYPE,
+              filters: DSR_EXPORT_FILTERS,
+            }),
+          );
+        } catch (e) {
+          toast.error(e);
+        }
       },
       onError: (e) => toast.error(e),
     });
