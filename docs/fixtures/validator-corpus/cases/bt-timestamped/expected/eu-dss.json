@@ -17,6 +17,12 @@
     "sha256": null,
     "bytes": null
   },
+  "evidence_scope": {
+    "kind": "external_validator_report",
+    "technical_only": true,
+    "legal_validity_assessment": "not_assessed",
+    "claim": "technical_validator_evidence_only"
+  },
   "expected": {
     "overall_indication": "TOTAL_PASSED",
     "sub_indication": null,
@@ -27,7 +33,26 @@
     "doc_time_stamp_present": false,
     "tamper_detected": false
   },
+  "report": {
+    "path": null,
+    "sha256": null,
+    "bytes": null,
+    "captured_at": null,
+    "content_type": null,
+    "source_filename": null,
+    "preserved_at": null,
+    "preserved_by": null,
+    "preservation_action": "not_recorded"
+  },
   "observed": null,
+  "status_transition": {
+    "from": null,
+    "to": "pending_operator_run",
+    "at": null,
+    "by": null,
+    "reason": "awaiting_operator_run",
+    "command": null
+  },
   "notes": [
     "Pending operator run; expected fields are the assertion target, not a recorded validator result."
   ]

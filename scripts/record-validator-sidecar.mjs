@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { assertSidecar, readJson, validateCorpus } from "./validate-validator-corpus.mjs";
@@ -50,6 +50,7 @@ export function recordValidatorSidecar({
 
   const sidecarPath = join(root, sidecarRelPath);
   const sidecar = readJson(sidecarPath);
+  const previousStatus = sidecar.validator.run_status;
   if (sidecar.validator.run_status === "recorded" && !force) {
     throw new Error(`${caseId}/${family} is already recorded; pass --force to replace the sidecar metadata`);
   }
@@ -62,19 +63,20 @@ export function recordValidatorSidecar({
   const sidecarDir = dirname(sidecarPath);
   const reportsDir = join(dirname(sidecarDir), "reports");
   mkdirSync(reportsDir, { recursive: true });
-  const reportPath = stageReport(sourceReportPath, reportsDir, family);
+  const { reportPath, preservationAction } = stageReport(sourceReportPath, reportsDir, family);
   const reportRelPath = relative(sidecarDir, reportPath).replaceAll("\\", "/");
 
   const documentPath = normalize(join(sidecarDir, sidecar.document.path));
   const documentBytes = readFileSync(documentPath);
   const reportBytes = readFileSync(reportPath);
+  const normalizedRunAt = normalizeTimestamp(runAt);
 
   sidecar.validator = {
     ...sidecar.validator,
     name: tool,
     version,
     run_status: "recorded",
-    run_at: normalizeTimestamp(runAt),
+    run_at: normalizedRunAt,
     operator,
     command,
     environment,
@@ -85,19 +87,33 @@ export function recordValidatorSidecar({
     sha256: sha256(documentBytes),
     bytes: documentBytes.length,
   };
+  sidecar.evidence_scope = evidenceScope();
   sidecar.report = {
     path: reportRelPath,
     sha256: sha256(reportBytes),
     bytes: reportBytes.length,
-    captured_at: normalizeTimestamp(runAt),
+    captured_at: normalizedRunAt,
+    content_type: inferContentType(reportPath),
+    source_filename: basename(sourceReportPath),
+    preserved_at: normalizedRunAt,
+    preserved_by: operator,
+    preservation_action: preservationAction,
   };
-  sidecar.observed = observed ?? {
-    transcription_status: "raw_report_only",
-    summary: "Raw external validator report recorded; no structured pass/fail fields were transcribed.",
+  sidecar.observed = normalizeObserved(observed);
+  sidecar.status_transition = {
+    from: previousStatus,
+    to: "recorded",
+    at: normalizedRunAt,
+    by: operator,
+    reason:
+      previousStatus === "recorded"
+        ? "operator_replaced_raw_validator_report"
+        : "operator_recorded_raw_validator_report",
+    command,
   };
   sidecar.notes = [
     `Recorded from raw ${family} validator report at ${reportRelPath}.`,
-    "Do not treat expected fields as observed results; inspect observed and the raw report.",
+    "This sidecar preserves technical external-validator evidence only; it is not a legal validity decision.",
   ];
 
   assertSidecar({ fixtureCase, family, sidecar, sidecarPath, corpusRoot: root });
@@ -106,18 +122,64 @@ export function recordValidatorSidecar({
   return { sidecarPath, reportPath, sidecar };
 }
 
+export function evidenceScope() {
+  return {
+    kind: "external_validator_report",
+    technical_only: true,
+    legal_validity_assessment: "not_assessed",
+    claim: "technical_validator_evidence_only",
+  };
+}
+
+function normalizeObserved(observed) {
+  if (observed === undefined) {
+    return {
+      transcription_status: "raw_report_only",
+      legal_validity_assessment: "not_assessed",
+      summary: "Raw external validator report preserved; structured validator findings were not transcribed.",
+      findings: null,
+    };
+  }
+
+  return {
+    transcription_status: "operator_transcribed",
+    legal_validity_assessment: "not_assessed",
+    summary: "Structured technical findings were transcribed by the operator from the raw validator report.",
+    findings: observed,
+  };
+}
+
 function stageReport(sourceReportPath, reportsDir, family) {
   const sourceResolved = resolve(sourceReportPath);
   const reportsResolved = resolve(reportsDir);
   if (sourceResolved.startsWith(`${reportsResolved}\\`) || sourceResolved.startsWith(`${reportsResolved}/`)) {
-    return sourceResolved;
+    return { reportPath: sourceResolved, preservationAction: "already_in_corpus" };
   }
 
   const destination = join(reportsDir, `${family}-${basename(sourceReportPath)}`);
   if (normalize(sourceResolved) !== normalize(destination)) {
     copyFileSync(sourceReportPath, destination);
   }
-  return destination;
+  return { reportPath: destination, preservationAction: "copied_to_corpus" };
+}
+
+function inferContentType(path) {
+  switch (extname(path).toLowerCase()) {
+    case ".xml":
+      return "application/xml";
+    case ".json":
+      return "application/json";
+    case ".html":
+    case ".htm":
+      return "text/html";
+    case ".pdf":
+      return "application/pdf";
+    case ".txt":
+    case ".log":
+      return "text/plain";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function parseArgs(argv) {

@@ -8,7 +8,7 @@ been run until an operator runs the named validator and updates the sidecar.
 ## Layout
 
 - `manifest.json` is the corpus index and the source of truth for case ids,
-  generated PDF locations, hashes, sizes, validator sidecars, and pending
+  generated PDF locations, hashes, sizes, validator sidecars, and
   external-validator status.
 - `cases/<case-id>/input/` contains the generated or tampered PDF.
 - `cases/<case-id>/expected/` contains one expected-output sidecar per external
@@ -26,9 +26,11 @@ The manifest commits these generated PDFs:
 - `/DocTimeStamp` PDF produced by the current technical archive-timestamp
   primitive. This is still not a production B-LTA claim.
 
-All sidecars currently use `run_status: "pending_operator_run"`. Keep that
-status until the named validator has been run by an operator and the raw report
-is committed or archived according to project policy.
+Sidecars start with `run_status: "pending_operator_run"` plus empty report
+metadata. Keep that status until the named validator has been run by an
+operator and the raw report is committed or archived according to project
+policy. A recorded sidecar is technical validator evidence only; it is not a
+legal validity decision.
 
 ## Recording an external validator run
 
@@ -48,19 +50,24 @@ node scripts/record-validator-sidecar.mjs \
 ```
 
 Use `--family adobe` for Adobe-style exports. If a structured transcription is
-available, pass `--observed-json path/to/observed.json`; otherwise the sidecar
-records only that the raw report was captured, without making a pass/fail claim.
+available, pass `--observed-json path/to/observed.json`; the recorder stores it
+under `observed.findings` and marks
+`legal_validity_assessment: "not_assessed"`. Without `--observed-json`, the
+sidecar records only that the raw report was preserved.
 
 The recorder requires an actual `--report` file. It copies reports that are
 outside the corpus into `cases/<case-id>/reports/`, hashes the raw report,
-records the document hash, timestamp, tool name, tool version, operator,
-environment, and command, and then reruns the corpus validator. It updates only
-the selected sidecar; pending sidecars remain `pending_operator_run` with null
-observed/report fields.
+records the raw report media type, original filename, preservation action,
+document hash, timestamp, tool name, tool version, operator, environment, and
+command, and then reruns the corpus validator. It also records the status
+transition from the prior sidecar state to `recorded`. It updates only the
+selected sidecar; pending sidecars remain `pending_operator_run` with null
+observed/report fields and `preservation_action: "not_recorded"`.
 
 Do not mark a sidecar as `recorded` by hand unless the raw report path, hash,
-timestamp, tool, and version are all preserved and `npm run test:validator-corpus`
-passes.
+byte length, media type, source filename, preservation metadata, status
+transition, tool, version, operator, and timestamp are all preserved and
+`npm run test:validator-corpus` passes.
 
 ## Validation
 
@@ -76,7 +83,9 @@ Run the manifest check from the repository root:
 npm run test:validator-corpus
 ```
 
-The check validates the manifest and sidecar schema, verifies that every
+The check validates the manifest and strict sidecar schema, verifies that every
 sidecar referenced by the manifest exists, and requires each generated PDF to
 exist with matching byte length and SHA-256. Recorded sidecars must also point
-to an existing raw report whose byte length and SHA-256 match the sidecar.
+to an existing raw report whose byte length and SHA-256 match the sidecar, must
+carry operator status-transition evidence, and must keep the evidence scope as
+technical-only with legal validity not assessed.

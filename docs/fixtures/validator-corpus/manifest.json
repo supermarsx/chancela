@@ -4,7 +4,7 @@
   "purpose": "Operator-run fixture corpus for external EU DSS and Adobe-style validation of generated PAdES PDFs.",
   "status_policy": {
     "pending_operator_run": "PDF may exist, but external validator output has not been run and recorded by an operator.",
-    "recorded": "External validator output was run and sidecar observed fields were filled from that run."
+    "recorded": "Technical external-validator report evidence was preserved by an operator; legal validity remains not assessed."
   },
   "validator_families": [
     "eu-dss",
