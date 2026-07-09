@@ -186,6 +186,26 @@ export const svSE: Catalog = {
   'notifications.alert.registry.expiringSoon.body':
     'The stored certificate expires on {valid_until} ({days_until} days). Plan a registry refresh before relying on it as current evidence.',
   'notifications.alert.registry.expiringSoon.action': 'Open entity',
+  'notifications.alert.entity.noOpenBook.title': 'No open book recorded',
+  'notifications.alert.entity.noOpenBook.body':
+    'Entity {entity_name} has no open book recorded. Open or import a book before drafting new minutes.',
+  'notifications.alert.entity.noOpenBook.action': 'Open entity',
+  'notifications.alert.book.missingTermo.title': 'Review opening term',
+  'notifications.alert.book.missingTermo.body':
+    'Book {book_id} has opening-term fields to review: {missing_fields}. Complete the record before relying on it as complete evidence.',
+  'notifications.alert.book.missingTermo.action': 'Open book',
+  'notifications.alert.book.noActs.title': 'Book has no minutes recorded',
+  'notifications.alert.book.noActs.body':
+    'The open book has no minutes yet. Draft minutes number {next_ata_number} or import historical minutes when appropriate.',
+  'notifications.alert.book.noActs.action': 'Open book',
+  'notifications.alert.act.advanceAvailable.title': 'Next minutes step available',
+  'notifications.alert.act.advanceAvailable.body':
+    'The minutes are in {current_state}. Advance to {next_state} when the supporting work is ready.',
+  'notifications.alert.act.advanceAvailable.action': 'Open minutes',
+  'notifications.alert.act.signingReady.title': 'Minutes ready for signatures',
+  'notifications.alert.act.signingReady.body':
+    'The minutes are in signing and have no compliance errors under {rule_pack}. Collect or import the required signatures.',
+  'notifications.alert.act.signingReady.action': 'Open minutes',
   'notifications.reminder.annual.csc.title': 'Annual general meeting pending',
   'notifications.reminder.annual.assoc.title': 'Annual general meeting pending',
   'notifications.reminder.annual.fundacao.title': 'Annual review pending',
@@ -1618,4 +1638,3 @@ export const svSE: Catalog = {
   'books.open.guidanceBody':
     'Välj den bok som motsvarar det organ som sammanträder och rätt numreringsschema — hjälpikonerna vid varje fält förklarar alternativen. Signeringsmetoden som används vid försegling av protokoll konfigureras under Inställningar → Signaturer.',
 };
-

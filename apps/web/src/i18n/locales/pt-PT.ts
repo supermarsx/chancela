@@ -192,6 +192,26 @@ export const ptPT = {
   'notifications.alert.registry.expiringSoon.body':
     'A certidão guardada expira em {valid_until} ({days_until} dias). Planeie uma atualização do registo antes de depender dela como prova atual.',
   'notifications.alert.registry.expiringSoon.action': 'Abrir entidade',
+  'notifications.alert.entity.noOpenBook.title': 'Sem livro aberto registado',
+  'notifications.alert.entity.noOpenBook.body':
+    'A entidade {entity_name} não tem livro aberto registado. Abra ou importe um livro antes de preparar novas atas.',
+  'notifications.alert.entity.noOpenBook.action': 'Abrir entidade',
+  'notifications.alert.book.missingTermo.title': 'Rever termo de abertura',
+  'notifications.alert.book.missingTermo.body':
+    'O livro {book_id} tem campos por rever no termo de abertura: {missing_fields}. Complete o registo antes de o usar como prova completa.',
+  'notifications.alert.book.missingTermo.action': 'Abrir livro',
+  'notifications.alert.book.noActs.title': 'Livro sem atas registadas',
+  'notifications.alert.book.noActs.body':
+    'O livro aberto ainda não tem atas. Crie a ata n.º {next_ata_number} ou importe atas históricas quando aplicável.',
+  'notifications.alert.book.noActs.action': 'Abrir livro',
+  'notifications.alert.act.advanceAvailable.title': 'Próximo passo da ata disponível',
+  'notifications.alert.act.advanceAvailable.body':
+    'A ata está em {current_state}. Avance para {next_state} quando o trabalho de suporte estiver pronto.',
+  'notifications.alert.act.advanceAvailable.action': 'Abrir ata',
+  'notifications.alert.act.signingReady.title': 'Ata pronta para assinaturas',
+  'notifications.alert.act.signingReady.body':
+    'A ata está em assinatura e não tem erros de conformidade em {rule_pack}. Recolha ou importe as assinaturas necessárias.',
+  'notifications.alert.act.signingReady.action': 'Abrir ata',
   'notifications.reminder.annual.csc.title': 'Assembleia geral anual pendente',
   'notifications.reminder.annual.assoc.title': 'Assembleia geral anual pendente',
   'notifications.reminder.annual.fundacao.title': 'Revisão anual pendente',

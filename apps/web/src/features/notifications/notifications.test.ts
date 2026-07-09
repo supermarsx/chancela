@@ -114,6 +114,114 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.detail).not.toContain('Backend fallback text');
   });
 
+  it('renders lifecycle dashboard alerts as localized actionable items', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        alerts: [
+          alert({
+            code: 'entity.book.no_open_book',
+            message: 'Raw backend no-book message.',
+            params: { entity_name: 'Acme, S.A.' },
+            target: {
+              entity_id: 'entity-1',
+              book_id: null,
+              act_id: null,
+              links: { ...targetLinks, entity: '/v1/entities/entity-1' },
+            },
+            source: 'dashboard.lifecycle.entity_books',
+          }),
+          alert({
+            code: 'book.termo_abertura.missing_metadata',
+            message: 'Raw backend missing-term message.',
+            params: { book_id: 'book-1', missing_fields: 'hash inicial' },
+            target: {
+              entity_id: 'entity-1',
+              book_id: 'book-1',
+              act_id: null,
+              links: { ...targetLinks, book: '/v1/books/book-1' },
+            },
+            source: 'dashboard.lifecycle.books',
+          }),
+          alert({
+            code: 'book.acts.none_recorded',
+            message: 'Raw backend no-acts message.',
+            params: { book_id: 'book-1', next_ata_number: '2' },
+            target: {
+              entity_id: 'entity-1',
+              book_id: 'book-1',
+              act_id: null,
+              links: { ...targetLinks, book: '/v1/books/book-1' },
+            },
+            source: 'dashboard.lifecycle.books',
+          }),
+          alert({
+            code: 'act.lifecycle.advance_available',
+            message: 'Raw backend advance message.',
+            params: { current_state: 'Draft', next_state: 'Review' },
+            target: {
+              entity_id: 'entity-1',
+              book_id: 'book-1',
+              act_id: 'act-1',
+              links: { ...targetLinks, act: '/v1/acts/act-1' },
+            },
+            source: 'dashboard.lifecycle.acts',
+          }),
+          alert({
+            code: 'act.lifecycle.signing_ready',
+            message: 'Raw backend signing message.',
+            params: { rule_pack: 'PT-CSC' },
+            target: {
+              entity_id: 'entity-1',
+              book_id: 'book-1',
+              act_id: 'act-1',
+              links: { ...targetLinks, act: '/v1/acts/act-1' },
+            },
+            source: 'dashboard.lifecycle.acts',
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(5);
+    expect(items.map((item) => item.detail).join('\n')).not.toContain('Raw backend');
+
+    const byId = new Map(items.map((item) => [item.id, item]));
+    expect(byId.get('alert:entity.book.no_open_book:entity-1:-:-:0')).toMatchObject({
+      title: 'Sem livro aberto registado',
+      action: { href: '/entidades/entity-1', label: 'Abrir entidade' },
+    });
+    expect(
+      byId.get('alert:book.termo_abertura.missing_metadata:entity-1:book-1:-:1'),
+    ).toMatchObject({
+      title: 'Rever termo de abertura',
+      action: { href: '/livros/book-1', label: 'Abrir livro' },
+    });
+    expect(
+      byId.get('alert:book.termo_abertura.missing_metadata:entity-1:book-1:-:1')?.detail,
+    ).toContain('hash inicial');
+    expect(byId.get('alert:book.acts.none_recorded:entity-1:book-1:-:2')).toMatchObject({
+      title: 'Livro sem atas registadas',
+      detail:
+        'O livro aberto ainda não tem atas. Crie a ata n.º 2 ou importe atas históricas quando aplicável.',
+      action: { href: '/livros/book-1', label: 'Abrir livro' },
+    });
+    expect(byId.get('alert:act.lifecycle.advance_available:entity-1:book-1:act-1:3')).toMatchObject(
+      {
+        title: 'Próximo passo da ata disponível',
+        detail:
+          'A ata está em Draft. Avance para Review quando o trabalho de suporte estiver pronto.',
+        action: { href: '/atas/act-1', label: 'Abrir ata' },
+      },
+    );
+    expect(byId.get('alert:act.lifecycle.signing_ready:entity-1:book-1:act-1:4')).toMatchObject({
+      title: 'Ata pronta para assinaturas',
+      detail:
+        'A ata está em assinatura e não tem erros de conformidade em PT-CSC. Recolha ou importe as assinaturas necessárias.',
+      action: { href: '/atas/act-1', label: 'Abrir ata' },
+    });
+  });
+
   it('uses the backend message only as an unknown-alert fallback and still provides an action', () => {
     const items = buildDashboardNotifications(
       dashboard({

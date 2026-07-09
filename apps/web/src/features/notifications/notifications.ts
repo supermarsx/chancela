@@ -64,6 +64,31 @@ const ALERT_COPY: Record<string, AlertCopy> = {
     body: 'notifications.alert.registry.expiringSoon.body',
     action: 'notifications.alert.registry.expiringSoon.action',
   },
+  'entity.book.no_open_book': {
+    title: 'notifications.alert.entity.noOpenBook.title',
+    body: 'notifications.alert.entity.noOpenBook.body',
+    action: 'notifications.alert.entity.noOpenBook.action',
+  },
+  'book.termo_abertura.missing_metadata': {
+    title: 'notifications.alert.book.missingTermo.title',
+    body: 'notifications.alert.book.missingTermo.body',
+    action: 'notifications.alert.book.missingTermo.action',
+  },
+  'book.acts.none_recorded': {
+    title: 'notifications.alert.book.noActs.title',
+    body: 'notifications.alert.book.noActs.body',
+    action: 'notifications.alert.book.noActs.action',
+  },
+  'act.lifecycle.advance_available': {
+    title: 'notifications.alert.act.advanceAvailable.title',
+    body: 'notifications.alert.act.advanceAvailable.body',
+    action: 'notifications.alert.act.advanceAvailable.action',
+  },
+  'act.lifecycle.signing_ready': {
+    title: 'notifications.alert.act.signingReady.title',
+    body: 'notifications.alert.act.signingReady.body',
+    action: 'notifications.alert.act.signingReady.action',
+  },
 };
 
 const REMINDER_COPY: Record<string, ReminderCopy> = {
