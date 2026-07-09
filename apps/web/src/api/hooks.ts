@@ -154,6 +154,7 @@ export function useUpdateEntity(id: string) {
       qc.setQueryData(keys.entity(id), entity);
       void qc.invalidateQueries({ queryKey: keys.entity(id) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });
 }
@@ -330,6 +331,7 @@ export function useUpdateAct(id: string) {
     onSuccess: (act) => {
       qc.setQueryData(keys.act(id), act);
       void qc.invalidateQueries({ queryKey: keys.compliance(id) });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });
 }
