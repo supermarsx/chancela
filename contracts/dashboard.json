@@ -1,11 +1,11 @@
 {
-  "entities": 1,
+  "entities": 2,
   "books_open": 1,
   "books_total": 1,
-  "acts_total": 1,
+  "acts_total": 0,
   "acts_draft": 0,
   "acts_awaiting_signature": 0,
-  "acts_sealed": 1,
+  "acts_sealed": 0,
   "unresolved_compliance": 0,
   "ledger_length": 5,
   "ledger_valid": true,
@@ -18,10 +18,10 @@
         "kind": "AssembleiaGeral",
         "purpose": "Livro de atas da assembleia geral",
         "opening_date": "2026-01-05",
-        "last_ata_number": 1,
-        "total_acts": 1,
+        "last_ata_number": 0,
+        "total_acts": 0,
         "open_acts": 0,
-        "next_ata_number": 2,
+        "next_ata_number": 1,
         "links": {
           "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
           "book": "/v1/books/3f1c8e40-0000-4000-8000-000000000010",
@@ -37,11 +37,61 @@
       "Deliberated": 0,
       "TextApproved": 0,
       "Signing": 0,
-      "Sealed": 1,
+      "Sealed": 0,
       "Archived": 0
     }
   },
   "alerts": [
+    {
+      "code": "book.acts.none_recorded",
+      "label": "Advisory",
+      "category": "BookLifecycle",
+      "message": "Open book 3f1c8e40-0000-4000-8000-000000000010 has no acts recorded yet. Draft a new ata or import historical minutes when appropriate.",
+      "params": {
+        "book_id": "3f1c8e40-0000-4000-8000-000000000010",
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "book_kind": "AssembleiaGeral",
+        "next_ata_number": "1",
+        "recommended_actions": "draft_ata,import_minutes"
+      },
+      "target": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000001",
+        "book_id": "3f1c8e40-0000-4000-8000-000000000010",
+        "act_id": null,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000001",
+          "book": "/v1/books/3f1c8e40-0000-4000-8000-000000000010",
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=book:3f1c8e40-0000-4000-8000-000000000010"
+        }
+      },
+      "source": "acts.by_book"
+    },
+    {
+      "code": "entity.book.no_open_book",
+      "label": "Advisory",
+      "category": "BookLifecycle",
+      "message": "Entity Norte Exemplo, Lda. has no open book recorded. Open a book or import an existing book before drafting new atas.",
+      "params": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+        "entity_name": "Norte Exemplo, Lda.",
+        "total_books": "0",
+        "open_books": "0",
+        "recommended_actions": "open_book,import_book"
+      },
+      "target": {
+        "entity_id": "2f1c8e40-0000-4000-8000-000000000002",
+        "book_id": null,
+        "act_id": null,
+        "links": {
+          "entity": "/v1/entities/2f1c8e40-0000-4000-8000-000000000002",
+          "book": null,
+          "act": null,
+          "ledger": "/v1/ledger/events?chain=company:2f1c8e40-0000-4000-8000-000000000002"
+        }
+      },
+      "source": "entities.books"
+    },
     {
       "code": "registry.provenance.expiring_soon",
       "label": "Advisory",
