@@ -133,6 +133,10 @@ pub enum StoreError {
         "store encryption key supplied but this build was not compiled with the sqlcipher feature"
     )]
     EncryptionUnavailable,
+    /// SQLCipher keying/rekeying was asked to use an empty key. Empty keys are rejected before
+    /// touching the database so a caller cannot accidentally decrypt or weaken an encrypted store.
+    #[error("store encryption key must not be empty")]
+    EmptyEncryptionKey,
     /// SQLCipher refused the supplied key, or the database could not be authenticated with it.
     #[error("store encryption key was rejected or the encrypted database is unreadable")]
     EncryptionKeyRejected {
@@ -601,6 +605,32 @@ impl Store {
     pub fn instance_id(&self) -> Result<String, StoreError> {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         read_instance_id(&guard)
+    }
+
+    /// Rotate the SQLCipher passphrase for an already-keyed store connection.
+    ///
+    /// The new key is never included in errors or logs. Empty keys are rejected before issuing
+    /// `PRAGMA rekey`, leaving the open database untouched.
+    #[cfg(feature = "sqlcipher")]
+    pub fn rotate_encryption_key(&self, new_key: &str) -> Result<(), StoreError> {
+        self.rekey(new_key)
+    }
+
+    /// Alias for [`Store::rotate_encryption_key`], matching SQLCipher's primitive name.
+    #[cfg(feature = "sqlcipher")]
+    pub fn rekey(&self, new_key: &str) -> Result<(), StoreError> {
+        if new_key.is_empty() {
+            return Err(StoreError::EmptyEncryptionKey);
+        }
+
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        guard.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        guard
+            .pragma_update(None, "rekey", new_key)
+            .map_err(|source| StoreError::EncryptionKeyRejected { source })?;
+        verify_keyed_database(&guard)?;
+        guard.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
     }
 
     /// Load the ledger and return its full [`IntegrityReport`] (t54 deliverable #6) — the queryable
@@ -1755,9 +1785,7 @@ fn apply_open_options(
         return Ok(());
     };
     if key.is_empty() {
-        return Err(StoreError::EncryptionKeyRejected {
-            source: rusqlite::Error::InvalidParameterName("empty sqlcipher key".to_owned()),
-        });
+        return Err(StoreError::EmptyEncryptionKey);
     }
 
     conn.pragma_update(None, "key", key)

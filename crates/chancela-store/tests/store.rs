@@ -254,6 +254,121 @@ fn sqlcipher_corrupt_keyed_database_fails_loudly() {
     );
 }
 
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn sqlcipher_rekey_reopens_with_new_key_only_and_preserves_data_and_ledger() {
+    let dir = TempDir::new();
+    let old = StoreOpenOptions::new().with_encryption_key("old store passphrase");
+    let new = StoreOpenOptions::new().with_encryption_key("new store passphrase");
+    let entity = sample_entity("Rekey, Lda");
+    let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+    let act = Act::draft(book.id, "Ata rekey", MeetingChannel::Remote);
+    let extract = sample_extract("500002020");
+
+    {
+        let store = Store::open_with_options(dir.path(), old.clone()).expect("keyed open");
+        let mut ledger = Ledger::new();
+        let e0 = ledger
+            .append(
+                "amelia.marques",
+                "entity:rekey",
+                "entity.created",
+                None,
+                b"entity",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e0)?;
+                tx.upsert_entity(&entity)
+            })
+            .unwrap();
+        let e1 = ledger
+            .append("amelia.marques", "book:rekey", "book.opened", None, b"book")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e1)?;
+                tx.upsert_book(&book)
+            })
+            .unwrap();
+        let e2 = ledger
+            .append("amelia.marques", "act:rekey", "act.drafted", None, b"act")
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e2)?;
+                tx.upsert_act(&act)
+            })
+            .unwrap();
+        let e3 = ledger
+            .append(
+                "amelia.marques",
+                "entity:rekey",
+                "registry.imported",
+                None,
+                b"extract",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&e3)?;
+                tx.upsert_registry_extract(entity.id, &extract)
+            })
+            .unwrap();
+
+        let result = store.rotate_encryption_key("");
+        assert!(
+            matches!(result, Err(StoreError::EmptyEncryptionKey)),
+            "empty rekey must fail before mutating the database, got {result:?}"
+        );
+    }
+
+    let still_old =
+        Store::open_with_options(dir.path(), old.clone()).expect("empty rekey left old key valid");
+    assert_eq!(still_old.load().unwrap().chain_status, Ok(4));
+    drop(still_old);
+    assert!(
+        matches!(
+            Store::open_with_options(dir.path(), new.clone()),
+            Err(StoreError::EncryptionKeyRejected { .. })
+        ),
+        "new key must not work before a successful rekey"
+    );
+
+    {
+        let store = Store::open_with_options(dir.path(), old.clone()).expect("reopen old key");
+        store
+            .rekey("new store passphrase")
+            .expect("rotate SQLCipher key");
+        let loaded = store.load().expect("load after rekey on same handle");
+        assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+        assert_eq!(loaded.books.get(&book.id), Some(&book));
+        assert_eq!(loaded.acts.get(&act.id), Some(&act));
+        assert_eq!(loaded.registry_extracts.get(&entity.id), Some(&extract));
+        assert_eq!(loaded.chain_status, Ok(4));
+        assert_eq!(loaded.ledger.len(), 4);
+    }
+
+    let reopened = Store::open_with_options(dir.path(), new).expect("reopen with new key");
+    let loaded = reopened.load().expect("load rekeyed db");
+    assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
+    assert_eq!(loaded.books.get(&book.id), Some(&book));
+    assert_eq!(loaded.acts.get(&act.id), Some(&act));
+    assert_eq!(loaded.registry_extracts.get(&entity.id), Some(&extract));
+    assert_eq!(loaded.chain_status, Ok(4));
+    assert_eq!(loaded.ledger.len(), 4);
+    drop(reopened);
+
+    assert!(
+        matches!(
+            Store::open_with_options(dir.path(), old),
+            Err(StoreError::EncryptionKeyRejected { .. })
+        ),
+        "old key must fail after successful rekey"
+    );
+}
+
 #[test]
 fn persist_commits_event_and_aggregate_together() {
     let dir = TempDir::new();
