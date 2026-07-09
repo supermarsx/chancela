@@ -22,3 +22,13 @@ pub const ID_CONTENT_TYPE: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.
 /// `id-messageDigest` — the CMS `message-digest` signed attribute (RFC 5652 §11.2).
 pub const ID_MESSAGE_DIGEST: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.4");
+
+/// `rsaEncryption` (PKCS#1) — commonly used as the CMS `signatureAlgorithm` for RSA signatures.
+pub const RSA_ENCRYPTION: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1");
+
+/// `sha256WithRSAEncryption` (PKCS#1) — accepted for RSA/SHA-256 timestamp signatures.
+pub const SHA256_WITH_RSA_ENCRYPTION: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
+
+/// `ecdsa-with-SHA256` (ANSI X9.62) — accepted for P-256/SHA-256 timestamp signatures.
+pub const ECDSA_WITH_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");

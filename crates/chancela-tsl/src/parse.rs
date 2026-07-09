@@ -16,6 +16,9 @@ use crate::error::TslError;
 /// makes an issuer a QTSP for qualified e-signatures/e-seals.
 pub const SVCTYPE_CA_QC: &str = "http://uri.etsi.org/TrstSvc/Svctype/CA/QC";
 
+/// `ServiceTypeIdentifier` for a qualified timestamping service.
+pub const SVCTYPE_TSA_QTST: &str = "http://uri.etsi.org/TrstSvc/Svctype/TSA/QTST";
+
 /// `ServiceStatus` — the service is currently granted/qualified.
 pub const STATUS_GRANTED: &str = "http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted";
 
@@ -143,6 +146,11 @@ impl TrustService {
     /// Whether this service is a CA issuing qualified certificates ([`SVCTYPE_CA_QC`]).
     pub fn is_ca_qc(&self) -> bool {
         self.service_type == SVCTYPE_CA_QC
+    }
+
+    /// Whether this service is a qualified timestamp service (`TSA/QTST`).
+    pub fn is_tsa_qtst(&self) -> bool {
+        self.service_type == SVCTYPE_TSA_QTST
     }
 
     /// Whether the current status is `granted`.

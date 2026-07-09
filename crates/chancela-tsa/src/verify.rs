@@ -1,22 +1,26 @@
 //! `TimeStampResp` parsing and `TimeStampToken` verification (spec 04, SIG-22).
 //!
-//! See the crate-level "Verification boundary" note: this verifies token *structure* and the
-//! *binding* to the requested digest, not the TSA's asymmetric signature or certificate chain.
+//! See the crate-level "Verification boundary" note: this verifies token *structure*, the
+//! *binding* to the requested digest, and the CMS signature value when the TSA signer certificate
+//! is embedded. It does not build or validate the TSA certificate chain.
 
 use cms::cert::CertificateChoices;
-use cms::signed_data::{SignedData, SignerInfo};
+use cms::signed_data::{SignedData, SignerIdentifier, SignerInfo};
 use der::asn1::OctetString;
 use der::oid::ObjectIdentifier;
 use der::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
+use x509_cert::Certificate;
 use x509_cert::attr::{Attribute, Attributes};
 use x509_tsp::{TimeStampResp, TstInfo};
 
 use crate::error::TsaError;
 use crate::oid;
 use crate::request::{TimestampRequest, u64_to_int};
+
+const SKI_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.29.14");
 
 /// The qualified-timestamp policy hook (SIG-22).
 ///
@@ -74,8 +78,10 @@ pub struct Timestamp {
 ///
 /// On success the token is structurally sound, reports PKIStatus granted, covers exactly
 /// `request.digest()` under SHA-256, echoes the request nonce, and its `content-type` /
-/// `message-digest` signed attributes bind to the encapsulated `TstInfo`. The `policy` hook
-/// enforces the qualified-timestamp policy (SIG-22).
+/// `message-digest` signed attributes bind to the encapsulated `TstInfo`. When the token embeds
+/// the TSA signer certificate referenced by `SignerInfo.sid`, this also verifies the CMS signature
+/// value over the signed attributes. The `policy` hook enforces the qualified-timestamp policy
+/// (SIG-22).
 pub fn verify_response(
     der_resp: &[u8],
     request: &TimestampRequest,
@@ -133,8 +139,9 @@ pub fn verify_response(
     }
 
     // 6. Signed-attribute binding: the SignerInfo's content-type attr is id-ct-TSTInfo and its
-    //    message-digest attr equals SHA-256(eContent). This proves the signature commits to this
-    //    exact TstInfo (the asymmetric signature value itself is checked by the crypto layer).
+    //    message-digest attr equals SHA-256(eContent). This proves the signed attributes commit to
+    //    this exact TstInfo; if the signer certificate is embedded below, the CMS signature value
+    //    is then verified over these attributes.
     let signer = signed_data
         .signer_infos
         .0
@@ -146,13 +153,35 @@ pub fn verify_response(
     // 7. Qualified-timestamp policy hook (SIG-22).
     policy.check(&tst.policy)?;
 
-    // 8. TSA certificate, if embedded. `certReq` implies it must be present.
-    let tsa_certificate_der = extract_tsa_certificate(&signed_data)?;
-    if request.cert_req() && tsa_certificate_der.is_none() {
+    // 8. TSA certificate, if embedded. Select by SignerInfo.sid; do not trust "first cert wins".
+    //    `certReq` implies a matching embedded signer certificate must be present.
+    let signer_cert = extract_tsa_certificate(&signed_data, &signer.sid)?;
+    if request.cert_req() && signer_cert.is_none() {
         return Err(TsaError::NoTsaCertificate);
     }
+    let tsa_certificate_der = signer_cert
+        .as_ref()
+        .map(|cert| cert.to_der().map_err(TsaError::Malformed))
+        .transpose()?;
 
-    // 9. genTime.
+    // 9. CMS signature value, when dependencies and embedded material allow it. Tokens without an
+    //    embedded certificate can still be structurally checked unless the request set certReq.
+    if let Some(cert) = &signer_cert {
+        let signed_attrs_der = signer
+            .signed_attrs
+            .as_ref()
+            .expect("checked by verify_signed_attribute_binding")
+            .to_der()
+            .map_err(TsaError::Malformed)?;
+        verify_signature(
+            cert,
+            &signer.signature_algorithm.oid,
+            signer.signature.as_bytes(),
+            &signed_attrs_der,
+        )?;
+    }
+
+    // 10. genTime.
     let gen_time = generalized_to_offset(&tst)?;
 
     Ok(Timestamp {
@@ -206,16 +235,104 @@ where
         .map_err(TsaError::Malformed)
 }
 
-fn extract_tsa_certificate(signed_data: &SignedData) -> Result<Option<Vec<u8>>, TsaError> {
+fn extract_tsa_certificate(
+    signed_data: &SignedData,
+    sid: &SignerIdentifier,
+) -> Result<Option<Certificate>, TsaError> {
     let Some(certificates) = &signed_data.certificates else {
         return Ok(None);
     };
+
     for choice in certificates.0.iter() {
         if let CertificateChoices::Certificate(certificate) = choice {
-            return Ok(Some(certificate.to_der().map_err(TsaError::Malformed)?));
+            if certificate_matches_sid(certificate, sid)? {
+                return Ok(Some(certificate.clone()));
+            }
         }
     }
-    Ok(None)
+
+    Err(TsaError::SignerCertNotEmbedded)
+}
+
+fn certificate_matches_sid(cert: &Certificate, sid: &SignerIdentifier) -> Result<bool, TsaError> {
+    match sid {
+        SignerIdentifier::IssuerAndSerialNumber(ias) => Ok(cert.tbs_certificate.issuer
+            == ias.issuer
+            && cert.tbs_certificate.serial_number == ias.serial_number),
+        SignerIdentifier::SubjectKeyIdentifier(ski) => {
+            Ok(subject_key_identifier(cert)?.as_deref() == Some(ski.0.as_bytes()))
+        }
+    }
+}
+
+fn subject_key_identifier(cert: &Certificate) -> Result<Option<Vec<u8>>, TsaError> {
+    let Some(extensions) = cert.tbs_certificate.extensions.as_ref() else {
+        return Ok(None);
+    };
+    let Some(ext) = extensions.iter().find(|ext| ext.extn_id == SKI_OID) else {
+        return Ok(None);
+    };
+    let inner = OctetString::from_der(ext.extn_value.as_bytes())
+        .map_err(|e| TsaError::InvalidTsaCertificate(e.to_string()))?;
+    Ok(Some(inner.as_bytes().to_vec()))
+}
+
+fn verify_signature(
+    cert: &Certificate,
+    sig_alg_oid: &ObjectIdentifier,
+    signature: &[u8],
+    message: &[u8],
+) -> Result<(), TsaError> {
+    if *sig_alg_oid == oid::RSA_ENCRYPTION || *sig_alg_oid == oid::SHA256_WITH_RSA_ENCRYPTION {
+        verify_rsa(cert, signature, message)
+    } else if *sig_alg_oid == oid::ECDSA_WITH_SHA256 {
+        verify_ecdsa(cert, signature, message)
+    } else {
+        Err(TsaError::UnsupportedSignatureAlgorithm {
+            oid: sig_alg_oid.to_string(),
+        })
+    }
+}
+
+fn verify_rsa(cert: &Certificate, signature: &[u8], message: &[u8]) -> Result<(), TsaError> {
+    use der::referenced::OwnedToRef;
+    use rsa::{Pkcs1v15Sign, RsaPublicKey};
+
+    const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
+        0x05, 0x00, 0x04, 0x20,
+    ];
+
+    let spki = cert.tbs_certificate.subject_public_key_info.owned_to_ref();
+    let public_key =
+        RsaPublicKey::try_from(spki).map_err(|e| TsaError::InvalidTsaCertificate(e.to_string()))?;
+
+    let hash = Sha256::digest(message);
+    let mut digest_info = Vec::with_capacity(SHA256_DIGEST_INFO_PREFIX.len() + hash.len());
+    digest_info.extend_from_slice(&SHA256_DIGEST_INFO_PREFIX);
+    digest_info.extend_from_slice(&hash);
+
+    public_key
+        .verify(Pkcs1v15Sign::new_unprefixed(), &digest_info, signature)
+        .map_err(|_| TsaError::SignatureVerificationFailed)
+}
+
+fn verify_ecdsa(cert: &Certificate, signature: &[u8], message: &[u8]) -> Result<(), TsaError> {
+    use p256::ecdsa::signature::Verifier;
+    use p256::ecdsa::{Signature, VerifyingKey};
+    use p256::pkcs8::DecodePublicKey;
+
+    let spki_der = cert
+        .tbs_certificate
+        .subject_public_key_info
+        .to_der()
+        .map_err(TsaError::Malformed)?;
+    let verifying_key = VerifyingKey::from_public_key_der(&spki_der)
+        .map_err(|e| TsaError::InvalidTsaCertificate(e.to_string()))?;
+    let sig = Signature::from_der(signature).map_err(|_| TsaError::InvalidSignatureEncoding)?;
+    verifying_key
+        .verify(message, &sig)
+        .map_err(|_| TsaError::SignatureVerificationFailed)
 }
 
 fn generalized_to_offset(tst: &TstInfo) -> Result<OffsetDateTime, TsaError> {

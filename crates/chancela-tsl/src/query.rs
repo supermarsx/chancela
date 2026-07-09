@@ -15,7 +15,8 @@ use crate::error::TslError;
 use crate::parse::{DigitalIdentity, TrustService, TrustedList, parse_tsl};
 use crate::source::TslSource;
 
-/// Whether a certificate issuer is currently a qualified QTSP for e-signatures per the TSL.
+/// Whether a certificate or issuer is currently qualified for the requested service class per the
+/// TSL.
 ///
 /// Maps one-to-one onto `chancela_signing::TrustedListStatus` (`Granted`/`Withdrawn`/`Unknown`);
 /// the mapping lives in `chancela-signing` (t4-e8) so this crate stays free of that dependency.
@@ -34,16 +35,16 @@ pub enum QualifiedStatus {
 /// The OID of the X.509 Subject Key Identifier extension (2.5.29.14).
 const SKI_OID: der::asn1::ObjectIdentifier = der::asn1::ObjectIdentifier::new_unwrap("2.5.29.14");
 
-/// Identifying material extracted from an issuer certificate, used to match it against a trust
+/// Identifying material extracted from a certificate, used to match it against a trust
 /// service's digital identities. Certificate-DER equality is the strong match; SKI and subject
 /// name are fallbacks for lists that publish only an identifier.
-struct IssuerId<'a> {
+struct CertificateId<'a> {
     der: &'a [u8],
     ski: Option<Vec<u8>>,
     subject: Option<String>,
 }
 
-impl<'a> IssuerId<'a> {
+impl<'a> CertificateId<'a> {
     fn from_der(der: &'a [u8]) -> Self {
         let (ski, subject) = match x509_cert::Certificate::from_der(der) {
             Ok(cert) => (
@@ -90,7 +91,7 @@ pub fn resolve_esig_status(
     issuer_cert_der: &[u8],
     now: OffsetDateTime,
 ) -> QualifiedStatus {
-    let issuer = IssuerId::from_der(issuer_cert_der);
+    let issuer = CertificateId::from_der(issuer_cert_der);
     let mut found = false;
     let mut qualified = false;
     for service in list.services().filter(|s| issuer.matches(s)) {
@@ -111,6 +112,34 @@ pub fn resolve_esig_status(
     }
 }
 
+/// Resolve whether `tsa_cert_der` identifies a currently-granted qualified timestamp service
+/// (`TSA/QTST`) in `list` as of `now`.
+///
+/// This is a technical trusted-list status lookup for the TSA signer certificate or published TSA
+/// service identity. It does not validate the timestamp token, build the TSA certificate path, or
+/// make a legal-validation statement.
+pub fn resolve_qtst_status(
+    list: &TrustedList,
+    tsa_cert_der: &[u8],
+    now: OffsetDateTime,
+) -> QualifiedStatus {
+    let tsa = CertificateId::from_der(tsa_cert_der);
+    let mut found = false;
+    let mut qualified = false;
+    for service in list.services().filter(|s| tsa.matches(s)) {
+        found = true;
+        if service.is_tsa_qtst() && service.is_granted() && service.is_effective_at(now) {
+            qualified = true;
+            break;
+        }
+    }
+    match (found, qualified) {
+        (_, true) => QualifiedStatus::Granted,
+        (true, false) => QualifiedStatus::Withdrawn,
+        (false, false) => QualifiedStatus::Unknown,
+    }
+}
+
 /// List every service currently granted and qualified for e-signatures as of `now` (SIG-12
 /// discovery/listing).
 pub fn qualified_esig_services(list: &TrustedList, now: OffsetDateTime) -> Vec<&TrustService> {
@@ -118,6 +147,13 @@ pub fn qualified_esig_services(list: &TrustedList, now: OffsetDateTime) -> Vec<&
         .filter(|s| {
             s.is_ca_qc() && s.is_granted() && s.is_effective_at(now) && s.qualifies_for_esig()
         })
+        .collect()
+}
+
+/// List every service currently granted as a qualified timestamp service (`TSA/QTST`) as of `now`.
+pub fn qualified_timestamp_services(list: &TrustedList, now: OffsetDateTime) -> Vec<&TrustService> {
+    list.services()
+        .filter(|s| s.is_tsa_qtst() && s.is_granted() && s.is_effective_at(now))
         .collect()
 }
 
@@ -193,6 +229,29 @@ impl<S: TslSource> TslClient<S> {
             (other, _) => other,
         })
     }
+
+    /// Resolve whether `tsa_cert_der` identifies a currently-granted qualified timestamp service
+    /// (`TSA/QTST`) as of `now`, refreshing the cache first if needed.
+    ///
+    /// As with [`Self::is_qualified_for_esig`], `Granted` is downgraded to `Unknown` when the TSL
+    /// XML-DSig signature did not verify. An unauthenticated TSL is not used to vouch for TSA
+    /// qualified status.
+    pub fn is_qualified_timestamp_service(
+        &mut self,
+        tsa_cert_der: &[u8],
+        now: OffsetDateTime,
+    ) -> Result<QualifiedStatus, TslError> {
+        self.ensure_fresh(now)?;
+        let cache = self
+            .cache
+            .as_ref()
+            .expect("cache populated by ensure_fresh");
+        let raw = resolve_qtst_status(cache.list(), tsa_cert_der, now);
+        Ok(match (raw, cache.signature_valid()) {
+            (QualifiedStatus::Granted, false) => QualifiedStatus::Unknown,
+            (other, _) => other,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -201,8 +260,8 @@ mod tests {
 
     use super::*;
     use crate::parse::{
-        FOR_ESIGNATURES, LocalizedText, SVCTYPE_CA_QC, ServiceStatus, TrustServiceProvider,
-        parse_tsl,
+        FOR_ESIGNATURES, LocalizedText, SVCTYPE_CA_QC, SVCTYPE_TSA_QTST, ServiceStatus,
+        TrustServiceProvider, parse_tsl,
     };
 
     const FIXTURE: &[u8] = include_bytes!("../fixtures/pt-tsl-sample.xml");
@@ -225,6 +284,20 @@ mod tests {
     }
 
     fn list_with_identity(id: DigitalIdentity, starting: Option<OffsetDateTime>) -> TrustedList {
+        list_with_service(
+            id,
+            SVCTYPE_CA_QC,
+            starting,
+            vec![FOR_ESIGNATURES.to_owned()],
+        )
+    }
+
+    fn list_with_service(
+        id: DigitalIdentity,
+        service_type: &str,
+        starting: Option<OffsetDateTime>,
+        additional_service_info: Vec<String>,
+    ) -> TrustedList {
         TrustedList {
             scheme_operator_name: String::new(),
             scheme_operator_names: Vec::new(),
@@ -244,7 +317,7 @@ mod tests {
                 localized_trade_names: Vec::new(),
                 information_uris: Vec::new(),
                 services: vec![TrustService {
-                    service_type: SVCTYPE_CA_QC.to_owned(),
+                    service_type: service_type.to_owned(),
                     name: "svc".to_owned(),
                     names: vec![LocalizedText {
                         lang: Some("en".to_owned()),
@@ -254,7 +327,7 @@ mod tests {
                     status_starting_time: starting,
                     status_starting_time_raw: starting.map(format_time_for_test),
                     digital_identities: vec![id],
-                    additional_service_info: vec![FOR_ESIGNATURES.to_owned()],
+                    additional_service_info,
                     service_supply_points: Vec::new(),
                     history: Vec::new(),
                 }],
@@ -311,5 +384,22 @@ mod tests {
             resolve_esig_status(&list, &multicert_cert(), NOW),
             QualifiedStatus::Withdrawn
         );
+    }
+
+    #[test]
+    fn resolves_granted_qualified_timestamp_service() {
+        let list = list_with_service(
+            DigitalIdentity::Certificate(b"tsa-cert".to_vec()),
+            SVCTYPE_TSA_QTST,
+            None,
+            Vec::new(),
+        );
+
+        assert_eq!(
+            resolve_qtst_status(&list, b"tsa-cert", NOW),
+            QualifiedStatus::Granted
+        );
+        assert_eq!(qualified_timestamp_services(&list, NOW).len(), 1);
+        assert_eq!(qualified_esig_services(&list, NOW).len(), 0);
     }
 }

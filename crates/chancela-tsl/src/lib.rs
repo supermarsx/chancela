@@ -1,10 +1,11 @@
 //! `chancela-tsl` — Portuguese Trusted List ingestion + qualified-status query (spec 04).
 //!
 //! This crate ingests the Portuguese Trusted List (ETSI TS 119 612) published by the Gabinete
-//! Nacional de Seguranca and answers one question the signing subsystem needs before it trusts a
-//! qualified certificate: **is this certificate's issuer a currently-qualified QTSP for
-//! e-signatures?** (SIG-10..13). It does so entirely offline against a bundled fixture in tests;
-//! the live fetch is feature-gated and never runs in CI.
+//! Nacional de Seguranca and answers technical trusted-list status questions the signing subsystem
+//! needs before it trusts qualified evidence: **is this certificate's issuer a currently-qualified
+//! QTSP for e-signatures?** and **is this TSA identity a currently-granted qualified timestamp
+//! service (`TSA/QTST`)?** (SIG-10..13/SIG-22). It does so entirely offline against a bundled
+//! fixture in tests; the live fetch is feature-gated and never runs in CI.
 //!
 //! # Pipeline
 //! 1. [`source::TslSource`] fetches the raw XML — [`source::HttpTslSource`] over the network,
@@ -41,7 +42,10 @@ pub use parse::{
     DigitalIdentity, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
     TrustServiceProvider, TrustedList, parse_tsl,
 };
-pub use query::{QualifiedStatus, TslClient, qualified_esig_services, resolve_esig_status};
+pub use query::{
+    QualifiedStatus, TslClient, qualified_esig_services, qualified_timestamp_services,
+    resolve_esig_status, resolve_qtst_status,
+};
 pub use record::{
     RecordIdentifier, RecordIdentifierKind, RecordSearch, RecordStatusKind, TslRecord,
     filter_records, trust_service_records, tsa_records,
