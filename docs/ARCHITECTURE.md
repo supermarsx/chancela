@@ -261,8 +261,8 @@ documents, mutate signed records, or prove legal/signature validity.
   events. The package carries a `manifest.json`, PDF/A members, metadata sidecars, signed PDF
   sidecars when present, signer certificate evidence, timestamp-token evidence when present, and
   per-document validation/evidence reports. Signature evidence reports include embedded DSS/VRI
-  counts and SHA-256 hashes when a signed PDF carries caller-supplied DSS evidence; they also record
-  that live revocation fetching is false and no production/legal B-LT status is claimed. The
+  counts, `/TU` metadata, and SHA-256 hashes when a signed PDF carries technical revocation
+  evidence; they also record that no production/legal B-LT status is claimed. The
   manifest includes structured producer and preservation-interchange metadata, but deliberately
   records `official_dglab_interchange: false` and `dglab_certification_claimed: false`. Before
   package build, the endpoint preflights the inventory for duplicate/non-canonical IDs, path-like
@@ -334,10 +334,15 @@ hardware, and provider onboarding.
 - **PAdES** (`chancela-pades`) — signs a PDF by incremental update (`prepare_signature` →
   caller signs → `embed_signature`; `add_signature_timestamp` upgrades B-B→B-T). B-B and B-T are
   implemented. The local core can append deterministic `/DSS` + `/VRI` incremental revisions from
-  caller-supplied DER evidence and report OCSP/CRL/certificate/VRI counts and hashes while keeping
-  validation scoped to the signed revision. This is still a technical local core: it does not fetch
-  live revocation data, merge existing DSS, add B-LTA archive timestamps, or make a production B-LT
-  legal sufficiency claim.
+  caller-supplied DER evidence, merge/dedupe existing DSS streams by content hash, add `/TU`
+  validation-time metadata, and report OCSP/CRL/certificate/VRI counts and hashes while keeping
+  validation scoped to the signed revision. This is still a technical core: it does not add B-LTA
+  archive timestamps or make a production B-LT legal sufficiency claim.
+- **Revocation evidence** (`chancela-signing::revocation`) — discovers CRL distribution points and
+  OCSP AIA responders from the signer certificate, fetches through bounded/mocked transports, and
+  validates technical CRL+OCSP evidence before it is attached to DSS: issuer/responder trust,
+  freshness windows, certificate status, and supported signature algorithms. Production source
+  policy and legal LTV sufficiency remain outside this claim.
 - **TSL** (`chancela-tsl`) — ingests the Portuguese Trusted List (ETSI TS 119 612), validates its
   own XML-DSig on every refresh, and answers `is_qualified_for_esig` →
   `Granted`/`Withdrawn`/`Unknown`. Wired in via the `TrustPolicy` trait (`TslTrustPolicy` real,
@@ -353,9 +358,10 @@ hardware, and provider onboarding.
   accent-folded, and provider/detail views expose analysis counts, duplicate-service names, history,
   raw dates, and supply-point evidence. It does **not** live-fetch the TSL or provide a
   buy-certificate workflow.
-- **TSA** (`chancela-tsa`) — RFC 3161 timestamp client. Verifies token structure + binding
-  (PKIStatus, TSTInfo, imprint/nonce match); the TSA's own signature/chain is deferred to TSL +
-  CAdES. Exposed via `TimestampProvider`. The trust API adds
+- **TSA** (`chancela-tsa`) — RFC 3161 timestamp client. Verifies token structure and binding
+  (PKIStatus, TSTInfo, imprint/nonce match), signed-attribute binding, signer-certificate
+  selection, TSA signature algorithms, and offline certificate-path foundations. Exposed via
+  `TimestampProvider`. The trust API adds
   `GET /v1/trust/tsa?search=&service_type=&status=&history=&supply_point=&limit=`, a read-only
   diagnostic surface: configured URL (credential-redacted), RFC 3161 profile, accepted hash, offline
   fixture probe, timestamp-token metadata from the fixture, TSL validation status, policy analysis,
@@ -401,10 +407,9 @@ Wire states `"unsigned"` → `"pending"` → `"signed"`:
   `GET /v1/acts/{id}/document/signed` expose provider availability, state, and the signed variant.
   The act signature status response includes a structured `evidence` object that reports the current
   PAdES level (`Unsigned`, `B-B`, `B-T`, or local `B-LT-local` when timestamped DSS evidence is
-  embedded), timestamp presence, embedded DSS/VRI counts and SHA-256 hashes, and guardrails such as
-  `production_b_lt_status: "not_claimed"`, `legal_b_lt_claimed: false`, and
-  `live_revocation_fetching: false`. This is a technical status surface, not a production B-LT/B-LTA
-  or probative-value claim.
+  embedded), timestamp presence, embedded DSS/VRI counts, `/TU` metadata, SHA-256 hashes, and
+  guardrails such as `production_b_lt_status: "not_claimed"` and `legal_b_lt_claimed: false`. This
+  is a technical status surface, not a production B-LT/B-LTA or probative-value claim.
 
 PIN and OTP are transient, read into `Zeroizing`, consumed by their single call, and never
 persisted/logged/echoed.
@@ -441,8 +446,9 @@ trusted-list *status*, not probative-value assertions.
   `network-tests` + `#[ignore]`.
 - **TSL/TSA live network operations are feature-gated** and never run in CI; the trust UI's TSA
   diagnostics use an offline fixture probe unless a signing path explicitly requests a timestamp.
-- Live revocation fetching, production PAdES B-LT/B-LTA, B-LTA archive timestamps, and XAdES/ASiC
-  formats are **not built**. Local embedded DSS/VRI append/inspection/reporting exists, but remains
+- Technical CRL+OCSP revocation evidence collection, DSS merge/dedupe, `/TU` metadata, and
+  embedded DSS/VRI append/inspection/reporting exist. Production PAdES B-LT/B-LTA, B-LTA archive
+  timestamps, and XAdES/ASiC formats are **not built**, and the implemented evidence remains
   technical evidence only.
 
 ---

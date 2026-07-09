@@ -78,8 +78,4 @@ pub enum PadesError {
         /// Zero-based index in the caller-supplied list.
         index: usize,
     },
-
-    /// This local slice does not merge or replace a pre-existing DSS dictionary.
-    #[error("PDF already contains a DSS dictionary; DSS merge is not supported in this slice")]
-    ExistingDssUnsupported,
 }

@@ -30,7 +30,7 @@ DER fixtures only; they do not fetch, freshness-check, or trust-validate OCSP/CR
 | `b_t_signature_timestamp_embeds_and_validates` | `add_signature_timestamp` inserts the `id-aa-signatureTimeStampToken` unsigned attribute; the signature still validates and the ByteRange is unchanged |
 | `dss_revision_appends_to_b_t_and_reports_counts_hashes` | `add_dss_revision` appends a deterministic `/DSS` + `/VRI` incremental update from caller-supplied DER evidence; validation still succeeds and reports certificate, OCSP, CRL, VRI, and evidence hashes |
 | `dss_revision_keeps_signed_revision_tamper_detection` | tampering with the original signed revision still fails validation even when a later DSS revision remains parseable |
-| `empty_dss_evidence_is_rejected` / `existing_dss_is_rejected_in_this_slice` | local DSS append rejects missing revocation material and pre-existing DSS dictionaries rather than implying merge support |
+| `empty_dss_evidence_is_rejected` / `existing_dss_is_merged_and_deduped` | local DSS append rejects missing revocation material, merges pre-existing DSS dictionaries, and deduplicates evidence by stream hash |
 | `validation_rejects_unsigned_pdf` | an unsigned PDF returns `PadesError::NoSignature` |
 | `pdf::pdf_tests::*` | low-level helpers: hex, DER TLV length, `startxref` scan, dictionary serialization |
 
@@ -66,9 +66,9 @@ Broader inputs (xref streams, existing forms, multi-signature) are a documented 
 ## Explicit phase-2 follow-ups
 
 - **Production-grade PAdES-B-LT / B-LTA legal LTV** (SIG-21 archival default): local,
-  caller-supplied DSS/VRI append and reporting exists and is tested, but live OCSP/CRL fetching,
-  revocation freshness and trust validation, existing-DSS merge, multi-signature VRI handling, and
-  archive document timestamps (`/DocTimeStamp`) remain gaps. `PadesError::
+  caller-supplied DSS/VRI append, existing-DSS merge/dedupe, `/TU` metadata, technical revocation
+  evidence attachment, and reporting exist and are tested, but production B-LT/LTA sufficiency,
+  multi-signature VRI handling, and archive document timestamps (`/DocTimeStamp`) remain gaps. `PadesError::
   LongTermNotImplemented` remains reserved for long-term profile entry points that are not part of
   this local DSS slice.
 - **TSA signature-value verification inside B-T**: `chancela-tsa` verifies the timestamp token

@@ -9,12 +9,23 @@ validation.
 - `chancela-pades` supports PAdES B-B and B-T.
 - `chancela-pades` can append a deterministic `/DSS` + `/VRI` incremental
   update from caller-supplied DER certificate, OCSP, and CRL evidence.
+- Existing DSS dictionaries are merged deterministically: existing evidence
+  stream references are preserved, new evidence is deduplicated by SHA-256 of
+  the stream content, and the target VRI is keyed from the selected signature.
+- DSS/VRI entries can carry `/TU` validation-time metadata supplied by the
+  validated revocation path.
 - `chancela-pades` can inspect embedded DSS/VRI evidence and report
-  certificate, OCSP, CRL, VRI, and evidence hash counts.
+  certificate, OCSP, CRL, VRI, `/TU`, and evidence hash counts.
+- `chancela-signing` has technical CRL+OCSP revocation evidence collection:
+  URI discovery, bounded/mocked HTTP transport, CRL freshness/issuer/signature
+  checks, OCSP request/response/status/freshness/responder checks, and DSS-ready
+  evidence records.
+- `chancela-tsa` now covers RFC 3161 token binding plus TSA signer/path
+  foundations, while TSL catalog/search surfaces TSA/QTST records and blocking
+  analysis.
 - Validation keeps checking the signed revision covered by the signature
   ByteRange while allowing a later DSS incremental update to exist.
-- Empty DSS evidence and PDFs that already contain a DSS dictionary are
-  rejected in this local slice.
+- Empty DSS revocation evidence is rejected rather than overclaiming support.
 - Higher layers surface embedded DSS/VRI counts and hashes as local technical
   evidence only, not as a production B-LT or legal LTV claim.
 
@@ -24,23 +35,25 @@ The implemented slice is fixture-fed and caller-supplied:
 
 - The caller supplies complete DER blobs; Chancela preserves and reports them.
 - The PDF layer creates the DSS/VRI objects deterministically in an incremental
-  revision.
+  revision and merges with existing DSS evidence by content hash.
+- The validated revocation provider can collect CRL and OCSP evidence through
+  bounded transports and pass validation time through to PAdES `/TU` metadata.
 - Reports distinguish unsigned, B-B, B-T, and B-T plus local DSS evidence.
 - Archive evidence can include embedded DSS/VRI counts and hashes when those
   bytes are present.
 
-This proves local evidence attachment/reporting mechanics only. It does not
-prove that the revocation material was authoritative, fresh, trusted, or legally
-sufficient.
+This proves technical evidence attachment/reporting and offline-validation
+mechanics only. It does not prove production source configuration, QTSP policy
+acceptance, legal long-term validation, or B-LT/B-LTA sufficiency.
 
 ## Tested Coverage
 
 - PAdES round-trip: B-T PDF -> DSS revision -> validates, reports VRI/OCSP/CRL
-  counts and evidence hashes, and produces deterministic bytes.
+  counts, `/TU` metadata, evidence hashes, and produces deterministic bytes.
 - Signed-revision tamper detection: covered-byte tampering still fails after a
   later DSS revision is appended.
-- Guardrails: empty revocation evidence and pre-existing DSS dictionaries are
-  rejected instead of silently overclaiming support.
+- Guardrails: empty revocation evidence is rejected, while pre-existing DSS
+  dictionaries are merged/deduplicated instead of overwriting evidence.
 - Signing/API/archive evidence paths report embedded DSS/VRI material as local
   technical evidence.
 
@@ -48,11 +61,8 @@ sufficient.
 
 Production-grade PAdES B-LT/B-LTA and legal LTV still need:
 
-- live OCSP/CRL acquisition from authoritative sources;
-- revocation freshness checks;
-- OCSP/CRL responder trust and certificate-chain validation;
-- TSL/QTSP policy validation and TSA signature-chain validation;
-- merging with existing DSS dictionaries;
+- production OCSP/CRL source configuration and operating policy;
+- end-to-end QTSP/TSL policy decisions for the signing and timestamping context;
 - multi-signature VRI handling;
 - interoperability validation against external validators;
 - B-LTA archive document timestamps (`/DocTimeStamp`) and timestamp renewal
