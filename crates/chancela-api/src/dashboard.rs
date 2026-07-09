@@ -222,6 +222,8 @@ fn dashboard_alerts(
         });
     }
 
+    push_lifecycle_alerts(&mut alerts, entities, books, acts);
+
     for act in acts.values() {
         if act.state != ActState::Signing {
             continue;
@@ -259,6 +261,31 @@ fn dashboard_alerts(
                     links: target_links(Some(entity.id), Some(book.id), Some(act.id)),
                 },
                 source: Some(pack.id().to_owned()),
+            });
+        } else {
+            alerts.push(DashboardAlert {
+                code: "act.lifecycle.signing_ready".to_owned(),
+                label: "Advisory".to_owned(),
+                category: "ActLifecycle".to_owned(),
+                message: format!(
+                    "Act {} is in Signing and has no review-required compliance findings from rule pack {}. Collect or import the required signatures and seal when ready.",
+                    act.id,
+                    pack.id()
+                ),
+                params: dashboard_alert_params([
+                    ("act_id", act.id.to_string()),
+                    ("book_id", book.id.to_string()),
+                    ("entity_id", entity.id.to_string()),
+                    ("current_state", format!("{:?}", act.state)),
+                    ("rule_pack", pack.id().to_owned()),
+                ]),
+                target: DashboardAlertTarget {
+                    entity_id: Some(entity.id.to_string()),
+                    book_id: Some(book.id.to_string()),
+                    act_id: Some(act.id.to_string()),
+                    links: target_links(Some(entity.id), Some(book.id), Some(act.id)),
+                },
+                source: Some("acts.state".to_owned()),
             });
         }
     }
@@ -325,6 +352,182 @@ fn dashboard_alerts(
             .then_with(|| a.target.act_id.cmp(&b.target.act_id))
     });
     alerts
+}
+
+fn push_lifecycle_alerts(
+    alerts: &mut Vec<DashboardAlert>,
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+) {
+    for entity in entities.values() {
+        let total_books = books
+            .values()
+            .filter(|book| book.entity_id == entity.id)
+            .count();
+        let open_books = books
+            .values()
+            .filter(|book| book.entity_id == entity.id && book.state == BookState::Open)
+            .count();
+        if open_books == 0 {
+            alerts.push(DashboardAlert {
+                code: "entity.book.no_open_book".to_owned(),
+                label: "Advisory".to_owned(),
+                category: "BookLifecycle".to_owned(),
+                message: format!(
+                    "Entity {} has no open book recorded. Open a book or import an existing book before drafting new atas.",
+                    entity.name
+                ),
+                params: dashboard_alert_params([
+                    ("entity_id", entity.id.to_string()),
+                    ("entity_name", entity.name.clone()),
+                    ("total_books", total_books.to_string()),
+                    ("open_books", open_books.to_string()),
+                    ("recommended_actions", "open_book,import_book".to_owned()),
+                ]),
+                target: DashboardAlertTarget {
+                    entity_id: Some(entity.id.to_string()),
+                    book_id: None,
+                    act_id: None,
+                    links: target_links(Some(entity.id), None, None),
+                },
+                source: Some("entities.books".to_owned()),
+            });
+        }
+    }
+
+    for book in books.values().filter(|book| book.state == BookState::Open) {
+        let missing_fields = termo_abertura_missing_fields(book);
+        if !missing_fields.is_empty() {
+            alerts.push(DashboardAlert {
+                code: "book.termo_abertura.missing_metadata".to_owned(),
+                label: "ReviewRequired".to_owned(),
+                category: "BookLifecycle".to_owned(),
+                message: format!(
+                    "Open book {} is missing termo de abertura metadata or signatories. Review the book opening record before relying on it as complete evidence.",
+                    book.id
+                ),
+                params: dashboard_alert_params([
+                    ("book_id", book.id.to_string()),
+                    ("entity_id", book.entity_id.to_string()),
+                    ("book_kind", format!("{:?}", book.kind)),
+                    ("missing_fields", missing_fields.join(",")),
+                ]),
+                target: DashboardAlertTarget {
+                    entity_id: Some(book.entity_id.to_string()),
+                    book_id: Some(book.id.to_string()),
+                    act_id: None,
+                    links: target_links(Some(book.entity_id), Some(book.id), None),
+                },
+                source: Some("books.termo_abertura".to_owned()),
+            });
+        }
+
+        let act_count = acts.values().filter(|act| act.book_id == book.id).count();
+        if act_count == 0 {
+            alerts.push(DashboardAlert {
+                code: "book.acts.none_recorded".to_owned(),
+                label: "Advisory".to_owned(),
+                category: "BookLifecycle".to_owned(),
+                message: format!(
+                    "Open book {} has no acts recorded yet. Draft a new ata or import historical minutes when appropriate.",
+                    book.id
+                ),
+                params: dashboard_alert_params([
+                    ("book_id", book.id.to_string()),
+                    ("entity_id", book.entity_id.to_string()),
+                    ("book_kind", format!("{:?}", book.kind)),
+                    (
+                        "next_ata_number",
+                        book.last_ata_number.saturating_add(1).to_string(),
+                    ),
+                    ("recommended_actions", "draft_ata,import_minutes".to_owned()),
+                ]),
+                target: DashboardAlertTarget {
+                    entity_id: Some(book.entity_id.to_string()),
+                    book_id: Some(book.id.to_string()),
+                    act_id: None,
+                    links: target_links(Some(book.entity_id), Some(book.id), None),
+                },
+                source: Some("acts.by_book".to_owned()),
+            });
+        }
+    }
+
+    // Manager/gerencia remuneration templates exist, but there is no persisted entity/statute
+    // field recording whether remuneration has been set. Emit no dashboard alert until the data
+    // model can support that claim.
+    for act in acts.values() {
+        let Some(next_state) = next_act_state(act.state) else {
+            continue;
+        };
+        let Some(book) = books.get(&act.book_id) else {
+            continue;
+        };
+        let entity_id = book.entity_id;
+        alerts.push(DashboardAlert {
+            code: "act.lifecycle.advance_available".to_owned(),
+            label: "Advisory".to_owned(),
+            category: "ActLifecycle".to_owned(),
+            message: format!(
+                "Act {} is in {:?}. Continue the recorded lifecycle and advance to {:?} when the supporting work is ready.",
+                act.id, act.state, next_state
+            ),
+            params: dashboard_alert_params([
+                ("act_id", act.id.to_string()),
+                ("book_id", book.id.to_string()),
+                ("entity_id", entity_id.to_string()),
+                ("current_state", format!("{:?}", act.state)),
+                ("next_state", format!("{:?}", next_state)),
+            ]),
+            target: DashboardAlertTarget {
+                entity_id: Some(entity_id.to_string()),
+                book_id: Some(book.id.to_string()),
+                act_id: Some(act.id.to_string()),
+                links: target_links(Some(entity_id), Some(book.id), Some(act.id)),
+            },
+            source: Some("acts.state".to_owned()),
+        });
+    }
+}
+
+fn termo_abertura_missing_fields(book: &Book) -> Vec<&'static str> {
+    let Some(termo) = book.termo_abertura.as_ref() else {
+        return vec!["termo_abertura"];
+    };
+
+    let mut missing = Vec::new();
+    if termo.entity_name.trim().is_empty() {
+        missing.push("entity_name");
+    }
+    if termo.entity_nipc.trim().is_empty() {
+        missing.push("entity_nipc");
+    }
+    if termo.entity_seat.trim().is_empty() {
+        missing.push("entity_seat");
+    }
+    if termo.purpose.trim().is_empty() {
+        missing.push("purpose");
+    }
+    if termo
+        .required_signatories
+        .iter()
+        .all(|signatory| signatory.trim().is_empty())
+    {
+        missing.push("required_signatories");
+    }
+    missing
+}
+
+fn next_act_state(state: ActState) -> Option<ActState> {
+    match state {
+        ActState::Draft => Some(ActState::Review),
+        ActState::Review => Some(ActState::Convened),
+        ActState::Convened => Some(ActState::Deliberated),
+        ActState::Deliberated => Some(ActState::TextApproved),
+        ActState::TextApproved => Some(ActState::Signing),
+        ActState::Signing | ActState::Sealed | ActState::Archived => None,
+    }
 }
 
 fn dashboard_alert_params<const N: usize>(
@@ -764,6 +967,135 @@ mod tests {
                 && alert.target.entity_id.as_deref() == Some(&expiring_id.to_string())
                 && alert.message.contains("expires in 23 days")
         }));
+    }
+
+    #[test]
+    fn lifecycle_alerts_cover_entity_without_open_book() {
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+
+        let alerts = dashboard_alerts(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            true,
+            date!(2026 - 07 - 09),
+        );
+
+        assert_eq!(alerts.len(), 1);
+        let alert = &alerts[0];
+        assert_eq!(alert.code, "entity.book.no_open_book");
+        assert_eq!(alert.label, "Advisory");
+        assert_eq!(alert.category, "BookLifecycle");
+        let expected_entity_id = entity.id.to_string();
+        let expected_entity_link = format!("/v1/entities/{}", entity.id);
+        let expected_ledger_link = format!("/v1/ledger/events?chain=company:{}", entity.id);
+        assert_eq!(alert.params.get("entity_id"), Some(&expected_entity_id));
+        assert_eq!(
+            alert.params.get("total_books").map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            alert.params.get("open_books").map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            alert.params.get("recommended_actions").map(String::as_str),
+            Some("open_book,import_book")
+        );
+        assert_eq!(
+            alert.target.entity_id.as_deref(),
+            Some(expected_entity_id.as_str())
+        );
+        assert_eq!(alert.target.book_id, None);
+        assert_eq!(alert.target.act_id, None);
+        assert_eq!(
+            alert.target.links.entity.as_deref(),
+            Some(expected_entity_link.as_str())
+        );
+        assert_eq!(
+            alert.target.links.ledger.as_deref(),
+            Some(expected_ledger_link.as_str())
+        );
+    }
+
+    #[test]
+    fn lifecycle_alerts_cover_open_book_missing_termo_metadata_and_no_acts() {
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Open;
+        book.termo_abertura = Some(TermoDeAbertura {
+            entity_name: "".to_owned(),
+            entity_nipc: "".to_owned(),
+            entity_seat: " ".to_owned(),
+            purpose: "".to_owned(),
+            numbering_scheme: NumberingScheme::Sequential,
+            opening_date: date!(2026 - 01 - 05),
+            required_signatories: Vec::new(),
+        });
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+        let books = HashMap::from([(book.id, book.clone())]);
+
+        let alerts = dashboard_alerts(
+            &entities,
+            &books,
+            &HashMap::new(),
+            &HashMap::new(),
+            true,
+            date!(2026 - 07 - 09),
+        );
+
+        assert_eq!(alerts.len(), 2);
+        let no_acts = alerts
+            .iter()
+            .find(|alert| alert.code == "book.acts.none_recorded")
+            .expect("no-acts alert");
+        assert_eq!(no_acts.label, "Advisory");
+        assert_eq!(no_acts.category, "BookLifecycle");
+        let expected_entity_id = entity.id.to_string();
+        let expected_book_id = book.id.to_string();
+        let expected_book_link = format!("/v1/books/{}", book.id);
+        let expected_book_ledger_link = format!("/v1/ledger/events?chain=book:{}", book.id);
+        assert_eq!(no_acts.params.get("book_id"), Some(&expected_book_id));
+        assert_eq!(no_acts.params.get("entity_id"), Some(&expected_entity_id));
+        assert_eq!(
+            no_acts.params.get("next_ata_number").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            no_acts
+                .params
+                .get("recommended_actions")
+                .map(String::as_str),
+            Some("draft_ata,import_minutes")
+        );
+        assert_eq!(
+            no_acts.target.book_id.as_deref(),
+            Some(expected_book_id.as_str())
+        );
+        assert_eq!(
+            no_acts.target.links.book.as_deref(),
+            Some(expected_book_link.as_str())
+        );
+
+        let missing_termo = alerts
+            .iter()
+            .find(|alert| alert.code == "book.termo_abertura.missing_metadata")
+            .expect("missing termo alert");
+        assert_eq!(missing_termo.label, "ReviewRequired");
+        assert_eq!(missing_termo.category, "BookLifecycle");
+        assert_eq!(
+            missing_termo
+                .params
+                .get("missing_fields")
+                .map(String::as_str),
+            Some("entity_name,entity_nipc,entity_seat,purpose,required_signatories")
+        );
+        assert_eq!(
+            missing_termo.target.links.ledger.as_deref(),
+            Some(expected_book_ledger_link.as_str())
+        );
     }
 
     #[test]
