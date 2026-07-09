@@ -2,10 +2,19 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      enforce_security_scans:
+        description: Fail report-only dependency/image vulnerability scans when they return findings or errors.
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
 
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
@@ -29,6 +38,114 @@ jobs:
 
       - name: Check release versions
         run: npm run check:versions
+
+  # ---------------------------------------------------------------------------
+  # Supply chain: deterministic lockfile SBOM plus advisory reports. SBOM
+  # generation/check is enforced; vulnerability reports are report-only by
+  # default and become blocking only for manual runs with enforce_security_scans.
+  # Cargo audit is heavier, so PRs run it only when labeled run-security-scans.
+  # ---------------------------------------------------------------------------
+  supply-chain:
+    name: Supply chain reports
+    runs-on: ubuntu-latest
+    env:
+      SECURITY_SCAN_ENFORCED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enforce_security_scans == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Generate dependency SBOM
+        run: |
+          mkdir -p dist/supply-chain
+          node scripts/release-supply-chain.mjs sbom --output dist/supply-chain/chancela-dependency-sbom.cdx.json
+          node scripts/release-supply-chain.mjs check --input dist/supply-chain/chancela-dependency-sbom.cdx.json
+
+      - name: npm production vulnerability audit (report)
+        id: npm-audit
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --audit-level=high --json > dist/supply-chain/npm-audit-prod.json
+          status=$?
+          set -e
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ]; then
+            echo "npm production audit did not report high/critical findings." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "npm production audit returned status $status; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ] && [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
+      - name: Cargo advisory audit (report)
+        id: cargo-audit
+        if: >-
+          github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'pull_request' &&
+           contains(github.event.pull_request.labels.*.name, 'run-security-scans'))
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+
+          if ! cargo audit --version >/dev/null 2>&1; then
+            set +e
+            cargo install cargo-audit --locked
+            install_status=$?
+            set -e
+            if [ "$install_status" -ne 0 ]; then
+              status="$install_status"
+              cat > dist/supply-chain/cargo-audit.json <<JSON
+          {
+            "status": "skipped",
+            "reason": "cargo-audit could not be installed in this CI run",
+            "installExitCode": $install_status
+          }
+          JSON
+              echo "cargo-audit install failed with status $install_status; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+              echo "status=$status" >> "$GITHUB_OUTPUT"
+              if [ "$SECURITY_SCAN_ENFORCED" = "true" ]; then
+                exit "$status"
+              fi
+              exit 0
+            fi
+          fi
+
+          set +e
+          cargo audit --json > dist/supply-chain/cargo-audit.json
+          status=$?
+          set -e
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ]; then
+            echo "cargo audit completed without advisory failures." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "cargo audit returned status $status; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ] && [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
+      - name: Upload supply chain reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chancela-supply-chain-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/supply-chain/
+          if-no-files-found: ignore
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # Rust: format, lint (deny warnings) and test on all three desktop platforms.
@@ -193,11 +310,19 @@ jobs:
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_dispatch'
+    env:
+      SECURITY_SCAN_ENFORCED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enforce_security_scans == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Prepare Docker metadata
+        id: docker-meta
+        shell: bash
+        run: |
+          echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
       - name: Build server image (no push)
         uses: docker/build-push-action@v6
@@ -207,6 +332,12 @@ jobs:
           push: false
           load: true
           tags: chancela-server:ci
+          labels: |
+            org.opencontainers.image.title=Chancela server
+            org.opencontainers.image.description=Chancela self-hosted server CI image
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.docker-meta.outputs.created }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -271,6 +402,83 @@ jobs:
           if failed:
               raise SystemExit(f"health smoke failed {failed}: {health!r}")
           PY
+
+      - name: Collect Docker image metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/docker-security
+          docker image inspect chancela-server:ci > dist/docker-security/chancela-server-image-inspect.json
+
+      - name: Generate Docker image SBOM (report)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/docker-security
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/dist/docker-security:/out" \
+            anchore/syft:v1.9.0 \
+            chancela-server:ci \
+            -o cyclonedx-json=/out/chancela-server-image-sbom.cdx.json
+
+      - name: Scan Docker image vulnerabilities (report)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/docker-security
+          exit_code=0
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ]; then
+            exit_code=1
+          fi
+          set +e
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/dist/docker-security:/out" \
+            aquasec/trivy:0.54.1 \
+            image \
+            --exit-code "$exit_code" \
+            --format json \
+            --output /out/chancela-server-trivy-high-critical.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            chancela-server:ci
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Docker image vulnerability scan completed; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Docker image vulnerability scan returned status $status; see uploaded report artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ] && [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
+      - name: Record Docker signing status
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/docker-security
+          cat > dist/docker-security/chancela-server-signing-status.json <<'JSON'
+          {
+            "image": "chancela-server:ci",
+            "imagePushed": false,
+            "signingPerformed": false,
+            "notarizationPerformed": false,
+            "note": "This CI job builds and smokes a local Docker image only. It does not push, sign, attest, or notarize the image. Configure registry publishing and a signing identity before making a signed-image claim."
+          }
+          JSON
+          echo "Docker image signing/notarization: not performed for the local CI image." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Docker security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chancela-docker-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/docker-security/
+          if-no-files-found: ignore
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # E2E: composed-system journeys that drive the REAL cargo-built

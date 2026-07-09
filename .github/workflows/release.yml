@@ -134,6 +134,16 @@ jobs:
           "package=dist/$($tarball.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "metadata=$metadataDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+      - name: Generate dependency SBOM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sbomPath = Join-Path '${{ steps.collect.outputs.metadata }}' 'chancela-dependency-sbom.cdx.json'
+          node scripts/release-supply-chain.mjs sbom --output $sbomPath --package '${{ steps.collect.outputs.package }}'
+          node scripts/release-supply-chain.mjs check --input $sbomPath
+
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Dependency SBOM: ``$sbomPath``"
+
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:

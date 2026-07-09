@@ -19,6 +19,10 @@ test operating checklist for driving Chancela toward release confidence.
 - CI runs on pushes to `main`, pull requests, and manual `workflow_dispatch`.
 - Rust format, clippy, and workspace tests run on Linux, Windows, and macOS.
 - Web format, ESLint, Vitest, and Vite build run on Node 20 and Node 24.
+- Supply-chain CI generates and validates a CycloneDX dependency SBOM from
+  `package-lock.json` plus `cargo metadata --locked`, uploads npm/Cargo advisory
+  reports, and can make those reports blocking only on manual runs with
+  `enforce_security_scans=true`.
 - Composed server e2e runs `cargo test -p chancela-server --features e2e --locked`
   on Linux and Windows for every push and PR.
 - Live seam compile checks run `cargo test ... --no-run` for the existing
@@ -32,6 +36,9 @@ test operating checklist for driving Chancela toward release confidence.
 - Docker server image build plus runtime smoke runs on pushes to `main` and
   manual dispatches; the smoke starts the container with `CHANCELA_DATA_DIR`,
   polls `/health`, and asserts durable persistence from the JSON body.
+- The Docker lane applies OCI image labels and uploads image inspect metadata,
+  report-only Syft/Trivy artifacts, and an explicit JSON status saying the local
+  CI image was not pushed, signed, attested, or notarized.
 - Windows desktop smoke runs on pushes to `main` or PRs labeled
   `run-desktop-tests`.
 
@@ -108,6 +115,8 @@ npm run format:check --workspace apps/web
 npm run lint --workspace apps/web
 npm run test --workspace apps/web
 npm run build --workspace apps/web
+node scripts/release-supply-chain.mjs sbom --output dist/supply-chain/chancela-dependency-sbom.cdx.json
+node scripts/release-supply-chain.mjs check --input dist/supply-chain/chancela-dependency-sbom.cdx.json
 cargo test -p chancela-server --features e2e --locked
 cargo test -p chancela-cae --features network-tests --locked --no-run
 cargo test -p chancela-cmd --features network-tests --locked --no-run
@@ -229,6 +238,12 @@ The root scripts `test:browser`, `build:docker`, `test:desktop:rust`, and
 - Full browser e2e passes at least once on the release branch.
 - Docker image builds and passes the runtime `/health` persistence smoke from a
   clean checkout.
+- Release metadata artifacts include a validated dependency SBOM, package
+  manifest, and SHA-256 checksums.
+- Vulnerability scans have either passed in an enforced manual run or their
+  report-only findings are triaged and explicitly accepted for the release.
+- Package signing/notarization and Docker image signing are not claimed unless
+  the release workflow actually performs those steps.
 - Desktop smoke passes on Windows with a temporary data dir.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
