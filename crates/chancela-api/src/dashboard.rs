@@ -9,6 +9,7 @@ use chancela_core::{
     Act, ActId, ActState, Book, BookId, BookKind, BookState, CalendarPreset, Entity, EntityFamily,
     EntityId, EntityKind, EntityProfile, Severity, profile_for, rule_pack_for,
 };
+use chancela_law::LawCatalog;
 use chancela_registry::RegistryExtract;
 use time::{Date, Month, OffsetDateTime};
 
@@ -16,9 +17,10 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::require_permission;
 use crate::dto::{
-    DashboardActStateCounts, DashboardAlert, DashboardAlertTarget, DashboardCurrentWork,
-    DashboardOpenBook, DashboardReminder, DashboardResponse, DashboardTargetLinks, LedgerEventView,
-    compute_expired, format_date,
+    DashboardActStateCounts, DashboardAction, DashboardAlert, DashboardAlertTarget,
+    DashboardCurrentWork, DashboardI18n, DashboardLawReference, DashboardOpenBook,
+    DashboardReminder, DashboardResponse, DashboardTargetLinks, LedgerEventView, compute_expired,
+    format_date,
 };
 use crate::error::ApiError;
 
@@ -204,6 +206,7 @@ fn dashboard_alerts(
         alerts.push(DashboardAlert {
             code: "ledger.integrity.review_required".to_owned(),
             label: "ReviewRequired".to_owned(),
+            severity: "Error".to_owned(),
             category: "LedgerIntegrity".to_owned(),
             message: "The dashboard could not verify the ledger chain. Review the ledger integrity report before relying on the audit trail.".to_owned(),
             params: dashboard_alert_params([]),
@@ -219,10 +222,26 @@ fn dashboard_alerts(
                 },
             },
             source: Some("ledger.verify".to_owned()),
+            law_refs: Vec::new(),
+            action: Some(dashboard_action(
+                "open_ledger",
+                "notifications.alert.ledger.integrity.action",
+                Some("/v1/ledger/integrity".to_owned()),
+                Some("/arquivo".to_owned()),
+            )),
+            recommended_next_steps: vec![
+                "Open the ledger integrity report.".to_owned(),
+                "Resolve or re-anchor chain breaks before relying on archive evidence.".to_owned(),
+            ],
+            i18n: Some(alert_i18n(
+                "notifications.alert.ledger.integrity.title",
+                "notifications.alert.ledger.integrity.body",
+                Some("notifications.alert.ledger.integrity.action"),
+            )),
         });
     }
 
-    push_lifecycle_alerts(&mut alerts, entities, books, acts);
+    push_lifecycle_alerts(&mut alerts, entities, books, acts, registry_extracts);
 
     for act in acts.values() {
         if act.state != ActState::Signing {
@@ -243,6 +262,7 @@ fn dashboard_alerts(
             alerts.push(DashboardAlert {
                 code: "act.compliance.review_required".to_owned(),
                 label: "ReviewRequired".to_owned(),
+                severity: "Warning".to_owned(),
                 category: "Compliance".to_owned(),
                 message: format!(
                     "Act {} is in Signing and has review-required compliance findings. Review the compliance report before sealing.",
@@ -261,11 +281,28 @@ fn dashboard_alerts(
                     links: target_links(Some(entity.id), Some(book.id), Some(act.id)),
                 },
                 source: Some(pack.id().to_owned()),
+                law_refs: Vec::new(),
+                action: Some(dashboard_action(
+                    "open_act",
+                    "notifications.alert.act.compliance.action",
+                    Some(format!("/v1/acts/{}", act.id)),
+                    Some(format!("/atas/{}", act.id)),
+                )),
+                recommended_next_steps: vec![
+                    "Open the minutes compliance report.".to_owned(),
+                    "Resolve review-required findings before sealing.".to_owned(),
+                ],
+                i18n: Some(alert_i18n(
+                    "notifications.alert.act.compliance.title",
+                    "notifications.alert.act.compliance.body",
+                    Some("notifications.alert.act.compliance.action"),
+                )),
             });
         } else {
             alerts.push(DashboardAlert {
                 code: "act.lifecycle.signing_ready".to_owned(),
                 label: "Advisory".to_owned(),
+                severity: "Info".to_owned(),
                 category: "ActLifecycle".to_owned(),
                 message: format!(
                     "Act {} is in Signing and has no review-required compliance findings from rule pack {}. Collect or import the required signatures and seal when ready.",
@@ -286,6 +323,22 @@ fn dashboard_alerts(
                     links: target_links(Some(entity.id), Some(book.id), Some(act.id)),
                 },
                 source: Some("acts.state".to_owned()),
+                law_refs: Vec::new(),
+                action: Some(dashboard_action(
+                    "open_act",
+                    "notifications.alert.act.signingReady.action",
+                    Some(format!("/v1/acts/{}", act.id)),
+                    Some(format!("/atas/{}", act.id)),
+                )),
+                recommended_next_steps: vec![
+                    "Collect or import required signatures.".to_owned(),
+                    "Seal the minutes when the signing record is complete.".to_owned(),
+                ],
+                i18n: Some(alert_i18n(
+                    "notifications.alert.act.signingReady.title",
+                    "notifications.alert.act.signingReady.body",
+                    Some("notifications.alert.act.signingReady.action"),
+                )),
             });
         }
     }
@@ -325,6 +378,7 @@ fn dashboard_alerts(
         alerts.push(DashboardAlert {
             code: code.to_owned(),
             label: label.to_owned(),
+            severity: "Info".to_owned(),
             category: "RegistryProvenance".to_owned(),
             message,
             params: dashboard_alert_params([
@@ -339,6 +393,34 @@ fn dashboard_alerts(
                 links: target_links(Some(*entity_id), None, None),
             },
             source: Some("registry_extracts.provenance.valid_until".to_owned()),
+            law_refs: Vec::new(),
+            action: Some(dashboard_action(
+                "open_entity",
+                if code == "registry.provenance.expired" {
+                    "notifications.alert.registry.expired.action"
+                } else {
+                    "notifications.alert.registry.expiringSoon.action"
+                },
+                Some(format!("/v1/entities/{entity_id}")),
+                Some(format!("/entidades/{entity_id}")),
+            )),
+            recommended_next_steps: vec![
+                "Open the entity registry evidence.".to_owned(),
+                "Refresh the permanent certificate before using it as current evidence.".to_owned(),
+            ],
+            i18n: Some(if code == "registry.provenance.expired" {
+                alert_i18n(
+                    "notifications.alert.registry.expired.title",
+                    "notifications.alert.registry.expired.body",
+                    Some("notifications.alert.registry.expired.action"),
+                )
+            } else {
+                alert_i18n(
+                    "notifications.alert.registry.expiringSoon.title",
+                    "notifications.alert.registry.expiringSoon.body",
+                    Some("notifications.alert.registry.expiringSoon.action"),
+                )
+            }),
         });
     }
 
@@ -359,6 +441,7 @@ fn push_lifecycle_alerts(
     entities: &HashMap<EntityId, Entity>,
     books: &HashMap<BookId, Book>,
     acts: &HashMap<ActId, Act>,
+    registry_extracts: &HashMap<EntityId, RegistryExtract>,
 ) {
     for entity in entities.values() {
         let total_books = books
@@ -373,6 +456,7 @@ fn push_lifecycle_alerts(
             alerts.push(DashboardAlert {
                 code: "entity.book.no_open_book".to_owned(),
                 label: "Advisory".to_owned(),
+                severity: "Info".to_owned(),
                 category: "BookLifecycle".to_owned(),
                 message: format!(
                     "Entity {} has no open book recorded. Open a book or import an existing book before drafting new atas.",
@@ -392,6 +476,68 @@ fn push_lifecycle_alerts(
                     links: target_links(Some(entity.id), None, None),
                 },
                 source: Some("entities.books".to_owned()),
+                law_refs: law_refs(&[("dl-76-a-2006", "1"), ("dl-76-a-2006", "2")]),
+                action: Some(dashboard_action(
+                    "open_entity",
+                    "notifications.alert.entity.noOpenBook.action",
+                    Some(format!("/v1/entities/{}", entity.id)),
+                    Some(format!("/entidades/{}", entity.id)),
+                )),
+                recommended_next_steps: vec![
+                    "Open a new digital book for the relevant organ.".to_owned(),
+                    "Import an existing paper or external book if the entity already has one.".to_owned(),
+                ],
+                i18n: Some(alert_i18n(
+                    "notifications.alert.entity.noOpenBook.title",
+                    "notifications.alert.entity.noOpenBook.body",
+                    Some("notifications.alert.entity.noOpenBook.action"),
+                )),
+            });
+        }
+
+        if should_prompt_manager_remuneration(
+            entity,
+            acts,
+            books,
+            registry_extracts.get(&entity.id),
+        ) {
+            alerts.push(DashboardAlert {
+                code: "entity.manager_remuneration.setup_recommended".to_owned(),
+                label: "Advisory".to_owned(),
+                severity: "Info".to_owned(),
+                category: "GovernanceSetup".to_owned(),
+                message: format!(
+                    "Entity {} has management/administration officers in the imported registry evidence, but no sealed remuneration or non-remuneration minutes are recorded. Record the remuneration setup when appropriate.",
+                    entity.name
+                ),
+                params: dashboard_alert_params([
+                    ("entity_id", entity.id.to_string()),
+                    ("entity_name", entity.name.clone()),
+                    ("recommended_actions", "record_remuneration,record_non_remuneration".to_owned()),
+                ]),
+                target: DashboardAlertTarget {
+                    entity_id: Some(entity.id.to_string()),
+                    book_id: None,
+                    act_id: None,
+                    links: target_links(Some(entity.id), None, None),
+                },
+                source: Some("registry_extracts.orgaos".to_owned()),
+                law_refs: remuneration_law_refs(entity.kind),
+                action: Some(dashboard_action(
+                    "open_entity",
+                    "notifications.alert.entity.managerRemuneration.action",
+                    Some(format!("/v1/entities/{}", entity.id)),
+                    Some(format!("/entidades/{}", entity.id)),
+                )),
+                recommended_next_steps: vec![
+                    "Review the registry officers and statutes.".to_owned(),
+                    "Draft minutes for remuneration or explicit non-remuneration if required.".to_owned(),
+                ],
+                i18n: Some(alert_i18n(
+                    "notifications.alert.entity.managerRemuneration.title",
+                    "notifications.alert.entity.managerRemuneration.body",
+                    Some("notifications.alert.entity.managerRemuneration.action"),
+                )),
             });
         }
     }
@@ -402,6 +548,7 @@ fn push_lifecycle_alerts(
             alerts.push(DashboardAlert {
                 code: "book.termo_abertura.missing_metadata".to_owned(),
                 label: "ReviewRequired".to_owned(),
+                severity: "Warning".to_owned(),
                 category: "BookLifecycle".to_owned(),
                 message: format!(
                     "Open book {} is missing termo de abertura metadata or signatories. Review the book opening record before relying on it as complete evidence.",
@@ -420,6 +567,22 @@ fn push_lifecycle_alerts(
                     links: target_links(Some(book.entity_id), Some(book.id), None),
                 },
                 source: Some("books.termo_abertura".to_owned()),
+                law_refs: law_refs(&[("dl-76-a-2006", "1"), ("dl-76-a-2006", "2")]),
+                action: Some(dashboard_action(
+                    "open_book",
+                    "notifications.alert.book.missingTermo.action",
+                    Some(format!("/v1/books/{}", book.id)),
+                    Some(format!("/livros/{}", book.id)),
+                )),
+                recommended_next_steps: vec![
+                    "Complete the opening term identification and purpose metadata.".to_owned(),
+                    "Record the required signatories for the book opening.".to_owned(),
+                ],
+                i18n: Some(alert_i18n(
+                    "notifications.alert.book.missingTermo.title",
+                    "notifications.alert.book.missingTermo.body",
+                    Some("notifications.alert.book.missingTermo.action"),
+                )),
             });
         }
 
@@ -428,6 +591,7 @@ fn push_lifecycle_alerts(
             alerts.push(DashboardAlert {
                 code: "book.acts.none_recorded".to_owned(),
                 label: "Advisory".to_owned(),
+                severity: "Info".to_owned(),
                 category: "BookLifecycle".to_owned(),
                 message: format!(
                     "Open book {} has no acts recorded yet. Draft a new ata or import historical minutes when appropriate.",
@@ -450,13 +614,26 @@ fn push_lifecycle_alerts(
                     links: target_links(Some(book.entity_id), Some(book.id), None),
                 },
                 source: Some("acts.by_book".to_owned()),
+                law_refs: law_refs(&[("dl-76-a-2006", "1"), ("dl-76-a-2006", "2")]),
+                action: Some(dashboard_action(
+                    "open_book",
+                    "notifications.alert.book.noActs.action",
+                    Some(format!("/v1/books/{}", book.id)),
+                    Some(format!("/livros/{}", book.id)),
+                )),
+                recommended_next_steps: vec![
+                    "Draft the next minutes for this book.".to_owned(),
+                    "Import historical minutes if this book is being migrated.".to_owned(),
+                ],
+                i18n: Some(alert_i18n(
+                    "notifications.alert.book.noActs.title",
+                    "notifications.alert.book.noActs.body",
+                    Some("notifications.alert.book.noActs.action"),
+                )),
             });
         }
     }
 
-    // Manager/gerencia remuneration templates exist, but there is no persisted entity/statute
-    // field recording whether remuneration has been set. Emit no dashboard alert until the data
-    // model can support that claim.
     for act in acts.values() {
         let Some(next_state) = next_act_state(act.state) else {
             continue;
@@ -468,6 +645,7 @@ fn push_lifecycle_alerts(
         alerts.push(DashboardAlert {
             code: "act.lifecycle.advance_available".to_owned(),
             label: "Advisory".to_owned(),
+            severity: "Info".to_owned(),
             category: "ActLifecycle".to_owned(),
             message: format!(
                 "Act {} is in {:?}. Continue the recorded lifecycle and advance to {:?} when the supporting work is ready.",
@@ -487,6 +665,22 @@ fn push_lifecycle_alerts(
                 links: target_links(Some(entity_id), Some(book.id), Some(act.id)),
             },
             source: Some("acts.state".to_owned()),
+            law_refs: Vec::new(),
+            action: Some(dashboard_action(
+                "open_act",
+                "notifications.alert.act.advanceAvailable.action",
+                Some(format!("/v1/acts/{}", act.id)),
+                Some(format!("/atas/{}", act.id)),
+            )),
+            recommended_next_steps: vec![
+                "Review the supporting work for the current lifecycle state.".to_owned(),
+                "Advance the minutes when the next state is ready.".to_owned(),
+            ],
+            i18n: Some(alert_i18n(
+                "notifications.alert.act.advanceAvailable.title",
+                "notifications.alert.act.advanceAvailable.body",
+                Some("notifications.alert.act.advanceAvailable.action"),
+            )),
         });
     }
 }
@@ -536,6 +730,115 @@ fn dashboard_alert_params<const N: usize>(
     entries
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value))
+        .collect()
+}
+
+fn alert_i18n(title_key: &str, body_key: &str, action_key: Option<&str>) -> DashboardI18n {
+    DashboardI18n {
+        title_key: title_key.to_owned(),
+        body_key: body_key.to_owned(),
+        action_key: action_key.map(str::to_owned),
+    }
+}
+
+fn dashboard_action(
+    kind: &str,
+    label_key: &str,
+    api_href: Option<String>,
+    route: Option<String>,
+) -> DashboardAction {
+    DashboardAction {
+        kind: kind.to_owned(),
+        label_key: label_key.to_owned(),
+        api_href,
+        route,
+    }
+}
+
+fn law_refs(refs: &[(&str, &str)]) -> Vec<DashboardLawReference> {
+    let catalog = LawCatalog::embedded();
+    refs.iter()
+        .map(|(diploma_id, article_number)| {
+            catalog
+                .article(diploma_id, article_number)
+                .map(|article| DashboardLawReference {
+                    diploma_id: article.diploma_id.clone(),
+                    article: article.number.clone(),
+                    label: article.label.clone(),
+                    heading: article.heading.clone(),
+                    verification: format!("{:?}", article.verification),
+                    source_url: article.source.url.clone(),
+                })
+                .unwrap_or_else(|| DashboardLawReference {
+                    diploma_id: (*diploma_id).to_owned(),
+                    article: (*article_number).to_owned(),
+                    label: format!("Artigo {article_number}"),
+                    heading: String::new(),
+                    verification: "Missing".to_owned(),
+                    source_url: None,
+                })
+        })
+        .collect()
+}
+
+fn remuneration_law_refs(kind: EntityKind) -> Vec<DashboardLawReference> {
+    if matches!(kind, EntityKind::SociedadeAnonima) {
+        law_refs(&[("csc", "399")])
+    } else {
+        law_refs(&[("csc", "255")])
+    }
+}
+
+fn should_prompt_manager_remuneration(
+    entity: &Entity,
+    acts: &HashMap<ActId, Act>,
+    books: &HashMap<BookId, Book>,
+    registry_extract: Option<&RegistryExtract>,
+) -> bool {
+    if !matches!(entity.family, EntityFamily::CommercialCompany) || !is_sa_or_lda_like(entity.kind)
+    {
+        return false;
+    }
+    let Some(extract) = registry_extract else {
+        return false;
+    };
+    if !extract.orgaos.iter().any(|officer| {
+        officer.cessation_date.is_none()
+            && officer
+                .role
+                .as_deref()
+                .map(fold_ascii)
+                .is_some_and(|role| role.contains("gerente") || role.contains("administrador"))
+    }) {
+        return false;
+    }
+
+    !acts.values().any(|act| {
+        matches!(act.state, ActState::Sealed | ActState::Archived)
+            && books
+                .get(&act.book_id)
+                .is_some_and(|book| book.entity_id == entity.id)
+            && act_mentions_remuneration(act)
+    })
+}
+
+fn act_mentions_remuneration(act: &Act) -> bool {
+    let haystack = fold_ascii(&format!("{} {}", act.title, act.deliberations));
+    haystack.contains("remuneracao") || haystack.contains("nao remuneracao")
+}
+
+fn fold_ascii(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ã' | 'ä' | 'Á' | 'À' | 'Â' | 'Ã' | 'Ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' | 'Í' | 'Ì' | 'Î' | 'Ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' | 'Ó' | 'Ò' | 'Ô' | 'Õ' | 'Ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' | 'Ú' | 'Ù' | 'Û' | 'Ü' => 'u',
+            'ç' | 'Ç' => 'c',
+            other => other.to_ascii_lowercase(),
+        })
         .collect()
 }
 
@@ -694,7 +997,45 @@ fn profile_calendar_reminder(
         entity_name: entity.name.clone(),
         source_rule: preset.id.to_owned(),
         source_profile: profile.template_family.to_owned(),
+        law_refs: calendar_law_refs(profile.family, preset.id),
+        action: Some(dashboard_action(
+            "open_entity",
+            "notifications.reminder.annual.action",
+            Some(format!("/v1/entities/{}", entity.id)),
+            Some(format!("/entidades/{}", entity.id)),
+        )),
+        recommended_next_steps: calendar_next_steps(profile.family),
     })
+}
+
+fn calendar_law_refs(family: EntityFamily, preset_id: &str) -> Vec<DashboardLawReference> {
+    match (family, preset_id) {
+        (EntityFamily::CommercialCompany, "csc-art376-annual") => law_refs(&[("csc", "376")]),
+        (EntityFamily::Association, "assoc-annual") => law_refs(&[("cc", "173")]),
+        (EntityFamily::Cooperative, "cooperativa-annual") => law_refs(&[("cod-cooperativo", "33")]),
+        _ => Vec::new(),
+    }
+}
+
+fn calendar_next_steps(family: EntityFamily) -> Vec<String> {
+    match family {
+        EntityFamily::CommercialCompany => vec![
+            "Prepare annual accounts approval minutes if the meeting has not occurred.".to_owned(),
+            "Seal or archive the annual general meeting minutes once approved.".to_owned(),
+        ],
+        EntityFamily::Association | EntityFamily::Cooperative => vec![
+            "Prepare the annual general meeting record if the meeting has not occurred.".to_owned(),
+            "Seal or archive the annual minutes once approved.".to_owned(),
+        ],
+        EntityFamily::Foundation => vec![
+            "Review the annual foundation governance record.".to_owned(),
+            "Seal or archive the relevant annual act once approved.".to_owned(),
+        ],
+        EntityFamily::Condominium => vec![
+            "Review the annual condominium assembly record.".to_owned(),
+            "Seal or archive the assembly minutes once approved.".to_owned(),
+        ],
+    }
 }
 
 fn supports_profile_calendar_reminders(entity: &Entity) -> bool {
@@ -890,7 +1231,7 @@ fn calendar_signal_book_kinds(family: EntityFamily) -> &'static [BookKind] {
 mod tests {
     use super::*;
     use chancela_core::{MeetingChannel, Nipc, NumberingScheme, TermoDeAbertura};
-    use chancela_registry::{RegistryExtract, RegistryProvenance};
+    use chancela_registry::{RegistryExtract, RegistryOfficer, RegistryProvenance};
     use time::macros::date;
 
     fn entity_of(kind: EntityKind) -> Entity {
@@ -940,6 +1281,18 @@ mod tests {
     fn registry_extract_with_constitution_date(constitution_date: &str) -> RegistryExtract {
         let mut extract = registry_extract(None);
         extract.data_constituicao = Some(constitution_date.to_owned());
+        extract
+    }
+
+    fn registry_extract_with_officer(role: &str) -> RegistryExtract {
+        let mut extract = registry_extract(None);
+        extract.orgaos.push(RegistryOfficer {
+            name: "Maria Gestora".to_owned(),
+            role: Some(role.to_owned()),
+            appointment_date: Some("2026-01-10".to_owned()),
+            cessation_date: None,
+            source_event: Some("1".to_owned()),
+        });
         extract
     }
 
@@ -1086,6 +1439,84 @@ mod tests {
         assert_eq!(
             alert.target.links.ledger.as_deref(),
             Some(expected_ledger_link.as_str())
+        );
+        assert_eq!(alert.severity, "Info");
+        assert_eq!(alert.law_refs[0].diploma_id, "dl-76-a-2006");
+        assert_eq!(
+            alert.action.as_ref().map(|action| action.kind.as_str()),
+            Some("open_entity")
+        );
+        assert!(
+            alert
+                .recommended_next_steps
+                .iter()
+                .any(|step| step.contains("Open a new digital book"))
+        );
+    }
+
+    #[test]
+    fn lifecycle_alerts_recommend_manager_remuneration_setup_from_registry_officers() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+        let registry_extracts =
+            HashMap::from([(entity.id, registry_extract_with_officer("Gerente"))]);
+
+        let alerts = dashboard_alerts(
+            &entities,
+            &HashMap::new(),
+            &HashMap::new(),
+            &registry_extracts,
+            true,
+            date!(2026 - 07 - 09),
+        );
+
+        let alert = alerts
+            .iter()
+            .find(|alert| alert.code == "entity.manager_remuneration.setup_recommended")
+            .expect("manager remuneration alert");
+        assert_eq!(alert.severity, "Info");
+        assert_eq!(alert.category, "GovernanceSetup");
+        assert_eq!(alert.law_refs.len(), 1);
+        assert_eq!(alert.law_refs[0].diploma_id, "csc");
+        assert_eq!(alert.law_refs[0].article, "255");
+        let expected_route = format!("/entidades/{}", entity.id);
+        assert_eq!(
+            alert
+                .action
+                .as_ref()
+                .and_then(|action| action.route.as_deref()),
+            Some(expected_route.as_str())
+        );
+        assert_eq!(
+            alert.params.get("recommended_actions").map(String::as_str),
+            Some("record_remuneration,record_non_remuneration")
+        );
+    }
+
+    #[test]
+    fn manager_remuneration_setup_alert_is_suppressed_by_sealed_remuneration_minutes() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut act = Act::draft(
+            book.id,
+            "Ata de não remuneração da gerência",
+            MeetingChannel::Physical,
+        );
+        act.state = ActState::Sealed;
+
+        let alerts = dashboard_alerts(
+            &HashMap::from([(entity.id, entity.clone())]),
+            &HashMap::from([(book.id, book)]),
+            &HashMap::from([(act.id, act)]),
+            &HashMap::from([(entity.id, registry_extract_with_officer("Gerente"))]),
+            true,
+            date!(2026 - 07 - 09),
+        );
+
+        assert!(
+            !alerts
+                .iter()
+                .any(|alert| alert.code == "entity.manager_remuneration.setup_recommended")
         );
     }
 

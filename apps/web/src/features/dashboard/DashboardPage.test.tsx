@@ -132,6 +132,66 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('list', { name: 'Fila de trabalho do painel' })).toBeNull();
   });
 
+  it('renders law-backed dashboard alerts with action route and law metadata', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      alerts: [
+        {
+          code: 'entity.manager_remuneration.setup_recommended',
+          label: 'Advisory',
+          severity: 'Info',
+          category: 'GovernanceSetup',
+          message: 'Raw backend remuneration message.',
+          params: { entity_name: 'Encosto Estratégico, Lda.' },
+          target: {
+            entity_id: 'entity-1',
+            book_id: null,
+            act_id: null,
+            links: { entity: '/v1/entities/entity-1', book: null, act: null, ledger: null },
+          },
+          source: 'registry_extracts.orgaos',
+          law_refs: [
+            {
+              diploma_id: 'csc',
+              article: '255',
+              label: 'Artigo 255.º',
+              heading: 'Remuneração dos gerentes',
+              verification: 'Pending',
+              source_url: null,
+            },
+          ],
+          action: {
+            kind: 'open_entity',
+            label_key: 'notifications.alert.entity.managerRemuneration.action',
+            api_href: '/v1/entities/entity-1',
+            route: '/entidades/entity-1',
+          },
+          recommended_next_steps: [
+            'Review registry officers.',
+            'Draft remuneration or non-remuneration minutes.',
+          ],
+          i18n: {
+            title_key: 'notifications.alert.entity.managerRemuneration.title',
+            body_key: 'notifications.alert.entity.managerRemuneration.body',
+            action_key: 'notifications.alert.entity.managerRemuneration.action',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    expect(
+      within(queue)
+        .getByRole('link', { name: 'Definir remuneração da gerência' })
+        .getAttribute('href'),
+    ).toBe('/entidades/entity-1');
+    expect(within(queue).getByText(/Encosto Estratégico, Lda./)).toBeTruthy();
+    expect(within(queue).getByText('Lei csc:255')).toBeTruthy();
+  });
+
   it('deduplicates reminders and orders overdue before upcoming work while tolerating bad dates', async () => {
     const longName =
       'Sociedade com uma denominação excecionalmente longa para testar a quebra de linha sem alargar o painel, S.A.';

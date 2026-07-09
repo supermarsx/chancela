@@ -190,6 +190,10 @@ export const ptBR: Catalog = {
   'notifications.alert.entity.noOpenBook.body':
     'A entidade {entity_name} não tem livro aberto registrado. Abra ou importe um livro antes de preparar novas atas.',
   'notifications.alert.entity.noOpenBook.action': 'Abrir entidade',
+  'notifications.alert.entity.managerRemuneration.title': 'Set up management remuneration',
+  'notifications.alert.entity.managerRemuneration.body':
+    'The entity {entity_name} has management/administration officers in imported registry evidence and no sealed remuneration or non-remuneration minutes yet. Record the decision when applicable.',
+  'notifications.alert.entity.managerRemuneration.action': 'Open entity',
   'notifications.alert.book.missingTermo.title': 'Revisar termo de abertura',
   'notifications.alert.book.missingTermo.body':
     'O livro {book_id} tem campos a revisar no termo de abertura: {missing_fields}. Complete o registro antes de usá-lo como prova completa.',

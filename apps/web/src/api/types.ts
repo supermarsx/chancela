@@ -630,11 +630,16 @@ export type DashboardAlertLabel = 'Advisory' | 'ReviewRequired';
 export interface DashboardAlert {
   code: string;
   label: DashboardAlertLabel;
+  severity?: 'Info' | 'Warning' | 'Error' | string;
   category: string;
   message: string;
   params: Record<string, string>;
   target: DashboardAlertTarget;
   source: string | null;
+  law_refs?: DashboardLawReference[];
+  action?: DashboardAction | null;
+  recommended_next_steps?: string[];
+  i18n?: DashboardI18n | null;
 }
 
 export interface DashboardAlertTarget {
@@ -651,6 +656,28 @@ export interface DashboardTargetLinks {
   ledger: string | null;
 }
 
+export interface DashboardLawReference {
+  diploma_id: string;
+  article: string;
+  label: string;
+  heading: string;
+  verification: string;
+  source_url: string | null;
+}
+
+export interface DashboardAction {
+  kind: string;
+  label_key: string;
+  api_href: string | null;
+  route: string | null;
+}
+
+export interface DashboardI18n {
+  title_key: string;
+  body_key: string;
+  action_key: string | null;
+}
+
 export type DashboardReminderSeverity = 'Advisory' | 'Info' | 'Warning';
 export type DashboardReminderStatus = 'Upcoming' | 'DueSoon' | 'Overdue';
 
@@ -663,6 +690,9 @@ export interface DashboardReminder {
   entity_name: string;
   source_rule: string;
   source_profile: string;
+  law_refs?: DashboardLawReference[];
+  action?: DashboardAction | null;
+  recommended_next_steps?: string[];
 }
 
 // --- Registry / certidão permanente (§2.7, plan t11) ----------------------------

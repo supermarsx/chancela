@@ -190,6 +190,10 @@ export const svSE: Catalog = {
   'notifications.alert.entity.noOpenBook.body':
     'Entity {entity_name} has no open book recorded. Open or import a book before drafting new minutes.',
   'notifications.alert.entity.noOpenBook.action': 'Open entity',
+  'notifications.alert.entity.managerRemuneration.title': 'Set up management remuneration',
+  'notifications.alert.entity.managerRemuneration.body':
+    'The entity {entity_name} has management/administration officers in imported registry evidence and no sealed remuneration or non-remuneration minutes yet. Record the decision when applicable.',
+  'notifications.alert.entity.managerRemuneration.action': 'Open entity',
   'notifications.alert.book.missingTermo.title': 'Review opening term',
   'notifications.alert.book.missingTermo.body':
     'Book {book_id} has opening-term fields to review: {missing_fields}. Complete the record before relying on it as complete evidence.',

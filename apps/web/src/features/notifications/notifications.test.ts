@@ -131,6 +131,34 @@ describe('buildDashboardNotifications', () => {
             source: 'dashboard.lifecycle.entity_books',
           }),
           alert({
+            code: 'entity.manager_remuneration.setup_recommended',
+            message: 'Raw backend remuneration message.',
+            params: { entity_name: 'Acme, Lda.' },
+            target: {
+              entity_id: 'entity-2',
+              book_id: null,
+              act_id: null,
+              links: { ...targetLinks, entity: '/v1/entities/entity-2' },
+            },
+            action: {
+              kind: 'open_entity',
+              label_key: 'notifications.alert.entity.managerRemuneration.action',
+              api_href: '/v1/entities/entity-2',
+              route: '/entidades/entity-2',
+            },
+            law_refs: [
+              {
+                diploma_id: 'csc',
+                article: '255',
+                label: 'Artigo 255.º',
+                heading: 'Remuneração dos gerentes',
+                verification: 'Pending',
+                source_url: null,
+              },
+            ],
+            source: 'registry_extracts.orgaos',
+          }),
+          alert({
             code: 'book.termo_abertura.missing_metadata',
             message: 'Raw backend missing-term message.',
             params: { book_id: 'book-1', missing_fields: 'hash inicial' },
@@ -183,7 +211,7 @@ describe('buildDashboardNotifications', () => {
       t,
     );
 
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(6);
     expect(items.map((item) => item.detail).join('\n')).not.toContain('Raw backend');
 
     const byId = new Map(items.map((item) => [item.id, item]));
@@ -192,21 +220,27 @@ describe('buildDashboardNotifications', () => {
       action: { href: '/entidades/entity-1', label: 'Abrir entidade' },
     });
     expect(
-      byId.get('alert:book.termo_abertura.missing_metadata:entity-1:book-1:-:1'),
+      byId.get('alert:entity.manager_remuneration.setup_recommended:entity-2:-:-:1'),
+    ).toMatchObject({
+      title: 'Definir remuneração da gerência',
+      action: { href: '/entidades/entity-2', label: 'Abrir entidade' },
+    });
+    expect(
+      byId.get('alert:book.termo_abertura.missing_metadata:entity-1:book-1:-:2'),
     ).toMatchObject({
       title: 'Rever termo de abertura',
       action: { href: '/livros/book-1', label: 'Abrir livro' },
     });
     expect(
-      byId.get('alert:book.termo_abertura.missing_metadata:entity-1:book-1:-:1')?.detail,
+      byId.get('alert:book.termo_abertura.missing_metadata:entity-1:book-1:-:2')?.detail,
     ).toContain('hash inicial');
-    expect(byId.get('alert:book.acts.none_recorded:entity-1:book-1:-:2')).toMatchObject({
+    expect(byId.get('alert:book.acts.none_recorded:entity-1:book-1:-:3')).toMatchObject({
       title: 'Livro sem atas registadas',
       detail:
         'O livro aberto ainda não tem atas. Crie a ata n.º 2 ou importe atas históricas quando aplicável.',
       action: { href: '/livros/book-1', label: 'Abrir livro' },
     });
-    expect(byId.get('alert:act.lifecycle.advance_available:entity-1:book-1:act-1:3')).toMatchObject(
+    expect(byId.get('alert:act.lifecycle.advance_available:entity-1:book-1:act-1:4')).toMatchObject(
       {
         title: 'Próximo passo da ata disponível',
         detail:
@@ -214,7 +248,7 @@ describe('buildDashboardNotifications', () => {
         action: { href: '/atas/act-1', label: 'Abrir ata' },
       },
     );
-    expect(byId.get('alert:act.lifecycle.signing_ready:entity-1:book-1:act-1:4')).toMatchObject({
+    expect(byId.get('alert:act.lifecycle.signing_ready:entity-1:book-1:act-1:5')).toMatchObject({
       title: 'Ata pronta para assinaturas',
       detail:
         'A ata está em assinatura e não tem erros de conformidade em PT-CSC. Recolha ou importe as assinaturas necessárias.',

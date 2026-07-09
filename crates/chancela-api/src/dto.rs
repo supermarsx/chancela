@@ -1509,11 +1509,16 @@ pub struct DashboardOpenBook {
 pub struct DashboardAlert {
     pub code: String,
     pub label: String,
+    pub severity: String,
     pub category: String,
     pub message: String,
     pub params: BTreeMap<String, String>,
     pub target: DashboardAlertTarget,
     pub source: Option<String>,
+    pub law_refs: Vec<DashboardLawReference>,
+    pub action: Option<DashboardAction>,
+    pub recommended_next_steps: Vec<String>,
+    pub i18n: Option<DashboardI18n>,
 }
 
 /// Safe target ids for a dashboard alert.
@@ -1534,6 +1539,34 @@ pub struct DashboardTargetLinks {
     pub ledger: Option<String>,
 }
 
+/// One law-corpus article reference attached to a dashboard actionable.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardLawReference {
+    pub diploma_id: String,
+    pub article: String,
+    pub label: String,
+    pub heading: String,
+    pub verification: String,
+    pub source_url: Option<String>,
+}
+
+/// Client-facing action metadata for dashboard actionables.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardAction {
+    pub kind: String,
+    pub label_key: String,
+    pub api_href: Option<String>,
+    pub route: Option<String>,
+}
+
+/// Translation keys for user-facing dashboard actionable text.
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct DashboardI18n {
+    pub title_key: String,
+    pub body_key: String,
+    pub action_key: Option<String>,
+}
+
 /// One bounded dashboard reminder/action item. These are advisory planning signals, not compliance
 /// gates; `source_rule` is the calendar/rule seed and `source_profile` is the entity profile facet
 /// that produced it.
@@ -1547,6 +1580,9 @@ pub struct DashboardReminder {
     pub entity_name: String,
     pub source_rule: String,
     pub source_profile: String,
+    pub law_refs: Vec<DashboardLawReference>,
+    pub action: Option<DashboardAction>,
+    pub recommended_next_steps: Vec<String>,
 }
 
 // --- Registry views + report (§2.7) ------------------------------------------------------

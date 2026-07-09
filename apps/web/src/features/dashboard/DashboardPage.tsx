@@ -6,8 +6,8 @@
  */
 import { Link } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
-import type { DashboardReminder, LedgerEventView } from '../../api/types';
-import { useT, type TFunction } from '../../i18n';
+import type { DashboardAlert, DashboardReminder, LedgerEventView } from '../../api/types';
+import { useT, type MessageKey, type TFunction, type TParams } from '../../i18n';
 import {
   Badge,
   Card,
@@ -128,6 +128,105 @@ function dedupeReminders(reminders: DashboardReminder[]): DashboardReminder[] {
   });
 }
 
+function messageKey(value: string | null | undefined): MessageKey | undefined {
+  return value?.trim() ? (value.trim() as MessageKey) : undefined;
+}
+
+function frontendRouteFromApi(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  const route = path.trim();
+  if (!route) return undefined;
+  if (route.startsWith('/entidades/') || route === '/entidades') return route;
+  if (route.startsWith('/livros/') || route === '/livros') return route;
+  if (route.startsWith('/atas/') || route === '/atas') return route;
+  if (route.startsWith('/arquivo') || route.startsWith('/configuracoes')) return route;
+
+  const entity = /^\/v1\/entities\/([^/?#]+)/.exec(route);
+  if (entity) return `/entidades/${entity[1]}`;
+  const book = /^\/v1\/books\/([^/?#]+)/.exec(route);
+  if (book) return `/livros/${book[1]}`;
+  const act = /^\/v1\/acts\/([^/?#]+)/.exec(route);
+  if (act) return `/atas/${act[1]}`;
+  if (route.startsWith('/v1/ledger')) return '/arquivo';
+  return undefined;
+}
+
+function routeFromAlert(alert: DashboardAlert): string | undefined {
+  const metadataRoute =
+    frontendRouteFromApi(alert.action?.route) ?? frontendRouteFromApi(alert.action?.api_href);
+  if (metadataRoute) return metadataRoute;
+  const links = alert.target.links;
+  return (
+    frontendRouteFromApi(links.act) ??
+    (alert.target.act_id?.trim() ? `/atas/${alert.target.act_id.trim()}` : undefined) ??
+    frontendRouteFromApi(links.book) ??
+    (alert.target.book_id?.trim() ? `/livros/${alert.target.book_id.trim()}` : undefined) ??
+    frontendRouteFromApi(links.entity) ??
+    (alert.target.entity_id?.trim() ? `/entidades/${alert.target.entity_id.trim()}` : undefined) ??
+    frontendRouteFromApi(links.ledger)
+  );
+}
+
+function alertTone(alert: DashboardAlert): QueueTone {
+  if (alert.severity === 'Error' || alert.code === 'ledger.integrity.review_required')
+    return 'error';
+  if (alert.severity === 'Warning' || alert.label === 'ReviewRequired') return 'warn';
+  return 'accent';
+}
+
+function alertPriority(alert: DashboardAlert): number {
+  if (alert.code === 'ledger.integrity.review_required') return 0;
+  if (alert.label === 'ReviewRequired') return 2;
+  return 3;
+}
+
+const ALERT_COPY: Partial<Record<string, { title: MessageKey; body: MessageKey }>> = {
+  'entity.book.no_open_book': {
+    title: 'notifications.alert.entity.noOpenBook.title',
+    body: 'notifications.alert.entity.noOpenBook.body',
+  },
+  'entity.manager_remuneration.setup_recommended': {
+    title: 'notifications.alert.entity.managerRemuneration.title',
+    body: 'notifications.alert.entity.managerRemuneration.body',
+  },
+  'book.termo_abertura.missing_metadata': {
+    title: 'notifications.alert.book.missingTermo.title',
+    body: 'notifications.alert.book.missingTermo.body',
+  },
+  'book.acts.none_recorded': {
+    title: 'notifications.alert.book.noActs.title',
+    body: 'notifications.alert.book.noActs.body',
+  },
+};
+
+function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction): WorkQueueItem {
+  const code = alert.code.trim();
+  const copy = ALERT_COPY[code];
+  const titleKey = messageKey(alert.i18n?.title_key) ?? copy?.title;
+  const bodyKey = messageKey(alert.i18n?.body_key) ?? copy?.body;
+  const params: TParams = { ...alert.params, code };
+  const lawRefs = (alert.law_refs ?? [])
+    .map((ref) => `${ref.diploma_id}:${ref.article}`)
+    .filter(Boolean);
+
+  return {
+    id: `alert:${code || 'unknown'}:${index}`,
+    priority: alertPriority(alert),
+    sortTime: null,
+    badge: t('notifications.badge.alert'),
+    tone: alertTone(alert),
+    title: titleKey ? t(titleKey, params) : t('notifications.alert.unknown.title', params),
+    detail: bodyKey
+      ? t(bodyKey, params)
+      : alert.message.trim() || t('notifications.alert.fallbackDetail'),
+    meta: [
+      ...(alert.source ? [t('notifications.alert.source', { source: alert.source })] : []),
+      ...(lawRefs.length > 0 ? [`Lei ${lawRefs.join(', ')}`] : []),
+    ],
+    href: routeFromAlert(alert),
+  };
+}
+
 function compareQueueItems(a: WorkQueueItem, b: WorkQueueItem): number {
   if (a.priority !== b.priority) return a.priority - b.priority;
   if (a.sortTime !== null && b.sortTime !== null && a.sortTime !== b.sortTime) {
@@ -141,17 +240,26 @@ function compareQueueItems(a: WorkQueueItem, b: WorkQueueItem): number {
 function buildWorkQueue({
   ledgerValid,
   unresolvedCompliance,
+  alerts,
   reminders,
   t,
 }: {
   ledgerValid: boolean;
   unresolvedCompliance: number;
+  alerts: DashboardAlert[];
   reminders: DashboardReminder[];
   t: TFunction;
 }): WorkQueueItem[] {
   const items: WorkQueueItem[] = [];
 
-  if (!ledgerValid) {
+  for (const [index, alert] of alerts.entries()) {
+    items.push(alertWorkQueueItem(alert, index, t));
+  }
+
+  if (
+    !ledgerValid &&
+    !items.some((item) => item.id.startsWith('alert:ledger.integrity.review_required:'))
+  ) {
     items.push({
       id: 'integrity',
       priority: 0,
@@ -274,6 +382,7 @@ export function DashboardPage() {
   const workQueueItems = buildWorkQueue({
     ledgerValid: data.ledger_valid,
     unresolvedCompliance: data.unresolved_compliance,
+    alerts: data.alerts,
     reminders: data.reminders,
     t,
   });

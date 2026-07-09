@@ -69,6 +69,11 @@ const ALERT_COPY: Record<string, AlertCopy> = {
     body: 'notifications.alert.entity.noOpenBook.body',
     action: 'notifications.alert.entity.noOpenBook.action',
   },
+  'entity.manager_remuneration.setup_recommended': {
+    title: 'notifications.alert.entity.managerRemuneration.title',
+    body: 'notifications.alert.entity.managerRemuneration.body',
+    action: 'notifications.alert.entity.managerRemuneration.action',
+  },
   'book.termo_abertura.missing_metadata': {
     title: 'notifications.alert.book.missingTermo.title',
     body: 'notifications.alert.book.missingTermo.body',
@@ -227,6 +232,21 @@ function routeAction(href: string, label: MessageKey, t: TFunction): Notificatio
   return { href, label: t(label) };
 }
 
+function messageKey(value: string | null | undefined): MessageKey | undefined {
+  return value?.trim() ? (value.trim() as MessageKey) : undefined;
+}
+
+function actionFromMetadata(
+  action: DashboardAlert['action'] | DashboardReminder['action'] | null | undefined,
+  t: TFunction,
+): NotificationAction | undefined {
+  if (!action) return undefined;
+  const href = frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href);
+  const labelKey = messageKey(action.label_key);
+  if (!href || !labelKey) return undefined;
+  return { href, label: t(labelKey) };
+}
+
 function actionFromTarget(
   alert: DashboardAlert,
   t: TFunction,
@@ -296,7 +316,9 @@ function alertAction(
   preferredLabel?: MessageKey,
 ): NotificationAction {
   return (
-    actionFromTarget(alert, t, preferredLabel) ?? fallbackAlertAction(alert, t, preferredLabel)
+    actionFromMetadata(alert.action, t) ??
+    actionFromTarget(alert, t, preferredLabel) ??
+    fallbackAlertAction(alert, t, preferredLabel)
   );
 }
 
@@ -320,6 +342,9 @@ function buildAlertNotification(
   const source = alert.source?.trim();
   const code = alert.code.trim() || 'unknown';
   const copy = ALERT_COPY[code];
+  const i18nTitle = messageKey(alert.i18n?.title_key);
+  const i18nBody = messageKey(alert.i18n?.body_key);
+  const i18nAction = messageKey(alert.i18n?.action_key);
   const params: TParams = { ...alert.params, code };
   const unknownParams: TParams = {
     ...params,
@@ -332,10 +357,18 @@ function buildAlertNotification(
     sortTime: null,
     tone,
     badge: t('notifications.badge.alert'),
-    title: copy ? t(copy.title, params) : t('notifications.alert.unknown.title', unknownParams),
-    detail: copy ? t(copy.body, params) : t('notifications.alert.unknown.body', unknownParams),
+    title: i18nTitle
+      ? t(i18nTitle, params)
+      : copy
+        ? t(copy.title, params)
+        : t('notifications.alert.unknown.title', unknownParams),
+    detail: i18nBody
+      ? t(i18nBody, params)
+      : copy
+        ? t(copy.body, params)
+        : t('notifications.alert.unknown.body', unknownParams),
     meta: source ? [t('notifications.alert.source', { source })] : [],
-    action: alertAction(alert, t, copy?.action),
+    action: alertAction(alert, t, i18nAction ?? copy?.action),
   };
 }
 
@@ -436,11 +469,12 @@ export function buildDashboardNotifications(
         t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
       ],
       action:
-        entityId && copy
+        actionFromMetadata(reminder.action, t) ??
+        (entityId && copy
           ? { href: `/entidades/${entityId}`, label: t(copy.action) }
           : entityId
             ? { href: `/entidades/${entityId}`, label: t('notifications.action.openEntity') }
-            : { href: SETTINGS_ROUTE, label: t('notifications.action.openSettings') },
+            : { href: SETTINGS_ROUTE, label: t('notifications.action.openSettings') }),
     });
   }
 
