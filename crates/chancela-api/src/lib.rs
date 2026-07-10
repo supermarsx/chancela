@@ -3779,6 +3779,60 @@ mod tests {
                 "preferred_family": "ChaveMovelDigital",
                 "tsa_url": "https://tsa.example.pt/tsr",
                 "tsl_url": "https://tsl.example.pt/tsl.xml",
+                "tsl_sources": [
+                    {
+                        "id": "pt-gns",
+                        "name": "Portugal GNS Trusted List",
+                        "enabled": true,
+                        "url": "https://tsl.example.pt/tsl.xml",
+                        "path": null,
+                        "country": "PT",
+                        "scheme": "eidas",
+                        "digest": null,
+                        "timeout_seconds": 20,
+                        "max_bytes": 26214400,
+                        "refresh": { "enabled": true, "cadence": { "kind": "daily", "hour_utc": 3 } }
+                    },
+                    {
+                        "id": "eu-lotl",
+                        "name": "EU List of Trusted Lists",
+                        "enabled": false,
+                        "url": "https://ec.europa.eu/tools/lotl/eu-lotl.xml",
+                        "path": null,
+                        "country": "EU",
+                        "scheme": "lotl",
+                        "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                        "timeout_seconds": 30,
+                        "max_bytes": 26214400,
+                        "refresh": { "enabled": false, "cadence": { "kind": "manual" } }
+                    }
+                ],
+                "tsa_providers": [
+                    {
+                        "id": "pt-cc",
+                        "name": "Portugal Cartao de Cidadao TSA",
+                        "enabled": true,
+                        "url": "https://tsa.example.pt/tsr",
+                        "path": null,
+                        "default": true,
+                        "policy": null,
+                        "digest": "sha256",
+                        "timeout_seconds": 20,
+                        "max_bytes": 1048576
+                    },
+                    {
+                        "id": "lab-rfc3161",
+                        "name": "Lab RFC 3161 TSA",
+                        "enabled": false,
+                        "url": "https://tsa-lab.example.pt/tsr",
+                        "path": null,
+                        "default": false,
+                        "policy": "1.2.3.4.5",
+                        "digest": "sha256",
+                        "timeout_seconds": 30,
+                        "max_bytes": 1048576
+                    }
+                ],
                 "require_qualified_for_seal": true,
                 "cmd": {
                     "env": "prod",
@@ -3905,6 +3959,25 @@ mod tests {
             body["signing"]["tsl_url"],
             "https://www.gns.gov.pt/media/TSLPT.xml"
         );
+        assert_eq!(body["signing"]["tsl_sources"][0]["id"], "pt-gns");
+        assert_eq!(body["signing"]["tsl_sources"][0]["enabled"], true);
+        assert_eq!(
+            body["signing"]["tsl_sources"][0]["url"],
+            "https://www.gns.gov.pt/media/TSLPT.xml"
+        );
+        assert_eq!(body["signing"]["tsl_sources"][1]["id"], "eu-lotl");
+        assert_eq!(body["signing"]["tsl_sources"][1]["enabled"], false);
+        assert_eq!(
+            body["signing"]["tsl_sources"][1]["url"],
+            "https://ec.europa.eu/tools/lotl/eu-lotl.xml"
+        );
+        assert_eq!(body["signing"]["tsa_providers"][0]["id"], "pt-cc");
+        assert_eq!(body["signing"]["tsa_providers"][0]["enabled"], true);
+        assert_eq!(body["signing"]["tsa_providers"][0]["default"], true);
+        assert_eq!(
+            body["signing"]["tsa_providers"][0]["url"],
+            "http://ts.cartaodecidadao.pt/tsa/server"
+        );
         assert_eq!(body["signing"]["require_qualified_for_seal"], false);
         assert_eq!(body["ai"]["enabled"], false);
         assert_eq!(body["platform"]["logging"]["global"], "info");
@@ -3979,6 +4052,8 @@ mod tests {
             stored["signing"]["tsl_url"],
             "https://www.gns.gov.pt/media/TSLPT.xml"
         );
+        assert_eq!(stored["signing"]["tsl_sources"][0]["id"], "pt-gns");
+        assert_eq!(stored["signing"]["tsa_providers"][0]["id"], "pt-cc");
         assert_eq!(stored["appearance"]["button_texture"], true);
     }
 
@@ -4031,6 +4106,9 @@ mod tests {
         // Omitted registry auto-update policy defaults fail-closed.
         assert!(!parsed.registry_auto_update.enabled);
         assert!(!parsed.registry_auto_update.entity_defaults.enabled);
+        assert_eq!(parsed.signing.tsl_sources[0].id, "pt-gns");
+        assert_eq!(parsed.signing.tsa_providers[0].id, "pt-cc");
+        assert!(parsed.signing.tsa_providers[0].r#default);
     }
 
     #[tokio::test]
@@ -4059,6 +4137,59 @@ mod tests {
         let (status, body) = send(AppState::default(), put_json("/v1/settings", bad)).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn settings_put_invalid_trust_source_provider_config_is_422() {
+        let mut duplicate_tsl = sample_settings();
+        duplicate_tsl["signing"]["tsl_sources"][1]["id"] = json!("pt-gns");
+        let (status, body) =
+            send(AppState::default(), put_json("/v1/settings", duplicate_tsl)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("duplicates")
+        );
+
+        let mut missing_tsl_location = sample_settings();
+        missing_tsl_location["signing"]["tsl_sources"][0]["url"] = Value::Null;
+        missing_tsl_location["signing"]["tsl_sources"][0]["path"] = Value::Null;
+        let (status, body) = send(
+            AppState::default(),
+            put_json("/v1/settings", missing_tsl_location),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("either url or path")
+        );
+
+        let mut oversized_tsl = sample_settings();
+        oversized_tsl["signing"]["tsl_sources"][0]["max_bytes"] = json!(200 * 1024 * 1024u64);
+        let (status, body) =
+            send(AppState::default(), put_json("/v1/settings", oversized_tsl)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body["error"].as_str().expect("error").contains("max_bytes"));
+
+        let mut no_default_tsa = sample_settings();
+        no_default_tsa["signing"]["tsa_providers"][0]["default"] = json!(false);
+        let (status, body) = send(
+            AppState::default(),
+            put_json("/v1/settings", no_default_tsa),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("exactly one enabled default")
+        );
     }
 
     #[tokio::test]

@@ -21,6 +21,7 @@
 //! so a configuration change is as auditable as any domain mutation.
 
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use axum::Json;
@@ -675,6 +676,17 @@ pub const DEFAULT_PT_TSA_URL: &str = "http://ts.cartaodecidadao.pt/tsa/server";
 /// `CHANCELA_TSL_URL` env override / the settings field as escape hatches.
 pub const DEFAULT_PT_TSL_URL: &str = "https://www.gns.gov.pt/media/TSLPT.xml";
 
+/// European Commission List of Trusted Lists (LOTL). Kept disabled by default because the current
+/// trust engine only consumes a single TSL URL; this is configuration plumbing for the future
+/// multi-source resolver.
+pub const DEFAULT_EU_LOTL_URL: &str = "https://ec.europa.eu/tools/lotl/eu-lotl.xml";
+
+const DEFAULT_TRUST_TIMEOUT_SECONDS: u16 = 30;
+const DEFAULT_TSL_MAX_BYTES: u64 = 25 * 1024 * 1024;
+const DEFAULT_TSA_MAX_BYTES: u64 = 1024 * 1024;
+const MAX_TSL_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_TSA_BYTES: u64 = 10 * 1024 * 1024;
+
 /// Signing preferences and trust-service endpoints.
 ///
 /// `tsa_url`/`tsl_url` default to the official Portuguese trust services
@@ -696,6 +708,12 @@ pub struct SigningSettings {
     /// Trusted-list (TSL) URL used for qualified-status checks. Defaults to
     /// [`DEFAULT_PT_TSL_URL`]; `null` clears it.
     pub tsl_url: Option<String>,
+    /// Additive multi-source Trusted List configuration. Runtime signing still reads
+    /// [`tsl_url`](Self::tsl_url) in this slice; these entries are validated settings state only.
+    pub tsl_sources: Vec<TslSourceSettings>,
+    /// Additive RFC 3161 timestamp provider configuration. Runtime timestamping still reads
+    /// [`tsa_url`](Self::tsa_url) in this slice; these entries are validated settings state only.
+    pub tsa_providers: Vec<TsaProviderSettings>,
     /// When true, an act cannot reach the finalized-**qualified** status until a valid qualified
     /// signature is present (t57 ruling 6 / deliverable D). This gates the STATUS, **not** the seal:
     /// sealing still succeeds and the unsigned PDF/A still exists; the async OTP signing flow is a
@@ -717,11 +735,189 @@ impl Default for SigningSettings {
             preferred_family: SignatureFamily::default(),
             tsa_url: Some(DEFAULT_PT_TSA_URL.to_owned()),
             tsl_url: Some(DEFAULT_PT_TSL_URL.to_owned()),
+            tsl_sources: default_tsl_sources(),
+            tsa_providers: default_tsa_providers(),
             require_qualified_for_seal: false,
             cmd: SigningCmdSettings::default(),
             providers: default_signing_provider_metadata(),
         }
     }
+}
+
+/// One configured Trusted List source. This is source metadata and fetch policy only; it does not
+/// make a legal-validity claim and is not yet wired into the signing trust decision engine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TslSourceSettings {
+    /// Stable operator-facing id, unique within `signing.tsl_sources`.
+    pub id: String,
+    /// Human-readable source name.
+    pub name: String,
+    /// Disabled sources are stored and validated but ignored by future refresh/resolution work.
+    pub enabled: bool,
+    /// Remote TSL/LOTL URL, or `null` when the source is file-backed.
+    pub url: Option<String>,
+    /// Local TSL/LOTL path, or `null` when the source is URL-backed.
+    pub path: Option<String>,
+    /// ISO-like territory marker such as `PT` or `EU`.
+    pub country: Option<String>,
+    /// Scheme label such as `eidas`, `lotl`, or an operator-defined value.
+    pub scheme: Option<String>,
+    /// Optional lowercase-hex sha256 pin for the source bytes.
+    pub digest: Option<String>,
+    /// Fetch/read timeout in seconds.
+    pub timeout_seconds: u16,
+    /// Maximum accepted source size in bytes.
+    pub max_bytes: u64,
+    /// Optional refresh policy metadata for schedulers.
+    pub refresh: TrustRefreshSettings,
+}
+
+impl Default for TslSourceSettings {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            enabled: false,
+            url: None,
+            path: None,
+            country: None,
+            scheme: None,
+            digest: None,
+            timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
+            max_bytes: DEFAULT_TSL_MAX_BYTES,
+            refresh: TrustRefreshSettings::default(),
+        }
+    }
+}
+
+/// One configured RFC 3161 TSA provider. Secrets, credentials, and trust decisions are out of
+/// scope for this settings slice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TsaProviderSettings {
+    /// Stable operator-facing id, unique within `signing.tsa_providers`.
+    pub id: String,
+    /// Human-readable provider name.
+    pub name: String,
+    /// Disabled providers are stored and validated but ignored by future provider selection.
+    pub enabled: bool,
+    /// Remote RFC 3161 endpoint URL, or `null` when the provider is file-backed/offline.
+    pub url: Option<String>,
+    /// Local path for an offline/mock provider, or `null` for normal HTTP RFC 3161.
+    pub path: Option<String>,
+    /// Whether this enabled provider is the default. Exactly one enabled provider must be default
+    /// when any TSA providers are configured.
+    pub r#default: bool,
+    /// Optional accepted timestamp policy OID.
+    pub policy: Option<String>,
+    /// Request digest algorithm label, e.g. `sha256`.
+    pub digest: String,
+    /// Request timeout in seconds.
+    pub timeout_seconds: u16,
+    /// Maximum accepted response size in bytes.
+    pub max_bytes: u64,
+}
+
+impl Default for TsaProviderSettings {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            enabled: false,
+            url: None,
+            path: None,
+            r#default: false,
+            policy: None,
+            digest: "sha256".to_owned(),
+            timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
+            max_bytes: DEFAULT_TSA_MAX_BYTES,
+        }
+    }
+}
+
+/// Refresh policy metadata shared by trust-source settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TrustRefreshSettings {
+    pub enabled: bool,
+    pub cadence: TrustRefreshCadence,
+}
+
+impl Default for TrustRefreshSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            cadence: TrustRefreshCadence::Manual,
+        }
+    }
+}
+
+/// Small, scheduler-friendly refresh cadence shape. No cron parser is introduced for this slice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TrustRefreshCadence {
+    Manual,
+    IntervalHours { hours: u16 },
+    Daily { hour_utc: u8 },
+}
+
+impl Default for TrustRefreshCadence {
+    fn default() -> Self {
+        Self::Manual
+    }
+}
+
+fn default_tsl_sources() -> Vec<TslSourceSettings> {
+    vec![
+        TslSourceSettings {
+            id: "pt-gns".to_owned(),
+            name: "Portugal GNS Trusted List".to_owned(),
+            enabled: true,
+            url: Some(DEFAULT_PT_TSL_URL.to_owned()),
+            path: None,
+            country: Some("PT".to_owned()),
+            scheme: Some("eidas".to_owned()),
+            digest: None,
+            timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
+            max_bytes: DEFAULT_TSL_MAX_BYTES,
+            refresh: TrustRefreshSettings {
+                enabled: false,
+                cadence: TrustRefreshCadence::Daily { hour_utc: 3 },
+            },
+        },
+        TslSourceSettings {
+            id: "eu-lotl".to_owned(),
+            name: "EU List of Trusted Lists".to_owned(),
+            enabled: false,
+            url: Some(DEFAULT_EU_LOTL_URL.to_owned()),
+            path: None,
+            country: Some("EU".to_owned()),
+            scheme: Some("lotl".to_owned()),
+            digest: None,
+            timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
+            max_bytes: DEFAULT_TSL_MAX_BYTES,
+            refresh: TrustRefreshSettings {
+                enabled: false,
+                cadence: TrustRefreshCadence::Daily { hour_utc: 2 },
+            },
+        },
+    ]
+}
+
+fn default_tsa_providers() -> Vec<TsaProviderSettings> {
+    vec![TsaProviderSettings {
+        id: "pt-cc".to_owned(),
+        name: "Portugal Cartao de Cidadao TSA".to_owned(),
+        enabled: true,
+        url: Some(DEFAULT_PT_TSA_URL.to_owned()),
+        path: None,
+        r#default: true,
+        policy: None,
+        digest: "sha256".to_owned(),
+        timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
+        max_bytes: DEFAULT_TSA_MAX_BYTES,
+    }]
 }
 
 /// Non-secret provider-mode status surfaced in Settings -> Assinaturas.
@@ -985,10 +1181,246 @@ impl Settings {
                 }
             }
         }
+        validate_tsl_sources(&self.signing.tsl_sources)?;
+        validate_tsa_providers(&self.signing.tsa_providers)?;
         self.registry_auto_update.validate()?;
         self.platform.validate()?;
         Ok(())
     }
+}
+
+fn validate_tsl_sources(entries: &[TslSourceSettings]) -> Result<(), ApiError> {
+    let mut ids = BTreeSet::new();
+    for (i, entry) in entries.iter().enumerate() {
+        validate_config_id(&format!("signing.tsl_sources[{i}].id"), &entry.id)?;
+        if !ids.insert(entry.id.as_str()) {
+            return Err(ApiError::Unprocessable(format!(
+                "signing.tsl_sources[{i}].id duplicates {:?}",
+                entry.id
+            )));
+        }
+        validate_non_blank_label(&format!("signing.tsl_sources[{i}].name"), &entry.name)?;
+        validate_url_or_path(
+            &format!("signing.tsl_sources[{i}]"),
+            entry.url.as_deref(),
+            entry.path.as_deref(),
+        )?;
+        if let Some(url) = entry.url.as_deref() {
+            let trimmed = url.trim();
+            if !trimmed.is_empty() && !is_http_url(trimmed) {
+                return Err(ApiError::Unprocessable(format!(
+                    "signing.tsl_sources[{i}].url must be an http(s) URL, got {url:?}"
+                )));
+            }
+        }
+        if let Some(digest) = entry.digest.as_deref() {
+            validate_optional_sha256_hex(&format!("signing.tsl_sources[{i}].digest"), digest)?;
+        }
+        validate_timeout(
+            &format!("signing.tsl_sources[{i}].timeout_seconds"),
+            entry.timeout_seconds,
+        )?;
+        validate_max_bytes(
+            &format!("signing.tsl_sources[{i}].max_bytes"),
+            entry.max_bytes,
+            MAX_TSL_BYTES,
+        )?;
+        validate_refresh(&format!("signing.tsl_sources[{i}].refresh"), &entry.refresh)?;
+        validate_optional_token(
+            &format!("signing.tsl_sources[{i}].country"),
+            &entry.country,
+            16,
+        )?;
+        validate_optional_token(
+            &format!("signing.tsl_sources[{i}].scheme"),
+            &entry.scheme,
+            64,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_tsa_providers(entries: &[TsaProviderSettings]) -> Result<(), ApiError> {
+    let mut ids = BTreeSet::new();
+    let mut enabled = 0usize;
+    let mut enabled_defaults = 0usize;
+    for (i, entry) in entries.iter().enumerate() {
+        validate_config_id(&format!("signing.tsa_providers[{i}].id"), &entry.id)?;
+        if !ids.insert(entry.id.as_str()) {
+            return Err(ApiError::Unprocessable(format!(
+                "signing.tsa_providers[{i}].id duplicates {:?}",
+                entry.id
+            )));
+        }
+        validate_non_blank_label(&format!("signing.tsa_providers[{i}].name"), &entry.name)?;
+        validate_url_or_path(
+            &format!("signing.tsa_providers[{i}]"),
+            entry.url.as_deref(),
+            entry.path.as_deref(),
+        )?;
+        if let Some(url) = entry.url.as_deref() {
+            let trimmed = url.trim();
+            if !trimmed.is_empty() && !is_http_url(trimmed) {
+                return Err(ApiError::Unprocessable(format!(
+                    "signing.tsa_providers[{i}].url must be an http(s) URL, got {url:?}"
+                )));
+            }
+        }
+        validate_non_blank_label(&format!("signing.tsa_providers[{i}].digest"), &entry.digest)?;
+        validate_timeout(
+            &format!("signing.tsa_providers[{i}].timeout_seconds"),
+            entry.timeout_seconds,
+        )?;
+        validate_max_bytes(
+            &format!("signing.tsa_providers[{i}].max_bytes"),
+            entry.max_bytes,
+            MAX_TSA_BYTES,
+        )?;
+        validate_optional_token(
+            &format!("signing.tsa_providers[{i}].policy"),
+            &entry.policy,
+            128,
+        )?;
+        if entry.enabled {
+            enabled += 1;
+            if entry.r#default {
+                enabled_defaults += 1;
+            }
+        }
+    }
+    if enabled > 0 && enabled_defaults != 1 {
+        return Err(ApiError::Unprocessable(format!(
+            "signing.tsa_providers must contain exactly one enabled default provider, found {enabled_defaults}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_config_id(field: &str, id: &str) -> Result<(), ApiError> {
+    let trimmed = id.trim();
+    if trimmed.is_empty()
+        || trimmed != id
+        || trimmed.len() > 64
+        || !trimmed
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.'))
+        || !trimmed
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be a stable lowercase id up to 64 chars using a-z, 0-9, '-', '_' or '.', got {id:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_non_blank_label(field: &str, value: &str) -> Result<(), ApiError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.len() > 160 || trimmed.chars().any(char::is_control) {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be non-empty text up to 160 non-control characters"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_url_or_path(
+    field: &str,
+    url: Option<&str>,
+    path: Option<&str>,
+) -> Result<(), ApiError> {
+    let has_url = url.is_some_and(|value| !value.trim().is_empty());
+    let has_path = path.is_some_and(|value| !value.trim().is_empty());
+    if !has_url && !has_path {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must provide either url or path"
+        )));
+    }
+    if let Some(path) = path {
+        let trimmed = path.trim();
+        if trimmed.is_empty() || trimmed.len() > 1024 || trimmed.chars().any(char::is_control) {
+            return Err(ApiError::Unprocessable(format!(
+                "{field}.path must be non-empty path text up to 1024 non-control characters"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_sha256_hex(field: &str, digest: &str) -> Result<(), ApiError> {
+    let trimmed = digest.trim();
+    if !trimmed.is_empty()
+        && (trimmed.len() != 64 || !trimmed.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be a 64-character sha256 hex, got {digest:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_timeout(field: &str, timeout_seconds: u16) -> Result<(), ApiError> {
+    if !(1..=300).contains(&timeout_seconds) {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be between 1 and 300, got {timeout_seconds}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_max_bytes(field: &str, max_bytes: u64, upper: u64) -> Result<(), ApiError> {
+    if !(1024..=upper).contains(&max_bytes) {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be between 1024 and {upper}, got {max_bytes}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_refresh(field: &str, refresh: &TrustRefreshSettings) -> Result<(), ApiError> {
+    match refresh.cadence {
+        TrustRefreshCadence::Manual => Ok(()),
+        TrustRefreshCadence::IntervalHours { hours } => {
+            if !(1..=24 * 30).contains(&hours) {
+                return Err(ApiError::Unprocessable(format!(
+                    "{field}.cadence.hours must be between 1 and 720, got {hours}"
+                )));
+            }
+            Ok(())
+        }
+        TrustRefreshCadence::Daily { hour_utc } => {
+            if hour_utc > 23 {
+                return Err(ApiError::Unprocessable(format!(
+                    "{field}.cadence.hour_utc must be between 0 and 23, got {hour_utc}"
+                )));
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_optional_token(
+    field: &str,
+    value: &Option<String>,
+    max_len: usize,
+) -> Result<(), ApiError> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > max_len
+        || trimmed
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '"' | '\'' | '<' | '>'))
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be non-empty token text up to {max_len} characters"
+        )));
+    }
+    Ok(())
 }
 
 /// Minimal http(s) URL shape check: an `http://` or `https://` scheme with a non-empty
