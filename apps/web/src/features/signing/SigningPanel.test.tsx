@@ -106,8 +106,51 @@ function evidence(
       status: 'not_configured',
       action: 'manual_review',
     },
+    local_technical_renewal_plan: localTechnicalRenewalPlan(),
+    multi_signature_local_renewal_plan: multiSignatureLocalRenewalPlan(),
     long_term_status,
     status_scope: 'technical_evidence_only',
+  };
+}
+
+function localTechnicalRenewalPlan(
+  overrides: Partial<SignatureEvidenceStatus['local_technical_renewal_plan']> = {},
+): SignatureEvidenceStatus['local_technical_renewal_plan'] {
+  return {
+    status: 'unavailable',
+    scope: 'signed_pdf',
+    notice: 'Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.',
+    signature_timestamp_present: false,
+    dss_revocation_evidence_present: false,
+    dss_validation_time_present: false,
+    doc_timestamp_present: false,
+    doc_timestamp_imprints_valid: false,
+    missing_inputs: [],
+    next_action: 'manual_review',
+    has_local_evidence_gap: false,
+    all_local_planning_inputs_present: false,
+    production_long_term_profile_claimed: false,
+    legal_ltv_claimed: false,
+    ...overrides,
+  };
+}
+
+function multiSignatureLocalRenewalPlan(
+  overrides: Partial<SignatureEvidenceStatus['multi_signature_local_renewal_plan']> = {},
+): SignatureEvidenceStatus['multi_signature_local_renewal_plan'] {
+  return {
+    status: 'not_applicable',
+    scope: 'multi_signature_signed_pdf',
+    notice: 'Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.',
+    signature_count: 0,
+    signatures: [],
+    signatures_with_local_evidence_gaps: [],
+    next_action: 'none',
+    has_local_evidence_gap: false,
+    all_local_planning_inputs_present: false,
+    production_long_term_profile_claimed: false,
+    legal_ltv_claimed: false,
+    ...overrides,
   };
 }
 
@@ -316,6 +359,50 @@ describe('SigningPanel — signed status + download', () => {
     expect(screen.getByText(/B-LTA não implementado/)).toBeTruthy();
     expect(screen.getByText(/Não é uma decisão jurídica/)).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Ajuda' }).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Lacunas locais')).toBeNull();
+  });
+
+  it('shows the available multi-signature local renewal plan as technical evidence only', async () => {
+    const status: SignatureStatusView = {
+      ...signedStatus,
+      evidence: {
+        ...evidence('B-LT-local', true, [
+          'timestamped',
+          'lt_local_technical_evidence_partial',
+          'lt_production_not_claimed',
+          'lta_not_implemented',
+        ]),
+        dss_revocation_evidence_present: true,
+        dss_revocation_evidence_status: 'present_local_technical_only',
+        local_b_lt_style_evidence_present: true,
+        multi_signature_local_renewal_plan: multiSignatureLocalRenewalPlan({
+          status: 'available',
+          signature_count: 3,
+          signatures_with_local_evidence_gaps: [0, 2],
+          next_action: 'record_signature_dss_validation_time',
+          has_local_evidence_gap: true,
+          production_long_term_profile_claimed: false,
+          legal_ltv_claimed: false,
+        }),
+      },
+    };
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith('/signature')) return json(status);
+      return emptyInviteList(url) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    expect(await screen.findByLabelText('Evidência técnica da assinatura')).toBeTruthy();
+    expect(screen.getByText('Assinaturas')).toBeTruthy();
+    expect(screen.getByText('Lacunas locais')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
+    expect(screen.getByText('2 (0, 2)')).toBeTruthy();
+    expect(screen.getByText('registar tempo de validação DSS da assinatura')).toBeTruthy();
+    expect(screen.getByText(/Plano de renovação local técnico apenas/)).toBeTruthy();
+    expect(screen.getByText(/sem alegação de LTV legal/)).toBeTruthy();
+    expect(screen.queryByText(/Atenção: a API devolveu/)).toBeNull();
   });
 });
 

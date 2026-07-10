@@ -2126,6 +2126,28 @@ export const ptPT = {
   'signing.evidence.noDetails': 'Sem detalhes',
   'signing.evidence.disclaimer':
     'Não é uma decisão jurídica. É um resumo da evidência técnica disponível no ficheiro e nos dados devolvidos pelo servidor.',
+  'signing.evidence.renewal.signatures': 'Assinaturas',
+  'signing.evidence.renewal.gaps': 'Lacunas locais',
+  'signing.evidence.renewal.gapSummary': '{count} ({indexes})',
+  'signing.evidence.renewal.noGapIndexes': 'nenhuma',
+  'signing.evidence.renewal.nextAction': 'Próxima ação',
+  'signing.evidence.renewal.scope': 'Âmbito',
+  'signing.evidence.renewal.guardrail':
+    'Plano de renovação local técnico apenas; sem alegação de LTV legal, perfil B-LT/B-LTA, aceitação em lista de confiança, validação por prestador ou renovação de produção.',
+  'signing.evidence.renewal.guardrailUnexpected':
+    'Atenção: a API devolveu uma alegação de perfil/LTV; rever antes de usar.',
+  'signing.evidence.renewal.action.none': 'sem ação',
+  'signing.evidence.renewal.action.manualReview': 'revisão manual',
+  'signing.evidence.renewal.action.addSignatureTimestamp':
+    'adicionar selo temporal da assinatura',
+  'signing.evidence.renewal.action.embedDssRevocationEvidence':
+    'incorporar evidência DSS de revogação',
+  'signing.evidence.renewal.action.recordDssValidationTime':
+    'registar tempo de validação DSS',
+  'signing.evidence.renewal.action.addDocumentTimestamp':
+    'adicionar selo temporal do documento',
+  'signing.evidence.renewal.action.recordSignatureDssValidationTime':
+    'registar tempo de validação DSS da assinatura',
   'signing.provider.cmd.title': 'Chave Móvel Digital',
   'signing.provider.cmd.description':
     'Fluxo remoto em dois passos: PIN de assinatura e código SMS. Recomendado quando a CMD está ativa.',

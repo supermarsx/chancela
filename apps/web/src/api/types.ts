@@ -3303,6 +3303,47 @@ export interface RenewalPolicyEvidenceStatus {
   action: 'manual_review' | string;
 }
 
+export interface LocalTechnicalRenewalPlanEvidenceStatus {
+  status: 'available' | 'not_applicable' | 'unavailable' | string;
+  scope: string;
+  notice: string;
+  signature_timestamp_present: boolean;
+  dss_revocation_evidence_present: boolean;
+  dss_validation_time_present: boolean;
+  doc_timestamp_present: boolean;
+  doc_timestamp_imprints_valid: boolean;
+  missing_inputs: string[];
+  next_action: string;
+  has_local_evidence_gap: boolean;
+  all_local_planning_inputs_present: boolean;
+  production_long_term_profile_claimed: boolean;
+  legal_ltv_claimed: boolean;
+}
+
+export interface SignatureLocalRenewalPlanEvidenceStatus {
+  index: number;
+  object_id: string;
+  signed_revision_len: number;
+  vri_key_sha256: string;
+  dss_vri_present: boolean;
+  dss_vri_validation_time_present: boolean;
+  local_technical_renewal_plan: LocalTechnicalRenewalPlanEvidenceStatus;
+}
+
+export interface MultiSignatureLocalRenewalPlanEvidenceStatus {
+  status: 'available' | 'not_applicable' | 'unavailable' | string;
+  scope: string;
+  notice: string;
+  signature_count: number;
+  signatures: SignatureLocalRenewalPlanEvidenceStatus[];
+  signatures_with_local_evidence_gaps: number[];
+  next_action: string;
+  has_local_evidence_gap: boolean;
+  all_local_planning_inputs_present: boolean;
+  production_long_term_profile_claimed: boolean;
+  legal_ltv_claimed: boolean;
+}
+
 export interface TimestampQtstMatchEvidenceStatus {
   provider_name: string;
   service_name: string;
@@ -3341,6 +3382,8 @@ export interface SignatureEvidenceStatus {
   legal_b_lt_claimed: boolean;
   legal_b_lta_claimed: boolean;
   renewal_policy: RenewalPolicyEvidenceStatus;
+  local_technical_renewal_plan: LocalTechnicalRenewalPlanEvidenceStatus;
+  multi_signature_local_renewal_plan: MultiSignatureLocalRenewalPlanEvidenceStatus;
   long_term_status: LongTermEvidenceStatus[];
   timestamp_trust?: TimestampTrustEvidenceStatus;
   status_scope: string;

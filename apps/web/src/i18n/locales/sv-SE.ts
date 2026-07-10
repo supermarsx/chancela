@@ -2113,6 +2113,25 @@ export const svSE: Catalog = {
   'signing.evidence.noDetails': 'Sem detalhes',
   'signing.evidence.disclaimer':
     'This is not a legal decision. It is a summary of the technical evidence available in the file and in the data returned by the server.',
+  'signing.evidence.renewal.signatures': 'Signatures',
+  'signing.evidence.renewal.gaps': 'Local gaps',
+  'signing.evidence.renewal.gapSummary': '{count} ({indexes})',
+  'signing.evidence.renewal.noGapIndexes': 'none',
+  'signing.evidence.renewal.nextAction': 'Next action',
+  'signing.evidence.renewal.scope': 'Scope',
+  'signing.evidence.renewal.guardrail':
+    'Local technical renewal plan only; no legal LTV, B-LT/B-LTA profile, trust-list acceptance, provider validation, or production renewal claim.',
+  'signing.evidence.renewal.guardrailUnexpected':
+    'Warning: the API returned a profile/LTV claim; review before use.',
+  'signing.evidence.renewal.action.none': 'no action',
+  'signing.evidence.renewal.action.manualReview': 'manual review',
+  'signing.evidence.renewal.action.addSignatureTimestamp': 'add signature timestamp',
+  'signing.evidence.renewal.action.embedDssRevocationEvidence':
+    'embed DSS revocation evidence',
+  'signing.evidence.renewal.action.recordDssValidationTime': 'record DSS validation time',
+  'signing.evidence.renewal.action.addDocumentTimestamp': 'add document timestamp',
+  'signing.evidence.renewal.action.recordSignatureDssValidationTime':
+    'record signature DSS validation time',
   'signing.provider.cmd.title': 'Chave Móvel Digital',
   'signing.provider.cmd.description':
     'Fluxo remoto em dois passos: PIN de assinatura e código SMS. Recomendado quando a CMD está ativa.',

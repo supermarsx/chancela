@@ -152,6 +152,22 @@ function longTermEvidenceLabel(status: string, t: TFunction): string {
   return status;
 }
 
+function renewalPlanActionLabel(action: string, t: TFunction): string {
+  if (action === 'none') return t('signing.evidence.renewal.action.none');
+  if (action === 'manual_review') return t('signing.evidence.renewal.action.manualReview');
+  if (action === 'add_signature_timestamp')
+    return t('signing.evidence.renewal.action.addSignatureTimestamp');
+  if (action === 'embed_dss_revocation_evidence')
+    return t('signing.evidence.renewal.action.embedDssRevocationEvidence');
+  if (action === 'record_dss_validation_time')
+    return t('signing.evidence.renewal.action.recordDssValidationTime');
+  if (action === 'add_document_timestamp')
+    return t('signing.evidence.renewal.action.addDocumentTimestamp');
+  if (action === 'record_signature_dss_validation_time')
+    return t('signing.evidence.renewal.action.recordSignatureDssValidationTime');
+  return action;
+}
+
 function dssEvidenceLabel(evidence: SignatureEvidenceStatus, t: TFunction): string {
   if (evidence.dss_revocation_evidence_present) return t('signing.evidence.dss.present');
   if (evidence.dss_revocation_evidence_status === 'unsupported')
@@ -262,6 +278,9 @@ type Step =
 function SignatureEvidenceSummary({ evidence }: { evidence: SignatureEvidenceStatus }) {
   const t = useT();
   const longTerm = evidence.long_term_status.map((status) => longTermEvidenceLabel(status, t));
+  const multiRenewalPlan = evidence.multi_signature_local_renewal_plan;
+  const showMultiRenewalPlan = multiRenewalPlan?.status === 'available';
+  const gapIndexes = multiRenewalPlan?.signatures_with_local_evidence_gaps ?? [];
   return (
     <section className="signing-evidence" aria-label={t('signing.evidence.aria')}>
       <div className="signing-evidence__head">
@@ -312,6 +331,38 @@ function SignatureEvidenceSummary({ evidence }: { evidence: SignatureEvidenceSta
             )}
           </dd>
         </div>
+        {showMultiRenewalPlan ? (
+          <>
+            <div>
+              <dt>{t('signing.evidence.renewal.signatures')}</dt>
+              <dd>{multiRenewalPlan.signature_count}</dd>
+            </div>
+            <div>
+              <dt>{t('signing.evidence.renewal.gaps')}</dt>
+              <dd>
+                {t('signing.evidence.renewal.gapSummary', {
+                  count: gapIndexes.length,
+                  indexes: gapIndexes.length
+                    ? gapIndexes.join(', ')
+                    : t('signing.evidence.renewal.noGapIndexes'),
+                })}
+              </dd>
+            </div>
+            <div>
+              <dt>{t('signing.evidence.renewal.nextAction')}</dt>
+              <dd>{renewalPlanActionLabel(multiRenewalPlan.next_action, t)}</dd>
+            </div>
+            <div className="signing-deflist__wide">
+              <dt>{t('signing.evidence.renewal.scope')}</dt>
+              <dd>
+                {multiRenewalPlan.legal_ltv_claimed ||
+                multiRenewalPlan.production_long_term_profile_claimed
+                  ? t('signing.evidence.renewal.guardrailUnexpected')
+                  : t('signing.evidence.renewal.guardrail')}
+              </dd>
+            </div>
+          </>
+        ) : null}
       </dl>
       <p className="field__hint">{t('signing.evidence.disclaimer')}</p>
     </section>
