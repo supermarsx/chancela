@@ -912,6 +912,7 @@ fn scan_sqlite_logical_usage(
     };
 
     let mut usage = Vec::new();
+    let mut table_usage = Vec::new();
 
     let ledger_bytes = loaded
         .ledger
@@ -919,6 +920,11 @@ fn scan_sqlite_logical_usage(
         .iter()
         .map(json_len_estimate)
         .fold(0_u64, u64::saturating_add);
+    table_usage.push(sqlite_logical_table(
+        "events",
+        loaded.ledger.len() as u64,
+        ledger_bytes,
+    ));
     usage.push(sqlite_logical_concern(
         "ledger",
         "Ledger events",
@@ -942,6 +948,21 @@ fn scan_sqlite_logical_usage(
         .values()
         .map(json_len_estimate)
         .fold(0_u64, u64::saturating_add);
+    table_usage.push(sqlite_logical_table(
+        "entities",
+        loaded.entities.len() as u64,
+        entity_bytes,
+    ));
+    table_usage.push(sqlite_logical_table(
+        "books",
+        loaded.books.len() as u64,
+        book_bytes,
+    ));
+    table_usage.push(sqlite_logical_table(
+        "acts",
+        loaded.acts.len() as u64,
+        act_bytes,
+    ));
     usage.push(sqlite_logical_concern(
         "domain",
         "Domain records",
@@ -957,6 +978,11 @@ fn scan_sqlite_logical_usage(
         .values()
         .map(json_len_estimate)
         .fold(0_u64, u64::saturating_add);
+    table_usage.push(sqlite_logical_table(
+        "registry_extracts",
+        loaded.registry_extracts.len() as u64,
+        registry_bytes,
+    ));
     usage.push(sqlite_logical_concern(
         "registry",
         "Registry extracts",
@@ -970,6 +996,11 @@ fn scan_sqlite_logical_usage(
         .values()
         .map(follow_up_len_estimate)
         .fold(0_u64, u64::saturating_add);
+    table_usage.push(sqlite_logical_table(
+        "follow_ups",
+        loaded.follow_ups.len() as u64,
+        follow_up_bytes,
+    ));
     usage.push(sqlite_logical_concern(
         "follow_ups",
         "Follow-ups",
@@ -995,6 +1026,11 @@ fn scan_sqlite_logical_usage(
             )),
         }
     }
+    table_usage.push(sqlite_logical_table(
+        "documents",
+        document_rows,
+        document_bytes,
+    ));
     usage.push(sqlite_logical_concern(
         "documents",
         "Generated documents",
@@ -1009,6 +1045,11 @@ fn scan_sqlite_logical_usage(
                 .values()
                 .map(signed_document_len_estimate)
                 .fold(0_u64, u64::saturating_add);
+            table_usage.push(sqlite_logical_table(
+                "signed_documents",
+                signed.len() as u64,
+                bytes,
+            ));
             usage.push(sqlite_logical_concern(
                 "signed_documents",
                 "Signed documents",
@@ -1028,6 +1069,11 @@ fn scan_sqlite_logical_usage(
                 .values()
                 .map(pending_session_len_estimate)
                 .fold(0_u64, u64::saturating_add);
+            table_usage.push(sqlite_logical_table(
+                "pending_cmd_sessions",
+                pending.len() as u64,
+                bytes,
+            ));
             usage.push(sqlite_logical_concern(
                 "pending_signatures",
                 "Pending signing sessions",
@@ -1047,6 +1093,11 @@ fn scan_sqlite_logical_usage(
                 .iter()
                 .map(imported_document_meta_len_estimate)
                 .fold(0_u64, u64::saturating_add);
+            table_usage.push(sqlite_logical_table(
+                "imported_documents",
+                imports.len() as u64,
+                bytes,
+            ));
             usage.push(sqlite_logical_concern(
                 "imported_documents",
                 "Imported document evidence",
@@ -1079,6 +1130,11 @@ fn scan_sqlite_logical_usage(
                     )),
                 }
             }
+            table_usage.push(sqlite_logical_table(
+                "imported_books",
+                imports.len() as u64,
+                bytes,
+            ));
             usage.push(sqlite_logical_concern(
                 "imported_books",
                 "Imported book bundles",
@@ -1098,6 +1154,11 @@ fn scan_sqlite_logical_usage(
                 .iter()
                 .map(paper_book_import_meta_len_estimate)
                 .fold(0_u64, u64::saturating_add);
+            table_usage.push(sqlite_logical_table(
+                "paper_book_imports",
+                imports.len() as u64,
+                bytes,
+            ));
             usage.push(sqlite_logical_concern(
                 "paper_book_imports",
                 "Paper book imports",
@@ -1124,6 +1185,11 @@ fn scan_sqlite_logical_usage(
                     )),
                 }
             }
+            table_usage.push(sqlite_logical_table(
+                "paper_book_ocr_drafts",
+                draft_rows,
+                draft_bytes,
+            ));
             usage.push(sqlite_logical_concern(
                 "paper_book_ocr_drafts",
                 "Paper book OCR drafts",
@@ -1137,6 +1203,7 @@ fn scan_sqlite_logical_usage(
         )),
     }
 
+    usage.extend(table_usage);
     usage
 }
 
@@ -1157,6 +1224,20 @@ fn sqlite_logical_concern(
         directory_count: 0,
         row_count: Some(row_count),
         relative_roots: tables.into_iter().map(str::to_owned).collect(),
+    }
+}
+
+fn sqlite_logical_table(table: &str, row_count: u64, bytes: u64) -> ConcernUsage {
+    ConcernUsage {
+        id: format!("sqlite_table_{table}"),
+        label: format!("SQLite table: {table}"),
+        bytes,
+        basis: UsageBasis::SqliteLogicalPayload,
+        exact: false,
+        file_count: 0,
+        directory_count: 0,
+        row_count: Some(row_count),
+        relative_roots: vec![table.to_owned()],
     }
 }
 
@@ -1485,6 +1566,8 @@ fn key_log_status(key: Option<&str>) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chancela_core::{Entity, EntityKind, Nipc};
+    use chancela_ledger::Ledger;
 
     struct TempDir {
         dir: PathBuf,
@@ -1506,6 +1589,13 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
+    }
+
+    fn sqlite_usage_entry<'a>(usage: &'a [ConcernUsage], id: &str) -> &'a ConcernUsage {
+        usage
+            .iter()
+            .find(|entry| entry.id == id)
+            .unwrap_or_else(|| panic!("missing SQLite logical usage entry {id}"))
     }
 
     #[test]
@@ -1540,6 +1630,77 @@ mod tests {
         assert_eq!(concern_for_root("exports").id, "exports");
         assert_eq!(concern_for_root("crash").id, "crash");
         assert_eq!(concern_for_root("misc.bin").id, "other");
+    }
+
+    #[test]
+    fn sqlite_logical_usage_includes_per_table_payload_stats() {
+        let tmp = TempDir::new("sqlite-table-stats");
+        let store = chancela_store::Store::open(&tmp.dir).expect("store opens");
+        let entity = Entity::new(
+            "Table Stats, Lda.",
+            Nipc::unvalidated("500002020"),
+            "Rua de Teste, Lisboa",
+            EntityKind::SociedadePorQuotas,
+        );
+        let mut ledger = Ledger::new();
+        let event = ledger
+            .append(
+                "tester",
+                "entity:table-stats",
+                "entity.created",
+                None,
+                b"entity payload",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.append_event(&event)?;
+                tx.upsert_entity(&entity)?;
+                Ok(())
+            })
+            .expect("persist event and entity");
+
+        let mut scan_errors = Vec::new();
+        let usage = scan_sqlite_logical_usage(&store, &mut scan_errors);
+
+        assert!(scan_errors.is_empty(), "scan errors: {scan_errors:?}");
+        let ledger_group = sqlite_usage_entry(&usage, "ledger");
+        assert_eq!(ledger_group.row_count, Some(1));
+        assert!(ledger_group.bytes > 0);
+
+        let events = sqlite_usage_entry(&usage, "sqlite_table_events");
+        assert_eq!(events.label, "SQLite table: events");
+        assert!(matches!(events.basis, UsageBasis::SqliteLogicalPayload));
+        assert!(!events.exact);
+        assert_eq!(events.row_count, Some(1));
+        assert!(events.bytes > 0);
+        assert_eq!(events.relative_roots, vec!["events".to_owned()]);
+
+        let entities = sqlite_usage_entry(&usage, "sqlite_table_entities");
+        assert_eq!(entities.row_count, Some(1));
+        assert!(entities.bytes > 0);
+        assert_eq!(entities.relative_roots, vec!["entities".to_owned()]);
+
+        let books = sqlite_usage_entry(&usage, "sqlite_table_books");
+        assert_eq!(books.row_count, Some(0));
+        assert_eq!(books.bytes, 0);
+    }
+
+    #[test]
+    fn sqlite_logical_usage_is_empty_without_durable_store() {
+        let no_data_dir = inspect_unconfigured_data_dir(false);
+        assert_eq!(no_data_dir.usage.total_bytes, 0);
+        assert!(no_data_dir.usage.filesystem.is_empty());
+        assert!(no_data_dir.usage.sqlite_logical.is_empty());
+        assert!(no_data_dir.usage.scan_errors.is_empty());
+        assert!(!no_data_dir.permissions.sqlite_store_open.ok);
+        assert!(no_data_dir.permissions.sqlite_store_open.checked);
+
+        let tmp = TempDir::new("fallback-in-memory");
+        let fallback = inspect_data_dir(tmp.dir.clone(), None);
+        assert!(fallback.usage.sqlite_logical.is_empty());
+        assert!(!fallback.permissions.sqlite_store_open.ok);
+        assert!(fallback.permissions.sqlite_store_open.checked);
     }
 
     #[test]
