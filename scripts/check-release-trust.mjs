@@ -74,8 +74,22 @@ function isSha256(value) {
   return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
 }
 
+function isSha256Digest(value) {
+  return typeof value === "string" && /^sha256:[a-fA-F0-9]{64}$/.test(value);
+}
+
 function isGitSha(value) {
   return typeof value === "string" && /^[a-fA-F0-9]{40}$/.test(value);
+}
+
+function isHttpsUrl(value) {
+  if (typeof value !== "string" || value.trim().length === 0) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function requireReason(claim, label) {
@@ -127,6 +141,101 @@ function requireEvidence(claim, label) {
     return;
   }
   validateEvidenceObject(claim.evidence, `${label}.evidence`);
+}
+
+function evidenceEntries(claim) {
+  return Array.isArray(claim.evidence) ? claim.evidence : [claim.evidence];
+}
+
+function fieldPathMatches(entry, fieldPath, predicate) {
+  const value = fieldPath
+    .split(".")
+    .reduce((current, key) => (isRecord(current) ? current[key] : undefined), entry);
+  return predicate(value);
+}
+
+function evidenceHasOneOf(claim, fieldPaths, predicate) {
+  return evidenceEntries(claim).some((entry) =>
+    fieldPaths.some((fieldPath) => fieldPathMatches(entry, fieldPath, predicate)),
+  );
+}
+
+function requireDockerProductionEvidenceAnchor(claim, label, fieldPaths, description, predicate) {
+  if (!evidenceHasOneOf(claim, fieldPaths, predicate)) {
+    fail(`${label}.evidence must include ${description} for production Docker metadata`);
+  }
+}
+
+function requireDockerProductionImagePublication(claim, label) {
+  requireDockerProductionEvidenceAnchor(
+    claim,
+    label,
+    ["imageDigest", "digest", "subject.digest"],
+    "an image digest such as sha256:<64 hex characters>",
+    (value) => isSha256Digest(value),
+  );
+  requireDockerProductionEvidenceAnchor(
+    claim,
+    label,
+    ["workflowRunUrl", "runUrl"],
+    "an HTTPS workflow/run URL",
+    isHttpsUrl,
+  );
+}
+
+function requireDockerProductionSigning(claim, label) {
+  requireDockerProductionEvidenceAnchor(
+    claim,
+    label,
+    ["imageDigest", "artifactDigest", "digest", "subject.digest"],
+    "an image or artifact digest such as sha256:<64 hex characters>",
+    (value) => isSha256Digest(value),
+  );
+  requireDockerProductionEvidenceAnchor(
+    claim,
+    label,
+    [
+      "signingIdentity",
+      "identity",
+      "subject",
+      "certificateSubject",
+      "certificateSha256",
+      "certificateFingerprint",
+    ],
+    "a signing identity or certificate fingerprint",
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+  requireDockerProductionEvidenceAnchor(
+    claim,
+    label,
+    ["workflowRunUrl", "runUrl"],
+    "an HTTPS workflow/run URL",
+    isHttpsUrl,
+  );
+}
+
+function requireDockerProductionAttestation(claim, label) {
+  requireDockerProductionEvidenceAnchor(
+    claim,
+    label,
+    ["predicateType", "attestation.predicateType"],
+    "an attestation predicate type",
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+  requireDockerProductionEvidenceAnchor(
+    claim,
+    label,
+    ["artifactDigest", "subject.digest", "imageDigest", "digest"],
+    "an artifact digest such as sha256:<64 hex characters>",
+    (value) => isSha256Digest(value),
+  );
+  requireDockerProductionEvidenceAnchor(
+    claim,
+    label,
+    ["workflowRunUrl", "runUrl"],
+    "an HTTPS workflow/run URL",
+    isHttpsUrl,
+  );
 }
 
 function validateCodeSigning(claim, { label, mode, allowUnsignedMode }) {
@@ -359,6 +468,18 @@ function validateDockerStatus(status, { expectedMode }) {
     allowMissingMode: "local-ci",
   });
 
+  if (mode === "production") {
+    requireDockerProductionImagePublication(
+      trust.imagePublication,
+      "docker signing status.releaseTrust.imagePublication",
+    );
+    requireDockerProductionSigning(trust.signing, "docker signing status.releaseTrust.signing");
+    requireDockerProductionAttestation(
+      trust.attestation,
+      "docker signing status.releaseTrust.attestation",
+    );
+  }
+
   if ("imagePushed" in status) {
     const imagePushed = requireBoolean(status.imagePushed, "docker signing status.imagePushed");
     if (imagePushed !== (publicationStatus === "pushed")) {
@@ -478,6 +599,53 @@ function localDockerFixture() {
   };
 }
 
+function productionDockerFixture() {
+  const imageDigest = `sha256:${"c".repeat(64)}`;
+  const workflowRunUrl = "https://github.com/example/chancela/actions/runs/123456789";
+  return {
+    image: `ghcr.io/example/chancela-server@${imageDigest}`,
+    imagePushed: true,
+    signingPerformed: true,
+    notarizationPerformed: false,
+    attestationPerformed: true,
+    releaseTrust: {
+      mode: "production",
+      imagePublication: {
+        status: "pushed",
+        evidence: {
+          registry: "ghcr.io",
+          repository: "example/chancela-server",
+          imageDigest,
+          workflowRunUrl,
+        },
+      },
+      signing: {
+        status: "signed",
+        signer: "github-actions:example/chancela/.github/workflows/release.yml",
+        evidence: {
+          imageDigest,
+          signingIdentity: "https://github.com/example/chancela/.github/workflows/release.yml",
+          certificateFingerprint: `SHA256:${"d".repeat(64)}`,
+          workflowRunUrl,
+        },
+      },
+      notarization: {
+        status: "not_applicable",
+        reason: "Container images are not notarized by this workflow.",
+      },
+      attestation: {
+        status: "attested",
+        evidence: {
+          predicateType: "https://slsa.dev/provenance/v1",
+          artifactDigest: imageDigest,
+          workflowRunUrl,
+        },
+      },
+    },
+    note: "This declaration validates Docker release trust metadata only; it does not verify the actual registry push, signature, or attestation.",
+  };
+}
+
 function expectFail(fn, expectedSubstring) {
   try {
     fn();
@@ -497,6 +665,7 @@ function runSelfTest() {
     expectedMode: "unsigned-dev",
   });
   validateDockerStatus(localDockerFixture(), { expectedMode: "local-ci" });
+  validateDockerStatus(productionDockerFixture(), { expectedMode: "production" });
 
   const productionUnsigned = structuredClone(summary);
   productionUnsigned.releaseTrust.mode = "production";
@@ -525,6 +694,45 @@ function runSelfTest() {
   expectFail(
     () => validateDockerStatus(dockerOverclaim, { expectedMode: "production" }),
     "must be pushed in production mode",
+  );
+
+  const dockerWeakProductionEvidence = productionDockerFixture();
+  dockerWeakProductionEvidence.releaseTrust.imagePublication.evidence = {
+    url: "https://github.com/example/chancela/actions/runs/123456789",
+  };
+  expectFail(
+    () => validateDockerStatus(dockerWeakProductionEvidence, { expectedMode: "production" }),
+    "imagePublication.evidence must include an image digest",
+  );
+
+  const dockerMissingSigningIdentity = productionDockerFixture();
+  delete dockerMissingSigningIdentity.releaseTrust.signing.evidence.signingIdentity;
+  delete dockerMissingSigningIdentity.releaseTrust.signing.evidence.certificateFingerprint;
+  expectFail(
+    () => validateDockerStatus(dockerMissingSigningIdentity, { expectedMode: "production" }),
+    "signing.evidence must include a signing identity or certificate fingerprint",
+  );
+
+  const dockerMissingAttestationPredicate = productionDockerFixture();
+  delete dockerMissingAttestationPredicate.releaseTrust.attestation.evidence.predicateType;
+  expectFail(
+    () => validateDockerStatus(dockerMissingAttestationPredicate, { expectedMode: "production" }),
+    "attestation.evidence must include an attestation predicate type",
+  );
+
+  const dockerMissingWorkflowRunUrl = productionDockerFixture();
+  delete dockerMissingWorkflowRunUrl.releaseTrust.attestation.evidence.workflowRunUrl;
+  expectFail(
+    () => validateDockerStatus(dockerMissingWorkflowRunUrl, { expectedMode: "production" }),
+    "attestation.evidence must include an HTTPS workflow/run URL",
+  );
+
+  const dockerInsecureWorkflowRunUrl = productionDockerFixture();
+  dockerInsecureWorkflowRunUrl.releaseTrust.imagePublication.evidence.workflowRunUrl =
+    "http://github.com/example/chancela/actions/runs/123456789";
+  expectFail(
+    () => validateDockerStatus(dockerInsecureWorkflowRunUrl, { expectedMode: "production" }),
+    "imagePublication.evidence must include an HTTPS workflow/run URL",
   );
 
   const sourceMismatch = structuredClone(summary);
@@ -583,7 +791,10 @@ try {
   } else if (command === "docker") {
     const status = readJson(inputPath, input);
     const mode = validateDockerStatus(status, { expectedMode });
-    console.log(`[release-trust] Docker trust declaration passed (${mode})`);
+    console.log(
+      `[release-trust] Docker trust metadata declaration passed (${mode}); ` +
+        "metadata only, actual registry push/signing/attestation was not verified",
+    );
   } else {
     usage();
     fail(`Unknown command: ${command}`);
