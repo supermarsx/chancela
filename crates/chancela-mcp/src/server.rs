@@ -6,8 +6,8 @@
 //! is no way to serve a disabled server — "off" is genuinely zero surface, not a soft flag.
 //!
 //! Dispatch handles the MCP subset needed for a tool server: `initialize`, `notifications/*`,
-//! `ping`, `tools/list`, `tools/call`, bounded prompt discovery, and a read-only
-//! `chancela://mcp/status` resource.
+//! `ping`, `tools/list`, `tools/call`, bounded prompt discovery, and read-only local resources
+//! such as `chancela://mcp/status`.
 //! `tools/call` resolves the tool to an `/api/v1` request via [`crate::registry::resolve_call`] and
 //! forwards it through the [`ApiBridge`] with the configured key. Authorization is entirely
 //! server-side (the key's principal); this layer never re-checks it.
@@ -20,7 +20,7 @@ use crate::bridge::{ApiBridge, ApiOutcome, BridgeError, HttpTransport, ReqwestTr
 use crate::config::{EnabledTools, McpConfig, McpTransport};
 use crate::error::McpError;
 use crate::jsonrpc::{JsonRpcRequest, JsonRpcResponse, codes};
-use crate::registry::{McpTool, ResolvedCall, ToolError, catalog, resolve_call};
+use crate::registry::{McpTool, ResolvedCall, ToolAccess, ToolError, catalog, resolve_call};
 
 /// The MCP protocol version this server implements.
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
@@ -28,10 +28,15 @@ pub const PROTOCOL_VERSION: &str = "2025-06-18";
 pub const SERVER_NAME: &str = "chancela-mcp";
 /// Read-only MCP resource URI for local server operability state.
 pub const MCP_STATUS_RESOURCE_URI: &str = "chancela://mcp/status";
+/// Read-only MCP resource URI for local spec 09 MCP coverage boundaries.
+pub const MCP_SPEC_09_COVERAGE_RESOURCE_URI: &str = "chancela://mcp/spec-09-coverage";
 
 const DRAFT_MINUTES_REVIEW_PROMPT_NAME: &str = "draft_minutes_human_review_checklist";
 const DRAFT_MINUTES_REVIEW_PROMPT_TITLE: &str = "Draft Minutes Human Review Checklist";
 const DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review checklist for draft minutes. Guidance only; no legal validity, signing, or hidden provider call.";
+const COMPLIANCE_PACK_GAP_REVIEW_PROMPT_NAME: &str = "compliance_pack_gap_review";
+const COMPLIANCE_PACK_GAP_REVIEW_PROMPT_TITLE: &str = "Compliance Pack Gap Review";
+const COMPLIANCE_PACK_GAP_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review prompt for DSR, retention, and archive evidence gaps. Guidance only; no legal-validity or provider claims.";
 
 const HUMAN_VERIFICATION_PENDING: &str = "pending_human_verification";
 const HUMAN_VERIFICATION_ACCEPTED: &str = "accepted_by_human";
@@ -45,13 +50,23 @@ struct McpPrompt {
     name: &'static str,
     title: &'static str,
     description: &'static str,
+    text: fn() -> &'static str,
 }
 
-const PROMPT_CATALOG: &[McpPrompt] = &[McpPrompt {
-    name: DRAFT_MINUTES_REVIEW_PROMPT_NAME,
-    title: DRAFT_MINUTES_REVIEW_PROMPT_TITLE,
-    description: DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION,
-}];
+const PROMPT_CATALOG: &[McpPrompt] = &[
+    McpPrompt {
+        name: DRAFT_MINUTES_REVIEW_PROMPT_NAME,
+        title: DRAFT_MINUTES_REVIEW_PROMPT_TITLE,
+        description: DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION,
+        text: draft_minutes_review_prompt_text,
+    },
+    McpPrompt {
+        name: COMPLIANCE_PACK_GAP_REVIEW_PROMPT_NAME,
+        title: COMPLIANCE_PACK_GAP_REVIEW_PROMPT_TITLE,
+        description: COMPLIANCE_PACK_GAP_REVIEW_PROMPT_DESCRIPTION,
+        text: compliance_pack_gap_review_prompt_text,
+    },
+];
 
 /// The running MCP server: the enabled tool subset + the api-key bridge.
 pub struct McpServer<T: HttpTransport> {
@@ -184,13 +199,16 @@ impl<T: HttpTransport> McpServer<T> {
                 );
             }
         };
-        if name != DRAFT_MINUTES_REVIEW_PROMPT_NAME {
-            return JsonRpcResponse::error(
-                id,
-                codes::INVALID_PARAMS,
-                format!("invalid prompt name: {name}"),
-            );
-        }
+        let prompt = match PROMPT_CATALOG.iter().find(|prompt| prompt.name == name) {
+            Some(prompt) => prompt,
+            None => {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    format!("invalid prompt name: {name}"),
+                );
+            }
+        };
         if let Some(arguments) = params.get("arguments") {
             match arguments.as_object() {
                 Some(arguments) if arguments.is_empty() => {}
@@ -198,7 +216,7 @@ impl<T: HttpTransport> McpServer<T> {
                     return JsonRpcResponse::error(
                         id,
                         codes::INVALID_PARAMS,
-                        "draft_minutes_human_review_checklist does not accept arguments",
+                        format!("{name} does not accept arguments"),
                     );
                 }
                 None => {
@@ -214,13 +232,13 @@ impl<T: HttpTransport> McpServer<T> {
         JsonRpcResponse::success(
             id,
             json!({
-                "description": DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION,
+                "description": prompt.description,
                 "messages": [
                     {
                         "role": "user",
                         "content": {
                             "type": "text",
-                            "text": draft_minutes_review_prompt_text(),
+                            "text": (prompt.text)(),
                         },
                     }
                 ],
@@ -261,6 +279,17 @@ impl<T: HttpTransport> McpServer<T> {
                         "audience": ["user", "assistant"],
                         "priority": 0.8,
                     },
+                },
+                {
+                    "uri": MCP_SPEC_09_COVERAGE_RESOURCE_URI,
+                    "name": "mcp_spec_09_coverage",
+                    "title": "MCP Spec 09 Coverage",
+                    "description": "Read-only local summary of MCP coverage for spec 09 AI-10/11/12 and the boundaries that still require human or API-side review. Contains no secrets and performs no provider calls.",
+                    "mimeType": "application/json",
+                    "annotations": {
+                        "audience": ["user", "assistant"],
+                        "priority": 0.7,
+                    },
                 }
             ]
         })
@@ -287,23 +316,26 @@ impl<T: HttpTransport> McpServer<T> {
                 );
             }
         };
-        if uri != MCP_STATUS_RESOURCE_URI {
-            return JsonRpcResponse::error_with_data(
-                id,
-                codes::RESOURCE_NOT_FOUND,
-                "Resource not found",
-                json!({ "uri": uri }),
-            );
-        }
+        let payload = match uri {
+            MCP_STATUS_RESOURCE_URI => self.status_resource_payload(),
+            MCP_SPEC_09_COVERAGE_RESOURCE_URI => self.spec_09_coverage_resource_payload(),
+            _ => {
+                return JsonRpcResponse::error_with_data(
+                    id,
+                    codes::RESOURCE_NOT_FOUND,
+                    "Resource not found",
+                    json!({ "uri": uri }),
+                );
+            }
+        };
 
-        let text = serde_json::to_string_pretty(&self.status_resource_payload())
-            .unwrap_or_else(|_| "{}".to_string());
+        let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
         JsonRpcResponse::success(
             id,
             json!({
                 "contents": [
                     {
-                        "uri": MCP_STATUS_RESOURCE_URI,
+                        "uri": uri,
                         "mimeType": "application/json",
                         "text": text,
                     }
@@ -352,6 +384,92 @@ impl<T: HttpTransport> McpServer<T> {
                 "http_sse_reserved_not_served",
                 "integration_api_health_not_probed",
                 "no_stdout_stderr_log_tail",
+            ],
+        })
+    }
+
+    fn spec_09_coverage_resource_payload(&self) -> Value {
+        let tools_by_access = |access: ToolAccess| -> Vec<Value> {
+            self.tools
+                .iter()
+                .filter(|tool| tool.access == access)
+                .map(|tool| {
+                    json!({
+                        "name": tool.name,
+                        "permission": tool.permission,
+                    })
+                })
+                .collect()
+        };
+        let prompt_names = PROMPT_CATALOG
+            .iter()
+            .map(|prompt| prompt.name)
+            .collect::<Vec<_>>();
+
+        json!({
+            "kind": "chancela_mcp_spec_09_coverage",
+            "schema_version": 1,
+            "source": "local_mcp_registry_and_static_server_metadata",
+            "offline": true,
+            "spec": {
+                "id": "09-ai-mcp",
+                "title": "AI, MCP, and Integrations",
+                "covered_here": ["AI-10", "AI-11", "AI-12"],
+                "not_assessed_here": ["AI-01..AI-04", "AI-20..AI-22", "AI-30..AI-31"],
+            },
+            "coverage": {
+                "AI-10": {
+                    "status": "partial",
+                    "requirement": "MCP discovery for tools, resources, and prompts",
+                    "covered_locally": {
+                        "tools": true,
+                        "resources": [MCP_STATUS_RESOURCE_URI, MCP_SPEC_09_COVERAGE_RESOURCE_URI],
+                        "prompts": prompt_names,
+                    },
+                    "boundaries": [
+                        "stdio_transport_only",
+                        "resource_payloads_are_local_snapshots",
+                        "no_external_provider_or_api_probe",
+                    ],
+                },
+                "AI-11": {
+                    "status": "partial",
+                    "requirement": "read-only and write-controlled tool split honoring permission scopes",
+                    "read_only_tools": tools_by_access(ToolAccess::ReadOnly),
+                    "write_controlled_tools": tools_by_access(ToolAccess::WriteControlled),
+                    "tool_counts": {
+                        "enabled": self.tools.len(),
+                        "catalog": self.runtime.catalog_tool_count,
+                    },
+                    "permission_source": "documented_server_side_rbac_gate_for_forwarded_api_key",
+                    "mcp_reimplements_rbac": false,
+                },
+                "AI-12": {
+                    "status": "partial",
+                    "requirement": "authenticated API Client role with the same audit-ledger path",
+                    "authentication": "configured_bearer_api_key_forwarded_to_integration_api",
+                    "authorization_forwarded_server_side": true,
+                    "audit_source": "integration_api_and_ledger",
+                    "mcp_emits_independent_audit_events": false,
+                    "limitations": [
+                        "resource_read_does_not_call_the_api",
+                        "audit_ledger_state_not_probed",
+                    ],
+                },
+            },
+            "review_boundaries": {
+                "hidden_provider_calls": false,
+                "additional_credentials_required": false,
+                "resource_read_forwards_api_key": false,
+                "secrets_in_resource": false,
+                "legal_validity_claimed": false,
+                "archive_certification_claimed": false,
+                "signature_qualification_claimed": false,
+            },
+            "operator_review_next_steps": [
+                "Compare enabled tools against the tenant policy and API-key grant before use.",
+                "Use explicit tools or API records to verify DSR, retention, archive, and audit evidence.",
+                "Treat all prompt output as review assistance only; human review and normal platform gates remain required.",
             ],
         })
     }
@@ -539,6 +657,29 @@ Return a concise review with these sections:
 - Authority or agenda concerns
 - Suggested wording changes, clearly labelled as suggestions only
 - Final human-review reminder: guidance only, no legal validity, no signing, no hidden provider call"#
+}
+
+fn compliance_pack_gap_review_prompt_text() -> &'static str {
+    r#"You are helping a human operator review gaps in a Chancela compliance pack.
+
+Use this as review guidance only. Use only evidence the operator supplies or explicitly retrieves through Chancela tools. Do not call hidden AI, legal, registry, trust, signature, archive, or privacy providers. Do not claim GDPR compliance, legal validity, lawful deletion, retention correctness, archive certification, qualified-signature status, or production B-LT/B-LTA sufficiency.
+
+Review checklist:
+1. Identify the scope: DSR request ids, user ids, retention policy or execution ids, legal-hold state, archive package ids or digests, signature evidence records, and ledger event references.
+2. Separate recorded facts from missing evidence, assumptions, recommendations, and legal judgment reserved for the responsible human reviewer.
+3. For DSR evidence, check request type, status, actor, timestamps, operator reason, affected record summaries, retention review, legal-basis review, and explicit exclusion of credential secrets.
+4. For retention evidence, check policy id and version, dry-run or execution status, outcome, notes, affected records, legal holds, and whether any deletion/anonymization was only proposed rather than performed.
+5. For archive evidence, check package manifest, member checksums, ledger references, legal-hold metadata, preservation-level statements, PDF/A or ZIP metadata, and explicit limits on DGLAB or official-certification claims.
+6. For signature evidence, check that technical evidence is labelled as technical evidence only and that no unsupported legal or qualified-signature conclusion is inferred.
+
+Return a concise gap review with these sections:
+- Evidence reviewed
+- Missing records or identifiers
+- DSR evidence gaps
+- Retention and legal-hold evidence gaps
+- Archive and signature evidence gaps
+- Follow-up questions for the human reviewer
+- Boundary reminder: guidance only, no legal validity, no hidden provider call"#
 }
 
 fn tool_text_result(text: &str, is_error: bool) -> Value {
@@ -1102,16 +1243,36 @@ mod tests {
         let result = resp.result.unwrap();
         let prompts = result["prompts"].as_array().unwrap();
         assert_eq!(prompts.len(), PROMPT_CATALOG.len());
-        assert_eq!(prompts[0]["name"], json!(DRAFT_MINUTES_REVIEW_PROMPT_NAME));
+        let by_name = |name: &str| {
+            prompts
+                .iter()
+                .find(|prompt| prompt["name"].as_str() == Some(name))
+                .unwrap()
+        };
+        let draft_minutes = by_name(DRAFT_MINUTES_REVIEW_PROMPT_NAME);
         assert_eq!(
-            prompts[0]["title"],
+            draft_minutes["name"],
+            json!(DRAFT_MINUTES_REVIEW_PROMPT_NAME)
+        );
+        assert_eq!(
+            draft_minutes["title"],
             json!(DRAFT_MINUTES_REVIEW_PROMPT_TITLE)
         );
         assert_eq!(
-            prompts[0]["description"],
+            draft_minutes["description"],
             json!(DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION)
         );
-        assert_eq!(prompts[0]["arguments"], json!([]));
+        assert_eq!(draft_minutes["arguments"], json!([]));
+        let compliance_pack = by_name(COMPLIANCE_PACK_GAP_REVIEW_PROMPT_NAME);
+        assert_eq!(
+            compliance_pack["title"],
+            json!(COMPLIANCE_PACK_GAP_REVIEW_PROMPT_TITLE)
+        );
+        assert_eq!(
+            compliance_pack["description"],
+            json!(COMPLIANCE_PACK_GAP_REVIEW_PROMPT_DESCRIPTION)
+        );
+        assert_eq!(compliance_pack["arguments"], json!([]));
         let encoded = serde_json::to_string(&result).unwrap();
         assert!(!encoded.contains("chk_ab12cd_secretsecret"));
         assert!(!encoded.contains("secretsecret"));
@@ -1156,6 +1317,44 @@ mod tests {
     }
 
     #[test]
+    fn prompts_get_returns_compliance_pack_gap_review_without_http_or_secret() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "prompts/get",
+                45,
+                json!({ "name": COMPLIANCE_PACK_GAP_REVIEW_PROMPT_NAME }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        assert_eq!(
+            result["description"],
+            json!(COMPLIANCE_PACK_GAP_REVIEW_PROMPT_DESCRIPTION)
+        );
+        let messages = result["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], json!("user"));
+        assert_eq!(messages[0]["content"]["type"], json!("text"));
+        let text = messages[0]["content"]["text"].as_str().unwrap();
+        for needle in [
+            "DSR",
+            "retention",
+            "archive",
+            "credential secrets",
+            "no legal validity",
+            "no hidden provider call",
+        ] {
+            assert!(
+                text.contains(needle),
+                "prompt should contain {needle:?}: {text}"
+            );
+        }
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn prompts_get_rejects_invalid_prompt_params_without_http() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
 
@@ -1185,18 +1384,30 @@ mod tests {
     }
 
     #[test]
-    fn resources_list_exposes_mcp_status_resource() {
+    fn resources_list_exposes_local_static_resources() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
         let resp = server
             .handle(&req("resources/list", 20, Value::Null))
             .unwrap();
         let result = resp.result.unwrap();
         let resources = result["resources"].as_array().unwrap();
-        assert_eq!(resources.len(), 1);
-        assert_eq!(resources[0]["uri"], json!(MCP_STATUS_RESOURCE_URI));
-        assert_eq!(resources[0]["mimeType"], json!("application/json"));
+        assert_eq!(resources.len(), 2);
+        let by_uri = |uri: &str| {
+            resources
+                .iter()
+                .find(|resource| resource["uri"].as_str() == Some(uri))
+                .unwrap()
+        };
+        let status = by_uri(MCP_STATUS_RESOURCE_URI);
+        assert_eq!(status["mimeType"], json!("application/json"));
         assert_eq!(
-            resources[0]["annotations"]["audience"],
+            status["annotations"]["audience"],
+            json!(["user", "assistant"])
+        );
+        let spec_09 = by_uri(MCP_SPEC_09_COVERAGE_RESOURCE_URI);
+        assert_eq!(spec_09["mimeType"], json!("application/json"));
+        assert_eq!(
+            spec_09["annotations"]["audience"],
             json!(["user", "assistant"])
         );
         assert!(server.bridge_recorded().is_empty());
@@ -1252,6 +1463,92 @@ mod tests {
         assert_eq!(status["tools"]["enabled"], json!(1));
         assert_eq!(status["tools"]["catalog"], json!(catalog().len()));
         assert_eq!(status["security"]["secrets_in_resource"], json!(false));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_spec_09_coverage_returns_boundaries_without_http_or_secret() {
+        let cfg = McpConfig {
+            enabled_tools: EnabledTools::List(vec![
+                "list_companies".into(),
+                "draft_minutes".into(),
+                "prepare_archive_export".into(),
+            ]),
+            ..enabled_cfg()
+        };
+        let server = McpServer::from_config(&cfg, MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                46,
+                json!({ "uri": MCP_SPEC_09_COVERAGE_RESOURCE_URI }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let contents = result["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(contents[0]["uri"], json!(MCP_SPEC_09_COVERAGE_RESOURCE_URI));
+        assert_eq!(contents[0]["mimeType"], json!("application/json"));
+        let text = contents[0]["text"].as_str().unwrap();
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+
+        let coverage: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(coverage["kind"], json!("chancela_mcp_spec_09_coverage"));
+        assert_eq!(coverage["offline"], json!(true));
+        assert_eq!(coverage["spec"]["id"], json!("09-ai-mcp"));
+        assert_eq!(
+            coverage["spec"]["covered_here"],
+            json!(["AI-10", "AI-11", "AI-12"])
+        );
+        assert_eq!(coverage["coverage"]["AI-10"]["status"], json!("partial"));
+        assert_eq!(
+            coverage["coverage"]["AI-10"]["covered_locally"]["resources"],
+            json!([MCP_STATUS_RESOURCE_URI, MCP_SPEC_09_COVERAGE_RESOURCE_URI])
+        );
+        assert!(
+            coverage["coverage"]["AI-10"]["covered_locally"]["prompts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name.as_str() == Some(COMPLIANCE_PACK_GAP_REVIEW_PROMPT_NAME))
+        );
+        assert_eq!(
+            coverage["coverage"]["AI-11"]["mcp_reimplements_rbac"],
+            json!(false)
+        );
+        assert!(
+            coverage["coverage"]["AI-11"]["read_only_tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| tool["name"] == json!("list_companies")
+                    && tool["permission"] == json!("entity.read"))
+        );
+        assert!(
+            coverage["coverage"]["AI-11"]["write_controlled_tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| tool["name"] == json!("draft_minutes")
+                    && tool["permission"] == json!("act.draft"))
+        );
+        assert_eq!(
+            coverage["coverage"]["AI-12"]["authorization_forwarded_server_side"],
+            json!(true)
+        );
+        assert_eq!(
+            coverage["review_boundaries"]["hidden_provider_calls"],
+            json!(false)
+        );
+        assert_eq!(
+            coverage["review_boundaries"]["secrets_in_resource"],
+            json!(false)
+        );
+        assert_eq!(
+            coverage["review_boundaries"]["legal_validity_claimed"],
+            json!(false)
+        );
         assert!(server.bridge_recorded().is_empty());
     }
 
