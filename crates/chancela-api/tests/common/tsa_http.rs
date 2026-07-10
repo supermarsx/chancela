@@ -34,6 +34,11 @@ impl MockTsaServer {
         Self::spawn(MockTsaMode::Outage)
     }
 
+    #[allow(dead_code)]
+    pub fn malformed_token() -> Self {
+        Self::spawn(MockTsaMode::MalformedToken)
+    }
+
     pub fn url(&self) -> &str {
         &self.url
     }
@@ -55,6 +60,8 @@ enum MockTsaMode {
     Granted,
     #[allow(dead_code)]
     Outage,
+    #[allow(dead_code)]
+    MalformedToken,
 }
 
 fn handle_connection(mut stream: TcpStream, mode: MockTsaMode) {
@@ -71,6 +78,14 @@ fn handle_connection(mut stream: TcpStream, mode: MockTsaMode) {
                 "503 Service Unavailable",
                 "text/plain",
                 b"tsa outage",
+            );
+        }
+        MockTsaMode::MalformedToken => {
+            write_response(
+                &mut stream,
+                "200 OK",
+                "application/timestamp-reply",
+                b"not a DER timestamp token",
             );
         }
     }

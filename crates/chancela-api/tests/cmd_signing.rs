@@ -31,7 +31,7 @@ use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
-use chancela_api::{AppState, router};
+use chancela_api::{AppState, CmdEnvSetting, router};
 use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
 use chancela_cmd::{CmdError, ScmdTransport};
 use chancela_core::ActId;
@@ -50,6 +50,13 @@ const APP_ID: &str = "CHANCELA-PREPROD-0001";
 const PHONE: &str = "+351 912345678";
 const PIN: &str = "271828";
 const OTP: &str = "314159";
+const CMD_ENV_KEYS: [&str; 5] = [
+    "CHANCELA_CMD_ENV",
+    "CHANCELA_CMD_APPLICATION_ID",
+    "CHANCELA_CMD_HTTP_BASIC_USERNAME",
+    "CHANCELA_CMD_HTTP_BASIC_PASSWORD",
+    "CHANCELA_CMD_AMA_CERT_PEM",
+];
 
 // --- ephemeral in-test RSA signer (mirrors chancela-pades/signing tests) ----------------------
 
@@ -263,6 +270,35 @@ impl Drop for TempDir {
     }
 }
 
+struct EnvRestore(Vec<(&'static str, Option<String>)>);
+
+fn without_cmd_env() -> EnvRestore {
+    let saved = CMD_ENV_KEYS
+        .into_iter()
+        .map(|key| {
+            let value = std::env::var(key).ok();
+            unsafe {
+                std::env::remove_var(key);
+            }
+            (key, value)
+        })
+        .collect();
+    EnvRestore(saved)
+}
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        for (key, value) in self.0.drain(..) {
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+}
+
 /// Build a durable state at `dir` with the injected transport + a granted trust policy + the CMD
 /// ApplicationId set (from "env"/settings). `reject` picks the OTP behaviour.
 async fn state_at_with_trust_status(
@@ -279,6 +315,7 @@ async fn state_at_with_trust_status(
         let mut settings = state.settings.write().await;
         settings.signing.cmd.application_id = Some(APP_ID.to_owned());
         settings.signing.tsa_url = None;
+        settings.signing.tsa_providers.clear();
     }
     state
 }
@@ -820,6 +857,137 @@ async fn cmd_tsa_failure_leaves_no_signed_artifact() {
             .unwrap_or_default()
             .contains("carimbo temporal"),
         "timestamp failure is explicit: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn cmd_malformed_tsa_token_leaves_no_signed_artifact() {
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false);
+    let state = state_at(&dir.0, transport, true).await;
+    let tsa = MockTsaServer::malformed_token();
+    state.settings.write().await.signing.tsa_url = Some(tsa.url().to_owned());
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, init) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "initiate: {init}");
+    let session_id = init["session_id"].as_str().unwrap().to_owned();
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/confirm"),
+            &token,
+            json!({ "session_id": session_id, "otp": OTP }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "malformed TSA token maps cleanly: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("carimbo temporal"),
+        "timestamp failure is explicit: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn cmd_initiate_requires_application_id_and_leaves_no_signature() {
+    let _env = without_cmd_env();
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false);
+    let state = state_at(&dir.0, transport, true).await;
+    state.settings.write().await.signing.cmd.application_id = None;
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing ApplicationId is client-actionable: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("ApplicationId"),
+        "error points at the missing ApplicationId: {err}"
+    );
+    assert!(
+        state.pending_signatures.read().await.is_empty(),
+        "missing config must not create a pending signing session"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn cmd_prod_without_ama_certificate_fails_before_scmd_and_leaves_no_signature() {
+    let _env = without_cmd_env();
+    let dir = TempDir::new();
+    let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
+    let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
+    let transport = SmartCmdTransport::new(&leaf, &issuer, false)
+        .with_transport_error_on(ACTION_GET_CERTIFICATE);
+    let state = state_at(&dir.0, transport, true).await;
+    state.settings.write().await.signing.cmd.env = CmdEnvSetting::Prod;
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
+            &token,
+            json!({ "phone": PHONE, "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "PROD without AMA cert is client-actionable: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("CHANCELA_CMD_AMA_CERT_PEM") || msg.contains("field encryption"),
+        "error points at the missing production certificate: {err}"
+    );
+    assert!(
+        state.pending_signatures.read().await.is_empty(),
+        "invalid production config must not create a pending signing session"
     );
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }

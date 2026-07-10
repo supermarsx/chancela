@@ -18,8 +18,11 @@
 
 mod common;
 
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration as StdDuration;
 
 use axum::body::{Body, to_bytes};
@@ -47,6 +50,7 @@ use chancela_signing::{
 };
 use chancela_smartcard::token::{LABEL_AUTH_CERT, LABEL_SIGNATURE_CERT};
 use chancela_smartcard::{CertUsage, CryptoToken, MockToken, SmartcardError, TokenCertificate};
+use chancela_tsl::{DigitalIdentity, parse_tsl};
 use common::tsa_http::MockTsaServer;
 use uuid::Uuid;
 
@@ -58,6 +62,7 @@ const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
 ];
 const OCSP_DER_FIXTURE: &[u8] = &[0x30, 0x03, 0x02, 0x01, 0x05];
 const CRL_DER_FIXTURE: &[u8] = &[0x30, 0x05, 0x06, 0x03, 0x2a, 0x03, 0x04];
+const PT_TSL_SAMPLE: &[u8] = include_bytes!("../../chancela-tsl/fixtures/pt-tsl-sample.xml");
 
 // --- An in-test, key-backed CryptoToken standing in for a Cartão de Cidadão -----------------------
 
@@ -261,6 +266,86 @@ impl Drop for TempDir {
     }
 }
 
+struct MockTslServer {
+    url: String,
+}
+
+impl MockTslServer {
+    fn invalid_signature_fixture() -> Self {
+        Self::spawn(MockTslMode::InvalidSignatureFixture)
+    }
+
+    fn outage() -> Self {
+        Self::spawn(MockTslMode::Outage)
+    }
+
+    fn url(&self) -> &str {
+        &self.url
+    }
+
+    fn spawn(mode: MockTslMode) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock TSL");
+        let url = format!("http://{}", listener.local_addr().expect("local addr"));
+        thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() {
+                handle_tsl_connection(stream, mode);
+            }
+        });
+        Self { url }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum MockTslMode {
+    InvalidSignatureFixture,
+    Outage,
+}
+
+fn handle_tsl_connection(mut stream: TcpStream, mode: MockTslMode) {
+    let _ = stream.set_read_timeout(Some(StdDuration::from_secs(5)));
+    let mut buf = [0u8; 1024];
+    let _ = stream.read(&mut buf);
+    match mode {
+        MockTslMode::InvalidSignatureFixture => {
+            write_tsl_response(&mut stream, "200 OK", "application/xml", PT_TSL_SAMPLE);
+        }
+        MockTslMode::Outage => {
+            write_tsl_response(
+                &mut stream,
+                "503 Service Unavailable",
+                "text/plain",
+                b"tsl outage",
+            );
+        }
+    }
+}
+
+fn write_tsl_response(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
+    let headers = format!(
+        "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(headers.as_bytes()).expect("write headers");
+    stream.write_all(body).expect("write body");
+}
+
+fn fixture_granted_issuer_cert() -> Vec<u8> {
+    let list = parse_tsl(PT_TSL_SAMPLE).expect("fixture parses");
+    let provider = list
+        .providers
+        .iter()
+        .find(|provider| provider.name.contains("MULTICERT"))
+        .expect("fixture has a granted e-signature provider");
+    provider.services[0]
+        .digital_identities
+        .iter()
+        .find_map(|identity| match identity {
+            DigitalIdentity::Certificate(der) => Some(der.clone()),
+            _ => None,
+        })
+        .expect("fixture provider carries a certificate identity")
+}
+
 /// The CC signer-provider factory shape `AppState::cc_provider` holds (mirrors the field type).
 type CcProviderFactory =
     Arc<dyn Fn() -> Result<Box<dyn SignerProvider>, SigningError> + Send + Sync>;
@@ -303,7 +388,11 @@ fn state_at_with_trust_status(
     let mut state = AppState::with_data_dir(dir);
     state.local_signing = local;
     state.cc_provider = factory;
-    state.settings.try_write().unwrap().signing.tsa_url = None;
+    {
+        let mut settings = state.settings.try_write().unwrap();
+        settings.signing.tsa_url = None;
+        settings.signing.tsa_providers.clear();
+    }
     let policy: Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync> =
         Arc::new(move || Box::new(StaticTrustPolicy::new(trust_status)));
     state.cmd_trust_policy = Some(policy);
@@ -1047,6 +1136,84 @@ async fn cc_sign_rejects_withdrawn_and_unknown_trust_policy() {
     }
 }
 
+#[tokio::test]
+async fn cc_sign_rejects_real_tsl_source_with_invalid_signature() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let issuer = fixture_granted_issuer_cert();
+    let factory = provider_factory(card, Some(issuer));
+    let mut state = state_at(&dir.0, Some(factory), true, true);
+    state.cmd_trust_policy = None;
+    let tsl = MockTslServer::invalid_signature_fixture();
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.tsl_sources.clear();
+        settings.signing.tsl_url = Some(tsl.url().to_owned());
+        settings.signing.tsa_url = None;
+        settings.signing.tsa_providers.clear();
+    }
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "capacity": "Administrador" }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unauthenticated TSL must fail closed: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("Lista de Confiança") && msg.contains("Unknown"),
+        "invalid TSL signature is reported as an unknown trust decision: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn trust_refresh_reports_tsl_source_offline_without_replacing_cache() {
+    let dir = TempDir::new();
+    let state = state_at(&dir.0, None, true, true);
+    let tsl = MockTslServer::outage();
+    let (token, _uid) = bootstrap(&state).await;
+
+    let (status, body) = send(
+        &state,
+        json_req(
+            "POST",
+            "/v1/trust/refresh",
+            &token,
+            json!({ "url": tsl.url() }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "offline TSL refresh reports status: {body}"
+    );
+    assert_eq!(body["outcome"], "Failed");
+    assert_eq!(body["source_kind"], "Url");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("503") || error.contains("status")),
+        "refresh response carries an actionable fetch error: {body}"
+    );
+    assert!(
+        !dir.0.join("tsl.xml").exists(),
+        "failed TSL refresh must not install a cache"
+    );
+}
+
 /// The co-location gate (CC-B): with `CHANCELA_LOCAL_SIGNING` absent (`local_signing == false`, a
 /// remote server), the CC endpoint 409s and produces no signed variant.
 #[tokio::test]
@@ -1159,6 +1326,41 @@ async fn cc_sign_403_for_role_without_signing_perm() {
 
 /// The provider-error mapping: an un-activated qualified signature (a real card failure mode) is
 /// surfaced as an honest CC 422 — distinct from a PAdES/CAdES failure — and leaves no artifact.
+#[tokio::test]
+async fn cc_sign_local_provider_unavailable_maps_to_honest_error() {
+    let dir = TempDir::new();
+    let factory: CcProviderFactory = Arc::new(|| {
+        Err(SigningError::Provider(
+            "simulated local provider unavailable".to_owned(),
+        ))
+    });
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "local provider unavailable -> 422: {err}"
+    );
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("Cartão de Cidadão") && msg.contains("simulated local provider unavailable"),
+        "provider outage is actionable and provider-specific: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
 #[tokio::test]
 async fn cc_sign_provider_error_maps_to_honest_error() {
     let dir = TempDir::new();
