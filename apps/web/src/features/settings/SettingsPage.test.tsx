@@ -310,7 +310,9 @@ function platformServiceStatus(settings: TestSettings, serviceId: 'api' | 'mcp_s
       actual_runtime_status: 'running',
       controllable_actions: platformActionCapabilities('api'),
       logging_level:
-        settings.platform.logging.service_overrides.api ?? settings.platform.logging.api,
+        settings.platform.logging.global === 'off'
+          ? 'off'
+          : (settings.platform.logging.service_overrides.api ?? settings.platform.logging.api),
       last_action: settings.platform.api_server.last_action,
       limitations: [
         'The API can observe this process as running only because it is serving this request.',
@@ -328,7 +330,9 @@ function platformServiceStatus(settings: TestSettings, serviceId: 'api' | 'mcp_s
     actual_runtime_status: 'unknown',
     controllable_actions: platformActionCapabilities('mcp_stdio'),
     logging_level:
-      settings.platform.logging.service_overrides.mcp_stdio ?? settings.platform.logging.mcp,
+      settings.platform.logging.global === 'off'
+        ? 'off'
+        : (settings.platform.logging.service_overrides.mcp_stdio ?? settings.platform.logging.mcp),
     last_action: settings.platform.mcp_stdio_server.last_action,
     limitations: [
       'The stdio MCP server is launched by an external client or supervisor; the API cannot observe or spawn that process.',
@@ -1088,6 +1092,68 @@ describe('SettingsPage', () => {
     expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
     expect(screen.getByText(/cannot observe or spawn/)).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /Registar reinício/ }).length).toBeGreaterThan(0);
+  });
+
+  it('renders only meaningful platform action buttons from backend capabilities', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    const apiRow = (await screen.findByText('Chancela API server')).closest('section');
+    expect(apiRow).toBeTruthy();
+    expect(within(apiRow!).queryByRole('button', { name: /Registar arranque/ })).toBeNull();
+    expect(within(apiRow!).getByRole('button', { name: /Registar paragem/ })).toBeTruthy();
+    expect(within(apiRow!).getByRole('button', { name: /Registar reinício/ })).toBeTruthy();
+    expect(within(apiRow!).getAllByText('Não suportado').length).toBeGreaterThan(0);
+    expect(
+      within(apiRow!).getByText('The current API process cannot start another copy of itself.'),
+    ).toBeTruthy();
+
+    const mcpRow = (await screen.findByText('Chancela MCP stdio server')).closest('section');
+    expect(mcpRow).toBeTruthy();
+    expect(within(mcpRow!).getByRole('button', { name: /Registar arranque/ })).toBeTruthy();
+    expect(within(mcpRow!).queryByRole('button', { name: /Registar paragem/ })).toBeNull();
+    expect(within(mcpRow!).queryByRole('button', { name: /Registar reinício/ })).toBeNull();
+    expect(within(mcpRow!).getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
+    expect(
+      within(mcpRow!).getAllByText(
+        'The stdio MCP server is launched externally; the API can only record desired state.',
+      ),
+    ).toHaveLength(3);
+  });
+
+  it('shows global-off effective platform logging even when service overrides remain stored', async () => {
+    const { fn } = settingsFetch(
+      materializeSettings({
+        ...DEFAULT_SETTINGS,
+        platform: {
+          ...DEFAULT_SETTINGS.platform,
+          logging: {
+            ...DEFAULT_SETTINGS.platform.logging,
+            global: 'off',
+            app: 'trace',
+            api: 'debug',
+            mcp: 'warn',
+            service_overrides: {
+              api: 'trace',
+              mcp_stdio: 'debug',
+            },
+          },
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
+
+    const summary = await screen.findByRole('group', { name: 'Log efetivo' });
+    expect(within(summary).getAllByText('Off')).toHaveLength(3);
+    expect(within(summary).getByText('Aplicação')).toBeTruthy();
+    expect(within(summary).getByText('Servidor API')).toBeTruthy();
+    expect(within(summary).getByText('Servidor MCP stdio')).toBeTruthy();
+    expect(within(summary).getAllByText('Global: Off')).toHaveLength(3);
+    expect(within(summary).queryByText(/Sobreposições/)).toBeNull();
   });
 
   it('shows AI/MCP provenance assurance to settings managers without secret material', async () => {

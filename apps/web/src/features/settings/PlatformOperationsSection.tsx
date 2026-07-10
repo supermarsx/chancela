@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { useControlPlatformService, usePlatformServices } from '../../api/hooks';
 import {
   PLATFORM_LOG_LEVELS,
-  PLATFORM_SERVICE_ACTIONS,
+  PLATFORM_SERVICE_IDS,
+  type PlatformActionCapability,
   type PlatformAuditEvent,
   type PlatformControlOutcomeKind,
   type PlatformLogLevel,
@@ -31,6 +32,14 @@ import {
 
 const LOG_BASE_FIELDS = ['global', 'app', 'api', 'mcp'] as const;
 const LOG_OVERRIDE_IDS: readonly PlatformServiceId[] = ['app', 'api', 'mcp_stdio'];
+const LOG_LEVEL_RANK: Record<PlatformLogLevel, number> = {
+  trace: 0,
+  debug: 1,
+  info: 2,
+  warn: 3,
+  error: 4,
+  off: 5,
+};
 const AI_MCP_ASSURANCE_KEYS = [
   'settings.platform.assurance.gates',
   'settings.platform.assurance.rbac',
@@ -64,6 +73,61 @@ function outcomeTone(outcome: PlatformControlOutcomeKind) {
   if (outcome === 'restart_required') return 'warn';
   if (outcome === 'supervisor_required') return 'accent';
   return 'neutral';
+}
+
+function desiredStateForAction(action: PlatformServiceAction): PlatformServiceDesiredState {
+  return action === 'stop' ? 'stopped' : 'running';
+}
+
+function isMeaningfulDesiredStateAction(
+  service: PlatformServiceStatus,
+  capability: PlatformActionCapability,
+) {
+  if (capability.action === 'restart') return service.desired_state === 'running';
+  return service.desired_state !== desiredStateForAction(capability.action);
+}
+
+function logAreaField(
+  serviceId: PlatformServiceId,
+): Exclude<(typeof LOG_BASE_FIELDS)[number], 'global'> {
+  if (serviceId === 'mcp_stdio') return 'mcp';
+  return serviceId;
+}
+
+function stricterLogLevel(left: PlatformLogLevel, right: PlatformLogLevel): PlatformLogLevel {
+  return LOG_LEVEL_RANK[left] >= LOG_LEVEL_RANK[right] ? left : right;
+}
+
+function effectiveLogLevel(
+  logging: PlatformLoggingSettings,
+  serviceId: PlatformServiceId,
+): PlatformLogLevel {
+  if (logging.global === 'off') return 'off';
+  const override = logging.service_overrides[serviceId];
+  if (override) return override;
+  return stricterLogLevel(logging.global, logging[logAreaField(serviceId)]);
+}
+
+function loggingSourceText(
+  logging: PlatformLoggingSettings,
+  serviceId: PlatformServiceId,
+  t: ReturnType<typeof useT>,
+) {
+  if (logging.global === 'off') {
+    return `${t('settings.platform.logging.global')}: ${t('settings.platform.logLevel.off')}`;
+  }
+  const override = logging.service_overrides[serviceId];
+  if (override) {
+    return `${t('settings.platform.logging.overrides')}: ${t(
+      `settings.platform.logLevel.${override}` as MessageKey,
+    )}`;
+  }
+  const area = logAreaField(serviceId);
+  return `${t('settings.platform.logging.global')}: ${t(
+    `settings.platform.logLevel.${logging.global}` as MessageKey,
+  )} · ${t(`settings.platform.logging.${area}` as MessageKey)}: ${t(
+    `settings.platform.logLevel.${logging[area]}` as MessageKey,
+  )}`;
 }
 
 function actionIcon(action: PlatformServiceAction) {
@@ -149,6 +213,29 @@ function LastAction({ service }: { service: PlatformServiceStatus }) {
   );
 }
 
+function ActionCapabilities({ service }: { service: PlatformServiceStatus }) {
+  const t = useT();
+  if (service.controllable_actions.length === 0) return null;
+  return (
+    <div className="platform-control-support">
+      <p className="card__label">{t('settings.platform.action')}</p>
+      <ul>
+        {service.controllable_actions.map((capability) => (
+          <li key={capability.action}>
+            <div className="platform-control-support__head">
+              <span>{t(`settings.platform.action.${capability.action}` as MessageKey)}</span>
+              <Badge tone={outcomeTone(capability.outcome)}>
+                {t(`settings.platform.outcome.${capability.outcome}` as MessageKey)}
+              </Badge>
+            </div>
+            <p>{capability.limitation}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ServiceRow({
   service,
   canManage,
@@ -161,6 +248,9 @@ function ServiceRow({
   const t = useT();
   const toast = useToast();
   const control = useControlPlatformService();
+  const meaningfulActions = service.controllable_actions.filter((capability) =>
+    isMeaningfulDesiredStateAction(service, capability),
+  );
 
   const recordAction = (action: PlatformServiceAction) => {
     control.mutate(
@@ -214,43 +304,42 @@ function ServiceRow({
           </div>
         </dl>
 
-        <div className="platform-action-row">
-          {PLATFORM_SERVICE_ACTIONS.map((action) => {
-            const capability = service.controllable_actions.find((c) => c.action === action);
-            const pending =
-              control.isPending &&
-              control.variables?.id === service.id &&
-              control.variables?.action === action;
-            return (
-              <Button
-                key={action}
-                type="button"
-                variant={action === 'restart' ? 'secondary' : 'ghost'}
-                icon={actionIcon(action)}
-                disabled={!canManage || pending}
-                onClick={() => recordAction(action)}
-              >
-                {pending
-                  ? t('settings.platform.action.recording')
-                  : t(`settings.platform.action.record.${action}` as MessageKey)}
-                {capability ? (
+        {meaningfulActions.length > 0 ? (
+          <div className="platform-action-row">
+            {meaningfulActions.map((capability) => {
+              const action = capability.action;
+              const pending =
+                control.isPending &&
+                control.variables?.id === service.id &&
+                control.variables?.action === action;
+              return (
+                <Button
+                  key={action}
+                  type="button"
+                  variant={action === 'restart' ? 'secondary' : 'ghost'}
+                  icon={actionIcon(action)}
+                  disabled={!canManage || pending}
+                  onClick={() => recordAction(action)}
+                >
+                  {pending
+                    ? t('settings.platform.action.recording')
+                    : t(`settings.platform.action.record.${action}` as MessageKey)}
                   <span className="platform-action-row__outcome">
                     {t(`settings.platform.outcome.${capability.outcome}` as MessageKey)}
                   </span>
-                ) : null}
-              </Button>
-            );
-          })}
-        </div>
+                </Button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <ActionCapabilities service={service} />
 
         <div className="platform-limitations">
           <p className="card__label">{t('settings.platform.limitations')}</p>
           <ul>
             {service.limitations.map((item) => (
               <li key={item}>{item}</li>
-            ))}
-            {service.controllable_actions.map((capability) => (
-              <li key={`${capability.action}:${capability.outcome}`}>{capability.limitation}</li>
             ))}
           </ul>
         </div>
@@ -261,6 +350,33 @@ function ServiceRow({
         <LastAction service={service} />
       </aside>
     </section>
+  );
+}
+
+function LoggingEffectiveSummary({ logging }: { logging: PlatformLoggingSettings }) {
+  const t = useT();
+  return (
+    <div
+      className="platform-logging-effective"
+      role="group"
+      aria-label={t('settings.platform.effectiveLog')}
+    >
+      <p className="card__label">{t('settings.platform.effectiveLog')}</p>
+      <div className="platform-logging-effective__grid">
+        {PLATFORM_SERVICE_IDS.map((serviceId) => {
+          const effective = effectiveLogLevel(logging, serviceId);
+          return (
+            <div key={serviceId} className="platform-logging-effective__item">
+              <span>{serviceFallbackLabel(serviceId, t)}</span>
+              <Badge tone={effective === 'off' ? 'neutral' : 'accent'}>
+                {t(`settings.platform.logLevel.${effective}` as MessageKey)}
+              </Badge>
+              <span className="field__hint">{loggingSourceText(logging, serviceId, t)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -371,6 +487,7 @@ export function PlatformOperationsSection({
               </Field>
             ))}
           </div>
+          <LoggingEffectiveSummary logging={value.logging} />
           <div className="stack--tight">
             <p className="card__label">{t('settings.platform.logging.overrides')}</p>
             <p className="field__hint">{t('settings.platform.logging.overridesHint')}</p>
