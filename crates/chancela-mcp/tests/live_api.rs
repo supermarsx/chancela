@@ -124,6 +124,37 @@ async fn mcp_draft_minutes_returns_provenance_and_unsealed_api_draft() {
             "draft wrapper: {body}"
         );
         assert_eq!(
+            body["source_provenance"]["status"],
+            json!("pending_human_verification"),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["source_provenance"]["human_verification_required"],
+            json!(true),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["source_provenance"]["accepted_as_legal_text"],
+            json!(false),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["source_provenance"]["source"]["tool"],
+            json!("draft_minutes"),
+            "draft wrapper: {body}"
+        );
+        let statement_sources = body["source_provenance"]["statement_sources"]
+            .as_array()
+            .expect("statement source provenance entries");
+        assert!(
+            statement_sources
+                .iter()
+                .any(|source| source["path"] == json!("/draft/title")
+                    && source["source_type"] == json!("caller_supplied")
+                    && source["human_verified"] == json!(false)),
+            "draft wrapper source provenance: {body}"
+        );
+        assert_eq!(
             body["provenance"]["source"]["tool"],
             json!("draft_minutes"),
             "draft wrapper: {body}"

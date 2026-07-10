@@ -380,6 +380,12 @@ fn ai_draft_success_text(
     let created_at = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default();
+    let source = json!({
+        "surface": "mcp",
+        "tool": tool.name,
+        "endpoint": format!("{} {}", resolved.method.as_str(), resolved.path),
+    });
+    let source_provenance = ai_draft_source_provenance(tool, &source, arguments);
     let payload = json!({
         "kind": "ai_draft",
         "status": "draft",
@@ -391,12 +397,9 @@ fn ai_draft_success_text(
             "required": true,
             "accepted_as_legal_text": false,
         },
+        "source_provenance": source_provenance,
         "provenance": {
-            "source": {
-                "surface": "mcp",
-                "tool": tool.name,
-                "endpoint": format!("{} {}", resolved.method.as_str(), resolved.path),
-            },
+            "source": source,
             "model": Value::Null,
             "provider": Value::Null,
             "created_at": created_at,
@@ -407,6 +410,47 @@ fn ai_draft_success_text(
 
     serde_json::to_string_pretty(&payload)
         .map_err(|e| format!("could not encode AI draft provenance response: {e}"))
+}
+
+fn ai_draft_source_provenance(tool: &McpTool, source: &Value, arguments: &Value) -> Value {
+    let mut statement_sources = vec![json!({
+        "path": "/draft",
+        "source_type": "ai_suggestion",
+        "source_label": tool.name,
+        "human_verified": false,
+        "verification_status": "pending",
+        "authoritative_source_claimed": false,
+    })];
+    for (argument, path) in [
+        ("book_id", "/draft/book_id"),
+        ("title", "/draft/title"),
+        ("channel", "/draft/channel"),
+        ("retifies", "/draft/retifies"),
+    ] {
+        if arguments
+            .get(argument)
+            .is_some_and(|value| !value.is_null())
+        {
+            statement_sources.push(json!({
+                "path": path,
+                "source_type": "caller_supplied",
+                "source_label": format!("arguments.{argument}"),
+                "human_verified": false,
+                "verification_status": "pending",
+                "authoritative_source_claimed": false,
+            }));
+        }
+    }
+
+    json!({
+        "schema_version": 1,
+        "status": "pending_human_verification",
+        "human_verification_required": true,
+        "accepted_as_legal_text": false,
+        "authoritative_source_claimed": false,
+        "source": source.clone(),
+        "statement_sources": statement_sources,
+    })
 }
 
 fn ensure_unsealed_draft_response(value: &Value) -> Result<(), String> {
@@ -858,6 +902,51 @@ mod tests {
         assert_eq!(
             payload["verification"]["accepted_as_legal_text"],
             json!(false)
+        );
+        assert_eq!(payload["source_provenance"]["schema_version"], json!(1));
+        assert_eq!(
+            payload["source_provenance"]["status"],
+            json!("pending_human_verification")
+        );
+        assert_eq!(
+            payload["source_provenance"]["human_verification_required"],
+            json!(true)
+        );
+        assert_eq!(
+            payload["source_provenance"]["accepted_as_legal_text"],
+            json!(false)
+        );
+        assert_eq!(
+            payload["source_provenance"]["authoritative_source_claimed"],
+            json!(false)
+        );
+        assert_eq!(
+            payload["source_provenance"]["source"]["tool"],
+            json!("draft_minutes")
+        );
+        assert_eq!(
+            payload["source_provenance"]["source"]["endpoint"],
+            json!("POST /acts")
+        );
+        let statement_sources = payload["source_provenance"]["statement_sources"]
+            .as_array()
+            .expect("statement source provenance entries");
+        assert!(
+            statement_sources
+                .iter()
+                .any(|source| source["path"] == json!("/draft")
+                    && source["source_type"] == json!("ai_suggestion")
+                    && source["human_verified"] == json!(false)),
+            "whole-draft AI suggestion provenance missing: {statement_sources:?}"
+        );
+        assert!(
+            statement_sources
+                .iter()
+                .any(|source| source["path"] == json!("/draft/title")
+                    && source["source_type"] == json!("caller_supplied")
+                    && source["source_label"] == json!("arguments.title")
+                    && source["verification_status"] == json!("pending")),
+            "title source provenance missing: {statement_sources:?}"
         );
         assert_eq!(payload["provenance"]["source"]["surface"], json!("mcp"));
         assert_eq!(
