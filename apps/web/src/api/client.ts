@@ -75,6 +75,8 @@ import type {
   PaperBookImportValidateBody,
   PaperBookOcrStatusUpdateBody,
   PaperBookOcrStatusView,
+  PdfSignatureValidationBody,
+  PdfSignatureValidationResponse,
   PlatformControllableServiceId,
   PlatformControlResponse,
   PlatformLogsQueryParams,
@@ -590,6 +592,8 @@ export const api = {
     }),
   fetchExternalSignerInviteWorkingCopy: (token: string) =>
     postTextDownload('/v1/signature/external-invites/document/working-copy', { token }),
+  validatePdfSignature: (body: PdfSignatureValidationBody) =>
+    post<PdfSignatureValidationResponse>('/v1/signature/pdf/validate', body),
 
   // Registry — certidão permanente (§2.7). The `code` in each body is a secret; it is
   // sent transiently in the request and never returned (provenance is masked).

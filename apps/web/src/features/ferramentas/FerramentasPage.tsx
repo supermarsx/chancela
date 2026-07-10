@@ -7,6 +7,8 @@
  *    from the former standalone /cae page, which now redirects in.
  *  - **Legislação** (t24) — a curated law shelf: the diplomas that ground the product,
  *    each with a faithful extract, official links and a last-reviewed date.
+ *  - **Validador PDF** — local technical PDF/PAdES evidence validation for an uploaded
+ *    PDF, backed by `POST /v1/signature/pdf/validate`.
  *  - **Lista de confiança** — the read-only TSL trust catalog/status surface for
  *    checking the parsed scheme, provider and service trust metadata.
  *
@@ -23,13 +25,15 @@ import { Icon, PageHeader } from '../../ui';
 import { CaeExplorer } from '../cae/CaeExplorer';
 import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
 import { LegislacaoPage } from '../legislacao/LegislacaoPage';
+import { PdfSignatureValidatorPanel } from './PdfSignatureValidatorPanel';
 import { TrustCatalogPage } from './TrustCatalogPage';
 
-type FerramentasSection = 'cae' | 'legislacao' | 'trust';
+type FerramentasSection = 'cae' | 'legislacao' | 'pdf' | 'trust';
 
 const SECTIONS: { id: FerramentasSection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'cae', label: 'tools.section.cae', icon: <Icon.Layers /> },
   { id: 'legislacao', label: 'tools.section.legislacao', icon: <Icon.Scale /> },
+  { id: 'pdf', label: 'tools.section.pdfValidator', icon: <Icon.FileText /> },
   { id: 'trust', label: 'tools.section.trust', icon: <Icon.Seal /> },
 ];
 
@@ -40,9 +44,11 @@ export function FerramentasPage() {
   const section: FerramentasSection =
     params.get('tool') === 'legislacao'
       ? 'legislacao'
-      : params.get('tool') === 'trust'
-        ? 'trust'
-        : 'cae';
+      : params.get('tool') === 'pdf'
+        ? 'pdf'
+        : params.get('tool') === 'trust'
+          ? 'trust'
+          : 'cae';
 
   // A gilt indicator that glides to the active sub-tab (consistent with the top bar's
   // active-tab indicator). Measured from the active button so it works with the two
@@ -52,6 +58,7 @@ export function FerramentasPage() {
   const btnRefs = useRef<Record<FerramentasSection, HTMLButtonElement | null>>({
     cae: null,
     legislacao: null,
+    pdf: null,
     trust: null,
   });
   const [indicator, setIndicator] = useState<{
@@ -155,6 +162,8 @@ export function FerramentasPage() {
       <div className="route-transition" key={section} data-anim-key={section}>
         {section === 'trust' ? (
           <TrustCatalogPage />
+        ) : section === 'pdf' ? (
+          <PdfSignatureValidatorPanel />
         ) : section === 'legislacao' ? (
           <LegislacaoPage />
         ) : (

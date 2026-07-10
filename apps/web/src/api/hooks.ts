@@ -40,6 +40,7 @@ import type {
   PaperBookImportPreserveBody,
   PaperBookImportView,
   PaperBookOcrStatus,
+  PdfSignatureValidationBody,
   PlatformControllableServiceId,
   PlatformLogsQueryParams,
   PlatformServiceAction,
@@ -132,6 +133,7 @@ export const keys = {
   trustService: (id: string) => ['trust', 'service', id] as const,
   tsaCatalog: ['trust', 'tsa'] as const,
   tsaSearch: (params: TsaCatalogSearchParams) => ['trust', 'tsa', 'search', params] as const,
+  pdfSignatureValidation: ['signature', 'pdf', 'validate'] as const,
   lawManifest: ['law', 'manifest'] as const,
   lawCorpus: ['law', 'corpus'] as const,
   lawDiploma: (diploma: string) => ['law', 'corpus', diploma] as const,
@@ -428,6 +430,13 @@ export function useUpdatePaperBookImportOcrStatus(bookRef?: string) {
 
 export function useDownloadPaperBookImport() {
   return useMutation({ mutationFn: (id: string) => api.fetchPaperBookImportBytes(id) });
+}
+
+export function useValidatePdfSignature() {
+  return useMutation({
+    mutationKey: keys.pdfSignatureValidation,
+    mutationFn: (body: PdfSignatureValidationBody) => api.validatePdfSignature(body),
+  });
 }
 
 // --- Acts -----------------------------------------------------------------------

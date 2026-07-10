@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { ptPT } from './locales/pt-PT';
+import { enUS } from './locales/en-US';
 import { interpolate } from './interpolate';
 import { i18nStore } from './store';
 import { LOCALE_LOADERS, LOCALE_QUALITY, SHIPPED_LOCALES } from './registry';
@@ -20,6 +21,13 @@ describe('catalog completeness matrix', () => {
   it('uses natural pt-PT wording for the registry catch-all filter', () => {
     expect(ptPT['entities.filters.registry.all']).toBe('Qualquer estado');
     expect(ptPT['entities.filters.registry.all']).not.toBe('Todo o registo');
+  });
+
+  it('keeps PDF validator copy localized in the English catalog', () => {
+    expect(enUS['tools.section.pdfValidator']).toBe('PDF validator');
+    expect(enUS['pdfValidator.file.label']).toBe('Signed PDF');
+    expect(enUS['pdfValidator.action.validate']).toBe('Validate PDF');
+    expect(enUS['pdfValidator.notice.title']).not.toBe('Validação técnica local');
   });
 
   it('every shipped locale is registered with a quality tier', () => {

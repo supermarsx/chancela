@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 import { FerramentasPage } from './FerramentasPage';
 import { CaeExplorer } from '../cae/CaeExplorer';
-import type { CaeCatalogView, CaeEntryView, CaeNode, LawCorpusView } from '../../api/types';
+import type {
+  CaeCatalogView,
+  CaeEntryView,
+  CaeNode,
+  LawCorpusView,
+  PdfSignatureValidationResponse,
+} from '../../api/types';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -106,6 +112,235 @@ function ferramentasFetch(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+
+const PDF_VALIDATION_RESPONSE: PdfSignatureValidationResponse = {
+  report_kind: 'pdf_signature_validation',
+  scope: 'local_technical_pdf_pades_evidence',
+  legal_notice:
+    'Local technical PDF/PAdES evidence validation only. No AMA integration, live trusted-list validation, live revocation validation, qualified-status decision, or legal-validity conclusion is performed or claimed.',
+  status: 'valid',
+  filename: 'signed.pdf',
+  sha256: '1'.repeat(64),
+  size_bytes: 14,
+  declared_sha256: '1'.repeat(64),
+  declared_size_bytes: 14,
+  structure: {
+    is_pdf: true,
+    header_offset: 0,
+    version: '1.7',
+    has_eof_marker: true,
+    has_startxref: true,
+  },
+  signature: {
+    status: 'valid',
+    validation_performed: true,
+    validation_error: null,
+    signed_pdf_signal: true,
+    signature_marker_count: 1,
+    byte_range_marker_count: 1,
+    has_contents_marker: true,
+    pades_profile: 'PAdES-B-T',
+    byte_range: {
+      byte_range: [0, 10, 20, 30],
+      covered_len: 40,
+      total_len: 42,
+      signed_revision_len: 42,
+      excluded_len: 2,
+      covers_whole_file_except_contents: true,
+      covers_signed_revision_except_contents: true,
+      has_later_incremental_updates: false,
+      digest_sha256: '2'.repeat(64),
+    },
+    cades: {
+      status: 'valid',
+      attrs_ok: true,
+      signing_certificate_v2_present: true,
+      signer_cert_sha256: '3'.repeat(64),
+      signer_cert_subject: 'CN=Signer',
+      signing_time: '2026-07-10T10:00:00Z',
+    },
+    timestamp: { signature_timestamp_present: true, status_scope: 'technical_evidence_only' },
+    dss: {
+      present: true,
+      vri_count: 1,
+      vri_tu_count: 1,
+      vri_has_tu: true,
+      certificate_count: 2,
+      ocsp_count: 1,
+      crl_count: 0,
+      revocation_evidence_present: true,
+      certificate_sha256: ['4'.repeat(64)],
+      ocsp_sha256: ['5'.repeat(64)],
+      crl_sha256: [],
+      status_scope: 'technical_evidence_only',
+    },
+    doc_timestamp: {
+      present: true,
+      count: 1,
+      token_count: 1,
+      token_sha256: ['6'.repeat(64)],
+      all_imprints_valid: true,
+      validations: [
+        {
+          index: 0,
+          object_id: '12 0 R',
+          byte_range: [0, 10, 20, 30],
+          document_digest_sha256: '7'.repeat(64),
+          token_imprint_sha256: '7'.repeat(64),
+          token_hash_algorithm: 'sha256',
+          status: 'valid',
+          failure_reason: null,
+        },
+      ],
+      status_scope: 'technical_evidence_only',
+    },
+  },
+  trust: {
+    status: 'not_performed',
+    performed: false,
+    live_trusted_list_validation_performed: false,
+    ama_integration_performed: false,
+    message: 'trust validation not performed',
+  },
+  revocation: {
+    status: 'not_performed',
+    live_fetch_performed: false,
+    freshness_validation_performed: false,
+    embedded_evidence_inspected: true,
+    embedded_revocation_evidence_present: true,
+    message: 'revocation freshness not performed',
+  },
+  qualification: {
+    status: 'not_performed',
+    qualified_status_claimed: false,
+    legal_validity_claimed: false,
+    legal_effect_assessed: false,
+    message: 'qualification not assessed',
+  },
+  findings: [
+    {
+      severity: 'info',
+      code: 'pades_valid_local_technical',
+      message: 'PAdES/CAdES cryptographic validation succeeded locally',
+    },
+  ],
+};
+
+function pdfValidatorFetch(response: Response): typeof fetch {
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    if (url.includes('/v1/signature/pdf/validate') && method === 'POST') {
+      return Promise.resolve(response);
+    }
+    return Promise.reject(new Error(`no stub for ${url}`));
+  }) as typeof fetch;
+}
+
+describe('Ferramentas — PDF signature validator', () => {
+  it('keeps validation disabled until a PDF is selected', async () => {
+    vi.stubGlobal('fetch', pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    expect(
+      (await screen.findByRole('button', { name: /validar pdf/i })).hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('uploads a PDF as base64 with declared SHA-256 and size', async () => {
+    const fetchMock = vi.fn(pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['%PDF-1.7\n%%EOF'], 'signed.pdf', { type: 'application/pdf' });
+    fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /validar pdf/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      content_base64: string;
+      filename: string;
+      declared_sha256: string | null;
+      declared_size_bytes: number;
+    };
+    expect(url).toBe('/v1/signature/pdf/validate');
+    expect(init.method).toBe('POST');
+    expect(body.content_base64).toBe('JVBERi0xLjcKJSVFT0Y=');
+    expect(body.filename).toBe('signed.pdf');
+    expect(body.declared_size_bytes).toBe(14);
+    expect(body.declared_sha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('renders a valid response with structure, PAdES, DSS and trust sections', async () => {
+    vi.stubGlobal('fetch', pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['%PDF-1.7\n%%EOF'], 'signed.pdf', { type: 'application/pdf' });
+    fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /validar pdf/i }));
+
+    expect(await screen.findByText('Tecnicamente válido')).toBeTruthy();
+    expect(screen.getByText('PAdES-B-T')).toBeTruthy();
+    expect(screen.getByText('DSS, VRI e revogação embebida')).toBeTruthy();
+    expect(screen.getByText('Confiança, revogação e qualificação')).toBeTruthy();
+    expect(screen.getByText('pades_valid_local_technical')).toBeTruthy();
+  });
+
+  it('renders invalid findings from the backend report', async () => {
+    vi.stubGlobal(
+      'fetch',
+      pdfValidatorFetch(
+        jsonResponse({
+          ...PDF_VALIDATION_RESPONSE,
+          status: 'invalid',
+          signature: {
+            ...PDF_VALIDATION_RESPONSE.signature,
+            status: 'invalid',
+            validation_error: 'invalid byte range',
+          },
+          findings: [
+            {
+              severity: 'error',
+              code: 'invalid_byte_range',
+              message: 'signature ByteRange is malformed or outside the file',
+            },
+          ],
+        } satisfies PdfSignatureValidationResponse),
+      ),
+    );
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['%PDF-1.7\n%%EOF'], 'bad.pdf', { type: 'application/pdf' });
+    fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /validar pdf/i }));
+
+    expect(await screen.findByText('Inválido')).toBeTruthy();
+    expect(screen.getByText('invalid_byte_range')).toBeTruthy();
+    expect(screen.getByText('invalid byte range')).toBeTruthy();
+  });
+
+  it('shows digest/size mismatch backend refusals as fail-closed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      pdfValidatorFetch(
+        jsonResponse(
+          { error: 'declared PDF SHA-256 digest does not match the received bytes' },
+          422,
+        ),
+      ),
+    );
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['%PDF-1.7\n%%EOF'], 'mismatch.pdf', { type: 'application/pdf' });
+    fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /validar pdf/i }));
+
+    expect(await screen.findByText('Validação recusada')).toBeTruthy();
+    expect(screen.getByText(/recusa segura/i)).toBeTruthy();
+    expect(screen.getByText(/SHA-256 digest does not match/i)).toBeTruthy();
+  });
 });
 
 describe('Ferramentas — CAE catalog panel', () => {

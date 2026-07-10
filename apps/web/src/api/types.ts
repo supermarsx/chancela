@@ -626,6 +626,152 @@ export interface DocumentBundle {
   validation_report: DocumentBundleValidationReport;
 }
 
+// --- Arbitrary PDF/PAdES technical validation ----------------------------------
+
+export interface PdfSignatureValidationBody {
+  content_base64: string;
+  filename?: string | null;
+  declared_sha256?: string | null;
+  declared_size_bytes?: number | null;
+}
+
+export type PdfValidationStatus = 'unsigned' | 'valid' | 'invalid' | 'indeterminate';
+
+export interface PdfStructureReport {
+  is_pdf: boolean;
+  header_offset: number | null;
+  version: string | null;
+  has_eof_marker: boolean;
+  has_startxref: boolean;
+}
+
+export interface PdfByteRangeReport {
+  byte_range: [number, number, number, number];
+  covered_len: number;
+  total_len: number;
+  signed_revision_len: number;
+  excluded_len: number | null;
+  covers_whole_file_except_contents: boolean;
+  covers_signed_revision_except_contents: boolean;
+  has_later_incremental_updates: boolean;
+  digest_sha256: string | null;
+}
+
+export interface CadesTechnicalReport {
+  status: string;
+  attrs_ok: boolean;
+  signing_certificate_v2_present: boolean;
+  signer_cert_sha256: string;
+  signer_cert_subject: string | null;
+  signing_time: string | null;
+}
+
+export interface SignatureTimestampReport {
+  signature_timestamp_present: boolean;
+  status_scope: string;
+}
+
+export interface DssTechnicalReport {
+  present: boolean;
+  vri_count: number;
+  vri_tu_count: number;
+  vri_has_tu: boolean;
+  certificate_count: number;
+  ocsp_count: number;
+  crl_count: number;
+  revocation_evidence_present: boolean;
+  certificate_sha256: string[];
+  ocsp_sha256: string[];
+  crl_sha256: string[];
+  status_scope: string;
+}
+
+export interface DocTimeStampValidationReport {
+  index: number;
+  object_id: string;
+  byte_range: [number, number, number, number] | null;
+  document_digest_sha256: string | null;
+  token_imprint_sha256: string | null;
+  token_hash_algorithm: string | null;
+  status: string;
+  failure_reason: string | null;
+}
+
+export interface DocTimeStampTechnicalReport {
+  present: boolean;
+  count: number;
+  token_count: number;
+  token_sha256: string[];
+  all_imprints_valid: boolean;
+  validations: DocTimeStampValidationReport[];
+  status_scope: string;
+}
+
+export interface PdfSignatureTechnicalReport {
+  status: PdfValidationStatus;
+  validation_performed: boolean;
+  validation_error: string | null;
+  signed_pdf_signal: boolean;
+  signature_marker_count: number;
+  byte_range_marker_count: number;
+  has_contents_marker: boolean;
+  pades_profile: string | null;
+  byte_range: PdfByteRangeReport | null;
+  cades: CadesTechnicalReport | null;
+  timestamp: SignatureTimestampReport;
+  dss: DssTechnicalReport;
+  doc_timestamp: DocTimeStampTechnicalReport;
+}
+
+export interface TrustValidationReport {
+  status: string;
+  performed: boolean;
+  live_trusted_list_validation_performed: boolean;
+  ama_integration_performed: boolean;
+  message: string;
+}
+
+export interface RevocationValidationReport {
+  status: string;
+  live_fetch_performed: boolean;
+  freshness_validation_performed: boolean;
+  embedded_evidence_inspected: boolean;
+  embedded_revocation_evidence_present: boolean;
+  message: string;
+}
+
+export interface QualificationValidationReport {
+  status: string;
+  qualified_status_claimed: boolean;
+  legal_validity_claimed: boolean;
+  legal_effect_assessed: boolean;
+  message: string;
+}
+
+export interface PdfSignatureValidationFinding {
+  severity: 'error' | 'warning' | 'info' | string;
+  code: string;
+  message: string;
+}
+
+export interface PdfSignatureValidationResponse {
+  report_kind: 'pdf_signature_validation' | string;
+  scope: 'local_technical_pdf_pades_evidence' | string;
+  legal_notice: string;
+  status: PdfValidationStatus;
+  filename: string | null;
+  sha256: string;
+  size_bytes: number;
+  declared_sha256: string | null;
+  declared_size_bytes: number | null;
+  structure: PdfStructureReport;
+  signature: PdfSignatureTechnicalReport;
+  trust: TrustValidationReport;
+  revocation: RevocationValidationReport;
+  qualification: QualificationValidationReport;
+  findings: PdfSignatureValidationFinding[];
+}
+
 /** Body for `POST /v1/documents/import`: validated again server-side before persistence. */
 export interface ImportDocumentBody {
   content_base64: string;

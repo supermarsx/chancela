@@ -3586,6 +3586,165 @@ a.btn--primary {
 }
 
 /* ==========================================================================
+ * PDF signature validator (Ferramentas) — readable local evidence report.
+ * ========================================================================== */
+
+.pdf-validator {
+  gap: 1.1rem;
+}
+
+.pdf-validator-upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, max-content);
+  gap: 1rem;
+  align-items: end;
+}
+
+@media (max-width: 760px) {
+  .pdf-validator-upload {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pdf-validator-file {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 58%, transparent);
+}
+
+.pdf-validator-file > span:not(.badge) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-validator-report {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pdf-validator-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 38%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent-strong) 7%, var(--surface));
+}
+
+.pdf-validator-summary h3 {
+  margin: 0.15rem 0 0.3rem;
+  font-size: 1.05rem;
+}
+
+.pdf-validator-kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.pdf-validator-kv > div {
+  min-width: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 54%, transparent);
+}
+
+.pdf-validator-kv dt {
+  margin: 0 0 0.3rem;
+  font-family: var(--font-sans);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pdf-validator-kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pdf-validator-kv .digest {
+  max-width: 100%;
+}
+
+.pdf-validator-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.pdf-validator details {
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 46%, transparent);
+}
+
+.pdf-validator summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.pdf-validator details[open] summary {
+  margin-bottom: 0.8rem;
+}
+
+.pdf-validator-findings,
+.pdf-validator-timestamps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdf-validator-findings > li,
+.pdf-validator-timestamps > li {
+  display: flex;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.pdf-validator-findings > li:first-child,
+.pdf-validator-timestamps > li:first-child {
+  border-top: 0;
+}
+
+.pdf-validator-findings p {
+  margin: 0.2rem 0 0;
+}
+
+.pdf-validator-timestamps > li,
+.pdf-validator-timestamps > li > span {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.pdf-validator-timestamps > li > span {
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+/* ==========================================================================
  * TSL trust catalog (Ferramentas) — compact status + provider/service explorer.
  * ========================================================================== */
 
