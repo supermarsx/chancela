@@ -310,6 +310,9 @@ pub struct SignatureEvidenceStatus {
     /// Local technical evidence continuity plan from embedded PAdES evidence. This is not a
     /// B-LT/B-LTA profile claim, legal LTV claim, or production renewal schedule.
     pub local_technical_renewal_plan: LocalTechnicalRenewalPlanEvidenceStatus,
+    /// Per-signature local technical renewal planning from embedded PAdES evidence. This reports
+    /// only already-inspected DSS/VRI and timestamp markers; no provider call or legal claim is made.
+    pub multi_signature_local_renewal_plan: MultiSignatureLocalRenewalPlanEvidenceStatus,
     /// Explicit long-term evidence milestones and gaps. Local B-LT/B-LTA markers are technical
     /// evidence only; production/legal LTV remains not claimed.
     pub long_term_status: Vec<LongTermEvidenceStatus>,
@@ -412,6 +415,32 @@ pub struct LocalTechnicalRenewalPlanEvidenceStatus {
     pub all_local_planning_inputs_present: bool,
     pub production_long_term_profile_claimed: bool,
     pub legal_ltv_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MultiSignatureLocalRenewalPlanEvidenceStatus {
+    pub status: &'static str,
+    pub scope: &'static str,
+    pub notice: &'static str,
+    pub signature_count: usize,
+    pub signatures: Vec<SignatureLocalRenewalPlanEvidenceStatus>,
+    pub signatures_with_local_evidence_gaps: Vec<usize>,
+    pub next_action: &'static str,
+    pub has_local_evidence_gap: bool,
+    pub all_local_planning_inputs_present: bool,
+    pub production_long_term_profile_claimed: bool,
+    pub legal_ltv_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SignatureLocalRenewalPlanEvidenceStatus {
+    pub index: usize,
+    pub object_id: String,
+    pub signed_revision_len: usize,
+    pub vri_key_sha256: String,
+    pub dss_vri_present: bool,
+    pub dss_vri_validation_time_present: bool,
+    pub local_technical_renewal_plan: LocalTechnicalRenewalPlanEvidenceStatus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -3279,6 +3308,13 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
         (None, true) => LocalTechnicalRenewalPlanEvidenceStatus::unavailable(),
         (None, false) => LocalTechnicalRenewalPlanEvidenceStatus::not_applicable(),
     };
+    let multi_signature_local_renewal_plan = match (pades_report.as_ref(), signed.is_some()) {
+        (Some(report), _) => {
+            multi_signature_renewal_plan_evidence_status(&report.multi_signature_ltv_renewal_plan)
+        }
+        (None, true) => MultiSignatureLocalRenewalPlanEvidenceStatus::unavailable(),
+        (None, false) => MultiSignatureLocalRenewalPlanEvidenceStatus::not_applicable(),
+    };
     let dss_evidence_present = dss.present || dss.vri_count > 0 || dss.revocation_evidence_present;
     let local_b_lt_style_evidence_present = timestamped && dss.revocation_evidence_present;
     let local_b_lt_style_evidence_partial =
@@ -3342,6 +3378,7 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
         legal_b_lta_claimed: false,
         renewal_policy: RenewalPolicyEvidenceStatus::not_configured(),
         local_technical_renewal_plan,
+        multi_signature_local_renewal_plan,
         long_term_status,
         timestamp_trust: signed.and_then(timestamp_trust_status_from_persisted_metadata),
         status_scope: TECHNICAL_EVIDENCE_ONLY,
@@ -3595,6 +3632,68 @@ fn renewal_plan_evidence_status(
     }
 }
 
+impl MultiSignatureLocalRenewalPlanEvidenceStatus {
+    fn not_applicable() -> Self {
+        Self::placeholder(RENEWAL_PLAN_NOT_APPLICABLE, RENEWAL_PLAN_ACTION_NONE)
+    }
+
+    fn unavailable() -> Self {
+        Self::placeholder(RENEWAL_PLAN_UNAVAILABLE, RENEWAL_PLAN_ACTION_MANUAL_REVIEW)
+    }
+
+    fn placeholder(status: &'static str, next_action: &'static str) -> Self {
+        Self {
+            status,
+            scope: LOCAL_TECHNICAL_EVIDENCE_ONLY,
+            notice: RENEWAL_PLAN_NOTICE,
+            signature_count: 0,
+            signatures: Vec::new(),
+            signatures_with_local_evidence_gaps: Vec::new(),
+            next_action,
+            has_local_evidence_gap: false,
+            all_local_planning_inputs_present: false,
+            production_long_term_profile_claimed: false,
+            legal_ltv_claimed: false,
+        }
+    }
+}
+
+fn multi_signature_renewal_plan_evidence_status(
+    plan: &chancela_pades::renewal::MultiSignatureLtvRenewalPlan,
+) -> MultiSignatureLocalRenewalPlanEvidenceStatus {
+    MultiSignatureLocalRenewalPlanEvidenceStatus {
+        status: RENEWAL_PLAN_AVAILABLE,
+        scope: renewal_plan_scope(plan.scope),
+        notice: RENEWAL_PLAN_NOTICE,
+        signature_count: plan.signature_count,
+        signatures: plan
+            .signatures
+            .iter()
+            .map(signature_renewal_plan_evidence_status)
+            .collect(),
+        signatures_with_local_evidence_gaps: plan.signatures_with_local_evidence_gaps.clone(),
+        next_action: renewal_plan_next_action(plan.next_action),
+        has_local_evidence_gap: plan.has_local_evidence_gap(),
+        all_local_planning_inputs_present: !plan.has_local_evidence_gap(),
+        production_long_term_profile_claimed: false,
+        legal_ltv_claimed: false,
+    }
+}
+
+fn signature_renewal_plan_evidence_status(
+    plan: &chancela_pades::renewal::SignatureLtvRenewalPlan,
+) -> SignatureLocalRenewalPlanEvidenceStatus {
+    SignatureLocalRenewalPlanEvidenceStatus {
+        index: plan.index,
+        object_id: format!("{} {}", plan.object_id.0, plan.object_id.1),
+        signed_revision_len: plan.signed_revision_len,
+        vri_key_sha256: String::from_utf8_lossy(&plan.vri_key).into_owned(),
+        dss_vri_present: plan.dss_vri_present,
+        dss_vri_validation_time_present: plan.dss_vri_validation_time_present,
+        local_technical_renewal_plan: renewal_plan_evidence_status(&plan.plan),
+    }
+}
+
 fn renewal_plan_scope(scope: chancela_pades::LtvRenewalPlanScope) -> &'static str {
     match scope {
         chancela_pades::LtvRenewalPlanScope::LocalTechnicalEvidenceOnly => {
@@ -3612,6 +3711,10 @@ fn renewal_plan_missing_input(input: chancela_pades::LtvRenewalPlanInput) -> &'s
         chancela_pades::LtvRenewalPlanInput::DocumentTimestamp => "document_timestamp",
         chancela_pades::LtvRenewalPlanInput::DocumentTimestampImprintBinding => {
             "document_timestamp_imprint_binding"
+        }
+        chancela_pades::LtvRenewalPlanInput::SignatureDssVri => "signature_dss_vri",
+        chancela_pades::LtvRenewalPlanInput::SignatureDssValidationTime => {
+            "signature_dss_validation_time"
         }
         _ => "unknown",
     }
@@ -3632,6 +3735,10 @@ fn renewal_plan_next_action(action: chancela_pades::LtvRenewalPlanAction) -> &'s
         }
         chancela_pades::LtvRenewalPlanAction::MonitorTimestampRenewal => {
             "monitor_timestamp_renewal"
+        }
+        chancela_pades::LtvRenewalPlanAction::AddSignatureDssVri => "add_signature_dss_vri",
+        chancela_pades::LtvRenewalPlanAction::RecordSignatureDssValidationTime => {
+            "record_signature_dss_validation_time"
         }
         _ => RENEWAL_PLAN_ACTION_MANUAL_REVIEW,
     }
@@ -5009,6 +5116,15 @@ mod tests {
         assert!(!plan.legal_ltv_claimed);
     }
 
+    fn assert_multi_signature_local_renewal_plan_guardrails(
+        plan: &MultiSignatureLocalRenewalPlanEvidenceStatus,
+    ) {
+        assert_eq!(plan.scope, LOCAL_TECHNICAL_EVIDENCE_ONLY);
+        assert_eq!(plan.notice, RENEWAL_PLAN_NOTICE);
+        assert!(!plan.production_long_term_profile_claimed);
+        assert!(!plan.legal_ltv_claimed);
+    }
+
     #[test]
     fn signature_evidence_status_classifies_unsigned_b_b_and_b_t() {
         let unsigned = signature_evidence_status(None);
@@ -5284,6 +5400,44 @@ mod tests {
         assert_eq!(plan.next_action, "record_dss_validation_time");
         assert!(plan.has_local_evidence_gap);
         assert!(!plan.all_local_planning_inputs_present);
+    }
+
+    #[test]
+    fn signature_evidence_status_reports_multi_signature_local_renewal_plan() {
+        let pdf = include_bytes!(
+            "../../../docs/fixtures/validator-corpus/cases/bt-dss-local/input/bt-dss-local.pdf"
+        );
+        let doc = stored_signed_fixture(pdf);
+
+        let status = signature_evidence_status(Some(&doc));
+
+        let plan = &status.multi_signature_local_renewal_plan;
+        assert_multi_signature_local_renewal_plan_guardrails(plan);
+        assert_eq!(plan.status, RENEWAL_PLAN_AVAILABLE);
+        assert_eq!(plan.signature_count, 1);
+        assert_eq!(plan.signatures_with_local_evidence_gaps, vec![0]);
+        assert_eq!(plan.next_action, "record_signature_dss_validation_time");
+        assert!(plan.has_local_evidence_gap);
+        assert!(!plan.all_local_planning_inputs_present);
+        assert_eq!(plan.signatures.len(), 1);
+        let signature = &plan.signatures[0];
+        assert_eq!(signature.index, 0);
+        assert!(!signature.object_id.is_empty());
+        assert!(signature.signed_revision_len > 0);
+        assert_eq!(signature.vri_key_sha256.len(), 64);
+        assert!(signature.dss_vri_present);
+        assert!(!signature.dss_vri_validation_time_present);
+        assert_local_renewal_plan_guardrails(&signature.local_technical_renewal_plan);
+        assert_eq!(
+            signature.local_technical_renewal_plan.missing_inputs,
+            vec!["document_timestamp", "signature_dss_validation_time"]
+        );
+        assert_eq!(
+            signature.local_technical_renewal_plan.next_action,
+            "record_signature_dss_validation_time"
+        );
+        assert!(!status.legal_b_lt_claimed);
+        assert!(!status.legal_b_lta_claimed);
     }
 
     #[test]

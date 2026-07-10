@@ -124,6 +124,7 @@ pub struct PdfSignatureTechnicalReport {
     pub dss: DssTechnicalReport,
     pub doc_timestamp: DocTimeStampTechnicalReport,
     pub local_technical_renewal_plan: LocalTechnicalRenewalPlanReport,
+    pub multi_signature_local_renewal_plan: MultiSignatureLocalRenewalPlanReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -210,6 +211,32 @@ pub struct LocalTechnicalRenewalPlanReport {
     pub all_local_planning_inputs_present: bool,
     pub production_long_term_profile_claimed: bool,
     pub legal_ltv_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MultiSignatureLocalRenewalPlanReport {
+    pub status: &'static str,
+    pub scope: &'static str,
+    pub notice: &'static str,
+    pub signature_count: usize,
+    pub signatures: Vec<SignatureLocalRenewalPlanReport>,
+    pub signatures_with_local_evidence_gaps: Vec<usize>,
+    pub next_action: &'static str,
+    pub has_local_evidence_gap: bool,
+    pub all_local_planning_inputs_present: bool,
+    pub production_long_term_profile_claimed: bool,
+    pub legal_ltv_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SignatureLocalRenewalPlanReport {
+    pub index: usize,
+    pub object_id: String,
+    pub signed_revision_len: usize,
+    pub vri_key_sha256: String,
+    pub dss_vri_present: bool,
+    pub dss_vri_validation_time_present: bool,
+    pub local_technical_renewal_plan: LocalTechnicalRenewalPlanReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -462,6 +489,9 @@ fn validate_signed_pdf_evidence(
                     dss,
                     doc_timestamp,
                     local_technical_renewal_plan: renewal_plan_report(&report.ltv_renewal_plan),
+                    multi_signature_local_renewal_plan: multi_signature_renewal_plan_report(
+                        &report.multi_signature_ltv_renewal_plan,
+                    ),
                 },
             )
         }
@@ -501,6 +531,7 @@ fn validate_signed_pdf_evidence(
                     dss: DssTechnicalReport::default(),
                     doc_timestamp: DocTimeStampTechnicalReport::default(),
                     local_technical_renewal_plan: renewal_plan_unavailable(),
+                    multi_signature_local_renewal_plan: multi_signature_renewal_plan_unavailable(),
                 },
             )
         }
@@ -567,6 +598,7 @@ fn empty_signature_report(
         dss: DssTechnicalReport::default(),
         doc_timestamp: DocTimeStampTechnicalReport::default(),
         local_technical_renewal_plan: renewal_plan_without_report(status),
+        multi_signature_local_renewal_plan: multi_signature_renewal_plan_without_report(status),
     }
 }
 
@@ -828,6 +860,82 @@ fn renewal_plan_placeholder(
     }
 }
 
+fn multi_signature_renewal_plan_report(
+    plan: &chancela_pades::renewal::MultiSignatureLtvRenewalPlan,
+) -> MultiSignatureLocalRenewalPlanReport {
+    MultiSignatureLocalRenewalPlanReport {
+        status: RENEWAL_PLAN_AVAILABLE,
+        scope: renewal_plan_scope(plan.scope),
+        notice: RENEWAL_PLAN_NOTICE,
+        signature_count: plan.signature_count,
+        signatures: plan
+            .signatures
+            .iter()
+            .map(signature_renewal_plan_report)
+            .collect(),
+        signatures_with_local_evidence_gaps: plan.signatures_with_local_evidence_gaps.clone(),
+        next_action: renewal_plan_next_action(plan.next_action),
+        has_local_evidence_gap: plan.has_local_evidence_gap(),
+        all_local_planning_inputs_present: !plan.has_local_evidence_gap(),
+        production_long_term_profile_claimed: false,
+        legal_ltv_claimed: false,
+    }
+}
+
+fn signature_renewal_plan_report(
+    plan: &chancela_pades::renewal::SignatureLtvRenewalPlan,
+) -> SignatureLocalRenewalPlanReport {
+    SignatureLocalRenewalPlanReport {
+        index: plan.index,
+        object_id: format!("{} {}", plan.object_id.0, plan.object_id.1),
+        signed_revision_len: plan.signed_revision_len,
+        vri_key_sha256: String::from_utf8_lossy(&plan.vri_key).into_owned(),
+        dss_vri_present: plan.dss_vri_present,
+        dss_vri_validation_time_present: plan.dss_vri_validation_time_present,
+        local_technical_renewal_plan: renewal_plan_report(&plan.plan),
+    }
+}
+
+fn multi_signature_renewal_plan_without_report(
+    status: PdfValidationStatus,
+) -> MultiSignatureLocalRenewalPlanReport {
+    if status == PdfValidationStatus::Unsigned {
+        multi_signature_renewal_plan_not_applicable()
+    } else {
+        multi_signature_renewal_plan_unavailable()
+    }
+}
+
+fn multi_signature_renewal_plan_not_applicable() -> MultiSignatureLocalRenewalPlanReport {
+    multi_signature_renewal_plan_placeholder(RENEWAL_PLAN_NOT_APPLICABLE, RENEWAL_PLAN_ACTION_NONE)
+}
+
+fn multi_signature_renewal_plan_unavailable() -> MultiSignatureLocalRenewalPlanReport {
+    multi_signature_renewal_plan_placeholder(
+        RENEWAL_PLAN_UNAVAILABLE,
+        RENEWAL_PLAN_ACTION_MANUAL_REVIEW,
+    )
+}
+
+fn multi_signature_renewal_plan_placeholder(
+    status: &'static str,
+    next_action: &'static str,
+) -> MultiSignatureLocalRenewalPlanReport {
+    MultiSignatureLocalRenewalPlanReport {
+        status,
+        scope: LOCAL_TECHNICAL_EVIDENCE_ONLY,
+        notice: RENEWAL_PLAN_NOTICE,
+        signature_count: 0,
+        signatures: Vec::new(),
+        signatures_with_local_evidence_gaps: Vec::new(),
+        next_action,
+        has_local_evidence_gap: false,
+        all_local_planning_inputs_present: false,
+        production_long_term_profile_claimed: false,
+        legal_ltv_claimed: false,
+    }
+}
+
 fn renewal_plan_scope(scope: chancela_pades::LtvRenewalPlanScope) -> &'static str {
     match scope {
         chancela_pades::LtvRenewalPlanScope::LocalTechnicalEvidenceOnly => {
@@ -845,6 +953,10 @@ fn renewal_plan_missing_input(input: chancela_pades::LtvRenewalPlanInput) -> &'s
         chancela_pades::LtvRenewalPlanInput::DocumentTimestamp => "document_timestamp",
         chancela_pades::LtvRenewalPlanInput::DocumentTimestampImprintBinding => {
             "document_timestamp_imprint_binding"
+        }
+        chancela_pades::LtvRenewalPlanInput::SignatureDssVri => "signature_dss_vri",
+        chancela_pades::LtvRenewalPlanInput::SignatureDssValidationTime => {
+            "signature_dss_validation_time"
         }
         _ => "unknown",
     }
@@ -865,6 +977,10 @@ fn renewal_plan_next_action(action: chancela_pades::LtvRenewalPlanAction) -> &'s
         }
         chancela_pades::LtvRenewalPlanAction::MonitorTimestampRenewal => {
             "monitor_timestamp_renewal"
+        }
+        chancela_pades::LtvRenewalPlanAction::AddSignatureDssVri => "add_signature_dss_vri",
+        chancela_pades::LtvRenewalPlanAction::RecordSignatureDssValidationTime => {
+            "record_signature_dss_validation_time"
         }
         _ => RENEWAL_PLAN_ACTION_MANUAL_REVIEW,
     }
@@ -1187,6 +1303,13 @@ startxref
         assert_eq!(plan["legal_ltv_claimed"], false);
     }
 
+    fn assert_multi_signature_local_renewal_plan_guardrails(plan: &Value) {
+        assert_eq!(plan["scope"], LOCAL_TECHNICAL_EVIDENCE_ONLY);
+        assert_eq!(plan["notice"], RENEWAL_PLAN_NOTICE);
+        assert_eq!(plan["production_long_term_profile_claimed"], false);
+        assert_eq!(plan["legal_ltv_claimed"], false);
+    }
+
     #[tokio::test]
     async fn pdf_signature_unsigned_minimal_pdf_reports_structure() {
         let state = AppState::default();
@@ -1367,6 +1490,50 @@ startxref
         assert_eq!(plan["next_action"], "record_dss_validation_time");
         assert_eq!(plan["has_local_evidence_gap"], true);
         assert_eq!(plan["all_local_planning_inputs_present"], false);
+    }
+
+    #[tokio::test]
+    async fn pdf_signature_validation_reports_multi_signature_local_renewal_plan() {
+        let state = AppState::default();
+        let token = owner_session(&state).await;
+        let pdf = include_bytes!(
+            "../../../docs/fixtures/validator-corpus/cases/bt-dss-local/input/bt-dss-local.pdf"
+        );
+
+        let (status, body) = send(&state, post_pdf(&token, pdf)).await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "valid");
+        let plan = &body["signature"]["multi_signature_local_renewal_plan"];
+        assert_multi_signature_local_renewal_plan_guardrails(plan);
+        assert_eq!(plan["status"], RENEWAL_PLAN_AVAILABLE);
+        assert_eq!(plan["signature_count"], 1);
+        assert_eq!(plan["signatures_with_local_evidence_gaps"], json!([0]));
+        assert_eq!(plan["next_action"], "record_signature_dss_validation_time");
+        assert_eq!(plan["has_local_evidence_gap"], true);
+        assert_eq!(plan["all_local_planning_inputs_present"], false);
+        let signatures = plan["signatures"].as_array().expect("signatures");
+        assert_eq!(signatures.len(), 1);
+        let signature = &signatures[0];
+        assert_eq!(signature["index"], 0);
+        assert_eq!(signature["dss_vri_present"], true);
+        assert_eq!(signature["dss_vri_validation_time_present"], false);
+        assert_eq!(
+            signature["local_technical_renewal_plan"]["missing_inputs"],
+            json!(["document_timestamp", "signature_dss_validation_time"])
+        );
+        assert_eq!(
+            signature["local_technical_renewal_plan"]["next_action"],
+            "record_signature_dss_validation_time"
+        );
+        assert_eq!(
+            signature["local_technical_renewal_plan"]["legal_ltv_claimed"],
+            false
+        );
+        assert_eq!(
+            signature["local_technical_renewal_plan"]["production_long_term_profile_claimed"],
+            false
+        );
     }
 
     #[tokio::test]
