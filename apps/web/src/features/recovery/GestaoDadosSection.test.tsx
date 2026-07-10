@@ -340,6 +340,77 @@ describe('GestaoDadosSection', () => {
     expect(document.body.textContent).not.toContain(replacementSecret);
   });
 
+  it('executes a guarded data key rekey only after a ready preflight and clears secrets', async () => {
+    const currentSecret = 'current-secret-ready-only';
+    const preflightReplacement = 'replacement-secret-ready-only';
+    const executionSecret = 'execution-secret-not-for-dom';
+    const calls = installFetch([durableStatus], (url) => {
+      if (url.includes('/v1/data/key-rotation/preflight')) {
+        return jsonResponse({
+          ready: true,
+          status: 'ready',
+          next_action:
+            'open the existing non-plaintext store with the current key and issue SQLCipher rekey with the replacement key',
+          evidence: {
+            database_format: 'non_plaintext_or_encrypted',
+            current_key_config: 'configured',
+            requested_key_config: 'configured',
+            sqlcipher_available: true,
+            database_file: 'F:\\ChancelaData\\chancela.db',
+          },
+        });
+      }
+      if (url === '/v1/data/key-rotation') {
+        return jsonResponse({
+          status: 'rekey_applied',
+          rekey_executed: true,
+          ledger_integrity_verified: true,
+          ledger_length: 42,
+          evidence: {
+            operation: 'sqlcipher_rekey',
+            requested_key_config: 'configured',
+            sqlcipher_available: true,
+            checkpointed_before_rekey: true,
+            checkpointed_after_rekey: true,
+            post_rekey_integrity_checked: true,
+          },
+        });
+      }
+      return null;
+    });
+
+    renderWithProviders(<GestaoDadosSection />);
+    const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
+    const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
+    fireEvent.change(current, { target: { value: currentSecret } });
+    fireEvent.change(replacement, { target: { value: preflightReplacement } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar rotação' }));
+
+    expect(await screen.findByLabelText('Nova chave SQLCipher')).toBeTruthy();
+    expect(current.value).toBe('');
+    expect(replacement.value).toBe('');
+
+    const execution = screen.getByLabelText('Nova chave SQLCipher') as HTMLInputElement;
+    fireEvent.change(execution, { target: { value: executionSecret } });
+    fireEvent.click(screen.getByRole('button', { name: 'Executar rekey SQLCipher' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url === '/v1/data/key-rotation' && c.method === 'POST')).toBe(
+        true,
+      ),
+    );
+    const executeCall = calls.find((c) => c.url === '/v1/data/key-rotation')!;
+    expect(JSON.parse(executeCall.body as string)).toEqual({ new_key: executionSecret });
+
+    expect(await screen.findByText('Resultado da execução SQLCipher')).toBeTruthy();
+    expect(screen.getByText('rekey_applied')).toBeTruthy();
+    expect(screen.getByText('sqlcipher_rekey')).toBeTruthy();
+    expect(execution.value).toBe('');
+    expect(document.body.textContent).not.toContain(currentSecret);
+    expect(document.body.textContent).not.toContain(preflightReplacement);
+    expect(document.body.textContent).not.toContain(executionSecret);
+  });
+
   it('clears key rotation secrets after a failed preflight request', async () => {
     const currentSecret = 'current-secret-after-error';
     const replacementSecret = 'replacement-secret-after-error';

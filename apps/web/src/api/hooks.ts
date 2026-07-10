@@ -46,6 +46,9 @@ import type {
   PaperBookImportValidateBody,
   PaperBookImportPreserveBody,
   PaperBookImportView,
+  PaperBookOcrDraftCreateBody,
+  PaperBookOcrDraftReviewBody,
+  PaperBookOcrDraftView,
   PaperBookOcrStatus,
   PdfSignatureValidationBody,
   PlatformControllableServiceId,
@@ -65,6 +68,7 @@ import type {
   VerifyAiHumanReviewBody,
   ActState,
   DataCleanupBody,
+  DataKeyRotationExecuteBody,
   DataKeyRotationPreflightBody,
   ReanchorBody,
   RestoreBody,
@@ -106,6 +110,8 @@ export const keys = {
   bookActs: (id: string) => ['books', id, 'acts'] as const,
   paperBookImports: (bookRef?: string) =>
     ['books', 'paper-imports', { bookRef: bookRef ?? null }] as const,
+  paperBookOcrDrafts: (importId: string) =>
+    ['books', 'paper-imports', importId, 'ocr-drafts'] as const,
   act: (id: string) => ['acts', id] as const,
   compliance: (id: string) => ['acts', id, 'compliance'] as const,
   actFollowUps: (id: string) => ['acts', id, 'follow-ups'] as const,
@@ -124,6 +130,7 @@ export const keys = {
   ledgerIntegrity: ['ledger', 'integrity'] as const,
   dataStatus: ['data', 'status'] as const,
   dataKeyRotationPreflight: ['data', 'key-rotation', 'preflight'] as const,
+  dataKeyRotationExecution: ['data', 'key-rotation', 'execution'] as const,
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
   platformServices: ['platform', 'services'] as const,
@@ -443,6 +450,62 @@ export function useUpdatePaperBookImportOcrStatus(bookRef?: string) {
         replacePaperBookImportOcrStatus(rows, status.import_id, status.ocr_status),
       );
       void qc.invalidateQueries({ queryKey: keys.paperBookImports(bookRef) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePaperBookOcrDrafts(importId: string) {
+  return useQuery({
+    queryKey: keys.paperBookOcrDrafts(importId),
+    queryFn: () => api.listPaperBookImportOcrDrafts(importId),
+    enabled: !!importId,
+    retry: false,
+  });
+}
+
+function upsertPaperBookOcrDraft(
+  rows: PaperBookOcrDraftView[] | undefined,
+  draft: PaperBookOcrDraftView,
+): PaperBookOcrDraftView[] {
+  const current = rows ?? [];
+  return current.some((row) => row.draft_id === draft.draft_id)
+    ? current.map((row) => (row.draft_id === draft.draft_id ? draft : row))
+    : [draft, ...current];
+}
+
+export function useCreatePaperBookOcrDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ importId, body }: { importId: string; body: PaperBookOcrDraftCreateBody }) =>
+      api.createPaperBookImportOcrDraft(importId, body),
+    onSuccess: (draft) => {
+      qc.setQueryData<PaperBookOcrDraftView[]>(keys.paperBookOcrDrafts(draft.import_id), (rows) =>
+        upsertPaperBookOcrDraft(rows, draft),
+      );
+      void qc.invalidateQueries({ queryKey: keys.paperBookOcrDrafts(draft.import_id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useReviewPaperBookOcrDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      importId,
+      draftId,
+      body,
+    }: {
+      importId: string;
+      draftId: string;
+      body: PaperBookOcrDraftReviewBody;
+    }) => api.reviewPaperBookImportOcrDraft(importId, draftId, body),
+    onSuccess: (draft) => {
+      qc.setQueryData<PaperBookOcrDraftView[]>(keys.paperBookOcrDrafts(draft.import_id), (rows) =>
+        upsertPaperBookOcrDraft(rows, draft),
+      );
+      void qc.invalidateQueries({ queryKey: keys.paperBookOcrDrafts(draft.import_id) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -979,6 +1042,18 @@ export function useDataKeyRotationPreflight() {
   return useMutation({
     mutationKey: keys.dataKeyRotationPreflight,
     mutationFn: (body: DataKeyRotationPreflightBody) => api.preflightDataKeyRotation(body),
+  });
+}
+
+/** Guarded SQLCipher rekey execution for an already-open keyed durable store. */
+export function useDataKeyRotationExecution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: keys.dataKeyRotationExecution,
+    mutationFn: (body: DataKeyRotationExecuteBody) => api.executeDataKeyRotation(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.dataStatus });
+    },
   });
 }
 

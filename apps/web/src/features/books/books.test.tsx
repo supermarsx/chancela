@@ -23,6 +23,7 @@ import {
   type BookView,
   type Entity,
   type PaperBookImportView,
+  type PaperBookOcrDraftView,
 } from '../../api/types';
 
 const ENTITY: Entity = {
@@ -82,7 +83,9 @@ function blobText(blob: Blob): Promise<string> {
   });
 }
 
-function bookDetailFetch(extra?: (url: string, method: string) => Response | null) {
+function bookDetailFetch(
+  extra?: (url: string, method: string, body: Record<string, unknown> | null) => Response | null,
+) {
   const calls: RecordedCall[] = [];
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -90,7 +93,7 @@ function bookDetailFetch(extra?: (url: string, method: string) => Response | nul
     const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null;
     calls.push({ url, method, body });
 
-    const custom = extra?.(url, method);
+    const custom = extra?.(url, method, body);
     if (custom) return Promise.resolve(custom);
     if (url === '/v1/books/book-1') return Promise.resolve(jsonResponse(BOOK));
     if (url === '/v1/books/book-1/acts') return Promise.resolve(jsonResponse([]));
@@ -368,6 +371,12 @@ describe('BookDetailPage — paper-book preserved imports', () => {
         return jsonResponse([preserved]);
       }
       if (
+        url === '/v1/books/paper-import/11111111-1111-4111-8111-111111111111/ocr-drafts' &&
+        method === 'GET'
+      ) {
+        return jsonResponse([]);
+      }
+      if (
         url === '/v1/books/paper-import/11111111-1111-4111-8111-111111111111/bytes' &&
         method === 'GET'
       ) {
@@ -406,9 +415,9 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(screen.getByText(/não declaram validade legal/i)).toBeTruthy();
     expect(screen.getByText('OCR não executado')).toBeTruthy();
     expect(screen.getByText(/OCR: metadado apenas; texto armazenado: não/i)).toBeTruthy();
-    expect(
-      (screen.getByRole('button', { name: 'Editar metadados' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(await screen.findByText('Rascunhos OCR e revisão auxiliar')).toBeTruthy();
+    expect(screen.getByText(/não criam texto legal, ata canónica/i)).toBeTruthy();
+    expect(screen.getByText('Sem rascunhos OCR registados')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Descarregar pacote' }));
 
@@ -435,6 +444,156 @@ describe('BookDetailPage — paper-book preserved imports', () => {
         body: null,
       }),
     );
+  });
+
+  it('creates and reviews OCR drafts as auxiliary non-canonical metadata only', async () => {
+    const preserved: PaperBookImportView = {
+      import_id: '33333333-3333-4333-8333-333333333333',
+      entity_ref: 'ent-1',
+      entity_name: 'Encosto Estratégico, Lda.',
+      entity_nipc: '503004642',
+      book_ref: 'book-1',
+      date_from: '1968-01-01',
+      date_to: '1971-12-31',
+      page_count: 240,
+      sha256: 'cd'.repeat(32),
+      size_bytes: 4096,
+      content_type: 'application/pdf',
+      source_filename: 'ag-ocr.pdf',
+      notes: null,
+      imported_at: '2026-07-09T10:00:00Z',
+      imported_by: 'paper.owner',
+      ocr_status: 'completed',
+      ocr_status_notice:
+        'OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.',
+      ocr_text_stored: false,
+      authoritative_text_claimed: false,
+      non_canonical: true,
+      legal_validity_claimed: false,
+      signature_validity_claimed: false,
+      qualified_signature_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      bytes_download: '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/bytes',
+    };
+    const createdDraft: PaperBookOcrDraftView = {
+      draft_id: '44444444-4444-4444-8444-444444444444',
+      import_id: preserved.import_id,
+      extracted_text: 'Livro de atas digitalizado.',
+      text_digest: null,
+      page_spans: [{ start_page: 1, end_page: 2 }],
+      confidence: 0.87,
+      engine: { name: 'operator-supplied-ocr', version: null },
+      created_at: '2026-07-10T09:30:00Z',
+      created_by: 'paper.owner',
+      review_status: 'unreviewed',
+      reviewed_at: null,
+      reviewed_by: null,
+      review_note: null,
+      superseded_by: null,
+      draft_notice:
+        'OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.',
+      non_canonical: true,
+      authoritative_text_claimed: false,
+      canonical_minutes_claimed: false,
+      canonical_act_created: false,
+      canonical_document_created: false,
+      signature_created: false,
+      legal_validity_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+    };
+    let drafts: PaperBookOcrDraftView[] = [];
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse([preserved]);
+      }
+      if (
+        url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
+        method === 'GET'
+      ) {
+        return jsonResponse(drafts);
+      }
+      if (
+        url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
+        method === 'POST'
+      ) {
+        drafts = [createdDraft];
+        return jsonResponse(createdDraft, 201);
+      }
+      if (
+        url ===
+          '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/review' &&
+        method === 'PATCH'
+      ) {
+        const reviewed = {
+          ...createdDraft,
+          review_status: 'accepted',
+          reviewed_at: '2026-07-10T10:00:00Z',
+          reviewed_by: 'paper.reviewer',
+          review_note: 'Conferido contra o pacote preservado.',
+        } satisfies PaperBookOcrDraftView;
+        drafts = [reviewed];
+        return jsonResponse(reviewed);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByText('Rascunhos OCR e revisão auxiliar')).toBeTruthy();
+    expect(await screen.findByText('Sem rascunhos OCR registados')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Texto OCR auxiliar'), {
+      target: { value: 'Livro de atas digitalizado.' },
+    });
+    fireEvent.change(screen.getByLabelText('Página final'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Confiança'), { target: { value: '0.87' } });
+    fireEvent.click(screen.getByLabelText(/Confirmo que este rascunho OCR é auxiliar/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar rascunho OCR' }));
+
+    expect(
+      await screen.findByText('Rascunho OCR guardado como metadado auxiliar não canónico.'),
+    ).toBeTruthy();
+    expect(await screen.findByText('Livro de atas digitalizado.')).toBeTruthy();
+    expect(screen.getAllByText(/Texto autoritativo: não/i).length).toBeGreaterThanOrEqual(1);
+    const createCall = calls.find(
+      (call) =>
+        call.url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
+        call.method === 'POST',
+    );
+    expect(createCall?.body).toMatchObject({
+      extracted_text: 'Livro de atas digitalizado.',
+      page_spans: [{ start_page: 1, end_page: 2 }],
+      confidence: 0.87,
+      engine_name: 'operator-supplied-ocr',
+    });
+
+    fireEvent.change(screen.getByLabelText('Estado da revisão OCR'), {
+      target: { value: 'accepted' },
+    });
+    fireEvent.change(screen.getByLabelText('Nota da revisão OCR'), {
+      target: { value: 'Conferido contra o pacote preservado.' },
+    });
+    fireEvent.click(screen.getByLabelText(/Confirmo que esta revisão é apenas metadado auxiliar/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar revisão OCR' }));
+
+    expect(
+      await screen.findByText('Revisão OCR guardada como metadado auxiliar não canónico.'),
+    ).toBeTruthy();
+    expect((await screen.findAllByText('Aceite para referência auxiliar')).length).toBeGreaterThan(
+      0,
+    );
+    const reviewCall = calls.find(
+      (call) =>
+        call.url ===
+          '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/review' &&
+        call.method === 'PATCH',
+    );
+    expect(reviewCall?.body).toMatchObject({
+      review_status: 'accepted',
+      review_note: 'Conferido contra o pacote preservado.',
+      superseded_by: null,
+    });
   });
 
   it('validates and preserves a scanned paper-book package as non-canonical evidence', async () => {
@@ -529,6 +688,12 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
         return jsonResponse(rows);
       }
+      if (
+        url === '/v1/books/paper-import/22222222-2222-4222-8222-222222222222/ocr-drafts' &&
+        method === 'GET'
+      ) {
+        return jsonResponse([]);
+      }
       if (url === '/v1/books/paper-import/validate' && method === 'POST') {
         return jsonResponse(validationReport);
       }
@@ -573,7 +738,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(await screen.findByText('ag-1968-1971.pdf')).toBeTruthy();
     expect(screen.getByText('Intervalo: Intervalo de páginas não exposto pela API')).toBeTruthy();
     expect(screen.getByText('Revisão manual não exposta pela API')).toBeTruthy();
-    expect(screen.getByText(/Edição de intervalo\/revisão: indisponível nesta API/i)).toBeTruthy();
+    expect(await screen.findByText('Sem rascunhos OCR registados')).toBeTruthy();
     const preserveCall = calls.find(
       (call) => call.url === '/v1/books/paper-import' && call.method === 'POST',
     );

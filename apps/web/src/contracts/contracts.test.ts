@@ -122,6 +122,10 @@ import {
   type PaperBookImportIdentity,
   type PaperBookContinuationRecommendation,
   type PaperBookLinkingEvidence,
+  PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES,
+  type PaperBookOcrDraftPageSpanView,
+  type PaperBookOcrDraftView,
+  type PaperBookOcrEngineView,
   type PaperBookOriginalAtaNumberRange,
   type PaperBookImportPackage,
   type PaperBookImportReport,
@@ -1033,6 +1037,89 @@ function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImpo
   return report;
 }
 
+function assertPaperBookOcrDraft(obj: unknown, label: string): PaperBookOcrDraftView {
+  const draft = assertExactKeys<PaperBookOcrDraftView>(
+    obj,
+    {
+      draft_id: true,
+      import_id: true,
+      extracted_text: true,
+      text_digest: true,
+      page_spans: true,
+      confidence: true,
+      engine: true,
+      created_at: true,
+      created_by: true,
+      review_status: true,
+      reviewed_at: true,
+      reviewed_by: true,
+      review_note: true,
+      superseded_by: true,
+      draft_notice: true,
+      non_canonical: true,
+      authoritative_text_claimed: true,
+      canonical_minutes_claimed: true,
+      canonical_act_created: true,
+      canonical_document_created: true,
+      signature_created: true,
+      legal_validity_claimed: true,
+      legal_notice: true,
+    },
+    label,
+  );
+  expect(draft.draft_id.length, `${label}.draft_id should be non-empty`).toBeGreaterThan(0);
+  expect(draft.import_id.length, `${label}.import_id should be non-empty`).toBeGreaterThan(0);
+  if (draft.extracted_text !== null) {
+    expect(
+      draft.extracted_text.length,
+      `${label}.extracted_text should be non-empty`,
+    ).toBeGreaterThan(0);
+  }
+  if (draft.text_digest !== null) assertHex64(draft.text_digest, `${label}.text_digest`);
+  expect(
+    draft.extracted_text !== null || draft.text_digest !== null,
+    `${label} should carry text or digest evidence`,
+  ).toBe(true);
+  expect(Array.isArray(draft.page_spans), `${label}.page_spans should be array`).toBe(true);
+  expect(draft.page_spans.length, `${label}.page_spans should be non-empty`).toBeGreaterThan(0);
+  for (const span of draft.page_spans) {
+    const item = assertExactKeys<PaperBookOcrDraftPageSpanView>(
+      span,
+      { start_page: true, end_page: true },
+      `${label}.page_spans[]`,
+    );
+    expect(item.start_page, `${label}.page_spans[].start_page positive`).toBeGreaterThan(0);
+    expect(item.end_page, `${label}.page_spans[].end_page ordered`).toBeGreaterThanOrEqual(
+      item.start_page,
+    );
+  }
+  if (draft.confidence !== null) {
+    expect(draft.confidence, `${label}.confidence lower bound`).toBeGreaterThanOrEqual(0);
+    expect(draft.confidence, `${label}.confidence upper bound`).toBeLessThanOrEqual(1);
+  }
+  const engine = assertExactKeys<PaperBookOcrEngineView>(
+    draft.engine,
+    { name: true, version: true },
+    `${label}.engine`,
+  );
+  expect(engine.name.length, `${label}.engine.name should be non-empty`).toBeGreaterThan(0);
+  assertTimestamp(draft.created_at, `${label}.created_at`);
+  expect(draft.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
+  inEnum(PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES, draft.review_status, `${label}.review_status`);
+  if (draft.reviewed_at !== null) assertTimestamp(draft.reviewed_at, `${label}.reviewed_at`);
+  expect(draft.draft_notice).toContain('non-authoritative');
+  expect(draft.draft_notice).toContain('not canonical minutes');
+  expect(draft.non_canonical).toBe(true);
+  expect(draft.authoritative_text_claimed).toBe(false);
+  expect(draft.canonical_minutes_claimed).toBe(false);
+  expect(draft.canonical_act_created).toBe(false);
+  expect(draft.canonical_document_created).toBe(false);
+  expect(draft.signature_created).toBe(false);
+  expect(draft.legal_validity_claimed).toBe(false);
+  expect(JSON.stringify(draft)).not.toContain('qualified_signature_claimed":true');
+  return draft;
+}
+
 // --- Per-contract tests --------------------------------------------------------
 
 describe('contract fixtures parse through the real client', () => {
@@ -1289,6 +1376,25 @@ describe('contract fixtures parse through the real client', () => {
     assertPaperBookImportReport(report, 'PaperBookImportReport');
     expect(JSON.stringify(report)).not.toContain('password_hash');
     expect(JSON.stringify(report)).not.toContain('qualified_signature_claimed":true');
+  });
+
+  it('paper-book.ocr-draft.json → PaperBookOcrDraftView (POST /v1/books/paper-import/{id}/ocr-drafts)', async () => {
+    stubFetch(fixture('paper-book.ocr-draft.json'), 201);
+    const draft: PaperBookOcrDraftView = await api.createPaperBookImportOcrDraft(
+      '11111111-1111-4111-8111-111111111111',
+      {
+        extracted_text: 'Livro de atas digitalizado.',
+        text_digest: 'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd',
+        page_spans: [{ start_page: 1, end_page: 2 }],
+        confidence: 0.87,
+        engine_name: 'operator-supplied-ocr',
+        engine_version: '1.0',
+      },
+    );
+    assertPaperBookOcrDraft(draft, 'PaperBookOcrDraftView');
+    expect(draft.legal_notice).toContain('non-canonical evidence only');
+    expect(JSON.stringify(draft)).not.toContain('signature_created":true');
+    expect(JSON.stringify(draft)).not.toContain('legal_validity_claimed":true');
   });
 
   it('ledger.events.json → LedgerEventView[] (GET /v1/ledger/events)', async () => {
@@ -3522,6 +3628,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'privacy.dpias.json',
       'retention.policies.json',
       'paper-book.import.json',
+      'paper-book.ocr-draft.json',
       'api-key.list.json',
       'api-key.create.json',
       'api-key.revoke.json',

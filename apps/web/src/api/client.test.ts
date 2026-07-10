@@ -168,6 +168,36 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[3][1].method).toBe('DELETE');
   });
 
+  it('uses the data key rotation execution endpoint and sends only the replacement key', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          status: 'rekey_applied',
+          rekey_executed: true,
+          ledger_integrity_verified: true,
+          ledger_length: 1,
+          evidence: {
+            operation: 'sqlcipher_rekey',
+            requested_key_config: 'configured',
+            sqlcipher_available: true,
+            checkpointed_before_rekey: true,
+            checkpointed_after_rekey: true,
+            post_rekey_integrity_checked: true,
+          },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.executeDataKeyRotation({ new_key: 'replacement-secret' });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/data/key-rotation');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      new_key: 'replacement-secret',
+    });
+  });
+
   it('uses the privacy register endpoints', async () => {
     const fetchMock = vi.fn().mockImplementation(() =>
       Promise.resolve(

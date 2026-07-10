@@ -14,14 +14,16 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use axum::Json;
 use axum::extract::State;
 use chancela_authz::{Permission, Scope};
-use chancela_store::{Store, StoreError, StoreKeyRotationPreflight, StoreOpenOptions};
+use chancela_store::{
+    Store, StoreError, StoreKeyRotationExecution, StoreKeyRotationPreflight, StoreOpenOptions,
+};
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
 use tokio::task;
 
 use crate::AppState;
 use crate::actor::CurrentActor;
-use crate::authz::require_permission;
+use crate::authz::{authorizer, require_permission};
 use crate::error::ApiError;
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,6 +131,20 @@ impl fmt::Debug for DataKeyRotationPreflightRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DataKeyRotationPreflightRequest")
             .field("current_key", &key_log_status(self.current_key.as_deref()))
+            .field("new_key", &key_log_status(self.new_key.as_deref()))
+            .finish()
+    }
+}
+
+#[derive(Deserialize)]
+pub struct DataKeyRotationExecuteRequest {
+    #[serde(default, alias = "replacement_key")]
+    new_key: Option<String>,
+}
+
+impl fmt::Debug for DataKeyRotationExecuteRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DataKeyRotationExecuteRequest")
             .field("new_key", &key_log_status(self.new_key.as_deref()))
             .finish()
     }
@@ -343,10 +359,73 @@ pub async fn preflight_data_key_rotation(
     Ok(Json(preflight))
 }
 
+/// `POST /v1/data/key-rotation` - guarded SQLCipher rekey execution for an already-open keyed store.
+pub async fn execute_data_key_rotation(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(req): Json<DataKeyRotationExecuteRequest>,
+) -> Result<Json<StoreKeyRotationExecution>, ApiError> {
+    let authz = authorizer(&state, &actor).await?;
+    // Execution is intentionally interactive-session-only. API-key principals may run the
+    // read-only preflight if granted settings.manage, but not mutate the data-store key.
+    authz.principal()?;
+    authz.require(Permission::SettingsManage, Scope::Global)?;
+
+    let Some(data_dir) = state.data_dir() else {
+        return Err(ApiError::Unprocessable(
+            "data key-rotation requires on-disk persistence; set CHANCELA_DATA_DIR".to_owned(),
+        ));
+    };
+    if !state.database_encryption_configured {
+        return Err(ApiError::Unprocessable(
+            "data key-rotation execution requires an already-open SQLCipher store; plaintext stores must use the supported backup/export-restore migration plan".to_owned(),
+        ));
+    }
+    let Some(store) = state.store.clone() else {
+        return Err(ApiError::Unprocessable(
+            "data key-rotation execution requires a durable store that is already open".to_owned(),
+        ));
+    };
+
+    let new_key = req.new_key.unwrap_or_default();
+    let current_options = StoreOpenOptions::new().with_encryption_key("<configured>");
+    let preflight = Store::key_rotation_preflight(&data_dir, &current_options, &new_key)
+        .map_err(map_key_rotation_preflight_error)?;
+    if !preflight.ready() {
+        return Err(ApiError::Unprocessable(format!(
+            "data key-rotation execution refused by preflight status {:?}; no rekey was attempted",
+            preflight.status
+        )));
+    }
+
+    let execution =
+        task::spawn_blocking(move || store.rotate_encryption_key_with_evidence(&new_key))
+            .await
+            .map_err(|e| ApiError::Internal(format!("data key-rotation worker failed: {e}")))?
+            .map_err(map_key_rotation_execution_error)?;
+
+    Ok(Json(execution))
+}
+
 fn map_key_rotation_preflight_error(_e: StoreError) -> ApiError {
     ApiError::Unprocessable(
         "data key-rotation preflight could not inspect the durable database".to_owned(),
     )
+}
+
+fn map_key_rotation_execution_error(e: StoreError) -> ApiError {
+    match e {
+        StoreError::EmptyEncryptionKey => ApiError::Unprocessable(
+            "data key-rotation replacement key must not be empty".to_owned(),
+        ),
+        StoreError::EncryptionUnavailable => ApiError::Unprocessable(
+            "data key-rotation execution requires a SQLCipher-enabled build".to_owned(),
+        ),
+        StoreError::EncryptionKeyRejected { .. } => ApiError::Unprocessable(
+            "data key-rotation execution was rejected by SQLCipher or the store could not be verified after rekey".to_owned(),
+        ),
+        _ => ApiError::Internal("data key-rotation execution failed".to_owned()),
+    }
 }
 
 fn parse_cleanup_target(raw: &str) -> Result<CleanupTarget, ApiError> {
@@ -1490,6 +1569,18 @@ mod tests {
 
         assert!(debug.contains("configured"));
         assert!(!debug.contains("current-secret"));
+        assert!(!debug.contains("new-secret"));
+    }
+
+    #[test]
+    fn key_rotation_execute_request_debug_redacts_key_material() {
+        let req = DataKeyRotationExecuteRequest {
+            new_key: Some("new-secret".to_owned()),
+        };
+
+        let debug = format!("{req:?}");
+
+        assert!(debug.contains("configured"));
         assert!(!debug.contains("new-secret"));
     }
 }

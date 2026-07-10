@@ -395,6 +395,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/data/reset", RouteClass::Gated), // POST data.wipe@Global + step-up
     ("/v1/data/status", RouteClass::Gated), // GET settings.read@Global
     ("/v1/data/cleanup", RouteClass::Gated), // POST settings.manage@Global
+    ("/v1/data/key-rotation", RouteClass::Gated), // POST settings.manage@Global + interactive session
     ("/v1/data/key-rotation/preflight", RouteClass::Gated), // POST settings.manage@Global (read-only)
     ("/v1/data/start-over", RouteClass::Gated),             // POST data.start_over@Global + step-up
     ("/v1/backup", RouteClass::Gated),                      // POST data.backup@Global

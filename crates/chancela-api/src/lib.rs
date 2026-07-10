@@ -1259,6 +1259,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/data/status", get(data_status::get_data_status))
         .route("/v1/data/cleanup", post(data_status::cleanup_data))
         .route(
+            "/v1/data/key-rotation",
+            post(data_status::execute_data_key_rotation),
+        )
+        .route(
             "/v1/data/key-rotation/preflight",
             post(data_status::preflight_data_key_rotation),
         )

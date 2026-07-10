@@ -13,6 +13,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 const PREFLIGHT_PATH: &str = "/v1/data/key-rotation/preflight";
+const EXECUTE_PATH: &str = "/v1/data/key-rotation";
 
 async fn send(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
     let response = router(state).oneshot(req).await.expect("router responds");
@@ -141,6 +142,64 @@ async fn preflight_requires_settings_manage_permission() {
 
     assert_eq!(status, StatusCode::FORBIDDEN, "permission denial: {body}");
     assert_secret_free(&body, &[current_key, new_key]);
+}
+
+#[tokio::test]
+async fn execution_requires_settings_manage_permission_without_leaking_keys() {
+    let tmp = TempDir::new("execute-permission-denied");
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let uid = seed_user(&state, "reader", LEITOR_ROLE_ID).await;
+    let token = open_session(&state, uid).await;
+    let new_key = "replacement-key-execute-denied";
+
+    let (status, body) = send(
+        state,
+        with_session(
+            post_json(EXECUTE_PATH, json!({ "new_key": new_key })),
+            &token,
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN, "permission denial: {body}");
+    assert_secret_free(&body, &[new_key]);
+}
+
+#[tokio::test]
+async fn execution_refuses_plaintext_store_without_leaking_key_or_migrating() {
+    let tmp = TempDir::new("execute-plaintext");
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let token = owner_session(&state).await;
+    let new_key = "replacement-key-for-execute-plaintext";
+
+    let (status, body) = send(
+        state,
+        with_session(
+            post_json(EXECUTE_PATH, json!({ "new_key": new_key })),
+            &token,
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "plaintext refused: {body}"
+    );
+    assert!(
+        body["error"].as_str().expect("error string").contains(
+            "plaintext stores must use the supported backup/export-restore migration plan"
+        ),
+        "plaintext refusal explains non-destructive migration boundary: {body}"
+    );
+    assert_secret_free(&body, &[new_key]);
+
+    let db =
+        std::fs::read(tmp.dir.join(chancela_store::DB_FILE)).expect("database remains readable");
+    assert!(
+        db.starts_with(b"SQLite format 3\0"),
+        "execution must not rewrite a plaintext SQLite store"
+    );
 }
 
 #[tokio::test]

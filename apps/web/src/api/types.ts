@@ -4246,6 +4246,73 @@ export interface PaperBookOcrStatusView {
   legal_notice: string;
 }
 
+export const PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES = [
+  'unreviewed',
+  'accepted',
+  'rejected',
+  'superseded',
+] as const;
+export type PaperBookOcrDraftReviewPatchStatus =
+  (typeof PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES)[number];
+export type PaperBookOcrDraftReviewStatus = PaperBookOcrDraftReviewPatchStatus | string;
+
+export interface PaperBookOcrDraftPageSpanBody {
+  start_page: number;
+  end_page: number;
+}
+
+export interface PaperBookOcrDraftPageSpanView {
+  start_page: number;
+  end_page: number;
+}
+
+export interface PaperBookOcrDraftCreateBody {
+  extracted_text?: string | null;
+  text_digest?: string | null;
+  page_spans: PaperBookOcrDraftPageSpanBody[];
+  confidence?: number | null;
+  engine_name: string;
+  engine_version?: string | null;
+}
+
+export interface PaperBookOcrDraftReviewBody {
+  review_status: PaperBookOcrDraftReviewPatchStatus;
+  review_note?: string | null;
+  superseded_by?: string | null;
+}
+
+export interface PaperBookOcrEngineView {
+  name: string;
+  version: string | null;
+}
+
+/** Non-authoritative OCR text/review aid linked to a preserved paper-book import. */
+export interface PaperBookOcrDraftView {
+  draft_id: string;
+  import_id: string;
+  extracted_text: string | null;
+  text_digest: string | null;
+  page_spans: PaperBookOcrDraftPageSpanView[];
+  confidence: number | null;
+  engine: PaperBookOcrEngineView;
+  created_at: string;
+  created_by: string;
+  review_status: PaperBookOcrDraftReviewStatus;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_note: string | null;
+  superseded_by: string | null;
+  draft_notice: string;
+  non_canonical: boolean;
+  authoritative_text_claimed: boolean;
+  canonical_minutes_claimed: boolean;
+  canonical_act_created: boolean;
+  canonical_document_created: boolean;
+  signature_created: boolean;
+  legal_validity_claimed: boolean;
+  legal_notice: string;
+}
+
 /** Preserved historical paper-book package metadata. Raw bytes are fetched via `bytes_download`. */
 export interface PaperBookImportView {
   import_id: string;
@@ -4428,6 +4495,33 @@ export interface DataKeyRotationPreflight {
   status: DataKeyRotationPreflightStatus;
   next_action: string;
   evidence: DataKeyRotationPreflightEvidence;
+}
+
+/** `POST /v1/data/key-rotation` request. Execution uses only the replacement key. */
+export interface DataKeyRotationExecuteBody {
+  new_key: string;
+}
+
+/** Secret-free status returned after SQLCipher accepts a data-key rekey request. */
+export type DataKeyRotationExecutionStatus = 'rekey_applied' | string;
+
+/** Non-secret evidence attached to a completed data-key rotation execution. */
+export interface DataKeyRotationExecutionEvidence {
+  operation: string;
+  requested_key_config: string;
+  sqlcipher_available: boolean;
+  checkpointed_before_rekey: boolean;
+  checkpointed_after_rekey: boolean;
+  post_rekey_integrity_checked: boolean;
+}
+
+/** Secret-free execution result for an accepted SQLCipher data-key rekey request. */
+export interface DataKeyRotationExecution {
+  status: DataKeyRotationExecutionStatus;
+  rekey_executed: boolean;
+  ledger_integrity_verified: boolean;
+  ledger_length: number;
+  evidence: DataKeyRotationExecutionEvidence;
 }
 
 /** The destructive data-management scope (§2.11). */

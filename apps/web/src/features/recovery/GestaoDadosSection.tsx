@@ -23,6 +23,7 @@ import { type FormEvent, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useCleanDataStorage,
+  useDataKeyRotationExecution,
   useDataKeyRotationPreflight,
   useDataStatus,
   useResetData,
@@ -32,6 +33,8 @@ import {
   RESET_PHRASE,
   type DataCleanupResult,
   type DataCleanupTarget,
+  type DataKeyRotationExecuteBody,
+  type DataKeyRotationExecution,
   type DataKeyRotationPreflight,
   type DataKeyRotationPreflightBody,
   type DataPermissionCheck,
@@ -197,6 +200,10 @@ function buildKeyRotationPreflightBody(
   return body;
 }
 
+function buildKeyRotationExecutionBody(replacementKey: string): DataKeyRotationExecuteBody {
+  return { new_key: replacementKey };
+}
+
 function StatusBadge({
   value,
   positive = true,
@@ -313,6 +320,92 @@ function DataKeyRotationPreflightReport({
   );
 }
 
+function DataKeyRotationExecutionReport({
+  execution,
+  t,
+  locale,
+}: {
+  execution: DataKeyRotationExecution;
+  t: TFunction;
+  locale: string;
+}) {
+  return (
+    <InlineWarning
+      tone={execution.ledger_integrity_verified ? 'info' : 'warn'}
+      title="Resultado da execução SQLCipher"
+    >
+      <div className="stack--tight">
+        <dl className="deflist data-status-summary">
+          <div>
+            <dt>{t('data.status.keyRotation.status')}</dt>
+            <dd>
+              <Badge tone={execution.rekey_executed ? 'ok' : 'warn'}>{execution.status}</Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Rekey executado</dt>
+            <dd>
+              <Badge tone={execution.rekey_executed ? 'ok' : 'warn'}>
+                {execution.rekey_executed ? t('common.yes') : t('common.no')}
+              </Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>{t('data.status.ledgerVerified')}</dt>
+            <dd>
+              <Badge tone={execution.ledger_integrity_verified ? 'ok' : 'warn'}>
+                {execution.ledger_integrity_verified ? t('common.yes') : t('common.no')}
+              </Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>{t('data.status.ledgerLength')}</dt>
+            <dd>{new Intl.NumberFormat(locale).format(execution.ledger_length)}</dd>
+          </div>
+        </dl>
+
+        <div>
+          <h5>{t('data.status.keyRotation.evidence')}</h5>
+          <dl className="deflist data-status-summary">
+            <div>
+              <dt>Operação</dt>
+              <dd className="mono">{execution.evidence.operation}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.keyRotation.evidence.replacementKey')}</dt>
+              <dd className="mono">{execution.evidence.requested_key_config}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.keyRotation.evidence.sqlcipher')}</dt>
+              <dd>{execution.evidence.sqlcipher_available ? t('common.yes') : t('common.no')}</dd>
+            </div>
+            <div>
+              <dt>Checkpoint antes</dt>
+              <dd>
+                {execution.evidence.checkpointed_before_rekey ? t('common.yes') : t('common.no')}
+              </dd>
+            </div>
+            <div>
+              <dt>Checkpoint depois</dt>
+              <dd>
+                {execution.evidence.checkpointed_after_rekey ? t('common.yes') : t('common.no')}
+              </dd>
+            </div>
+            <div>
+              <dt>Integridade pós-rekey</dt>
+              <dd>
+                {execution.evidence.post_rekey_integrity_checked
+                  ? t('common.yes')
+                  : t('common.no')}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </InlineWarning>
+  );
+}
+
 function UsageList({
   concerns,
   locale,
@@ -354,13 +447,16 @@ function DataStatusPanel() {
   const status = useDataStatus();
   const cleanup = useCleanDataStorage();
   const keyRotationPreflight = useDataKeyRotationPreflight();
+  const keyRotationExecution = useDataKeyRotationExecution();
   const data = status.data;
   const dataPath = data?.data_dir.path ?? null;
   const [cleanupTarget, setCleanupTarget] = useState<DataCleanupTarget | null>(null);
   const [lastCleanup, setLastCleanup] = useState<DataCleanupResult | null>(null);
   const [currentKey, setCurrentKey] = useState('');
   const [replacementKey, setReplacementKey] = useState('');
+  const [executionKey, setExecutionKey] = useState('');
   const [lastPreflight, setLastPreflight] = useState<DataKeyRotationPreflight | null>(null);
+  const [lastExecution, setLastExecution] = useState<DataKeyRotationExecution | null>(null);
   const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
   const canClean = Boolean(
     dataPath &&
@@ -388,6 +484,7 @@ function DataStatusPanel() {
     const body = buildKeyRotationPreflightBody(currentKey, replacementKey);
     keyRotationPreflight.reset();
     setLastPreflight(null);
+    setLastExecution(null);
     try {
       const result = await keyRotationPreflight.mutateAsync(body);
       setLastPreflight(result);
@@ -397,6 +494,22 @@ function DataStatusPanel() {
     } finally {
       setCurrentKey('');
       setReplacementKey('');
+    }
+  }
+
+  async function submitKeyRotationExecution(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = buildKeyRotationExecutionBody(executionKey);
+    keyRotationExecution.reset();
+    setLastExecution(null);
+    try {
+      const result = await keyRotationExecution.mutateAsync(body);
+      setLastExecution(result);
+      toast.success('Rekey SQLCipher executado.');
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setExecutionKey('');
     }
   }
 
@@ -631,6 +744,52 @@ function DataStatusPanel() {
               </div>
             </form>
             {lastPreflight ? <DataKeyRotationPreflightReport report={lastPreflight} t={t} /> : null}
+            {lastPreflight?.ready ? (
+              <form
+                className="form"
+                aria-label="Execução da rotação SQLCipher"
+                onSubmit={(event) => void submitKeyRotationExecution(event)}
+              >
+                <Field
+                  label="Nova chave SQLCipher"
+                  htmlFor="data-key-rotation-execution"
+                  hint="Enviada apenas para executar PRAGMA rekey; a resposta devolve só evidência sem segredo."
+                >
+                  <Input
+                    id="data-key-rotation-execution"
+                    name="data-key-rotation-execution"
+                    type="password"
+                    value={executionKey}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    onChange={(event) => setExecutionKey(event.target.value)}
+                  />
+                </Field>
+                <p className="field__hint">
+                  Executa apenas o rekey SQLCipher na base de dados durável já aberta; não converte
+                  lojas SQLite em plaintext.
+                </p>
+                {keyRotationExecution.error ? <ErrorNote error={keyRotationExecution.error} /> : null}
+                <div className="form__actions">
+                  <GateButton
+                    perm="settings.manage"
+                    type="submit"
+                    variant="primary"
+                    icon={<Icon.Check />}
+                    disabled={!dataPath || keyRotationExecution.isPending}
+                  >
+                    {keyRotationExecution.isPending
+                      ? 'A executar rekey…'
+                      : 'Executar rekey SQLCipher'}
+                  </GateButton>
+                </div>
+              </form>
+            ) : null}
+            {lastExecution ? (
+              <DataKeyRotationExecutionReport execution={lastExecution} t={t} locale={locale} />
+            ) : null}
           </section>
 
           <section className="data-status-section" aria-labelledby="data-status-permissions">

@@ -45,6 +45,8 @@ import type {
   Dashboard,
   DataCleanupBody,
   DataCleanupResult,
+  DataKeyRotationExecuteBody,
+  DataKeyRotationExecution,
   DataKeyRotationPreflight,
   DataKeyRotationPreflightBody,
   DataStatusResponse,
@@ -82,6 +84,9 @@ import type {
   PaperBookImportPreserveBody,
   PaperBookImportView,
   PaperBookImportValidateBody,
+  PaperBookOcrDraftCreateBody,
+  PaperBookOcrDraftReviewBody,
+  PaperBookOcrDraftView,
   PaperBookOcrStatusUpdateBody,
   PaperBookOcrStatusView,
   PdfSignatureValidationBody,
@@ -847,6 +852,24 @@ export const api = {
       `/v1/books/paper-import/${encodeURIComponent(id)}/ocr-status`,
       body,
     ),
+  listPaperBookImportOcrDrafts: (id: string) =>
+    get<PaperBookOcrDraftView[]>(`/v1/books/paper-import/${encodeURIComponent(id)}/ocr-drafts`),
+  createPaperBookImportOcrDraft: (id: string, body: PaperBookOcrDraftCreateBody) =>
+    post<PaperBookOcrDraftView>(
+      `/v1/books/paper-import/${encodeURIComponent(id)}/ocr-drafts`,
+      body,
+    ),
+  reviewPaperBookImportOcrDraft: (
+    importId: string,
+    draftId: string,
+    body: PaperBookOcrDraftReviewBody,
+  ) =>
+    patch<PaperBookOcrDraftView>(
+      `/v1/books/paper-import/${encodeURIComponent(importId)}/ocr-drafts/${encodeURIComponent(
+        draftId,
+      )}/review`,
+      body,
+    ),
   fetchPaperBookImportBytes: (id: string) =>
     fetchBlob(`/v1/books/paper-import/${encodeURIComponent(id)}/bytes`),
   startOverBook: (id: string, body: StartOverBookBody) =>
@@ -855,6 +878,8 @@ export const api = {
   cleanDataStorage: (body: DataCleanupBody) => post<DataCleanupResult>('/v1/data/cleanup', body),
   preflightDataKeyRotation: (body: DataKeyRotationPreflightBody) =>
     post<DataKeyRotationPreflight>('/v1/data/key-rotation/preflight', body),
+  executeDataKeyRotation: (body: DataKeyRotationExecuteBody) =>
+    post<DataKeyRotationExecution>('/v1/data/key-rotation', body),
   // Data management (§2.11). Frontend-reset is client-only — it has NO endpoint here.
   resetData: (body: ResetDataBody) => post<ResetOutcomeView>('/v1/data/reset', body),
   startOverInstance: (body: StartOverInstanceBody) =>
