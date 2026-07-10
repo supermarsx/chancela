@@ -19,12 +19,14 @@ use chancela_core::{
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
-    Store, StoreDatabaseFormat, StoreError, StoreKeyConfigStatus, StoreKeyOpsPlan,
-    StoreOpenOptions, StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredImportedDocument,
-    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
-    StoredPaperBookImportMeta, StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan,
-    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
+    Store, StoreError, StoreKeyRotationStatus, StoreOpenOptions, StoredDocument, StoredFollowUp,
+    StoredFollowUpStatus, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
+    StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
+    StoredPaperBookOcrStatus,
 };
+#[cfg(not(feature = "sqlcipher"))]
+use chancela_store::{StoreDatabaseFormat, StoreKeyConfigStatus, StoreKeyOpsPlan};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
@@ -386,6 +388,128 @@ fn key_ops_status_refuses_plaintext_to_encrypted_migration_without_sqlcipher() {
     assert_eq!(reopened.load().expect("load plaintext").chain_status, Ok(0));
 }
 
+#[test]
+fn key_rotation_preflight_refuses_missing_plaintext_and_empty_requests_without_leaking_keys() {
+    let dir = TempDir::new();
+    let current = StoreOpenOptions::new().with_encryption_key("current rotation passphrase");
+
+    let missing = Store::key_rotation_preflight(dir.path(), &current, "replacement passphrase")
+        .expect("missing preflight");
+    assert_eq!(missing.status, StoreKeyRotationStatus::StoreMissing);
+    assert!(!missing.ready());
+    assert_eq!(missing.evidence.database_format, "missing");
+    assert_eq!(missing.evidence.current_key_config, "configured");
+    assert_eq!(missing.evidence.requested_key_config, "configured");
+    assert!(
+        !dir.path().join(chancela_store::DB_FILE).exists(),
+        "rotation preflight must not create a plaintext database"
+    );
+
+    let empty_new = Store::key_rotation_preflight(dir.path(), &current, " \t\n")
+        .expect("empty replacement preflight");
+    assert_eq!(empty_new.status, StoreKeyRotationStatus::RejectEmptyNewKey);
+    assert!(
+        empty_new
+            .operator_action()
+            .contains("non-empty replacement")
+    );
+
+    let empty_current = StoreOpenOptions::new().with_encryption_key("\n");
+    let empty_current_status =
+        Store::key_rotation_preflight(dir.path(), &empty_current, "replacement passphrase")
+            .expect("empty current preflight");
+    assert_eq!(
+        empty_current_status.status,
+        StoreKeyRotationStatus::RejectEmptyCurrentKey
+    );
+    assert_eq!(empty_current_status.evidence.current_key_config, "empty");
+
+    Store::open(dir.path()).expect("create plaintext store");
+    let plaintext = Store::key_rotation_preflight(dir.path(), &current, "replacement passphrase")
+        .expect("plaintext preflight");
+    assert_eq!(
+        plaintext.status,
+        StoreKeyRotationStatus::PlaintextStoreNotRotatable
+    );
+    assert!(!plaintext.ready());
+    assert_eq!(plaintext.evidence.database_format, "plaintext_sqlite");
+    assert!(
+        plaintext
+            .operator_action()
+            .contains("backup/export-restore migration plan"),
+        "plaintext preflight must point to the supported migration workflow: {}",
+        plaintext.operator_action()
+    );
+
+    let json = serde_json::to_string(&plaintext).expect("serialize rotation preflight");
+    assert!(json.contains("\"status\":\"plaintext_store_not_rotatable\""));
+    assert!(!json.contains("current rotation passphrase"));
+    assert!(!json.contains("replacement passphrase"));
+}
+
+#[test]
+fn key_rotation_preflight_requires_current_key_for_non_plaintext_store_header() {
+    let dir = TempDir::new();
+    std::fs::write(
+        dir.path().join(chancela_store::DB_FILE),
+        b"not a plaintext sqlite header",
+    )
+    .expect("write non-plaintext marker");
+
+    let preflight = Store::key_rotation_preflight(
+        dir.path(),
+        &StoreOpenOptions::default(),
+        "replacement passphrase",
+    )
+    .expect("rotation preflight");
+
+    assert_eq!(preflight.status, StoreKeyRotationStatus::CurrentKeyRequired);
+    assert!(!preflight.ready());
+    assert_eq!(
+        preflight.evidence.database_format,
+        "non_plaintext_or_encrypted"
+    );
+    assert_eq!(preflight.evidence.current_key_config, "unconfigured");
+    assert_eq!(preflight.evidence.requested_key_config, "configured");
+    let json = serde_json::to_string(&preflight).expect("serialize rotation preflight");
+    assert!(json.contains("\"status\":\"current_key_required\""));
+    assert!(!json.contains("replacement passphrase"));
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+#[test]
+fn key_rotation_preflight_and_execution_require_sqlcipher_without_leaking_keys() {
+    let dir = TempDir::new();
+    std::fs::write(
+        dir.path().join(chancela_store::DB_FILE),
+        b"not a plaintext sqlite header",
+    )
+    .expect("write non-plaintext marker");
+    let current = StoreOpenOptions::new().with_encryption_key("current rotation passphrase");
+
+    let preflight = Store::key_rotation_preflight(dir.path(), &current, "replacement passphrase")
+        .expect("rotation preflight");
+    assert_eq!(
+        preflight.status,
+        StoreKeyRotationStatus::SqlcipherBuildRequired
+    );
+    assert!(!preflight.ready());
+    assert!(!preflight.evidence.sqlcipher_available);
+    assert!(preflight.operator_action().contains("sqlcipher feature"));
+    let json = serde_json::to_string(&preflight).expect("serialize rotation preflight");
+    assert!(!json.contains("current rotation passphrase"));
+    assert!(!json.contains("replacement passphrase"));
+
+    let plaintext_dir = TempDir::new();
+    let store = Store::open(plaintext_dir.path()).expect("open plaintext store");
+    let err = store
+        .rotate_encryption_key_with_evidence("replacement passphrase")
+        .expect_err("rotation execution must require sqlcipher feature");
+    let message = err.to_string();
+    assert!(matches!(err, StoreError::EncryptionUnavailable));
+    assert!(!message.contains("replacement passphrase"));
+}
+
 #[cfg(feature = "sqlcipher")]
 #[test]
 fn sqlcipher_keyed_open_creates_encrypted_db_and_reopens_with_same_key() {
@@ -453,7 +577,7 @@ fn sqlcipher_rekey_reopens_with_new_key_only_and_preserves_data_and_ledger() {
     let new = StoreOpenOptions::new().with_encryption_key("new store passphrase");
     let entity = sample_entity("Rekey, Lda");
     let book = Book::new(entity.id, BookKind::AssembleiaGeral);
-    let act = Act::draft(book.id, "Ata rekey", MeetingChannel::Remote);
+    let act = Act::draft(book.id, "Ata rekey", MeetingChannel::Telematic);
     let extract = sample_extract("500002020");
 
     {
@@ -513,6 +637,11 @@ fn sqlcipher_rekey_reopens_with_new_key_only_and_preserves_data_and_ledger() {
             matches!(result, Err(StoreError::EmptyEncryptionKey)),
             "empty rekey must fail before mutating the database, got {result:?}"
         );
+        let whitespace_result = store.rotate_encryption_key(" \t\n");
+        assert!(
+            matches!(whitespace_result, Err(StoreError::EmptyEncryptionKey)),
+            "whitespace-only rekey must fail before mutating the database, got {whitespace_result:?}"
+        );
     }
 
     let still_old =
@@ -529,9 +658,43 @@ fn sqlcipher_rekey_reopens_with_new_key_only_and_preserves_data_and_ledger() {
 
     {
         let store = Store::open_with_options(dir.path(), old.clone()).expect("reopen old key");
-        store
-            .rekey("new store passphrase")
+        let preflight = Store::key_rotation_preflight(dir.path(), &old, "new store passphrase")
+            .expect("rotation preflight");
+        assert!(preflight.ready());
+        assert_eq!(preflight.status, StoreKeyRotationStatus::Ready);
+        assert_eq!(
+            preflight.evidence.database_format,
+            "non_plaintext_or_encrypted"
+        );
+        assert_eq!(preflight.evidence.current_key_config, "configured");
+        assert_eq!(preflight.evidence.requested_key_config, "configured");
+        assert!(preflight.evidence.sqlcipher_available);
+        let preflight_json = serde_json::to_string(&preflight).expect("serialize preflight");
+        assert!(preflight_json.contains("\"status\":\"ready\""));
+        assert!(!preflight_json.contains("old store passphrase"));
+        assert!(!preflight_json.contains("new store passphrase"));
+
+        let execution = store
+            .rotate_encryption_key_with_evidence("new store passphrase")
             .expect("rotate SQLCipher key");
+        assert_eq!(
+            execution.status,
+            chancela_store::StoreKeyRotationExecutionStatus::RekeyApplied
+        );
+        assert!(execution.rekey_executed);
+        assert!(execution.ledger_integrity_verified);
+        assert_eq!(execution.ledger_length, 4);
+        assert_eq!(execution.evidence.operation, "sqlcipher_rekey");
+        assert_eq!(execution.evidence.requested_key_config, "configured");
+        assert!(execution.evidence.sqlcipher_available);
+        assert!(execution.evidence.checkpointed_before_rekey);
+        assert!(execution.evidence.checkpointed_after_rekey);
+        assert!(execution.evidence.post_rekey_integrity_checked);
+        let execution_json = serde_json::to_string(&execution).expect("serialize execution");
+        assert!(execution_json.contains("\"status\":\"rekey_applied\""));
+        assert!(!execution_json.contains("old store passphrase"));
+        assert!(!execution_json.contains("new store passphrase"));
+
         let loaded = store.load().expect("load after rekey on same handle");
         assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
         assert_eq!(loaded.books.get(&book.id), Some(&book));

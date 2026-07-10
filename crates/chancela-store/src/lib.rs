@@ -334,6 +334,99 @@ pub struct StoreKeyOpsStatus {
     pub migration_plan: StoreKeyOpsMigrationPlan,
 }
 
+/// Operator-facing status for a SQLCipher key rotation request.
+///
+/// The status is intentionally conservative: `NonPlaintextOrEncrypted` is enough to say a store may
+/// be rotation-ready when a current key is configured, but it never claims live encryption until the
+/// caller opens the store with SQLCipher and authenticates the key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StoreKeyRotationStatus {
+    /// A non-empty current key and replacement key are configured for an existing non-plaintext
+    /// store, and this build has SQLCipher support.
+    Ready,
+    /// No database exists yet; rotation only applies to an existing keyed store.
+    StoreMissing,
+    /// A plaintext SQLite store cannot be rekeyed into an encrypted store.
+    PlaintextStoreNotRotatable,
+    /// The existing store is not plaintext SQLite, but no current SQLCipher key was configured.
+    CurrentKeyRequired,
+    /// The configured current key source resolved to an empty value.
+    RejectEmptyCurrentKey,
+    /// The requested replacement key is empty.
+    RejectEmptyNewKey,
+    /// The store may need SQLCipher, but this build was not compiled with SQLCipher support.
+    SqlcipherBuildRequired,
+}
+
+/// Non-secret evidence used to explain a key-rotation preflight decision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StoreKeyRotationEvidence {
+    /// Header-level database format observed without opening the database.
+    pub database_format: &'static str,
+    /// Secret-free classification of the current key configuration.
+    pub current_key_config: &'static str,
+    /// Secret-free classification of the requested replacement key.
+    pub requested_key_config: &'static str,
+    /// Whether this build can operate SQLCipher databases.
+    pub sqlcipher_available: bool,
+    /// The database path inspected by preflight.
+    pub database_file: String,
+}
+
+/// Secret-free preflight for a SQLCipher key rotation request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StoreKeyRotationPreflight {
+    /// Whether the caller can proceed to open the store with the current key and rekey it.
+    pub ready: bool,
+    /// Stable status code for operator displays and tests.
+    pub status: StoreKeyRotationStatus,
+    /// Secret-free operator next action.
+    pub next_action: &'static str,
+    /// Non-secret evidence for the status decision.
+    pub evidence: StoreKeyRotationEvidence,
+}
+
+/// Status returned after a SQLCipher rekey request has completed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StoreKeyRotationExecutionStatus {
+    /// SQLCipher accepted the `PRAGMA rekey` request and the store was readable afterwards.
+    RekeyApplied,
+}
+
+/// Non-secret evidence for a completed key rotation request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StoreKeyRotationExecutionEvidence {
+    /// Stable operation code. This deliberately names the primitive, not any key material.
+    pub operation: &'static str,
+    /// Secret-free classification of the replacement key.
+    pub requested_key_config: &'static str,
+    /// Whether this build can operate SQLCipher databases.
+    pub sqlcipher_available: bool,
+    /// Whether the WAL was checkpointed before issuing `PRAGMA rekey`.
+    pub checkpointed_before_rekey: bool,
+    /// Whether the WAL was checkpointed after `PRAGMA rekey`.
+    pub checkpointed_after_rekey: bool,
+    /// Whether the durable ledger was read and checked after rekey.
+    pub post_rekey_integrity_checked: bool,
+}
+
+/// Secret-free execution result for an accepted SQLCipher rekey request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StoreKeyRotationExecution {
+    /// Stable execution status.
+    pub status: StoreKeyRotationExecutionStatus,
+    /// True when SQLCipher accepted the rekey command. This does not expose either key.
+    pub rekey_executed: bool,
+    /// Result of the post-rekey ledger integrity read.
+    pub ledger_integrity_verified: bool,
+    /// Number of events in the global ledger spine after rekey.
+    pub ledger_length: u64,
+    /// Non-secret evidence for audit/status surfaces.
+    pub evidence: StoreKeyRotationExecutionEvidence,
+}
+
 impl StoreKeyOpsStatus {
     /// Whether a non-empty database key was configured.
     pub fn key_configured(&self) -> bool {
@@ -380,6 +473,51 @@ impl StoreKeyOpsStatus {
                  SQLCipher store, verify the restored ledger, or remove the key to keep plaintext"
             }
         }
+    }
+}
+
+impl StoreKeyRotationStatus {
+    /// Secret-free next action suitable for logs, CLIs, or startup diagnostics.
+    pub fn operator_action(self) -> &'static str {
+        match self {
+            StoreKeyRotationStatus::Ready => {
+                "open the existing non-plaintext store with the current key and issue SQLCipher \
+                 rekey with the replacement key"
+            }
+            StoreKeyRotationStatus::StoreMissing => {
+                "no database exists yet; create or restore a keyed store before requesting key \
+                 rotation"
+            }
+            StoreKeyRotationStatus::PlaintextStoreNotRotatable => {
+                "plaintext SQLite cannot be rekeyed in place; use the supported \
+                 backup/export-restore migration plan into a fresh SQLCipher store"
+            }
+            StoreKeyRotationStatus::CurrentKeyRequired => {
+                "configure the current SQLCipher key before requesting rotation; the replacement \
+                 key alone cannot authenticate the existing store"
+            }
+            StoreKeyRotationStatus::RejectEmptyCurrentKey => {
+                "configure a non-empty current database key before requesting rotation"
+            }
+            StoreKeyRotationStatus::RejectEmptyNewKey => {
+                "provide a non-empty replacement database key; no rekey should be attempted"
+            }
+            StoreKeyRotationStatus::SqlcipherBuildRequired => {
+                "rebuild with the sqlcipher feature before rotating a non-plaintext store key"
+            }
+        }
+    }
+}
+
+impl StoreKeyRotationPreflight {
+    /// Whether the preflight permits an operator to attempt SQLCipher rekey.
+    pub fn ready(&self) -> bool {
+        self.ready
+    }
+
+    /// Secret-free next action suitable for logs, CLIs, or startup diagnostics.
+    pub fn operator_action(&self) -> &'static str {
+        self.next_action
     }
 }
 
@@ -440,6 +578,34 @@ impl StoreKeyOpsMigrationPlan {
                 },
             ],
             evidence,
+        }
+    }
+}
+
+fn classify_key_rotation_status(
+    database_format: StoreDatabaseFormat,
+    current_key_config: StoreKeyConfigStatus,
+    requested_key_config: StoreKeyConfigStatus,
+    sqlcipher_available: bool,
+) -> StoreKeyRotationStatus {
+    if requested_key_config == StoreKeyConfigStatus::Empty {
+        return StoreKeyRotationStatus::RejectEmptyNewKey;
+    }
+    if current_key_config == StoreKeyConfigStatus::Empty {
+        return StoreKeyRotationStatus::RejectEmptyCurrentKey;
+    }
+
+    match database_format {
+        StoreDatabaseFormat::Missing => StoreKeyRotationStatus::StoreMissing,
+        StoreDatabaseFormat::PlaintextSqlite => StoreKeyRotationStatus::PlaintextStoreNotRotatable,
+        StoreDatabaseFormat::NonPlaintextOrEncrypted => {
+            if current_key_config == StoreKeyConfigStatus::Unconfigured {
+                StoreKeyRotationStatus::CurrentKeyRequired
+            } else if !sqlcipher_available {
+                StoreKeyRotationStatus::SqlcipherBuildRequired
+            } else {
+                StoreKeyRotationStatus::Ready
+            }
         }
     }
 }
@@ -1126,6 +1292,43 @@ impl Store {
         })
     }
 
+    /// Inspect whether a key rotation request is safe to attempt, without opening or mutating the
+    /// database. Both the current key and the requested replacement key are classified only as
+    /// absent/empty/configured; key material is never returned.
+    pub fn key_rotation_preflight(
+        data_dir: &Path,
+        current_options: &StoreOpenOptions,
+        new_key: &str,
+    ) -> Result<StoreKeyRotationPreflight, StoreError> {
+        let database_file = data_dir.join(DB_FILE);
+        let database_format = inspect_database_format(&database_file)?;
+        let current_key_config = current_options.key_config_status();
+        let requested_key_config = StoreOpenOptions::new()
+            .with_encryption_key(new_key)
+            .key_config_status();
+        let sqlcipher_available = cfg!(feature = "sqlcipher");
+        let status = classify_key_rotation_status(
+            database_format,
+            current_key_config,
+            requested_key_config,
+            sqlcipher_available,
+        );
+        let evidence = StoreKeyRotationEvidence {
+            database_format: store_database_format_code(database_format),
+            current_key_config: store_key_config_status_code(current_key_config),
+            requested_key_config: store_key_config_status_code(requested_key_config),
+            sqlcipher_available,
+            database_file: database_file.display().to_string(),
+        };
+
+        Ok(StoreKeyRotationPreflight {
+            ready: status == StoreKeyRotationStatus::Ready,
+            status,
+            next_action: status.operator_action(),
+            evidence,
+        })
+    }
+
     /// The stable per-install `instance_id` stamped into `meta` on first open (t54): bundle
     /// provenance (`BundleManifest.source_instance_id`) and the import feed both read it. A restored
     /// backup keeps the *source* instance's id (the stamp is only minted when absent).
@@ -1140,13 +1343,57 @@ impl Store {
     /// `PRAGMA rekey`, leaving the open database untouched.
     #[cfg(feature = "sqlcipher")]
     pub fn rotate_encryption_key(&self, new_key: &str) -> Result<(), StoreError> {
-        self.rekey(new_key)
+        self.rotate_encryption_key_with_evidence(new_key)
+            .map(|_| ())
+    }
+
+    /// Rotate the SQLCipher passphrase and return secret-free execution evidence for operator
+    /// audit/status surfaces. The caller must have opened the store with the current key already;
+    /// this method never accepts, returns, logs, or serializes that current key.
+    #[cfg(feature = "sqlcipher")]
+    pub fn rotate_encryption_key_with_evidence(
+        &self,
+        new_key: &str,
+    ) -> Result<StoreKeyRotationExecution, StoreError> {
+        self.rekey(new_key)?;
+        let integrity = self.integrity_report()?;
+        Ok(StoreKeyRotationExecution {
+            status: StoreKeyRotationExecutionStatus::RekeyApplied,
+            rekey_executed: true,
+            ledger_integrity_verified: integrity.healthy,
+            ledger_length: integrity.global.length,
+            evidence: StoreKeyRotationExecutionEvidence {
+                operation: "sqlcipher_rekey",
+                requested_key_config: store_key_config_status_code(
+                    StoreOpenOptions::new()
+                        .with_encryption_key(new_key)
+                        .key_config_status(),
+                ),
+                sqlcipher_available: true,
+                checkpointed_before_rekey: true,
+                checkpointed_after_rekey: true,
+                post_rekey_integrity_checked: true,
+            },
+        })
+    }
+
+    /// Feature-stable rotation API for callers that are compiled without SQLCipher. It fails
+    /// closed and returns no key material.
+    #[cfg(not(feature = "sqlcipher"))]
+    pub fn rotate_encryption_key_with_evidence(
+        &self,
+        new_key: &str,
+    ) -> Result<StoreKeyRotationExecution, StoreError> {
+        if new_key.trim().is_empty() {
+            return Err(StoreError::EmptyEncryptionKey);
+        }
+        Err(StoreError::EncryptionUnavailable)
     }
 
     /// Alias for [`Store::rotate_encryption_key`], matching SQLCipher's primitive name.
     #[cfg(feature = "sqlcipher")]
     pub fn rekey(&self, new_key: &str) -> Result<(), StoreError> {
-        if new_key.is_empty() {
+        if new_key.trim().is_empty() {
             return Err(StoreError::EmptyEncryptionKey);
         }
 
