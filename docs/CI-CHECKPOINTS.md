@@ -15,9 +15,9 @@ legal completeness, external-provider readiness, or spec completion.
 ## Recent Landed Areas
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
-recently landed work that crosses Rust API tests, trust parsing, MCP
-resource/prompt coverage, web fixtures, validator fixtures, and the standalone
-desktop Cargo workspace.
+recently landed work that crosses Rust API tests, data key preflight guards,
+trust parsing, MCP resource/prompt coverage, web fixtures, template provenance
+UI, validator fixtures, and the standalone desktop Cargo workspace.
 
 It intentionally reuses existing test surfaces:
 
@@ -29,21 +29,24 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test local_pkcs12_signing --locked`
 - API bounded retention execution:
   `cargo test -p chancela-api --test privacy --locked retention_`
+- API data key operations:
+  `cargo test -p chancela-api --test data_key_ops --locked`
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
 - MCP resource/prompt coverage: `cargo test -p chancela-mcp --locked`
-- Web contract/dashboard/signing/i18n matrix:
-  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`
+- Web contract/dashboard/signing/templates/i18n matrix:
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts`
 - Validator corpus manifest:
   `npm run test:validator-corpus`
 - Desktop lockfile resolution:
   `cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --locked --no-deps --format-version 1`
 
 The script also performs a cheap static map before running commands. That map
-asserts the expected test files, fixture markers, validator manifest, and
-desktop `Cargo.lock` are present, so accidental deletion or rename of the
-checkpoint targets fails with a direct message. It also statically pins the
-imported-document review notification/export browser E2E marker; Playwright
-execution remains in the browser jobs so this recent-landed lane stays focused.
+asserts the expected test files, fixture markers, data key preflight markers,
+template law-reference UI markers, validator manifest, and desktop `Cargo.lock`
+are present, so accidental deletion or rename of the checkpoint targets fails
+with a direct message. It also statically pins the imported-document review
+notification/export browser E2E marker; Playwright execution remains in the
+browser jobs so this recent-landed lane stays focused.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 

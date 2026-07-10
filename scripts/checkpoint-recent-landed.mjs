@@ -61,6 +61,13 @@ const checks = [
     ],
   },
   {
+    name: "API data key operation tests",
+    command: [
+      "cargo",
+      ["test", "-p", "chancela-api", "--test", "data_key_ops", "--locked"],
+    ],
+  },
+  {
     name: "TSL XML-DSig hardening tests",
     command: ["cargo", ["test", "-p", "chancela-tsl", "--locked"]],
   },
@@ -79,6 +86,7 @@ const checks = [
       "src/contracts/contracts.test.ts",
       "src/features/dashboard/DashboardPage.test.tsx",
       "src/features/signing/SigningPanel.test.tsx",
+      "src/features/templates/TemplatesCatalogPage.test.tsx",
       "src/i18n/i18n.test.ts",
     ]),
   },
@@ -183,6 +191,16 @@ function assertCheckpointMap() {
     "bounded retention execution regression coverage",
   );
   assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    "preflight_reports_empty_and_missing_replacement_key_without_leaking_keys",
+    "data key rotation preflight request validation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "key_rotation_preflight_request_debug_redacts_key_material",
+    "data key rotation preflight secret-redaction coverage",
+  );
+  assertFileContains(
     "crates/chancela-tsl/tests/tsl_fixture.rs",
     "tsl_signature_validation_rejects_tampered_signature_value",
     "TSL XML-DSig tamper regression coverage",
@@ -211,6 +229,11 @@ function assertCheckpointMap() {
     "apps/web/src/features/signing/SigningPanel.test.tsx",
     "SigningPanel — local PKCS#12 software certificate",
     "web local PKCS#12 signing coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplatesCatalogPage.test.tsx",
+    "renders pending law references and searches by citation or article text",
+    "web template law-reference coverage",
   );
   assertFileContains(
     "apps/web/src/i18n/i18n.test.ts",

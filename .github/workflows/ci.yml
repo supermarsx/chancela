@@ -281,8 +281,8 @@ jobs:
   # Recent landed checkpoint: focused regression lane for areas that landed in
   # parallel and are easy to miss in broad jobs: API paper import,
   # archive-package evidence including /DocTimeStamp, local PKCS#12 signing,
-  # bounded retention, TSL hardening, MCP resources/prompts,
-  # web contract/dashboard/signing/i18n pins, static browser E2E markers,
+  # bounded retention, data key preflight, TSL hardening, MCP resources/prompts,
+  # web contract/dashboard/signing/template/i18n pins, static browser E2E markers,
   # validator corpus manifest integrity, and desktop Cargo.lock resolution.
   # ---------------------------------------------------------------------------
   recent-landed:
