@@ -87,6 +87,13 @@ const IMPORTED_DOCUMENT_REVIEW_NOTICE: &str = "Operator review records a preserv
 decision only; it does not run OCR, convert bytes, replace the canonical PDF/A, or claim legal \
 acceptance.";
 
+const IMPORTED_DOCUMENT_REVIEW_GUARDRAIL_CHECKLIST: &[&str] = &[
+    "preserved_original_bytes_remain_non_canonical_evidence",
+    "canonical_pdfa_record_is_not_replaced",
+    "signed_pdf_artifact_is_not_created_or_validated",
+    "ocr_or_conversion_output_is_not_promoted_to_canonical_records",
+];
+
 const DOCUMENT_BUNDLE_VALIDATION_NOTICE: &str = "Technical bundle evidence report only; it does \
 not certify legal validity, PDF/A conformance, PDF/UA conformance, qualified-signature status, \
 DGLAB certification, or production long-term validation.";
@@ -547,6 +554,9 @@ pub struct DocumentPreservationPolicyReport {
     pub review_state: &'static str,
     pub requires_operator_review: bool,
     pub requires_ocr_review: bool,
+    pub canonical_record_status: &'static str,
+    pub signed_artifact_status: &'static str,
+    pub review_guardrail_checklist: Vec<&'static str>,
     pub canonical_conversion_status: &'static str,
     pub original_bytes_preservation_status: &'static str,
     pub preservation_action: &'static str,
@@ -1114,6 +1124,9 @@ pub struct ImportedDocumentView {
     pub operator_review_notice: &'static str,
     pub non_canonical: bool,
     pub requires_ocr_review: bool,
+    pub canonical_record_status: &'static str,
+    pub signed_artifact_status: &'static str,
+    pub review_guardrail_checklist: Vec<&'static str>,
     pub canonical_conversion_status: &'static str,
     pub canonical_conversion_performed: bool,
     pub legal_acceptance_claimed: bool,
@@ -1417,6 +1430,9 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
         operator_review_notice: IMPORTED_DOCUMENT_REVIEW_NOTICE,
         non_canonical: true,
         requires_ocr_review: preservation_policy.requires_ocr_review,
+        canonical_record_status: preservation_policy.canonical_record_status,
+        signed_artifact_status: preservation_policy.signed_artifact_status,
+        review_guardrail_checklist: preservation_policy.review_guardrail_checklist.clone(),
         canonical_conversion_status: preservation_policy.canonical_conversion_status,
         canonical_conversion_performed: false,
         legal_acceptance_claimed: false,
@@ -1537,6 +1553,9 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
         "operator_review_note_in_payload": false,
         "operator_review_notice": IMPORTED_DOCUMENT_REVIEW_NOTICE,
         "requires_ocr_review": preservation_policy.requires_ocr_review,
+        "canonical_record_status": preservation_policy.canonical_record_status,
+        "signed_artifact_status": preservation_policy.signed_artifact_status,
+        "review_guardrail_checklist": preservation_policy.review_guardrail_checklist.clone(),
         "legal_notice": DOCUMENT_IMPORTED_NOTICE,
         "non_canonical_warning": NON_CANONICAL_EVIDENCE_WARNING,
         "bytes_in_payload": false,
@@ -1567,6 +1586,9 @@ fn imported_document_review_event_payload(
         "non_canonical": true,
         "bytes_in_payload": false,
         "ocr_performed": false,
+        "canonical_record_status": "not_canonical_record",
+        "signed_artifact_status": "not_signed_artifact",
+        "review_guardrail_checklist": imported_document_review_guardrail_checklist(),
         "canonical_conversion_status": "not_performed_non_canonical_original_only",
         "canonical_conversion_performed": false,
         "canonical_pdfa_generated": false,
@@ -1589,6 +1611,10 @@ fn parse_imported_document_review_status(
             "review_status must be one of reviewed_non_canonical_original_only or rejected_non_canonical_evidence".to_owned(),
         )),
     }
+}
+
+fn imported_document_review_guardrail_checklist() -> Vec<&'static str> {
+    IMPORTED_DOCUMENT_REVIEW_GUARDRAIL_CHECKLIST.to_vec()
 }
 
 fn optional_limited_text(
@@ -2357,6 +2383,9 @@ fn document_preservation_policy(
         review_state,
         requires_operator_review: true,
         requires_ocr_review,
+        canonical_record_status: "not_canonical_record",
+        signed_artifact_status: "not_signed_artifact",
+        review_guardrail_checklist: imported_document_review_guardrail_checklist(),
         canonical_conversion_status,
         original_bytes_preservation_status,
         preservation_action,
@@ -4628,6 +4657,24 @@ mod tests {
         report.findings.iter().any(|finding| finding.code == code)
     }
 
+    fn assert_imported_review_guardrails(policy: &DocumentPreservationPolicyReport) {
+        assert_eq!(policy.canonical_record_status, "not_canonical_record");
+        assert_eq!(policy.signed_artifact_status, "not_signed_artifact");
+        assert_eq!(
+            policy.review_guardrail_checklist,
+            imported_document_review_guardrail_checklist()
+        );
+    }
+
+    fn assert_imported_review_guardrail_payload(payload: &Value) {
+        assert_eq!(payload["canonical_record_status"], "not_canonical_record");
+        assert_eq!(payload["signed_artifact_status"], "not_signed_artifact");
+        assert_eq!(
+            payload["review_guardrail_checklist"],
+            json!(imported_document_review_guardrail_checklist())
+        );
+    }
+
     fn report_sha256(bytes: &[u8]) -> String {
         let digest: [u8; 32] = Sha256::digest(bytes).into();
         crate::hex::hex(&digest)
@@ -4861,6 +4908,7 @@ mod tests {
         assert_eq!(report.image.width, Some(1));
         assert_eq!(report.image.height, Some(1));
         assert!(report.can_accept_non_canonical_import);
+        assert_imported_review_guardrails(&report.preservation_policy);
         assert!(has_finding(&report, "non_canonical_import_only"));
         assert!(has_finding(&report, "image_no_pdfa_conversion"));
         assert!(!report.image.conversion_performed);
@@ -4961,6 +5009,7 @@ mod tests {
         assert!(!report.legacy_word.canonical_pdfa_generated);
         assert_eq!(report.signature.validation_status, "unsigned");
         assert!(report.can_accept_non_canonical_import);
+        assert_imported_review_guardrails(&report.preservation_policy);
         assert!(has_finding(&report, "legacy_word_doc_detected"));
         assert!(has_finding(&report, "legacy_word_no_macro_execution"));
         assert!(has_finding(&report, "legacy_word_no_pdfa_conversion"));
@@ -5197,6 +5246,13 @@ mod tests {
         assert_eq!(imported.detected_content_type, "application/msword");
         assert_eq!(imported.size_bytes, doc.len());
         assert!(imported.non_canonical);
+        assert_eq!(imported.canonical_record_status, "not_canonical_record");
+        assert_eq!(imported.signed_artifact_status, "not_signed_artifact");
+        assert_eq!(
+            imported.review_guardrail_checklist,
+            imported_document_review_guardrail_checklist()
+        );
+        assert_imported_review_guardrails(&imported.preservation_policy);
         assert!(imported.legal_notice.contains("does not replace"));
         assert!(
             state.documents.read().await.is_empty(),
@@ -5282,6 +5338,7 @@ mod tests {
         );
         assert!(!imported.canonical_conversion_performed);
         assert!(!imported.legal_acceptance_claimed);
+        assert_imported_review_guardrails(&imported.preservation_policy);
 
         let before = state
             .store
@@ -5325,6 +5382,9 @@ mod tests {
         assert!(!reviewed.preservation_policy.canonical_conversion_performed);
         assert!(!reviewed.legal_acceptance_claimed);
         assert!(!reviewed.preservation_policy.legal_acceptance_claimed);
+        assert_eq!(reviewed.canonical_record_status, "not_canonical_record");
+        assert_eq!(reviewed.signed_artifact_status, "not_signed_artifact");
+        assert_imported_review_guardrails(&reviewed.preservation_policy);
         assert!(state.documents.read().await.is_empty());
 
         let after = state
@@ -5364,6 +5424,7 @@ mod tests {
             "reviewed_non_canonical_original_only"
         );
         assert_eq!(payload["ocr_performed"], false);
+        assert_imported_review_guardrail_payload(&payload);
         assert_eq!(payload["canonical_conversion_performed"], false);
         assert_eq!(payload["canonical_pdfa_generated"], false);
         assert_eq!(payload["legal_acceptance_claimed"], false);
@@ -5462,6 +5523,7 @@ mod tests {
             format!("/v1/documents/imported/{}/bytes", imported.id)
         );
         assert!(imported.non_canonical);
+        assert_imported_review_guardrails(&imported.preservation_policy);
         assert!(state.documents.read().await.is_empty());
 
         let event = state
@@ -5494,6 +5556,7 @@ mod tests {
         let payload = imported_document_event_payload(&stored.meta);
         assert_eq!(payload["evidence_family"], "image");
         assert_eq!(payload["classification"], "image_non_canonical_evidence");
+        assert_imported_review_guardrail_payload(&payload);
         assert_eq!(payload["canonical_conversion_performed"], false);
         assert_eq!(payload["canonical_pdfa_generated"], false);
         assert_eq!(payload["legal_validity_claimed"], false);
