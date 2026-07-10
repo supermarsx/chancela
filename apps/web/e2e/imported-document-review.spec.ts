@@ -2,14 +2,20 @@
  * Focused browser regression for imported-document operator review. The API is route-stubbed
  * so the test pins the review UI contract without depending on mutable server data.
  */
-import { expect, test, type Page, type Route } from './fixtures';
+import { expect, test, type Download, type Page, type Route } from './fixtures';
+import { readFile, stat } from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
 import type {
   ActView,
   BookView,
   ComplianceReport,
+  Dashboard,
+  DashboardAlert,
   Entity,
   ImportedDocumentReviewBody,
   ImportedDocumentView,
+  NotificationTriageEntry,
+  NotificationTriageStatus,
   PermissionGrant,
   Settings,
   SignatureStatusView,
@@ -24,11 +30,21 @@ const IMPORT_ID = '2b8d1d70-1000-4000-8000-00000000d305';
 
 const ENTITY_NAME = 'Imported Review E2E, S.A.';
 const ACT_TITLE = 'Ata import review E2E';
+const ACT_PDF_PATH = `/v1/acts/${ACT_ID}/document`;
+const IMPORT_REVIEW_ALERT_CODE = 'document.import.review_required';
+const IMPORT_REVIEW_ALERT_ID = `alert:${IMPORT_REVIEW_ALERT_CODE}:${ENTITY_ID}:${BOOK_ID}:${ACT_ID}:0`;
+const PDF_FILENAME = 'imported-review-e2e-s-a-ata-3.pdf';
+const PDF_BYTES = Buffer.from(
+  '%PDF-1.7\n% Chancela imported-review notification e2e PDF\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n',
+  'utf8',
+);
 const REVIEW_NOTICE =
   'Operator review records a preservation workflow decision only; it does not run OCR, convert bytes, replace the canonical PDF/A, or claim legal acceptance.';
 const LEGAL_NOTICE =
   'Imported document preserved as non-canonical evidence only; it does not replace the generated PDF/A or signed PDF, and no legal validity, PDF/A conformance, or signature validity is claimed.';
 const REVIEW_NOTE = 'Conferido como evidência preservada, sem conversão canónica.';
+const NOTIFICATION_REVIEW_NOTE =
+  'Revisto a partir da notificação; original mantido fora do PDF/A canónico.';
 
 test('non-canonical imported document can be reviewed without losing conservative evidence messaging', async ({
   page,
@@ -98,11 +114,123 @@ test('non-canonical imported document can be reviewed without losing conservativ
   await expect(page.locator('body')).not.toContainText('PDF/A canónico gerado');
 });
 
+test('dashboard import-review notification routes to review, can be dismissed, and keeps PDF export canonical', async ({
+  page,
+}) => {
+  await installBrowserDownloadFallback(page);
+  const reviewBodies: ImportedDocumentReviewBody[] = [];
+  const triageUpdates: TriageUpdate[] = [];
+  const downloadedPaths: string[] = [];
+  await routeImportedReviewFixtures(page, reviewBodies, {
+    dashboardAlerts: [importReviewDashboardAlert()],
+    downloadedPaths,
+    triageUpdates,
+  });
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Vista geral' })).toBeVisible();
+
+  await page.getByRole('button', { name: '1 notificações pendentes' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Notificações' });
+  await expect(dialog.getByText(`Alerta do painel (${IMPORT_REVIEW_ALERT_CODE})`)).toBeVisible();
+  await expect(
+    dialog.getByText('legacy-minutes.doc precisa de revisão operacional.'),
+  ).toBeVisible();
+
+  await Promise.all([
+    page.waitForURL(`**/atas/${ACT_ID}`),
+    dialog.getByRole('link', { name: 'Abrir ata' }).click(),
+  ]);
+
+  await expect(dialog).toHaveCount(0);
+  await expect(sealedActNotice(page)).toBeVisible();
+  await expect(page.getByText('Documentos importados', { exact: true })).toBeVisible();
+
+  const list = page.getByRole('list', { name: 'Documentos importados' });
+  await list.getByRole('button', { name: 'Ver metadados' }).click();
+
+  const form = page.getByRole('form', { name: 'Revisão operacional do documento importado' });
+  await form.getByLabel('Estado de revisão').selectOption('reviewed_non_canonical_original_only');
+  await form.getByLabel('Nota da revisão').fill(NOTIFICATION_REVIEW_NOTE);
+
+  const reviewResponse = waitForApiResponse(
+    page,
+    `/v1/documents/imported/${IMPORT_ID}/review`,
+    'PATCH',
+  );
+  await form.getByRole('button', { name: 'Guardar revisão' }).click();
+  expect((await reviewResponse).status()).toBe(200);
+
+  expect(reviewBodies).toEqual([
+    {
+      review_status: 'reviewed_non_canonical_original_only',
+      review_note: NOTIFICATION_REVIEW_NOTE,
+    },
+  ]);
+  const metadata = page.getByRole('group', { name: 'Metadados do documento importado' });
+  await expect(metadata).toContainText(
+    'Revisto: original preservado apenas como evidência não canónica',
+  );
+  await expect(metadata).toContainText(NOTIFICATION_REVIEW_NOTE);
+  await expect(metadata).toContainText(LEGAL_NOTICE);
+
+  await page.getByRole('button', { name: '1 notificações pendentes' }).click();
+  const reopenedDialog = page.getByRole('dialog', { name: 'Notificações' });
+  const triageResponse = waitForApiResponse(
+    page,
+    `/v1/notifications/triage/${encodeURIComponent(IMPORT_REVIEW_ALERT_ID)}`,
+    'PATCH',
+  );
+  await reopenedDialog.getByRole('button', { name: 'Dispensar' }).click();
+  expect((await triageResponse).status()).toBe(200);
+  await expect(page.locator('.notification-bell')).toHaveAccessibleName('Notificações');
+  expect(triageUpdates).toEqual([{ notificationId: IMPORT_REVIEW_ALERT_ID, status: 'dismissed' }]);
+  await page.keyboard.press('Escape');
+  await expect(reopenedDialog).toHaveCount(0);
+
+  const [download, pdfResponse] = await Promise.all([
+    page.waitForEvent('download'),
+    waitForApiResponse(page, ACT_PDF_PATH, 'GET'),
+    page.getByRole('button', { name: 'Descarregar PDF' }).click(),
+  ]);
+
+  expect(pdfResponse.status()).toBe(200);
+  expect(await pdfResponse.headerValue('content-type')).toContain('application/pdf');
+  await expectDownloadPayload(download, PDF_FILENAME, PDF_BYTES);
+  expect(downloadedPaths).toEqual([ACT_PDF_PATH]);
+});
+
+type ImportedReviewRouteOptions = {
+  dashboardAlerts?: DashboardAlert[];
+  downloadedPaths?: string[];
+  triageUpdates?: TriageUpdate[];
+};
+
+type TriageUpdate = {
+  notificationId: string;
+  status: NotificationTriageStatus;
+};
+
+async function installBrowserDownloadFallback(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      Object.defineProperty(window, 'showSaveFilePicker', {
+        value: undefined,
+        configurable: true,
+      });
+    } catch {
+      (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker = undefined;
+    }
+  });
+}
+
 async function routeImportedReviewFixtures(
   page: Page,
   reviewBodies: ImportedDocumentReviewBody[],
+  options: ImportedReviewRouteOptions = {},
 ): Promise<void> {
   let currentDocument = importedDocumentFixture();
+  const triageEntries: NotificationTriageEntry[] = [];
 
   await page.route('**/health', async (route) => {
     await fulfillJson(route, { status: 'ok', version: 'e2e', integrity: 'ok', degraded: false });
@@ -137,11 +265,32 @@ async function routeImportedReviewFixtures(
       return;
     }
     if (method === 'GET' && pathname === '/v1/dashboard') {
-      await fulfillJson(route, dashboardFixture());
+      await fulfillJson(route, dashboardFixture(options.dashboardAlerts ?? []));
       return;
     }
     if (method === 'GET' && pathname === '/v1/notifications/triage') {
-      await fulfillJson(route, { entries: [], durable: true, max_entries_per_owner: 500 });
+      await fulfillJson(route, {
+        entries: triageEntries,
+        durable: true,
+        max_entries_per_owner: 500,
+      });
+      return;
+    }
+    const triageNotificationId = pathname.match(/^\/v1\/notifications\/triage\/(.+)$/)?.[1];
+    if (method === 'PATCH' && triageNotificationId) {
+      const notificationId = decodeURIComponent(triageNotificationId);
+      const status = (request.postDataJSON() as { status: NotificationTriageStatus }).status;
+      options.triageUpdates?.push({ notificationId, status });
+      const entry =
+        status === 'unread'
+          ? null
+          : {
+              notification_id: notificationId,
+              status,
+              updated_at: '2026-07-10T10:15:00.000Z',
+            };
+      triageEntries.splice(0, triageEntries.length, ...(entry ? [entry] : []));
+      await fulfillJson(route, { status, entry, durable: true });
       return;
     }
     if (method === 'GET' && pathname === '/v1/ledger/verify') {
@@ -170,6 +319,11 @@ async function routeImportedReviewFixtures(
     }
     if (method === 'GET' && pathname === `/v1/acts/${ACT_ID}/document/bundle`) {
       await fulfillJson(route, documentBundleFixture());
+      return;
+    }
+    if (method === 'GET' && pathname === ACT_PDF_PATH) {
+      options.downloadedPaths?.push(pathname);
+      await fulfillBytes(route, PDF_BYTES, 'application/pdf');
       return;
     }
     if (method === 'GET' && pathname === `/v1/acts/${ACT_ID}/signature`) {
@@ -217,12 +371,42 @@ async function waitForApiResponse(page: Page, pathname: string, method: string) 
   });
 }
 
+function sealedActNotice(page: Page) {
+  return page.getByRole('note').filter({ hasText: 'Ata selada' }).first();
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
   await route.fulfill({
     status,
     contentType: 'application/json',
     body: JSON.stringify(body),
   });
+}
+
+async function fulfillBytes(route: Route, body: Buffer, contentType: string): Promise<void> {
+  await route.fulfill({
+    status: 200,
+    contentType,
+    body,
+  });
+}
+
+async function expectDownloadPayload(
+  download: Download,
+  filename: string,
+  expectedBytes: Buffer,
+): Promise<void> {
+  expect(download.suggestedFilename()).toBe(filename);
+  await expect(download.failure()).resolves.toBeNull();
+
+  const file = await download.path();
+  expect(file).toBeTruthy();
+  const info = await stat(file!);
+  expect(info.size).toBe(expectedBytes.length);
+
+  const bytes = await readFile(file!);
+  expect(bytes.equals(expectedBytes)).toBe(true);
+  expect(bytes.subarray(0, 4).toString('utf8')).toBe('%PDF');
 }
 
 function permissionGrant(permission: string): PermissionGrant {
@@ -306,7 +490,7 @@ function settingsFixture(): Settings {
   };
 }
 
-function dashboardFixture() {
+function dashboardFixture(alerts: DashboardAlert[] = []): Dashboard {
   return {
     entities: 1,
     books_open: 1,
@@ -318,9 +502,64 @@ function dashboardFixture() {
     unresolved_compliance: 0,
     ledger_length: 7,
     ledger_valid: true,
-    alerts: [],
+    current_work: {
+      open_books: [
+        {
+          book_id: BOOK_ID,
+          entity_id: ENTITY_ID,
+          entity_name: ENTITY_NAME,
+          kind: 'AssembleiaGeral',
+          purpose: 'Livro import review E2E',
+          opening_date: '2026-01-01',
+          last_ata_number: 3,
+          total_acts: 1,
+          open_acts: 0,
+          next_ata_number: 4,
+          links: {
+            entity: `/v1/entities/${ENTITY_ID}`,
+            book: `/v1/books/${BOOK_ID}`,
+            act: null,
+            ledger: null,
+          },
+        },
+      ],
+      act_counts_by_state: {
+        Draft: 0,
+        Review: 0,
+        Convened: 0,
+        Deliberated: 0,
+        TextApproved: 0,
+        Signing: 0,
+        Sealed: 1,
+        Archived: 0,
+      },
+    },
+    alerts,
     reminders: [],
     recent_events: [],
+  };
+}
+
+function importReviewDashboardAlert(): DashboardAlert {
+  return {
+    code: IMPORT_REVIEW_ALERT_CODE,
+    label: 'ReviewRequired',
+    severity: 'Warning',
+    category: 'ImportedDocumentReview',
+    message: 'legacy-minutes.doc precisa de revisão operacional.',
+    params: { filename: 'legacy-minutes.doc', act_title: ACT_TITLE },
+    target: {
+      entity_id: ENTITY_ID,
+      book_id: BOOK_ID,
+      act_id: ACT_ID,
+      links: {
+        entity: `/v1/entities/${ENTITY_ID}`,
+        book: `/v1/books/${BOOK_ID}`,
+        act: `/v1/acts/${ACT_ID}`,
+        ledger: null,
+      },
+    },
+    source: 'documents.imported.operator_review',
   };
 }
 
@@ -417,7 +656,7 @@ function documentBundleFixture() {
     pdf: {
       media_type: 'application/pdf',
       byte_length: 2048,
-      download: `/v1/acts/${ACT_ID}/document`,
+      download: ACT_PDF_PATH,
     },
     attachments_manifest: [],
     validation_report: null,
