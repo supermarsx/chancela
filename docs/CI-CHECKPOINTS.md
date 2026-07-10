@@ -12,6 +12,18 @@ needed for release notes or an operator review packet.
 This is an honesty gate for the implementation tracker. It does not certify
 legal completeness, external-provider readiness, or spec completion.
 
+## Live Provider Assurance
+
+`npm run check:live-provider-assurance` is a cheap static guard for the live CMD,
+CSC/QTSP, TSA, and smartcard seams. It checks that the live-provider test files
+keep their top-level feature gates, `#[ignore]` manual-test markers, no-CI and
+credential/operator boundary copy, and that CI still compiles those seams with
+`cargo test ... --no-run`.
+
+This is static/compile-time assurance only. It does not use credentials, make
+network calls, touch card readers, or run live tests, and it does not prove live
+provider validity or authority approval.
+
 ## Recent Landed Areas
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for

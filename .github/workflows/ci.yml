@@ -42,6 +42,9 @@ jobs:
       - name: Check spec coverage tracker
         run: npm run check:spec-coverage
 
+      - name: Check live-provider assurance gates
+        run: npm run check:live-provider-assurance
+
       - name: Check release trust validator fixtures
         run: node scripts/check-release-trust.mjs self-test
 
