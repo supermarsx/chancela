@@ -343,6 +343,7 @@ async fn state_at_with_trust_status(
         let mut settings = state.settings.write().await;
         settings.signing.cmd.application_id = Some(APP_ID.to_owned());
         settings.signing.tsa_url = None;
+        settings.signing.tsa_providers.clear();
     }
     if let Some(csc) = csc {
         state.csc_providers = Arc::new(vec![csc_config()]);
