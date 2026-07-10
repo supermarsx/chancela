@@ -68,6 +68,10 @@ const checks = [
     ],
   },
   {
+    name: "CLI database encryption key-env tests",
+    command: ["cargo", ["test", "-p", "chancela-cli", "--locked"]],
+  },
+  {
     name: "API official signature import guardrail acknowledgement test",
     command: [
       "cargo",
@@ -265,9 +269,24 @@ function assertCheckpointMap() {
     "notification bell icon-only action coverage",
   );
   assertFileContains(
+    "apps/web/src/ui/SubNav.test.tsx",
+    "can render an icon-only item with an accessible name and tooltip",
+    "subnav icon-only tooltip coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/notifications/NotificationsPage.test.tsx",
-    "expectIconOnlyControl",
-    "notifications page icon-only action coverage",
+    "expectIconOnlyFilter",
+    "notifications page icon-only filter coverage",
+  );
+  assertFileContains(
+    "crates/chancela-cli/tests/cli.rs",
+    "db_key_env_fails_closed_without_sqlcipher_and_does_not_create_plaintext_db",
+    "CLI database key env fail-closed coverage",
+  );
+  assertFileContains(
+    "crates/chancela-cli/tests/cli.rs",
+    "ambiguous_db_key_sources_are_rejected_before_store_open",
+    "CLI database key ambiguity coverage",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
