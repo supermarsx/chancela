@@ -502,6 +502,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
+    "accessibility_page_breaks_do_not_require_decorative_accounting",
+    "PDF accessibility page breaks decorative-accounting coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    "emits_decorative_artifact_block",
+    "PDF accessibility emitted decorative artifact boundary",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
     "pdf_ua_is_not_claimed_with_minimal_tagging",
     "PDF/UA non-certification marker coverage",
   );
@@ -696,6 +706,51 @@ function assertCheckpointMap() {
     "signature status multi-signature renewal-plan field",
   );
   assertFileContains(
+    "crates/chancela-pades/src/dss.rs",
+    "pub vri_tu_keys: Vec<Vec<u8>>",
+    "PAdES DSS keyed VRI /TU report field",
+  );
+  assertFileContains(
+    "crates/chancela-pades/src/dss.rs",
+    "pub fn has_vri_tu_for_key(&self, vri_key: &[u8]) -> bool",
+    "PAdES DSS keyed VRI /TU lookup helper",
+  );
+  assertFileContains(
+    "crates/chancela-pades/src/renewal.rs",
+    "dss.has_vri_tu_for_key(&signature.vri_key)",
+    "PAdES multi-signature renewal keyed VRI /TU check",
+  );
+  assertFileContains(
+    "crates/chancela-pades/src/tests.rs",
+    "multi_signature_renewal_plan_matches_tu_to_the_specific_vri_key",
+    "PAdES multi-signature keyed VRI /TU regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-pades/src/tests.rs",
+    "assert!(report.dss.has_vri_tu_for_key(&first_signature.vri_key));",
+    "PAdES keyed VRI /TU positive assertion",
+  );
+  assertFileContains(
+    "crates/chancela-pades/src/tests.rs",
+    "assert!(!report.dss.has_vri_tu_for_key(&second_signature.vri_key));",
+    "PAdES keyed VRI /TU negative assertion",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/pdf_signature_validation.rs",
+    "pub vri_tu_keys: Vec<String>",
+    "PDF signature validation keyed VRI /TU response field",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/pdf_signature_validation.rs",
+    "vri_tu_keys: vri_keys_text(&report.vri_tu_keys)",
+    "PDF signature validation keyed VRI /TU payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "vri_tu_keys: dss_vri_keys_text(&report.vri_tu_keys)",
+    "signature evidence status keyed VRI /TU payload marker",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
     "retention_execution_records_bounded_archive_and_idempotent_repeat",
     "bounded retention execution regression coverage",
@@ -801,6 +856,36 @@ function assertCheckpointMap() {
     "data key rotation execution secret-redaction coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "fn sqlite_logical_table",
+    "data status SQLite per-table logical usage helper",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    'id: format!("sqlite_table_{table}")',
+    "data status SQLite per-table logical usage id marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "sqlite_logical_usage_includes_per_table_payload_stats",
+    "data status SQLite per-table logical payload coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "UsageBasis::SqliteLogicalPayload",
+    "data status SQLite logical payload basis marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    'assert_eq!(ledger["basis"], "sqlite_logical_payload");',
+    "API data status SQLite logical payload response coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "sqlite logical usage not reported",
+    "API data status old SQLite logical placeholder rejection",
+  );
+  assertFileContains(
     "crates/chancela-templates/src/lib.rs",
     "catalog_metadata_validation_reports_stage_channel_and_authored_metadata_drift",
     "template stage/channel metadata drift coverage",
@@ -844,6 +929,31 @@ function assertCheckpointMap() {
     "apps/web/src/features/ferramentas/trust.test.tsx",
     "passes identifier lookups to TSA search and shows the empty state for no matches",
     "web TSA identifier lookup coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    'className="trust-accepted-hash"',
+    "web TSA accepted hash wrapper marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    '<TrustResultGroup title="Registos TSA">',
+    "web TSA records result group marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "expect(acceptedHashGroup.classList.contains('trust-accepted-hash')).toBe(true);",
+    "web TSA accepted hash compact-display coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "const tsaRecordsGroup = screen.getByRole('group', { name: 'Registos TSA' });",
+    "web TSA Registos TSA grouped-list coverage",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".trust-result-group",
+    "web trust catalog grouped result CSS marker",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
@@ -1030,6 +1140,21 @@ function assertCheckpointMap() {
     "dashboard hidden dated-reminders count marker",
   );
   assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "marks the six main stats cards as a compact desktop metrics row",
+    "dashboard desktop-six metrics row coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    'data-dashboard-density="desktop-six"',
+    "dashboard desktop-six density marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".dashboard-tab--stats > .dashboard-metrics--summary",
+    "dashboard compact summary metrics CSS marker",
+  );
+  assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.css",
     ".dashboard-workqueue__action.btn--iconOnly",
     "dashboard compact work-queue action sizing marker",
@@ -1076,6 +1201,41 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/entities/entities.test.tsx",
+    "async function themeCss(): Promise<string>",
+    "entity CSS test async helper for browser-gate-safe dynamic import",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "const nodeFs = 'node:fs';",
+    "entity CSS test node:fs dynamic import indirection",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "const { readFileSync } = (await import(nodeFs)) as",
+    "entity CSS test runtime node:fs dynamic import marker",
+  );
+  assertFileDoesNotContain(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "import { readFileSync } from 'node:fs';",
+    "entity CSS test static node:fs import removed",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "expect(primaryRule).toContain('flex-wrap: nowrap;');",
+    "entity primary filter desktop nowrap CSS assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "expect(mobilePrimaryRule).toContain('flex-wrap: wrap;');",
+    "entity primary filter mobile wrap CSS assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));",
+    "entity advanced filter no-overflow grid assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
     "renders the default entity table columns as single-line truncating cells",
     "entity default single-line table coverage",
   );
@@ -1088,6 +1248,11 @@ function assertCheckpointMap() {
     "apps/web/src/features/entities/EntitiesPage.tsx",
     "className=\"stack--tight entities-filters\"",
     "entity filter no-overflow wrapper marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".entities-filterbar__primary",
+    "entity primary filter CSS marker",
   );
   assertFileContains(
     "apps/web/src/theme.css",
@@ -1190,6 +1355,46 @@ function assertCheckpointMap() {
     "notification compact popup tag coverage",
   );
   assertFileContains(
+    "apps/web/src/features/notifications/NotificationsPage.tsx",
+    "            compact",
+    "notifications page compact list marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationsPage.test.tsx",
+    "notifications-list--compact",
+    "notifications page compact list coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationsPage.test.tsx",
+    "selector: '.notifications-list__title-tag'",
+    "notifications page title-folded tag coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationsPage.test.tsx",
+    "queryByText('Alerta', { selector: '.badge' })",
+    "notifications page separate badge removal coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.test.tsx",
+    "keeps the bell bubble and popup on explicit shell-safe layers",
+    "notification bell shell-safe layer coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.test.tsx",
+    "cssNumber(css, '.notification-bell__count', 'z-index')",
+    "notification bell count z-index assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.test.tsx",
+    "expect(countRule).toMatch(/pointer-events:\\s*none;/);",
+    "notification bell count pointer-events assertion",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".notifications-list--compact",
+    "notifications compact list CSS marker",
+  );
+  assertFileContains(
     "apps/web/src/features/onboarding/onboarding.test.tsx",
     "email: 'operador@example.pt'",
     "onboarding first-user email coverage",
@@ -1263,6 +1468,66 @@ function assertCheckpointMap() {
     "apps/web/src/theme.css",
     ".data-status-cleanup__main",
     "data management compact cleanup row CSS marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "kind?: string;",
+    "web data usage optional kind marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "['kind', 'row_count']",
+    "web data status contract optional kind tolerance marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "kind: 'sqlite_logical_table'",
+    "web data status sqlite logical table fixture marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "const tablePayloads = sqliteGroup.querySelector('.data-status-sqlite-table-list')!;",
+    "web data status sqlite table list DOM coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "const tableRows = tablePayloads.querySelectorAll('.data-status-sqlite-table-row');",
+    "web data status sqlite table row DOM coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "expect(tablePayloads.textContent).not.toContain('SQLite table ledger_events');",
+    "web data status sqlite table redundant-label coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "const SQLITE_LOGICAL_TABLE_KIND = 'sqlite_logical_table';",
+    "web data status sqlite logical table kind marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "function isSqliteTableConcern",
+    "web data status sqlite table classifier marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "function sqliteTableLabel",
+    "web data status sqlite table label helper marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "function SqliteTablePayloadList",
+    "web data status sqlite table list component marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".data-status-sqlite-table-list",
+    "web data status sqlite table list CSS marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".data-status-sqlite-table-row",
+    "web data status sqlite table row CSS marker",
   );
   assertFileContains(
     "crates/chancela-api/src/settings.rs",
@@ -1340,6 +1605,26 @@ function assertCheckpointMap() {
     "books filter/table no-overflow CSS coverage",
   );
   assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "async function themeCss(): Promise<string>",
+    "books CSS test async helper for browser-gate-safe dynamic import",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "const nodeFs = 'node:fs';",
+    "books CSS test node:fs dynamic import indirection",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "const { readFileSync } = (await import(nodeFs)) as",
+    "books CSS test runtime node:fs dynamic import marker",
+  );
+  assertFileDoesNotContain(
+    "apps/web/src/features/books/books.test.tsx",
+    "import { readFileSync } from 'node:fs';",
+    "books CSS test static node:fs import removed",
+  );
+  assertFileContains(
     "apps/web/src/features/books/BooksPage.tsx",
     "books-filterbar__primary",
     "books primary filterbar marker",
@@ -1387,6 +1672,21 @@ function assertCheckpointMap() {
     "apps/web/src/features/books/books.test.tsx",
     "preferBrowserSavePicker",
     "books export save prompt marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/export-save-hardening.spec.ts",
+    "sealed act PDF save prompt cancellation stays visible without browser-download fallback",
+    "browser export save cancellation coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/export-save-hardening.spec.ts",
+    "installCancelledBrowserSavePicker",
+    "browser export save cancellation helper marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/export-save-hardening.spec.ts",
+    "Guardar cancelado: ${PDF_FILENAME}.",
+    "browser export save cancellation visible message marker",
   );
   assertFileContains(
     "crates/chancela-cli/tests/cli.rs",
@@ -1485,17 +1785,62 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-10 from the current CI configuration and head `fa57352`",
+    "Updated 2026-07-10 from the current CI configuration and head `2c88b90`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `fa57352`",
+    "Focused Gate Snapshot Through `2c88b90`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Recent checkpoint metadata/static checks through `fa57352`",
+    "Recent trust catalog display checks through `c3d874b`",
+    "CI/E2E hardening plan trust catalog focused checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent PDF accessibility checks through `fdb9376`",
+    "CI/E2E hardening plan PDF accessibility focused checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent export-save checks through `ff1823a`",
+    "CI/E2E hardening plan export-save focused checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent dashboard density checks through `2ffae33`",
+    "CI/E2E hardening plan dashboard density focused checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent SQLite logical-usage checks through `2187a67`",
+    "CI/E2E hardening plan SQLite logical usage focused checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent browser export-save gate checks through `fd70ca0`",
+    "CI/E2E hardening plan browser export-save gate checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent web SQLite table-usage checks through `c1c57fe`",
+    "CI/E2E hardening plan web SQLite table usage checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent keyed PAdES VRI `/TU` checks through `76fc229`",
+    "CI/E2E hardening plan keyed PAdES VRI /TU checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent compact notification/entity filter checks through `2c88b90`",
+    "CI/E2E hardening plan compact notification/entity checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent checkpoint metadata/static checks through `2c88b90`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -1507,6 +1852,56 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Recent notification footer checks through `938b61e`",
     "CI/E2E hardening plan notification footer checks marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "implementation snapshot `2c88b9024f735ae2f46481066d67a56bb84ac144`",
+    "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`2c88b90` keeps UX/Workflows/CI **PARTIAL**",
+    "spec coverage compact notifications/entity filter checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`76fc229` keeps Signatures/Documents/CI **PARTIAL**",
+    "spec coverage keyed PAdES VRI /TU checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`c1c57fe` keeps UX/Data/CI **PARTIAL**",
+    "spec coverage web SQLite table usage checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`fd70ca0` keeps CI/UX **PARTIAL**",
+    "spec coverage browser export-save gate checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`c3d874b` keeps UX/Signatures/Trust/CI **PARTIAL**",
+    "spec coverage trust catalog hash display checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`fdb9376` keeps Documents/CI **PARTIAL**",
+    "spec coverage decorative content accounting checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`ff1823a` keeps UX/Documents/CI **PARTIAL**",
+    "spec coverage export save cancellation checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`2ffae33` keeps UX/Workflows/CI **PARTIAL**",
+    "spec coverage dashboard density checkpoint marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`2187a67` keeps Data/Architecture/CI **PARTIAL**",
+    "spec coverage SQLite logical usage checkpoint marker",
   );
   assertFileExists(
     "docs/fixtures/validator-corpus/manifest.json",
@@ -1539,5 +1934,14 @@ function assertFileContains(relativePath, needle, label) {
   assert.ok(
     body.includes(needle),
     `${label} missing expected marker ${needle}`,
+  );
+}
+
+function assertFileDoesNotContain(relativePath, needle, label) {
+  assertFileExists(relativePath, label);
+  const body = readFileSync(join(repoRoot, relativePath), "utf8");
+  assert.ok(
+    !body.includes(needle),
+    `${label} still contains removed marker ${needle}`,
   );
 }

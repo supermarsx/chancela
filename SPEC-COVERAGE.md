@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-10 through committed implementation snapshot `fa57352229a353fde8ba70ce4550490f7d9c4f5f`,
+*Updated 2026-07-10 through committed implementation snapshot `2c88b9024f735ae2f46481066d67a56bb84ac144`,
 refreshing the `cfcb3d9` baseline, the prior `4566715` coverage point,
 and the `c66ea3f`/`5fcaedd` checkpoint snapshot
 with commits through that snapshot:
@@ -76,7 +76,12 @@ filter/table density hardening, then `386ed95` CI/E2E hardening-plan refresh,
 clarification, then `938b61e` notification popup footer icon-only hardening,
 `ff953c5` user/onboarding/act-signatory email field capture, `5aad733`
 compact Data Management cleanup controls, and `fa57352` settings-backed
-trust-source provider management.
+trust-source provider management, then `c3d874b` trust catalog hash display,
+`fdb9376` decorative content accounting, `ff1823a` export save cancellation
+coverage, `2ffae33` dashboard metric density, and `2187a67` SQLite logical
+table usage exposure, followed by `fd70ca0` browser export-save gate unblock
+and `c1c57fe` web SQLite table-usage surfacing, then `76fc229` keyed PAdES VRI
+`/TU` evidence and `2c88b90` compact notifications/entity filter hardening.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -98,6 +103,84 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- `2c88b90` keeps UX/Workflows/CI **PARTIAL**: the Notifications page now uses
+  compact list rows, folds status/type tags into the notification title, and
+  preserves icon-only controls, while the bell badge has explicit
+  z-index/pointer-events coverage. Registered-entity primary filters now stay
+  compact and nowrap on desktop, wrap on mobile, and keep advanced filters on a
+  no-overflow grid. Focused worker validations reported 20 notification tests,
+  4 export-save browser-gate Chromium tests, 21 entities tests, plus
+  prettier/eslint/diff checks. This is notification/entity UI hardening only,
+  not new notification semantics, legal notice delivery, workflow completion,
+  or mobile UX completion.
+- `76fc229` keeps Signatures/Documents/CI **PARTIAL**: PAdES DSS reports now
+  expose `vri_tu_keys`, API signature/PDF validation payloads include keyed TU
+  evidence, and multi-signature renewal planning checks
+  `has_vri_tu_for_key` for the specific VRI key instead of treating any `/TU`
+  as sufficient. Focused worker validations reported `cargo fmt`,
+  `cargo test -p chancela-pades`, `cargo test -p chancela-api pdf_signature`,
+  `cargo test -p chancela-api signature_evidence_status`,
+  `cargo check -p chancela-signing`, `cargo check -p chancela-api`, and
+  `git diff --check`. This is local technical evidence/planning only, not
+  production PAdES-LT/LTA renewal execution, live revocation validation,
+  qualified signature operation, provider approval, or legal validity
+  certification.
+- `c1c57fe` keeps UX/Data/CI **PARTIAL**: Data Management now renders
+  `sqlite_logical` per-table payload rows separately from aggregate logical
+  usage, with optional `DataUsageConcern.kind` contract tolerance, test fixture
+  rows marked `sqlite_logical_table`, and compact
+  `data-status-sqlite-table-list` / `data-status-sqlite-table-row` CSS and DOM
+  coverage. Focused `GestaoDadosSection` tests pin the visible table names,
+  row-count/byte cells, and removal of redundant "SQLite table ..." labels. This
+  is web telemetry presentation only, not physical SQLite page accounting,
+  storage quota enforcement, live SQLCipher proof, migration execution, erasure,
+  or data-lifecycle certification.
+- `fd70ca0` keeps CI/UX **PARTIAL**: books and entity CSS assertion tests no
+  longer statically import `node:fs`; they dynamically import it inside the
+  runtime-only CSS checks so the browser export-save Playwright bundle is not
+  blocked by Node-only test imports. The focused books/entities unit tests,
+  eslint/prettier, and
+  `npm run test:browser --workspace apps/web -- e2e/export-save-hardening.spec.ts`
+  passed for 4 Chromium tests after this unblock. This is browser-test gate
+  hygiene only, not new product behavior, export semantics, archive legality,
+  or broader browser coverage.
+- `2187a67` keeps Data/Architecture/CI **PARTIAL**: data-status SQLite logical
+  usage now includes per-table logical payload entries such as
+  `sqlite_table_events`, with row counts, estimated bytes, and
+  `sqlite_logical_payload` basis preserved in the API response. Focused tests
+  pin `sqlite_logical_usage_includes_per_table_payload_stats` and the durable
+  data-status payload no longer emits the old "sqlite logical usage not
+  reported" placeholder. This is read-only storage telemetry only, not physical
+  SQLite page accounting, live SQLCipher encryption proof, storage quota
+  enforcement, migration execution, GDPR erasure, or data-lifecycle
+  certification.
+- `2ffae33` keeps UX/Workflows/CI **PARTIAL**: the six primary dashboard metric
+  cards now carry a compact `desktop-six` density marker and tighter summary CSS
+  so they remain scannable as one desktop row, with focused `DashboardPage`
+  coverage for the card order and marker. This is dashboard density regression
+  coverage only, not new analytics, workflow semantics, legal-calendar proof,
+  attendance proof, or dashboard completion.
+- `ff1823a` keeps UX/Documents/CI **PARTIAL**: focused browser E2E now covers a
+  sealed-act PDF export where the browser save picker is cancelled, keeps the
+  visible `Guardar cancelado` result, preserves the suggested filename/options,
+  prevents browser-download fallback, and records no state mutation. This is
+  export cancellation hardening only, not a new document format, signing,
+  notarization, archive legality, or filesystem policy guarantee.
+- `fdb9376` keeps Documents/CI **PARTIAL**: PDF accessibility non-text
+  accounting now counts only blocks that the writer emits as decorative
+  artifacts, so page breaks no longer require decorative artifact entries.
+  Focused tests pin
+  `accessibility_page_breaks_do_not_require_decorative_accounting` and the
+  `emits_decorative_artifact_block` boundary. This is local accounting honesty
+  only, not full PDF/UA delivery, complete non-text modeling, external
+  validation, or legal document acceptance.
+- `c3d874b` keeps UX/Signatures/Trust/CI **PARTIAL**: the Ferramentas trust
+  catalog now groups provider/service/TSA result lists with labelled result
+  groups, keeps accepted TSA hashes in the dedicated `trust-accepted-hash`
+  wrapper, and pins `Registos TSA` list grouping plus truncated/copyable digest
+  behavior in focused web tests. This is trust-catalog presentation/accessibility
+  hardening only, not live trust-source validation, production TSA operation,
+  provider onboarding, or qualified-trust legal completion.
 - `fa57352` keeps UX/Signatures/Trust/CI **PARTIAL**: Settings can now manage
   multiple TSL source URLs and TSA provider entries with localized labels and
   focused tests for rendering, autosave, default TSA selection, and legacy

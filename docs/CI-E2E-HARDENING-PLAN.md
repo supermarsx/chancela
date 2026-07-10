@@ -1,6 +1,6 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-10 from the current CI configuration and head `fa57352`. This
+Updated 2026-07-10 from the current CI configuration and head `2c88b90`. This
 plan is the build and test operating checklist for driving Chancela toward
 release confidence.
 
@@ -67,8 +67,9 @@ release confidence.
 - Release packages are unsigned/not notarized, and Docker images are not
   signed/attested.
 - The current Data Management slice adds `settings.manage`-gated cleanup for
-  crash reports and retained exports plus SQLite logical usage estimates. Treat
-  it as storage maintenance coverage, not legal data-lifecycle certification.
+  crash reports and retained exports plus SQLite logical usage estimates,
+  including per-table logical payload entries surfaced in the web UI. Treat it
+  as storage maintenance coverage, not legal data-lifecycle certification.
 - Release and package builds now opt into SQLCipher features by default where the
   supported package scripts and CI metadata require it. Treat this as encrypted
   build-default coverage, not proof of operator key custody, migration success,
@@ -315,10 +316,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `fa57352`
+## Focused Gate Snapshot Through `2c88b90`
 
 Historical focused checks from the active director loop, refreshed on
-2026-07-10 for current head `fa57352`. This is not an exhaustive current
+2026-07-10 for current head `2c88b90`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -431,7 +432,52 @@ settingsDefaults.test.ts contracts.test.ts`.
   `SettingsPage.test.tsx` trust-source/TSA-provider coverage, i18n locale
   catalog validation, Prettier, and ESLint are the focused web checks for
   settings-backed TSL/TSA provider management.
-- Recent checkpoint metadata/static checks through `fa57352` passed: `node
+- Recent trust catalog display checks through `c3d874b`: focused Ferramentas
+  trust tests pin the `trust-accepted-hash` wrapper, copyable truncated accepted
+  TSA hash behavior, and labelled `Registos TSA` result grouping without making
+  live trust-network calls.
+- Recent PDF accessibility checks through `fdb9376`: focused document tests pin
+  `accessibility_page_breaks_do_not_require_decorative_accounting` and the
+  `emits_decorative_artifact_block` boundary so page breaks no longer require
+  decorative artifact accounting while `pdf_ua_claimed` stays false.
+- Recent export-save checks through `ff1823a`: focused browser E2E pins
+  `installCancelledBrowserSavePicker`, the visible `Guardar cancelado` result,
+  preserved save-picker options, no browser-download fallback, and no mutation
+  when a sealed-act PDF save prompt is cancelled.
+- Recent dashboard density checks through `2ffae33`: focused dashboard unit
+  coverage pins the six-card stats order, `desktop-six` density marker, and
+  compact summary CSS for the desktop metrics row.
+- Recent SQLite logical-usage checks through `2187a67`: data-status coverage
+  pins `sqlite_logical_table`, `sqlite_table_*` logical payload entries,
+  `sqlite_logical_payload` basis, and the API test that rejects the old
+  "sqlite logical usage not reported" placeholder.
+- Recent browser export-save gate checks through `fd70ca0`: the focused books
+  and entities CSS tests now dynamically import `node:fs` inside runtime CSS
+  assertions instead of statically importing it, and the focused books/entities
+  test run passed 34 tests alongside eslint/prettier. The browser export-save
+  lane then passed 4 Chromium tests with
+  `npm run test:browser --workspace apps/web -- e2e/export-save-hardening.spec.ts`.
+- Recent web SQLite table-usage checks through `c1c57fe`: focused
+  `GestaoDadosSection` coverage passed 13 tests after adding optional
+  `DataUsageConcern.kind`, contract tolerance, `sqlite_logical_table` fixture
+  rows, `data-status-sqlite-table-list` / row DOM and CSS markers, plus
+  prettier/eslint and scoped `git diff --check`.
+- Recent keyed PAdES VRI `/TU` checks through `76fc229`: worker validations
+  passed `cargo fmt`, `cargo test -p chancela-pades`,
+  `cargo test -p chancela-api pdf_signature`,
+  `cargo test -p chancela-api signature_evidence_status`,
+  `cargo check -p chancela-signing`, `cargo check -p chancela-api`, and
+  `git diff --check`. The checks pin `vri_tu_keys`,
+  `has_vri_tu_for_key`, keyed API signature/PDF validation payloads, and
+  multi-signature renewal planning for the specific VRI key without claiming
+  production/legal PAdES-LT/LTA completion.
+- Recent compact notification/entity filter checks through `2c88b90`: worker
+  validations passed 20 notification tests, 4 export-save browser-gate Chromium
+  tests, 21 entities tests, plus prettier/eslint/diff checks. These pin compact
+  notification list rows, title-folded tags, bell badge z-index/pointer-events
+  assertions, entity primary-filter nowrap desktop/mobile-wrap CSS, and
+  advanced-filter no-overflow grid assertions.
+- Recent checkpoint metadata/static checks through `2c88b90` passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
@@ -440,7 +486,12 @@ settingsDefaults.test.ts contracts.test.ts`.
   routing, dashboard dates tab, notification footer icon-only action, and
   clarified platform operations UI, user/signatory email capture, and compact
   Data Management cleanup controls, plus SettingsPage/i18n trust-source
-  provider markers.
+  provider markers, trust-accepted-hash/Registos TSA grouping, decorative
+  page-break accounting, export-save cancellation, dashboard desktop-six
+  density, SQLite logical table payload markers, browser dynamic-import gate
+  markers, web SQLite table-usage rows, keyed VRI `/TU` evidence markers,
+  compact notification/bell badge assertions, and entity filter nowrap/mobile
+  wrap markers.
 
 Full workspace format/clippy should be rerun before commit. The prior
 `paper_import.rs` compile blocker, retention dead-code warning set, TSL `record`
