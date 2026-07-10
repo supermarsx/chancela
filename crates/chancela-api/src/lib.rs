@@ -1193,6 +1193,12 @@ pub fn router(state: AppState) -> Router {
             )),
         )
         .route(
+            "/v1/acts/{id}/signature/local/pkcs12/sign",
+            post(signature::sign_local_pkcs12_signature).layer(DefaultBodyLimit::max(
+                signature::LOCAL_PKCS12_SIGN_ENVELOPE_BYTES,
+            )),
+        )
+        .route(
             "/v1/acts/{id}/signature/external-invites",
             get(signature::list_external_signer_invites)
                 .post(signature::create_external_signer_invite),

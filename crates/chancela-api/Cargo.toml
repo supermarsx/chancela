@@ -57,3 +57,4 @@ chancela-cades = { workspace = true }
 der = { workspace = true }
 spki = { workspace = true }
 rsa = { workspace = true }
+p12 = "0.6.3"

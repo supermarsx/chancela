@@ -60,8 +60,9 @@ use chancela_signing::{
     RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider,
     TimestampTrustDecision, TimestampTrustPolicy, TimestampTrustReport, TrustPolicy,
     TrustedListStatus, TslTrustPolicy, attach_pdf_dss, attach_pdf_revocation_evidence, cmd_confirm,
-    cmd_initiate, sign_pdf_cc, validate_timestamp_trust,
+    cmd_initiate, sign_pdf_cc, sign_pdf_pades, validate_timestamp_trust,
 };
+use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError};
 use chancela_smartcard::Pkcs11Token;
 use chancela_store::{PendingCmdSession, StoredDocument, StoredSignedDocument};
 use chancela_tsl::{FileTslSource, TslClient, TslError, TslSource};
@@ -102,6 +103,9 @@ const EVIDENTIARY_IMPORTED_OFFICIAL: &str = "ImportedOfficialHandoffTechnicalEvi
 const FAMILY_EXTERNAL_SIGNER_HANDOFF: &str = "ExternalSignerHandoff";
 const EVIDENTIARY_EXTERNAL_SIGNED_PDF: &str = "ExternalSignedPdfTechnicalEvidence";
 const EXTERNAL_SIGNED_PDF_NOTICE: &str = "Uploaded signed PDF technical evidence only; no legal validity, qualified-signature, or trust-list status is claimed.";
+const FAMILY_LOCAL_PKCS12: &str = "LocalPkcs12SoftwareCertificate";
+const EVIDENTIARY_ADVANCED_LOCAL: &str = "AdvancedLocalTechnicalEvidence";
+const LOCAL_PKCS12_NOTICE: &str = "Local software-certificate PAdES technical evidence only; no qualified remote/CMD signature, trusted-list status, or legal qualification is claimed.";
 /// The signed-PDF profile strings bound into the `document.signed` event.
 const PADES_PROFILE_B_B: &str = "application/pdf; profile=PAdES-B-B";
 const PADES_PROFILE_B_T: &str = "application/pdf; profile=PAdES-B-T";
@@ -145,6 +149,12 @@ pub(crate) const OFFICIAL_SIGNATURE_IMPORT_MAX_BYTES: usize = 16 * 1024 * 1024;
 /// HTTP envelope cap: enough for raw PDF bytes plus JSON/base64 overhead.
 pub(crate) const OFFICIAL_SIGNATURE_IMPORT_ENVELOPE_BYTES: usize =
     OFFICIAL_SIGNATURE_IMPORT_MAX_BYTES * 4 / 3 + 64 * 1024;
+/// Decoded PKCS#12/PFX cap for local software-certificate signing. The PFX is used transiently and
+/// is never persisted.
+pub(crate) const LOCAL_PKCS12_SIGN_MAX_BYTES: usize = 3 * 1024 * 1024;
+/// HTTP envelope cap: enough for encrypted PFX bytes plus JSON/base64 overhead.
+pub(crate) const LOCAL_PKCS12_SIGN_ENVELOPE_BYTES: usize =
+    LOCAL_PKCS12_SIGN_MAX_BYTES * 4 / 3 + 64 * 1024;
 /// DSS attach bodies carry small DER evidence arrays as base64 strings.
 pub(crate) const DSS_ATTACH_ENVELOPE_BYTES: usize = 4 * 1024 * 1024;
 
@@ -484,6 +494,53 @@ pub struct OfficialSignatureLegalValidation {
     pub trust_validation_performed: bool,
     pub qualified_status_claimed: bool,
     pub legal_status_claimed: bool,
+}
+
+// --- local PKCS#12 software-certificate signing -----------------------------------------------
+
+/// JSON envelope accepted by `POST /v1/acts/{id}/signature/local/pkcs12/sign`.
+///
+/// This is an advanced local-signing import flow: the encrypted PKCS#12 bytes and passphrase are
+/// accepted only for this request, loaded into a [`Pkcs12SigningSource`], used to sign the sealed
+/// PDF, then dropped. No PFX bytes, passphrase, or decrypted private key material are persisted or
+/// copied into the audit event.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocalPkcs12SignRequest {
+    #[serde(alias = "pkcs12", alias = "pfx_base64", alias = "pkcs12_der_base64")]
+    pub pkcs12_base64: String,
+    pub passphrase: String,
+    #[serde(default)]
+    pub friendly_name: Option<String>,
+    /// The capacity in which the signer acts (optional, informational).
+    #[serde(default)]
+    pub capacity: Option<String>,
+    /// Actor override for attribution.
+    #[serde(default)]
+    pub actor: Option<String>,
+}
+
+/// Response of a successful local PKCS#12 software-certificate signature. This is deliberately
+/// labelled as advanced local technical evidence, not a qualified remote/CMD signature.
+#[derive(Serialize)]
+pub struct LocalPkcs12SignResponse {
+    pub document_id: String,
+    pub act_id: String,
+    pub family: &'static str,
+    pub evidentiary_level: &'static str,
+    pub trusted_list_status: Option<String>,
+    pub signing_time: String,
+    pub signed_at: String,
+    pub signed_pdf_digest: String,
+    pub signer_cert_subject: Option<String>,
+    pub signer_cert_sha256: String,
+    pub certificate_chain_count: usize,
+    pub timestamp_token: bool,
+    pub finalization: &'static str,
+    pub qualification_claimed: bool,
+    pub legal_status_claimed: bool,
+    pub status_scope: &'static str,
+    pub notice: &'static str,
 }
 
 // --- external signer invitations --------------------------------------------------------------
@@ -2832,6 +2889,210 @@ pub async fn import_official_signature(
     }))
 }
 
+/// `POST /v1/acts/{id}/signature/local/pkcs12/sign` — sign a sealed act with a locally supplied
+/// PKCS#12/PFX software certificate.
+///
+/// This is an explicit advanced local-signing flow. The request's encrypted PFX bytes and
+/// passphrase are transient inputs only; the persisted artifact is the resulting signed PDF plus
+/// public certificate/audit evidence. No trusted-list lookup is performed and no qualified
+/// remote/CMD status is claimed.
+pub async fn sign_local_pkcs12_signature(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<LocalPkcs12SignRequest>,
+) -> Result<Json<LocalPkcs12SignResponse>, ApiError> {
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
+    let act_id = ActId(id);
+
+    if !state.local_signing {
+        return Err(ApiError::Conflict(
+            "a assinatura local com certificado PKCS#12 só está disponível na aplicação de secretária"
+                .to_owned(),
+        ));
+    }
+
+    {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        if act.ata_number.is_none() {
+            return Err(ApiError::Conflict(
+                "o ato ainda não foi selado; a assinatura local é um passo posterior ao selo"
+                    .to_owned(),
+            ));
+        }
+    }
+
+    let unsigned = crate::documents::load_document(&state, act_id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
+        })?;
+
+    if load_signed(&state, act_id).await?.is_some() {
+        return Err(ApiError::Conflict(
+            "o ato já tem um artefacto de assinatura".to_owned(),
+        ));
+    }
+
+    let pkcs12_der =
+        Zeroizing::new(B64.decode(req.pkcs12_base64.trim()).map_err(|e| {
+            ApiError::Unprocessable(format!("invalid base64 PKCS#12 content: {e}"))
+        })?);
+    if pkcs12_der.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "PKCS#12 upload is empty".to_owned(),
+        ));
+    }
+    if pkcs12_der.len() > LOCAL_PKCS12_SIGN_MAX_BYTES {
+        return Err(ApiError::Unprocessable(format!(
+            "PKCS#12 upload is {} bytes; local signing accepts at most {} bytes",
+            pkcs12_der.len(),
+            LOCAL_PKCS12_SIGN_MAX_BYTES
+        )));
+    }
+
+    let passphrase = Zeroizing::new(req.passphrase);
+    let friendly_name = optional_trimmed(req.friendly_name);
+    let selector = friendly_name
+        .clone()
+        .map(Pkcs12IdentitySelector::by_friendly_name)
+        .unwrap_or_else(Pkcs12IdentitySelector::any);
+    let capacity = optional_trimmed(req.capacity);
+    let signing_time = OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let reason = match capacity.as_deref() {
+        Some(capacity) => format!("Assinatura local avancada da ata ({capacity})"),
+        None => "Assinatura local avancada da ata".to_owned(),
+    };
+    let opts = SignOptions {
+        field_name: Some("AssinaturaLocalPkcs12".to_owned()),
+        signing_time: Some(pdf_time(signing_time)),
+        reason: Some(reason),
+        location: None,
+        contact_info: None,
+    };
+    let unsigned_pdf = unsigned.pdf_bytes.clone();
+
+    let (signed_pdf, identity) = tokio::task::spawn_blocking(move || {
+        let source = Pkcs12SigningSource::from_der_with_selector(
+            pkcs12_der.as_slice(),
+            &passphrase,
+            &selector,
+        )?;
+        let identity = source.identity().clone();
+        let signed_pdf = sign_pdf_pades(&source, &unsigned_pdf, signing_time, &opts)?;
+        Ok::<_, chancela_signing::SigningError>((signed_pdf, identity))
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("local PKCS#12 signing task failed: {e}")))?
+    .map_err(map_local_pkcs12_signing_error)?;
+
+    let final_pdf =
+        finalize_signed_pdf(&state, signed_pdf, &identity.signing_certificate_der).await?;
+    let signed_pdf_digest = sha256_hex(&final_pdf.bytes);
+    let signed_at = OffsetDateTime::now_utc();
+    let signer_cert_subject = subject_dn(&identity.signing_certificate_der);
+    let signer_cert_sha256 = sha256_hex(&identity.signing_certificate_der);
+    let finalization = {
+        let require_qualified = state
+            .settings
+            .read()
+            .await
+            .signing
+            .require_qualified_for_seal;
+        finalization_status(true, false, require_qualified)
+    };
+
+    let stored = StoredSignedDocument {
+        act_id,
+        document_id: unsigned.id.clone(),
+        signed_pdf_digest: signed_pdf_digest.clone(),
+        signature_family: FAMILY_LOCAL_PKCS12.to_owned(),
+        evidentiary_level: EVIDENTIARY_ADVANCED_LOCAL.to_owned(),
+        trusted_list_status: None,
+        signer_cert_subject: signer_cert_subject.clone(),
+        signing_time,
+        signed_at,
+        signer_cert_der: identity.signing_certificate_der.clone(),
+        timestamp_token_der: final_pdf.timestamp_token_der.clone(),
+        timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
+        signed_pdf_bytes: final_pdf.bytes,
+    };
+
+    let audit_scope = act_audit_scope(&state, act_id).await?;
+    let event_payload = json!({
+        "act_id": act_id.to_string(),
+        "document_id": unsigned.id,
+        "signed_pdf_digest": signed_pdf_digest,
+        "family": FAMILY_LOCAL_PKCS12,
+        "evidentiary_level": EVIDENTIARY_ADVANCED_LOCAL,
+        "trusted_list_status": null,
+        "profile": pades_profile(final_pdf.timestamp_token_der.is_some()),
+        "signer_cert_sha256": signer_cert_sha256,
+        "certificate_chain_count": identity.chain_der.len(),
+        "source": {
+            "kind": "local_pkcs12_software_certificate",
+            "friendly_name_selected": friendly_name,
+            "secret_material_persisted": false,
+            "passphrase_persisted": false,
+            "pkcs12_persisted": false
+        },
+        "validation": {
+            "pades_cryptographic_validation": "valid",
+            "byte_range_covers_whole_file_except_contents": true,
+            "trust_validation": "not_performed",
+            "qualified_status_claimed": false,
+            "qualified_remote_cmd_signature": false
+        },
+        "status_scope": LOCAL_TECHNICAL_EVIDENCE_ONLY,
+        "notice": LOCAL_PKCS12_NOTICE
+    });
+    let payload = serde_json::to_vec(&event_payload)?;
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &audit_scope,
+            "document.signed",
+            None,
+            &payload,
+        )?;
+        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        state.attest_latest(&attestor, &ledger).await;
+    }
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(act_id, stored.clone());
+
+    Ok(Json(LocalPkcs12SignResponse {
+        document_id: stored.document_id,
+        act_id: act_id.to_string(),
+        family: FAMILY_LOCAL_PKCS12,
+        evidentiary_level: EVIDENTIARY_ADVANCED_LOCAL,
+        trusted_list_status: None,
+        signing_time: rfc3339(signing_time),
+        signed_at: rfc3339(signed_at),
+        signed_pdf_digest,
+        signer_cert_subject,
+        signer_cert_sha256,
+        certificate_chain_count: identity.chain_der.len(),
+        timestamp_token: final_pdf.report.has_signature_timestamp,
+        finalization,
+        qualification_claimed: false,
+        legal_status_claimed: false,
+        status_scope: LOCAL_TECHNICAL_EVIDENCE_ONLY,
+        notice: LOCAL_PKCS12_NOTICE,
+    }))
+}
+
 // --- status / read ----------------------------------------------------------------------------
 
 /// `GET /v1/acts/{id}/signature` — the act's signature status + derived finalization.
@@ -4370,6 +4631,23 @@ fn decode_der_base64_list(field: &str, values: Vec<String>) -> Result<Vec<Vec<u8
 
 fn map_dss_attach_error(e: chancela_signing::SigningError) -> ApiError {
     ApiError::Unprocessable(format!("falha ao anexar DSS/VRI local: {e}"))
+}
+
+fn map_local_pkcs12_signing_error(e: chancela_signing::SigningError) -> ApiError {
+    match e {
+        chancela_signing::SigningError::SoftCertificate(SoftCertificateError::WrongPassword) => {
+            ApiError::Unprocessable("PKCS#12 password is incorrect".to_owned())
+        }
+        chancela_signing::SigningError::SoftCertificate(error) => {
+            ApiError::Unprocessable(format!("invalid PKCS#12 signing material: {error}"))
+        }
+        chancela_signing::SigningError::Cades(msg)
+        | chancela_signing::SigningError::Pades(msg)
+        | chancela_signing::SigningError::Provider(msg) => {
+            ApiError::Unprocessable(format!("local PKCS#12 signing failed: {msg}"))
+        }
+        other => ApiError::Unprocessable(format!("local PKCS#12 signing failed: {other}")),
+    }
 }
 
 fn map_revocation_collect_error(e: chancela_signing::RevocationError) -> ApiError {

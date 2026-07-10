@@ -347,6 +347,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cc/sign", RouteClass::Gated), // POST signing.perform@Book (co-located)
+    (
+        "/v1/acts/{id}/signature/local/pkcs12/sign",
+        RouteClass::Gated,
+    ), // POST signing.perform@Book (local software certificate)
     ("/v1/acts/{id}/signature/dss/attach", RouteClass::Gated), // POST signing.perform@Book
     (
         "/v1/acts/{id}/signature/dss/collect-revocation",
