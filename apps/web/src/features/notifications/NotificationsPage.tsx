@@ -1,7 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { useDashboard } from '../../api/hooks';
 import { useT, type TFunction } from '../../i18n';
-import { Card, ErrorNote, Icon, Loading, PageHeader, SubNav } from '../../ui';
+import { Card, ErrorNote, Icon, Loading, PageHeader, SubNav, type SubNavItem } from '../../ui';
 import { NotificationList } from './NotificationList';
 import { buildDashboardNotifications } from './notifications';
 import {
@@ -42,12 +42,42 @@ export function NotificationsPage() {
     [data, t, triage.entries],
   );
   const visible = filterItems(notifications, filter);
-  const navItems: { id: NotificationFilter; label: ReactNode; icon: ReactNode }[] = [
-    { id: 'all', label: t('notifications.filter.all'), icon: <Icon.Bell /> },
-    { id: 'alerts', label: t('notifications.filter.alerts'), icon: <Icon.Info /> },
-    { id: 'reminders', label: t('notifications.filter.reminders'), icon: <Icon.Calendar /> },
-    { id: 'operations', label: t('notifications.filter.operations'), icon: <Icon.Archive /> },
-    { id: 'resolved', label: t('notifications.filter.resolved'), icon: <Icon.Check /> },
+  const navItems: SubNavItem<NotificationFilter>[] = [
+    {
+      id: 'all',
+      label: t('notifications.filter.all'),
+      tooltipLabel: t('notifications.filter.all'),
+      iconOnly: true,
+      icon: <Icon.Bell />,
+    },
+    {
+      id: 'alerts',
+      label: t('notifications.filter.alerts'),
+      tooltipLabel: t('notifications.filter.alerts'),
+      iconOnly: true,
+      icon: <Icon.Info />,
+    },
+    {
+      id: 'reminders',
+      label: t('notifications.filter.reminders'),
+      tooltipLabel: t('notifications.filter.reminders'),
+      iconOnly: true,
+      icon: <Icon.Calendar />,
+    },
+    {
+      id: 'operations',
+      label: t('notifications.filter.operations'),
+      tooltipLabel: t('notifications.filter.operations'),
+      iconOnly: true,
+      icon: <Icon.Archive />,
+    },
+    {
+      id: 'resolved',
+      label: t('notifications.filter.resolved'),
+      tooltipLabel: t('notifications.filter.resolved'),
+      iconOnly: true,
+      icon: <Icon.Check />,
+    },
   ];
 
   return (

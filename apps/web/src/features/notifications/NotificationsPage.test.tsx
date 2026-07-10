@@ -74,6 +74,13 @@ function expectIconOnlyControl(control: HTMLElement, label: string) {
   expect(tooltip?.textContent).toBe(label);
 }
 
+function expectIconOnlyFilter(label: string) {
+  const control = screen.getByRole('button', { name: label });
+  expect(control.className).toContain('subnav__btn--iconOnly');
+  expect(control.getAttribute('aria-label')).toBe(label);
+  expect(control.textContent).not.toContain(label);
+}
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -131,6 +138,12 @@ describe('NotificationsPage', () => {
     );
 
     renderWithProviders(<NotificationsPage />, ['/notificacoes']);
+
+    expectIconOnlyFilter('Todas');
+    expectIconOnlyFilter('Alertas');
+    expectIconOnlyFilter('Lembretes');
+    expectIconOnlyFilter('Operações');
+    expectIconOnlyFilter('Resolvidas');
 
     expect(await screen.findByText('Sem notificações derivadas do painel.')).toBeTruthy();
     expect(screen.queryByText('Rever conformidade da ata')).toBeNull();

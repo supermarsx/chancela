@@ -5224,6 +5224,11 @@ a.btn--primary {
   min-width: 0;
 }
 
+.subnav > .tooltip {
+  position: static;
+  flex: none;
+}
+
 /* The fades sit above the buttons (z 1) and indicator (z 0), pinned to the pill's rounded
    ends. A soft `--text`-tinted smudge reads as a shadow in both light and dark themes. */
 .subnav-wrap::before,
@@ -5385,6 +5390,20 @@ a.btn--primary {
 .ferramentas-subnav__btn:not(.is-active):hover,
 .subnav__btn:not(.is-active):hover {
   color: var(--accent);
+}
+
+.subnav__btn--iconOnly {
+  justify-content: center;
+  width: 2.05rem;
+  min-width: 2.05rem;
+  height: 2.05rem;
+  min-height: 2.05rem;
+  padding: 0.4rem;
+  letter-spacing: 0;
+}
+
+.subnav__btn--iconOnly .subnav__icon {
+  font-size: 1.14em;
 }
 
 @media (prefers-reduced-motion: reduce) {

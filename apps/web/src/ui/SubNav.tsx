@@ -14,8 +14,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useActiveLocale } from '../i18n';
 import { ArrowRight } from './icons';
+import { Tooltip } from './Tooltip';
 
-export interface SubNavItem<T extends string> {
+interface SubNavItemBase<T extends string> {
   id: T;
   label: ReactNode;
   /**
@@ -25,6 +26,21 @@ export interface SubNavItem<T extends string> {
    */
   icon?: ReactNode;
 }
+
+export type SubNavItem<T extends string> =
+  | (SubNavItemBase<T> & {
+      iconOnly?: false;
+      tooltipLabel?: string;
+    })
+  | (SubNavItemBase<T> & {
+      /**
+       * Render only the glyph in the button. The text label is kept out of the visible
+       * button content and exposed through `aria-label` + `Tooltip`.
+       */
+      iconOnly: true;
+      icon: ReactNode;
+      tooltipLabel: string;
+    });
 
 interface SubNavProps<T extends string> {
   items: SubNavItem<T>[];
@@ -259,25 +275,38 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
               : { opacity: 0 }
           }
         />
-        {items.map((item) => (
-          <button
-            key={item.id}
-            ref={(el) => {
-              btnRefs.current[item.id] = el;
-            }}
-            type="button"
-            className={item.id === active ? 'subnav__btn is-active' : 'subnav__btn'}
-            aria-pressed={item.id === active}
-            onClick={() => onSelect(item.id)}
-          >
-            {item.icon ? (
-              <span className="subnav__icon" aria-hidden="true">
-                {item.icon}
-              </span>
-            ) : null}
-            {item.label}
-          </button>
-        ))}
+        {items.map((item) => {
+          const button = (
+            <button
+              key={item.iconOnly ? undefined : item.id}
+              ref={(el) => {
+                btnRefs.current[item.id] = el;
+              }}
+              type="button"
+              className={`${item.id === active ? 'subnav__btn is-active' : 'subnav__btn'}${
+                item.iconOnly ? ' subnav__btn--iconOnly' : ''
+              }`}
+              aria-label={item.iconOnly ? item.tooltipLabel : undefined}
+              aria-pressed={item.id === active}
+              onClick={() => onSelect(item.id)}
+            >
+              {item.icon ? (
+                <span className="subnav__icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+              ) : null}
+              {item.iconOnly ? null : item.label}
+            </button>
+          );
+
+          return item.iconOnly ? (
+            <Tooltip key={item.id} label={item.tooltipLabel} placement="bottom">
+              {button}
+            </Tooltip>
+          ) : (
+            button
+          );
+        })}
       </div>
       {overflow.end ? renderScrollButton('end') : null}
     </div>

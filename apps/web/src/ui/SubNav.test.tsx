@@ -63,6 +63,37 @@ describe('SubNav', () => {
     expect(withoutIcon.querySelector('.subnav__icon')).toBeNull();
   });
 
+  it('can render an icon-only item with an accessible name and tooltip', () => {
+    const onSelect = vi.fn();
+    const items: SubNavItem<'a' | 'b'>[] = [
+      {
+        id: 'a',
+        label: 'Alpha',
+        tooltipLabel: 'Alpha',
+        iconOnly: true,
+        icon: <svg data-testid="glyph" />,
+      },
+      { id: 'b', label: 'Beta' },
+    ];
+    render(<SubNav items={items} active="a" onSelect={onSelect} ariaLabel="Secções" />);
+
+    const iconOnly = screen.getByRole('button', { name: 'Alpha' });
+    expect(iconOnly.className).toContain('subnav__btn--iconOnly');
+    expect(iconOnly.textContent).not.toContain('Alpha');
+    expect(iconOnly.querySelector('.subnav__icon')?.getAttribute('aria-hidden')).toBe('true');
+
+    const tooltipIds = (iconOnly.getAttribute('aria-describedby') ?? '')
+      .split(/\s+/)
+      .filter(Boolean);
+    const tooltip = tooltipIds
+      .map((id) => document.getElementById(id))
+      .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === 'Alpha');
+    expect(tooltip?.textContent).toBe('Alpha');
+
+    fireEvent.click(iconOnly);
+    expect(onSelect).toHaveBeenCalledWith('a');
+  });
+
   it('renders the gliding indicator element', () => {
     const { container } = render(
       <SubNav items={ITEMS} active="a" onSelect={() => {}} ariaLabel="Secções" />,
