@@ -61,6 +61,8 @@ pub(crate) const DOCUMENT_IMPORT_VALIDATION_MAX_BYTES: usize = 16 * 1024 * 1024;
 pub(crate) const DOCUMENT_IMPORT_VALIDATION_ENVELOPE_BYTES: usize =
     DOCUMENT_IMPORT_VALIDATION_MAX_BYTES * 4 / 3 + 64 * 1024;
 
+const OLE_CFB_MAGIC: &[u8; 8] = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
+
 const DOCUMENT_IMPORT_VALIDATION_NOTICE: &str = "This report is a structural import screen only; \
 it is not proof of legal validity, PDF/A conformance, or signature validity.";
 
@@ -475,6 +477,7 @@ pub struct DocumentImportValidationReport {
     pub fixity: DocumentFixityReport,
     pub content_type: DocumentContentTypeReport,
     pub pdf: PdfRecognitionReport,
+    pub legacy_word: LegacyWordDocRecognitionReport,
     pub signature: SignedPdfSignalReport,
     pub can_accept_non_canonical_import: bool,
     pub findings: Vec<DocumentValidationFinding>,
@@ -516,6 +519,20 @@ pub struct PdfARecognitionReport {
     pub conformance_values: Vec<String>,
     pub duplicate_metadata: bool,
     pub odd_metadata: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LegacyWordDocRecognitionReport {
+    pub is_ole_cfb: bool,
+    pub is_legacy_word_doc: bool,
+    pub filename_extension_doc: bool,
+    pub declared_content_type_msword: bool,
+    pub declared_content_type_generic: bool,
+    pub filename_extension_conflict: bool,
+    pub declared_content_type_conflict: bool,
+    pub macro_execution_performed: bool,
+    pub conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -659,11 +676,12 @@ fn validate_document_candidate_with_fixity(
     };
 
     let pdf = recognize_pdf(bytes);
-    let detected_content_type = detect_candidate_content_type(bytes, pdf.is_pdf);
     let declared = declared_content_type.and_then(|value| {
         let trimmed = value.trim();
         (!trimmed.is_empty()).then(|| trimmed.to_owned())
     });
+    let legacy_word = recognize_legacy_word_doc(bytes, declared.as_deref(), filename.as_deref());
+    let detected_content_type = detect_candidate_content_type(bytes, pdf.is_pdf, &legacy_word);
     let declared_matches_detected = declared
         .as_deref()
         .map(|value| content_type_base(value) == detected_content_type);
@@ -673,7 +691,11 @@ fn validate_document_candidate_with_fixity(
         detected: detected_content_type,
         declared_matches_detected,
     };
-    let signature = recognize_signed_pdf(bytes);
+    let signature = if pdf.is_pdf && !legacy_word.is_ole_cfb {
+        recognize_signed_pdf(bytes)
+    } else {
+        unsigned_pdf_signal_report()
+    };
     let mut findings = Vec::new();
 
     if bytes.is_empty() {
@@ -713,10 +735,54 @@ fn validate_document_candidate_with_fixity(
             "declared SHA-256 digest does not match the received bytes",
         ));
     }
-    if !pdf.is_pdf && !bytes.is_empty() {
+    if !pdf.is_pdf && !legacy_word.is_ole_cfb && !bytes.is_empty() {
         findings.push(DocumentValidationFinding::error(
             "not_pdf",
             "candidate bytes do not contain a PDF header in the first 1024 bytes",
+        ));
+    }
+    if legacy_word.is_ole_cfb && pdf.is_pdf {
+        findings.push(DocumentValidationFinding::error(
+            "legacy_word_ambiguous_pdf",
+            "candidate starts as an OLE compound file but also contains a PDF header in the first 1024 bytes",
+        ));
+    }
+    if legacy_word.filename_extension_conflict {
+        findings.push(DocumentValidationFinding::error(
+            "legacy_word_filename_conflict",
+            "OLE compound file bytes were supplied with a non-.doc filename extension",
+        ));
+    }
+    if legacy_word.declared_content_type_conflict {
+        findings.push(DocumentValidationFinding::error(
+            "legacy_word_content_type_conflict",
+            "OLE compound file bytes were supplied with a declared content type that is not compatible with legacy Word DOC",
+        ));
+    }
+    if legacy_word.is_ole_cfb
+        && !legacy_word.is_legacy_word_doc
+        && !legacy_word.filename_extension_conflict
+        && !legacy_word.declared_content_type_conflict
+        && !pdf.is_pdf
+        && !bytes.is_empty()
+    {
+        findings.push(DocumentValidationFinding::error(
+            "legacy_word_ambiguous_ole_cfb",
+            "OLE compound file bytes were found, but the request did not identify a legacy Word .doc candidate",
+        ));
+    }
+    if legacy_word.is_legacy_word_doc {
+        findings.push(DocumentValidationFinding::info(
+            "legacy_word_doc_detected",
+            "legacy Microsoft Word .doc/OLE CFB detected; it can be preserved only as non-canonical evidence",
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "legacy_word_no_macro_execution",
+            "OLE CFB bytes were inspected by magic bytes and metadata only; macros and embedded objects were not executed",
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "legacy_word_no_pdfa_conversion",
+            "no DOC-to-PDF/A conversion was performed; this import does not become the canonical PDF/A record",
         ));
     }
     if pdf.is_pdf && !pdf.has_eof_marker {
@@ -817,6 +883,7 @@ fn validate_document_candidate_with_fixity(
         fixity,
         content_type,
         pdf,
+        legacy_word,
         signature,
         can_accept_non_canonical_import,
         findings,
@@ -976,9 +1043,10 @@ pub async fn get_imported_document_bytes(
     actor: CurrentActor,
 ) -> Result<Response, ApiError> {
     let doc = load_imported_document_for_actor(&state, &actor, &id).await?;
-    let filename = format!("imported-document-{}.pdf", doc.meta.id);
+    let content_type = imported_document_download_content_type(&doc.meta.detected_content_type);
+    let filename = imported_document_download_filename(&doc.meta);
     Response::builder()
-        .header(header::CONTENT_TYPE, "application/pdf")
+        .header(header::CONTENT_TYPE, content_type)
         .header(
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{filename}\""),
@@ -1046,6 +1114,32 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
         non_canonical: true,
         legal_notice: DOCUMENT_IMPORTED_NOTICE,
         bytes_download: format!("/v1/documents/imported/{}/bytes", meta.id),
+    }
+}
+
+fn imported_document_download_filename(meta: &StoredImportedDocumentMeta) -> String {
+    format!(
+        "imported-document-{}.{}",
+        meta.id,
+        imported_document_download_extension(&meta.detected_content_type)
+    )
+}
+
+fn imported_document_download_content_type(detected_content_type: &str) -> &'static str {
+    match content_type_base(detected_content_type).as_str() {
+        "application/pdf" => "application/pdf",
+        "application/msword" => "application/msword",
+        "application/zip" => "application/zip",
+        _ => "application/octet-stream",
+    }
+}
+
+fn imported_document_download_extension(detected_content_type: &str) -> &'static str {
+    match content_type_base(detected_content_type).as_str() {
+        "application/pdf" => "pdf",
+        "application/msword" => "doc",
+        "application/zip" => "zip",
+        _ => "bin",
     }
 }
 
@@ -1135,6 +1229,76 @@ fn recognize_pdfa(bytes: &[u8]) -> PdfARecognitionReport {
     }
 }
 
+fn recognize_legacy_word_doc(
+    bytes: &[u8],
+    declared_content_type: Option<&str>,
+    filename: Option<&str>,
+) -> LegacyWordDocRecognitionReport {
+    let is_ole_cfb = bytes.starts_with(OLE_CFB_MAGIC);
+    let filename_extension_doc = filename
+        .and_then(filename_extension)
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("doc"));
+    let filename_extension_conflict = is_ole_cfb
+        && filename
+            .and_then(filename_extension)
+            .is_some_and(|extension| !extension.eq_ignore_ascii_case("doc"));
+    let declared_base = declared_content_type.map(content_type_base);
+    let declared_content_type_msword = declared_base
+        .as_deref()
+        .is_some_and(is_legacy_word_content_type);
+    let declared_content_type_generic = declared_base
+        .as_deref()
+        .is_some_and(is_generic_ole_cfb_content_type);
+    let declared_content_type_conflict = is_ole_cfb
+        && declared_base.as_deref().is_some_and(|content_type| {
+            !is_legacy_word_content_type(content_type)
+                && !is_generic_ole_cfb_content_type(content_type)
+        });
+    let is_legacy_word_doc = is_ole_cfb
+        && (filename_extension_doc || declared_content_type_msword)
+        && !filename_extension_conflict
+        && !declared_content_type_conflict;
+
+    LegacyWordDocRecognitionReport {
+        is_ole_cfb,
+        is_legacy_word_doc,
+        filename_extension_doc,
+        declared_content_type_msword,
+        declared_content_type_generic,
+        filename_extension_conflict,
+        declared_content_type_conflict,
+        macro_execution_performed: false,
+        conversion_performed: false,
+        canonical_pdfa_generated: false,
+    }
+}
+
+fn filename_extension(filename: &str) -> Option<&str> {
+    let (_, extension) = filename.rsplit_once('.')?;
+    (!extension.is_empty()).then_some(extension)
+}
+
+fn is_legacy_word_content_type(content_type: &str) -> bool {
+    matches!(
+        content_type,
+        "application/msword"
+            | "application/doc"
+            | "application/vnd.ms-word"
+            | "application/x-msword"
+            | "application/x-ms-word"
+    )
+}
+
+fn is_generic_ole_cfb_content_type(content_type: &str) -> bool {
+    matches!(
+        content_type,
+        "application/octet-stream"
+            | "application/vnd.ms-office"
+            | "application/x-ole-storage"
+            | "application/ole"
+    )
+}
+
 fn recognize_signed_pdf(bytes: &[u8]) -> SignedPdfSignalReport {
     let signature_marker_count = count_signature_markers(bytes);
     let byte_range_marker_count = count_bytes(bytes, b"/ByteRange");
@@ -1170,6 +1334,27 @@ fn recognize_signed_pdf(bytes: &[u8]) -> SignedPdfSignalReport {
         cryptographic_validation_performed: pades_validation.performed,
         pades_profile: pades_validation.pades_profile,
         validation_error: pades_validation.error,
+    }
+}
+
+fn unsigned_pdf_signal_report() -> SignedPdfSignalReport {
+    SignedPdfSignalReport {
+        validation_status: "unsigned",
+        signed_pdf_signal: false,
+        has_signature_dictionary_marker: false,
+        signature_marker_count: 0,
+        has_byte_range: false,
+        byte_range_marker_count: 0,
+        byte_range: None,
+        byte_range_complete: None,
+        byte_range_digest_sha256: None,
+        signed_revision_bytes: None,
+        covered_bytes: None,
+        excluded_bytes: None,
+        has_contents_marker: false,
+        cryptographic_validation_performed: false,
+        pades_profile: None,
+        validation_error: None,
     }
 }
 
@@ -1380,8 +1565,16 @@ fn pdf_header(bytes: &[u8]) -> Option<(usize, String)> {
     Some((offset, version))
 }
 
-fn detect_candidate_content_type(bytes: &[u8], is_pdf: bool) -> &'static str {
-    if is_pdf {
+fn detect_candidate_content_type(
+    bytes: &[u8],
+    is_pdf: bool,
+    legacy_word: &LegacyWordDocRecognitionReport,
+) -> &'static str {
+    if legacy_word.is_legacy_word_doc {
+        "application/msword"
+    } else if legacy_word.is_ole_cfb {
+        "application/vnd.ms-office"
+    } else if is_pdf {
         "application/pdf"
     } else if bytes.starts_with(b"PK\x03\x04") {
         "application/zip"
@@ -3446,6 +3639,16 @@ mod tests {
         b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\nstartxref\n0\n%%EOF\n".to_vec()
     }
 
+    fn legacy_doc_bytes() -> Vec<u8> {
+        let mut bytes = vec![0u8; 512];
+        bytes[..OLE_CFB_MAGIC.len()].copy_from_slice(OLE_CFB_MAGIC);
+        let word_stream = b"WordDocument";
+        bytes[64..64 + word_stream.len()].copy_from_slice(word_stream);
+        let vba_marker = b"VBA project marker";
+        bytes[128..128 + vba_marker.len()].copy_from_slice(vba_marker);
+        bytes
+    }
+
     fn signable_pdf() -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n");
@@ -3732,6 +3935,58 @@ mod tests {
     }
 
     #[test]
+    fn document_import_validation_accepts_legacy_doc_as_non_canonical_evidence() {
+        let doc = legacy_doc_bytes();
+
+        let report = validate_document_candidate(
+            &doc,
+            Some("application/msword"),
+            Some("board-minutes.doc".to_owned()),
+        );
+
+        assert_eq!(report.content_type.detected, "application/msword");
+        assert_eq!(report.content_type.declared_matches_detected, Some(true));
+        assert!(!report.pdf.is_pdf);
+        assert!(report.legacy_word.is_ole_cfb);
+        assert!(report.legacy_word.is_legacy_word_doc);
+        assert!(report.legacy_word.filename_extension_doc);
+        assert!(report.legacy_word.declared_content_type_msword);
+        assert!(!report.legacy_word.macro_execution_performed);
+        assert!(!report.legacy_word.conversion_performed);
+        assert!(!report.legacy_word.canonical_pdfa_generated);
+        assert_eq!(report.signature.validation_status, "unsigned");
+        assert!(report.can_accept_non_canonical_import);
+        assert!(has_finding(&report, "legacy_word_doc_detected"));
+        assert!(has_finding(&report, "legacy_word_no_macro_execution"));
+        assert!(has_finding(&report, "legacy_word_no_pdfa_conversion"));
+        assert!(!has_finding(&report, "not_pdf"));
+    }
+
+    #[test]
+    fn document_import_validation_rejects_ambiguous_ole_cfb_pdf_claim() {
+        let mut doc = legacy_doc_bytes();
+        doc.extend_from_slice(b"\n%PDF-1.7\nstartxref\n0\n%%EOF\n");
+
+        let report = validate_document_candidate(
+            &doc,
+            Some("application/pdf"),
+            Some("board-minutes.pdf".to_owned()),
+        );
+
+        assert_eq!(report.content_type.detected, "application/vnd.ms-office");
+        assert_eq!(report.content_type.declared_matches_detected, Some(false));
+        assert!(report.pdf.is_pdf);
+        assert!(report.legacy_word.is_ole_cfb);
+        assert!(!report.legacy_word.is_legacy_word_doc);
+        assert!(report.legacy_word.filename_extension_conflict);
+        assert!(report.legacy_word.declared_content_type_conflict);
+        assert!(!report.can_accept_non_canonical_import);
+        assert!(has_finding(&report, "legacy_word_ambiguous_pdf"));
+        assert!(has_finding(&report, "legacy_word_filename_conflict"));
+        assert!(has_finding(&report, "legacy_word_content_type_conflict"));
+    }
+
+    #[test]
     fn document_import_validation_reports_pdf_header_without_eof() {
         let report = validate_document_candidate(b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n", None, None);
 
@@ -3899,6 +4154,95 @@ mod tests {
             state.ledger.read().await.events().is_empty(),
             "validation is read-only and must not append ledger events"
         );
+    }
+
+    #[tokio::test]
+    async fn document_import_preserves_legacy_doc_as_non_canonical_evidence() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let doc = legacy_doc_bytes();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            "application/json".parse().expect("content-type"),
+        );
+        let body = json!({
+            "filename": "board-minutes.doc",
+            "content_type": "application/msword",
+            "content_base64": B64.encode(&doc),
+        });
+
+        let (status, Json(imported)) = import_document(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            headers,
+            Bytes::from(body.to_string()),
+        )
+        .await
+        .expect("legacy DOC import succeeds");
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(imported.filename.as_deref(), Some("board-minutes.doc"));
+        assert_eq!(
+            imported.declared_content_type.as_deref(),
+            Some("application/msword")
+        );
+        assert_eq!(imported.detected_content_type, "application/msword");
+        assert_eq!(imported.size_bytes, doc.len());
+        assert!(imported.non_canonical);
+        assert!(imported.legal_notice.contains("does not replace"));
+        assert!(
+            state.documents.read().await.is_empty(),
+            "legacy DOC import must not create or replace canonical PDF/A documents"
+        );
+
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .imported_document(&imported.id)
+            .expect("store read")
+            .expect("imported doc stored");
+        assert_eq!(stored.bytes, doc);
+        assert_eq!(stored.meta.detected_content_type, "application/msword");
+
+        let event = state
+            .ledger
+            .read()
+            .await
+            .events()
+            .last()
+            .expect("document.imported event")
+            .clone();
+        assert_eq!(event.kind, "document.imported");
+
+        let response = get_imported_document_bytes(
+            State(state.clone()),
+            Path(imported.id.clone()),
+            actor.clone(),
+        )
+        .await
+        .expect("legacy DOC bytes stream");
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/msword")
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::CONTENT_DISPOSITION)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|value| value.contains(".doc\""))
+        );
+        let downloaded = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("download body");
+        assert_eq!(downloaded.as_ref(), stored.bytes.as_slice());
     }
 
     #[tokio::test]
