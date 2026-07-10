@@ -306,6 +306,26 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/external_validator_evidence.rs",
+    "download_external_validator_report_metadata",
+    "external-validator raw metadata download API",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/external_validator_evidence.rs",
+    "raw_metadata_for_identity",
+    "external-validator raw metadata identity disambiguation helper",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/external-validator-reports/{case_id}/{validator_family}",
+    "external-validator raw metadata download route",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/authz.rs",
+    "external_validator_report_download_route_is_classified_as_gated",
+    "external-validator raw metadata download authz classification coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/external_validator_evidence.rs",
     "EXTERNAL_VALIDATOR_REPORT_METADATA_DIR",
     "external-validator durable metadata sidecar directory",
   );
@@ -336,8 +356,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
+    "api-durable/eu-dss",
+    "API external-validator metadata persisted raw download coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
     "external_validator_report_metadata_malformed_sidecars_are_counted_not_trusted",
     "API external-validator malformed sidecar coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "api-malformed/eu-dss",
+    "API external-validator malformed sidecar download refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "external_validator_report_metadata_duplicate_identity_is_not_downloadable",
+    "API external-validator duplicate identity download refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "external_validator_report_metadata_download_allows_settings_read",
+    "API external-validator settings.read download coverage",
   );
   assertFileContains(
     "package.json",

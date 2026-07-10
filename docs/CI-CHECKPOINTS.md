@@ -39,7 +39,7 @@ It intentionally reuses existing test surfaces:
   including the non-canonical canonical-conversion preflight evidence guard.
 - API archive package and `/DocTimeStamp` evidence:
   `cargo test -p chancela-api --test archive_package --locked`
-- API external-validator report metadata:
+- API external-validator report metadata, including raw metadata download:
   `cargo test -p chancela-api --locked external_validator_report_metadata`
 - Live-provider assurance static gate:
   `npm run check:live-provider-assurance`
@@ -66,12 +66,12 @@ asserts the expected test files, fixture markers, data key preflight markers,
 official-signature/imported-document guardrail acknowledgement markers,
 dashboard subtab markers, notification icon-only markers, template
 law-reference UI markers, external-validator metadata API durability markers,
-Ferramentas panel/client/i18n markers, live-provider assurance markers,
-validator manifest, and desktop `Cargo.lock` are present, so accidental deletion
-or rename of the checkpoint targets fails with a direct message. It also
-statically pins the imported-document review notification/export browser E2E
-marker; Playwright execution remains in the browser jobs so this recent-landed
-lane stays focused.
+the settings.read raw metadata download route/tests, Ferramentas panel/client/i18n
+markers, live-provider assurance markers, validator manifest, and desktop
+`Cargo.lock` are present, so accidental deletion or rename of the checkpoint
+targets fails with a direct message. It also statically pins the imported-document
+review notification/export browser E2E marker; Playwright execution remains in
+the browser jobs so this recent-landed lane stays focused.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 
