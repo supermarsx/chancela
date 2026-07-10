@@ -22,6 +22,7 @@ import {
   usePaperBookImports,
   usePreservePaperBookImport,
   useReviewPaperBookOcrDraft,
+  useRunPaperBookImportOcr,
   useSetBookLegalHold,
   useValidatePaperBookImport,
 } from '../../api/hooks';
@@ -64,6 +65,7 @@ import {
   TextArea,
   useToast,
 } from '../../ui';
+import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
 import { GateButton, GateButtonLink, scopeBook } from '../session/permissions';
 
 function preservationPackageFilename(bookId: string): string {
@@ -154,7 +156,7 @@ function canQueueOcr(status: PaperBookOcrStatus): boolean {
 
 const PAPER_BOOK_OCR_REVIEW_NOTE_LIMIT = 2000;
 const PAPER_BOOK_OCR_DRAFT_COPY =
-  'Rascunhos OCR são metadados auxiliares não canónicos para revisão. Não criam texto legal, ata canónica, documento canónico, assinatura ou validade legal.';
+  'Rascunhos OCR são auxiliares, não canónicos e destinam-se apenas à revisão. Não criam ata canónica, documento canónico, PDF/A, assinatura ou validade legal.';
 
 const paperBookOcrReviewOptions = PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES.map((status) => ({
   value: status,
@@ -735,6 +737,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
   const preserve = usePreservePaperBookImport();
   const download = useDownloadPaperBookImport();
   const enqueueOcr = useEnqueuePaperBookImportOcr(book.id);
+  const runOcr = useRunPaperBookImportOcr(book.id);
   const [file, setFile] = useState<File | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -745,6 +748,8 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
     PaperBookImportReport | PaperBookImportPreservationReport | null
   >(null);
   const [formError, setFormError] = useState<unknown>(null);
+  const [localOcrCandidate, setLocalOcrCandidate] = useState<PaperBookImportView | null>(null);
+  const ocrMutationPending = enqueueOcr.isPending || runOcr.isPending;
 
   function onDownload(row: PaperBookImportView) {
     download.mutate(row.import_id, {
@@ -770,6 +775,21 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
       onSuccess: () => toast.success('OCR colocado em fila como metadado não canónico.'),
       onError: (e) => toast.error(e),
     });
+  }
+
+  async function confirmRunLocalOcr() {
+    if (!localOcrCandidate) return;
+    const result = await runOcr.mutateAsync(localOcrCandidate.import_id);
+    if (result.ocr_status !== 'completed' || !result.draft) {
+      throw new Error(
+        result.failure_reason
+          ? `OCR local falhou (${result.failure_reason}); nenhum rascunho auxiliar foi criado.`
+          : 'OCR local não criou rascunho auxiliar; nenhum rascunho foi criado.',
+      );
+    }
+    toast.success(
+      'OCR local concluído: rascunho OCR auxiliar não canónico criado e disponível para revisão.',
+    );
   }
 
   function showSaveResult(result: SaveBlobResult) {
@@ -845,6 +865,27 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
   return (
     <Card title="Importações de livro em papel preservadas">
       <div className="stack">
+        <ConfirmActionModal
+          open={localOcrCandidate !== null}
+          onClose={() => setLocalOcrCandidate(null)}
+          title="Executar OCR local"
+          intro={
+            <div className="stack--tight">
+              <p>
+                O resultado será um rascunho OCR auxiliar não canónico para revisão da importação
+                preservada.
+              </p>
+              <p>
+                Esta ação não cria ata canónica, documento canónico, PDF/A, assinatura ou validade
+                legal.
+              </p>
+            </div>
+          }
+          confirmLabel="Confirmar execução de OCR local"
+          pendingLabel="A executar OCR local"
+          pending={runOcr.isPending}
+          onConfirm={confirmRunLocalOcr}
+        />
         <InlineWarning tone="warn" title="Evidência não canónica">
           Estes pacotes preservam cópias de livros em papel para consulta. Não substituem atas
           digitais canónicas e não declaram validade legal, PDF/A, validade de assinatura ou
@@ -1060,10 +1101,20 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
                         type="button"
                         variant="ghost"
                         icon={<Icon.Search />}
-                        disabled={enqueueOcr.isPending || !canQueueOcr(row.ocr_status)}
+                        disabled={ocrMutationPending || !canQueueOcr(row.ocr_status)}
                         onClick={() => onQueueOcr(row)}
                       >
                         {enqueueOcr.isPending ? 'A colocar em fila' : 'Colocar OCR em fila'}
+                      </GateButton>
+                      <GateButton
+                        perm="book.import"
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Search />}
+                        disabled={ocrMutationPending || !canQueueOcr(row.ocr_status)}
+                        onClick={() => setLocalOcrCandidate(row)}
+                      >
+                        {runOcr.isPending ? 'A executar OCR local' : 'Executar OCR local'}
                       </GateButton>
                     </div>
                   </td>

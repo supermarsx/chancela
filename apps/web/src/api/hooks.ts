@@ -49,6 +49,7 @@ import type {
   PaperBookOcrDraftCreateBody,
   PaperBookOcrDraftReviewBody,
   PaperBookOcrDraftView,
+  PaperBookOcrRunView,
   PaperBookOcrStatus,
   PdfSignatureValidationBody,
   PlatformControllableServiceId,
@@ -433,8 +434,11 @@ function replacePaperBookImportOcrStatus(
   rows: PaperBookImportView[] | undefined,
   importId: string,
   ocrStatus: PaperBookOcrStatus,
+  patch: Partial<Pick<PaperBookImportView, 'ocr_status_notice' | 'ocr_text_stored'>> = {},
 ): PaperBookImportView[] | undefined {
-  return rows?.map((row) => (row.import_id === importId ? { ...row, ocr_status: ocrStatus } : row));
+  return rows?.map((row) =>
+    row.import_id === importId ? { ...row, ...patch, ocr_status: ocrStatus } : row,
+  );
 }
 
 export function useEnqueuePaperBookImportOcr(bookRef?: string) {
@@ -461,6 +465,30 @@ export function useUpdatePaperBookImportOcrStatus(bookRef?: string) {
         replacePaperBookImportOcrStatus(rows, status.import_id, status.ocr_status),
       );
       void qc.invalidateQueries({ queryKey: keys.paperBookImports(bookRef) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useRunPaperBookImportOcr(bookRef?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.runPaperBookImportOcr(id),
+    onSuccess: (result: PaperBookOcrRunView) => {
+      qc.setQueryData<PaperBookImportView[]>(keys.paperBookImports(bookRef), (rows) =>
+        replacePaperBookImportOcrStatus(rows, result.import_id, result.ocr_status, {
+          ocr_status_notice: result.status_notice,
+        }),
+      );
+      const draft = result.draft;
+      if (draft) {
+        qc.setQueryData<PaperBookOcrDraftView[]>(
+          keys.paperBookOcrDrafts(result.import_id),
+          (rows) => upsertPaperBookOcrDraft(rows, draft),
+        );
+      }
+      void qc.invalidateQueries({ queryKey: ['books', 'paper-imports'] });
+      void qc.invalidateQueries({ queryKey: keys.paperBookOcrDrafts(result.import_id) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });

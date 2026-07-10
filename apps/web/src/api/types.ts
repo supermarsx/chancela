@@ -4455,6 +4455,32 @@ export interface PaperBookOcrDraftView {
   legal_notice: string;
 }
 
+/** `POST /v1/books/paper-import/{id}/ocr/run` local OCR outcome. */
+export interface PaperBookOcrRunView {
+  import_id: string;
+  previous_ocr_status: PaperBookOcrStatus;
+  ocr_status: PaperBookOcrStatus;
+  command_configured: boolean;
+  command_exit_success: boolean;
+  command_exit_code: number | null;
+  timed_out: boolean;
+  failure_reason: string | null;
+  stdout_bytes_captured: number;
+  stdout_truncated: boolean;
+  engine: PaperBookOcrEngineView;
+  draft: PaperBookOcrDraftView | null;
+  status_notice: string;
+  draft_notice: string;
+  non_canonical: boolean;
+  authoritative_text_claimed: boolean;
+  canonical_minutes_claimed: boolean;
+  canonical_act_created: boolean;
+  canonical_document_created: boolean;
+  signature_created: boolean;
+  legal_validity_claimed: boolean;
+  legal_notice: string;
+}
+
 /** Preserved historical paper-book package metadata. Raw bytes are fetched via `bytes_download`. */
 export interface PaperBookImportView {
   import_id: string;

@@ -128,6 +128,7 @@ import {
   type PaperBookOcrDraftPageSpanView,
   type PaperBookOcrDraftView,
   type PaperBookOcrEngineView,
+  type PaperBookOcrRunView,
   type PaperBookOriginalAtaNumberRange,
   type PaperBookImportPackage,
   type PaperBookImportReport,
@@ -580,10 +581,7 @@ function assertDpiaRecord(obj: unknown, label: string): DpiaRecordView {
   return record;
 }
 
-function assertBreachEvidenceReceipt(
-  obj: unknown,
-  label: string,
-): BreachPlaybookEvidenceReceipt {
+function assertBreachEvidenceReceipt(obj: unknown, label: string): BreachPlaybookEvidenceReceipt {
   const receipt = assertExactKeys<BreachPlaybookEvidenceReceipt>(
     obj,
     {
@@ -1254,6 +1252,68 @@ function assertPaperBookOcrDraft(obj: unknown, label: string): PaperBookOcrDraft
   return draft;
 }
 
+function assertPaperBookOcrRun(obj: unknown, label: string): PaperBookOcrRunView {
+  const result = assertExactKeys<PaperBookOcrRunView>(
+    obj,
+    {
+      import_id: true,
+      previous_ocr_status: true,
+      ocr_status: true,
+      command_configured: true,
+      command_exit_success: true,
+      command_exit_code: true,
+      timed_out: true,
+      failure_reason: true,
+      stdout_bytes_captured: true,
+      stdout_truncated: true,
+      engine: true,
+      draft: true,
+      status_notice: true,
+      draft_notice: true,
+      non_canonical: true,
+      authoritative_text_claimed: true,
+      canonical_minutes_claimed: true,
+      canonical_act_created: true,
+      canonical_document_created: true,
+      signature_created: true,
+      legal_validity_claimed: true,
+      legal_notice: true,
+    },
+    label,
+  );
+  expect(result.import_id.length, `${label}.import_id should be non-empty`).toBeGreaterThan(0);
+  expect(result.previous_ocr_status).toBe('not_run');
+  expect(result.ocr_status).toBe('completed');
+  expect(result.command_configured).toBe(true);
+  expect(result.command_exit_success).toBe(true);
+  expect(result.command_exit_code).toBe(0);
+  expect(result.timed_out).toBe(false);
+  expect(result.failure_reason).toBeNull();
+  expect(result.stdout_bytes_captured).toBeGreaterThan(0);
+  const engine = assertExactKeys<PaperBookOcrEngineView>(
+    result.engine,
+    { name: true, version: true },
+    `${label}.engine`,
+  );
+  expect(engine.name.length, `${label}.engine.name should be non-empty`).toBeGreaterThan(0);
+  expect(result.draft_notice).toContain('non-authoritative');
+  expect(result.draft_notice).toContain('not canonical minutes');
+  expect(result.non_canonical).toBe(true);
+  expect(result.authoritative_text_claimed).toBe(false);
+  expect(result.canonical_minutes_claimed).toBe(false);
+  expect(result.canonical_act_created).toBe(false);
+  expect(result.canonical_document_created).toBe(false);
+  expect(result.signature_created).toBe(false);
+  expect(result.legal_validity_claimed).toBe(false);
+  expect(result.draft).not.toBeNull();
+  assertPaperBookOcrDraft(result.draft, `${label}.draft`);
+  expect(JSON.stringify(result)).not.toContain('canonical_act_created":true');
+  expect(JSON.stringify(result)).not.toContain('canonical_document_created":true');
+  expect(JSON.stringify(result)).not.toContain('signature_created":true');
+  expect(JSON.stringify(result)).not.toContain('legal_validity_claimed":true');
+  return result;
+}
+
 // --- Per-contract tests --------------------------------------------------------
 
 describe('contract fixtures parse through the real client', () => {
@@ -1529,6 +1589,14 @@ describe('contract fixtures parse through the real client', () => {
     expect(draft.legal_notice).toContain('non-canonical evidence only');
     expect(JSON.stringify(draft)).not.toContain('signature_created":true');
     expect(JSON.stringify(draft)).not.toContain('legal_validity_claimed":true');
+  });
+
+  it('paper-book.ocr-run.json → PaperBookOcrRunView (POST /v1/books/paper-import/{id}/ocr/run)', async () => {
+    stubFetch(fixture('paper-book.ocr-run.json'));
+    const result: PaperBookOcrRunView = await api.runPaperBookImportOcr(
+      '11111111-1111-4111-8111-111111111111',
+    );
+    assertPaperBookOcrRun(result, 'PaperBookOcrRunView');
   });
 
   it('ledger.events.json → LedgerEventView[] (GET /v1/ledger/events)', async () => {
@@ -3781,6 +3849,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'retention.policies.json',
       'paper-book.import.json',
       'paper-book.ocr-draft.json',
+      'paper-book.ocr-run.json',
       'api-key.list.json',
       'api-key.create.json',
       'api-key.revoke.json',

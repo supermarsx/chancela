@@ -88,6 +88,7 @@ import type {
   PaperBookOcrDraftCreateBody,
   PaperBookOcrDraftReviewBody,
   PaperBookOcrDraftView,
+  PaperBookOcrRunView,
   PaperBookOcrStatusUpdateBody,
   PaperBookOcrStatusView,
   PdfSignatureValidationBody,
@@ -317,7 +318,11 @@ const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 const postRawJsonText = <T>(path: string, rawJson: string) =>
-  request<T>(path, { method: 'POST', body: rawJson, headers: { 'Content-Type': 'application/json' } });
+  request<T>(path, {
+    method: 'POST',
+    body: rawJson,
+    headers: { 'Content-Type': 'application/json' },
+  });
 const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const put = <T>(path: string, body: unknown) =>
@@ -501,8 +506,7 @@ export const api = {
   // Entities (§2.3)
   listEntities: () => get<Entity[]>('/v1/entities'),
   getEntity: (id: string) => get<Entity>(`/v1/entities/${id}`),
-  getEntityChronology: (id: string) =>
-    get<EntityChronologyView>(`/v1/entities/${id}/chronology`),
+  getEntityChronology: (id: string) => get<EntityChronologyView>(`/v1/entities/${id}/chronology`),
   createEntity: (body: CreateEntityBody) => post<Entity>('/v1/entities', body),
   // Statute overlay (ENT-03, t31). Omit `statute` to leave it untouched, `null` to
   // clear it, or an object to set it; appends an `entity.statute_updated` ledger event.
@@ -862,6 +866,8 @@ export const api = {
     get<PaperBookImportView>(`/v1/books/paper-import/${encodeURIComponent(id)}`),
   enqueuePaperBookImportOcr: (id: string) =>
     post<PaperBookOcrStatusView>(`/v1/books/paper-import/${encodeURIComponent(id)}/ocr/enqueue`),
+  runPaperBookImportOcr: (id: string) =>
+    post<PaperBookOcrRunView>(`/v1/books/paper-import/${encodeURIComponent(id)}/ocr/run`),
   updatePaperBookImportOcrStatus: (id: string, body: PaperBookOcrStatusUpdateBody) =>
     patch<PaperBookOcrStatusView>(
       `/v1/books/paper-import/${encodeURIComponent(id)}/ocr-status`,

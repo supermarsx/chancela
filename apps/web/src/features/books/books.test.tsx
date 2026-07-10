@@ -24,6 +24,7 @@ import {
   type Entity,
   type PaperBookImportView,
   type PaperBookOcrDraftView,
+  type PaperBookOcrRunView,
 } from '../../api/types';
 
 const ENTITY: Entity = {
@@ -416,7 +417,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(screen.getByText('OCR não executado')).toBeTruthy();
     expect(screen.getByText(/OCR: metadado apenas; texto armazenado: não/i)).toBeTruthy();
     expect(await screen.findByText('Rascunhos OCR e revisão auxiliar')).toBeTruthy();
-    expect(screen.getByText(/não criam texto legal, ata canónica/i)).toBeTruthy();
+    expect(screen.getByText(/não criam ata canónica, documento canónico, PDF\/A/i)).toBeTruthy();
     expect(screen.getByText('Sem rascunhos OCR registados')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Descarregar pacote' }));
@@ -594,6 +595,209 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       review_note: 'Conferido contra o pacote preservado.',
       superseded_by: null,
     });
+  });
+
+  it('runs local OCR for a preserved import and exposes the auxiliary non-canonical draft', async () => {
+    const preserved: PaperBookImportView = {
+      import_id: '55555555-5555-4555-8555-555555555555',
+      entity_ref: 'ent-1',
+      entity_name: 'Encosto Estratégico, Lda.',
+      entity_nipc: '503004642',
+      book_ref: 'book-1',
+      date_from: '1968-01-01',
+      date_to: '1971-12-31',
+      page_count: 240,
+      sha256: 'ef'.repeat(32),
+      size_bytes: 8192,
+      content_type: 'application/pdf',
+      source_filename: 'ag-local-ocr.pdf',
+      notes: null,
+      imported_at: '2026-07-10T10:00:00Z',
+      imported_by: 'paper.owner',
+      ocr_status: 'not_run',
+      ocr_status_notice:
+        'OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.',
+      ocr_text_stored: false,
+      authoritative_text_claimed: false,
+      non_canonical: true,
+      legal_validity_claimed: false,
+      signature_validity_claimed: false,
+      qualified_signature_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      bytes_download: '/v1/books/paper-import/55555555-5555-4555-8555-555555555555/bytes',
+    };
+    const runDraft: PaperBookOcrDraftView = {
+      draft_id: '66666666-6666-4666-8666-666666666666',
+      import_id: preserved.import_id,
+      extracted_text: 'Livro de atas digitalizado via OCR local.',
+      text_digest: null,
+      page_spans: [{ start_page: 1, end_page: 240 }],
+      confidence: null,
+      engine: { name: 'test-local-ocr', version: '0.0.1' },
+      created_at: '2026-07-10T13:40:00Z',
+      created_by: 'paper.owner',
+      review_status: 'unreviewed',
+      reviewed_at: null,
+      reviewed_by: null,
+      review_note: null,
+      superseded_by: null,
+      draft_notice:
+        'OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.',
+      non_canonical: true,
+      authoritative_text_claimed: false,
+      canonical_minutes_claimed: false,
+      canonical_act_created: false,
+      canonical_document_created: false,
+      signature_created: false,
+      legal_validity_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+    };
+    const runResult: PaperBookOcrRunView = {
+      import_id: preserved.import_id,
+      previous_ocr_status: 'not_run',
+      ocr_status: 'completed',
+      command_configured: true,
+      command_exit_success: true,
+      command_exit_code: 0,
+      timed_out: false,
+      failure_reason: null,
+      stdout_bytes_captured: 43,
+      stdout_truncated: false,
+      engine: runDraft.engine,
+      draft: runDraft,
+      status_notice: preserved.ocr_status_notice,
+      draft_notice: runDraft.draft_notice,
+      non_canonical: true,
+      authoritative_text_claimed: false,
+      canonical_minutes_claimed: false,
+      canonical_act_created: false,
+      canonical_document_created: false,
+      signature_created: false,
+      legal_validity_claimed: false,
+      legal_notice: preserved.legal_notice,
+    };
+    let rows: PaperBookImportView[] = [preserved];
+    let drafts: PaperBookOcrDraftView[] = [];
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse(rows);
+      }
+      if (
+        url === '/v1/books/paper-import/55555555-5555-4555-8555-555555555555/ocr-drafts' &&
+        method === 'GET'
+      ) {
+        return jsonResponse(drafts);
+      }
+      if (
+        url === '/v1/books/paper-import/55555555-5555-4555-8555-555555555555/ocr/run' &&
+        method === 'POST'
+      ) {
+        rows = [{ ...preserved, ocr_status: 'completed' }];
+        drafts = [runDraft];
+        return jsonResponse(runResult);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByText('ag-local-ocr.pdf')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Executar OCR local' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Executar OCR local' })).toBeTruthy();
+    expect(screen.getByText(/rascunho OCR auxiliar não canónico/i)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /não cria ata canónica, documento canónico, PDF\/A, assinatura ou validade legal/i,
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar execução de OCR local' }));
+
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        url: '/v1/books/paper-import/55555555-5555-4555-8555-555555555555/ocr/run',
+        method: 'POST',
+        body: null,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        'OCR local concluído: rascunho OCR auxiliar não canónico criado e disponível para revisão.',
+      ),
+    ).toBeTruthy();
+    expect(await screen.findByText('OCR concluído')).toBeTruthy();
+    expect(await screen.findByText('Livro de atas digitalizado via OCR local.')).toBeTruthy();
+    expect(screen.getByText(/Rascunhos OCR são auxiliares, não canónicos/i)).toBeTruthy();
+  });
+
+  it('surfaces missing local OCR configuration without creating an auxiliary draft', async () => {
+    const preserved: PaperBookImportView = {
+      import_id: '77777777-7777-4777-8777-777777777777',
+      entity_ref: 'ent-1',
+      entity_name: 'Encosto Estratégico, Lda.',
+      entity_nipc: '503004642',
+      book_ref: 'book-1',
+      date_from: '1968-01-01',
+      date_to: '1971-12-31',
+      page_count: 240,
+      sha256: '12'.repeat(32),
+      size_bytes: 8192,
+      content_type: 'application/pdf',
+      source_filename: 'ag-no-ocr-config.pdf',
+      notes: null,
+      imported_at: '2026-07-10T10:00:00Z',
+      imported_by: 'paper.owner',
+      ocr_status: 'not_run',
+      ocr_status_notice:
+        'OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.',
+      ocr_text_stored: false,
+      authoritative_text_claimed: false,
+      non_canonical: true,
+      legal_validity_claimed: false,
+      signature_validity_claimed: false,
+      qualified_signature_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      bytes_download: '/v1/books/paper-import/77777777-7777-4777-8777-777777777777/bytes',
+    };
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse([preserved]);
+      }
+      if (
+        url === '/v1/books/paper-import/77777777-7777-4777-8777-777777777777/ocr-drafts' &&
+        method === 'GET'
+      ) {
+        return jsonResponse([]);
+      }
+      if (
+        url === '/v1/books/paper-import/77777777-7777-4777-8777-777777777777/ocr/run' &&
+        method === 'POST'
+      ) {
+        return jsonResponse(
+          { error: 'operator-configured local OCR command is not configured' },
+          422,
+        );
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByText('ag-no-ocr-config.pdf')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Executar OCR local' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar execução de OCR local' }));
+
+    expect(await screen.findAllByText(/operator-configured local OCR command/i)).not.toHaveLength(
+      0,
+    );
+    expect(screen.getByText('Sem rascunhos OCR registados')).toBeTruthy();
+    expect(screen.queryByText('Livro de atas digitalizado via OCR local.')).toBeNull();
+    expect(calls.some((call) => call.url.endsWith('/ocr-drafts') && call.method === 'POST')).toBe(
+      false,
+    );
   });
 
   it('validates and preserves a scanned paper-book package as non-canonical evidence', async () => {
