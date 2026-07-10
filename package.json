@@ -36,6 +36,7 @@
     "build:rust": "cargo build --workspace --release --locked",
     "build:web": "npm run build --workspace apps/web",
     "build:docker": "docker build -f docker/Dockerfile.server -t chancela-server:local .",
+    "test:package-integrity": "node scripts/check-package-artifacts.mjs",
     "test:docker:smoke": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/docker-smoke.ps1']:['scripts/docker-smoke.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\"",
     "package": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/package.ps1']:['scripts/package.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\""
   }

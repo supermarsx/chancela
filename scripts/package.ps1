@@ -156,12 +156,29 @@ $includedFiles = Get-ChildItem -Path $stageDir -Recurse -File |
         }
     }
 
+$notarizationStatus = if ($platform -eq 'macos') { 'not_notarized' } else { 'not_applicable' }
+$notarizationReason = if ($platform -eq 'macos') {
+    'The local package script does not submit artifacts for notarization.'
+} else {
+    'Notarization applies to macOS release artifacts only.'
+}
+
 $manifest = [pscustomobject][ordered]@{
     version = $version
     platform = $platform
     arch = $arch
     gitCommit = $gitCommit
     generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+    releaseIntegrity = [pscustomobject][ordered]@{
+        codeSigning = [pscustomobject][ordered]@{
+            status = 'unsigned'
+            reason = 'The local package script stages unsigned binaries; signed release artifacts must update this status with signer evidence.'
+        }
+        notarization = [pscustomobject][ordered]@{
+            status = $notarizationStatus
+            reason = $notarizationReason
+        }
+    }
     included = $includedFiles
     checksums = [pscustomobject][ordered]@{
         algorithm = 'SHA-256'

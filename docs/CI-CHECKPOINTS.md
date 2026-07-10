@@ -35,6 +35,12 @@ The CI `supply-chain` job now generates and validates a CycloneDX dependency
 SBOM from the committed npm and Cargo lockfiles. It uploads that SBOM together
 with npm and Cargo vulnerability reports under `chancela-supply-chain-reports-*`.
 
+After `npm run package`, run `npm run test:package-integrity` to validate the
+generated `dist/chancela-*.tar.gz` archive and staged package directory. The
+check enforces safe archive member paths, matching manifest entries, valid
+`SHA256SUMS` digests, and explicit code-signing/notarization status in
+`manifest.json`.
+
 Normal CI treats vulnerability scans as report-only so missing advisory tooling
 or newly reported findings do not silently break unrelated PRs. Manual
 `workflow_dispatch` runs can set `enforce_security_scans=true` to make the npm,

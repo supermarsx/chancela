@@ -152,6 +152,18 @@ const manifest = {
   arch,
   gitCommit: gitCommit || null,
   generatedAt: new Date().toISOString(),
+  releaseIntegrity: {
+    codeSigning: {
+      status: 'unsigned',
+      reason: 'The local package script stages unsigned binaries; signed release artifacts must update this status with signer evidence.',
+    },
+    notarization: {
+      status: platform === 'macos' ? 'not_notarized' : 'not_applicable',
+      reason: platform === 'macos'
+        ? 'The local package script does not submit artifacts for notarization.'
+        : 'Notarization applies to macOS release artifacts only.',
+    },
+  },
   included,
   checksums: {
     algorithm: 'SHA-256',
