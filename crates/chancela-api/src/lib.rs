@@ -48,8 +48,9 @@
 //!   bounded privacy control registers with JSON sidecar durability in data-dir mode and
 //!   ledger-audited create/update transitions.
 //! - `GET|POST /v1/privacy/retention-policies`, `PATCH /v1/privacy/retention-policies/{id}`,
-//!   `POST /v1/privacy/retention-policies/dry-run` — bounded retention policy register and
-//!   non-destructive applicability reporting.
+//!   `POST /v1/privacy/retention-policies/dry-run`,
+//!   `GET /v1/privacy/retention-executions` — bounded retention policy register,
+//!   non-destructive applicability reporting, and recorded execution-request evidence.
 //!
 //! ## Serving the web UI
 //!
@@ -169,7 +170,8 @@ pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 /// to mutate concurrently. Cloning an [`AppState`] shares the same underlying maps and ledger.
 /// Handlers that take several locks acquire them in the fixed order **entities → books → acts
 /// → follow_ups → registry_extracts → registry_auto_updates → users → dsr_requests → processor_records →
-/// dpia_records → breach_playbooks → transfer_controls → retention_policies → ledger** to avoid deadlock. The `cae` and `sessions` locks
+/// dpia_records → breach_playbooks → transfer_controls → retention_policies →
+/// retention_execution_records → ledger** to avoid deadlock. The `cae` and `sessions` locks
 /// are independent, short-lived locks not part of that chain (a handler acquires and releases one
 /// before touching the ordered locks, or after — never interleaved with them).
 #[derive(Clone, Default)]
@@ -262,6 +264,10 @@ pub struct AppState {
     /// `retention-policies.json`; create and update transitions are also chained into the ledger.
     pub retention_policies:
         Arc<RwLock<HashMap<privacy::RetentionPolicyId, privacy::RetentionPolicyRecord>>>,
+    /// Retention execution request evidence. File-backed states load and write these through
+    /// `privacy-retention-executions.json`; records are non-destructive and ledger-audited.
+    pub retention_execution_records:
+        Arc<RwLock<HashMap<String, privacy::RetentionExecutionRecord>>>,
     /// Per-actor notification triage for dashboard-derived notification ids. File-backed states load
     /// and write this through `notification-triage.json`; the dashboard generation itself is unchanged.
     pub notification_triage: Arc<RwLock<notifications::NotificationTriageTable>>,
@@ -275,6 +281,8 @@ pub struct AppState {
     pub transfer_controls_path: Option<Arc<PathBuf>>,
     /// Where `retention-policies.json` is persisted, or `None` for in-memory registers.
     pub retention_policies_path: Option<Arc<PathBuf>>,
+    /// Where `privacy-retention-executions.json` is persisted, or `None` for in-memory evidence.
+    pub retention_execution_records_path: Option<Arc<PathBuf>>,
     /// Where `notification-triage.json` is persisted, or `None` for in-memory triage.
     pub notification_triage_path: Option<Arc<PathBuf>>,
     /// Where `users.json` is persisted, or `None` for in-memory profiles. Mirrors `persist_path`.
@@ -526,6 +534,10 @@ impl AppState {
         let retention_policies_path = dir.join(privacy::RETENTION_POLICIES_FILE);
         let loaded_retention_policies =
             privacy::load_retention_policies(&retention_policies_path).unwrap_or_default();
+        let retention_execution_records_path = dir.join(privacy::RETENTION_EXECUTIONS_FILE);
+        let loaded_retention_execution_records =
+            privacy::load_retention_execution_records(&retention_execution_records_path)
+                .unwrap_or_default();
         let notification_triage_path = dir.join(notifications::NOTIFICATION_TRIAGE_FILE);
         let loaded_notification_triage =
             notifications::load_notification_triage(&notification_triage_path).unwrap_or_default();
@@ -564,6 +576,8 @@ impl AppState {
             transfer_controls_path: Some(Arc::new(transfer_controls_path)),
             retention_policies: Arc::new(RwLock::new(loaded_retention_policies)),
             retention_policies_path: Some(Arc::new(retention_policies_path)),
+            retention_execution_records: Arc::new(RwLock::new(loaded_retention_execution_records)),
+            retention_execution_records_path: Some(Arc::new(retention_execution_records_path)),
             notification_triage: Arc::new(RwLock::new(loaded_notification_triage)),
             notification_triage_path: Some(Arc::new(notification_triage_path)),
             api_keys: Arc::new(RwLock::new(loaded_api_keys)),
@@ -760,6 +774,7 @@ impl AppState {
                 dir.join(crate::privacy::BREACH_PLAYBOOKS_FILE),
                 dir.join(crate::privacy::TRANSFER_CONTROLS_FILE),
                 dir.join(crate::privacy::RETENTION_POLICIES_FILE),
+                dir.join(crate::privacy::RETENTION_EXECUTIONS_FILE),
                 dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
                 dir.join(crate::apikeys::API_KEYS_FILE),
                 dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
@@ -831,6 +846,11 @@ impl AppState {
             *self.retention_policies.write().await =
                 privacy::load_retention_policies(&dir.join(privacy::RETENTION_POLICIES_FILE))
                     .unwrap_or_default();
+            *self.retention_execution_records.write().await =
+                privacy::load_retention_execution_records(
+                    &dir.join(privacy::RETENTION_EXECUTIONS_FILE),
+                )
+                .unwrap_or_default();
             *self.notification_triage.write().await = notifications::load_notification_triage(
                 &dir.join(notifications::NOTIFICATION_TRIAGE_FILE),
             )
@@ -878,6 +898,7 @@ impl AppState {
         self.processor_records.write().await.clear();
         self.dpia_records.write().await.clear();
         self.retention_policies.write().await.clear();
+        self.retention_execution_records.write().await.clear();
         self.notification_triage.write().await.clear();
         self.sessions.write().await.clear();
         self.attestations.write().await.clear();
@@ -1338,6 +1359,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/privacy/retention-policies/dry-run",
             post(privacy::retention_policy_dry_run),
+        )
+        .route(
+            "/v1/privacy/retention-executions",
+            get(privacy::list_retention_execution_records),
         )
         .route(
             "/v1/privacy/retention-policies/{id}",

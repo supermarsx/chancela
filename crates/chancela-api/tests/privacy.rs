@@ -20,6 +20,7 @@ const BREACH_PLAYBOOKS_FILE: &str = "privacy-breach-playbooks.json";
 const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json";
 const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
+const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions.json";
 
 struct TempDir {
     dir: PathBuf,
@@ -1790,6 +1791,33 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
         json!(1)
     );
 
+    let execution_id = execution_record["id"]
+        .as_str()
+        .expect("execution id")
+        .to_owned();
+    let (status, denied_history) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-executions"), &reader_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "reader cannot list execution evidence: {denied_history}"
+    );
+
+    let (status, history) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-executions"), &settings_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "execution history lists: {history}");
+    let history = history.as_array().expect("execution history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0]["id"], json!(execution_id));
+    assert_eq!(history[0]["requested_policy"]["id"], json!(policy_id));
+    assert_eq!(history[0]["outcome"], json!("blocked_destructive_action"));
+
     let (status, updated) = send(
         state.clone(),
         with_session(
@@ -2438,6 +2466,36 @@ async fn retention_policy_records_persist_across_restart() {
     assert_eq!(status, StatusCode::CREATED, "policy create: {created}");
     let policy_id = created["id"].as_str().expect("policy id").to_owned();
 
+    let (status, execution) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies/dry-run",
+                json!({
+                    "scope": "document",
+                    "category": "signed_pdf",
+                    "record_id": "doc-persisted-execution",
+                    "execution_request": {
+                        "requested_policy_id": policy_id,
+                        "operator_notes": "Recorded before restart."
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "execution request records before restart: {execution}"
+    );
+    let execution_id = execution["execution_record"]["id"]
+        .as_str()
+        .expect("execution id")
+        .to_owned();
+    assert!(tmp.dir.join(RETENTION_EXECUTIONS_FILE).is_file());
+
     let (status, updated) = send(
         state.clone(),
         with_session(
@@ -2475,6 +2533,27 @@ async fn retention_policy_records_persist_across_restart() {
     assert_eq!(policies[0]["status"], json!("suspended"));
     assert_eq!(policies[0]["active"], json!(false));
     assert_eq!(policies[0]["retention_period"], json!("P12Y"));
+
+    let (status, executions) = send(
+        restarted.clone(),
+        with_session(get("/v1/privacy/retention-executions"), &restarted_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "execution list after restart: {executions}"
+    );
+    let executions = executions.as_array().expect("execution list");
+    assert_eq!(executions.len(), 1);
+    assert_eq!(executions[0]["id"], json!(execution_id));
+    assert_eq!(executions[0]["requested_policy"]["id"], json!(policy_id));
+    assert_eq!(executions[0]["outcome"], json!("manual_review_required"));
+    assert_eq!(
+        executions[0]["operator_notes"],
+        json!("Recorded before restart.")
+    );
+    assert_eq!(executions[0]["would_execute"], json!(false));
 
     let (status, dry_run) = send(
         restarted,

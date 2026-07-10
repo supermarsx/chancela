@@ -45,6 +45,7 @@ pub(crate) const BREACH_PLAYBOOKS_FILE: &str = "privacy-breach-playbooks.json";
 pub(crate) const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json";
 pub(crate) const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 pub(crate) const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
+pub(crate) const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions.json";
 const MAX_DSR_EXECUTION_NOTE_CHARS: usize = 4096;
 const MAX_DSR_REVIEW_CHARS: usize = 2048;
 const MAX_DSR_AFFECTED_RECORDS: usize = 32;
@@ -1077,7 +1078,7 @@ pub struct RetentionDryRunReport {
     pub execution_record: Option<RetentionExecutionRecord>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RetentionDryRunCandidate {
     pub scope: String,
     pub category: String,
@@ -1108,7 +1109,7 @@ struct ValidatedRetentionExecutionRequest {
     evidence: Vec<RetentionOperatorEvidence>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RetentionExecutionRecord {
     pub id: String,
     pub requested_at: String,
@@ -1121,11 +1122,11 @@ pub struct RetentionExecutionRecord {
     pub operator_notes: Option<String>,
     pub operator_evidence: Vec<RetentionOperatorEvidence>,
     pub outcome: RetentionExecutionOutcome,
-    pub block_reason: &'static str,
+    pub block_reason: String,
     pub would_execute: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RetentionExecutionRequestedPolicy {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -1151,7 +1152,7 @@ pub struct RetentionExecutionRequestedPolicy {
     pub destructive_action: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RetentionMatchedRecordsSummary {
     pub scope: String,
     pub category: String,
@@ -1163,22 +1164,22 @@ pub struct RetentionMatchedRecordsSummary {
     pub policy_ids: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RetentionLegalHoldBlocker {
     pub policy_id: String,
     pub name: String,
     pub schedule_id: String,
     pub retention_period: String,
-    pub reason: &'static str,
+    pub reason: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RetentionOperatorEvidence {
     pub label: String,
     pub value: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RetentionExecutionOutcome {
     BlockedMissingPolicy,
@@ -1290,6 +1291,26 @@ pub(crate) fn load_retention_policies(
         Err(e) => {
             eprintln!(
                 "warning: {} is not a valid retention policy document ({e}); ignoring it",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+pub(crate) fn load_retention_execution_records(
+    path: &FsPath,
+) -> Option<HashMap<String, RetentionExecutionRecord>> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<Vec<RetentionExecutionRecord>>(&bytes) {
+        Ok(list) => Some(
+            list.into_iter()
+                .map(|record| (record.id.clone(), record))
+                .collect(),
+        ),
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid retention execution document ({e}); ignoring it",
                 path.display()
             );
             None
@@ -1435,6 +1456,29 @@ pub(crate) fn write_retention_policies_atomic(
     }
 }
 
+pub(crate) fn write_retention_execution_records_atomic(
+    path: &FsPath,
+    records: &HashMap<String, RetentionExecutionRecord>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut list: Vec<&RetentionExecutionRecord> = records.values().collect();
+    list.sort_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)));
+    let json = serde_json::to_vec_pretty(&list).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, RETENTION_EXECUTIONS_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
 fn tmp_path(path: &FsPath, fallback: &str) -> PathBuf {
     let mut name = path
         .file_name()
@@ -1494,6 +1538,18 @@ async fn persist_retention_policies(state: &AppState) -> Result<(), ApiError> {
         let records = state.retention_policies.read().await;
         write_retention_policies_atomic(path, &records).map_err(|e| {
             ApiError::Internal(format!("failed to persist retention policies: {e}"))
+        })?;
+    }
+    Ok(())
+}
+
+async fn persist_retention_execution_records(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.retention_execution_records_path {
+        let records = state.retention_execution_records.read().await;
+        write_retention_execution_records_atomic(path, &records).map_err(|e| {
+            ApiError::Internal(format!(
+                "failed to persist retention execution records: {e}"
+            ))
         })?;
     }
     Ok(())
@@ -2267,6 +2323,18 @@ pub async fn list_retention_policies(
     ))
 }
 
+/// `GET /v1/privacy/retention-policies/dry-run` — list recorded retention execution requests.
+pub async fn list_retention_execution_records(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<RetentionExecutionRecord>>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let records = state.retention_execution_records.read().await;
+    let mut list: Vec<&RetentionExecutionRecord> = records.values().collect();
+    list.sort_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)));
+    Ok(Json(list.into_iter().cloned().collect()))
+}
+
 /// `PATCH /v1/privacy/retention-policies/{id}` — update a retention policy register record.
 pub async fn patch_retention_policy(
     State(state): State<AppState>,
@@ -2361,6 +2429,12 @@ pub async fn retention_policy_dry_run(
     drop(records);
 
     if let Some(record) = &execution_record {
+        state
+            .retention_execution_records
+            .write()
+            .await
+            .insert(record.id.clone(), record.clone());
+        persist_retention_execution_records(&state).await?;
         let scope = format!("privacy:retention-execution:{}", record.id);
         record_privacy_event(
             &state,
@@ -2840,7 +2914,7 @@ fn build_retention_execution_record(
         operator_notes: request.operator_notes,
         operator_evidence: request.evidence,
         outcome,
-        block_reason,
+        block_reason: block_reason.to_owned(),
         would_execute: false,
     }
 }
@@ -2913,7 +2987,7 @@ fn retention_legal_hold_blockers(
             name: record.name.clone(),
             schedule_id: record.schedule_id.clone(),
             retention_period: record.retention_period.clone(),
-            reason: "active legal hold policy matches the candidate record",
+            reason: "active legal hold policy matches the candidate record".to_owned(),
         })
         .collect()
 }
