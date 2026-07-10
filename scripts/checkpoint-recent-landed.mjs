@@ -265,6 +265,16 @@ function assertCheckpointMap() {
     "MCP compliance prompt regression coverage",
   );
   assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "prompts_get_returns_paper_book_ocr_canonical_review_without_http_or_secret",
+    "MCP paper-book OCR prompt regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "paper_book_ocr_canonical_review",
+    "MCP paper-book OCR prompt catalog marker",
+  );
+  assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
     "dashboard.json",
     "web dashboard contract fixture coverage",
@@ -373,6 +383,16 @@ function assertCheckpointMap() {
     "apps/web/e2e/imported-document-review.spec.ts",
     "downloadedPaths).toEqual([ACT_PDF_PATH])",
     "imported document review canonical PDF export coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/data-key-rotation-execution.spec.ts",
+    "data key rotation preflight reveals guarded execution and submits only the replacement key",
+    "data key rotation execution browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/data-key-rotation-execution.spec.ts",
+    "not.toHaveProperty('current_key')",
+    "data key rotation browser secret-minimization coverage",
   );
   assertFileExists(
     "docs/fixtures/validator-corpus/manifest.json",
