@@ -118,14 +118,52 @@ async fn mcp_draft_minutes_returns_provenance_and_unsealed_api_draft() {
             json!(true),
             "draft wrapper: {body}"
         );
+        let verification_status_values = json!([
+            "pending_human_verification",
+            "accepted_by_human",
+            "rejected_by_human"
+        ]);
+        assert_eq!(
+            body["verification"]["checkpoint_status"],
+            json!("pending_human_verification"),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["verification"]["checkpoint_allowed_statuses"], verification_status_values,
+            "draft wrapper: {body}"
+        );
         assert_eq!(
             body["verification"]["accepted_as_legal_text"],
             json!(false),
             "draft wrapper: {body}"
         );
         assert_eq!(
+            body["verification"]["legal_validity_claimed"],
+            json!(false),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["verification"]["checkpoint"]["accepted_by_human"],
+            json!(false),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["verification"]["checkpoint"]["rejected_by_human"],
+            json!(false),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["verification"]["checkpoint"]["acceptance_claim"],
+            json!("human_review_only_not_legal_certification"),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
             body["source_provenance"]["status"],
             json!("pending_human_verification"),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["source_provenance"]["status_values"], verification_status_values,
             "draft wrapper: {body}"
         );
         assert_eq!(
@@ -136,6 +174,16 @@ async fn mcp_draft_minutes_returns_provenance_and_unsealed_api_draft() {
         assert_eq!(
             body["source_provenance"]["accepted_as_legal_text"],
             json!(false),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["source_provenance"]["legal_validity_claimed"],
+            json!(false),
+            "draft wrapper: {body}"
+        );
+        assert_eq!(
+            body["source_provenance"]["human_verification"]["allowed_statuses"],
+            verification_status_values,
             "draft wrapper: {body}"
         );
         assert_eq!(
@@ -151,7 +199,10 @@ async fn mcp_draft_minutes_returns_provenance_and_unsealed_api_draft() {
                 .iter()
                 .any(|source| source["path"] == json!("/draft/title")
                     && source["source_type"] == json!("caller_supplied")
-                    && source["human_verified"] == json!(false)),
+                    && source["human_verified"] == json!(false)
+                    && source["human_verification_status"] == json!("pending_human_verification")
+                    && source["human_verification_status_values"] == verification_status_values
+                    && source["legal_validity_claimed"] == json!(false)),
             "draft wrapper source provenance: {body}"
         );
         assert_eq!(

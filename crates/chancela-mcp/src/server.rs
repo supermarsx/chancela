@@ -25,6 +25,13 @@ pub const PROTOCOL_VERSION: &str = "2025-06-18";
 /// Advertised server name.
 pub const SERVER_NAME: &str = "chancela-mcp";
 
+const HUMAN_VERIFICATION_PENDING: &str = "pending_human_verification";
+const HUMAN_VERIFICATION_ACCEPTED: &str = "accepted_by_human";
+const HUMAN_VERIFICATION_REJECTED: &str = "rejected_by_human";
+const HUMAN_VERIFICATION_AUTHORITY: &str = "human_review_workflow_only";
+const HUMAN_VERIFICATION_ACCEPTANCE_CLAIM: &str = "human_review_only_not_legal_certification";
+const AI_DRAFT_LEGAL_EFFECT: &str = "none_until_human_verification_and_seal";
+
 /// The running MCP server: the enabled tool subset + the api-key bridge.
 pub struct McpServer<T: HttpTransport> {
     tools: Vec<McpTool>,
@@ -391,11 +398,15 @@ fn ai_draft_success_text(
         "status": "draft",
         "non_authoritative": true,
         "human_verification_required": true,
-        "legal_effect": "none_until_human_verification_and_seal",
+        "legal_effect": AI_DRAFT_LEGAL_EFFECT,
         "verification": {
             "status": "pending",
+            "checkpoint_status": HUMAN_VERIFICATION_PENDING,
+            "checkpoint_allowed_statuses": human_verification_status_values(),
             "required": true,
             "accepted_as_legal_text": false,
+            "legal_validity_claimed": false,
+            "checkpoint": human_verification_checkpoint(),
         },
         "source_provenance": source_provenance,
         "provenance": {
@@ -412,6 +423,29 @@ fn ai_draft_success_text(
         .map_err(|e| format!("could not encode AI draft provenance response: {e}"))
 }
 
+fn human_verification_status_values() -> Value {
+    json!([
+        HUMAN_VERIFICATION_PENDING,
+        HUMAN_VERIFICATION_ACCEPTED,
+        HUMAN_VERIFICATION_REJECTED,
+    ])
+}
+
+fn human_verification_checkpoint() -> Value {
+    json!({
+        "status": HUMAN_VERIFICATION_PENDING,
+        "allowed_statuses": human_verification_status_values(),
+        "accepted_by_human": false,
+        "rejected_by_human": false,
+        "recorded_by": Value::Null,
+        "recorded_at": Value::Null,
+        "recorded_note": Value::Null,
+        "transition_authority": HUMAN_VERIFICATION_AUTHORITY,
+        "acceptance_claim": HUMAN_VERIFICATION_ACCEPTANCE_CLAIM,
+        "legal_validity_claimed": false,
+    })
+}
+
 fn ai_draft_source_provenance(tool: &McpTool, source: &Value, arguments: &Value) -> Value {
     let mut statement_sources = vec![json!({
         "path": "/draft",
@@ -419,7 +453,10 @@ fn ai_draft_source_provenance(tool: &McpTool, source: &Value, arguments: &Value)
         "source_label": tool.name,
         "human_verified": false,
         "verification_status": "pending",
+        "human_verification_status": HUMAN_VERIFICATION_PENDING,
+        "human_verification_status_values": human_verification_status_values(),
         "authoritative_source_claimed": false,
+        "legal_validity_claimed": false,
     })];
     for (argument, path) in [
         ("book_id", "/draft/book_id"),
@@ -437,16 +474,22 @@ fn ai_draft_source_provenance(tool: &McpTool, source: &Value, arguments: &Value)
                 "source_label": format!("arguments.{argument}"),
                 "human_verified": false,
                 "verification_status": "pending",
+                "human_verification_status": HUMAN_VERIFICATION_PENDING,
+                "human_verification_status_values": human_verification_status_values(),
                 "authoritative_source_claimed": false,
+                "legal_validity_claimed": false,
             }));
         }
     }
 
     json!({
         "schema_version": 1,
-        "status": "pending_human_verification",
+        "status": HUMAN_VERIFICATION_PENDING,
+        "status_values": human_verification_status_values(),
         "human_verification_required": true,
         "accepted_as_legal_text": false,
+        "legal_validity_claimed": false,
+        "human_verification": human_verification_checkpoint(),
         "authoritative_source_claimed": false,
         "source": source.clone(),
         "statement_sources": statement_sources,
@@ -899,8 +942,45 @@ mod tests {
         );
         assert_eq!(payload["verification"]["required"], json!(true));
         assert_eq!(payload["verification"]["status"], json!("pending"));
+        let verification_status_values = json!([
+            "pending_human_verification",
+            "accepted_by_human",
+            "rejected_by_human"
+        ]);
+        assert_eq!(
+            payload["verification"]["checkpoint_status"],
+            json!("pending_human_verification")
+        );
+        assert_eq!(
+            payload["verification"]["checkpoint_allowed_statuses"],
+            verification_status_values
+        );
         assert_eq!(
             payload["verification"]["accepted_as_legal_text"],
+            json!(false)
+        );
+        assert_eq!(
+            payload["verification"]["legal_validity_claimed"],
+            json!(false)
+        );
+        assert_eq!(
+            payload["verification"]["checkpoint"]["status"],
+            json!("pending_human_verification")
+        );
+        assert_eq!(
+            payload["verification"]["checkpoint"]["accepted_by_human"],
+            json!(false)
+        );
+        assert_eq!(
+            payload["verification"]["checkpoint"]["rejected_by_human"],
+            json!(false)
+        );
+        assert_eq!(
+            payload["verification"]["checkpoint"]["acceptance_claim"],
+            json!("human_review_only_not_legal_certification")
+        );
+        assert_eq!(
+            payload["verification"]["checkpoint"]["legal_validity_claimed"],
             json!(false)
         );
         assert_eq!(payload["source_provenance"]["schema_version"], json!(1));
@@ -909,11 +989,27 @@ mod tests {
             json!("pending_human_verification")
         );
         assert_eq!(
+            payload["source_provenance"]["status_values"],
+            verification_status_values
+        );
+        assert_eq!(
             payload["source_provenance"]["human_verification_required"],
             json!(true)
         );
         assert_eq!(
             payload["source_provenance"]["accepted_as_legal_text"],
+            json!(false)
+        );
+        assert_eq!(
+            payload["source_provenance"]["legal_validity_claimed"],
+            json!(false)
+        );
+        assert_eq!(
+            payload["source_provenance"]["human_verification"]["allowed_statuses"],
+            verification_status_values
+        );
+        assert_eq!(
+            payload["source_provenance"]["human_verification"]["rejected_by_human"],
             json!(false)
         );
         assert_eq!(
@@ -936,7 +1032,9 @@ mod tests {
                 .iter()
                 .any(|source| source["path"] == json!("/draft")
                     && source["source_type"] == json!("ai_suggestion")
-                    && source["human_verified"] == json!(false)),
+                    && source["human_verified"] == json!(false)
+                    && source["human_verification_status"] == json!("pending_human_verification")
+                    && source["legal_validity_claimed"] == json!(false)),
             "whole-draft AI suggestion provenance missing: {statement_sources:?}"
         );
         assert!(
@@ -945,7 +1043,8 @@ mod tests {
                 .any(|source| source["path"] == json!("/draft/title")
                     && source["source_type"] == json!("caller_supplied")
                     && source["source_label"] == json!("arguments.title")
-                    && source["verification_status"] == json!("pending")),
+                    && source["verification_status"] == json!("pending")
+                    && source["human_verification_status_values"] == verification_status_values),
             "title source provenance missing: {statement_sources:?}"
         );
         assert_eq!(payload["provenance"]["source"]["surface"], json!("mcp"));
