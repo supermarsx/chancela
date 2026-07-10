@@ -12,6 +12,7 @@ const CATALOG: TemplateSummary[] = [
     channels: ['Physical', 'Hybrid', 'Telematic', 'WrittenResolution'],
     signature_policy: 'QualifiedPreferred',
     rule_pack_id: 'csc-art63/v2',
+    law_references: [],
     locale: 'pt-PT',
   },
   {
@@ -21,6 +22,7 @@ const CATALOG: TemplateSummary[] = [
     channels: [],
     signature_policy: 'QualifiedPreferred',
     rule_pack_id: 'csc-art63/v2',
+    law_references: [],
     locale: 'pt-PT',
   },
   {
@@ -30,6 +32,17 @@ const CATALOG: TemplateSummary[] = [
     channels: [],
     signature_policy: 'ManualAttested',
     rule_pack_id: 'assoc-cc/v1',
+    law_references: [
+      {
+        source_id: 'cc',
+        source_label: 'Código Civil',
+        article: '175',
+        citation: 'CC arts. 173.º e 175.º',
+        source: 'ThresholdRegistry',
+        verification: 'Pending',
+        threshold_id: 'assoc.convocatoria_maioria',
+      },
+    ],
     locale: 'pt-PT',
   },
   {
@@ -39,6 +52,7 @@ const CATALOG: TemplateSummary[] = [
     channels: ['Physical', 'Hybrid', 'Telematic'],
     signature_policy: 'QualifiedOrHandwritten',
     rule_pack_id: 'condominio-dl268/v1',
+    law_references: [],
     locale: 'pt-PT',
   },
 ];
@@ -51,6 +65,7 @@ const EDGE_CATALOG: TemplateSummary[] = [
     channels: ['Physical'],
     signature_policy: 'ManualAttested',
     rule_pack_id: 'assoc-cc/v1',
+    law_references: [],
     locale: 'pt-PT',
   },
   {
@@ -60,6 +75,7 @@ const EDGE_CATALOG: TemplateSummary[] = [
     channels: ['Telematic'],
     signature_policy: 'ManualAttested',
     rule_pack_id: 'assoc-cc/v1',
+    law_references: [],
     locale: 'en-US',
   },
   {
@@ -69,6 +85,7 @@ const EDGE_CATALOG: TemplateSummary[] = [
     channels: ['Hybrid'],
     signature_policy: 'ManualAttested',
     rule_pack_id: 'fundacao-cc/v1',
+    law_references: [],
     locale: 'pt-PT',
   },
 ];
@@ -206,5 +223,37 @@ describe('TemplatesCatalogPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Limpar pesquisa e filtros' }));
     expect(await screen.findByText('fundacao-reuniao/v1')).toBeTruthy();
     expect(screen.getByText('3 de 3 modelos')).toBeTruthy();
+  });
+
+  it('renders pending law references and searches by citation or article text', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
+
+    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+
+    const associationId = await screen.findByText('assoc-convocatoria-ga/v1');
+    const associationCard = associationId.closest('article');
+    expect(associationCard).toBeTruthy();
+    expect(within(associationCard as HTMLElement).getByText('Fonte legal')).toBeTruthy();
+    expect(within(associationCard as HTMLElement).getByText('Por verificar')).toBeTruthy();
+    expect(within(associationCard as HTMLElement).getByText('CC arts. 173.º e 175.º')).toBeTruthy();
+    expect(
+      within(associationCard as HTMLElement).getByText('Fonte: Código Civil · art. 175'),
+    ).toBeTruthy();
+    expect(
+      within(associationCard as HTMLElement).getByText('Fonte pendente; não usar como verificada.'),
+    ).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
+      target: { value: '175' },
+    });
+    expect(screen.getByText('1 de 4 modelos')).toBeTruthy();
+    expect(screen.getByText('assoc-convocatoria-ga/v1')).toBeTruthy();
+    expect(screen.queryByText('csc-ata-ag/v1')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Pesquisa'), {
+      target: { value: 'CC ARTS. 173' },
+    });
+    expect(screen.getByText('1 de 4 modelos')).toBeTruthy();
+    expect(screen.getByText('assoc-convocatoria-ga/v1')).toBeTruthy();
   });
 });

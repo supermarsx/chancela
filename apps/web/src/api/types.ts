@@ -547,6 +547,24 @@ export interface DocumentModel {
   blocks: Block[];
 }
 
+export type TemplateLawReferenceSource = 'RulePack' | 'ThresholdRegistry' | string;
+export type TemplateLawReferenceVerification = LegalBasisVerification;
+
+/**
+ * Structured legal citation candidate exposed with a template summary. These are provenance
+ * anchors for discovery and drafting support only; `verification` must be rendered honestly and
+ * never upgraded into a legal-validity claim.
+ */
+export interface TemplateLawReference {
+  source_id: string;
+  source_label: string;
+  article?: string | null;
+  citation: string;
+  source: TemplateLawReferenceSource;
+  verification: TemplateLawReferenceVerification;
+  threshold_id?: string | null;
+}
+
 /**
  * One template-catalog entry (`GET /v1/templates?family=&stage=`, t48-e5). Informational
  * for v1 — metadata is copied from the authored template asset. `signature_policy` is a
@@ -559,6 +577,7 @@ export interface TemplateSummary {
   channels: MeetingChannel[];
   signature_policy: SignaturePolicyHint;
   rule_pack_id: string;
+  law_references: TemplateLawReference[];
   locale: string;
 }
 

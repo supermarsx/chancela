@@ -13,6 +13,7 @@ import {
   type LifecycleStage,
   type MeetingChannel,
   type SignaturePolicyHint,
+  type TemplateLawReference,
   type TemplateSummary,
 } from '../../api/types';
 import { useT } from '../../i18n';
@@ -53,6 +54,15 @@ function templateMatches(template: TemplateSummary, query: string): boolean {
     channel,
     meetingChannelLabels[channel],
   ]);
+  const lawReferenceParts = (template.law_references ?? []).flatMap((reference) => [
+    reference.source_id,
+    reference.source_label,
+    reference.article ?? '',
+    reference.citation,
+    reference.source,
+    reference.verification,
+    reference.threshold_id ?? '',
+  ]);
   return [
     template.id,
     template.locale,
@@ -64,7 +74,35 @@ function templateMatches(template: TemplateSummary, query: string): boolean {
     lifecycleStageLabels[template.stage],
     signaturePolicyLabels[template.signature_policy],
     ...channelParts,
+    ...lawReferenceParts,
   ].some((part) => searchText(part).includes(query));
+}
+
+function lawReferenceKey(reference: TemplateLawReference, index: number): string {
+  return [
+    reference.source_id,
+    reference.article ?? '',
+    reference.citation,
+    reference.threshold_id ?? '',
+    index,
+  ].join(':');
+}
+
+function lawReferenceTone(reference: TemplateLawReference): 'ok' | 'warn' {
+  return reference.verification === 'Verified' ? 'ok' : 'warn';
+}
+
+function lawReferenceBadgeKey(
+  reference: TemplateLawReference,
+): 'legislacao.corpus.badge.verified' | 'legislacao.corpus.badge.pending' {
+  return reference.verification === 'Verified'
+    ? 'legislacao.corpus.badge.verified'
+    : 'legislacao.corpus.badge.pending';
+}
+
+function lawReferenceSourceText(reference: TemplateLawReference): string {
+  const article = reference.article?.trim();
+  return [reference.source_label, article ? `art. ${article}` : ''].filter(Boolean).join(' · ');
 }
 
 function sortTemplates(a: TemplateSummary, b: TemplateSummary): number {
@@ -303,54 +341,86 @@ export function TemplatesCatalogPage() {
           </EmptyState>
         ) : (
           <div className="templates-grid">
-            {filtered.map((template) => (
-              <article className="template-card" key={template.id}>
-                <div className="template-card__head">
-                  <p className="card__label">{t('templates.card.id')}</p>
-                  <Badge tone="accent">{template.locale}</Badge>
-                </div>
-                <code className="template-card__id">{template.id}</code>
-                <dl className="template-card__meta">
-                  <div>
-                    <dt>{t('templates.card.family')}</dt>
-                    <dd>{entityFamilyLabels[template.family]}</dd>
+            {filtered.map((template) => {
+              const lawReferences = template.law_references ?? [];
+
+              return (
+                <article className="template-card" key={template.id}>
+                  <div className="template-card__head">
+                    <p className="card__label">{t('templates.card.id')}</p>
+                    <Badge tone="accent">{template.locale}</Badge>
                   </div>
-                  <div>
-                    <dt>{t('templates.card.stage')}</dt>
-                    <dd>{lifecycleStageLabels[template.stage]}</dd>
+                  <code className="template-card__id">{template.id}</code>
+                  <dl className="template-card__meta">
+                    <div>
+                      <dt>{t('templates.card.family')}</dt>
+                      <dd>{entityFamilyLabels[template.family]}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('templates.card.stage')}</dt>
+                      <dd>{lifecycleStageLabels[template.stage]}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('templates.card.signature')}</dt>
+                      <dd>{signaturePolicyLabels[template.signature_policy]}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('templates.card.rulePack')}</dt>
+                      <dd>
+                        <code className="template-card__code">{template.rule_pack_id}</code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t('templates.card.channels')}</dt>
+                      <dd>
+                        {template.channels.length > 0 ? (
+                          <span className="template-card__channels">
+                            {template.channels.map((value) => (
+                              <Badge key={value}>{meetingChannelLabels[value]}</Badge>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="muted">{t('templates.channels.none')}</span>
+                        )}
+                      </dd>
+                    </div>
+                    {lawReferences.length > 0 ? (
+                      <div>
+                        <dt>{t('documents.metadata.legalSource')}</dt>
+                        <dd>
+                          <div className="stack--tight">
+                            {lawReferences.map((reference, index) => (
+                              <div key={lawReferenceKey(reference, index)} className="stack--tight">
+                                <span className="template-card__channels">
+                                  <Badge tone={lawReferenceTone(reference)}>
+                                    {t(lawReferenceBadgeKey(reference))}
+                                  </Badge>
+                                  <span className="mono">{reference.citation}</span>
+                                </span>
+                                <span className="muted">
+                                  {t('legislacao.corpus.article.source')}:{' '}
+                                  {lawReferenceSourceText(reference)}
+                                </span>
+                                {reference.verification === 'Pending' ? (
+                                  <span className="muted">
+                                    {t('legislacao.citations.pendingNote')}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                  <div className="template-card__actions">
+                    <ButtonLink to="/livros" icon={<Icon.ArrowRight />}>
+                      {t('templates.openAct')}
+                    </ButtonLink>
                   </div>
-                  <div>
-                    <dt>{t('templates.card.signature')}</dt>
-                    <dd>{signaturePolicyLabels[template.signature_policy]}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('templates.card.rulePack')}</dt>
-                    <dd>
-                      <code className="template-card__code">{template.rule_pack_id}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{t('templates.card.channels')}</dt>
-                    <dd>
-                      {template.channels.length > 0 ? (
-                        <span className="template-card__channels">
-                          {template.channels.map((value) => (
-                            <Badge key={value}>{meetingChannelLabels[value]}</Badge>
-                          ))}
-                        </span>
-                      ) : (
-                        <span className="muted">{t('templates.channels.none')}</span>
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="template-card__actions">
-                  <ButtonLink to="/livros" icon={<Icon.ArrowRight />}>
-                    {t('templates.openAct')}
-                  </ButtonLink>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
