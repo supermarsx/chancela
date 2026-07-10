@@ -299,6 +299,12 @@ export const frFR: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Vue d’ensemble',
+  'dashboard.tabs.aria': 'Sections du tableau de bord',
+  'dashboard.tabs.stats': 'Statistiques',
+  'dashboard.tabs.activity': 'Activité récente',
+  'dashboard.tabs.current': 'Activités en cours',
+  'dashboard.tabs.queue': 'File de travail',
+  'dashboard.tabs.events': 'Derniers événements',
   'dashboard.recentEvents.title': 'Derniers événements du registre',
   'dashboard.metric.entities': 'Entités',
   'dashboard.metric.booksOpen': 'Registres ouverts',

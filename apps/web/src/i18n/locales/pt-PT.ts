@@ -306,6 +306,12 @@ export const ptPT = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Vista geral',
+  'dashboard.tabs.aria': 'Secções do painel',
+  'dashboard.tabs.stats': 'Estatísticas',
+  'dashboard.tabs.activity': 'Atividade recente',
+  'dashboard.tabs.current': 'Atividades atuais',
+  'dashboard.tabs.queue': 'Fila de trabalho',
+  'dashboard.tabs.events': 'Últimos eventos',
   'dashboard.recentEvents.title': 'Últimos eventos do registo',
   'dashboard.metric.entities': 'Entidades',
   'dashboard.metric.booksOpen': 'Livros abertos',

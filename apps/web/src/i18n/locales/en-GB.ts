@@ -298,6 +298,12 @@ export const enGB: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Overview',
+  'dashboard.tabs.aria': 'Dashboard sections',
+  'dashboard.tabs.stats': 'Stats',
+  'dashboard.tabs.activity': 'Recent activity',
+  'dashboard.tabs.current': 'Current activity',
+  'dashboard.tabs.queue': 'Work queue',
+  'dashboard.tabs.events': 'Latest events',
   'dashboard.recentEvents.title': 'Latest ledger events',
   'dashboard.metric.entities': 'Entities',
   'dashboard.metric.booksOpen': 'Open books',

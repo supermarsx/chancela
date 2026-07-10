@@ -4,10 +4,11 @@
  * events. Everything is derived from `GET /v1/dashboard`, which the seal/mutation hooks
  * invalidate, so the numbers stay live.
  */
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
 import { actStateLabels, bookKindLabels } from '../../api/labels';
 import type {
+  Dashboard,
   DashboardAlert,
   DashboardActStateCounts,
   DashboardLawReference,
@@ -26,6 +27,7 @@ import {
   PageHeader,
   SkeletonCards,
   SkeletonTable,
+  SubNav,
   Tooltip,
 } from '../../ui';
 import { LedgerTable } from '../ledger/LedgerTable';
@@ -33,9 +35,11 @@ import './DashboardPage.css';
 
 const RECENT_EVENTS_LIMIT = 10;
 const SUMMARY_LIST_LIMIT = 5;
+const DASHBOARD_TAB_PARAM = 'painel';
 
 type QueueTone = 'neutral' | 'accent' | 'warn' | 'error';
 type ActivityKind = 'act' | 'book' | 'entity';
+type DashboardTab = 'stats' | 'activity' | 'current' | 'queue' | 'events';
 
 interface WorkQueueItem {
   id: string;
@@ -83,6 +87,13 @@ function Metric({ label, value, note }: { label: string; value: number | string;
       {note ? <p className="card__note">{note}</p> : null}
     </li>
   );
+}
+
+function dashboardTabFromParam(value: string | null): DashboardTab {
+  if (value === 'activity' || value === 'current' || value === 'queue' || value === 'events') {
+    return value;
+  }
+  return 'stats';
 }
 
 function formatDateTime(value: string, locale: string): string {
@@ -647,6 +658,113 @@ function ActStatusSummary({ counts }: { counts: DashboardActStateCounts }) {
   );
 }
 
+function ActivityNumberCards({ counts }: { counts: DashboardActStateCounts }) {
+  const t = useT();
+
+  return (
+    <section className="dashboard-card-section">
+      <h3 className="dashboard-card-section__title">{t('dashboard.actStatus.title')}</h3>
+      <ul
+        className="cards dashboard-metrics dashboard-activity-metrics"
+        aria-label={t('dashboard.actStatus.aria')}
+      >
+        {ACTIVE_ACT_STATES.map((state) => (
+          <Metric key={state} label={actStateLabels[state]} value={counts[state]} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function DashboardStats({ data }: { data: Dashboard }) {
+  const t = useT();
+
+  return (
+    <div className="dashboard-tab dashboard-tab--stats">
+      <ul className="cards dashboard-metrics">
+        <Metric label={t('dashboard.metric.entities')} value={data.entities} />
+        <Metric
+          label={t('dashboard.metric.booksOpen')}
+          value={data.books_open}
+          note={t('dashboard.metric.booksOpen.note', { total: data.books_total })}
+        />
+        <Metric
+          label={t('dashboard.metric.actsDraft')}
+          value={data.acts_draft}
+          note={t('dashboard.metric.actsDraft.note', { total: data.acts_total })}
+        />
+        <Metric
+          label={t('dashboard.metric.awaitingSignature')}
+          value={data.acts_awaiting_signature}
+          note={t('dashboard.metric.awaitingSignature.note')}
+        />
+        <Metric
+          label={t('dashboard.metric.actsSealed')}
+          value={data.acts_sealed}
+          note={t('dashboard.metric.actsSealed.note')}
+        />
+        <Metric
+          label={t('dashboard.metric.ledger')}
+          value={data.ledger_length}
+          note={
+            data.ledger_valid
+              ? t('dashboard.metric.ledger.note.valid')
+              : t('dashboard.metric.ledger.note.invalid')
+          }
+        />
+      </ul>
+
+      <div className="row-wrap">
+        <div className="chain-status">
+          <span className="card__label">{t('dashboard.integrity.label')}</span>{' '}
+          {data.ledger_valid ? (
+            <Badge tone="ok">{t('dashboard.chain.verified')}</Badge>
+          ) : (
+            <Badge tone="error">{t('dashboard.chain.compromised')}</Badge>
+          )}
+        </div>
+      </div>
+
+      {data.unresolved_compliance > 0 ? (
+        <InlineWarning tone="warn" title={t('dashboard.compliance.title')}>
+          {data.unresolved_compliance === 1
+            ? t('dashboard.compliance.body.one', { count: data.unresolved_compliance })
+            : t('dashboard.compliance.body.other', { count: data.unresolved_compliance })}
+        </InlineWarning>
+      ) : null}
+
+      <ActivityNumberCards counts={data.current_work.act_counts_by_state} />
+    </div>
+  );
+}
+
+function DashboardHeader({
+  active,
+  onSelect,
+}: {
+  active: DashboardTab;
+  onSelect: (tab: DashboardTab) => void;
+}) {
+  const t = useT();
+
+  return (
+    <PageHeader title={t('dashboard.title')}>
+      <SubNav<DashboardTab>
+        ariaLabel={t('dashboard.tabs.aria')}
+        active={active}
+        onSelect={onSelect}
+        items={[
+          { id: 'stats', label: t('dashboard.tabs.stats'), icon: <Icon.Sliders /> },
+          { id: 'activity', label: t('dashboard.tabs.activity'), icon: <Icon.Bell /> },
+          { id: 'current', label: t('dashboard.tabs.current'), icon: <Icon.Calendar /> },
+          { id: 'queue', label: t('dashboard.tabs.queue'), icon: <Icon.Tray /> },
+          { id: 'events', label: t('dashboard.tabs.events'), icon: <Icon.Archive /> },
+        ]}
+      />
+    </PageHeader>
+  );
+}
+
 function reminderSortValue(reminder: DashboardReminder): number {
   const date = parseReminderDate(reminder.due_date);
   if (date !== null) return date;
@@ -718,16 +836,35 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
 
 export function DashboardPage() {
   const t = useT();
+  const [params, setParams] = useSearchParams();
   const { data, isLoading, error } = useDashboard();
+  const tab = dashboardTabFromParam(params.get(DASHBOARD_TAB_PARAM));
+
+  function selectTab(next: DashboardTab) {
+    setParams(
+      (prev) => {
+        const nextParams = new URLSearchParams(prev);
+        if (next === 'stats') nextParams.delete(DASHBOARD_TAB_PARAM);
+        else nextParams.set(DASHBOARD_TAB_PARAM, next);
+        return nextParams;
+      },
+      { replace: true },
+    );
+  }
 
   if (isLoading) {
     return (
       <div className="stack">
-        <PageHeader title={t('dashboard.title')} />
-        <SkeletonCards />
-        <Card title={t('dashboard.recentEvents.title')}>
-          <SkeletonTable cols={5} />
-        </Card>
+        <DashboardHeader active={tab} onSelect={selectTab} />
+        <div className="route-transition dashboard-tab" key={`loading-${tab}`}>
+          {tab === 'events' ? (
+            <Card title={t('dashboard.recentEvents.title')}>
+              <SkeletonTable cols={5} />
+            </Card>
+          ) : (
+            <SkeletonCards />
+          )}
+        </div>
       </div>
     );
   }
@@ -748,87 +885,44 @@ export function DashboardPage() {
 
   return (
     <div className="stack">
-      <PageHeader title={t('dashboard.title')} />
+      <DashboardHeader active={tab} onSelect={selectTab} />
 
-      <ul className="cards dashboard-metrics">
-        <Metric label={t('dashboard.metric.entities')} value={data.entities} />
-        <Metric
-          label={t('dashboard.metric.booksOpen')}
-          value={data.books_open}
-          note={t('dashboard.metric.booksOpen.note', { total: data.books_total })}
-        />
-        <Metric
-          label={t('dashboard.metric.actsDraft')}
-          value={data.acts_draft}
-          note={t('dashboard.metric.actsDraft.note', { total: data.acts_total })}
-        />
-        <Metric
-          label={t('dashboard.metric.awaitingSignature')}
-          value={data.acts_awaiting_signature}
-          note={t('dashboard.metric.awaitingSignature.note')}
-        />
-        <Metric
-          label={t('dashboard.metric.actsSealed')}
-          value={data.acts_sealed}
-          note={t('dashboard.metric.actsSealed.note')}
-        />
-        <Metric
-          label={t('dashboard.metric.ledger')}
-          value={data.ledger_length}
-          note={
-            data.ledger_valid
-              ? t('dashboard.metric.ledger.note.valid')
-              : t('dashboard.metric.ledger.note.invalid')
-          }
-        />
-      </ul>
+      <div className="route-transition" key={tab}>
+        {tab === 'stats' ? <DashboardStats data={data} /> : null}
 
-      <div className="row-wrap">
-        <div className="chain-status">
-          <span className="card__label">{t('dashboard.integrity.label')}</span>{' '}
-          {data.ledger_valid ? (
-            <Badge tone="ok">{t('dashboard.chain.verified')}</Badge>
-          ) : (
-            <Badge tone="error">{t('dashboard.chain.compromised')}</Badge>
-          )}
-        </div>
+        {tab === 'activity' ? <RecentActivity events={data.recent_events} /> : null}
+
+        {tab === 'current' ? (
+          <div className="dashboard-section-grid">
+            <OpenBooksSummary openBooks={data.current_work.open_books} />
+            <ActStatusSummary counts={data.current_work.act_counts_by_state} />
+            <ReminderDatesSummary reminders={data.reminders} />
+          </div>
+        ) : null}
+
+        {tab === 'queue' ? <OperatorWorkQueue items={workQueueItems} /> : null}
+
+        {tab === 'events' ? (
+          <Card
+            title={t('dashboard.recentEvents.title')}
+            actions={
+              <Tooltip label={t('dashboard.viewFullArchive')} placement="left">
+                <Link
+                  to="/arquivo"
+                  className="btn btn--secondary btn--icon btn--iconOnly dashboard-archive-link"
+                  aria-label={t('dashboard.viewFullArchive')}
+                >
+                  <span className="btn__icon">
+                    <Icon.Archive />
+                  </span>
+                </Link>
+              </Tooltip>
+            }
+          >
+            <LedgerTable events={recentEvents} />
+          </Card>
+        ) : null}
       </div>
-
-      {data.unresolved_compliance > 0 ? (
-        <InlineWarning tone="warn" title={t('dashboard.compliance.title')}>
-          {data.unresolved_compliance === 1
-            ? t('dashboard.compliance.body.one', { count: data.unresolved_compliance })
-            : t('dashboard.compliance.body.other', { count: data.unresolved_compliance })}
-        </InlineWarning>
-      ) : null}
-
-      <div className="dashboard-section-grid">
-        <RecentActivity events={data.recent_events} />
-        <OpenBooksSummary openBooks={data.current_work.open_books} />
-        <ActStatusSummary counts={data.current_work.act_counts_by_state} />
-        <ReminderDatesSummary reminders={data.reminders} />
-      </div>
-
-      <OperatorWorkQueue items={workQueueItems} />
-
-      <Card
-        title={t('dashboard.recentEvents.title')}
-        actions={
-          <Tooltip label={t('dashboard.viewFullArchive')} placement="left">
-            <Link
-              to="/arquivo"
-              className="btn btn--secondary btn--icon btn--iconOnly dashboard-archive-link"
-              aria-label={t('dashboard.viewFullArchive')}
-            >
-              <span className="btn__icon">
-                <Icon.Archive />
-              </span>
-            </Link>
-          </Tooltip>
-        }
-      >
-        <LedgerTable events={recentEvents} />
-      </Card>
     </div>
   );
 }

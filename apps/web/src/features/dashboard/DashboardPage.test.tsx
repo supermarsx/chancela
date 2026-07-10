@@ -54,6 +54,15 @@ function eventFor(
   };
 }
 
+function renderDashboard() {
+  renderWithProviders(<DashboardPage />);
+}
+
+async function openDashboardTab(name: string) {
+  const tabs = await screen.findByRole('group', { name: 'Secções do painel' });
+  fireEvent.click(within(tabs).getByRole('button', { name }));
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -74,7 +83,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Últimos eventos');
 
     expect(await screen.findByText('kind-12')).toBeTruthy();
 
@@ -98,7 +108,8 @@ describe('DashboardPage', () => {
 
   it('renders the full archive affordance as a tooltip-backed icon link', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Últimos eventos');
 
     const archive = await screen.findByRole('link', { name: 'Ver arquivo completo' });
     expect(archive.getAttribute('href')).toBe('/arquivo');
@@ -165,7 +176,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Atividade recente');
 
     const activity = await screen.findByRole('list', {
       name: 'Atividade recente de atas, livros e entidades',
@@ -236,7 +248,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Atividades atuais');
 
     const openItems = await screen.findByRole('list', { name: 'Livros abertos atualmente em uso' });
     expect(
@@ -278,7 +291,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     expect(within(queue).getByText('Atrasado')).toBeTruthy();
@@ -286,6 +300,8 @@ describe('DashboardPage', () => {
     expect(within(queue).getByText('Data 2026-03-31')).toBeTruthy();
     expect(within(queue).getByText(/cannot yet prove this annual calendar purpose/)).toBeTruthy();
     expect(within(queue).getByText('Fonte csc-art376-annual / csc-commercial')).toBeTruthy();
+    await openDashboardTab('Últimos eventos');
+    expect(await screen.findByText('kind-1')).toBeTruthy();
     expect(screen.getAllByRole('row')).toHaveLength(2);
   });
 
@@ -329,7 +345,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     const item = within(queue).getByRole('listitem');
@@ -385,7 +402,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     const item = within(queue).getByRole('listitem');
@@ -405,9 +423,10 @@ describe('DashboardPage', () => {
 
   it('shows an empty work-queue state when dashboard data exposes no operator work', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
-    expect(await screen.findByText('Fila de trabalho')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Fila de trabalho' })).toBeTruthy();
     expect(screen.getByText('Sem trabalho pendente derivado do painel.')).toBeTruthy();
     expect(screen.queryByRole('list', { name: 'Fila de trabalho do painel' })).toBeNull();
   });
@@ -461,7 +480,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     expect(
@@ -522,7 +542,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     expect(
@@ -627,7 +648,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     expect(
@@ -697,7 +719,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     expect(within(queue).getByText('Lei dl-76-a-2006:1')).toBeTruthy();
@@ -766,7 +789,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     const items = within(queue).getAllByRole('listitem');
@@ -790,7 +814,8 @@ describe('DashboardPage', () => {
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
-    renderWithProviders(<DashboardPage />);
+    renderDashboard();
+    await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     const integrityLink = within(queue).getByRole('link', {

@@ -299,6 +299,12 @@ export const ptBR: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Visão geral',
+  'dashboard.tabs.aria': 'Seções do painel',
+  'dashboard.tabs.stats': 'Estatísticas',
+  'dashboard.tabs.activity': 'Atividade recente',
+  'dashboard.tabs.current': 'Atividades atuais',
+  'dashboard.tabs.queue': 'Fila de trabalho',
+  'dashboard.tabs.events': 'Últimos eventos',
   'dashboard.recentEvents.title': 'Últimos eventos do registro',
   'dashboard.metric.entities': 'Entidades',
   'dashboard.metric.booksOpen': 'Livros abertos',

@@ -299,6 +299,12 @@ export const itIT: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Panoramica',
+  'dashboard.tabs.aria': 'Sezioni del pannello',
+  'dashboard.tabs.stats': 'Statistiche',
+  'dashboard.tabs.activity': 'Attività recente',
+  'dashboard.tabs.current': 'Attività correnti',
+  'dashboard.tabs.queue': 'Coda di lavoro',
+  'dashboard.tabs.events': 'Ultimi eventi',
   'dashboard.recentEvents.title': 'Ultimi eventi del registro',
   'dashboard.metric.entities': 'Entità',
   'dashboard.metric.booksOpen': 'Libri aperti',

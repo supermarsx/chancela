@@ -297,6 +297,12 @@ export const daDK: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Oversigt',
+  'dashboard.tabs.aria': 'Oversigtssektioner',
+  'dashboard.tabs.stats': 'Statistik',
+  'dashboard.tabs.activity': 'Seneste aktivitet',
+  'dashboard.tabs.current': 'Aktuelle aktiviteter',
+  'dashboard.tabs.queue': 'Arbejdskø',
+  'dashboard.tabs.events': 'Seneste hændelser',
   'dashboard.recentEvents.title': 'Seneste hændelser i journalen',
   'dashboard.metric.entities': 'Enheder',
   'dashboard.metric.booksOpen': 'Åbne bøger',

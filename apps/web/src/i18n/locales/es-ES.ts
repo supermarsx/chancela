@@ -298,6 +298,12 @@ export const esES: Catalog = {
 
   // --- Panel ---------------------------------------------------------------------
   'dashboard.title': 'Vista general',
+  'dashboard.tabs.aria': 'Secciones del panel',
+  'dashboard.tabs.stats': 'Estadísticas',
+  'dashboard.tabs.activity': 'Actividad reciente',
+  'dashboard.tabs.current': 'Actividades actuales',
+  'dashboard.tabs.queue': 'Cola de trabajo',
+  'dashboard.tabs.events': 'Últimos eventos',
   'dashboard.recentEvents.title': 'Últimos eventos del registro',
   'dashboard.metric.entities': 'Entidades',
   'dashboard.metric.booksOpen': 'Libros abiertos',

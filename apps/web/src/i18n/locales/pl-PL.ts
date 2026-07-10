@@ -299,6 +299,12 @@ export const plPL: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Przegląd',
+  'dashboard.tabs.aria': 'Sekcje panelu',
+  'dashboard.tabs.stats': 'Statystyki',
+  'dashboard.tabs.activity': 'Ostatnia aktywność',
+  'dashboard.tabs.current': 'Bieżące aktywności',
+  'dashboard.tabs.queue': 'Kolejka pracy',
+  'dashboard.tabs.events': 'Najnowsze zdarzenia',
   'dashboard.recentEvents.title': 'Najnowsze zdarzenia w dzienniku',
   'dashboard.metric.entities': 'Podmioty',
   'dashboard.metric.booksOpen': 'Otwarte księgi',

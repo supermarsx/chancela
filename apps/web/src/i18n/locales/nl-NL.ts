@@ -296,6 +296,12 @@ export const nlNL: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Overzicht',
+  'dashboard.tabs.aria': 'Dashboardsecties',
+  'dashboard.tabs.stats': 'Statistieken',
+  'dashboard.tabs.activity': 'Recente activiteit',
+  'dashboard.tabs.current': 'Huidige activiteiten',
+  'dashboard.tabs.queue': 'Werkqueue',
+  'dashboard.tabs.events': 'Laatste gebeurtenissen',
   'dashboard.recentEvents.title': 'Laatste grootboekgebeurtenissen',
   'dashboard.metric.entities': 'Entiteiten',
   'dashboard.metric.booksOpen': 'Open boeken',

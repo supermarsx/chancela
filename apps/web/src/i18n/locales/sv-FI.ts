@@ -301,6 +301,12 @@ export const svFI: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Översikt',
+  'dashboard.tabs.aria': 'Panelavsnitt',
+  'dashboard.tabs.stats': 'Statistik',
+  'dashboard.tabs.activity': 'Senaste aktivitet',
+  'dashboard.tabs.current': 'Aktuella aktiviteter',
+  'dashboard.tabs.queue': 'Arbetskö',
+  'dashboard.tabs.events': 'Senaste händelser',
   'dashboard.recentEvents.title': 'Senaste händelser i liggaren',
   'dashboard.metric.entities': 'Enheter',
   'dashboard.metric.booksOpen': 'Öppna böcker',

@@ -300,6 +300,12 @@ export const deDE: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Gesamtübersicht',
+  'dashboard.tabs.aria': 'Dashboard-Abschnitte',
+  'dashboard.tabs.stats': 'Statistiken',
+  'dashboard.tabs.activity': 'Aktuelle Aktivität',
+  'dashboard.tabs.current': 'Laufende Aktivitäten',
+  'dashboard.tabs.queue': 'Arbeitswarteschlange',
+  'dashboard.tabs.events': 'Neueste Ereignisse',
   'dashboard.recentEvents.title': 'Letzte Ereignisse im Register',
   'dashboard.metric.entities': 'Rechtsträger',
   'dashboard.metric.booksOpen': 'Offene Bücher',

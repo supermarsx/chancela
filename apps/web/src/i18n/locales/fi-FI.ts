@@ -298,6 +298,12 @@ export const fiFI: Catalog = {
 
   // --- Dashboard -----------------------------------------------------------------
   'dashboard.title': 'Yleiskatsaus',
+  'dashboard.tabs.aria': 'Kojelaudan osiot',
+  'dashboard.tabs.stats': 'Tilastot',
+  'dashboard.tabs.activity': 'Viimeaikainen toiminta',
+  'dashboard.tabs.current': 'Nykyiset tehtävät',
+  'dashboard.tabs.queue': 'Työjono',
+  'dashboard.tabs.events': 'Viimeisimmät tapahtumat',
   'dashboard.recentEvents.title': 'Viimeisimmät lokitapahtumat',
   'dashboard.metric.entities': 'Yksiköt',
   'dashboard.metric.booksOpen': 'Avoimet kirjat',
