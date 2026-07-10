@@ -13,6 +13,12 @@ description = "Chancela host-level operations CLI (the `chancela` binary)."
 name = "chancela"
 path = "src/main.rs"
 
+[features]
+default = []
+# Match chancela-server's optional encrypted-store build. A configured CHANCELA_DB_KEY or
+# CHANCELA_DB_KEY_FILE still fails closed without this feature.
+sqlcipher = ["chancela-api/sqlcipher", "chancela-store/sqlcipher"]
+
 [dependencies]
 # Domain + durability + audit primitives the CLI operates on directly (OFFLINE — no api client).
 chancela-core.workspace = true

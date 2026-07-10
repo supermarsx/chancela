@@ -135,7 +135,11 @@ impl DatabaseEncryptionConfig {
         self.key.is_some()
     }
 
-    pub(crate) fn store_open_options(&self) -> StoreOpenOptions {
+    /// Convert this resolved encryption config into durable-store open options.
+    ///
+    /// The returned options redact key material in `Debug`; callers must still avoid logging the
+    /// original environment variables or file contents.
+    pub fn store_open_options(&self) -> StoreOpenOptions {
         match &self.key {
             Some(key) => StoreOpenOptions::new().with_encryption_key(key.clone()),
             None => StoreOpenOptions::default(),

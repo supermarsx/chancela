@@ -8,10 +8,10 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-use chancela_api::User;
+use chancela_api::{DB_KEY_ENV, DB_KEY_FILE_ENV, User};
 use chancela_authz::OWNER_ROLE_ID;
 use chancela_core::{Book, BookKind, Entity, EntityKind, Nipc};
-use chancela_store::Store;
+use chancela_store::{DB_FILE, Store};
 
 /// A throwaway data directory unique to one test.
 fn tmp_dir() -> PathBuf {
@@ -21,20 +21,33 @@ fn tmp_dir() -> PathBuf {
 }
 
 /// Run the `chancela` binary against `dir`. stdin is null (so destructive commands without `--yes`
-/// are refused), and the ambient data-dir env var is cleared.
+/// are refused), and ambient data-dir / database-key env vars are cleared.
 fn cli(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_chancela"))
-        .arg("--data-dir")
+    cli_with_env(dir, args, &[])
+}
+
+/// Run the CLI with explicit extra env vars after clearing ambient durable-store env.
+fn cli_with_env(dir: &Path, args: &[&str], envs: &[(&str, &str)]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_chancela"));
+    cmd.arg("--data-dir")
         .arg(dir)
         .args(args)
         .stdin(Stdio::null())
         .env_remove("CHANCELA_DATA_DIR")
-        .output()
-        .expect("failed to run chancela binary")
+        .env_remove(DB_KEY_ENV)
+        .env_remove(DB_KEY_FILE_ENV);
+    for (key, value) in envs {
+        cmd.env(key, value);
+    }
+    cmd.output().expect("failed to run chancela binary")
 }
 
 fn stdout(o: &Output) -> String {
     String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+fn stderr(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stderr).into_owned()
 }
 
 /// Seed a store with an entity + book and a valid two-event chain (entity.created → book.opened),
@@ -109,6 +122,117 @@ fn status_on_fresh_store() {
     let v: serde_json::Value = serde_json::from_str(&stdout(&out_json)).unwrap();
     assert_eq!(v["ledger_length"], 0);
     assert_eq!(v["healthy"], true);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+#[test]
+fn db_key_env_fails_closed_without_sqlcipher_and_does_not_create_plaintext_db() {
+    let dir = tmp_dir();
+    let secret = "correct horse battery staple";
+
+    let out = cli_with_env(&dir, &["status"], &[(DB_KEY_ENV, secret)]);
+
+    assert!(
+        !out.status.success(),
+        "keyed status must fail without sqlcipher"
+    );
+    let err = stderr(&out);
+    assert!(err.contains("sqlcipher feature"), "{err}");
+    assert!(
+        !err.contains(secret),
+        "database key must not be printed: {err}"
+    );
+    assert!(
+        !dir.join(DB_FILE).exists(),
+        "no plaintext store should be created for a keyed default build"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+#[test]
+fn db_key_file_env_fails_closed_without_sqlcipher_and_does_not_leak_key() {
+    let dir = tmp_dir();
+    let key_file = dir.join("db.key");
+    let secret = "file-backed database key";
+    std::fs::write(&key_file, format!("{secret}\n")).unwrap();
+    let key_file = key_file.to_string_lossy().into_owned();
+
+    let out = cli_with_env(&dir, &["status"], &[(DB_KEY_FILE_ENV, key_file.as_str())]);
+
+    assert!(
+        !out.status.success(),
+        "key-file status must fail without sqlcipher"
+    );
+    let err = stderr(&out);
+    assert!(err.contains("sqlcipher feature"), "{err}");
+    assert!(
+        !err.contains(secret),
+        "key file contents must not leak: {err}"
+    );
+    assert!(
+        !dir.join(DB_FILE).exists(),
+        "no plaintext store should be created for a keyed default build"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn ambiguous_db_key_sources_are_rejected_before_store_open() {
+    let dir = tmp_dir();
+    let key_file = dir.join("db.key");
+    std::fs::write(&key_file, "file-secret").unwrap();
+    let key_file = key_file.to_string_lossy().into_owned();
+
+    let out = cli_with_env(
+        &dir,
+        &["status"],
+        &[
+            (DB_KEY_ENV, "direct-secret"),
+            (DB_KEY_FILE_ENV, key_file.as_str()),
+        ],
+    );
+
+    assert!(!out.status.success(), "ambiguous key sources must fail");
+    let err = stderr(&out);
+    assert!(err.contains(DB_KEY_ENV), "{err}");
+    assert!(err.contains(DB_KEY_FILE_ENV), "{err}");
+    assert!(!err.contains("direct-secret"), "{err}");
+    assert!(!err.contains("file-secret"), "{err}");
+    assert!(
+        !dir.join(DB_FILE).exists(),
+        "invalid key config should fail before opening the store"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(feature = "sqlcipher")]
+#[test]
+fn db_key_env_opens_existing_encrypted_store_when_sqlcipher_is_enabled() {
+    let dir = tmp_dir();
+    let secret = "correct horse battery staple";
+    Store::open_with_options(
+        &dir,
+        chancela_store::StoreOpenOptions::new().with_encryption_key(secret),
+    )
+    .unwrap();
+
+    let out = cli_with_env(&dir, &["status"], &[(DB_KEY_ENV, secret)]);
+
+    assert!(
+        out.status.success(),
+        "keyed status should open encrypted store: stdout={} stderr={}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(stdout(&out).contains("Instance id"), "{}", stdout(&out));
+    assert!(!stdout(&out).contains(secret), "{}", stdout(&out));
+    assert!(!stderr(&out).contains(secret), "{}", stderr(&out));
 
     let _ = std::fs::remove_dir_all(&dir);
 }

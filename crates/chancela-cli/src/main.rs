@@ -8,7 +8,9 @@
 //! store's export-first safety rail by default.
 //!
 //! The data dir is resolved like `chancela_api::AppState::resolve_data_dir`: `--data-dir` ›
-//! `$CHANCELA_DATA_DIR` › an auto-detected `chancela-data/` › `./chancela-data`.
+//! `$CHANCELA_DATA_DIR` › an auto-detected `chancela-data/` › `./chancela-data`. Durable store
+//! opens also resolve the same optional database encryption env vars as server startup:
+//! `$CHANCELA_DB_KEY` / `$CHANCELA_DB_KEY_FILE`.
 
 mod args;
 mod commands;

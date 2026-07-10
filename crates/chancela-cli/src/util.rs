@@ -4,8 +4,8 @@
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
-use chancela_api::User;
-use chancela_store::{Store, StoreError};
+use chancela_api::{DatabaseEncryptionConfig, User};
+use chancela_store::Store;
 use time::OffsetDateTime;
 
 /// The uniform command result: `Ok(true)` ⇒ success (exit 0), `Ok(false)` ⇒ a handled failure /
@@ -41,9 +41,14 @@ pub struct Ctx {
 
 impl Ctx {
     /// Open (creating if absent) the durable store at the resolved data dir. Opening runs the
-    /// idempotent forward schema migration.
-    pub fn open_store(&self) -> Result<Store, StoreError> {
-        Store::open(&self.data_dir)
+    /// idempotent forward schema migration and honors the same optional database encryption key env
+    /// vars as server startup.
+    pub fn open_store(&self) -> Result<Store, Box<dyn std::error::Error>> {
+        let database_encryption = DatabaseEncryptionConfig::from_env()?;
+        Ok(Store::open_with_options(
+            &self.data_dir,
+            database_encryption.store_open_options(),
+        )?)
     }
 
     /// The standard sidecar paths under this data dir (for backup / reset / start-over).
