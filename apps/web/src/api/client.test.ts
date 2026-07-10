@@ -122,6 +122,20 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('/v1/books');
   });
 
+  it('records AI human-review decisions on the act-scoped endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'act-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.verifyActHumanReview('act-1', { decision: 'accept', note: 'reviewed by operator' });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/acts/act-1/human-verification');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      decision: 'accept',
+      note: 'reviewed by operator',
+    });
+  });
+
   it('uses the API-key lifecycle endpoints and JSON body shape', async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse([])));
     vi.stubGlobal('fetch', fetchMock);

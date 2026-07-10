@@ -69,6 +69,7 @@ function stateful(initial: ActView, options: { warnings?: ComplianceReport['issu
   let act = initial;
   const patches: Record<string, unknown>[] = [];
   const seals: Record<string, unknown>[] = [];
+  const verifications: Record<string, unknown>[] = [];
   const warnings = options.warnings ?? [];
   const json = (body: unknown, status = 200) =>
     Promise.resolve(
@@ -114,6 +115,29 @@ function stateful(initial: ActView, options: { warnings?: ComplianceReport['issu
         document: null,
       });
     }
+    if (url.includes(`/v1/acts/${act.id}/human-verification`) && method === 'POST') {
+      const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : {};
+      verifications.push(body);
+      const status =
+        body.decision === 'accept'
+          ? ('accepted_by_human' as const)
+          : ('rejected_by_human' as const);
+      act = {
+        ...act,
+        ai_provenance: act.ai_provenance
+          ? {
+              ...act.ai_provenance,
+              human_verification: {
+                status,
+                actor: 'api',
+                reviewed_at: '2026-07-10T10:00:00Z',
+                note: typeof body.note === 'string' ? body.note : null,
+              },
+            }
+          : null,
+      };
+      return json(act);
+    }
     if (/\/v1\/acts\/[^/]+$/.test(url)) {
       if (method === 'PATCH') {
         const body = JSON.parse(init!.body as string) as Record<string, unknown>;
@@ -125,7 +149,7 @@ function stateful(initial: ActView, options: { warnings?: ComplianceReport['issu
     }
     return Promise.reject(new Error(`no stub for ${method} ${url}`));
   }) as typeof fetch;
-  return { fetchImpl, patches, seals };
+  return { fetchImpl, patches, seals, verifications };
 }
 
 function renderEditor() {
@@ -309,6 +333,71 @@ describe('AtaEditorPage — agenda add/remove', () => {
     expect(screen.queryByLabelText('Ponto da ordem de trabalhos')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     await waitFor(() => expect(shared.patches.at(-1)?.agenda).toEqual([]));
+  });
+});
+
+describe('AtaEditorPage — AI human review gate', () => {
+  it('records reject and accept decisions and only enables Signing after acceptance', async () => {
+    const withAi: ActView = {
+      ...baseAct,
+      state: 'TextApproved',
+      mesa: { presidente: 'Ana', secretarios: [] },
+      ai_provenance: {
+        source: 'mcp',
+        tool: 'draft_act',
+        statement_source: 'operator instruction',
+        human_verification: {
+          status: 'pending_human_verification',
+          actor: null,
+          reviewed_at: null,
+          note: null,
+        },
+      },
+    };
+    const shared = stateful(withAi);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    expect(await screen.findByText('Revisão humana pendente')).toBeTruthy();
+    expect(screen.getByText('mcp')).toBeTruthy();
+    const advance = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Avançar para «Em assinatura»',
+    });
+    expect(advance.disabled).toBe(true);
+    expect(screen.getByText(/Aceite a revisão humana/i)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Nota de revisão'), {
+      target: { value: 'needs correction' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Rejeitar revisão' }));
+
+    await waitFor(() =>
+      expect(shared.verifications.at(-1)).toEqual({
+        decision: 'reject',
+        note: 'needs correction',
+      }),
+    );
+    expect(await screen.findByText('Revisão humana rejeitada')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Nota de revisão'), {
+      target: { value: 'human reviewed only' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Aceitar revisão' }));
+
+    await waitFor(() =>
+      expect(shared.verifications.at(-1)).toEqual({
+        decision: 'accept',
+        note: 'human reviewed only',
+      }),
+    );
+    expect(await screen.findByText('Revisão humana aceite')).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>('button', {
+          name: 'Avançar para «Em assinatura»',
+        }).disabled,
+      ).toBe(false),
+    );
   });
 });
 

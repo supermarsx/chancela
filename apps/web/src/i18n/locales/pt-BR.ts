@@ -732,6 +732,26 @@ export const ptBR: Catalog = {
   'acts.archiving': 'Arquivando…',
   'acts.archive': 'Arquivar ata',
   'acts.archived': 'Ata arquivada.',
+  'acts.aiReview.title': 'Revisão humana da assistência de IA',
+  'acts.aiReview.body':
+    'Este painel registra apenas a revisão humana que desbloqueia a passagem para «Em assinatura».',
+  'acts.aiReview.status.pending': 'Revisão humana pendente',
+  'acts.aiReview.status.accepted': 'Revisão humana aceita',
+  'acts.aiReview.status.rejected': 'Revisão humana rejeitada',
+  'acts.aiReview.signingBlocked':
+    'Aceite a revisão humana da assistência de IA antes de avançar para «Em assinatura».',
+  'acts.aiReview.source': 'Origem',
+  'acts.aiReview.tool': 'Ferramenta',
+  'acts.aiReview.statementSource': 'Fonte das instruções',
+  'acts.aiReview.actor': 'Revisor',
+  'acts.aiReview.reviewedAt': 'Revista em',
+  'acts.aiReview.recordedNote': 'Nota registrada',
+  'acts.aiReview.note': 'Nota de revisão',
+  'acts.aiReview.notePlaceholder': 'Contexto da revisão humana',
+  'acts.aiReview.accept': 'Aceitar revisão',
+  'acts.aiReview.reject': 'Rejeitar revisão',
+  'acts.aiReview.recording': 'Registrando…',
+  'acts.aiReview.missing': 'Não indicado',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Regras: {rulePack}',
@@ -1874,6 +1894,8 @@ export const ptBR: Catalog = {
   'toast.ata.advanced': 'Estado da ata atualizado.',
   'toast.ata.sealed': 'Ata selada.',
   'toast.ata.archived': 'Ata arquivada.',
+  'toast.ata.aiReviewAccepted': 'Revisão humana aceita.',
+  'toast.ata.aiReviewRejected': 'Revisão humana rejeitada.',
   // Toast notifications — registry/CAE/law/users/session (t44 retrofit-b)
   'toast.registry.imported': 'Entidade importada do registro.',
   'toast.registry.enriched': 'Entidade atualizada a partir da certidão.',

@@ -60,6 +60,7 @@ import type {
   UpdateActBody,
   UpdateEntityBody,
   UpdateUserBody,
+  VerifyAiHumanReviewBody,
   ActState,
   DataCleanupBody,
   ReanchorBody,
@@ -499,6 +500,20 @@ export function useAdvanceAct(id: string) {
       qc.setQueryData(keys.act(id), act);
       void qc.invalidateQueries({ queryKey: keys.compliance(id) });
       void qc.invalidateQueries({ queryKey: keys.bookActs(act.book_id) });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+export function useVerifyActHumanReview(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: VerifyAiHumanReviewBody) => api.verifyActHumanReview(id, body),
+    onSuccess: (act) => {
+      qc.setQueryData(keys.act(id), act);
+      void qc.invalidateQueries({ queryKey: keys.compliance(id) });
+      void qc.invalidateQueries({ queryKey: keys.bookActs(act.book_id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
   });

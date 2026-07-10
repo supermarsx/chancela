@@ -27,6 +27,7 @@ import {
   useEntity,
   useSealAct,
   useUpdateAct,
+  useVerifyActHumanReview,
 } from '../../api/hooks';
 import {
   actStateLabels,
@@ -51,6 +52,8 @@ import {
   type ActDocumentReference,
   type ActMemberStatement,
   type ActMesa,
+  type AiHumanVerificationStatus,
+  type AiProvenanceView,
   type ActSecondCall,
   type ActSignatory,
   type ActState,
@@ -59,6 +62,7 @@ import {
   type AttachmentKind,
   type ComplianceReport,
   type DispatchChannel,
+  type HumanVerificationDecision,
   type MeetingChannel,
   type SignatoryCapacity,
 } from '../../api/types';
@@ -941,11 +945,13 @@ function ConveningEditor({
 
 function LifecycleStepper({
   current,
+  aiHumanVerificationStatus,
   onAdvance,
   pending,
   scope,
 }: {
   current: ActState;
+  aiHumanVerificationStatus?: AiHumanVerificationStatus | null;
   onAdvance: (to: ActState) => void;
   pending: boolean;
   scope: CanScope;
@@ -953,6 +959,11 @@ function LifecycleStepper({
   const t = useT();
   const currentIdx = ACT_STATES.indexOf(current);
   const next = nextState(current);
+  const signingBlockedByAiReview =
+    current === 'TextApproved' &&
+    next === 'Signing' &&
+    aiHumanVerificationStatus != null &&
+    aiHumanVerificationStatus !== 'accepted_by_human';
   return (
     <div className="stack--tight">
       <ol className="stepper">
@@ -975,11 +986,163 @@ function LifecycleStepper({
           type="button"
           variant="primary"
           icon={<Icon.ArrowRight />}
-          disabled={pending}
+          disabled={pending || signingBlockedByAiReview}
           onClick={() => onAdvance(next)}
         >
           {pending ? t('acts.advancing') : t('acts.advanceTo', { state: actStateLabels[next] })}
         </GateButton>
+      ) : null}
+      {signingBlockedByAiReview ? (
+        <p className="field__hint">{t('acts.aiReview.signingBlocked')}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function aiHumanVerificationTone(status: AiHumanVerificationStatus): 'warn' | 'ok' | 'error' {
+  if (status === 'accepted_by_human') return 'ok';
+  if (status === 'rejected_by_human') return 'error';
+  return 'warn';
+}
+
+function aiHumanVerificationLabel(
+  status: AiHumanVerificationStatus,
+):
+  | 'acts.aiReview.status.accepted'
+  | 'acts.aiReview.status.rejected'
+  | 'acts.aiReview.status.pending' {
+  switch (status) {
+    case 'accepted_by_human':
+      return 'acts.aiReview.status.accepted';
+    case 'rejected_by_human':
+      return 'acts.aiReview.status.rejected';
+    case 'pending_human_verification':
+      return 'acts.aiReview.status.pending';
+  }
+}
+
+function AiHumanReviewPanel({
+  provenance,
+  readOnly,
+  note,
+  pending,
+  pendingDecision,
+  error,
+  scope,
+  onNoteChange,
+  onVerify,
+}: {
+  provenance: AiProvenanceView;
+  readOnly: boolean;
+  note: string;
+  pending: boolean;
+  pendingDecision: HumanVerificationDecision | null;
+  error: unknown;
+  scope: CanScope;
+  onNoteChange: (note: string) => void;
+  onVerify: (decision: HumanVerificationDecision) => void;
+}) {
+  const t = useT();
+  const noteId = useId();
+  const verification = provenance.human_verification;
+  const statusLabel = t(aiHumanVerificationLabel(verification.status));
+  const reviewedAt = verification.reviewed_at;
+
+  return (
+    <div className="stack--tight ai-review">
+      <div className="row-wrap ai-review__status">
+        <Badge tone={aiHumanVerificationTone(verification.status)}>{statusLabel}</Badge>
+      </div>
+      <p className="muted">{t('acts.aiReview.body')}</p>
+
+      <dl className="deflist deflist--tight ai-review__meta">
+        <div>
+          <dt>{t('acts.aiReview.source')}</dt>
+          <dd className="mono">{provenance.source}</dd>
+        </div>
+        <div>
+          <dt>{t('acts.aiReview.tool')}</dt>
+          <dd>
+            {provenance.tool ? (
+              <span className="mono">{provenance.tool}</span>
+            ) : (
+              t('acts.aiReview.missing')
+            )}
+          </dd>
+        </div>
+        {provenance.statement_source ? (
+          <div>
+            <dt>{t('acts.aiReview.statementSource')}</dt>
+            <dd className="mono">{provenance.statement_source}</dd>
+          </div>
+        ) : null}
+        {verification.actor ? (
+          <div>
+            <dt>{t('acts.aiReview.actor')}</dt>
+            <dd className="mono">{verification.actor}</dd>
+          </div>
+        ) : null}
+        {reviewedAt ? (
+          <div>
+            <dt>{t('acts.aiReview.reviewedAt')}</dt>
+            <dd>
+              <time className="mono" dateTime={reviewedAt}>
+                {reviewedAt}
+              </time>
+            </dd>
+          </div>
+        ) : null}
+        {verification.note ? (
+          <div>
+            <dt>{t('acts.aiReview.recordedNote')}</dt>
+            <dd>{verification.note}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      {error ? <ErrorNote error={error} /> : null}
+
+      {!readOnly ? (
+        <>
+          <Field label={t('acts.aiReview.note')} htmlFor={noteId}>
+            <TextArea
+              id={noteId}
+              rows={3}
+              value={note}
+              disabled={pending}
+              placeholder={t('acts.aiReview.notePlaceholder')}
+              onChange={(e) => onNoteChange(e.target.value)}
+            />
+          </Field>
+          <div className="row-wrap ai-review__actions">
+            <GateButton
+              perm="act.advance"
+              scope={scope}
+              type="button"
+              variant="secondary"
+              icon={<Icon.Check />}
+              disabled={pending}
+              onClick={() => onVerify('accept')}
+            >
+              {pending && pendingDecision === 'accept'
+                ? t('acts.aiReview.recording')
+                : t('acts.aiReview.accept')}
+            </GateButton>
+            <GateButton
+              perm="act.advance"
+              scope={scope}
+              type="button"
+              variant="ghost"
+              icon={<Icon.Close />}
+              disabled={pending}
+              onClick={() => onVerify('reject')}
+            >
+              {pending && pendingDecision === 'reject'
+                ? t('acts.aiReview.recording')
+                : t('acts.aiReview.reject')}
+            </GateButton>
+          </div>
+        </>
       ) : null}
     </div>
   );
@@ -1170,10 +1333,15 @@ export function AtaEditorPage() {
   const compliance = useCompliance(id);
   const update = useUpdateAct(id);
   const advance = useAdvanceAct(id);
+  const humanReview = useVerifyActHumanReview(id);
   const seal = useSealAct(id);
   const archive = useArchiveAct(id);
 
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [humanReviewNote, setHumanReviewNote] = useState('');
+  const [humanReviewDecision, setHumanReviewDecision] = useState<HumanVerificationDecision | null>(
+    null,
+  );
   const [sealWarningsOpen, setSealWarningsOpen] = useState(false);
   const [sealWarningsAcknowledged, setSealWarningsAcknowledged] = useState(false);
 
@@ -1225,6 +1393,26 @@ export function AtaEditorPage() {
     });
   }
 
+  function onHumanReview(decision: HumanVerificationDecision) {
+    const note = humanReviewNote.trim();
+    setHumanReviewDecision(decision);
+    humanReview.mutate(
+      { decision, note: note === '' ? undefined : note },
+      {
+        onSuccess: () => {
+          setHumanReviewNote('');
+          toast.success(
+            decision === 'accept'
+              ? t('toast.ata.aiReviewAccepted')
+              : t('toast.ata.aiReviewRejected'),
+          );
+        },
+        onError: (e) => toast.error(e),
+        onSettled: () => setHumanReviewDecision(null),
+      },
+    );
+  }
+
   function submitSeal(acknowledgeWarnings: boolean) {
     seal.mutate(acknowledgeWarnings ? { acknowledge_warnings: true } : {}, {
       onSuccess: () => {
@@ -1257,6 +1445,7 @@ export function AtaEditorPage() {
 
   const sealAllowed = compliance.data?.seal_allowed ?? false;
   const canSeal = a.state === 'Signing' && sealAllowed;
+  const aiHumanVerificationStatus = a.ai_provenance?.human_verification.status ?? null;
   const warningCount = complianceWarningCount(compliance.data);
   const hasComplianceWarnings = warningCount > 0;
   const warningItems = sealWarningItems(compliance.data);
@@ -1531,11 +1720,28 @@ export function AtaEditorPage() {
             {advance.error ? <ErrorNote error={advance.error} /> : null}
             <LifecycleStepper
               current={a.state}
+              aiHumanVerificationStatus={aiHumanVerificationStatus}
               pending={advance.isPending}
               onAdvance={onAdvance}
               scope={bookScope}
             />
           </Card>
+
+          {a.ai_provenance ? (
+            <Card title={t('acts.aiReview.title')}>
+              <AiHumanReviewPanel
+                provenance={a.ai_provenance}
+                readOnly={readOnly}
+                note={humanReviewNote}
+                pending={humanReview.isPending}
+                pendingDecision={humanReviewDecision}
+                error={humanReview.error}
+                scope={bookScope}
+                onNoteChange={setHumanReviewNote}
+                onVerify={onHumanReview}
+              />
+            </Card>
+          ) : null}
 
           <Card title={t('acts.compliance')}>
             {compliance.isLoading ? (

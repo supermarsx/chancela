@@ -372,6 +372,27 @@ export interface ActSealMetadata {
   profile: EntityKind;
 }
 
+export const AI_HUMAN_VERIFICATION_STATUSES = [
+  'pending_human_verification',
+  'accepted_by_human',
+  'rejected_by_human',
+] as const;
+export type AiHumanVerificationStatus = (typeof AI_HUMAN_VERIFICATION_STATUSES)[number];
+
+export interface AiHumanVerificationView {
+  status: AiHumanVerificationStatus;
+  actor: string | null;
+  reviewed_at: string | null;
+  note: string | null;
+}
+
+export interface AiProvenanceView {
+  source: string;
+  tool: string | null;
+  statement_source: string | null;
+  human_verification: AiHumanVerificationView;
+}
+
 export interface ActView {
   id: string;
   book_id: string;
@@ -398,6 +419,7 @@ export interface ActView {
   seal_metadata: ActSealMetadata | null;
   retifies: string | null;
   convening?: ActConvening;
+  ai_provenance?: AiProvenanceView | null;
 }
 
 export interface ComplianceIssue {
@@ -1725,7 +1747,7 @@ export interface TsaCatalogView {
   records: TsaRecordView[];
 }
 
-export interface TsaCatalogSearchParams extends TslCatalogSearchParams {}
+export type TsaCatalogSearchParams = TslCatalogSearchParams;
 
 // --- Law archive (t27, FROZEN §law-v1) — the local "mini law archive" -----------
 //
@@ -2704,8 +2726,15 @@ export interface DraftActBody {
   book_id: string;
   title: string;
   channel: MeetingChannel;
+  ai_provenance?: AiProvenanceInput | null;
   convening?: ActConvening | null;
   retifies?: string;
+}
+
+export interface AiProvenanceInput {
+  source: string;
+  tool?: string | null;
+  statement_source?: string | null;
 }
 
 export interface UpdateActBody {
@@ -2730,6 +2759,14 @@ export interface UpdateActBody {
 
 export interface AdvanceActBody {
   to: ActState;
+  actor?: string;
+}
+
+export type HumanVerificationDecision = 'accept' | 'reject';
+
+export interface VerifyAiHumanReviewBody {
+  decision: HumanVerificationDecision;
+  note?: string | null;
   actor?: string;
 }
 

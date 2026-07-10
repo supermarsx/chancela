@@ -1463,6 +1463,15 @@ a.btn.btn--iconOnly {
   border-color: var(--accent-strong);
 }
 
+.ai-review__meta {
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+.ai-review__actions {
+  gap: 0.55rem;
+}
+
 /* Compliance issue list. */
 .issues {
   list-style: none;

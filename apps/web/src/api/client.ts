@@ -142,6 +142,7 @@ import type {
   UpdateActBody,
   UpdateUserBody,
   UserView,
+  VerifyAiHumanReviewBody,
   RoleView,
   PermissionCatalogView,
   CreateRoleBody,
@@ -508,6 +509,8 @@ export const api = {
   draftAct: (body: DraftActBody) => post<ActView>('/v1/acts', body),
   updateAct: (id: string, body: UpdateActBody) => patch<ActView>(`/v1/acts/${id}`, body),
   advanceAct: (id: string, body: AdvanceActBody) => post<ActView>(`/v1/acts/${id}/advance`, body),
+  verifyActHumanReview: (id: string, body: VerifyAiHumanReviewBody) =>
+    post<ActView>(`/v1/acts/${id}/human-verification`, body),
   getCompliance: (id: string) => get<ComplianceReport>(`/v1/acts/${id}/compliance`),
   sealAct: (id: string, body: SealActBody) => post<SealResult>(`/v1/acts/${id}/seal`, body),
   archiveAct: (id: string) => post<ActView>(`/v1/acts/${id}/archive`),

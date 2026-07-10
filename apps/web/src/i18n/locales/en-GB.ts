@@ -728,6 +728,26 @@ export const enGB: Catalog = {
   'acts.archiving': 'Archiving…',
   'acts.archive': 'Archive minute',
   'acts.archived': 'Minute archived.',
+  'acts.aiReview.title': 'AI assistance human review',
+  'acts.aiReview.body':
+    'This panel records only the human review that unlocks the move to Signing.',
+  'acts.aiReview.status.pending': 'Human review pending',
+  'acts.aiReview.status.accepted': 'Human review accepted',
+  'acts.aiReview.status.rejected': 'Human review rejected',
+  'acts.aiReview.signingBlocked':
+    'Accept the human review of the AI-assisted draft before advancing to Signing.',
+  'acts.aiReview.source': 'Source',
+  'acts.aiReview.tool': 'Tool',
+  'acts.aiReview.statementSource': 'Instruction source',
+  'acts.aiReview.actor': 'Reviewer',
+  'acts.aiReview.reviewedAt': 'Reviewed at',
+  'acts.aiReview.recordedNote': 'Recorded note',
+  'acts.aiReview.note': 'Review note',
+  'acts.aiReview.notePlaceholder': 'Optional human-review context',
+  'acts.aiReview.accept': 'Accept review',
+  'acts.aiReview.reject': 'Reject review',
+  'acts.aiReview.recording': 'Recording…',
+  'acts.aiReview.missing': 'Not recorded',
 
   // --- Compliance panel (chrome only; issue text stays backend-authored, UX-21) --
   'compliance.rules': 'Rules: {rulePack}',
@@ -1852,6 +1872,8 @@ export const enGB: Catalog = {
   'toast.ata.advanced': 'Minute state updated.',
   'toast.ata.sealed': 'Minute sealed.',
   'toast.ata.archived': 'Minute archived.',
+  'toast.ata.aiReviewAccepted': 'Human review accepted.',
+  'toast.ata.aiReviewRejected': 'Human review rejected.',
   // Toast notifications — registry/CAE/law/users/session (t44 retrofit-b)
   'toast.registry.imported': 'Entity imported from the registry.',
   'toast.registry.enriched': 'Entity updated from the certificate.',
