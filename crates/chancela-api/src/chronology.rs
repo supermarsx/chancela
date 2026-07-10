@@ -1,9 +1,10 @@
 //! Chronology / relationship-graph endpoint (spec DOC-30/31/32) — a native, **explainable** graph
 //! feature over a stored [`RegistryExtract`].
 //!
-//! `GET /v1/entities/{id}/chronology` builds the normalized event timeline (DOC-30) and the Mermaid
-//! diagram set (DOC-31) from the entity's imported certidão extract and returns them as thin wire
-//! views (house convention). Every event carries its `source_inscription` (DOC-32 provenance).
+//! `GET /v1/entities/{id}/chronology` builds the normalized event timeline (DOC-30), the Mermaid
+//! diagram set (DOC-31), and structured graph data from the entity's imported certidão extract and
+//! returns them as thin wire views (house convention). Every event carries its `source_inscription`
+//! (DOC-32 provenance).
 //! `404` when the entity is unknown or nothing has been imported. Requires a valid session, exactly
 //! like its sibling `GET /v1/entities/{id}/registry` (both read the same stored extract).
 
@@ -11,7 +12,9 @@ use axum::Json;
 use axum::extract::{Path, State};
 use chancela_core::EntityId;
 use chancela_registry::RegistryExtract;
-use chancela_registry::chronology::{Chronology, ChronologyEvent, ChronologyKind};
+use chancela_registry::chronology::{
+    Chronology, ChronologyEvent, ChronologyGraphBundle, ChronologyKind,
+};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -57,11 +60,12 @@ pub struct MermaidBundleView {
     pub relationships: String,
 }
 
-/// The chronology response: the ordered event timeline plus the Mermaid diagram set.
+/// The chronology response: the ordered event timeline plus Mermaid and structured graph views.
 #[derive(Serialize)]
 pub struct ChronologyView {
     pub events: Vec<ChronologyEventView>,
     pub mermaid: MermaidBundleView,
+    pub graph: ChronologyGraphBundle,
 }
 
 impl ChronologyView {
@@ -78,7 +82,12 @@ impl ChronologyView {
             organs: chrono.organs_mermaid(extract),
             relationships: chrono.relationships_mermaid(extract),
         };
-        ChronologyView { events, mermaid }
+        let graph = chrono.graph(extract);
+        ChronologyView {
+            events,
+            mermaid,
+            graph,
+        }
     }
 }
 
@@ -287,6 +296,36 @@ mod tests {
                 .as_str()
                 .expect("relationships")
                 .starts_with("graph")
+        );
+
+        // Structured graph bundle mirrors the Mermaid views without replacing them.
+        let graph = &view["graph"];
+        for key in ["shareholders", "organs", "relationships"] {
+            assert!(
+                graph[key]["nodes"].is_array(),
+                "{key} graph exposes nodes: {graph:?}"
+            );
+            assert!(
+                graph[key]["edges"].is_array(),
+                "{key} graph exposes edges: {graph:?}"
+            );
+            assert!(
+                graph[key]["warnings"].is_array(),
+                "{key} graph exposes warnings: {graph:?}"
+            );
+        }
+        assert_eq!(graph["shareholders"]["nodes"][0]["id"], "entity");
+        assert_eq!(graph["relationships"]["nodes"][0]["id"], "entity");
+        assert!(
+            graph["relationships"]["warnings"]
+                .as_array()
+                .expect("relationship warnings")
+                .iter()
+                .any(|warning| warning
+                    .as_str()
+                    .unwrap_or("")
+                    .contains("No structured corporate relationship evidence")),
+            "relationship empty-state warning is exposed: {graph:?}"
         );
     }
 

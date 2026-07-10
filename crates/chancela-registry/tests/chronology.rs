@@ -147,6 +147,34 @@ fn shareholders_mermaid_is_a_graph_with_socio_nodes() {
 }
 
 #[test]
+fn chronology_shareholders_graph_has_deterministic_nodes_edges_and_provenance() {
+    let extract = lookup(MockRegistryTransport::from_fixture_spq());
+    let chrono = Chronology::build(&extract);
+    let graph = chrono.graph(&extract).shareholders;
+
+    let node_ids: Vec<&str> = graph.nodes.iter().map(|node| node.id.as_str()).collect();
+    assert_eq!(node_ids, vec!["entity", "shareholder-0", "shareholder-1"]);
+    assert!(graph.warnings.is_empty(), "unexpected warnings: {graph:?}");
+
+    let rui = &graph.nodes[1];
+    assert_eq!(rui.label, "Rui Tavares Nogueira");
+    assert_eq!(rui.kind, "person");
+    assert_eq!(rui.category.as_deref(), Some("shareholder"));
+    assert_eq!(rui.source_inscription.as_deref(), Some("1"));
+    assert_eq!(rui.source_date.as_deref(), Some("2020-01-15"));
+
+    let edge_ids: Vec<&str> = graph.edges.iter().map(|edge| edge.id.as_str()).collect();
+    assert_eq!(edge_ids, vec!["shareholding-0", "shareholding-1"]);
+    let first = &graph.edges[0];
+    assert_eq!(first.from, "entity");
+    assert_eq!(first.to, "shareholder-0");
+    assert_eq!(first.label, "4.500,00 Euros");
+    assert_eq!(first.kind, "shareholding");
+    assert_eq!(first.source_inscription.as_deref(), Some("1"));
+    assert_eq!(first.source_date.as_deref(), Some("2020-01-15"));
+}
+
+#[test]
 fn organs_mermaid_is_a_timeline_ordered_by_date() {
     let extract = lookup(MockRegistryTransport::from_fixture_spq());
     let chrono = Chronology::build(&extract);
@@ -170,6 +198,52 @@ fn organs_mermaid_is_a_timeline_ordered_by_date() {
 }
 
 #[test]
+fn chronology_organs_graph_has_deterministic_nodes_edges_and_provenance() {
+    let extract = lookup(MockRegistryTransport::from_fixture_spq());
+    let chrono = Chronology::build(&extract);
+    let graph = chrono.graph(&extract).organs;
+
+    let node_ids: Vec<&str> = graph.nodes.iter().map(|node| node.id.as_str()).collect();
+    assert_eq!(node_ids, vec!["entity", "officer-0", "officer-1"]);
+    assert!(graph.warnings.is_empty(), "unexpected warnings: {graph:?}");
+
+    let amelia = &graph.nodes[1];
+    assert_eq!(amelia.label, "Amélia Marques");
+    assert_eq!(amelia.category.as_deref(), Some("officer"));
+    assert_eq!(amelia.source_inscription.as_deref(), Some("1"));
+    assert_eq!(amelia.source_date.as_deref(), Some("2026-05-11"));
+
+    let bruno = &graph.nodes[2];
+    assert_eq!(bruno.label, "Bruno Alves Ferreira");
+    assert_eq!(bruno.source_inscription.as_deref(), Some("2"));
+    assert_eq!(bruno.source_date.as_deref(), Some("2021-03-05"));
+
+    let designation = graph
+        .edges
+        .iter()
+        .find(|edge| edge.id == "organ-designation-1")
+        .expect("Bruno designation edge");
+    assert_eq!(designation.from, "entity");
+    assert_eq!(designation.to, "officer-1");
+    assert_eq!(designation.label, "Gerente");
+    assert_eq!(designation.kind, "organ_designation");
+    assert_eq!(designation.source_inscription.as_deref(), Some("2"));
+    assert_eq!(designation.source_date.as_deref(), Some("2021-03-05"));
+
+    let cessation = graph
+        .edges
+        .iter()
+        .find(|edge| edge.id == "organ-cessation-1")
+        .expect("Bruno cessation edge");
+    assert_eq!(cessation.from, "entity");
+    assert_eq!(cessation.to, "officer-1");
+    assert_eq!(cessation.label, "cessation");
+    assert_eq!(cessation.kind, "organ_cessation");
+    assert_eq!(cessation.source_inscription.as_deref(), Some("3 Av. 1"));
+    assert_eq!(cessation.source_date.as_deref(), Some("2023-06-20"));
+}
+
+#[test]
 fn relationships_mermaid_is_a_valid_graph_stub() {
     // The SPQ sócios are natural persons → an honest single-node stub, still a valid graph.
     let extract = lookup(MockRegistryTransport::from_fixture_spq());
@@ -186,6 +260,24 @@ fn relationships_mermaid_is_a_valid_graph_stub() {
 }
 
 #[test]
+fn chronology_relationships_graph_is_an_honest_empty_stub_without_corporate_relationships() {
+    let extract = lookup(MockRegistryTransport::from_fixture_spq());
+    let chrono = Chronology::build(&extract);
+    let graph = chrono.graph(&extract).relationships;
+
+    assert_eq!(graph.nodes.len(), 1);
+    assert_eq!(graph.nodes[0].id, "entity");
+    assert!(graph.edges.is_empty(), "no fabricated edges: {graph:?}");
+    assert!(
+        graph
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("No structured corporate relationship evidence")),
+        "empty relationship graph explains why it has no edges: {graph:?}"
+    );
+}
+
+#[test]
 fn chronology_is_deterministic() {
     let extract = lookup(MockRegistryTransport::from_fixture_spq());
     let a = Chronology::build(&extract);
@@ -196,4 +288,5 @@ fn chronology_is_deterministic() {
         b.shareholders_mermaid(&extract)
     );
     assert_eq!(a.organs_mermaid(&extract), b.organs_mermaid(&extract));
+    assert_eq!(a.graph(&extract), b.graph(&extract));
 }

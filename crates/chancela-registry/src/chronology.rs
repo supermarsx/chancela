@@ -7,8 +7,8 @@
 //!   designations, cessations, capital/seat/object changes, quota transfers, dissolutions, …), each
 //!   carrying its **`source_inscription`** so every fact traces back to a numbered registry entry
 //!   (DOC-32 provenance);
-//! - **DOC-31** — deterministic **Mermaid** diagram strings: a shareholders/quotas `graph`, an
-//!   órgãos-over-time `timeline`, and an inter-company relationship `graph` stub.
+//! - **DOC-31** — deterministic graph views: **Mermaid** diagram strings plus structured
+//!   `nodes`/`edges` data for shareholders, organs, and inter-company relationship evidence.
 //!
 //! Everything here is a **pure function of the extract** — no clock, no network, no randomness — so
 //! the same extract always yields the same chronology and the same Mermaid text (ordering follows
@@ -60,6 +60,50 @@ pub struct ChronologyEvent {
     pub actors: Vec<String>,
 }
 
+/// A deterministic structured graph bundle mirroring the chronology Mermaid views. It is technical
+/// evidence data only: labels come from parsed registry facts, while `kind`/`category` values are
+/// stable English machine categories.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChronologyGraphBundle {
+    pub shareholders: ChronologyGraph,
+    pub organs: ChronologyGraph,
+    pub relationships: ChronologyGraph,
+}
+
+/// A small source-linked graph: stable node/edge ids, source labels, and warnings when the parser
+/// has no structured evidence for a richer graph.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChronologyGraph {
+    pub nodes: Vec<ChronologyGraphNode>,
+    pub edges: Vec<ChronologyGraphEdge>,
+    pub warnings: Vec<String>,
+}
+
+/// One graph node. `source_inscription` / `source_date` point to the parsed registry entry when the
+/// node comes from inscription evidence; the subject entity node may have no single source marker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChronologyGraphNode {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    pub category: Option<String>,
+    pub source_inscription: Option<String>,
+    pub source_date: Option<String>,
+}
+
+/// One graph edge, labelled with the parsed fact it represents and linked back to its source entry
+/// when available.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChronologyGraphEdge {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub label: String,
+    pub kind: String,
+    pub source_inscription: Option<String>,
+    pub source_date: Option<String>,
+}
+
 /// The normalized, ordered event timeline for an entity (DOC-30). Ordering follows the inscrição
 /// feed as printed on the certidão — deterministic, no clock.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,6 +140,16 @@ impl Chronology {
     /// legal person (company/association/foundation). A single-node `graph` when none is detected.
     pub fn relationships_mermaid(&self, extract: &RegistryExtract) -> String {
         relationships_mermaid(extract)
+    }
+
+    /// Structured graph data for the same three DOC-31 views. The builders use the same parsed
+    /// extract / chronology evidence as the Mermaid helpers and keep empty graphs explicit.
+    pub fn graph(&self, extract: &RegistryExtract) -> ChronologyGraphBundle {
+        ChronologyGraphBundle {
+            shareholders: shareholders_graph(extract, &self.events),
+            organs: organs_graph(extract, &self.events),
+            relationships: relationships_graph(extract),
+        }
     }
 }
 
@@ -355,6 +409,419 @@ fn push_unique(v: &mut Vec<String>, s: String) {
     if !s.is_empty() && !v.iter().any(|e| e == &s) {
         v.push(s);
     }
+}
+
+// --- Structured graph generation (DOC-31) -----------------------------------------------------
+
+#[derive(Debug, Clone)]
+struct SourceMarker {
+    inscription: Option<String>,
+    date: Option<String>,
+}
+
+impl SourceMarker {
+    fn has_any(&self) -> bool {
+        self.inscription.is_some() || self.date.is_some()
+    }
+}
+
+fn shareholders_graph(extract: &RegistryExtract, events: &[ChronologyEvent]) -> ChronologyGraph {
+    let mut graph = graph_with_entity(extract);
+
+    if let Some((idx, insc, c)) = constitution_entry(extract) {
+        let source = source_from_inscription(insc, idx);
+        for (i, socio) in c.socios.iter().enumerate() {
+            let node_id = format!("shareholder-{i}");
+            let label = party_label(&socio.titular.name, &format!("Shareholder {}", i + 1));
+            graph.nodes.push(graph_node(
+                node_id.clone(),
+                label.clone(),
+                party_kind(&label),
+                Some("shareholder"),
+                Some(&source),
+            ));
+            graph.edges.push(graph_edge(
+                format!("shareholding-{i}"),
+                "entity",
+                &node_id,
+                socio.amount.to_display(),
+                "shareholding",
+                Some(&source),
+            ));
+        }
+        if c.socios.is_empty() {
+            graph.warnings.push(
+                "Structured constitution evidence contains no shareholder quota entries."
+                    .to_owned(),
+            );
+        }
+    } else {
+        graph.warnings.push(
+            "No structured constitution evidence is available for shareholder graphing.".to_owned(),
+        );
+    }
+
+    let transfers = events
+        .iter()
+        .filter(|e| e.kind == ChronologyKind::QuotaTransfer)
+        .count();
+    if transfers > 0 {
+        graph.warnings.push(format!(
+            "{transfers} quota transfer event(s) are present but not parsed into ownership edges."
+        ));
+    }
+
+    graph
+}
+
+fn organs_graph(extract: &RegistryExtract, events: &[ChronologyEvent]) -> ChronologyGraph {
+    let mut graph = graph_with_entity(extract);
+
+    if extract.orgaos.is_empty() {
+        graph
+            .warnings
+            .push("No structured organ evidence was detected.".to_owned());
+        return graph;
+    }
+
+    for (i, officer) in extract.orgaos.iter().enumerate() {
+        let node_id = format!("officer-{i}");
+        let label = party_label(&officer.name, &format!("Officer {}", i + 1));
+        let appointment_source = appointment_source_for_officer(officer, events);
+        let cessation_source = cessation_source_for_officer(officer, events);
+        let node_source = appointment_source
+            .as_ref()
+            .filter(|s| s.has_any())
+            .or_else(|| cessation_source.as_ref().filter(|s| s.has_any()));
+
+        graph.nodes.push(graph_node(
+            node_id.clone(),
+            label.clone(),
+            party_kind(&label),
+            Some("officer"),
+            node_source,
+        ));
+
+        if let Some(source) = appointment_source.as_ref() {
+            graph.edges.push(graph_edge(
+                format!("organ-designation-{i}"),
+                "entity",
+                &node_id,
+                officer
+                    .role
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|r| !r.is_empty())
+                    .unwrap_or("appointment"),
+                "organ_designation",
+                Some(source),
+            ));
+        }
+
+        if let Some(source) = cessation_source.as_ref() {
+            graph.edges.push(graph_edge(
+                format!("organ-cessation-{i}"),
+                "entity",
+                &node_id,
+                "cessation",
+                "organ_cessation",
+                Some(source),
+            ));
+        }
+    }
+
+    graph
+}
+
+fn relationships_graph(extract: &RegistryExtract) -> ChronologyGraph {
+    let mut graph = graph_with_entity(extract);
+    let mut related_names: Vec<String> = Vec::new();
+
+    if let Some((idx, insc, c)) = constitution_entry(extract) {
+        let source = source_from_inscription(insc, idx);
+        for socio in &c.socios {
+            if looks_like_company(&socio.titular.name) {
+                push_relationship(
+                    &mut graph,
+                    &mut related_names,
+                    socio.titular.name.clone(),
+                    "corporate_shareholder",
+                    "shareholder",
+                    &source,
+                );
+            }
+        }
+        for organ in &c.orgaos {
+            for member in &organ.members {
+                if looks_like_company(&member.name) {
+                    push_relationship(
+                        &mut graph,
+                        &mut related_names,
+                        member.name.clone(),
+                        "corporate_officer",
+                        "officer",
+                        &source,
+                    );
+                }
+            }
+        }
+    } else {
+        graph.warnings.push(
+            "No structured constitution evidence is available for relationship graphing."
+                .to_owned(),
+        );
+    }
+
+    if graph.edges.is_empty() {
+        graph.warnings.push(
+            "No structured corporate relationship evidence was detected; graph contains only the subject entity."
+                .to_owned(),
+        );
+    }
+
+    graph
+}
+
+fn graph_with_entity(extract: &RegistryExtract) -> ChronologyGraph {
+    ChronologyGraph {
+        nodes: vec![graph_node(
+            "entity",
+            entity_label(extract),
+            "entity",
+            Some("subject"),
+            None,
+        )],
+        edges: Vec::new(),
+        warnings: Vec::new(),
+    }
+}
+
+fn graph_node(
+    id: impl Into<String>,
+    label: impl Into<String>,
+    kind: &str,
+    category: Option<&str>,
+    source: Option<&SourceMarker>,
+) -> ChronologyGraphNode {
+    ChronologyGraphNode {
+        id: id.into(),
+        label: tidy(&label.into()),
+        kind: kind.to_owned(),
+        category: category.map(str::to_owned),
+        source_inscription: source.and_then(|s| s.inscription.clone()),
+        source_date: source.and_then(|s| s.date.clone()),
+    }
+}
+
+fn graph_edge(
+    id: impl Into<String>,
+    from: impl Into<String>,
+    to: impl Into<String>,
+    label: impl Into<String>,
+    kind: &str,
+    source: Option<&SourceMarker>,
+) -> ChronologyGraphEdge {
+    ChronologyGraphEdge {
+        id: id.into(),
+        from: from.into(),
+        to: to.into(),
+        label: tidy(&label.into()),
+        kind: kind.to_owned(),
+        source_inscription: source.and_then(|s| s.inscription.clone()),
+        source_date: source.and_then(|s| s.date.clone()),
+    }
+}
+
+fn constitution_entry(
+    extract: &RegistryExtract,
+) -> Option<(usize, &RegistryEvent, &ConstitutionPayload)> {
+    extract
+        .inscricoes
+        .iter()
+        .enumerate()
+        .find_map(
+            |(idx, event)| match event.detail.as_ref()?.payload.as_ref()? {
+                InscriptionPayload::Constitution(c) => Some((idx, event, c)),
+                _ => None,
+            },
+        )
+}
+
+fn source_from_inscription(insc: &RegistryEvent, idx: usize) -> SourceMarker {
+    SourceMarker {
+        inscription: Some(source_ref(insc, idx)),
+        date: event_date(insc),
+    }
+}
+
+fn source_from_event(event: &ChronologyEvent) -> SourceMarker {
+    SourceMarker {
+        inscription: non_empty(event.source_inscription.clone()),
+        date: event.date.clone().and_then(non_empty),
+    }
+}
+
+fn source_from_values(inscription: Option<String>, date: Option<String>) -> SourceMarker {
+    SourceMarker {
+        inscription: inscription.and_then(non_empty),
+        date: date.and_then(non_empty),
+    }
+}
+
+fn appointment_source_for_officer(
+    officer: &crate::model::RegistryOfficer,
+    events: &[ChronologyEvent],
+) -> Option<SourceMarker> {
+    event_source_for_actor(events, ChronologyKind::Constitution, &officer.name, None)
+        .map(|source| source_with_date(source, officer.appointment_date.as_deref()))
+        .or_else(|| {
+            event_source_for_actor(
+                events,
+                ChronologyKind::Designation,
+                &officer.name,
+                officer.appointment_date.as_deref(),
+            )
+            .map(|source| source_with_date(source, officer.appointment_date.as_deref()))
+        })
+        .or_else(|| {
+            officer.appointment_date.as_ref().map(|_| {
+                source_from_values(
+                    officer.source_event.clone(),
+                    officer.appointment_date.clone(),
+                )
+            })
+        })
+}
+
+fn cessation_source_for_officer(
+    officer: &crate::model::RegistryOfficer,
+    events: &[ChronologyEvent],
+) -> Option<SourceMarker> {
+    officer.cessation_date.as_ref()?;
+    event_source_for_actor(
+        events,
+        ChronologyKind::Cessation,
+        &officer.name,
+        officer.cessation_date.as_deref(),
+    )
+    .map(|source| source_with_date(source, officer.cessation_date.as_deref()))
+    .or_else(|| {
+        let fallback_inscription = if officer.appointment_date.is_none() {
+            officer.source_event.clone()
+        } else {
+            None
+        };
+        Some(source_from_values(
+            fallback_inscription,
+            officer.cessation_date.clone(),
+        ))
+    })
+}
+
+fn event_source_for_actor(
+    events: &[ChronologyEvent],
+    kind: ChronologyKind,
+    actor: &str,
+    date: Option<&str>,
+) -> Option<SourceMarker> {
+    let mut first = None;
+    for event in events.iter().filter(|event| {
+        event.kind == kind
+            && event
+                .actors
+                .iter()
+                .any(|candidate| same_party(candidate, actor))
+    }) {
+        let source = source_from_event(event);
+        if first.is_none() {
+            first = Some(source.clone());
+        }
+        if date.is_none() || event.date.as_deref() == date {
+            return Some(source);
+        }
+    }
+    first
+}
+
+fn source_with_date(mut source: SourceMarker, date: Option<&str>) -> SourceMarker {
+    if let Some(date) = date.and_then(|d| non_empty(d.to_owned())) {
+        source.date = Some(date);
+    }
+    source
+}
+
+fn push_relationship(
+    graph: &mut ChronologyGraph,
+    related_names: &mut Vec<String>,
+    name: String,
+    kind: &str,
+    label: &str,
+    source: &SourceMarker,
+) {
+    let label_name = party_label(
+        &name,
+        &format!("Related entity {}", related_names.len() + 1),
+    );
+    let idx = match related_names
+        .iter()
+        .position(|existing| same_party(existing, &label_name))
+    {
+        Some(idx) => idx,
+        None => {
+            let idx = related_names.len();
+            related_names.push(label_name.clone());
+            graph.nodes.push(graph_node(
+                format!("related-{idx}"),
+                label_name,
+                "legal_person",
+                Some("related_entity"),
+                Some(source),
+            ));
+            idx
+        }
+    };
+    let to = format!("related-{idx}");
+    if graph
+        .edges
+        .iter()
+        .any(|edge| edge.to == to && edge.kind == kind)
+    {
+        return;
+    }
+    graph.edges.push(graph_edge(
+        format!("relationship-{}", graph.edges.len()),
+        "entity",
+        to,
+        label,
+        kind,
+        Some(source),
+    ));
+}
+
+fn party_label(name: &str, fallback: &str) -> String {
+    let label = tidy(name);
+    if label.is_empty() {
+        fallback.to_owned()
+    } else {
+        label
+    }
+}
+
+fn party_kind(label: &str) -> &'static str {
+    if looks_like_company(label) {
+        "legal_person"
+    } else {
+        "person"
+    }
+}
+
+fn same_party(a: &str, b: &str) -> bool {
+    fold_upper(&tidy(a)) == fold_upper(&tidy(b))
+}
+
+fn non_empty(s: String) -> Option<String> {
+    let t = s.trim();
+    (!t.is_empty()).then(|| t.to_owned())
 }
 
 // --- Mermaid generation (DOC-31) --------------------------------------------------------------
