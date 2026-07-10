@@ -357,6 +357,7 @@ pub struct TsaCatalogView {
 #[derive(Deserialize)]
 pub struct TslCatalogQuery {
     pub search: Option<String>,
+    pub identifier: Option<String>,
     pub service_type: Option<String>,
     pub status: Option<String>,
     pub history: Option<String>,
@@ -367,6 +368,7 @@ pub struct TslCatalogQuery {
 #[derive(Deserialize)]
 pub struct TsaCatalogQuery {
     pub search: Option<String>,
+    pub identifier: Option<String>,
     pub service_type: Option<String>,
     pub status: Option<String>,
     pub history: Option<String>,
@@ -384,16 +386,38 @@ struct LoadedTsl {
 #[derive(Default)]
 struct ServiceFilters {
     search: Option<String>,
+    identifier: Option<IdentifierFilter>,
     service_type: Option<String>,
     status: Option<String>,
     history: Option<String>,
     supply_point: Option<String>,
 }
 
+#[derive(Clone)]
+struct IdentifierFilter {
+    kind: IdentifierFilterKind,
+    value: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IdentifierFilterKind {
+    CertificateSha256,
+    SubjectKeyId,
+    Text,
+    Unknown,
+}
+
+enum HexLikeInput {
+    Hex(String),
+    Malformed,
+    Text,
+}
+
 impl ServiceFilters {
     fn from_tsl_query(query: &TslCatalogQuery) -> Self {
         Self {
             search: folded_query(&query.search),
+            identifier: identifier_filter(query.identifier.as_deref()),
             service_type: folded_query(&query.service_type),
             status: folded_query(&query.status),
             history: folded_query(&query.history),
@@ -404,6 +428,7 @@ impl ServiceFilters {
     fn from_tsa_query(query: &TsaCatalogQuery) -> Self {
         Self {
             search: folded_query(&query.search),
+            identifier: identifier_filter(query.identifier.as_deref()),
             service_type: folded_query(&query.service_type),
             status: folded_query(&query.status),
             history: folded_query(&query.history),
@@ -413,6 +438,7 @@ impl ServiceFilters {
 
     fn is_active(&self) -> bool {
         self.search.is_some()
+            || self.identifier.is_some()
             || self.service_type.is_some()
             || self.status.is_some()
             || self.history.is_some()
@@ -1385,6 +1411,11 @@ fn service_matches_filters(
             return false;
         }
     }
+    if let Some(identifier) = &filters.identifier {
+        if !identity_matches_filter(service, list_text, provider_text, service_text, identifier) {
+            return false;
+        }
+    }
     if let Some(service_type) = &filters.service_type {
         let current_type = fold(&service.service_type);
         let history_types = service
@@ -1415,6 +1446,31 @@ fn service_matches_filters(
         }
     }
     true
+}
+
+fn identity_matches_filter(
+    service: &TrustService,
+    list_text: &str,
+    provider_text: &str,
+    service_text: &str,
+    filter: &IdentifierFilter,
+) -> bool {
+    match filter.kind {
+        IdentifierFilterKind::Unknown => false,
+        IdentifierFilterKind::CertificateSha256 => service.digital_identities.iter().any(|id| {
+            matches!(id, DigitalIdentity::Certificate(der) if cert_fingerprint(der) == filter.value)
+        }),
+        IdentifierFilterKind::SubjectKeyId => service.digital_identities.iter().any(|id| {
+            matches!(id, DigitalIdentity::SubjectKeyId(ski) if hex_bytes(ski) == filter.value)
+        }),
+        IdentifierFilterKind::Text => {
+            service.digital_identities.iter().any(|id| {
+                matches!(id, DigitalIdentity::SubjectName(name) if matches_folded(&fold(name), &filter.value))
+            }) || matches_folded(list_text, &filter.value)
+                || matches_folded(provider_text, &filter.value)
+                || matches_folded(service_text, &filter.value)
+        }
+    }
 }
 
 fn status_matches_filter(status: &ServiceStatus, filter: &str) -> bool {
@@ -1846,6 +1902,77 @@ fn folded_query(value: &Option<String>) -> Option<String> {
     (!trimmed.is_empty()).then(|| fold(trimmed))
 }
 
+fn identifier_filter(value: Option<&str>) -> Option<IdentifierFilter> {
+    let trimmed = value?.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match compact_fingerprint_hex(trimmed) {
+        HexLikeInput::Hex(compact_hex) => {
+            return Some(match compact_hex.len() {
+                64 => IdentifierFilter {
+                    kind: IdentifierFilterKind::CertificateSha256,
+                    value: compact_hex,
+                },
+                40 => IdentifierFilter {
+                    kind: IdentifierFilterKind::SubjectKeyId,
+                    value: compact_hex,
+                },
+                _ => IdentifierFilter {
+                    kind: IdentifierFilterKind::Unknown,
+                    value: compact_hex,
+                },
+            });
+        }
+        HexLikeInput::Malformed => {
+            return Some(IdentifierFilter {
+                kind: IdentifierFilterKind::Unknown,
+                value: String::new(),
+            });
+        }
+        HexLikeInput::Text => {}
+    }
+
+    let text = fold(trimmed);
+    Some(
+        if text.chars().filter(|c| c.is_alphanumeric()).count() >= 3 {
+            IdentifierFilter {
+                kind: IdentifierFilterKind::Text,
+                value: text,
+            }
+        } else {
+            IdentifierFilter {
+                kind: IdentifierFilterKind::Unknown,
+                value: text,
+            }
+        },
+    )
+}
+
+fn compact_fingerprint_hex(input: &str) -> HexLikeInput {
+    let mut out = String::new();
+    let mut saw_separator = false;
+    for c in input.chars() {
+        if c.is_ascii_hexdigit() {
+            out.push(c.to_ascii_lowercase());
+        } else if c == ':' || c == '-' || c.is_ascii_whitespace() {
+            saw_separator = true;
+            continue;
+        } else {
+            return if saw_separator {
+                HexLikeInput::Malformed
+            } else {
+                HexLikeInput::Text
+            };
+        }
+    }
+    if out.is_empty() {
+        HexLikeInput::Text
+    } else {
+        HexLikeInput::Hex(out)
+    }
+}
+
 fn fold(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars().flat_map(|c| c.to_lowercase()) {
@@ -2207,6 +2334,110 @@ mod tests {
     }
 
     #[test]
+    fn structured_identifier_filters_match_complete_material_only() {
+        let loaded = fixture();
+        let multicert = loaded
+            .list
+            .providers
+            .iter()
+            .find(|provider| provider.name.contains("MULTICERT"))
+            .expect("provider");
+        let service = &multicert.services[0];
+        let fingerprint = service
+            .digital_identities
+            .iter()
+            .find_map(|id| match id {
+                DigitalIdentity::Certificate(der) => Some(cert_fingerprint(der)),
+                _ => None,
+            })
+            .expect("certificate identity");
+        let ski = service
+            .digital_identities
+            .iter()
+            .find_map(|id| match id {
+                DigitalIdentity::SubjectKeyId(ski) => Some(hex_bytes(ski)),
+                _ => None,
+            })
+            .expect("ski identity");
+
+        let fingerprint_hits = filter_services(
+            &loaded.list,
+            &ServiceFilters {
+                identifier: identifier_filter(Some(&fingerprint.to_uppercase())),
+                ..ServiceFilters::default()
+            },
+            10,
+            NOW,
+            false,
+        );
+        assert_eq!(fingerprint_hits.len(), 1);
+        assert_eq!(
+            fingerprint_hits[0].name,
+            "MULTICERT CA para Assinatura Qualificada"
+        );
+
+        let ski_hits = filter_services(
+            &loaded.list,
+            &ServiceFilters {
+                identifier: identifier_filter(Some(&ski)),
+                ..ServiceFilters::default()
+            },
+            10,
+            NOW,
+            false,
+        );
+        assert_eq!(ski_hits.len(), 1);
+
+        let subject_hits = filter_services(
+            &loaded.list,
+            &ServiceFilters {
+                identifier: identifier_filter(Some("CN=MULTICERT CA para Assinatura Qualificada")),
+                ..ServiceFilters::default()
+            },
+            10,
+            NOW,
+            false,
+        );
+        assert_eq!(subject_hits.len(), 1);
+
+        let provider_hint_hits = filter_services(
+            &loaded.list,
+            &ServiceFilters {
+                identifier: identifier_filter(Some("MULTICERT")),
+                ..ServiceFilters::default()
+            },
+            10,
+            NOW,
+            false,
+        );
+        assert!(!provider_hint_hits.is_empty());
+
+        let partial = filter_services(
+            &loaded.list,
+            &ServiceFilters {
+                identifier: identifier_filter(Some("84:b7:8a:44")),
+                ..ServiceFilters::default()
+            },
+            10,
+            NOW,
+            false,
+        );
+        assert!(partial.is_empty());
+
+        let malformed = filter_services(
+            &loaded.list,
+            &ServiceFilters {
+                identifier: identifier_filter(Some("ab:cd:not-hex")),
+                ..ServiceFilters::default()
+            },
+            10,
+            NOW,
+            false,
+        );
+        assert!(malformed.is_empty());
+    }
+
+    #[test]
     fn provider_analysis_and_detail_views_expose_duplicate_names_and_raw_dates() {
         let loaded = fixture();
         let catalog = catalog_view(&loaded, NOW, None);
@@ -2359,6 +2590,43 @@ mod tests {
         let supply_point_hits =
             search_tsa_records(&loaded.list, "tsa.cartorio.example.test", 10, NOW, false);
         assert_eq!(supply_point_hits.len(), 2);
+        let tsa_ski = loaded
+            .list
+            .providers
+            .iter()
+            .find(|provider| provider.name == "Cartorio Notarial Timestamping")
+            .expect("TSA provider")
+            .services[0]
+            .digital_identities
+            .iter()
+            .find_map(|id| match id {
+                DigitalIdentity::SubjectKeyId(ski) => Some(hex_bytes(ski)),
+                _ => None,
+            })
+            .expect("TSA SKI");
+        let identifier_hits = filter_tsa_records(
+            &loaded.list,
+            &ServiceFilters {
+                identifier: identifier_filter(Some(&tsa_ski)),
+                ..ServiceFilters::default()
+            },
+            10,
+            NOW,
+            false,
+        );
+        assert_eq!(identifier_hits.len(), 1);
+        assert!(identifier_hits[0].qualified_timestamp_service);
+        let supply_point_identifier_hits = filter_tsa_records(
+            &loaded.list,
+            &ServiceFilters {
+                identifier: identifier_filter(Some("tsa.cartorio.example.test")),
+                ..ServiceFilters::default()
+            },
+            10,
+            NOW,
+            false,
+        );
+        assert_eq!(supply_point_identifier_hits.len(), 2);
         let accent_hits = search_tsa_records(&loaded.list, "ancora sao tome", 10, NOW, false);
         assert_eq!(accent_hits.len(), 2);
         let revoked_hits = search_tsa_records(&loaded.list, "supervisionrevoked", 10, NOW, false);

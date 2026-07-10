@@ -48,8 +48,9 @@ pub use query::{
     resolve_qtst_status,
 };
 pub use record::{
-    RecordIdentifier, RecordIdentifierKind, RecordSearch, RecordStatusKind, TslRecord,
-    filter_records, trust_service_records, tsa_records,
+    RecordIdentifier, RecordIdentifierKind, RecordLookupField, RecordLookupInputKind,
+    RecordLookupOutcome, RecordSearch, RecordStatusKind, TslRecord, TslRecordLookup,
+    TslRecordLookupMatch, filter_records, lookup_records, trust_service_records, tsa_records,
 };
 pub use source::{
     BytesTslSource, DEFAULT_PT_TSL_URL, ENV_TSL_URL, FileTslSource, HttpTslSource, TslSource,

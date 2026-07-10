@@ -28,6 +28,53 @@ pub enum RecordIdentifierKind {
     SubjectKeyId,
 }
 
+/// Coarse input class used by record identity lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RecordLookupInputKind {
+    CertificateSha256,
+    SubjectKeyId,
+    Text,
+}
+
+/// Field that caused a record lookup hit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RecordLookupField {
+    CertificateSha256,
+    SubjectKeyId,
+    SubjectName,
+    Provider,
+    Service,
+    ServiceType,
+    SupplyPoint,
+    AdditionalServiceInfo,
+}
+
+/// Deterministic lookup outcome. `Unknown` means the input is not specific enough to prove a
+/// technical match, not that the certificate/service is trusted or untrusted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RecordLookupOutcome {
+    Match,
+    NoMatch,
+    Unknown,
+}
+
+/// A single matched record and the fields that matched the lookup input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TslRecordLookupMatch {
+    pub record: TslRecord,
+    pub fields: Vec<RecordLookupField>,
+}
+
+/// Structured technical lookup result over projected records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TslRecordLookup {
+    pub input: String,
+    pub normalized_input: Option<String>,
+    pub input_kind: Option<RecordLookupInputKind>,
+    pub outcome: RecordLookupOutcome,
+    pub matches: Vec<TslRecordLookupMatch>,
+}
+
 /// Normalized status kind for filtering while preserving the raw URI on the record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RecordStatusKind {
@@ -223,6 +270,183 @@ pub fn filter_records(records: &[TslRecord], search: &RecordSearch) -> Vec<TslRe
         .take(limit)
         .cloned()
         .collect()
+}
+
+/// Look up certificate/service identity material across projected records.
+///
+/// Fingerprint-like input is intentionally strict: SHA-256 certificate fingerprints must be
+/// complete 64-character hex after common separators are removed, and SKIs must be complete
+/// 40-character hex. Short or malformed fingerprint-like input returns [`RecordLookupOutcome::Unknown`]
+/// instead of attempting a partial match. Non-hex text is treated as a bounded catalog search over
+/// subject names, provider/service labels, service type, supply points and additional service info.
+pub fn lookup_records(records: &[TslRecord], input: &str, limit: Option<usize>) -> TslRecordLookup {
+    let original = input.trim().to_owned();
+    let Some(lookup) = normalize_lookup_input(input) else {
+        return TslRecordLookup {
+            input: original,
+            normalized_input: None,
+            input_kind: None,
+            outcome: RecordLookupOutcome::Unknown,
+            matches: Vec::new(),
+        };
+    };
+
+    let max = limit.unwrap_or(usize::MAX);
+    let mut matches = Vec::new();
+    for record in records {
+        let fields = lookup_fields(record, &lookup);
+        if !fields.is_empty() {
+            matches.push(TslRecordLookupMatch {
+                record: record.clone(),
+                fields,
+            });
+            if matches.len() >= max {
+                break;
+            }
+        }
+    }
+
+    let outcome = if matches.is_empty() {
+        RecordLookupOutcome::NoMatch
+    } else {
+        RecordLookupOutcome::Match
+    };
+    TslRecordLookup {
+        input: original,
+        normalized_input: Some(lookup.value),
+        input_kind: Some(lookup.kind),
+        outcome,
+        matches,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedLookup {
+    kind: RecordLookupInputKind,
+    value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HexLikeInput {
+    Hex(String),
+    Malformed,
+    Text,
+}
+
+fn normalize_lookup_input(input: &str) -> Option<NormalizedLookup> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    match compact_fingerprint_hex(trimmed) {
+        HexLikeInput::Hex(compact_hex) => {
+            return match compact_hex.len() {
+                64 => Some(NormalizedLookup {
+                    kind: RecordLookupInputKind::CertificateSha256,
+                    value: compact_hex,
+                }),
+                40 => Some(NormalizedLookup {
+                    kind: RecordLookupInputKind::SubjectKeyId,
+                    value: compact_hex,
+                }),
+                _ => None,
+            };
+        }
+        HexLikeInput::Malformed => return None,
+        HexLikeInput::Text => {}
+    }
+
+    let text = fold(trimmed);
+    (text.chars().filter(|c| c.is_alphanumeric()).count() >= 3).then_some(NormalizedLookup {
+        kind: RecordLookupInputKind::Text,
+        value: text,
+    })
+}
+
+fn compact_fingerprint_hex(input: &str) -> HexLikeInput {
+    let mut out = String::new();
+    let mut saw_separator = false;
+    for c in input.chars() {
+        if c.is_ascii_hexdigit() {
+            out.push(c.to_ascii_lowercase());
+        } else if c == ':' || c == '-' || c.is_ascii_whitespace() {
+            saw_separator = true;
+            continue;
+        } else {
+            return if saw_separator {
+                HexLikeInput::Malformed
+            } else {
+                HexLikeInput::Text
+            };
+        }
+    }
+    if out.is_empty() {
+        HexLikeInput::Text
+    } else {
+        HexLikeInput::Hex(out)
+    }
+}
+
+fn lookup_fields(record: &TslRecord, lookup: &NormalizedLookup) -> Vec<RecordLookupField> {
+    let mut fields = Vec::new();
+    match lookup.kind {
+        RecordLookupInputKind::CertificateSha256 => {
+            if record.identifiers.iter().any(|id| {
+                id.kind == RecordIdentifierKind::CertificateSha256 && id.value == lookup.value
+            }) {
+                fields.push(RecordLookupField::CertificateSha256);
+            }
+        }
+        RecordLookupInputKind::SubjectKeyId => {
+            if record
+                .identifiers
+                .iter()
+                .any(|id| id.kind == RecordIdentifierKind::SubjectKeyId && id.value == lookup.value)
+            {
+                fields.push(RecordLookupField::SubjectKeyId);
+            }
+        }
+        RecordLookupInputKind::Text => {
+            if record.identifiers.iter().any(|id| {
+                id.kind == RecordIdentifierKind::SubjectName
+                    && matches_folded(&fold(&id.value), &lookup.value)
+            }) {
+                fields.push(RecordLookupField::SubjectName);
+            }
+            if matches_folded(
+                &folded_parts([
+                    record.provider_name.as_str(),
+                    &record.provider_aliases.join(" "),
+                ]),
+                &lookup.value,
+            ) {
+                fields.push(RecordLookupField::Provider);
+            }
+            if matches_folded(
+                &folded_parts([
+                    record.service_name.as_str(),
+                    &record.service_aliases.join(" "),
+                ]),
+                &lookup.value,
+            ) {
+                fields.push(RecordLookupField::Service);
+            }
+            if matches_folded(&fold(&record.service_type), &lookup.value) {
+                fields.push(RecordLookupField::ServiceType);
+            }
+            if matches_folded(&fold(&record.supply_points.join(" ")), &lookup.value) {
+                fields.push(RecordLookupField::SupplyPoint);
+            }
+            if matches_folded(
+                &fold(&record.additional_service_info.join(" ")),
+                &lookup.value,
+            ) {
+                fields.push(RecordLookupField::AdditionalServiceInfo);
+            }
+        }
+    }
+    fields
 }
 
 fn provider_aliases(provider: &crate::parse::TrustServiceProvider) -> Vec<String> {
@@ -572,5 +796,119 @@ mod tests {
                 .iter()
                 .all(|record| record.service_type.contains("/TSA/"))
         );
+    }
+
+    #[test]
+    fn lookup_matches_complete_certificate_fingerprint_and_ski_only() {
+        let list = parse_tsl(FIXTURE).unwrap();
+        let records = trust_service_records(&list, NOW);
+        let multicert = records
+            .iter()
+            .find(|record| record.provider_name.contains("MULTICERT"))
+            .expect("multicert record");
+        let fingerprint = multicert
+            .identifiers
+            .iter()
+            .find(|id| id.kind == RecordIdentifierKind::CertificateSha256)
+            .expect("certificate fingerprint")
+            .value
+            .clone();
+        let ski = multicert
+            .identifiers
+            .iter()
+            .find(|id| id.kind == RecordIdentifierKind::SubjectKeyId)
+            .expect("ski")
+            .value
+            .clone();
+
+        let fingerprint_with_separators = fingerprint
+            .as_bytes()
+            .chunks(2)
+            .map(|chunk| std::str::from_utf8(chunk).unwrap())
+            .collect::<Vec<_>>()
+            .join(":");
+        let by_fingerprint = lookup_records(&records, &fingerprint_with_separators, Some(10));
+        assert_eq!(by_fingerprint.outcome, RecordLookupOutcome::Match);
+        assert_eq!(
+            by_fingerprint.input_kind,
+            Some(RecordLookupInputKind::CertificateSha256)
+        );
+        assert_eq!(by_fingerprint.matches.len(), 1);
+        assert_eq!(
+            by_fingerprint.matches[0].fields,
+            vec![RecordLookupField::CertificateSha256]
+        );
+
+        let by_ski = lookup_records(&records, &ski.to_uppercase(), Some(10));
+        assert_eq!(by_ski.outcome, RecordLookupOutcome::Match);
+        assert_eq!(by_ski.input_kind, Some(RecordLookupInputKind::SubjectKeyId));
+        assert_eq!(by_ski.matches.len(), 1);
+        assert_eq!(
+            by_ski.matches[0].fields,
+            vec![RecordLookupField::SubjectKeyId]
+        );
+    }
+
+    #[test]
+    fn lookup_matches_subject_provider_service_and_tsa_hints_as_text() {
+        let list = parse_tsl(FIXTURE).unwrap();
+        let records = trust_service_records(&list, NOW);
+
+        let by_subject = lookup_records(
+            &records,
+            "CN=MULTICERT CA para Assinatura Qualificada",
+            Some(10),
+        );
+        assert_eq!(by_subject.outcome, RecordLookupOutcome::Match);
+        assert!(
+            by_subject.matches[0]
+                .fields
+                .contains(&RecordLookupField::SubjectName)
+        );
+
+        let by_provider = lookup_records(&records, "ancora sao tome", Some(10));
+        assert_eq!(by_provider.outcome, RecordLookupOutcome::Match);
+        assert_eq!(by_provider.matches.len(), 2);
+        assert!(by_provider.matches.iter().all(|hit| hit.record.is_tsa));
+
+        let by_qtst = lookup_records(&records, "/TSA/QTST", Some(10));
+        assert_eq!(by_qtst.outcome, RecordLookupOutcome::Match);
+        assert_eq!(by_qtst.matches.len(), 1);
+        assert!(by_qtst.matches[0].record.is_qualified_timestamp_service);
+        assert!(
+            by_qtst.matches[0]
+                .fields
+                .contains(&RecordLookupField::ServiceType)
+        );
+    }
+
+    #[test]
+    fn lookup_reports_no_match_without_inferring_and_unknown_for_partial_hex() {
+        let list = parse_tsl(FIXTURE).unwrap();
+        let records = trust_service_records(&list, NOW);
+
+        let no_match = lookup_records(
+            &records,
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            Some(10),
+        );
+        assert_eq!(no_match.outcome, RecordLookupOutcome::NoMatch);
+        assert_eq!(
+            no_match.input_kind,
+            Some(RecordLookupInputKind::CertificateSha256)
+        );
+        assert!(no_match.matches.is_empty());
+
+        let partial_fingerprint = lookup_records(&records, "84:b7:8a:44", Some(10));
+        assert_eq!(partial_fingerprint.outcome, RecordLookupOutcome::Unknown);
+        assert_eq!(partial_fingerprint.input_kind, None);
+        assert!(partial_fingerprint.matches.is_empty());
+
+        let malformed = lookup_records(&records, "ab:cd:not-hex", Some(10));
+        assert_eq!(malformed.outcome, RecordLookupOutcome::Unknown);
+        assert_eq!(malformed.input_kind, None);
+
+        let too_short = lookup_records(&records, "ca", Some(10));
+        assert_eq!(too_short.outcome, RecordLookupOutcome::Unknown);
     }
 }
