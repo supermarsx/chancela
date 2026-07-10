@@ -46,6 +46,8 @@ pub struct DssReport {
     pub vri_keys: Vec<Vec<u8>>,
     /// Number of `/DSS /VRI` entries carrying `/TU` freshness metadata.
     pub vri_tu_count: usize,
+    /// `/DSS /VRI` dictionary keys whose entries carry `/TU` freshness metadata.
+    pub vri_tu_keys: Vec<Vec<u8>>,
     /// SHA-256 hashes of `/DSS /Certs` stream contents, in array order.
     pub certificate_hashes: Vec<[u8; 32]>,
     /// SHA-256 hashes of `/DSS /OCSPs` stream contents, in array order.
@@ -78,6 +80,11 @@ impl DssReport {
     /// Whether any VRI entry carries `/TU` freshness metadata.
     pub fn has_vri_tu(&self) -> bool {
         self.vri_tu_count > 0
+    }
+
+    /// Whether the VRI entry for `vri_key` carries `/TU` freshness metadata.
+    pub fn has_vri_tu_for_key(&self, vri_key: &[u8]) -> bool {
+        self.vri_tu_keys.iter().any(|key| key.as_slice() == vri_key)
     }
 }
 
@@ -229,7 +236,7 @@ pub(crate) fn inspect_dss_document(doc: &lopdf::Document) -> Result<DssReport, P
         .as_dict()
         .map_err(|_| PadesError::MalformedStructure("DSS object is not a dictionary".into()))?;
 
-    let (vri_count, vri_keys, vri_tu_count) = match dss.get(b"VRI").ok() {
+    let (vri_count, vri_keys, vri_tu_keys) = match dss.get(b"VRI").ok() {
         Some(vri_obj) => {
             let (_, vri_obj) = doc.dereference(vri_obj).map_err(|e| {
                 PadesError::MalformedStructure(format!("DSS /VRI reference is invalid: {e}"))
@@ -237,31 +244,33 @@ pub(crate) fn inspect_dss_document(doc: &lopdf::Document) -> Result<DssReport, P
             let vri = vri_obj.as_dict().map_err(|_| {
                 PadesError::MalformedStructure("DSS /VRI is not a dictionary".into())
             })?;
-            let mut tu_count = 0;
-            for (_, item) in vri.iter() {
+            let mut vri_tu_keys = Vec::new();
+            for (key, item) in vri.iter() {
                 let (_, item) = doc.dereference(item).map_err(|e| {
                     PadesError::MalformedStructure(format!(
                         "DSS /VRI entry reference is invalid: {e}"
                     ))
                 })?;
                 if item.as_dict().map(|d| d.has(b"TU")).unwrap_or(false) {
-                    tu_count += 1;
+                    vri_tu_keys.push(key.clone());
                 }
             }
             (
                 vri.len(),
                 vri.iter().map(|(key, _)| key.clone()).collect(),
-                tu_count,
+                vri_tu_keys,
             )
         }
-        None => (0, Vec::new(), 0),
+        None => (0, Vec::new(), Vec::new()),
     };
+    let vri_tu_count = vri_tu_keys.len();
 
     Ok(DssReport {
         present: true,
         vri_count,
         vri_keys,
         vri_tu_count,
+        vri_tu_keys,
         certificate_hashes: stream_hashes(doc, dss, b"Certs")?,
         ocsp_hashes: stream_hashes(doc, dss, b"OCSPs")?,
         crl_hashes: stream_hashes(doc, dss, b"CRLs")?,

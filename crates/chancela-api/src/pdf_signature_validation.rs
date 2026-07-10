@@ -161,6 +161,7 @@ pub struct DssTechnicalReport {
     pub present: bool,
     pub vri_count: usize,
     pub vri_tu_count: usize,
+    pub vri_tu_keys: Vec<String>,
     pub vri_has_tu: bool,
     pub certificate_count: usize,
     pub ocsp_count: usize,
@@ -690,6 +691,7 @@ fn dss_report(report: &chancela_pades::DssReport) -> DssTechnicalReport {
         present: report.present,
         vri_count: report.vri_count,
         vri_tu_count: report.vri_tu_count,
+        vri_tu_keys: vri_keys_text(&report.vri_tu_keys),
         vri_has_tu: report.has_vri_tu(),
         certificate_count: report.certificate_count(),
         ocsp_count: report.ocsp_count(),
@@ -708,6 +710,7 @@ impl Default for DssTechnicalReport {
             present: false,
             vri_count: 0,
             vri_tu_count: 0,
+            vri_tu_keys: Vec::new(),
             vri_has_tu: false,
             certificate_count: 0,
             ocsp_count: 0,
@@ -1159,6 +1162,12 @@ fn count_bytes(haystack: &[u8], needle: &[u8]) -> usize {
 
 fn hashes_hex(hashes: &[[u8; 32]]) -> Vec<String> {
     hashes.iter().map(hex).collect()
+}
+
+fn vri_keys_text(keys: &[Vec<u8>]) -> Vec<String> {
+    keys.iter()
+        .map(|key| String::from_utf8_lossy(key).into_owned())
+        .collect()
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

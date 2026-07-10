@@ -385,6 +385,8 @@ pub struct TimestampQtstMatchEvidenceStatus {
 pub struct DssEvidenceStatus {
     pub present: bool,
     pub vri_count: usize,
+    pub vri_tu_count: usize,
+    pub vri_tu_keys: Vec<String>,
     pub certificate_count: usize,
     pub ocsp_count: usize,
     pub crl_count: usize,
@@ -3653,6 +3655,8 @@ impl DssEvidenceStatus {
         Self {
             present: false,
             vri_count: 0,
+            vri_tu_count: 0,
+            vri_tu_keys: Vec::new(),
             certificate_count: 0,
             ocsp_count: 0,
             crl_count: 0,
@@ -3675,6 +3679,8 @@ impl DssEvidenceStatus {
         Self {
             present: report.present,
             vri_count: report.vri_count,
+            vri_tu_count: report.vri_tu_count,
+            vri_tu_keys: dss_vri_keys_text(&report.vri_tu_keys),
             certificate_count: report.certificate_count(),
             ocsp_count: report.ocsp_count(),
             crl_count: report.crl_count(),
@@ -3696,6 +3702,12 @@ fn dss_evidence_status(pdf_bytes: &[u8]) -> DssEvidenceStatus {
 
 fn dss_hashes_hex(hashes: &[[u8; 32]]) -> Vec<String> {
     hashes.iter().map(crate::hex::hex).collect()
+}
+
+fn dss_vri_keys_text(keys: &[Vec<u8>]) -> Vec<String> {
+    keys.iter()
+        .map(|key| String::from_utf8_lossy(key).into_owned())
+        .collect()
 }
 
 fn hex_bytes(bytes: &[u8]) -> String {

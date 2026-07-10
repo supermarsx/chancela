@@ -335,7 +335,8 @@ pub fn plan_multi_signature_ltv_renewal(
 
     for signature in signatures {
         let dss_vri_present = dss.vri_keys.iter().any(|key| key == &signature.vri_key);
-        let dss_vri_validation_time_present = dss_vri_present && dss.has_vri_tu();
+        let dss_vri_validation_time_present =
+            dss_vri_present && dss.has_vri_tu_for_key(&signature.vri_key);
         let mut plan = plan_ltv_renewal_with_policy(
             signature.signature_timestamp_present,
             dss,

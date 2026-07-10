@@ -471,6 +471,7 @@ fn dss_revision_appends_to_b_t_and_reports_counts_hashes() {
     assert_eq!(report.dss.vri_keys.len(), 1);
     assert_eq!(report.dss.vri_keys[0].len(), 64);
     assert_eq!(report.dss.vri_tu_count, 0);
+    assert!(report.dss.vri_tu_keys.is_empty());
     assert!(!report.dss.has_vri_tu());
     assert_eq!(report.dss.certificate_count(), 2);
     assert_eq!(report.dss.ocsp_count(), 1);
@@ -683,7 +684,9 @@ fn dss_validation_time_is_written_as_vri_tu_and_reported() {
     assert!(report.dss.present);
     assert_eq!(report.dss.vri_count, 1);
     assert_eq!(report.dss.vri_tu_count, 1);
+    assert_eq!(report.dss.vri_tu_keys, report.dss.vri_keys);
     assert!(report.dss.has_vri_tu());
+    assert!(report.dss.has_vri_tu_for_key(&report.dss.vri_keys[0]));
     assert!(crate_find(&with_dss, b"/TU (D:20260709120000Z)").is_some());
     assert_eq!(
         report.ltv_renewal_plan.missing_inputs,
@@ -814,6 +817,47 @@ fn multi_signature_renewal_plan_reports_each_signature_vri_coverage() {
 }
 
 #[test]
+fn multi_signature_renewal_plan_matches_tu_to_the_specific_vri_key() {
+    let signer = TestSigner::new_rsa("PAdES Multi Renewal TU Key", 19);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let with_ts = add_fixture_timestamp(&signed);
+    let evidence = fixture_dss_evidence(&signer);
+    let with_first_tu =
+        add_dss_revision_with_validation_time(&with_ts, &evidence, "D:20260709120000Z")
+            .expect("first DSS append with TU");
+    let with_second_sig = append_synthetic_sig_dictionary_with_signed_revision_len(
+        &with_first_tu,
+        DOC_TIMESTAMP_TOKEN_DER_FIXTURE,
+        with_first_tu.len() + 1,
+    );
+
+    let with_second_vri =
+        add_dss_revision(&with_second_sig, &evidence).expect("second DSS append without TU");
+    let report = validate_pdf_signature(&with_second_vri).expect("validate first signature");
+
+    assert_eq!(report.dss.vri_count, 2);
+    assert_eq!(report.dss.vri_tu_count, 1);
+    assert_eq!(report.dss.vri_tu_keys.len(), 1);
+    assert_eq!(report.multi_signature_ltv_renewal_plan.signature_count, 2);
+
+    let first_signature = &report.multi_signature_ltv_renewal_plan.signatures[0];
+    assert!(first_signature.dss_vri_present);
+    assert!(first_signature.dss_vri_validation_time_present);
+    assert!(report.dss.has_vri_tu_for_key(&first_signature.vri_key));
+
+    let second_signature = &report.multi_signature_ltv_renewal_plan.signatures[1];
+    assert!(second_signature.dss_vri_present);
+    assert!(!second_signature.dss_vri_validation_time_present);
+    assert!(!report.dss.has_vri_tu_for_key(&second_signature.vri_key));
+    assert!(
+        second_signature
+            .plan
+            .missing_inputs
+            .contains(&LtvRenewalPlanInput::SignatureDssValidationTime)
+    );
+}
+
+#[test]
 fn validation_rejects_unsigned_pdf() {
     let err = validate_pdf_signature(&base_pdf()).unwrap_err();
     assert!(matches!(err, PadesError::NoSignature), "got {err:?}");
@@ -923,6 +967,14 @@ fn dss_array_refs(pdf: &[u8], key: &[u8]) -> Vec<(u32, u16)> {
 }
 
 fn append_synthetic_sig_dictionary(pdf: &[u8], contents_der: &[u8]) -> Vec<u8> {
+    append_synthetic_sig_dictionary_with_signed_revision_len(pdf, contents_der, 0)
+}
+
+fn append_synthetic_sig_dictionary_with_signed_revision_len(
+    pdf: &[u8],
+    contents_der: &[u8],
+    signed_revision_len: usize,
+) -> Vec<u8> {
     let doc = lopdf::Document::load_mem(pdf).expect("parse PDF");
     let root = doc
         .trailer
@@ -936,7 +988,9 @@ fn append_synthetic_sig_dictionary(pdf: &[u8], contents_der: &[u8]) -> Vec<u8> {
     out.extend_from_slice(b"\n");
     out.extend_from_slice(format!("{sig_id} 0 obj\n").as_bytes());
     out.extend_from_slice(b"<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached ");
-    out.extend_from_slice(b"/ByteRange [0 0 0 0] /Contents <");
+    out.extend_from_slice(
+        format!("/ByteRange [0 0 {signed_revision_len} 0] /Contents <").as_bytes(),
+    );
     out.extend_from_slice(&crate::pdf::to_hex(contents_der));
     out.extend_from_slice(b"> >>\nendobj\n");
     let xref_offset = out.len();
