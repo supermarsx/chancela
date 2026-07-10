@@ -123,9 +123,12 @@ with npm and Cargo vulnerability reports under `chancela-supply-chain-reports-*`
 
 `node scripts/check-release-trust.mjs self-test` and
 `node scripts/check-package-artifacts.mjs --fixture --skip-dist` are part of
-the cheap CI metadata lane. Release packaging then validates each generated
-`*-release-artifact.json` plus package manifest in explicit `unsigned-dev`
-mode, including a source SHA cross-check against
+the cheap CI metadata lane. `npm run check:encrypted-build-defaults` is also in
+that lane; it statically checks that release package, Docker server, and desktop
+package builds opt into the existing `sqlcipher` feature while dev/test commands
+remain explicit plaintext/no-SQLCipher paths. Release packaging then validates
+each generated `*-release-artifact.json` plus package manifest in explicit
+`unsigned-dev` mode, including a source SHA cross-check against
 `manifest.sourceProvenance.commitSha`. Docker CI validates
 `chancela-server-signing-status.json` in explicit `local-ci` mode. Switch those
 checks to `production` only when signing, notarization, registry publication,

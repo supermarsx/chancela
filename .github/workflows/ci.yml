@@ -45,6 +45,9 @@ jobs:
       - name: Check live-provider assurance gates
         run: npm run check:live-provider-assurance
 
+      - name: Check encrypted build defaults
+        run: npm run check:encrypted-build-defaults
+
       - name: Check release trust validator fixtures
         run: node scripts/check-release-trust.mjs self-test
 
@@ -722,6 +725,25 @@ jobs:
        contains(github.event.pull_request.labels.*.name, 'run-desktop-tests'))
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install native Perl for SQLCipher vendored OpenSSL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install strawberryperl --version=5.40.4.1 --no-progress --yes
+
+          $perlBin = 'C:\Strawberry\perl\bin'
+          $cBin = 'C:\Strawberry\c\bin'
+          if (-not (Test-Path (Join-Path $perlBin 'perl.exe'))) {
+            throw "Pinned Strawberry Perl was not installed at $perlBin"
+          }
+
+          "$perlBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "$cBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "PERL=$perlBin\perl.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $env:Path = "$perlBin;$cBin;$env:Path"
+          perl -MConfig -e 'print qq(perl=$^X\narch=$Config{archname}\nversion=$]\n)'
 
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable

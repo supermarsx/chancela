@@ -6,8 +6,8 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build",
-    "build:no-bundle": "tauri build --no-bundle",
+    "build": "tauri build --features sqlcipher",
+    "build:no-bundle": "tauri build --no-bundle --features sqlcipher",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
     "test:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1",
     "test:smoke:ci": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1 -KillOwnedProcesses"

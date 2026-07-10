@@ -91,6 +91,14 @@ everything except those sidecars is lost on restart — the startup banner and `
 durable chain is re-verified; a tampered or truncated store still starts, but the banner and
 `/health` report `ledger_verified: false` so you can restore before trusting it.
 
+**Database encryption.** Release/package and Docker server builds compile the existing
+SQLCipher support by default. They still do not invent or embed a database key: set
+`CHANCELA_DB_KEY_FILE` or `CHANCELA_DB_KEY` together with `CHANCELA_DATA_DIR` to create or
+open an encrypted store. With no key, server and CLI startup remains plaintext and says so.
+Desktop package builds compile SQLCipher; on Windows the desktop shell uses the existing
+random key protected by the current-user DPAPI provider. Local no-SQLCipher desktop dev must
+opt into plaintext explicitly with `CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB=1`.
+
 **Online backup (server running).** `POST /v1/backup` snapshots the store with SQLite
 `VACUUM INTO` (transactionally consistent, no downtime), bundles it with the sidecars and a
 `manifest.json` into `<data_dir>/backups/chancela-backup-<utc>.zip`, and returns the
@@ -149,7 +157,7 @@ are standalone operator tools run directly (not via npm) — see
 | `npm run test:rust`         | `cargo test --workspace`                                                |
 | `npm run test:web`          | Vitest over `apps/web`                                                  |
 | `npm run build`             | `build:rust` then `build:web`                                           |
-| `npm run build:rust`        | `cargo build --workspace --release`                                     |
+| `npm run build:rust`        | Release workspace build with SQLCipher features for server and CLI      |
 | `npm run build:web`         | Production web bundle to `apps/web/dist`                                |
 | `npm run build:docker`      | Build the self-hosted server image (`chancela-server:local`)            |
 | `npm run test:docker:smoke` | Run the server image and assert `/health` reports durable persistence   |
@@ -175,8 +183,10 @@ docker compose -f docker/docker-compose.yml up --build
 Inside the container the server binds `0.0.0.0:8080` (`CHANCELA_ADDR`) and stores durable
 state under `/var/lib/chancela` (`CHANCELA_DATA_DIR`). Compose mounts the named
 `chancela-data` volume there; if you use `docker run` directly, mount a persistent host
-directory or volume to that path. The `/health` endpoint should report
-`persistent: true`, `ledger_verified: true`, and a numeric `store_schema_version`. See
+directory or volume to that path. The image is SQLCipher-capable, but encryption only starts
+when you provide `CHANCELA_DB_KEY_FILE` or `CHANCELA_DB_KEY` at runtime. The `/health`
+endpoint should report `persistent: true`, `ledger_verified: true`, and a numeric
+`store_schema_version`. See
 [`docker/`](docker/) for the hardening details (read-only rootfs, dropped capabilities,
 non-root user).
 
@@ -191,8 +201,8 @@ an explicit, separate step:
 ```sh
 cd apps/desktop
 npm install -D @tauri-apps/cli   # or install the Tauri CLI globally
-npx tauri dev                    # develop against the web dev server
-npx tauri build                  # produce a desktop installer
+npm run dev                      # local dev; set CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB=1 for no-SQLCipher plaintext
+npm run build                    # produce a SQLCipher-capable desktop installer
 ```
 
 The desktop shell loads the same web frontend (`devUrl` → the Vite dev server;

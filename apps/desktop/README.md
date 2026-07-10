@@ -65,6 +65,13 @@ npm install     # installs @tauri-apps/cli (first time only)
 npm run dev     # = tauri dev
 ```
 
+`npm run dev` intentionally keeps the no-SQLCipher local-development build. To run that path
+against durable plaintext storage, set `CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB=1` for the dev
+process. To exercise encrypted desktop dev instead, run `npm run tauri -- dev --features
+sqlcipher`; Windows uses the current-user DPAPI protected key file, while other platforms
+need an explicit `CHANCELA_DB_KEY_FILE` or `CHANCELA_DB_KEY` until they have an OS-backed key
+provider.
+
 `tauri dev`'s `beforeDevCommand` starts the web dev server for you by running,
 from the repo root, `npm run dev --workspace apps/web` (Vite on
 <http://localhost:5173>, matched by `devUrl` in `tauri.conf.json`). It then opens
@@ -119,6 +126,11 @@ on a loopback port and opens the window against it — no server to start first.
 It resolves `CHANCELA_WEB_DIST` first, then a packaged Tauri resource named
 `web-dist`, then the on-disk `apps/web/dist` by walking up from the executable /
 cwd; if none is found it serves API-only with a landing page.
+
+`npm run build:no-bundle` passes `--features sqlcipher`. A packaged Windows binary creates
+or reuses a random SQLCipher key protected by the current-user DPAPI provider; non-Windows
+package runs must supply `CHANCELA_DB_KEY_FILE` or `CHANCELA_DB_KEY` until a platform key
+provider is added. This is intentionally not a hardware-ID-derived embedded key.
 
 ### Smoke/package checks
 
@@ -176,8 +188,8 @@ SPA shell for the smoke run. Installers bundle `web-dist`.
 npm run build   # = tauri build (bundles installers)
 ```
 
-bundles native installers under `src-tauri/target/release/bundle/`. **On Windows
-this needs [WiX Toolset v3](https://wixtoolset.org/) for the MSI** (and/or NSIS
+bundles native SQLCipher-capable installers under `src-tauri/target/release/bundle/`.
+**On Windows this needs [WiX Toolset v3](https://wixtoolset.org/) for the MSI** (and/or NSIS
 for the `.exe` installer); the Tauri CLI downloads NSIS on first use but WiX must
 be installed separately. Bundling is **not** required for v1 and is not covered
 by this repo's build gate.
