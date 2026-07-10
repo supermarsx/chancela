@@ -662,6 +662,46 @@ mod tests {
     }
 
     #[test]
+    fn hardened_secret_verifier_uses_seed_pepper_and_salt() {
+        let seed = VerifierSeed::default();
+        let first = hash_secret_with_seed("same-password", &seed).unwrap();
+        let second = hash_secret_with_seed("same-password", &seed).unwrap();
+
+        assert!(first.starts_with(HARDENED_VERIFIER_PREFIX));
+        assert!(first.contains("$argon2id$"));
+        assert_ne!(first, second, "salt and pepper make each verifier unique");
+        assert!(!first.contains("same-password"));
+
+        let ok = verify_secret_with_seed("same-password", &first, &seed);
+        assert!(ok.verified);
+        assert!(!ok.needs_upgrade);
+        assert!(!verify_secret_with_seed("wrong", &first, &seed).verified);
+
+        let other_seed = VerifierSeed::default();
+        let (_, rest) = first
+            .strip_prefix(HARDENED_VERIFIER_PREFIX)
+            .expect("hardened prefix")
+            .split_once('$')
+            .expect("seed id separator");
+        let forged_seed_id = format!("{HARDENED_VERIFIER_PREFIX}{}${rest}", other_seed.id());
+        assert!(
+            !verify_secret_with_seed("same-password", &forged_seed_id, &other_seed).verified,
+            "the app seed is part of the argon2 verifier input"
+        );
+    }
+
+    #[test]
+    fn legacy_phc_verifier_still_verifies_but_requests_upgrade() {
+        let legacy = hash_secret("old-password").unwrap();
+        let seed = VerifierSeed::default();
+
+        let ok = verify_secret_with_seed("old-password", &legacy, &seed);
+        assert!(ok.verified);
+        assert!(ok.needs_upgrade);
+        assert!(!verify_secret_with_seed("wrong", &legacy, &seed).verified);
+    }
+
+    #[test]
     fn recovery_phrase_is_high_entropy_and_hashes_independently() {
         let a = generate_recovery_phrase();
         let b = generate_recovery_phrase();

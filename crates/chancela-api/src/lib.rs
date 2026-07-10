@@ -7761,6 +7761,159 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn password_and_recovery_verifiers_persist_hardened_and_secret_free() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let password = "Senha-Forte7!X";
+
+        let (status, first_view) = send_raw(
+            state.clone(),
+            post_json("/v1/users", json!({ "username": "amelia.marques" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "bootstrap user");
+        let first = first_view["id"].as_str().expect("first id").to_owned();
+        let first_token = open_session(&state, &first).await;
+
+        let (status, second_view) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/users", json!({ "username": "bruno.dias" })),
+                &first_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "second user");
+        let second = second_view["id"].as_str().expect("second id").to_owned();
+        let second_token = open_session(&state, &second).await;
+
+        for (user_id, token) in [(&first, &first_token), (&second, &second_token)] {
+            let (status, view) = send(
+                state.clone(),
+                with_session(
+                    post_json(
+                        &format!("/v1/users/{user_id}/secret"),
+                        json!({ "password": password }),
+                    ),
+                    token,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "password set for {user_id}");
+            assert_eq!(view["has_secret"], true);
+        }
+
+        let (status, issued) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/users/{first}/recovery"),
+                    json!({ "current_password": password }),
+                ),
+                &first_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "recovery phrase issued");
+        let recovery_phrase = issued["recovery_phrase"].as_str().expect("phrase");
+
+        let first_user = stored_user(&state, &first).await;
+        let second_user = stored_user(&state, &second).await;
+        let first_hash = first_user.password_hash.as_deref().expect("first hash");
+        let second_hash = second_user.password_hash.as_deref().expect("second hash");
+        let recovery_hash = first_user.recovery_hash.as_deref().expect("recovery hash");
+
+        assert!(first_hash.starts_with(crate::attestation::HARDENED_VERIFIER_PREFIX));
+        assert!(second_hash.starts_with(crate::attestation::HARDENED_VERIFIER_PREFIX));
+        assert!(recovery_hash.starts_with(crate::attestation::HARDENED_VERIFIER_PREFIX));
+        assert_ne!(
+            first_hash, second_hash,
+            "same password for two users must not produce the same verifier"
+        );
+        assert!(!first_hash.contains(password));
+        assert!(!second_hash.contains(password));
+        assert!(!recovery_hash.contains(recovery_phrase));
+
+        let users_json =
+            std::fs::read_to_string(tmp.dir.join(crate::users::USERS_FILE)).expect("users.json");
+        assert!(!users_json.contains(password));
+        assert!(!users_json.contains(recovery_phrase));
+        assert!(users_json.contains(crate::attestation::HARDENED_VERIFIER_PREFIX));
+        assert!(
+            tmp.dir
+                .join(crate::attestation::VERIFIER_SEED_FILE)
+                .is_file(),
+            "first hardened verifier persists the per-install seed sidecar"
+        );
+
+        state.signin_backoff.write().await.clear();
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": first, "password": "wrong-password" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        state.signin_backoff.write().await.clear();
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": first, "password": password }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn legacy_password_phc_signs_in_and_upgrades_to_hardened_verifier() {
+        let state = AppState::default();
+        let uid = UserId(Uuid::new_v4());
+        let legacy_hash = crate::attestation::hash_secret("Migrar-Chave7!").unwrap();
+        state.users.write().await.insert(
+            uid,
+            User {
+                id: uid,
+                username: "legacy.user".to_owned(),
+                display_name: "Legacy User".to_owned(),
+                email: None,
+                created_at: "2026-01-01T00:00:00Z".to_owned(),
+                active: true,
+                password_hash: Some(legacy_hash.clone()),
+                attestation_key: None,
+                secret_source: Default::default(),
+                recovery_hash: None,
+                role_assignments: vec![crate::roles::bootstrap_assignment(true)],
+            },
+        );
+
+        let (status, _) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/session",
+                json!({ "user_id": uid.0, "password": "Migrar-Chave7!" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let upgraded = state
+            .users
+            .read()
+            .await
+            .get(&uid)
+            .and_then(|u| u.password_hash.clone())
+            .expect("upgraded hash");
+        assert_ne!(upgraded, legacy_hash);
+        assert!(upgraded.starts_with(crate::attestation::HARDENED_VERIFIER_PREFIX));
+        assert!(!upgraded.contains("Migrar-Chave7!"));
+    }
+
+    #[tokio::test]
     async fn repeated_wrong_password_triggers_backoff_429() {
         let state = AppState::default();
         let id = make_user(&state, "bruno").await;
