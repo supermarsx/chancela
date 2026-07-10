@@ -54,6 +54,44 @@ test('sealed act PDF export starts a browser download with the expected file met
   expect(mutations).toEqual([]);
 });
 
+test('sealed act PDF save prompt cancellation stays visible without browser-download fallback', async ({
+  page,
+}) => {
+  await installCancelledBrowserSavePicker(page);
+  const mutations = await routeExportFixtures(page);
+
+  await page.goto(`/atas/${ACT_ID}`);
+  await expect(sealedActNotice(page)).toBeVisible();
+  await expect(page.getByLabel('Data da reunião')).toBeDisabled();
+
+  const downloadButton = page.getByRole('button', { name: 'Descarregar PDF' });
+  await expect(downloadButton).toBeEnabled();
+
+  const unexpectedDownload = page
+    .waitForEvent('download', { timeout: 1_000 })
+    .then((download) => download.suggestedFilename())
+    .catch(() => null);
+
+  const [response] = await Promise.all([
+    waitForApiResponse(page, ACT_PDF_PATH),
+    downloadButton.click(),
+  ]);
+
+  expect(response.request().method()).toBe('GET');
+  expect(response.status()).toBe(200);
+  await expect(page.getByText(`Guardar cancelado: ${PDF_FILENAME}.`)).toBeVisible();
+  await expect(page.getByText(/^Transferência iniciada pelo navegador:/)).toHaveCount(0);
+  await expect(downloadButton).toBeEnabled();
+  await expect(sealedActNotice(page)).toBeVisible();
+  await expect(page.getByLabel('Data da reunião')).toBeDisabled();
+  expect(await unexpectedDownload).toBeNull();
+  expect(await lastSavePickerOptions(page)).toEqual({
+    suggestedName: PDF_FILENAME,
+    types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+  });
+  expect(mutations).toEqual([]);
+});
+
 test('book preservation package export starts a zip browser download', async ({ page }) => {
   await installBrowserDownloadFallback(page);
   const mutations = await routeExportFixtures(page);
@@ -124,6 +162,26 @@ async function installBrowserDownloadFallback(page: Page): Promise<void> {
     } catch {
       (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker = undefined;
     }
+  });
+}
+
+async function installCancelledBrowserSavePicker(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const browserWindow = window as Window & {
+      __chancelaLastSavePickerOptions?: unknown;
+      showSaveFilePicker?: (options?: unknown) => Promise<never>;
+    };
+    browserWindow.showSaveFilePicker = async (options?: unknown) => {
+      browserWindow.__chancelaLastSavePickerOptions = options;
+      throw new DOMException('User cancelled the save prompt in E2E.', 'AbortError');
+    };
+  });
+}
+
+async function lastSavePickerOptions(page: Page): Promise<unknown> {
+  return page.evaluate(() => {
+    return (window as Window & { __chancelaLastSavePickerOptions?: unknown })
+      .__chancelaLastSavePickerOptions;
   });
 }
 
