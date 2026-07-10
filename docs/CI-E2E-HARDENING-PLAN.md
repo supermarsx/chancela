@@ -1,7 +1,8 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-10 from the current working tree. This plan is the build and
-test operating checklist for driving Chancela toward release confidence.
+Updated 2026-07-10 from the current CI configuration and head `c54fc0e`. This
+plan is the build and test operating checklist for driving Chancela toward
+release confidence.
 
 ## Goals
 
@@ -18,7 +19,12 @@ test operating checklist for driving Chancela toward release confidence.
 
 - CI runs on pushes to `main`, pull requests, and manual `workflow_dispatch`.
 - Rust format, clippy, and workspace tests run on Linux, Windows, and macOS.
-- Web format, ESLint, Vitest, and Vite build run on Node 20 and Node 24.
+- A dedicated SQLCipher feature lane runs on Windows, pins Strawberry Perl ahead
+  of vendored OpenSSL, and runs
+  `cargo test -p chancela-store --locked --features sqlcipher sqlcipher`.
+- Web format, ESLint, Vitest/V8 coverage thresholds, and Vite build run on Node
+  20 and Node 24; the web CI test command is
+  `npm run test:coverage --workspace apps/web`.
 - Supply-chain CI generates and validates a CycloneDX dependency SBOM from
   `package-lock.json` plus `cargo metadata --locked`, uploads npm/Cargo advisory
   reports, and can make those reports blocking only on manual runs with
@@ -31,13 +37,15 @@ test operating checklist for driving Chancela toward release confidence.
 - Browser core e2e builds release `chancela-server`, builds the web app,
   installs Chromium, and runs the stable smoke/session/first-launch/journey
   Playwright specs on every push and PR.
-- Browser full e2e remains a heavier Chromium gate for pushes to `main`, manual
+- Browser full e2e remains a heavier Chromium lane for pushes to `main`, manual
   dispatches, or PRs labeled `run-browser-tests`; the explicit
-  `test:browser:matrix` gate runs the same Playwright suite across Chromium,
-  Firefox, WebKit, and mobile Chromium when CI/release wants full browser
-  coverage.
-- Browser e2e is useful smoke/edge coverage, not exhaustive product coverage,
-  and the repository does not currently enforce coverage thresholds.
+  release-candidate `test:browser:matrix` command runs the same Playwright suite
+  across Chromium, Firefox, WebKit, and mobile Chromium when full browser
+  coverage is needed.
+- Browser e2e is useful smoke/edge coverage, not exhaustive product coverage.
+  Web unit coverage is enforced separately with Vitest/V8 thresholds in
+  `apps/web/vite.config.ts` (statements 90, branches 78, functions 83, lines
+  90).
 - Docker server image build plus runtime smoke runs on pushes to `main` and
   manual dispatches; the smoke starts the container with `CHANCELA_DATA_DIR`,
   polls `/health`, and asserts durable persistence from the JSON body.
@@ -51,8 +59,9 @@ test operating checklist for driving Chancela toward release confidence.
 
 ## 2026-07-10 Audit Note
 
-- Current browser e2e coverage is smoke/edge oriented rather than exhaustive,
-  and there are no enforced line, branch, or function coverage thresholds.
+- Current browser e2e coverage is smoke/edge oriented rather than exhaustive.
+  The enforced coverage thresholds are Vitest/V8 web-unit thresholds, so they do
+  not prove browser, desktop, Docker, or live-provider coverage.
 - Live signature/provider seams are compile-only checks; they do not exercise
   live CMD, CSC/QTSP, CC hardware, production TSL, or production TSA paths.
 - Release packages are unsigned/not notarized, and Docker images are not
@@ -61,11 +70,12 @@ test operating checklist for driving Chancela toward release confidence.
   crash reports and retained exports plus SQLite logical usage estimates. Treat
   it as storage maintenance coverage, not legal data-lifecycle certification.
 
-## Current Local Verification Snapshot
+## Last Broad Local Verification Snapshot
 
-Recorded on 2026-07-09 from the current dirty working tree after the
-privacy/archive/signing integration wave and before the next document-import/MCP
-worker wave is integrated:
+Recorded on 2026-07-09 from a then-current dirty working tree after the
+privacy/archive/signing integration wave and before the later document-import/MCP
+worker wave was integrated. Retained as historical context; it is not a current
+full-green claim for head `c54fc0e`:
 
 - `cargo fmt --all -- --check` passed.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` passed.
@@ -132,7 +142,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 npm run format:check --workspace apps/web
 npm run lint --workspace apps/web
-npm run test --workspace apps/web
+npm run test:coverage --workspace apps/web
 npm run build --workspace apps/web
 node scripts/release-supply-chain.mjs sbom --output dist/supply-chain/chancela-dependency-sbom.cdx.json
 node scripts/release-supply-chain.mjs check --input dist/supply-chain/chancela-dependency-sbom.cdx.json
@@ -258,8 +268,8 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - All fast PR checks pass locally and in CI.
 - Chromium core browser e2e passes as a normal PR/push gate.
 - Full browser e2e passes at least once on the release branch.
-- Coverage thresholds are enforced, or an explicit release waiver records why
-  they are not yet enforced.
+- Web Vitest/V8 coverage thresholds pass in CI and in the local release loop;
+  any coverage threshold waiver is explicit and release-scoped.
 - Docker image builds and passes the runtime `/health` persistence smoke from a
   clean checkout.
 - Release metadata artifacts include a validated dependency SBOM, package
@@ -272,10 +282,12 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Current Focused Gate Snapshot
+## Focused Gate Snapshot Through `c54fc0e`
 
-Historical focused checks from the active director loop. This is not an
-exhaustive current green-run claim; the 2026-07-10 audit gaps above still apply.
+Historical focused checks from the active director loop, refreshed on
+2026-07-10 for current head `c54fc0e`. This is not an exhaustive current
+green-run claim; browser, Docker, desktop, package signing/notarization, image
+signing/attestation, and live-provider limits above still apply.
 
 - `actionlint .github/workflows/ci.yml`, `npx prettier --check
 .github/workflows/ci.yml`, and `git diff --check -- .github/workflows/ci.yml
@@ -285,8 +297,8 @@ docs/CI-E2E-HARDENING-PLAN.md`: passed after the CI hardening workflow
   compile-only live seam gates for `chancela-cae`, `chancela-cmd`,
   `chancela-csc`, `chancela-law`, `chancela-registry`, `chancela-tsa`,
   `chancela-tsl`, and `chancela-smartcard`: passed.
-- `cargo test -p chancela-mcp --locked`: passed 60 unit tests plus 1 live API
-  bearer test.
+- `cargo test -p chancela-mcp --locked`: passed at head `c54fc0e` after the MCP
+  status resource landed, with 68 unit tests plus 2 live API integration tests.
 - `cargo test -p chancela-core --locked`: passed 76 unit tests plus 7
   back-compat integration tests.
 - `cargo clippy -p chancela-core --all-targets --locked -- -D warnings`:
