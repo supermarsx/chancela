@@ -477,6 +477,22 @@ function buildWorkQueue({
   return items.sort(compareQueueItems);
 }
 
+function WorkQueueActionLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Tooltip label={label}>
+      <Link
+        className="btn btn--ghost btn--icon btn--iconOnly dashboard-workqueue__action"
+        to={href}
+        aria-label={label}
+      >
+        <span className="btn__icon" aria-hidden="true">
+          <Icon.ArrowRight />
+        </span>
+      </Link>
+    </Tooltip>
+  );
+}
+
 function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
   const t = useT();
   if (items.length === 0) {
@@ -494,13 +510,8 @@ function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
           <li className="dashboard-workqueue__item" key={item.id}>
             <div className="dashboard-workqueue__head">
               <Badge tone={item.tone}>{item.badge}</Badge>
-              {item.href ? (
-                <Link className="dashboard-workqueue__title" to={item.href}>
-                  {item.title}
-                </Link>
-              ) : (
-                <span className="dashboard-workqueue__title">{item.title}</span>
-              )}
+              <span className="dashboard-workqueue__title">{item.title}</span>
+              {item.href ? <WorkQueueActionLink href={item.href} label={item.title} /> : null}
             </div>
             <p className="dashboard-workqueue__detail muted">{item.detail}</p>
             <div className="dashboard-workqueue__meta">

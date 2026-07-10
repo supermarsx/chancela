@@ -63,6 +63,25 @@ async function openDashboardTab(name: string) {
   fireEvent.click(within(tabs).getByRole('button', { name }));
 }
 
+function expectIconOnlyActionLink(control: HTMLElement, label: string, href: string) {
+  expect(control.getAttribute('href')).toBe(href);
+  expect(control.className).toContain('btn--iconOnly');
+  expect(control.getAttribute('aria-label')).toBe(label);
+  expect(control.textContent).not.toContain(label);
+  expect(control.querySelector('.icon')).toBeTruthy();
+
+  const tooltipIds = (control.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+  const tooltip = tooltipIds
+    .map((id) => document.getElementById(id))
+    .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === label);
+
+  expect(tooltip?.textContent).toBe(label);
+  fireEvent.focus(control);
+  expect(tooltip?.className).toContain('is-open');
+  fireEvent.blur(control);
+  expect(tooltip?.className).not.toContain('is-open');
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -112,16 +131,7 @@ describe('DashboardPage', () => {
     await openDashboardTab('Últimos eventos');
 
     const archive = await screen.findByRole('link', { name: 'Ver arquivo completo' });
-    expect(archive.getAttribute('href')).toBe('/arquivo');
-    expect(archive.className).toContain('btn--iconOnly');
-    expect(archive.querySelector('.icon')).toBeTruthy();
-
-    fireEvent.focus(archive);
-    const describedBy = archive.getAttribute('aria-describedby');
-    expect(describedBy).toBeTruthy();
-    expect(document.getElementById(describedBy as string)?.textContent).toBe(
-      'Ver arquivo completo',
-    );
+    expectIconOnlyActionLink(archive, 'Ver arquivo completo', '/arquivo');
   });
 
   it('shows the 10 most recent act, book, and entity activities with inferred links', async () => {
@@ -484,11 +494,11 @@ describe('DashboardPage', () => {
     await openDashboardTab('Fila de trabalho');
 
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
-    expect(
-      within(queue)
-        .getByRole('link', { name: 'Definir remuneração da gerência' })
-        .getAttribute('href'),
-    ).toBe('/entidades/entity-1');
+    expectIconOnlyActionLink(
+      within(queue).getByRole('link', { name: 'Definir remuneração da gerência' }),
+      'Definir remuneração da gerência',
+      '/entidades/entity-1',
+    );
     expect(within(queue).getByText(/Encosto Estratégico, Lda./)).toBeTruthy();
     expect(within(queue).getByText('Lei csc:255 · fonte pendente')).toBeTruthy();
   });
@@ -795,7 +805,7 @@ describe('DashboardPage', () => {
     const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
     const items = within(queue).getAllByRole('listitem');
     expect(items).toHaveLength(5);
-    expect(items.map((item) => within(item).getByRole('link').textContent)).toEqual([
+    expect(items.map((item) => within(item).getByRole('link').getAttribute('aria-label'))).toEqual([
       longName,
       'Data Incerta, S.A.',
       'Quase Vence, Lda.',

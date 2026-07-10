@@ -289,10 +289,22 @@ a:focus-visible {
 }
 
 .dashboard-workqueue__title {
+  flex: 1 1 12rem;
   min-width: 0;
   font-weight: 650;
   line-height: 1.3;
   overflow-wrap: anywhere;
+}
+
+.dashboard-workqueue__action.btn--iconOnly {
+  width: 1.9rem;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  min-height: 1.9rem;
+  margin-left: auto;
+  padding: 0.32rem;
+  font-size: 0.82rem;
+  line-height: 0;
 }
 
 .dashboard-workqueue__detail {
