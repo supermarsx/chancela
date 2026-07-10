@@ -2251,6 +2251,41 @@ export const ptBR: Catalog = {
   'data.status.cleanup.doneTitle': 'Manutenção concluída',
   'data.status.cleanup.result':
     'Apagados {files} arquivos e {directories} pastas, liberando {bytes}.',
+  'data.status.keyRotation.title': 'Preflight de rotação da chave de dados',
+  'data.status.keyRotation.body':
+    'Verifica se uma rotação SQLCipher pode ser tentada. Esta ação é somente leitura e não executa a rotação.',
+  'data.status.keyRotation.currentKey.label': 'Chave atual',
+  'data.status.keyRotation.currentKey.hint':
+    'Deixe vazio se a instância não tiver uma chave atual configurada.',
+  'data.status.keyRotation.replacementKey.label': 'Chave de substituição',
+  'data.status.keyRotation.replacementKey.hint':
+    'Enviada apenas para classificar o pedido; a resposta nunca devolve a chave.',
+  'data.status.keyRotation.secretHint':
+    'As chaves ficam apenas neste formulário e são limpas após resposta ou erro.',
+  'data.status.keyRotation.unavailable': 'Requer armazenamento durável em disco.',
+  'data.status.keyRotation.submit': 'Verificar preflight',
+  'data.status.keyRotation.pending': 'Verificando…',
+  'data.status.keyRotation.done': 'Preflight concluído.',
+  'data.status.keyRotation.resultTitle': 'Resultado do preflight',
+  'data.status.keyRotation.status': 'Status',
+  'data.status.keyRotation.ready': 'Prontidão',
+  'data.status.keyRotation.ready.yes': 'Pronto',
+  'data.status.keyRotation.ready.no': 'Bloqueado',
+  'data.status.keyRotation.nextAction': 'Próxima ação',
+  'data.status.keyRotation.blockers': 'Bloqueios',
+  'data.status.keyRotation.blockers.none': 'Nenhum bloqueio reportado.',
+  'data.status.keyRotation.evidence': 'Evidência',
+  'data.status.keyRotation.evidence.databaseFormat': 'Formato da base de dados',
+  'data.status.keyRotation.evidence.currentKey': 'Chave atual',
+  'data.status.keyRotation.evidence.replacementKey': 'Chave de substituição',
+  'data.status.keyRotation.evidence.sqlcipher': 'SQLCipher disponível',
+  'data.status.keyRotation.evidence.databaseFile': 'Arquivo da base de dados',
+  'data.status.keyRotation.metadata': 'Metadados',
+  'data.status.keyRotation.metadata.provider': 'Fornecedor',
+  'data.status.keyRotation.metadata.readOnly': 'Somente leitura',
+  'data.status.keyRotation.metadata.execution': 'Execução',
+  'data.status.keyRotation.metadata.execution.none':
+    'Não executa rotação; apenas verifica a prontidão.',
   'degraded.title': 'Sistema em modo somente leitura',
   'degraded.detail':
     'A cadeia de integridade está quebrada. As alterações estão bloqueadas até ser reparada.',

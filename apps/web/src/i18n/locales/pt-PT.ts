@@ -2261,6 +2261,41 @@ export const ptPT = {
   'data.status.cleanup.doneTitle': 'Manutenção concluída',
   'data.status.cleanup.result':
     'Apagados {files} ficheiros e {directories} pastas, libertando {bytes}.',
+  'data.status.keyRotation.title': 'Verificação prévia da rotação da chave de dados',
+  'data.status.keyRotation.body':
+    'Verifica se uma rotação SQLCipher pode ser tentada. Esta ação é só de leitura e não executa a rotação.',
+  'data.status.keyRotation.currentKey.label': 'Chave atual',
+  'data.status.keyRotation.currentKey.hint':
+    'Deixe em branco se a instância não tiver uma chave atual configurada.',
+  'data.status.keyRotation.replacementKey.label': 'Chave de substituição',
+  'data.status.keyRotation.replacementKey.hint':
+    'Enviada apenas para classificar o pedido; a resposta nunca devolve a chave.',
+  'data.status.keyRotation.secretHint':
+    'As chaves ficam apenas neste formulário e são limpas após resposta ou erro.',
+  'data.status.keyRotation.unavailable': 'Requer armazenamento durável em disco.',
+  'data.status.keyRotation.submit': 'Verificar rotação',
+  'data.status.keyRotation.pending': 'A verificar…',
+  'data.status.keyRotation.done': 'Verificação concluída.',
+  'data.status.keyRotation.resultTitle': 'Resultado da verificação',
+  'data.status.keyRotation.status': 'Estado',
+  'data.status.keyRotation.ready': 'Prontidão',
+  'data.status.keyRotation.ready.yes': 'Pronto',
+  'data.status.keyRotation.ready.no': 'Bloqueado',
+  'data.status.keyRotation.nextAction': 'Próxima ação',
+  'data.status.keyRotation.blockers': 'Bloqueios',
+  'data.status.keyRotation.blockers.none': 'Sem bloqueios indicados.',
+  'data.status.keyRotation.evidence': 'Evidência',
+  'data.status.keyRotation.evidence.databaseFormat': 'Formato da base de dados',
+  'data.status.keyRotation.evidence.currentKey': 'Chave atual',
+  'data.status.keyRotation.evidence.replacementKey': 'Chave de substituição',
+  'data.status.keyRotation.evidence.sqlcipher': 'SQLCipher disponível',
+  'data.status.keyRotation.evidence.databaseFile': 'Ficheiro da base de dados',
+  'data.status.keyRotation.metadata': 'Metadados',
+  'data.status.keyRotation.metadata.provider': 'Fornecedor',
+  'data.status.keyRotation.metadata.readOnly': 'Só de leitura',
+  'data.status.keyRotation.metadata.execution': 'Execução',
+  'data.status.keyRotation.metadata.execution.none':
+    'Não executa rotação; apenas verifica a prontidão.',
   'degraded.title': 'Sistema em modo só-leitura',
   'degraded.detail':
     'A cadeia de integridade está quebrada. As alterações estão bloqueadas até ser reparada.',

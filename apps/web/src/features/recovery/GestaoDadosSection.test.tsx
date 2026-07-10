@@ -274,6 +274,78 @@ describe('GestaoDadosSection', () => {
     expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2);
   });
 
+  it('runs a secret-clearing data key rotation preflight and renders only returned evidence', async () => {
+    const currentSecret = 'current-secret-not-for-dom';
+    const replacementSecret = 'replacement-secret-not-for-dom';
+    const calls = installFetch([durableStatus], (url) => {
+      if (url.includes('/v1/data/key-rotation/preflight')) {
+        return jsonResponse({
+          ready: false,
+          status: 'plaintext_store_not_rotatable',
+          next_action:
+            'plaintext SQLite cannot be rekeyed in place; use the export/restore migration plan',
+          evidence: {
+            database_format: 'plaintext_sqlite',
+            current_key_config: 'configured',
+            requested_key_config: 'configured',
+            sqlcipher_available: false,
+            database_file: 'F:\\ChancelaData\\chancela.db',
+          },
+        });
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+    const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
+    const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
+    fireEvent.change(current, { target: { value: currentSecret } });
+    fireEvent.change(replacement, { target: { value: replacementSecret } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar rotação' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.includes('/v1/data/key-rotation/preflight'))).toBe(true),
+    );
+    const preflight = calls.find((c) => c.url.includes('/v1/data/key-rotation/preflight'))!;
+    expect(preflight.method).toBe('POST');
+    expect(JSON.parse(preflight.body as string)).toEqual({
+      current_key: currentSecret,
+      new_key: replacementSecret,
+    });
+
+    expect(await screen.findAllByText('plaintext_store_not_rotatable')).toHaveLength(2);
+    expect(screen.getByText('plaintext_sqlite')).toBeTruthy();
+    expect(screen.getAllByText('configured').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('F:\\ChancelaData\\chancela.db')).toBeTruthy();
+    expect(screen.getByText(/export\/restore migration plan/)).toBeTruthy();
+    expect(current.value).toBe('');
+    expect(replacement.value).toBe('');
+    expect(document.body.textContent).not.toContain(currentSecret);
+    expect(document.body.textContent).not.toContain(replacementSecret);
+  });
+
+  it('clears key rotation secrets after a failed preflight request', async () => {
+    const currentSecret = 'current-secret-after-error';
+    const replacementSecret = 'replacement-secret-after-error';
+    installFetch([durableStatus], (url) => {
+      if (url.includes('/v1/data/key-rotation/preflight')) {
+        return jsonResponse({ error: 'preflight blocked without secret echo' }, 422);
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+    const current = (await screen.findByLabelText('Chave atual')) as HTMLInputElement;
+    const replacement = screen.getByLabelText('Chave de substituição') as HTMLInputElement;
+    fireEvent.change(current, { target: { value: currentSecret } });
+    fireEvent.change(replacement, { target: { value: replacementSecret } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar rotação' }));
+
+    expect(await screen.findAllByText('preflight blocked without secret echo')).toHaveLength(2);
+    expect(current.value).toBe('');
+    expect(replacement.value).toBe('');
+    expect(document.body.textContent).not.toContain(currentSecret);
+    expect(document.body.textContent).not.toContain(replacementSecret);
+  });
+
   it('cleans crash reports from the storage maintenance panel and refreshes status', async () => {
     const cleanedStatus: DataStatusResponse = {
       ...durableStatus,

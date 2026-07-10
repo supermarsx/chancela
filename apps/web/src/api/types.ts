@@ -4338,6 +4338,40 @@ export interface DataCleanupResult {
   skipped: string[];
 }
 
+/** `POST /v1/data/key-rotation/preflight` request. Key material is transient. */
+export interface DataKeyRotationPreflightBody {
+  current_key?: string;
+  new_key: string;
+}
+
+/** Secret-free data-key rotation preflight status. */
+export type DataKeyRotationPreflightStatus =
+  | 'ready'
+  | 'store_missing'
+  | 'plaintext_store_not_rotatable'
+  | 'current_key_required'
+  | 'reject_empty_current_key'
+  | 'reject_empty_new_key'
+  | 'sqlcipher_build_required'
+  | string;
+
+/** Non-secret evidence attached to a data-key rotation preflight decision. */
+export interface DataKeyRotationPreflightEvidence {
+  database_format: string;
+  current_key_config: string;
+  requested_key_config: string;
+  sqlcipher_available: boolean;
+  database_file: string;
+}
+
+/** Secret-free readiness report for a SQLCipher data-key rotation request. */
+export interface DataKeyRotationPreflight {
+  ready: boolean;
+  status: DataKeyRotationPreflightStatus;
+  next_action: string;
+  evidence: DataKeyRotationPreflightEvidence;
+}
+
 /** The destructive data-management scope (§2.11). */
 export type ResetScope = 'backend_domain' | 'backend_factory';
 

@@ -64,6 +64,7 @@ import type {
   VerifyAiHumanReviewBody,
   ActState,
   DataCleanupBody,
+  DataKeyRotationPreflightBody,
   ReanchorBody,
   RestoreBody,
   CollisionPolicy,
@@ -121,6 +122,7 @@ export const keys = {
   ledgerVerify: ['ledger', 'verify'] as const,
   ledgerIntegrity: ['ledger', 'integrity'] as const,
   dataStatus: ['data', 'status'] as const,
+  dataKeyRotationPreflight: ['data', 'key-rotation', 'preflight'] as const,
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
   platformServices: ['platform', 'services'] as const,
@@ -951,6 +953,14 @@ export function useCleanDataStorage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.dataStatus });
     },
+  });
+}
+
+/** Read-only SQLCipher key-rotation preflight; does not execute the rotation. */
+export function useDataKeyRotationPreflight() {
+  return useMutation({
+    mutationKey: keys.dataKeyRotationPreflight,
+    mutationFn: (body: DataKeyRotationPreflightBody) => api.preflightDataKeyRotation(body),
   });
 }
 

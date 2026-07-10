@@ -19,10 +19,11 @@
  * Every server op routes the shared {@link ConfirmActionModal} (type-phrase + step-up
  * re-auth + export-first); the server enforces the same gates. Nothing is silently destructive.
  */
-import { useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useCleanDataStorage,
+  useDataKeyRotationPreflight,
   useDataStatus,
   useResetData,
   useStartOverInstance,
@@ -31,6 +32,8 @@ import {
   RESET_PHRASE,
   type DataCleanupResult,
   type DataCleanupTarget,
+  type DataKeyRotationPreflight,
+  type DataKeyRotationPreflightBody,
   type DataPermissionCheck,
   type DataPermissionStatus,
   type DataPersistenceMode,
@@ -48,6 +51,7 @@ import {
   Field,
   Icon,
   InlineWarning,
+  Input,
   Loading,
   TextArea,
   useToast,
@@ -184,6 +188,15 @@ function cleanupSummary(result: DataCleanupResult, t: TFunction, locale: string)
   });
 }
 
+function buildKeyRotationPreflightBody(
+  currentKey: string,
+  replacementKey: string,
+): DataKeyRotationPreflightBody {
+  const body: DataKeyRotationPreflightBody = { new_key: replacementKey };
+  if (currentKey.length > 0) body.current_key = currentKey;
+  return body;
+}
+
 function StatusBadge({
   value,
   positive = true,
@@ -196,6 +209,108 @@ function StatusBadge({
   if (value === null) return <Badge>{'—'}</Badge>;
   const ok = positive ? value : !value;
   return <Badge tone={ok ? 'ok' : 'warn'}>{value ? t('common.yes') : t('common.no')}</Badge>;
+}
+
+function DataKeyRotationPreflightReport({
+  report,
+  t,
+}: {
+  report: DataKeyRotationPreflight;
+  t: TFunction;
+}) {
+  const blockerItems = report.ready ? [] : [report.status];
+  return (
+    <InlineWarning
+      tone={report.ready ? 'info' : 'warn'}
+      title={t('data.status.keyRotation.resultTitle')}
+    >
+      <div className="stack--tight">
+        <dl className="deflist data-status-summary">
+          <div>
+            <dt>{t('data.status.keyRotation.status')}</dt>
+            <dd>
+              <Badge tone={report.ready ? 'ok' : 'warn'}>{report.status}</Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>{t('data.status.keyRotation.ready')}</dt>
+            <dd>
+              <Badge tone={report.ready ? 'ok' : 'warn'}>
+                {report.ready
+                  ? t('data.status.keyRotation.ready.yes')
+                  : t('data.status.keyRotation.ready.no')}
+              </Badge>
+            </dd>
+          </div>
+          <div className="deflist__wide">
+            <dt>{t('data.status.keyRotation.nextAction')}</dt>
+            <dd>{report.next_action}</dd>
+          </div>
+        </dl>
+
+        <div>
+          <h5>{t('data.status.keyRotation.blockers')}</h5>
+          {blockerItems.length === 0 ? (
+            <p className="field__hint">{t('data.status.keyRotation.blockers.none')}</p>
+          ) : (
+            <ul className="plain-list">
+              {blockerItems.map((item) => (
+                <li key={item}>
+                  <code className="mono">{item}</code>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <h5>{t('data.status.keyRotation.evidence')}</h5>
+          <dl className="deflist data-status-summary">
+            <div>
+              <dt>{t('data.status.keyRotation.evidence.databaseFormat')}</dt>
+              <dd className="mono">{report.evidence.database_format}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.keyRotation.evidence.currentKey')}</dt>
+              <dd className="mono">{report.evidence.current_key_config}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.keyRotation.evidence.replacementKey')}</dt>
+              <dd className="mono">{report.evidence.requested_key_config}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.keyRotation.evidence.sqlcipher')}</dt>
+              <dd>{report.evidence.sqlcipher_available ? t('common.yes') : t('common.no')}</dd>
+            </div>
+            <div className="deflist__wide">
+              <dt>{t('data.status.keyRotation.evidence.databaseFile')}</dt>
+              <dd className="mono">{report.evidence.database_file}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div>
+          <h5>{t('data.status.keyRotation.metadata')}</h5>
+          <dl className="deflist data-status-summary">
+            <div>
+              <dt>{t('data.status.keyRotation.metadata.provider')}</dt>
+              <dd>SQLCipher</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.keyRotation.metadata.readOnly')}</dt>
+              <dd>
+                <Badge tone="ok">{t('common.yes')}</Badge>
+              </dd>
+            </div>
+            <div className="deflist__wide">
+              <dt>{t('data.status.keyRotation.metadata.execution')}</dt>
+              <dd>{t('data.status.keyRotation.metadata.execution.none')}</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </InlineWarning>
+  );
 }
 
 function UsageList({
@@ -231,10 +346,14 @@ function DataStatusPanel() {
   const toast = useToast();
   const status = useDataStatus();
   const cleanup = useCleanDataStorage();
+  const keyRotationPreflight = useDataKeyRotationPreflight();
   const data = status.data;
   const dataPath = data?.data_dir.path ?? null;
   const [cleanupTarget, setCleanupTarget] = useState<DataCleanupTarget | null>(null);
   const [lastCleanup, setLastCleanup] = useState<DataCleanupResult | null>(null);
+  const [currentKey, setCurrentKey] = useState('');
+  const [replacementKey, setReplacementKey] = useState('');
+  const [lastPreflight, setLastPreflight] = useState<DataKeyRotationPreflight | null>(null);
   const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
   const canClean = Boolean(
     dataPath &&
@@ -254,6 +373,23 @@ function DataStatusPanel() {
       toast.success(t('data.status.copyDone'));
     } catch (err) {
       toast.error(err);
+    }
+  }
+
+  async function submitKeyRotationPreflight(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = buildKeyRotationPreflightBody(currentKey, replacementKey);
+    keyRotationPreflight.reset();
+    setLastPreflight(null);
+    try {
+      const result = await keyRotationPreflight.mutateAsync(body);
+      setLastPreflight(result);
+      toast.success(t('data.status.keyRotation.done'));
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setCurrentKey('');
+      setReplacementKey('');
     }
   }
 
@@ -422,6 +558,72 @@ function DataStatusPanel() {
                 ) : null}
               </InlineWarning>
             ) : null}
+          </section>
+
+          <section className="data-status-section" aria-labelledby="data-status-key-rotation">
+            <div className="data-status-section__head">
+              <div>
+                <h4 id="data-status-key-rotation">{t('data.status.keyRotation.title')}</h4>
+                <p className="data-status-section__hint">{t('data.status.keyRotation.body')}</p>
+              </div>
+            </div>
+            <form className="form" onSubmit={(event) => void submitKeyRotationPreflight(event)}>
+              <div className="data-status-usage-groups">
+                <Field
+                  label={t('data.status.keyRotation.currentKey.label')}
+                  htmlFor="data-key-rotation-current"
+                  hint={t('data.status.keyRotation.currentKey.hint')}
+                >
+                  <Input
+                    id="data-key-rotation-current"
+                    name="data-key-rotation-current"
+                    type="password"
+                    value={currentKey}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    onChange={(event) => setCurrentKey(event.target.value)}
+                  />
+                </Field>
+                <Field
+                  label={t('data.status.keyRotation.replacementKey.label')}
+                  htmlFor="data-key-rotation-replacement"
+                  hint={t('data.status.keyRotation.replacementKey.hint')}
+                >
+                  <Input
+                    id="data-key-rotation-replacement"
+                    name="data-key-rotation-replacement"
+                    type="password"
+                    value={replacementKey}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    onChange={(event) => setReplacementKey(event.target.value)}
+                  />
+                </Field>
+              </div>
+              <p className="field__hint">{t('data.status.keyRotation.secretHint')}</p>
+              {!dataPath ? (
+                <p className="field__hint">{t('data.status.keyRotation.unavailable')}</p>
+              ) : null}
+              {keyRotationPreflight.error ? <ErrorNote error={keyRotationPreflight.error} /> : null}
+              <div className="form__actions">
+                <GateButton
+                  perm="settings.manage"
+                  type="submit"
+                  variant="secondary"
+                  icon={<Icon.Search />}
+                  disabled={!dataPath || keyRotationPreflight.isPending}
+                >
+                  {keyRotationPreflight.isPending
+                    ? t('data.status.keyRotation.pending')
+                    : t('data.status.keyRotation.submit')}
+                </GateButton>
+              </div>
+            </form>
+            {lastPreflight ? <DataKeyRotationPreflightReport report={lastPreflight} t={t} /> : null}
           </section>
 
           <section className="data-status-section" aria-labelledby="data-status-permissions">
