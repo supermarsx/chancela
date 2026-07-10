@@ -17,11 +17,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type {
   ActView,
+  DocumentImportValidationFinding,
+  DocumentImportValidationReport,
   EntityFamily,
   ImportDocumentBody,
   ImportedDocumentView,
 } from '../../api/types';
-import { ApiError, api, type ActDocumentWorkingCopyFormat } from '../../api/client';
+import {
+  ApiError,
+  SESSION_HEADER,
+  api,
+  parseResponse,
+  type ActDocumentWorkingCopyFormat,
+} from '../../api/client';
+import { clearSessionToken, getSessionToken } from '../../api/session';
 import {
   useActDocumentBundle,
   useActDocumentPreview,
@@ -80,6 +89,21 @@ async function listImportedDocumentsForAct(actId: string): Promise<ImportedDocum
     if (e instanceof ApiError && e.status === 404) return [];
     throw e;
   }
+}
+
+async function validateImportedDocument(
+  body: ImportDocumentBody,
+): Promise<DocumentImportValidationReport> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getSessionToken();
+  if (token) headers[SESSION_HEADER] = token;
+  const res = await fetch('/v1/documents/import/validate', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) clearSessionToken();
+  return parseResponse<DocumentImportValidationReport>(res, '/v1/documents/import/validate');
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -146,6 +170,101 @@ function mergeImportedDocument(
 ): ImportedDocumentView[] {
   const existing = current ?? [];
   return [document, ...existing.filter((item) => item.id !== document.id)];
+}
+
+function yesNo(value: boolean, t: TFunction): string {
+  return value ? t('common.yes') : t('common.no');
+}
+
+function validationFindingTone(
+  finding: DocumentImportValidationFinding,
+): 'neutral' | 'warn' | 'error' {
+  if (finding.severity === 'error') return 'error';
+  if (finding.severity === 'warning') return 'warn';
+  return 'neutral';
+}
+
+function DocumentImportValidationEvidence({
+  report,
+  t,
+}: {
+  report: DocumentImportValidationReport | null;
+  t: TFunction;
+}) {
+  if (!report) return null;
+
+  const legacyWord = report.legacy_word;
+  const hasOleEvidence = legacyWord.is_ole_cfb || legacyWord.is_legacy_word_doc;
+  if (!hasOleEvidence && report.findings.length === 0) return null;
+
+  const accepted = report.can_accept_non_canonical_import;
+  const title = legacyWord.is_legacy_word_doc
+    ? t('documents.import.legacyWord.title')
+    : accepted
+      ? t('documents.import.validationTitle')
+      : t('documents.import.validationRejectedTitle');
+
+  return (
+    <div className="stack--tight" role="group" aria-label={t('documents.import.validationAria')}>
+      <InlineWarning tone={accepted ? 'info' : 'error'} title={title}>
+        <div className="stack--tight">
+          {legacyWord.is_legacy_word_doc ? (
+            <p>{t('documents.import.legacyWord.body')}</p>
+          ) : !accepted ? (
+            <p>{t('documents.import.validationRejectedBody')}</p>
+          ) : null}
+
+          {hasOleEvidence ? (
+            <dl className="deflist deflist--tight">
+              <div>
+                <dt>{t('documents.import.legacyWord.detectedType')}</dt>
+                <dd className="mono">{report.content_type.detected}</dd>
+              </div>
+              <div>
+                <dt>{t('documents.import.legacyWord.oleCfb')}</dt>
+                <dd>{yesNo(legacyWord.is_ole_cfb, t)}</dd>
+              </div>
+              <div>
+                <dt>{t('documents.import.legacyWord.legacyDoc')}</dt>
+                <dd>{yesNo(legacyWord.is_legacy_word_doc, t)}</dd>
+              </div>
+              <div>
+                <dt>{t('documents.import.legacyWord.macrosExecuted')}</dt>
+                <dd>{yesNo(legacyWord.macro_execution_performed, t)}</dd>
+              </div>
+              <div>
+                <dt>{t('documents.import.legacyWord.conversion')}</dt>
+                <dd>{yesNo(legacyWord.conversion_performed, t)}</dd>
+              </div>
+              <div>
+                <dt>{t('documents.import.legacyWord.canonicalPdfa')}</dt>
+                <dd>{yesNo(legacyWord.canonical_pdfa_generated, t)}</dd>
+              </div>
+            </dl>
+          ) : null}
+
+          {report.findings.length > 0 ? (
+            <div className="stack--tight">
+              <p className="card__label">{t('documents.import.findings')}</p>
+              <ul className="plain-list">
+                {report.findings.map((finding, index) => (
+                  <li className="chainrow" key={`${finding.code}-${index}`}>
+                    <div className="stack--tight">
+                      <p className="row-wrap">
+                        <Badge tone={validationFindingTone(finding)}>{finding.severity}</Badge>
+                        <code className="mono">{finding.code}</code>
+                      </p>
+                      <p className="chainrow__meta">{finding.message}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      </InlineWarning>
+    </div>
+  );
 }
 
 function MetadataValue({ value, missing }: { value: unknown; missing: string }) {
@@ -347,6 +466,9 @@ export function ActDocumentPanel({
   const [open, setOpen] = useState(false);
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
   const [importError, setImportError] = useState<unknown>(null);
+  const [importValidationReport, setImportValidationReport] =
+    useState<DocumentImportValidationReport | null>(null);
+  const [importValidationPending, setImportValidationPending] = useState(false);
 
   const sealed = act.state === 'Sealed' || act.state === 'Archived';
   const preview = useActDocumentPreview(act.id, open);
@@ -385,6 +507,7 @@ export function ActDocumentPanel({
   const selectedImportFromList =
     importList.find((document) => document.id === selectedImportId) ?? null;
   const selectedImport = selectedImportedDocument.data ?? selectedImportFromList;
+  const importBusy = importValidationPending || importDocument.isPending;
 
   function downloadBaseName() {
     const base = entityName ? `${slug(entityName)}-` : '';
@@ -466,6 +589,8 @@ export function ActDocumentPanel({
 
   async function onImportFile(file: File) {
     setImportError(null);
+    setImportValidationReport(null);
+    setImportValidationPending(true);
     try {
       const content_base64 = await readFileAsBase64(file, t);
       const body: ImportDocumentBody = {
@@ -474,11 +599,19 @@ export function ActDocumentPanel({
         filename: metadataText(file.name),
         act_id: act.id,
       };
+      const report = await validateImportedDocument(body);
+      setImportValidationReport(report);
+      if (!report.can_accept_non_canonical_import) {
+        toast.error(t('documents.import.toast.validationRejected'));
+        return;
+      }
       await importDocument.mutateAsync(body);
       toast.success(t('documents.import.toast.success'));
     } catch (e) {
       setImportError(e);
       toast.error(e);
+    } finally {
+      setImportValidationPending(false);
     }
   }
 
@@ -620,13 +753,11 @@ export function ActDocumentPanel({
               <span className="btn__icon">
                 <Icon.Tray />
               </span>
-              {importDocument.isPending
-                ? t('documents.import.pending')
-                : t('documents.import.choose')}
+              {importBusy ? t('documents.import.pending') : t('documents.import.choose')}
               <input
                 type="file"
                 className="sr-only"
-                disabled={importDocument.isPending}
+                disabled={importBusy}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) void onImportFile(file);
@@ -637,6 +768,7 @@ export function ActDocumentPanel({
           </div>
 
           {importError ? <ErrorNote error={importError} /> : null}
+          <DocumentImportValidationEvidence report={importValidationReport} t={t} />
 
           {importedDocuments.isLoading ? (
             <Skeleton height="4.5rem" />

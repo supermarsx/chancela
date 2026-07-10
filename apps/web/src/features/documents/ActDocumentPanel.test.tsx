@@ -8,7 +8,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { ActDocumentPanel } from './ActDocumentPanel';
 import { renderWithProviders } from '../../test/utils';
-import type { ActView, DocumentBundle, ImportedDocumentView } from '../../api/types';
+import type {
+  ActView,
+  DocumentBundle,
+  DocumentImportValidationReport,
+  ImportedDocumentView,
+} from '../../api/types';
 
 const baseAct: ActView = {
   id: 'act-1',
@@ -133,6 +138,183 @@ const importedDocument: ImportedDocumentView = {
   bytes_download: '/v1/documents/imported/import-1/bytes',
 };
 
+const unsignedImportSignature = {
+  validation_status: 'unsigned',
+  signed_pdf_signal: false,
+  has_signature_dictionary_marker: false,
+  signature_marker_count: 0,
+  has_byte_range: false,
+  byte_range_marker_count: 0,
+  byte_range: null,
+  byte_range_complete: null,
+  byte_range_digest_sha256: null,
+  signed_revision_bytes: null,
+  covered_bytes: null,
+  excluded_bytes: null,
+  has_contents_marker: false,
+  cryptographic_validation_performed: false,
+  pades_profile: null,
+  validation_error: null,
+};
+
+const baseImportValidationReport: DocumentImportValidationReport = {
+  report_kind: 'document_import_validation',
+  scope: 'non_canonical_import_candidate',
+  legal_notice:
+    'Imported document validation is local technical evidence only; no legal validity, PDF/A conformance, qualified signature, or trust-provider validation is certified.',
+  filename: 'supporting-evidence.pdf',
+  size_bytes: 52,
+  sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  fixity: {
+    size_bytes: 52,
+    sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    declared_size_bytes: null,
+    declared_sha256: null,
+    size_matches_declared: null,
+    sha256_matches_declared: null,
+  },
+  content_type: {
+    declared: 'application/pdf',
+    detected: 'application/pdf',
+    declared_matches_detected: true,
+  },
+  pdf: {
+    is_pdf: true,
+    header_offset: 0,
+    version: '1.7',
+    has_eof_marker: true,
+    has_startxref: true,
+    pdfa: {
+      is_pdfa_ish: false,
+      part: null,
+      conformance: null,
+      part_values: [],
+      conformance_values: [],
+      duplicate_metadata: false,
+      odd_metadata: false,
+    },
+  },
+  legacy_word: {
+    is_ole_cfb: false,
+    is_legacy_word_doc: false,
+    filename_extension_doc: false,
+    declared_content_type_msword: false,
+    declared_content_type_generic: false,
+    filename_extension_conflict: false,
+    declared_content_type_conflict: false,
+    macro_execution_performed: false,
+    conversion_performed: false,
+    canonical_pdfa_generated: false,
+  },
+  signature: unsignedImportSignature,
+  can_accept_non_canonical_import: true,
+  findings: [],
+};
+
+const legacyWordImportValidationReport: DocumentImportValidationReport = {
+  ...baseImportValidationReport,
+  filename: 'board-minutes.doc',
+  size_bytes: 32,
+  sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  fixity: {
+    ...baseImportValidationReport.fixity,
+    size_bytes: 32,
+    sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  },
+  content_type: {
+    declared: 'application/msword',
+    detected: 'application/msword',
+    declared_matches_detected: true,
+  },
+  pdf: {
+    ...baseImportValidationReport.pdf,
+    is_pdf: false,
+    header_offset: null,
+    version: null,
+    has_eof_marker: false,
+    has_startxref: false,
+  },
+  legacy_word: {
+    is_ole_cfb: true,
+    is_legacy_word_doc: true,
+    filename_extension_doc: true,
+    declared_content_type_msword: true,
+    declared_content_type_generic: false,
+    filename_extension_conflict: false,
+    declared_content_type_conflict: false,
+    macro_execution_performed: false,
+    conversion_performed: false,
+    canonical_pdfa_generated: false,
+  },
+  findings: [
+    {
+      severity: 'info',
+      code: 'legacy_word_doc_detected',
+      message:
+        'legacy Microsoft Word .doc/OLE CFB detected; it can be preserved only as non-canonical evidence',
+    },
+    {
+      severity: 'info',
+      code: 'legacy_word_no_macro_execution',
+      message:
+        'OLE CFB bytes were inspected by magic bytes and metadata only; macros and embedded objects were not executed',
+    },
+    {
+      severity: 'info',
+      code: 'legacy_word_no_pdfa_conversion',
+      message:
+        'no DOC-to-PDF/A conversion was performed; this import does not become the canonical PDF/A record',
+    },
+  ],
+};
+
+const ambiguousOlePdfValidationReport: DocumentImportValidationReport = {
+  ...legacyWordImportValidationReport,
+  filename: 'board-minutes.pdf',
+  sha256: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  fixity: {
+    ...legacyWordImportValidationReport.fixity,
+    sha256: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  },
+  content_type: {
+    declared: 'application/pdf',
+    detected: 'application/vnd.ms-office',
+    declared_matches_detected: false,
+  },
+  pdf: {
+    ...baseImportValidationReport.pdf,
+    is_pdf: true,
+  },
+  legacy_word: {
+    ...legacyWordImportValidationReport.legacy_word,
+    is_legacy_word_doc: false,
+    filename_extension_doc: false,
+    declared_content_type_msword: false,
+    filename_extension_conflict: true,
+    declared_content_type_conflict: true,
+  },
+  can_accept_non_canonical_import: false,
+  findings: [
+    {
+      severity: 'error',
+      code: 'legacy_word_ambiguous_pdf',
+      message:
+        'candidate starts as an OLE compound file but also contains a PDF header in the first 1024 bytes',
+    },
+    {
+      severity: 'error',
+      code: 'legacy_word_filename_conflict',
+      message: 'OLE compound file bytes were supplied with a non-.doc filename extension',
+    },
+    {
+      severity: 'error',
+      code: 'legacy_word_content_type_conflict',
+      message:
+        'OLE compound file bytes were supplied with a declared content type that is not compatible with legacy Word DOC',
+    },
+  ],
+};
+
 function json(body: unknown, status = 200) {
   return Promise.resolve(
     new Response(JSON.stringify(body), {
@@ -158,6 +340,10 @@ function emptyImports(url: string) {
 
 function isImportCreate(url: string) {
   return url.endsWith('/v1/documents/import');
+}
+
+function isImportValidate(url: string) {
+  return url.endsWith('/v1/documents/import/validate');
 }
 
 afterEach(() => {
@@ -725,10 +911,15 @@ describe('ActDocumentPanel — imported evidence documents', () => {
 
   it('imports an uploaded file for the current act after server-side validation', async () => {
     const bodies: unknown[] = [];
+    const validationBodies: unknown[] = [];
     let stored = false;
 
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
+      if (isImportValidate(url)) {
+        validationBodies.push(JSON.parse(String(init?.body)));
+        return json(baseImportValidationReport);
+      }
       if (isImportCreate(url)) {
         bodies.push(JSON.parse(String(init?.body)));
         stored = true;
@@ -747,12 +938,14 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(validationBodies).toHaveLength(1);
     expect(bodies[0]).toEqual({
       content_base64: 'ZXZpZGVuY2U=',
       content_type: 'application/pdf',
       filename: 'evidence.pdf',
       act_id: 'act-1',
     });
+    expect(validationBodies[0]).toEqual(bodies[0]);
     expect(await screen.findAllByText('supporting-evidence.pdf')).toHaveLength(2);
     expect(
       await screen.findByRole('group', { name: 'Metadados do documento importado' }),
@@ -764,6 +957,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
 
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
+      if (isImportValidate(url)) return json(baseImportValidationReport);
       if (isImportCreate(url)) {
         bodies.push(JSON.parse(String(init?.body)));
         return json({ error: 'Conteúdo inválido: tipo não suportado' }, 422);
@@ -783,6 +977,114 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(await screen.findAllByText('Conteúdo inválido: tipo não suportado')).toHaveLength(2);
     expect(screen.queryByRole('group', { name: 'Metadados do documento importado' })).toBeNull();
+    expect(screen.queryByText('Assinatura válida')).toBeNull();
+  });
+
+  it('surfaces legacy Word .doc OLE evidence before preserving it as non-canonical import', async () => {
+    const bodies: unknown[] = [];
+    const validationBodies: unknown[] = [];
+    let stored = false;
+    const legacyImportedDocument: ImportedDocumentView = {
+      ...importedDocument,
+      filename: 'board-minutes.doc',
+      declared_content_type: 'application/msword',
+      detected_content_type: 'application/msword',
+    };
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (isImportValidate(url)) {
+        validationBodies.push(JSON.parse(String(init?.body)));
+        return json(legacyWordImportValidationReport);
+      }
+      if (isImportCreate(url)) {
+        bodies.push(JSON.parse(String(init?.body)));
+        stored = true;
+        return json(legacyImportedDocument);
+      }
+      if (url.includes('/v1/documents/imported/import-1')) return json(legacyImportedDocument);
+      if (url.includes('/v1/documents/imported')) {
+        return json(stored ? [legacyImportedDocument] : []);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<ActDocumentPanel act={baseAct} />);
+    expect(await screen.findByText('Nenhum documento importado')).toBeTruthy();
+
+    const input = screen.getByLabelText('Importar evidência') as HTMLInputElement;
+    const file = new File(
+      [new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]), 'legacy'],
+      'board-minutes.doc',
+      {
+        type: 'application/msword',
+      },
+    );
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(validationBodies).toHaveLength(1));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    const validation = await screen.findByRole('group', {
+      name: 'Relatório de validação do documento importado',
+    });
+    expect(within(validation).getByText('Microsoft Word .doc/OLE CFB legado')).toBeTruthy();
+    expect(
+      within(validation).getByText(/preservado apenas como evidência não canónica/),
+    ).toBeTruthy();
+    expect(within(validation).getByText('application/msword')).toBeTruthy();
+    expect(within(validation).getByText('legacy_word_doc_detected')).toBeTruthy();
+    expect(within(validation).getByText('legacy_word_no_macro_execution')).toBeTruthy();
+    expect(within(validation).getByText('legacy_word_no_pdfa_conversion')).toBeTruthy();
+    expect(within(validation).getByText('Conversão DOC-to-PDF/A')).toBeTruthy();
+    expect(within(validation).getByText('PDF/A canónico gerado')).toBeTruthy();
+    expect(await screen.findAllByText('board-minutes.doc')).toHaveLength(2);
+    expect(screen.queryByText('Assinatura válida')).toBeNull();
+  });
+
+  it('shows ambiguous OLE/PDF validation findings and does not import the candidate', async () => {
+    let importAttempts = 0;
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (isImportValidate(url)) return json(ambiguousOlePdfValidationReport);
+      if (isImportCreate(url)) {
+        importAttempts += 1;
+        return json(importedDocument);
+      }
+      const imports = emptyImports(url);
+      if (imports) return imports;
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<ActDocumentPanel act={baseAct} />);
+    expect(await screen.findByText('Nenhum documento importado')).toBeTruthy();
+
+    const input = screen.getByLabelText('Importar evidência') as HTMLInputElement;
+    const file = new File(
+      [new Uint8Array([0xd0, 0xcf, 0x11, 0xe0]), '%PDF-1.7'],
+      'board-minutes.pdf',
+      {
+        type: 'application/pdf',
+      },
+    );
+    fireEvent.change(input, { target: { files: [file] } });
+
+    const validation = await screen.findByRole('group', {
+      name: 'Relatório de validação do documento importado',
+    });
+    expect(within(validation).getByText('Importação recusada pela validação')).toBeTruthy();
+    expect(
+      within(validation).getByText(
+        'O ficheiro não foi gravado; reveja os erros técnicos reportados abaixo.',
+      ),
+    ).toBeTruthy();
+    expect(within(validation).getByText('legacy_word_ambiguous_pdf')).toBeTruthy();
+    expect(within(validation).getByText('legacy_word_filename_conflict')).toBeTruthy();
+    expect(within(validation).getByText('legacy_word_content_type_conflict')).toBeTruthy();
+    expect(within(validation).getByText('application/vnd.ms-office')).toBeTruthy();
+    expect(within(validation).queryByText(/preservado apenas como evidência/)).toBeNull();
+    expect(importAttempts).toBe(0);
+    expect(screen.queryByText('board-minutes.pdf')).toBeNull();
     expect(screen.queryByText('Assinatura válida')).toBeNull();
   });
 });

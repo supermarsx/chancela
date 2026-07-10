@@ -772,6 +772,76 @@ export interface PdfSignatureValidationResponse {
   findings: PdfSignatureValidationFinding[];
 }
 
+export interface DocumentImportValidationFinding {
+  severity: 'error' | 'warning' | 'info' | string;
+  code: string;
+  message: string;
+}
+
+export interface DocumentImportFixityReport {
+  size_bytes: number;
+  sha256: string;
+  declared_size_bytes: number | null;
+  declared_sha256: string | null;
+  size_matches_declared: boolean | null;
+  sha256_matches_declared: boolean | null;
+}
+
+export interface DocumentImportContentTypeReport {
+  declared: string | null;
+  detected: string;
+  declared_matches_detected: boolean | null;
+}
+
+export interface DocumentImportPdfARecognitionReport {
+  is_pdfa_ish: boolean;
+  part: string | null;
+  conformance: string | null;
+  part_values: string[];
+  conformance_values: string[];
+  duplicate_metadata: boolean;
+  odd_metadata: boolean;
+}
+
+export interface DocumentImportPdfRecognitionReport {
+  is_pdf: boolean;
+  header_offset: number | null;
+  version: string | null;
+  has_eof_marker: boolean;
+  has_startxref: boolean;
+  pdfa: DocumentImportPdfARecognitionReport;
+}
+
+export interface LegacyWordDocRecognitionReport {
+  is_ole_cfb: boolean;
+  is_legacy_word_doc: boolean;
+  filename_extension_doc: boolean;
+  declared_content_type_msword: boolean;
+  declared_content_type_generic: boolean;
+  filename_extension_conflict: boolean;
+  declared_content_type_conflict: boolean;
+  macro_execution_performed: boolean;
+  conversion_performed: boolean;
+  canonical_pdfa_generated: boolean;
+}
+
+/** `POST /v1/documents/import/validate` read-only validation report. */
+export interface DocumentImportValidationReport {
+  report_kind: 'document_import_validation' | string;
+  scope: 'non_canonical_import_candidate' | string;
+  legal_notice: string;
+  filename: string | null;
+  size_bytes: number;
+  sha256: string;
+  fixity: DocumentImportFixityReport;
+  content_type: DocumentImportContentTypeReport;
+  pdf: DocumentImportPdfRecognitionReport;
+  legacy_word: LegacyWordDocRecognitionReport;
+  signature: DocumentBundleSignedPdfSignalReport;
+  can_accept_non_canonical_import: boolean;
+  findings: DocumentImportValidationFinding[];
+}
+
 /** Body for `POST /v1/documents/import`: validated again server-side before persistence. */
 export interface ImportDocumentBody {
   content_base64: string;
