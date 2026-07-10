@@ -181,6 +181,14 @@ fn tagged_pdf_structure_markers_are_emitted() {
         mark_info.get(b"Marked"),
         Ok(Object::Boolean(true))
     ));
+    let viewer_preferences = catalog
+        .get(b"ViewerPreferences")
+        .and_then(Object::as_dict)
+        .expect("ViewerPreferences dictionary");
+    assert!(matches!(
+        viewer_preferences.get(b"DisplayDocTitle"),
+        Ok(Object::Boolean(true))
+    ));
 
     let struct_root_ref = catalog
         .get(b"StructTreeRoot")
@@ -247,6 +255,13 @@ fn tagged_pdf_structure_markers_are_emitted() {
             .expect("page StructParents"),
         0
     );
+    assert_eq!(
+        first_page
+            .get(b"Tabs")
+            .and_then(Object::as_name)
+            .expect("page Tabs"),
+        b"S"
+    );
 
     let content = content_stream_text(&parsed);
     assert!(content.contains("/H1 << /MCID 0 >> BDC"));
@@ -305,6 +320,50 @@ fn selfcheck_rejects_unscoped_layout_artifact_painting() {
     let err = selfcheck::verify(&bytes).expect_err("unscoped artifact drawing must fail");
     assert!(
         err.to_string().contains("outside an /Artifact"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_missing_display_doc_title_preference() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    replace_once(
+        &mut bytes,
+        b"/DisplayDocTitle true",
+        b"/DisplayDocTitle null",
+    );
+
+    let err = selfcheck::verify(&bytes).expect_err("missing DisplayDocTitle must fail");
+    assert!(
+        err.to_string().contains("DisplayDocTitle"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_non_structure_tab_order() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    replace_once(&mut bytes, b"/Tabs/S", b"/Tabs/R");
+
+    let err = selfcheck::verify(&bytes).expect_err("non-structure tab order must fail");
+    assert!(
+        err.to_string().contains("/Tabs"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_xmp_language_drift_from_catalog_lang() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    replace_once(
+        &mut bytes,
+        b"<rdf:li>pt-PT</rdf:li>",
+        b"<rdf:li>zz-ZZ</rdf:li>",
+    );
+
+    let err = selfcheck::verify(&bytes).expect_err("XMP language drift must fail");
+    assert!(
+        err.to_string().contains("dc:language"),
         "unexpected self-check error: {err}"
     );
 }
@@ -565,6 +624,8 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
     assert!(report.structure_tree_present);
     assert!(report.tagged_content_present);
     assert!(report.layout_artifacts_marked);
+    assert!(report.display_doc_title);
+    assert!(report.pages_use_structure_tab_order);
     assert!(!report.alt_text_model_present);
     assert!(!report.pdf_ua_claimed);
     assert!(
@@ -669,7 +730,7 @@ fn accessibility_report_json_is_deterministic() {
     assert_eq!(a, b);
     assert_eq!(
         a,
-        "{\"version\":1,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":true,\"tagged_content_present\":true,\"layout_artifacts_marked\":true},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"no_alt_text_model\",\"limited_tagged_structure\"]}"
+        "{\"version\":2,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"display_doc_title\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":true,\"tagged_content_present\":true,\"layout_artifacts_marked\":true,\"pages_use_structure_tab_order\":true},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"no_alt_text_model\",\"limited_tagged_structure\"]}"
     );
 }
 

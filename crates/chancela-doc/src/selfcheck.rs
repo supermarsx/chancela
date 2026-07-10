@@ -26,7 +26,14 @@ use lopdf::{Dictionary, Document, Object, ObjectId};
 use crate::DocError;
 
 fn find(hay: &[u8], needle: &[u8]) -> bool {
-    needle.len() <= hay.len() && hay.windows(needle.len()).any(|w| w == needle)
+    find_slice(hay, needle).is_some()
+}
+
+fn find_slice(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > hay.len() {
+        return None;
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
 }
 
 fn last_startxref(pdf: &[u8]) -> Option<usize> {
@@ -131,6 +138,9 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
     if lang.is_empty() {
         return Err(fail("catalog /Lang is empty".into()));
     }
+    let lang =
+        std::str::from_utf8(lang).map_err(|_| fail("catalog /Lang is not valid UTF-8".into()))?;
+    verify_document_title_preference(catalog, &fail)?;
     verify_tagged_structure(&doc, catalog, &fail)?;
     let oi_arr = catalog
         .get(b"OutputIntents")
@@ -165,6 +175,7 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
             "XMP claims PDF/UA, but the writer only emits a bounded tagged-PDF structure".into(),
         ));
     }
+    verify_xmp_accessibility_metadata(&meta.content, lang, &fail)?;
 
     // OutputIntent: /S GTS_PDFA1 and an N=3 DestOutputProfile.
     let oi_ref = oi_arr[0]
@@ -202,6 +213,58 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
             Ok(Object::Array(_)) | Err(_) => {}
             Ok(_) => return Err(fail("first page /Annots is not an inline array".into())),
         }
+    }
+
+    Ok(())
+}
+
+fn verify_document_title_preference(
+    catalog: &Dictionary,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let viewer_preferences = catalog
+        .get(b"ViewerPreferences")
+        .and_then(Object::as_dict)
+        .map_err(|_| fail("catalog has no /ViewerPreferences dictionary".into()))?;
+    if !matches!(
+        viewer_preferences.get(b"DisplayDocTitle"),
+        Ok(Object::Boolean(true))
+    ) {
+        return Err(fail(
+            "catalog /ViewerPreferences does not set /DisplayDocTitle true".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn verify_xmp_accessibility_metadata(
+    xmp: &[u8],
+    catalog_lang: &str,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let title_start = b"<rdf:li xml:lang=\"x-default\">";
+    let title_end = b"</rdf:li>";
+    let title_start_index = find_slice(xmp, title_start)
+        .ok_or_else(|| fail("XMP missing dc:title x-default value".into()))?
+        + title_start.len();
+    let title_end_index = find_slice(&xmp[title_start_index..], title_end)
+        .ok_or_else(|| fail("XMP has unterminated dc:title value".into()))?
+        + title_start_index;
+    if xmp[title_start_index..title_end_index]
+        .iter()
+        .all(|byte| byte.is_ascii_whitespace())
+    {
+        return Err(fail("XMP dc:title value is empty".into()));
+    }
+
+    if !find(xmp, b"<dc:language>") {
+        return Err(fail("XMP missing dc:language".into()));
+    }
+    let language_entry = format!("<rdf:li>{catalog_lang}</rdf:li>");
+    if !find(xmp, language_entry.as_bytes()) {
+        return Err(fail(format!(
+            "XMP dc:language does not match catalog /Lang {catalog_lang}"
+        )));
     }
 
     Ok(())
@@ -336,6 +399,11 @@ fn verify_tagged_structure(
         if struct_parents != page_index as i64 {
             return Err(fail(format!(
                 "page {page_index} /StructParents is {struct_parents}, expected {page_index}"
+            )));
+        }
+        if page.get(b"Tabs").and_then(Object::as_name).ok() != Some(b"S") {
+            return Err(fail(format!(
+                "page {page_index} /Tabs is not /S structure order"
             )));
         }
         page_keys.insert(struct_parents);

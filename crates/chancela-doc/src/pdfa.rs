@@ -187,6 +187,7 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
         page.set("Resources", Object::Dictionary(resources));
         page.set("Contents", Object::Reference(content_id));
         page.set("StructParents", Object::Integer(page_index as i64));
+        page.set("Tabs", name("S"));
         pdf.set_object(page_id, Object::Dictionary(page));
         page_ids.push(page_id);
     }
@@ -226,6 +227,9 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     let mut mark_info = Dictionary::new();
     mark_info.set("Marked", Object::Boolean(true));
     catalog.set("MarkInfo", Object::Dictionary(mark_info));
+    let mut viewer_preferences = Dictionary::new();
+    viewer_preferences.set("DisplayDocTitle", Object::Boolean(true));
+    catalog.set("ViewerPreferences", Object::Dictionary(viewer_preferences));
     pdf.set_object(catalog_id, Object::Dictionary(catalog));
 
     // Trailer: /Root + deterministic /ID (never clock/RNG), no /Encrypt.

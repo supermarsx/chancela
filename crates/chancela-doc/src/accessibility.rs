@@ -126,6 +126,8 @@ pub struct AccessibilityReport {
     pub metadata: AccessibilityMetadata,
     /// The catalog carries `/Lang`.
     pub catalog_lang: bool,
+    /// Catalog `/ViewerPreferences /DisplayDocTitle true` is emitted.
+    pub display_doc_title: bool,
     /// XMP carries `dc:title`.
     pub xmp_title: bool,
     /// XMP carries `dc:language`.
@@ -142,6 +144,8 @@ pub struct AccessibilityReport {
     pub tagged_content_present: bool,
     /// Whether visual layout artifacts are marked as artifacts.
     pub layout_artifacts_marked: bool,
+    /// Every page uses structure order for tab/annotation navigation (`/Tabs /S`).
+    pub pages_use_structure_tab_order: bool,
     /// Whether the model/writer has an alternate-text surface for non-text content.
     pub alt_text_model_present: bool,
     /// True only when the writer has enough tagged-PDF machinery to claim PDF/UA.
@@ -186,12 +190,13 @@ impl AccessibilityReport {
             .join(",");
 
         format!(
-            "{{\"version\":1,\
+            "{{\"version\":2,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
 \"language\":{{\"value\":{language},\"source_present\":{language_present},\"fallback_used\":{language_fallback}}},\
 \"catalog_lang\":{catalog_lang},\
+\"display_doc_title\":{display_doc_title},\
 \"xmp_title\":{xmp_title},\
 \"xmp_language\":{xmp_language}\
 }},\
@@ -200,7 +205,8 @@ impl AccessibilityReport {
 \"content_streams_follow_model_order\":{content_order},\
 \"structure_tree_present\":{structure_tree},\
 \"tagged_content_present\":{tagged_content},\
-\"layout_artifacts_marked\":{artifacts_marked}\
+\"layout_artifacts_marked\":{artifacts_marked},\
+\"pages_use_structure_tab_order\":{structure_tab_order}\
 }},\
 \"alt_text_model_present\":{alt_text},\
 \"pdf_ua_blockers\":[{blockers}]\
@@ -213,6 +219,7 @@ impl AccessibilityReport {
             language_present = self.metadata.language.source_present,
             language_fallback = self.metadata.language.fallback_used,
             catalog_lang = self.catalog_lang,
+            display_doc_title = self.display_doc_title,
             xmp_title = self.xmp_title,
             xmp_language = self.xmp_language,
             embedded_fonts = self.embedded_fonts,
@@ -221,6 +228,7 @@ impl AccessibilityReport {
             structure_tree = self.structure_tree_present,
             tagged_content = self.tagged_content_present,
             artifacts_marked = self.layout_artifacts_marked,
+            structure_tab_order = self.pages_use_structure_tab_order,
             alt_text = self.alt_text_model_present,
         )
     }
@@ -242,6 +250,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
     AccessibilityReport {
         metadata: metadata(input.doc),
         catalog_lang: true,
+        display_doc_title: true,
         xmp_title: true,
         xmp_language: true,
         embedded_fonts: true,
@@ -250,6 +259,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         structure_tree_present: true,
         tagged_content_present: true,
         layout_artifacts_marked: true,
+        pages_use_structure_tab_order: true,
         alt_text_model_present,
         pdf_ua_claimed: blockers.is_empty(),
         pdf_ua_blockers: blockers,
