@@ -77,6 +77,24 @@ test("recorded sidecar requires raw report metadata that matches the report file
     attachment.archive_attachment.suggested_path,
     "evidence/external-validators/sample-eu-dss.json",
   );
+  assert.equal(attachment.evidence_indexing.status_scope, "technical_metadata_only");
+  assert.equal(attachment.evidence_indexing.archive_package.index_path, "evidence/index.json");
+  assert.equal(
+    attachment.evidence_indexing.archive_package.indexed_path_prefix,
+    "evidence/external-validators/",
+  );
+  assert.equal(
+    attachment.evidence_indexing.archive_package.indexed_path_pattern,
+    "evidence/external-validators/{case_id}-{validator_family}.json",
+  );
+  assert.equal(
+    attachment.evidence_indexing.document_bundle.index_json_pointer,
+    "/validation_report/evidence_index/external_validator_reports",
+  );
+  assert.equal(
+    attachment.evidence_indexing.document_bundle.archive_path_pattern,
+    "evidence/external-validators/{case_id}-{validator_family}.json",
+  );
 });
 
 test("pending sidecar remains pending and contains no report evidence", () => {
@@ -412,12 +430,21 @@ test("recorder preserves raw report metadata and pending-to-recorded transition"
   assert.equal(result.evidenceAttachment.report.path, "cases/sample/reports/eu-dss-operator-export.xml");
   assert.equal(result.evidenceAttachment.transcription.findings_available, false);
   assert.equal(result.evidenceAttachment.legal_validity_claimed, false);
+  assert.equal(result.evidenceAttachment.evidence_indexing.archive_package.index_path, "evidence/index.json");
+  assert.equal(
+    result.evidenceAttachment.evidence_indexing.document_bundle.index_json_pointer,
+    "/validation_report/evidence_index/external_validator_reports",
+  );
 
   const attachments = collectValidatorReportEvidenceAttachments({ root });
   assert.equal(attachments.length, 1);
   assert.equal(attachments[0].case_id, "sample");
   assert.equal(attachments[0].validator.family, "eu-dss");
   assert.equal(attachments[0].report.source_filename, "operator-export.xml");
+  assert.equal(
+    attachments[0].evidence_indexing.archive_package.indexed_path_pattern,
+    "evidence/external-validators/{case_id}-{validator_family}.json",
+  );
 });
 
 function makeFixture() {

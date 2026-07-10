@@ -3261,6 +3261,59 @@ mod tests {
         assert_eq!(report["report_kind"], "document_bundle_validation");
         assert_eq!(report["scope"], "generated_document_bundle");
         assert_eq!(report["status"], "technical_warning");
+        assert_eq!(
+            report["evidence_index"]["index_kind"],
+            "document_bundle_evidence_index"
+        );
+        assert_eq!(
+            report["evidence_index"]["status_scope"],
+            "technical_metadata_only"
+        );
+        assert_eq!(report["evidence_index"]["act_id"], act_id);
+        assert_eq!(
+            report["evidence_index"]["document_id"],
+            bundle["document"]["id"]
+        );
+        assert_eq!(
+            report["evidence_index"]["bundle_paths"]["canonical_pdf_download"],
+            format!("/v1/acts/{act_id}/document")
+        );
+        assert_eq!(
+            report["evidence_index"]["bundle_paths"]["signed_pdf_download"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            report["evidence_index"]["bundle_paths"]["attachments_manifest_json_pointer"],
+            "/attachments_manifest"
+        );
+        assert_eq!(
+            report["evidence_index"]["external_validator_reports"]["evidence_kind"],
+            "external_validator_report_metadata"
+        );
+        assert_eq!(
+            report["evidence_index"]["external_validator_reports"]["metadata_schema"],
+            "chancela-external-validator-report-evidence/v1"
+        );
+        assert_eq!(
+            report["evidence_index"]["external_validator_reports"]["archive_path_pattern"],
+            "evidence/external-validators/{case_id}-{validator_family}.json"
+        );
+        assert_eq!(
+            report["evidence_index"]["external_validator_reports"]["bundle_attachment_status"],
+            "no_external_validator_report_metadata_attached"
+        );
+        assert_eq!(
+            report["evidence_index"]["external_validator_reports"]["attachments"],
+            serde_json::json!([])
+        );
+        let evidence_index_text = serde_json::to_string(&report["evidence_index"])
+            .expect("evidence index JSON serializes");
+        assert!(
+            !evidence_index_text.contains("trust-list")
+                && !evidence_index_text.contains("trust_list")
+                && !evidence_index_text.contains("legal"),
+            "evidence index stays path/metadata scoped: {report}"
+        );
         assert_eq!(report["canonical_pdf"]["present"], true);
         assert_eq!(report["canonical_pdf"]["media_type"], "application/pdf");
         assert_eq!(
@@ -3342,6 +3395,10 @@ mod tests {
         let report = &bundle["validation_report"];
         assert_eq!(report["status"], "technical_error");
         assert_eq!(report["signed_document"]["present"], true);
+        assert_eq!(
+            report["evidence_index"]["bundle_paths"]["signed_pdf_download"],
+            format!("/v1/acts/{act_id}/document/signed")
+        );
         assert_eq!(
             report["signed_document"]["document_id_matches_canonical"],
             false

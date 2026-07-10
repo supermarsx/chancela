@@ -54,6 +54,14 @@ const DOC_TIMESTAMP_INSPECTION_INSPECTED: &str = "inspected_from_signed_pdf";
 const DOC_TIMESTAMP_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
 const RENEWAL_POLICY_NOT_CONFIGURED: &str = "not_configured";
 const RENEWAL_POLICY_MANUAL_REVIEW: &str = "manual_review";
+const ARCHIVE_EVIDENCE_INDEX_PATH: &str = "evidence/index.json";
+const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND: &str = "external_validator_report_metadata";
+const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA: &str =
+    "chancela-external-validator-report-evidence/v1";
+const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX: &str = "evidence/external-validators/";
+const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN: &str =
+    "evidence/external-validators/{case_id}-{validator_family}.json";
+const TECHNICAL_METADATA_ONLY: &str = "technical_metadata_only";
 
 #[derive(Clone)]
 struct PackageDocument {
@@ -257,6 +265,63 @@ struct ValidationEvidenceReport<'a> {
     archive_export_revalidated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     signature: Option<SignatureEvidence<'a>>,
+}
+
+#[derive(Serialize)]
+struct ArchiveEvidenceIndex {
+    package_profile: &'static str,
+    index_kind: &'static str,
+    status_scope: &'static str,
+    generated_at: String,
+    book_id: Uuid,
+    package_manifest_path: &'static str,
+    evidence_index_path: &'static str,
+    documents: Vec<ArchiveDocumentEvidenceIndexEntry>,
+    package_evidence: ArchivePackageEvidenceIndexEntry,
+    external_validator_reports: ExternalValidatorReportEvidenceIndex,
+}
+
+#[derive(Serialize)]
+struct ArchiveDocumentEvidenceIndexEntry {
+    document_id: Uuid,
+    act_id: Option<Uuid>,
+    canonical_pdf_path: String,
+    document_metadata_path: String,
+    signature_evidence_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signed_pdf_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signing_metadata_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signer_certificate_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timestamp_token_path: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ArchivePackageEvidenceIndexEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    legal_hold_evidence_path: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct ExternalValidatorReportEvidenceIndex {
+    evidence_kind: &'static str,
+    metadata_schema: &'static str,
+    indexed_path_prefix: &'static str,
+    indexed_path_pattern: &'static str,
+    attachment_status: &'static str,
+    status_scope: &'static str,
+    attachments: Vec<ExternalValidatorReportEvidenceAttachmentIndex>,
+}
+
+#[derive(Serialize)]
+struct ExternalValidatorReportEvidenceAttachmentIndex {
+    case_id: String,
+    validator_family: String,
+    path: String,
+    content_type: String,
+    sha256: String,
 }
 
 #[derive(Serialize)]
@@ -562,6 +627,12 @@ pub async fn export_book_archive_package(
             legal_hold_evidence_bytes(book_id, created_at, hold)?,
         ));
     }
+    files.push(PackageFileInput::new(
+        ARCHIVE_EVIDENCE_INDEX_PATH,
+        PackageFileRole::EvidenceReport,
+        JSON_CONTENT_TYPE,
+        archive_evidence_index_bytes(book_id, created_at, &package_docs, legal_hold.is_some())?,
+    ));
 
     let package_id = stable_package_id(entity_id.0, book_id.0, created_at, &files);
     let mut input = PackageBuildInput::new(package_id, created_at, entity_id.0, book_id.0);
@@ -1130,6 +1201,14 @@ fn package_member_targets(docs: &[PackageDocument]) -> Vec<WouldDeleteTarget> {
         path: Some("manifest.json".to_owned()),
         content_type: Some(JSON_CONTENT_TYPE),
     }];
+    targets.push(WouldDeleteTarget {
+        kind: "archive_evidence_index",
+        id: ARCHIVE_EVIDENCE_INDEX_PATH.to_owned(),
+        act_id: None,
+        document_id: None,
+        path: Some(ARCHIVE_EVIDENCE_INDEX_PATH.to_owned()),
+        content_type: Some(JSON_CONTENT_TYPE),
+    });
     for doc in docs {
         targets.push(package_member_target(
             "pdfa_document",
@@ -1506,6 +1585,73 @@ fn evidence_report_bytes(book_id: BookId, doc: &PackageDocument) -> Result<Vec<u
         signature,
     })
     .map_err(|e| ApiError::Internal(format!("evidence report serialization failed: {e}")))
+}
+
+fn archive_evidence_index_bytes(
+    book_id: BookId,
+    created_at: OffsetDateTime,
+    docs: &[PackageDocument],
+    legal_hold: bool,
+) -> Result<Vec<u8>, ApiError> {
+    serde_json::to_vec_pretty(&ArchiveEvidenceIndex {
+        package_profile: PACKAGE_PROFILE,
+        index_kind: "archive_evidence_index",
+        status_scope: TECHNICAL_METADATA_ONLY,
+        generated_at: rfc3339(created_at),
+        book_id: book_id.0,
+        package_manifest_path: "manifest.json",
+        evidence_index_path: ARCHIVE_EVIDENCE_INDEX_PATH,
+        documents: docs.iter().map(archive_document_evidence_index).collect(),
+        package_evidence: ArchivePackageEvidenceIndexEntry {
+            legal_hold_evidence_path: legal_hold.then_some("evidence/legal-hold.json"),
+        },
+        external_validator_reports: external_validator_report_evidence_index(
+            "no_external_validator_report_metadata_attached",
+        ),
+    })
+    .map_err(|e| ApiError::Internal(format!("archive evidence index serialization failed: {e}")))
+}
+
+fn archive_document_evidence_index(doc: &PackageDocument) -> ArchiveDocumentEvidenceIndexEntry {
+    ArchiveDocumentEvidenceIndexEntry {
+        document_id: doc.document_id,
+        act_id: doc.act_id.map(|act_id| act_id.0),
+        canonical_pdf_path: format!("documents/{}.pdf", doc.document_id),
+        document_metadata_path: format!("metadata/{}.json", doc.document_id),
+        signature_evidence_path: format!("evidence/{}.json", doc.document_id),
+        signed_pdf_path: doc
+            .signed
+            .as_ref()
+            .map(|_| format!("signed/{}.pdf", doc.document_id)),
+        signing_metadata_path: doc
+            .signed
+            .as_ref()
+            .map(|_| format!("signing/{}.json", doc.document_id)),
+        signer_certificate_path: doc
+            .signed
+            .as_ref()
+            .map(|_| format!("evidence/{}-signer-cert.der", doc.document_id)),
+        timestamp_token_path: doc.signed.as_ref().and_then(|signed| {
+            signed
+                .timestamp_token_der
+                .as_ref()
+                .map(|_| format!("evidence/{}-timestamp-token.tsr", doc.document_id))
+        }),
+    }
+}
+
+fn external_validator_report_evidence_index(
+    attachment_status: &'static str,
+) -> ExternalValidatorReportEvidenceIndex {
+    ExternalValidatorReportEvidenceIndex {
+        evidence_kind: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND,
+        metadata_schema: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
+        indexed_path_prefix: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
+        indexed_path_pattern: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN,
+        attachment_status,
+        status_scope: TECHNICAL_METADATA_ONLY,
+        attachments: Vec::new(),
+    }
 }
 
 fn legal_hold_evidence_bytes(

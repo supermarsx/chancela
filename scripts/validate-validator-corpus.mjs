@@ -7,6 +7,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const corpusRoot = join(repoRoot, "docs", "fixtures", "validator-corpus");
 const manifestPath = join(corpusRoot, "manifest.json");
+const externalValidatorEvidenceKind = "external_validator_report_metadata";
+const externalValidatorEvidenceSchema = "chancela-external-validator-report-evidence/v1";
+const archiveEvidenceIndexPath = "evidence/index.json";
+const externalValidatorArchivePathPrefix = "evidence/external-validators/";
+const externalValidatorArchivePathPattern = "evidence/external-validators/{case_id}-{validator_family}.json";
+const documentBundleExternalValidatorIndexPointer =
+  "/validation_report/evidence_index/external_validator_reports";
+const technicalMetadataOnlyScope = "technical_metadata_only";
 
 const allowedRunStatuses = new Set(["pending_operator_run", "recorded"]);
 const requiredFamilies = new Set(["eu-dss", "adobe"]);
@@ -137,8 +145,8 @@ export function buildValidatorReportEvidenceAttachment({
   const reportPath = normalize(join(sidecarDir, sidecar.report.path));
 
   return {
-    schema: "chancela-external-validator-report-evidence/v1",
-    evidence_kind: "external_validator_report_metadata",
+    schema: externalValidatorEvidenceSchema,
+    evidence_kind: externalValidatorEvidenceKind,
     legal_validity_claimed: false,
     evidence_scope: {
       kind: sidecar.evidence_scope.kind,
@@ -186,7 +194,20 @@ export function buildValidatorReportEvidenceAttachment({
     archive_attachment: {
       role: "technical_external_validator_report_metadata",
       content_type: "application/json",
-      suggested_path: `evidence/external-validators/${sidecar.case_id}-${family}.json`,
+      suggested_path: `${externalValidatorArchivePathPrefix}${sidecar.case_id}-${family}.json`,
+    },
+    evidence_indexing: {
+      status_scope: technicalMetadataOnlyScope,
+      archive_package: {
+        index_path: archiveEvidenceIndexPath,
+        indexed_path_prefix: externalValidatorArchivePathPrefix,
+        indexed_path_pattern: externalValidatorArchivePathPattern,
+      },
+      document_bundle: {
+        index_json_pointer: documentBundleExternalValidatorIndexPointer,
+        archive_path_prefix: externalValidatorArchivePathPrefix,
+        archive_path_pattern: externalValidatorArchivePathPattern,
+      },
     },
   };
 }
@@ -605,6 +626,19 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
             technical_only: true,
             legal_validity_assessment: "not_assessed",
             claim: "technical_validator_evidence_only",
+          },
+          evidence_indexing: {
+            status_scope: technicalMetadataOnlyScope,
+            archive_package: {
+              index_path: archiveEvidenceIndexPath,
+              indexed_path_prefix: externalValidatorArchivePathPrefix,
+              indexed_path_pattern: externalValidatorArchivePathPattern,
+            },
+            document_bundle: {
+              index_json_pointer: documentBundleExternalValidatorIndexPointer,
+              archive_path_prefix: externalValidatorArchivePathPrefix,
+              archive_path_pattern: externalValidatorArchivePathPattern,
+            },
           },
           attachments: collectValidatorReportEvidenceAttachments({ root: corpusRoot, manifest }),
         },

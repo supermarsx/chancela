@@ -1270,6 +1270,63 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
     );
 
     let members = zip_members(&first);
+    let evidence_index_file = manifest
+        .files
+        .iter()
+        .find(|file| file.path == "evidence/index.json")
+        .expect("evidence index in manifest");
+    assert_eq!(evidence_index_file.role, PackageFileRole::EvidenceReport);
+    assert_eq!(evidence_index_file.content_type, "application/json");
+    assert!(evidence_index_file.act_id.is_none());
+    assert!(evidence_index_file.document_id.is_none());
+    let evidence_index = member_json(&members, "evidence/index.json");
+    assert_eq!(evidence_index["index_kind"], "archive_evidence_index");
+    assert_eq!(evidence_index["status_scope"], "technical_metadata_only");
+    assert_eq!(
+        evidence_index["external_validator_reports"]["evidence_kind"],
+        "external_validator_report_metadata"
+    );
+    assert_eq!(
+        evidence_index["external_validator_reports"]["metadata_schema"],
+        "chancela-external-validator-report-evidence/v1"
+    );
+    assert_eq!(
+        evidence_index["external_validator_reports"]["indexed_path_prefix"],
+        "evidence/external-validators/"
+    );
+    assert_eq!(
+        evidence_index["external_validator_reports"]["indexed_path_pattern"],
+        "evidence/external-validators/{case_id}-{validator_family}.json"
+    );
+    assert_eq!(
+        evidence_index["external_validator_reports"]["attachment_status"],
+        "no_external_validator_report_metadata_attached"
+    );
+    assert_eq!(
+        evidence_index["external_validator_reports"]["attachments"],
+        json!([])
+    );
+    assert!(
+        evidence_index["documents"]
+            .as_array()
+            .expect("indexed documents")
+            .iter()
+            .any(|entry| entry["document_id"] == sealed.document_id
+                && entry["signature_evidence_path"] == evidence_path
+                && entry["canonical_pdf_path"] == format!("documents/{}.pdf", sealed.document_id)
+                && entry["document_metadata_path"]
+                    == format!("metadata/{}.json", sealed.document_id)),
+        "document evidence paths are indexed: {evidence_index}"
+    );
+    let evidence_index_text =
+        String::from_utf8_lossy(members.get("evidence/index.json").expect("index bytes"));
+    assert!(
+        !evidence_index_text.contains("trust-list")
+            && !evidence_index_text.contains("trust_list")
+            && !evidence_index_text.contains("legal"),
+        "evidence index stays path/metadata scoped: {evidence_index}"
+    );
+
     let report = member_json(&members, &evidence_path);
     assert_eq!(report["report_kind"], "signature_validation_evidence");
     assert_eq!(report["status"], "not_signed");
@@ -1377,6 +1434,22 @@ async fn archive_package_reports_persisted_signature_metadata_as_evidence() {
             ))
             .expect("timestamp member"),
         &timestamp_token_der
+    );
+    let evidence_index = member_json(&members, "evidence/index.json");
+    assert!(
+        evidence_index["documents"]
+            .as_array()
+            .expect("indexed documents")
+            .iter()
+            .any(|entry| entry["document_id"] == sealed.document_id
+                && entry["signed_pdf_path"] == format!("signed/{}.pdf", sealed.document_id)
+                && entry["signing_metadata_path"]
+                    == format!("signing/{}.json", sealed.document_id)
+                && entry["signer_certificate_path"]
+                    == format!("evidence/{}-signer-cert.der", sealed.document_id)
+                && entry["timestamp_token_path"]
+                    == format!("evidence/{}-timestamp-token.tsr", sealed.document_id)),
+        "signed evidence paths are indexed: {evidence_index}"
     );
 
     let report = member_json(&members, &evidence_path);

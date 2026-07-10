@@ -90,6 +90,13 @@ acceptance.";
 const DOCUMENT_BUNDLE_VALIDATION_NOTICE: &str = "Technical bundle evidence report only; it does \
 not certify legal validity, PDF/A conformance, PDF/UA conformance, qualified-signature status, \
 DGLAB certification, or production long-term validation.";
+const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND: &str = "external_validator_report_metadata";
+const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA: &str =
+    "chancela-external-validator-report-evidence/v1";
+const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX: &str = "evidence/external-validators/";
+const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN: &str =
+    "evidence/external-validators/{case_id}-{validator_family}.json";
+const TECHNICAL_METADATA_ONLY: &str = "technical_metadata_only";
 
 const MAX_IMPORTED_DOCUMENT_REVIEW_NOTE_CHARS: usize = 2_000;
 
@@ -3782,6 +3789,7 @@ pub struct DocumentBundleValidationReport {
     pub report_kind: &'static str,
     pub scope: &'static str,
     pub status: &'static str,
+    pub evidence_index: DocumentBundleEvidenceIndex,
     pub legal_notice: &'static str,
     pub bundle_document_consistency: BundleDocumentConsistencyReport,
     pub canonical_pdf: BundleCanonicalPdfReport,
@@ -3789,6 +3797,44 @@ pub struct DocumentBundleValidationReport {
     pub signed_document: BundleSignedDocumentReport,
     pub non_certification: BundleNonCertificationReport,
     pub findings: Vec<DocumentValidationFinding>,
+}
+
+#[derive(Serialize)]
+pub struct DocumentBundleEvidenceIndex {
+    pub index_kind: &'static str,
+    pub status_scope: &'static str,
+    pub document_id: String,
+    pub act_id: String,
+    pub bundle_paths: DocumentBundleEvidencePaths,
+    pub external_validator_reports: DocumentBundleExternalValidatorReportIndex,
+}
+
+#[derive(Serialize)]
+pub struct DocumentBundleEvidencePaths {
+    pub canonical_pdf_download: String,
+    pub signed_pdf_download: Option<String>,
+    pub attachments_manifest_json_pointer: &'static str,
+    pub validation_report_json_pointer: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct DocumentBundleExternalValidatorReportIndex {
+    pub evidence_kind: &'static str,
+    pub metadata_schema: &'static str,
+    pub archive_path_prefix: &'static str,
+    pub archive_path_pattern: &'static str,
+    pub bundle_attachment_status: &'static str,
+    pub status_scope: &'static str,
+    pub attachments: Vec<DocumentBundleExternalValidatorReportAttachment>,
+}
+
+#[derive(Serialize)]
+pub struct DocumentBundleExternalValidatorReportAttachment {
+    pub case_id: String,
+    pub validator_family: String,
+    pub archive_path: String,
+    pub content_type: String,
+    pub sha256: String,
 }
 
 #[derive(Serialize)]
@@ -3858,6 +3904,34 @@ pub struct BundleNonCertificationReport {
     pub dglab_certification_claimed: bool,
     pub production_ltv_claimed: bool,
     pub trust_provider_validation_performed: bool,
+}
+
+fn document_bundle_evidence_index(
+    act_id: ActId,
+    doc: &StoredDocument,
+    signed: Option<&StoredSignedDocument>,
+) -> DocumentBundleEvidenceIndex {
+    DocumentBundleEvidenceIndex {
+        index_kind: "document_bundle_evidence_index",
+        status_scope: TECHNICAL_METADATA_ONLY,
+        document_id: doc.id.clone(),
+        act_id: act_id.to_string(),
+        bundle_paths: DocumentBundleEvidencePaths {
+            canonical_pdf_download: format!("/v1/acts/{act_id}/document"),
+            signed_pdf_download: signed.map(|_| format!("/v1/acts/{act_id}/document/signed")),
+            attachments_manifest_json_pointer: "/attachments_manifest",
+            validation_report_json_pointer: "/validation_report",
+        },
+        external_validator_reports: DocumentBundleExternalValidatorReportIndex {
+            evidence_kind: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND,
+            metadata_schema: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
+            archive_path_prefix: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
+            archive_path_pattern: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN,
+            bundle_attachment_status: "no_external_validator_report_metadata_attached",
+            status_scope: TECHNICAL_METADATA_ONLY,
+            attachments: Vec::new(),
+        },
+    }
 }
 
 fn build_document_bundle_validation_report(
@@ -4092,6 +4166,7 @@ fn build_document_bundle_validation_report(
         report_kind: "document_bundle_validation",
         scope: "generated_document_bundle",
         status: report_status(&findings),
+        evidence_index: document_bundle_evidence_index(act_id, doc, signed),
         legal_notice: DOCUMENT_BUNDLE_VALIDATION_NOTICE,
         bundle_document_consistency: BundleDocumentConsistencyReport {
             route_act_id: act_id.to_string(),
