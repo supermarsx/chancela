@@ -1001,6 +1001,7 @@ export type ImportedDocumentReviewGuardrail =
 /** Body for `PATCH /v1/documents/imported/{id}/review`: metadata-only review transition. */
 export interface ImportedDocumentReviewBody {
   review_status: ImportedDocumentReviewPatchStatus;
+  acknowledged_guardrail_ids: ImportedDocumentReviewGuardrail[];
   review_note?: string | null;
 }
 
@@ -1043,6 +1044,7 @@ export interface ImportedDocumentView {
   canonical_record_status?: ImportedDocumentCanonicalRecordStatus;
   signed_artifact_status?: ImportedDocumentSignedArtifactStatus;
   review_guardrail_checklist?: ImportedDocumentReviewGuardrail[];
+  acknowledged_guardrail_ids?: ImportedDocumentReviewGuardrail[];
   canonical_conversion_status?: string;
   canonical_conversion_performed?: boolean;
   legal_acceptance_claimed?: boolean;

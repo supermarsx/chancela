@@ -21,6 +21,7 @@ import type {
   DocumentImportValidationReport,
   EntityFamily,
   ImportDocumentBody,
+  ImportedDocumentReviewGuardrail,
   ImportedDocumentReviewPatchStatus,
   ImportedDocumentView,
 } from '../../api/types';
@@ -166,6 +167,12 @@ function importedDownloadName(document: ImportedDocumentView): string {
 const IMPORTED_DOCUMENT_REVIEW_NOTICE =
   'A revisão regista apenas uma decisão de preservação operacional; não executa OCR, não converte bytes, não substitui o PDF/A canónico e não declara aceitação legal.';
 const IMPORTED_DOCUMENT_REVIEW_NOTE_LIMIT = 2000;
+const FALLBACK_IMPORTED_DOCUMENT_REVIEW_GUARDRAILS: ImportedDocumentReviewGuardrail[] = [
+  'preserved_original_bytes_remain_non_canonical_evidence',
+  'canonical_pdfa_record_is_not_replaced',
+  'signed_pdf_artifact_is_not_created_or_validated',
+  'ocr_or_conversion_output_is_not_promoted_to_canonical_records',
+];
 
 const importedDocumentReviewOptions: {
   value: ImportedDocumentReviewPatchStatus;
@@ -241,6 +248,24 @@ function importedGuardrailChecklist(value: unknown): string[] {
     const text = metadataText(item);
     return text ? [text] : [];
   });
+}
+
+function uniqueImportedGuardrails(guardrails: string[]): ImportedDocumentReviewGuardrail[] {
+  return Array.from(new Set(guardrails)) as ImportedDocumentReviewGuardrail[];
+}
+
+function importedRequiredReviewGuardrails(
+  document: ImportedDocumentView,
+): ImportedDocumentReviewGuardrail[] {
+  const checklist = importedGuardrailChecklist(document.review_guardrail_checklist);
+  if (checklist.length > 0) return uniqueImportedGuardrails(checklist);
+
+  const policyChecklist = importedGuardrailChecklist(
+    document.preservation_policy?.review_guardrail_checklist,
+  );
+  if (policyChecklist.length > 0) return uniqueImportedGuardrails(policyChecklist);
+
+  return FALLBACK_IMPORTED_DOCUMENT_REVIEW_GUARDRAILS;
 }
 
 function importedGuardrailLabel(guardrail: string, t: TFunction): string {
@@ -630,20 +655,24 @@ function ImportedDocumentGuardrails({
 }
 
 function ImportedDocumentReviewForm({
+  acknowledged,
   document,
   error,
   isPending,
   note,
+  onAcknowledgedChange,
   onNoteChange,
   onStatusChange,
   onSubmit,
   scope,
   status,
 }: {
+  acknowledged: boolean;
   document: ImportedDocumentView;
   error: unknown;
   isPending: boolean;
   note: string;
+  onAcknowledgedChange: (value: boolean) => void;
   onNoteChange: (value: string) => void;
   onStatusChange: (value: ImportedDocumentReviewPatchStatus) => void;
   onSubmit: () => void;
@@ -651,6 +680,8 @@ function ImportedDocumentReviewForm({
   status: ImportedDocumentReviewPatchStatus;
 }) {
   const controlId = `import-review-${slug(document.id)}`;
+  const t = useT();
+  const requiredGuardrails = importedRequiredReviewGuardrails(document);
   return (
     <form
       className="form"
@@ -686,6 +717,25 @@ function ImportedDocumentReviewForm({
           onChange={(event) => onNoteChange(event.target.value)}
         />
       </Field>
+      <div className="stack--tight">
+        <p className="card__label">Limites a reconhecer</p>
+        <ul className="plain-list">
+          {requiredGuardrails.map((guardrail) => (
+            <li key={guardrail}>{importedGuardrailLabel(guardrail, t)}</li>
+          ))}
+        </ul>
+        <label className="checkline" htmlFor={`${controlId}-guardrails`}>
+          <input
+            id={`${controlId}-guardrails`}
+            type="checkbox"
+            checked={acknowledged}
+            disabled={isPending}
+            onChange={(event) => onAcknowledgedChange(event.target.checked)}
+          />
+          Confirmo que revi estes limites e que a decisão não promove o documento importado a
+          registo canónico, PDF/A substituto, PDF assinado ou aceitação legal.
+        </label>
+      </div>
       {error ? <ErrorNote error={error} /> : null}
       <GateButton
         perm="document.generate"
@@ -693,7 +743,7 @@ function ImportedDocumentReviewForm({
         type="submit"
         variant="secondary"
         icon={<Icon.Pencil />}
-        disabled={isPending}
+        disabled={isPending || !acknowledged}
       >
         {isPending ? 'A guardar revisão' : 'Guardar revisão'}
       </GateButton>
@@ -739,6 +789,7 @@ export function ActDocumentPanel({
     'reviewed_non_canonical_original_only',
   );
   const [reviewNote, setReviewNote] = useState('');
+  const [reviewGuardrailsAcknowledged, setReviewGuardrailsAcknowledged] = useState(false);
 
   const sealed = act.state === 'Sealed' || act.state === 'Archived';
   const reviewScope = scopeBook(act.book_id);
@@ -788,6 +839,7 @@ export function ActDocumentPanel({
     if (!selectedImportReviewId) return;
     setReviewStatus(reviewPatchStatusFromDocument(selectedImportReviewStatus));
     setReviewNote(metadataText(selectedImportReviewNote) ?? '');
+    setReviewGuardrailsAcknowledged(false);
   }, [selectedImportReviewId, selectedImportReviewStatus, selectedImportReviewNote]);
 
   function downloadBaseName() {
@@ -913,18 +965,22 @@ export function ActDocumentPanel({
 
   function onReviewImportedDocument() {
     if (!selectedImport) return;
+    const requiredGuardrails = importedRequiredReviewGuardrails(selectedImport);
+    if (!reviewGuardrailsAcknowledged) return;
     const trimmedNote = reviewNote.trim();
     reviewImportedDocument.mutate(
       {
         id: selectedImport.id,
         body: {
           review_status: reviewStatus,
+          acknowledged_guardrail_ids: requiredGuardrails,
           review_note: trimmedNote.length > 0 ? trimmedNote : undefined,
         },
       },
       {
         onSuccess: (document) => {
           setSelectedImportId(document.id);
+          setReviewGuardrailsAcknowledged(false);
           toast.success('Revisão do documento importado guardada.');
         },
         onError: (error) => toast.error(error),
@@ -1149,10 +1205,12 @@ export function ActDocumentPanel({
               />
               {selectedImport ? (
                 <ImportedDocumentReviewForm
+                  acknowledged={reviewGuardrailsAcknowledged}
                   document={selectedImport}
                   error={reviewImportedDocument.error}
                   isPending={reviewImportedDocument.isPending}
                   note={reviewNote}
+                  onAcknowledgedChange={setReviewGuardrailsAcknowledged}
                   onNoteChange={setReviewNote}
                   onStatusChange={setReviewStatus}
                   onSubmit={onReviewImportedDocument}

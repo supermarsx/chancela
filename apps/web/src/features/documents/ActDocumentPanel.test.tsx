@@ -1008,7 +1008,42 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(screen.queryByText('Assinatura válida')).toBeNull();
   });
 
-  it('shows operator review metadata and patches only a conservative review status plus note', async () => {
+  it('keeps terminal imported-document review disabled until guardrails are acknowledged', async () => {
+    let reviewAttempts = 0;
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/v1/documents/imported/import-1/review')) {
+        reviewAttempts += 1;
+        return json(importedDocumentPendingReview);
+      }
+      if (url.includes('/v1/documents/imported/import-1'))
+        return json(importedDocumentPendingReview);
+      if (url.includes('/v1/documents/imported')) return json([importedDocumentPendingReview]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<ActDocumentPanel act={baseAct} />);
+
+    const list = await screen.findByRole('list', { name: 'Documentos importados' });
+    fireEvent.click(within(list).getByRole('button', { name: 'Ver metadados' }));
+    const save = await screen.findByRole('button', { name: 'Guardar revisão' });
+    const acknowledgement = screen.getByLabelText(
+      /Confirmo que revi estes limites/,
+    ) as HTMLInputElement;
+
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    expect(acknowledgement.checked).toBe(false);
+    fireEvent.click(save);
+    expect(reviewAttempts).toBe(0);
+
+    fireEvent.click(acknowledgement);
+
+    expect(acknowledgement.checked).toBe(true);
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows operator review metadata and patches a conservative review status after guardrail acknowledgement', async () => {
     const reviewBodies: unknown[] = [];
     const calls: { url: string; method: string }[] = [];
     let current: ImportedDocumentView = importedDocumentPendingReview;
@@ -1026,6 +1061,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
           operator_reviewed_at: '2026-07-10T09:30:00Z',
           operator_reviewed_by: 'amelia.operator',
           operator_review_note: body.review_note,
+          acknowledged_guardrail_ids: body.acknowledged_guardrail_ids,
         };
         return json(current);
       }
@@ -1071,11 +1107,16 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     fireEvent.change(screen.getByLabelText('Nota da revisão'), {
       target: { value: 'Conferido contra o original preservado.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar revisão' }));
+    const save = screen.getByRole('button', { name: 'Guardar revisão' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText(/Confirmo que revi estes limites/));
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
 
     await waitFor(() => expect(reviewBodies).toHaveLength(1));
     expect(reviewBodies[0]).toEqual({
       review_status: 'rejected_non_canonical_evidence',
+      acknowledged_guardrail_ids: importedDocumentReviewGuardrailChecklist,
       review_note: 'Conferido contra o original preservado.',
     });
     expect(
