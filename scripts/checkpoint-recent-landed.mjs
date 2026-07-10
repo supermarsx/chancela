@@ -280,9 +280,49 @@ function assertCheckpointMap() {
     "paper import canonical preflight regression coverage",
   );
   assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "paper_book_import_ocr_run_configured_command_stores_unreviewed_non_authoritative_draft",
+    "paper import local OCR run success coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "paper_book_import_ocr_run_missing_config_returns_422_without_mutation",
+    "paper import local OCR missing-config refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/books/paper-import/{id}/ocr/run",
+    "paper import local OCR run route",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "PAPER_BOOK_OCR_COMMAND_ENV",
+    "paper import local OCR command configuration",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/archive_package.rs",
     "archive_package_reports_embedded_doc_timestamp_evidence_without_b_lta_claim",
     "archive package DocTimeStamp evidence coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/cc_signing.rs",
+    "archive_timestamp_append_api_persists_caller_supplied_local_technical_evidence",
+    "caller-supplied archive timestamp append API coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/cc_signing.rs",
+    "archive_timestamp_append_rejects_stale_token_without_digest_change_or_event",
+    "caller-supplied archive timestamp stale-token refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/acts/{id}/signature/archive-timestamp/append",
+    "caller-supplied archive timestamp append route",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "pub async fn append_archive_timestamp",
+    "caller-supplied archive timestamp append handler",
   );
   assertFileContains(
     "crates/chancela-api/tests/archive_package.rs",
@@ -293,6 +333,66 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/lib.rs",
     "document_bundle_indexes_matching_external_validator_metadata",
     "document bundle runtime external-validator metadata coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "paragraph_flow_emits_real_unicode_spaces",
+    "PDF paragraph inter-word space mapping coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "wrapped_key_value_values_emit_real_unicode_spaces",
+    "PDF wrapped key-value inter-word space mapping coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "accessibility_report_records_space_emission_without_pdfua_claim",
+    "PDF accessibility space evidence without PDF/UA claim coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    "pub struct HeadingHierarchyReport",
+    "PDF accessibility heading hierarchy blocker report",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    "pub struct RoleMapCoverageReport",
+    "PDF accessibility role-map blocker report",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    "pub struct TableSemanticsReport",
+    "PDF accessibility table-semantics blocker report",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    "pub struct NonTextContentReport",
+    "PDF accessibility non-text content blocker report",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "accessibility_heading_hierarchy_reports_skipped_and_unsupported_levels",
+    "PDF accessibility heading blocker decomposition coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "accessibility_role_map_and_table_semantics_are_reported",
+    "PDF accessibility role-map and table blocker decomposition coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "accessibility_explicit_alt_text_decorative_model_clears_local_blockers_without_pdfua_claim",
+    "PDF accessibility local blocker clearing without PDF/UA claim coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "accessibility_non_text_accounting_reports_missing_and_invalid_entries",
+    "PDF accessibility non-text blocker decomposition coverage",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "pdf_ua_is_not_claimed_with_minimal_tagging",
+    "PDF/UA non-certification marker coverage",
   );
   assertFileContains(
     "crates/chancela-api/src/external_validator_evidence.rs",
@@ -550,9 +650,23 @@ function assertCheckpointMap() {
     "paper-book OCR draft contract fixture coverage",
   );
   assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "paper-book.ocr-run.json",
+    "paper-book OCR run contract fixture coverage",
+  );
+  assertFileExists(
+    "contracts/paper-book.ocr-run.json",
+    "paper-book OCR run contract fixture",
+  );
+  assertFileContains(
     "apps/web/src/api/client.test.ts",
     "uses the data key rotation execution endpoint and sends only the replacement key",
     "web client data key execution endpoint coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "runPaperBookImportOcr",
+    "web client paper-book OCR run API",
   );
   assertFileContains(
     "apps/web/src/api/client.ts",
@@ -580,6 +694,16 @@ function assertCheckpointMap() {
     "paper-book OCR draft UI coverage",
   );
   assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "runs local OCR for a preserved import and exposes the auxiliary non-canonical draft",
+    "paper-book local OCR run UI coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "surfaces missing local OCR configuration without creating an auxiliary draft",
+    "paper-book local OCR missing-config UI coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
     "DashboardPage",
     "dashboard unit coverage",
@@ -590,6 +714,21 @@ function assertCheckpointMap() {
     "dashboard subtab unit coverage",
   );
   assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders the full archive affordance as a tooltip-backed icon link",
+    "dashboard archive icon-only action coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "expectIconOnlyActionLink",
+    "dashboard work-queue icon-only action helper coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "dashboard-workqueue__action",
+    "dashboard work-queue icon-only action implementation marker",
+  );
+  assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
     "keeps terminal imported-document review disabled until guardrails are acknowledged",
     "imported-document guardrail acknowledgement UI coverage",
@@ -598,6 +737,26 @@ function assertCheckpointMap() {
     "apps/web/src/features/entities/entities.test.tsx",
     "surfaces the backend entity chronology and Mermaid graph source",
     "entity chronology graph UI coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/chronology.rs",
+    "pub graph: ChronologyGraphBundle",
+    "API entity chronology structured graph response field",
+  );
+  assertFileContains(
+    "crates/chancela-registry/tests/chronology.rs",
+    "chronology_shareholders_graph_has_deterministic_nodes_edges_and_provenance",
+    "registry chronology shareholders structured graph coverage",
+  );
+  assertFileContains(
+    "crates/chancela-registry/tests/chronology.rs",
+    "chronology_organs_graph_has_deterministic_nodes_edges_and_provenance",
+    "registry chronology organs structured graph coverage",
+  );
+  assertFileContains(
+    "crates/chancela-registry/tests/chronology.rs",
+    "chronology_relationships_graph_is_an_honest_empty_stub_without_corporate_relationships",
+    "registry chronology relationships structured graph coverage",
   );
   assertFileContains(
     "apps/web/src/features/entities/EntityChronologyPanel.tsx",
