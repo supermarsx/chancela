@@ -368,6 +368,9 @@ pub struct AppState {
     /// at indexing time and matched only by observed canonical/signed PDF SHA-256; invalid,
     /// overclaiming, duplicate-path, or non-JSON entries are ignored.
     pub external_validator_report_metadata: Arc<RwLock<Vec<Vec<u8>>>>,
+    /// Where external-validator technical metadata sidecars are persisted, or `None` for pure
+    /// in-memory metadata.
+    pub external_validator_report_metadata_dir: Option<Arc<PathBuf>>,
     /// In-flight two-phase Chave Móvel Digital signing sessions (t57-S3), keyed by session id. The
     /// non-secret resumable handle between `initiate` and `confirm`; **never holds a PIN or OTP**.
     /// Backed by the durable `pending_cmd_sessions` table (rehydrated on boot), so a session survives
@@ -554,6 +557,12 @@ impl AppState {
             dir.join(external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE);
         let loaded_external_signing_envelopes =
             external_signing::load_envelopes(&external_signing_envelopes_path).unwrap_or_default();
+        let external_validator_report_metadata_dir =
+            dir.join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR);
+        let loaded_external_validator_report_metadata =
+            external_validator_evidence::load_external_validator_report_metadata(
+                &external_validator_report_metadata_dir,
+            );
         // Prefer a valid, newer `cae-catalog.json` cache over the embedded catalog (never errors).
         let catalog = chancela_cae::load_catalog(Some(&dir));
         // Law archive: the `laws/` subdir plus its state file (missing/malformed → empty archive).
@@ -591,6 +600,12 @@ impl AppState {
             api_keys_path: Some(Arc::new(api_keys_path)),
             external_signing_envelopes: Arc::new(RwLock::new(loaded_external_signing_envelopes)),
             external_signing_envelopes_path: Some(Arc::new(external_signing_envelopes_path)),
+            external_validator_report_metadata: Arc::new(RwLock::new(
+                loaded_external_validator_report_metadata,
+            )),
+            external_validator_report_metadata_dir: Some(Arc::new(
+                external_validator_report_metadata_dir,
+            )),
             cae: Arc::new(RwLock::new(catalog)),
             laws_dir: Some(Arc::new(laws_dir)),
             law_store: Arc::new(RwLock::new(law_store)),
@@ -785,6 +800,9 @@ impl AppState {
                 dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
                 dir.join(crate::apikeys::API_KEYS_FILE),
                 dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
+                dir.join(
+                    crate::external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR,
+                ),
                 dir.join(chancela_cae::CACHE_FILE),
                 dir.join(crate::law::LAWS_DIR),
             ],
@@ -868,6 +886,10 @@ impl AppState {
                 &dir.join(external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
             )
             .unwrap_or_default();
+            *self.external_validator_report_metadata.write().await =
+                external_validator_evidence::load_external_validator_report_metadata(
+                    &dir.join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR),
+                );
             self.api_key_rate_limits.write().await.clear();
             self.sessions.write().await.clear();
             self.attestations.write().await.clear();
@@ -911,6 +933,10 @@ impl AppState {
         self.attestations.write().await.clear();
         self.api_keys.write().await.clear();
         self.external_signing_envelopes.write().await.clear();
+        self.external_validator_report_metadata
+            .write()
+            .await
+            .clear();
         self.api_key_rate_limits.write().await.clear();
         self.platform_logs.write().await.clear();
         // A blank first-run instance has the seeded default roles and no delegations (t64), matching
@@ -1917,6 +1943,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn external_validator_report_metadata_in_memory_state_remains_ephemeral() {
+        let first = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let metadata =
+            external_validator_metadata_bytes("api-memory-only", "eu-dss", &document_sha256);
+
+        let (status, body) = send(
+            first.clone(),
+            post_external_validator_metadata(metadata.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_eq!(body["storage"], "in_memory");
+        assert!(first.external_validator_report_metadata_dir.is_none());
+        assert_eq!(
+            *first.external_validator_report_metadata.read().await,
+            vec![metadata]
+        );
+
+        let fresh = AppState::default();
+        let (status, listed) = send(fresh, get("/v1/external-validator-reports")).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed["storage"], "in_memory");
+        assert_eq!(listed["count"], 0);
+        assert_eq!(listed["malformed_count"], 0);
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_persists_and_reloads_from_data_dir() {
+        let tmp = TempDir::new();
+        let first = AppState::with_data_dir(tmp.dir.clone());
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let metadata = external_validator_metadata_bytes("api-durable", "eu-dss", &document_sha256);
+
+        let (status, created) = send(
+            first.clone(),
+            post_external_validator_metadata(metadata.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        assert_eq!(created["storage"], "data_dir");
+
+        let sidecar = tmp
+            .dir
+            .join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR)
+            .join("api-durable-eu-dss.json");
+        assert_eq!(
+            std::fs::read(&sidecar).expect("external-validator sidecar"),
+            metadata
+        );
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, listed) = send(restarted.clone(), get("/v1/external-validator-reports")).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed["storage"], "data_dir");
+        assert_eq!(listed["count"], 1);
+        assert_eq!(listed["malformed_count"], 0);
+        assert_eq!(
+            listed["reports"][0]["path"],
+            "evidence/external-validators/api-durable-eu-dss.json"
+        );
+
+        let raw_entries = restarted.external_validator_report_metadata.read().await;
+        let attachments = external_validator_evidence::matching_attachments(
+            &raw_entries,
+            vec![document_sha256.clone()],
+        );
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(
+            attachments[0].archive_path,
+            "evidence/external-validators/api-durable-eu-dss.json"
+        );
+    }
+
+    #[tokio::test]
     async fn external_validator_report_metadata_api_rejects_legal_overclaim() {
         let state = AppState::default();
         let document_sha256 = sha256_hex_test(b"document bytes");
@@ -1971,6 +2072,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn external_validator_report_metadata_malformed_sidecars_are_counted_not_trusted() {
+        let tmp = TempDir::new();
+        let sidecar_dir = tmp
+            .dir
+            .join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR);
+        std::fs::create_dir_all(&sidecar_dir).expect("sidecar dir");
+        std::fs::write(sidecar_dir.join("bad.json"), b"{not valid json")
+            .expect("malformed sidecar");
+
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let (status, listed) = send(state.clone(), get("/v1/external-validator-reports")).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed["storage"], "data_dir");
+        assert_eq!(listed["count"], 0);
+        assert_eq!(listed["malformed_count"], 1);
+        assert_eq!(listed["duplicate_suggested_path_count"], 0);
+        assert_eq!(listed["reports"], json!([]));
+        assert!(
+            !listed.to_string().contains("not valid json"),
+            "raw malformed bytes must not be listed"
+        );
+
+        let raw_entries = state.external_validator_report_metadata.read().await;
+        let attachments = external_validator_evidence::matching_attachments(
+            &raw_entries,
+            vec![sha256_hex_test(b"document bytes")],
+        );
+        assert!(attachments.is_empty());
+    }
+
+    #[tokio::test]
     async fn external_validator_report_metadata_api_rejects_duplicate_suggested_path() {
         let state = AppState::default();
         let document_sha256 = sha256_hex_test(b"document bytes");
@@ -1985,6 +2117,29 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED, "{body}");
 
         let (status, body) = send(state, post_external_validator_metadata(metadata)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("duplicate external-validator suggested_path"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_rejects_duplicate_suggested_path_after_restart() {
+        let tmp = TempDir::new();
+        let first = AppState::with_data_dir(tmp.dir.clone());
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let metadata =
+            external_validator_metadata_bytes("api-restart-duplicate", "eu-dss", &document_sha256);
+
+        let (status, body) = send(first, post_external_validator_metadata(metadata.clone())).await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(restarted, post_external_validator_metadata(metadata)).await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         assert!(
             body["error"]

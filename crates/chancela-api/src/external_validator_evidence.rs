@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use axum::Json;
 use axum::body::Bytes;
@@ -8,6 +9,7 @@ use chancela_authz::{Permission, Scope};
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use crate::{ApiError, AppState, CurrentActor, require_permission};
 
@@ -19,6 +21,7 @@ pub const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN: &str =
     "evidence/external-validators/{case_id}-{validator_family}.json";
 pub const TECHNICAL_METADATA_ONLY: &str = "technical_metadata_only";
 pub const EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES: usize = 256 * 1024;
+pub(crate) const EXTERNAL_VALIDATOR_REPORT_METADATA_DIR: &str = "external-validator-reports";
 
 #[derive(Clone, Debug)]
 pub struct ExternalValidatorEvidenceAttachment {
@@ -75,7 +78,10 @@ pub async fn list_external_validator_report_metadata(
 ) -> Result<Json<ExternalValidatorReportMetadataList>, ApiError> {
     require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
     let raw_entries = state.external_validator_report_metadata.read().await;
-    Ok(Json(metadata_list_response(&raw_entries)))
+    Ok(Json(metadata_list_response(
+        &raw_entries,
+        storage_mode(state.external_validator_report_metadata_dir.is_some()),
+    )))
 }
 
 /// `POST /v1/external-validator-reports` - accept operator-supplied technical metadata only.
@@ -109,16 +115,95 @@ pub async fn create_external_validator_report_metadata(
             )));
         }
     }
+    if let Some(dir) = &state.external_validator_report_metadata_dir {
+        persist_external_validator_report_metadata(dir, &attachment, &body).map_err(|e| {
+            ApiError::Internal(format!(
+                "failed to persist external-validator metadata sidecar: {e}"
+            ))
+        })?;
+    }
     raw_entries.push(body.to_vec());
 
     Ok((
         StatusCode::CREATED,
         Json(ExternalValidatorReportMetadataCreateResponse {
-            storage: "in_memory",
+            storage: storage_mode(state.external_validator_report_metadata_dir.is_some()),
             status: "external_validator_report_metadata_attached",
             report: ExternalValidatorEvidenceAttachmentIndex::from(&attachment),
         }),
     ))
+}
+
+pub(crate) fn load_external_validator_report_metadata(dir: &Path) -> Vec<Vec<u8>> {
+    let read_dir = match std::fs::read_dir(dir) {
+        Ok(read_dir) => read_dir,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            eprintln!(
+                "warning: failed to read external-validator metadata sidecar directory {} ({e}); using no durable external-validator metadata",
+                dir.display()
+            );
+            return Vec::new();
+        }
+    };
+
+    let mut paths = Vec::new();
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                eprintln!(
+                    "warning: failed to inspect an external-validator metadata sidecar entry in {} ({e}); ignoring it",
+                    dir.display()
+                );
+                continue;
+            }
+        };
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(e) => {
+                eprintln!(
+                    "warning: failed to inspect external-validator metadata sidecar {} ({e}); counting it as malformed",
+                    path.display()
+                );
+                paths.push(path);
+                continue;
+            }
+        };
+        if file_type.is_file() {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+
+    paths
+        .into_iter()
+        .map(|path| match read_external_validator_metadata_sidecar(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!(
+                    "warning: failed to load external-validator metadata sidecar {} ({e}); counting it as malformed",
+                    path.display()
+                );
+                Vec::new()
+            }
+        })
+        .collect()
+}
+
+pub(crate) fn persist_external_validator_report_metadata(
+    dir: &Path,
+    attachment: &ExternalValidatorEvidenceAttachment,
+    raw: &[u8],
+) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let path = external_validator_report_metadata_path(dir, attachment)?;
+    write_external_validator_report_metadata_atomic(&path, raw)?;
+    Ok(path)
 }
 
 pub fn matching_attachments(
@@ -299,7 +384,10 @@ fn sha256_hex(bytes: &[u8]) -> String {
     crate::hex::hex(&digest)
 }
 
-fn metadata_list_response(raw_entries: &[Vec<u8>]) -> ExternalValidatorReportMetadataList {
+fn metadata_list_response(
+    raw_entries: &[Vec<u8>],
+    storage: &'static str,
+) -> ExternalValidatorReportMetadataList {
     let mut reports = Vec::new();
     let mut malformed_count = 0;
     let mut path_counts = BTreeMap::<String, usize>::new();
@@ -326,7 +414,7 @@ fn metadata_list_response(raw_entries: &[Vec<u8>]) -> ExternalValidatorReportMet
     };
 
     ExternalValidatorReportMetadataList {
-        storage: "in_memory",
+        storage,
         status,
         count: reports.len(),
         malformed_count,
@@ -359,4 +447,67 @@ fn require_json_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
             "external-validator metadata must be submitted as application/json".to_owned(),
         ))
     }
+}
+
+fn read_external_validator_metadata_sidecar(path: &Path) -> std::io::Result<Vec<u8>> {
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES as u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "sidecar exceeds {} bytes",
+                EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES
+            ),
+        ));
+    }
+    std::fs::read(path)
+}
+
+fn external_validator_report_metadata_path(
+    dir: &Path,
+    attachment: &ExternalValidatorEvidenceAttachment,
+) -> std::io::Result<PathBuf> {
+    if !is_safe_slug(&attachment.case_id) || !is_safe_slug(&attachment.validator_family) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "external-validator sidecar file name is not safe",
+        ));
+    }
+    Ok(dir.join(format!(
+        "{}-{}.json",
+        attachment.case_id, attachment.validator_family
+    )))
+}
+
+fn write_external_validator_report_metadata_atomic(
+    path: &Path,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let tmp = tmp_path(path);
+    std::fs::write(&tmp, bytes)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+fn tmp_path(path: &Path) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_else(|| "external-validator-report.json".into());
+    name.push(format!(".{}.tmp", Uuid::new_v4()));
+    path.with_file_name(name)
+}
+
+fn storage_mode(durable: bool) -> &'static str {
+    if durable { "data_dir" } else { "in_memory" }
 }
