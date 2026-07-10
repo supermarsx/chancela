@@ -1,10 +1,11 @@
-//! In-memory platform log tail.
+//! API-owned platform log tail.
 //!
-//! This is deliberately only an API-owned ring buffer. It does not tail historical stdout/stderr,
-//! and it does not contain MCP process logs unless a future supervisor forwards structured events
-//! into the API.
+//! This is deliberately only an API-owned structured sink. It does not tail historical
+//! stdout/stderr, and it does not contain MCP process logs unless a future supervisor forwards
+//! structured events into the API.
 
 use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -12,6 +13,7 @@ use chancela_authz::{Permission, Scope};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
+use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::CurrentActor;
@@ -21,9 +23,11 @@ use crate::settings::{PlatformLogLevel, validate_platform_service_id};
 
 pub(crate) const PLATFORM_LOG_DEFAULT_TAIL: usize = 100;
 pub(crate) const PLATFORM_LOG_MAX_TAIL: usize = 200;
-const PLATFORM_LOG_RING_CAPACITY: usize = 512;
+pub(crate) const PLATFORM_LOG_RETENTION_LIMIT: usize = 512;
+pub(crate) const PLATFORM_LOGS_FILE: &str = "platform-logs.json";
+const PLATFORM_LOG_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlatformLogEntry {
     pub id: String,
     pub seq: u64,
@@ -46,14 +50,31 @@ pub struct PlatformLogRing {
 impl Default for PlatformLogRing {
     fn default() -> Self {
         Self {
-            capacity: PLATFORM_LOG_RING_CAPACITY,
+            capacity: PLATFORM_LOG_RETENTION_LIMIT,
             next_seq: 1,
-            entries: VecDeque::with_capacity(PLATFORM_LOG_RING_CAPACITY),
+            entries: VecDeque::with_capacity(PLATFORM_LOG_RETENTION_LIMIT),
         }
     }
 }
 
 impl PlatformLogRing {
+    fn from_persisted(next_seq: u64, entries: Vec<PlatformLogEntry>) -> Self {
+        let mut entries = entries
+            .into_iter()
+            .filter(valid_persisted_entry)
+            .collect::<Vec<_>>();
+        let overflow = entries.len().saturating_sub(PLATFORM_LOG_RETENTION_LIMIT);
+        if overflow > 0 {
+            entries.drain(0..overflow);
+        }
+        let max_seq = entries.iter().map(|entry| entry.seq).max().unwrap_or(0);
+        Self {
+            capacity: PLATFORM_LOG_RETENTION_LIMIT,
+            next_seq: next_seq.max(max_seq.saturating_add(1)).max(1),
+            entries: VecDeque::from(entries),
+        }
+    }
+
     pub fn push(
         &mut self,
         service_id: &str,
@@ -99,6 +120,10 @@ impl PlatformLogRing {
         Ok(entry)
     }
 
+    fn persisted_entries(&self) -> Vec<PlatformLogEntry> {
+        self.entries.iter().cloned().collect()
+    }
+
     pub fn tail(&self, filter: PlatformLogFilter, tail: usize) -> Vec<PlatformLogEntry> {
         let mut logs = self
             .entries
@@ -118,6 +143,82 @@ impl PlatformLogRing {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PlatformLogFile {
+    schema_version: u32,
+    next_seq: u64,
+    entries: Vec<PlatformLogEntry>,
+}
+
+pub(crate) fn load_platform_logs(path: &Path) -> Option<PlatformLogRing> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<PlatformLogFile>(&bytes) {
+        Ok(file) if file.schema_version == PLATFORM_LOG_SCHEMA_VERSION => {
+            Some(PlatformLogRing::from_persisted(file.next_seq, file.entries))
+        }
+        Ok(file) => {
+            eprintln!(
+                "warning: {} has unsupported platform log schema version {}; using empty log tail",
+                path.display(),
+                file.schema_version
+            );
+            None
+        }
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid platform log document ({e}); using empty log tail",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+pub(crate) fn write_platform_logs_atomic(
+    path: &Path,
+    logs: &PlatformLogRing,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let file = PlatformLogFile {
+        schema_version: PLATFORM_LOG_SCHEMA_VERSION,
+        next_seq: logs.next_seq,
+        entries: logs.persisted_entries(),
+    };
+    let json = serde_json::to_vec_pretty(&file).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+fn tmp_path(path: &Path) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|s| s.to_os_string())
+        .unwrap_or_else(|| PLATFORM_LOGS_FILE.into());
+    name.push(format!(".{}.tmp", Uuid::new_v4()));
+    path.with_file_name(name)
+}
+
+fn valid_persisted_entry(entry: &PlatformLogEntry) -> bool {
+    entry.seq > 0
+        && entry.id == format!("platform-log-{}", entry.seq)
+        && time::OffsetDateTime::parse(&entry.timestamp, &Rfc3339).is_ok()
+        && validate_platform_service_id(&entry.service_id).is_ok()
+        && validate_emitted_level(entry.level).is_ok()
+        && !entry.target.trim().is_empty()
+        && !entry.message.trim().is_empty()
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct PlatformLogInput<'a> {
     pub service_id: &'a str,
@@ -131,13 +232,24 @@ pub(crate) async fn record_platform_log(
     state: &AppState,
     input: PlatformLogInput<'_>,
 ) -> Result<PlatformLogEntry, ApiError> {
-    state.platform_logs.write().await.push(
+    let mut logs = state.platform_logs.write().await;
+    let before = logs.clone();
+    let entry = logs.push(
         input.service_id,
         input.level,
         input.target,
         input.message,
         input.context,
-    )
+    )?;
+    if let Some(path) = &state.platform_logs_path {
+        if let Err(e) = write_platform_logs_atomic(path, &logs) {
+            *logs = before;
+            return Err(ApiError::Internal(format!(
+                "failed to persist platform logs: {e}"
+            )));
+        }
+    }
+    Ok(entry)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -169,7 +281,7 @@ pub struct PlatformLogsResponse {
     pub limitations: Vec<String>,
 }
 
-/// `GET /v1/platform/logs` — read the newest in-memory platform log tail in chronological order.
+/// `GET /v1/platform/logs` — read the newest API-owned platform log tail in chronological order.
 pub async fn list_logs(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -193,13 +305,29 @@ pub async fn list_logs(
         logs,
         tail,
         order: "chronological",
-        limitations: vec![
+        limitations: limitations(state.platform_logs_path.is_some()),
+    }))
+}
+
+fn limitations(durable: bool) -> Vec<String> {
+    let mut limitations = if durable {
+        vec![
+            "This is a data-dir-backed, bounded API-owned structured platform log tail.".to_owned(),
+            format!(
+                "Retention is deterministic: only the newest {PLATFORM_LOG_RETENTION_LIMIT} API-owned platform log entries are kept."
+            ),
+        ]
+    } else {
+        vec![
             "This is an in-memory API log ring; entries reset when the API process restarts."
                 .to_owned(),
-            "It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards them."
-                .to_owned(),
-        ],
-    }))
+        ]
+    };
+    limitations.push(
+        "It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards them."
+            .to_owned(),
+    );
+    limitations
 }
 
 fn validate_tail(tail: Option<&str>) -> Result<usize, ApiError> {

@@ -184,9 +184,12 @@ pub struct AppState {
     pub ledger: Arc<RwLock<Ledger>>,
     /// The current application settings document (contract §2.8). Defaults until a `PUT`.
     pub settings: Arc<RwLock<settings::Settings>>,
-    /// In-memory structured platform log tail. This is API-owned, bounded, and reset on restart;
-    /// it is not a historical stdout/stderr tail or an MCP process-log collector.
+    /// Structured platform log tail. This is API-owned and bounded; it is backed by
+    /// `platform-logs.json` when a data dir is configured, and in-memory otherwise. It is not a
+    /// historical stdout/stderr tail or an MCP process-log collector.
     pub platform_logs: Arc<RwLock<PlatformLogRing>>,
+    /// Where `platform-logs.json` is persisted, or `None` for pure in-memory state.
+    pub platform_logs_path: Option<Arc<PathBuf>>,
     /// Where `settings.json` is persisted, or `None` for pure in-memory state. Shared (and so
     /// cheap to clone) via `Arc`; set only by [`AppState::with_data_dir`]/[`AppState::from_env`].
     pub persist_path: Option<Arc<PathBuf>>,
@@ -447,6 +450,9 @@ impl AppState {
         }
         let settings_path = dir.join(settings::SETTINGS_FILE);
         let loaded = settings::load_settings(&settings_path).unwrap_or_default();
+        let platform_logs_path = dir.join(platform_logs::PLATFORM_LOGS_FILE);
+        let loaded_platform_logs =
+            platform_logs::load_platform_logs(&platform_logs_path).unwrap_or_default();
         let users_path = dir.join(users::USERS_FILE);
         let mut loaded_users = users::load_users(&users_path).unwrap_or_default();
         let verifier_seed_path = dir.join(attestation::VERIFIER_SEED_FILE);
@@ -502,6 +508,8 @@ impl AppState {
         let law_store = law::load_law_store(&laws_dir);
         let mut state = AppState {
             settings: Arc::new(RwLock::new(loaded)),
+            platform_logs: Arc::new(RwLock::new(loaded_platform_logs)),
+            platform_logs_path: Some(Arc::new(platform_logs_path)),
             persist_path: Some(Arc::new(settings_path)),
             users: Arc::new(RwLock::new(loaded_users)),
             users_path: Some(Arc::new(users_path)),
@@ -703,6 +711,7 @@ impl AppState {
         match self.data_dir() {
             Some(dir) => vec![
                 dir.join(crate::settings::SETTINGS_FILE),
+                dir.join(crate::platform_logs::PLATFORM_LOGS_FILE),
                 dir.join(crate::attestation::VERIFIER_SEED_FILE),
                 dir.join(crate::users::USERS_FILE),
                 dir.join(crate::roles::ROLES_FILE),
@@ -749,6 +758,9 @@ impl AppState {
         if let Some(dir) = self.data_dir() {
             *self.settings.write().await =
                 settings::load_settings(&dir.join(settings::SETTINGS_FILE)).unwrap_or_default();
+            *self.platform_logs.write().await =
+                platform_logs::load_platform_logs(&dir.join(platform_logs::PLATFORM_LOGS_FILE))
+                    .unwrap_or_default();
             *self.users.write().await =
                 users::load_users(&dir.join(users::USERS_FILE)).unwrap_or_default();
             *self.verifier_seed.write().await = attestation::VerifierSeed::load_or_generate(
@@ -4545,6 +4557,145 @@ mod tests {
             let (status, body) = send(state.clone(), get(&uri)).await;
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
         }
+    }
+
+    #[tokio::test]
+    async fn platform_logs_persist_and_reload_from_data_dir() {
+        let tmp = TempDir::new();
+        let first = AppState::with_data_dir(tmp.dir.clone());
+        seed_platform_log(
+            &first,
+            "api",
+            PlatformLogLevel::Info,
+            "platform.test",
+            "durable api event",
+            Some(json!({ "phase": "first" })),
+        )
+        .await;
+
+        let log_file = tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE);
+        assert!(log_file.is_file(), "platform log sidecar written");
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(
+            restarted,
+            get("/v1/platform/logs?service_id=api&level=info&tail=10"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let logs = body["logs"].as_array().expect("logs array");
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["message"], "durable api event");
+        assert_eq!(logs[0]["context"], json!({ "phase": "first" }));
+        assert!(
+            body["limitations"]
+                .as_array()
+                .expect("limitations")
+                .iter()
+                .any(|item| item
+                    .as_str()
+                    .expect("limitation text")
+                    .contains("data-dir-backed"))
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_logs_data_dir_retention_is_bounded() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        for idx in 0..platform_logs::PLATFORM_LOG_RETENTION_LIMIT + 3 {
+            seed_platform_log(
+                &state,
+                "api",
+                PlatformLogLevel::Info,
+                "platform.retention",
+                &format!("retained event {idx}"),
+                None,
+            )
+            .await;
+        }
+
+        let on_disk: Value = serde_json::from_slice(
+            &std::fs::read(tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE)).expect("log sidecar"),
+        )
+        .expect("platform log sidecar json");
+        let entries = on_disk["entries"].as_array().expect("entries array");
+        assert_eq!(entries.len(), platform_logs::PLATFORM_LOG_RETENTION_LIMIT);
+        assert_eq!(entries[0]["seq"], 4);
+        assert_eq!(
+            entries.last().expect("last retained entry")["seq"]
+                .as_u64()
+                .expect("last seq"),
+            (platform_logs::PLATFORM_LOG_RETENTION_LIMIT + 3) as u64
+        );
+        assert_eq!(
+            on_disk["next_seq"].as_u64().expect("next seq"),
+            (platform_logs::PLATFORM_LOG_RETENTION_LIMIT + 4) as u64
+        );
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(restarted, get("/v1/platform/logs?tail=1")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body["logs"][0]["message"],
+            format!(
+                "retained event {}",
+                platform_logs::PLATFORM_LOG_RETENTION_LIMIT + 2
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_logs_malformed_data_dir_sidecar_reads_empty() {
+        let tmp = TempDir::new();
+        std::fs::write(
+            tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE),
+            b"{not valid json",
+        )
+        .expect("write malformed platform log sidecar");
+
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(state, get("/v1/platform/logs")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["logs"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn platform_action_logs_do_not_echo_secret_request_fields() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let secret = "NeverLog-Platform-Secret-123";
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                "/v1/platform/services/mcp_stdio/actions/start",
+                json!({
+                    "api_key": secret,
+                    "password": secret,
+                    "token": secret
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "control response: {body}");
+
+        let (status, logs) = send(
+            state,
+            get("/v1/platform/logs?service_id=mcp_stdio&level=info&tail=5"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            !logs.to_string().contains(secret),
+            "platform log response must not echo secret fields: {logs}"
+        );
+
+        let on_disk = std::fs::read_to_string(tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE))
+            .expect("platform log sidecar");
+        assert!(
+            !on_disk.contains(secret),
+            "platform log sidecar must not echo secret fields"
+        );
     }
 
     #[tokio::test]
