@@ -14,13 +14,14 @@
  * idiom (success + error) per CONVENTIONS §2/§3.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   ActView,
   DocumentImportValidationFinding,
   DocumentImportValidationReport,
   EntityFamily,
   ImportDocumentBody,
+  ImportedDocumentReviewPatchStatus,
   ImportedDocumentView,
 } from '../../api/types';
 import {
@@ -37,7 +38,10 @@ import {
   useDownloadActDocument,
   useDownloadActDocumentOffice,
   useDownloadActDocumentWorkingCopy,
+  useReviewImportedDocument,
+  keys,
 } from '../../api/hooks';
+import { GateButton, scopeBook } from '../session/permissions';
 import { useT, type TFunction } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
@@ -47,9 +51,12 @@ import {
   Digest,
   EmptyState,
   ErrorNote,
+  Field,
   Icon,
   InlineWarning,
+  Select,
   Skeleton,
+  TextArea,
   Truncate,
   useToast,
 } from '../../ui';
@@ -72,14 +79,6 @@ function slug(value: string): string {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'documento'
   );
-}
-
-function importedDocumentsKey(actId: string) {
-  return ['documents', 'imported', { actId }] as const;
-}
-
-function importedDocumentKey(id: string) {
-  return ['documents', 'imported', id] as const;
 }
 
 async function listImportedDocumentsForAct(actId: string): Promise<ImportedDocumentView[]> {
@@ -162,6 +161,64 @@ function importedDisplayName(document: ImportedDocumentView, t: TFunction): stri
 
 function importedDownloadName(document: ImportedDocumentView): string {
   return metadataText(document.filename) ?? `documento-importado-${slug(document.id)}.bin`;
+}
+
+const IMPORTED_DOCUMENT_REVIEW_NOTICE =
+  'A revisão regista apenas uma decisão de preservação operacional; não executa OCR, não converte bytes, não substitui o PDF/A canónico e não declara aceitação legal.';
+const IMPORTED_DOCUMENT_REVIEW_NOTE_LIMIT = 2000;
+
+const importedDocumentReviewOptions: {
+  value: ImportedDocumentReviewPatchStatus;
+  label: string;
+}[] = [
+  {
+    value: 'reviewed_non_canonical_original_only',
+    label: 'Revisto: original preservado apenas como evidência não canónica',
+  },
+  {
+    value: 'rejected_non_canonical_evidence',
+    label: 'Rejeitado como evidência não canónica',
+  },
+];
+
+function importedReviewStatusLabel(status: unknown): string {
+  switch (metadataText(status)) {
+    case 'operator_review_required':
+      return 'Revisão do operador necessária';
+    case 'ocr_review_required':
+      return 'Revisão do operador necessária para imagem preservada';
+    case 'canonical_conversion_review_required':
+      return 'Revisão do operador necessária para ficheiro legado';
+    case 'reviewed_non_canonical_original_only':
+      return 'Revisto: original preservado apenas como evidência não canónica';
+    case 'rejected_non_canonical_evidence':
+      return 'Rejeitado como evidência não canónica';
+    default:
+      return metadataText(status) ?? 'Revisão não indicada';
+  }
+}
+
+function importedReviewStatusTone(status: unknown): 'neutral' | 'warn' | 'error' | 'ok' {
+  switch (metadataText(status)) {
+    case 'reviewed_non_canonical_original_only':
+      return 'ok';
+    case 'rejected_non_canonical_evidence':
+      return 'error';
+    case 'operator_review_required':
+    case 'ocr_review_required':
+    case 'canonical_conversion_review_required':
+      return 'warn';
+    default:
+      return 'neutral';
+  }
+}
+
+function reviewPatchStatusFromDocument(
+  document: ImportedDocumentView | null,
+): ImportedDocumentReviewPatchStatus {
+  return document?.operator_review_status === 'rejected_non_canonical_evidence'
+    ? 'rejected_non_canonical_evidence'
+    : 'reviewed_non_canonical_original_only';
 }
 
 function mergeImportedDocument(
@@ -355,6 +412,11 @@ function ImportedDocumentDetails({
   const detectedType = metadataText(document.detected_content_type);
   const importedBy = metadataText(document.imported_by);
   const legalNotice = metadataText(document.legal_notice) ?? t('documents.import.notice');
+  const reviewNotice =
+    metadataText(document.operator_review_notice) ?? IMPORTED_DOCUMENT_REVIEW_NOTICE;
+  const reviewedAt = metadataText(document.operator_reviewed_at);
+  const reviewedBy = metadataText(document.operator_reviewed_by);
+  const reviewNote = metadataText(document.operator_review_note);
 
   return (
     <div className="stack--tight" role="group" aria-label={t('documents.import.metadataAria')}>
@@ -421,6 +483,42 @@ function ImportedDocumentDetails({
           </dd>
         </div>
         <div>
+          <dt>Revisão do operador</dt>
+          <dd>
+            <Badge tone={importedReviewStatusTone(document.operator_review_status)}>
+              {importedReviewStatusLabel(document.operator_review_status)}
+            </Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>Aviso de revisão</dt>
+          <dd>{reviewNotice}</dd>
+        </div>
+        <div>
+          <dt>Revisto em</dt>
+          <dd>
+            {reviewedAt ? (
+              <time className="mono" dateTime={reviewedAt}>
+                {reviewedAt}
+              </time>
+            ) : (
+              <span className="muted">{t('documents.import.notIndicated')}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Revisto por</dt>
+          <dd>
+            {reviewedBy ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+          </dd>
+        </div>
+        <div>
+          <dt>Nota da revisão</dt>
+          <dd>
+            {reviewNote ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+          </dd>
+        </div>
+        <div>
           <dt>{t('documents.import.sha256')}</dt>
           <dd>
             <Digest value={document.sha256} />
@@ -432,6 +530,78 @@ function ImportedDocumentDetails({
         </div>
       </dl>
     </div>
+  );
+}
+
+function ImportedDocumentReviewForm({
+  document,
+  error,
+  isPending,
+  note,
+  onNoteChange,
+  onStatusChange,
+  onSubmit,
+  scope,
+  status,
+}: {
+  document: ImportedDocumentView;
+  error: unknown;
+  isPending: boolean;
+  note: string;
+  onNoteChange: (value: string) => void;
+  onStatusChange: (value: ImportedDocumentReviewPatchStatus) => void;
+  onSubmit: () => void;
+  scope: ReturnType<typeof scopeBook>;
+  status: ImportedDocumentReviewPatchStatus;
+}) {
+  const controlId = `import-review-${slug(document.id)}`;
+  return (
+    <form
+      className="form"
+      aria-label="Revisão operacional do documento importado"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <InlineWarning tone="info" title="Revisão conservadora">
+        {metadataText(document.operator_review_notice) ?? IMPORTED_DOCUMENT_REVIEW_NOTICE}
+      </InlineWarning>
+      <Field label="Estado de revisão" htmlFor={`${controlId}-status`}>
+        <Select
+          id={`${controlId}-status`}
+          value={status}
+          options={importedDocumentReviewOptions}
+          onChange={(event) =>
+            onStatusChange(event.target.value as ImportedDocumentReviewPatchStatus)
+          }
+        />
+      </Field>
+      <Field
+        label="Nota da revisão"
+        htmlFor={`${controlId}-note`}
+        hint={`${note.length}/${IMPORTED_DOCUMENT_REVIEW_NOTE_LIMIT} caracteres. Registe apenas a decisão operacional; não declare OCR, conversão ou aceitação legal.`}
+      >
+        <TextArea
+          id={`${controlId}-note`}
+          rows={3}
+          maxLength={IMPORTED_DOCUMENT_REVIEW_NOTE_LIMIT}
+          value={note}
+          onChange={(event) => onNoteChange(event.target.value)}
+        />
+      </Field>
+      {error ? <ErrorNote error={error} /> : null}
+      <GateButton
+        perm="document.generate"
+        scope={scope}
+        type="submit"
+        variant="secondary"
+        icon={<Icon.Pencil />}
+        disabled={isPending}
+      >
+        {isPending ? 'A guardar revisão' : 'Guardar revisão'}
+      </GateButton>
+    </form>
   );
 }
 
@@ -469,8 +639,13 @@ export function ActDocumentPanel({
   const [importValidationReport, setImportValidationReport] =
     useState<DocumentImportValidationReport | null>(null);
   const [importValidationPending, setImportValidationPending] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState<ImportedDocumentReviewPatchStatus>(
+    'reviewed_non_canonical_original_only',
+  );
+  const [reviewNote, setReviewNote] = useState('');
 
   const sealed = act.state === 'Sealed' || act.state === 'Archived';
+  const reviewScope = scopeBook(act.book_id);
   const preview = useActDocumentPreview(act.id, open);
   const bundle = useActDocumentBundle(act.id, sealed);
   const download = useDownloadActDocument(act.id);
@@ -480,23 +655,24 @@ export function ActDocumentPanel({
   const workingCopyRtfDownload = useDownloadActDocumentWorkingCopy(act.id, 'rtf');
   const workingCopyOdtDownload = useDownloadActDocumentWorkingCopy(act.id, 'odt');
   const officeDownload = useDownloadActDocumentOffice(act.id);
+  const reviewImportedDocument = useReviewImportedDocument(act.id);
   const importedDocuments = useQuery({
-    queryKey: importedDocumentsKey(act.id),
+    queryKey: keys.importedDocuments(act.id),
     queryFn: () => listImportedDocumentsForAct(act.id),
   });
   const selectedImportedDocument = useQuery({
-    queryKey: importedDocumentKey(selectedImportId ?? ''),
+    queryKey: keys.importedDocument(selectedImportId ?? ''),
     queryFn: () => api.getImportedDocument(selectedImportId ?? ''),
     enabled: selectedImportId != null,
   });
   const importDocument = useMutation({
     mutationFn: (body: ImportDocumentBody) => api.importDocument(body),
     onSuccess: (document) => {
-      queryClient.setQueryData<ImportedDocumentView[]>(importedDocumentsKey(act.id), (current) =>
+      queryClient.setQueryData<ImportedDocumentView[]>(keys.importedDocuments(act.id), (current) =>
         mergeImportedDocument(current, document),
       );
       setSelectedImportId(document.id);
-      void queryClient.invalidateQueries({ queryKey: importedDocumentsKey(act.id) });
+      void queryClient.invalidateQueries({ queryKey: keys.importedDocuments(act.id) });
     },
   });
   const importedDownload = useMutation({
@@ -508,6 +684,16 @@ export function ActDocumentPanel({
     importList.find((document) => document.id === selectedImportId) ?? null;
   const selectedImport = selectedImportedDocument.data ?? selectedImportFromList;
   const importBusy = importValidationPending || importDocument.isPending;
+
+  useEffect(() => {
+    if (!selectedImport) return;
+    setReviewStatus(reviewPatchStatusFromDocument(selectedImport));
+    setReviewNote(metadataText(selectedImport.operator_review_note) ?? '');
+  }, [
+    selectedImport?.id,
+    selectedImport?.operator_review_status,
+    selectedImport?.operator_review_note,
+  ]);
 
   function downloadBaseName() {
     const base = entityName ? `${slug(entityName)}-` : '';
@@ -628,6 +814,27 @@ export function ActDocumentPanel({
     } catch (e) {
       toast.error(e);
     }
+  }
+
+  function onReviewImportedDocument() {
+    if (!selectedImport) return;
+    const trimmedNote = reviewNote.trim();
+    reviewImportedDocument.mutate(
+      {
+        id: selectedImport.id,
+        body: {
+          review_status: reviewStatus,
+          review_note: trimmedNote.length > 0 ? trimmedNote : undefined,
+        },
+      },
+      {
+        onSuccess: (document) => {
+          setSelectedImportId(document.id);
+          toast.success('Revisão do documento importado guardada.');
+        },
+        onError: (error) => toast.error(error),
+      },
+    );
   }
 
   return (
@@ -795,6 +1002,9 @@ export function ActDocumentPanel({
                               ? t('documents.import.nonCanonical')
                               : t('documents.import.imported')}
                           </Badge>
+                          <Badge tone={importedReviewStatusTone(document.operator_review_status)}>
+                            {importedReviewStatusLabel(document.operator_review_status)}
+                          </Badge>
                           <Truncate text={displayName} />
                         </p>
                         <p className="chainrow__meta">
@@ -835,12 +1045,27 @@ export function ActDocumentPanel({
           )}
 
           {selectedImportId ? (
-            <ImportedDocumentDetails
-              document={selectedImport}
-              error={selectedImportedDocument.error}
-              isLoading={selectedImportedDocument.isLoading}
-              t={t}
-            />
+            <div className="stack--tight">
+              <ImportedDocumentDetails
+                document={selectedImport}
+                error={selectedImportedDocument.error}
+                isLoading={selectedImportedDocument.isLoading}
+                t={t}
+              />
+              {selectedImport ? (
+                <ImportedDocumentReviewForm
+                  document={selectedImport}
+                  error={reviewImportedDocument.error}
+                  isPending={reviewImportedDocument.isPending}
+                  note={reviewNote}
+                  onNoteChange={setReviewNote}
+                  onStatusChange={setReviewStatus}
+                  onSubmit={onReviewImportedDocument}
+                  scope={reviewScope}
+                  status={reviewStatus}
+                />
+              ) : null}
+            </div>
           ) : null}
         </section>
 

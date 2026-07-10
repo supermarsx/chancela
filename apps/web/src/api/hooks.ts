@@ -33,6 +33,8 @@ import type {
   CreateExternalSignerInviteBody,
   ExternalSignerInviteView,
   FollowUpView,
+  ImportedDocumentReviewBody,
+  ImportedDocumentView,
   ImportFromRegistryBody,
   LawEntryView,
   LawCitationRequest,
@@ -105,6 +107,9 @@ export const keys = {
   actFollowUps: (id: string) => ['acts', id, 'follow-ups'] as const,
   actDocumentPreview: (id: string) => ['acts', id, 'document', 'preview'] as const,
   actDocumentBundle: (id: string) => ['acts', id, 'document', 'bundle'] as const,
+  importedDocuments: (actId?: string) =>
+    ['documents', 'imported', { actId: actId ?? null }] as const,
+  importedDocument: (id: string) => ['documents', 'imported', id] as const,
   actSignature: (id: string) => ['acts', id, 'signature'] as const,
   externalSignerInvites: (id: string) => ['acts', id, 'signature', 'external-invites'] as const,
   signatureProviders: ['signature', 'providers'] as const,
@@ -600,6 +605,39 @@ export function useActDocumentBundle(id: string, enabled: boolean) {
     queryFn: () => api.getActDocumentBundle(id),
     enabled: enabled && !!id,
     retry: false,
+  });
+}
+
+function replaceImportedDocument(
+  rows: ImportedDocumentView[] | undefined,
+  document: ImportedDocumentView,
+): ImportedDocumentView[] {
+  const current = rows ?? [];
+  return current.some((item) => item.id === document.id)
+    ? current.map((item) => (item.id === document.id ? document : item))
+    : [document, ...current];
+}
+
+/**
+ * Metadata-only operator review for imported, non-canonical document evidence. The server
+ * permits only conservative terminal states and records the actor/timestamp; no OCR, conversion,
+ * canonical replacement, or legal acceptance is performed by this PATCH.
+ */
+export function useReviewImportedDocument(actId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: ImportedDocumentReviewBody }) =>
+      api.reviewImportedDocument(id, body),
+    onSuccess: (document) => {
+      const listActId = document.act_id ?? actId;
+      qc.setQueryData(keys.importedDocument(document.id), document);
+      qc.setQueryData<ImportedDocumentView[]>(keys.importedDocuments(listActId), (rows) =>
+        replaceImportedDocument(rows, document),
+      );
+      void qc.invalidateQueries({ queryKey: keys.importedDocument(document.id) });
+      void qc.invalidateQueries({ queryKey: keys.importedDocuments(listActId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
   });
 }
 

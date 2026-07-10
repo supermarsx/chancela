@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { ActDocumentPanel } from './ActDocumentPanel';
 import { renderWithProviders } from '../../test/utils';
+import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import type {
   ActView,
   DocumentBundle,
@@ -138,6 +139,22 @@ const importedDocument: ImportedDocumentView = {
   legal_notice:
     'Imported document preserved as non-canonical evidence only; it does not replace the generated PDF/A or signed PDF, and no legal validity, PDF/A conformance, or signature validity is claimed.',
   bytes_download: '/v1/documents/imported/import-1/bytes',
+};
+
+const importedDocumentReviewNotice =
+  'Operator review records a preservation workflow decision only; it does not run OCR, convert bytes, replace the canonical PDF/A, or claim legal acceptance.';
+
+const importedDocumentPendingReview: ImportedDocumentView = {
+  ...importedDocument,
+  operator_review_status: 'operator_review_required',
+  operator_reviewed_at: null,
+  operator_reviewed_by: null,
+  operator_review_note: null,
+  operator_review_notice: importedDocumentReviewNotice,
+  requires_ocr_review: false,
+  canonical_conversion_status: 'not_performed_non_canonical_original_only',
+  canonical_conversion_performed: false,
+  legal_acceptance_claimed: false,
 };
 
 const unsignedImportSignature = {
@@ -963,6 +980,111 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(clickedDownloads).toEqual([`documento-importado-${longId}.bin`]);
     expect(revokeUrl).toHaveBeenCalledWith('blob:imported');
     expect(screen.queryByText('Assinatura válida')).toBeNull();
+  });
+
+  it('shows operator review metadata and patches only a conservative review status plus note', async () => {
+    const reviewBodies: unknown[] = [];
+    const calls: { url: string; method: string }[] = [];
+    let current: ImportedDocumentView = importedDocumentPendingReview;
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method });
+      if (url.includes('/v1/documents/imported/import-1/review')) {
+        const body = JSON.parse(String(init?.body));
+        reviewBodies.push(body);
+        current = {
+          ...importedDocumentPendingReview,
+          operator_review_status: body.review_status,
+          operator_reviewed_at: '2026-07-10T09:30:00Z',
+          operator_reviewed_by: 'amelia.operator',
+          operator_review_note: body.review_note,
+        };
+        return json(current);
+      }
+      if (url.includes('/v1/documents/imported/import-1')) return json(current);
+      if (url.includes('/v1/documents/imported')) return json([current]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<ActDocumentPanel act={baseAct} />);
+
+    const list = await screen.findByRole('list', { name: 'Documentos importados' });
+    expect(within(list).getByText('Revisão do operador necessária')).toBeTruthy();
+    fireEvent.click(within(list).getByRole('button', { name: 'Ver metadados' }));
+
+    const metadata = await screen.findByRole('group', {
+      name: 'Metadados do documento importado',
+    });
+    expect(within(metadata).getByText('Revisão do operador necessária')).toBeTruthy();
+    expect(within(metadata).getByText(importedDocumentReviewNotice)).toBeTruthy();
+    expect(within(metadata).getAllByText('Não indicado').length).toBeGreaterThanOrEqual(2);
+
+    const status = screen.getByLabelText('Estado de revisão') as HTMLSelectElement;
+    expect(Array.from(status.options).map((option) => option.value)).toEqual([
+      'reviewed_non_canonical_original_only',
+      'rejected_non_canonical_evidence',
+    ]);
+    fireEvent.change(status, { target: { value: 'rejected_non_canonical_evidence' } });
+    fireEvent.change(screen.getByLabelText('Nota da revisão'), {
+      target: { value: 'Conferido contra o original preservado.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar revisão' }));
+
+    await waitFor(() => expect(reviewBodies).toHaveLength(1));
+    expect(reviewBodies[0]).toEqual({
+      review_status: 'rejected_non_canonical_evidence',
+      review_note: 'Conferido contra o original preservado.',
+    });
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'PATCH' && call.url.includes('/v1/documents/imported/import-1/review'),
+      ),
+    ).toBe(true);
+    await waitFor(() =>
+      expect(within(metadata).getByText('Rejeitado como evidência não canónica')).toBeTruthy(),
+    );
+    expect(await screen.findByText('2026-07-10T09:30:00Z')).toBeTruthy();
+    expect(await screen.findByText('amelia.operator')).toBeTruthy();
+    await waitFor(() =>
+      expect(within(metadata).getByText('Conferido contra o original preservado.')).toBeTruthy(),
+    );
+    expect(screen.queryByText('OCR concluído')).toBeNull();
+    expect(screen.queryByText('Conversão concluída')).toBeNull();
+  });
+
+  it('keeps imported-document review disabled when the operator lacks document.generate', async () => {
+    let reviewAttempts = 0;
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/v1/documents/imported/import-1/review')) {
+        reviewAttempts += 1;
+        return json(importedDocumentPendingReview);
+      }
+      if (url.includes('/v1/documents/imported/import-1'))
+        return json(importedDocumentPendingReview);
+      if (url.includes('/v1/documents/imported')) return json([importedDocumentPendingReview]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission !== 'document.generate')}
+      >
+        <ActDocumentPanel act={baseAct} />
+      </StaticPermissionsProvider>,
+    );
+
+    const list = await screen.findByRole('list', { name: 'Documentos importados' });
+    fireEvent.click(within(list).getByRole('button', { name: 'Ver metadados' }));
+    const save = await screen.findByRole('button', { name: 'Guardar revisão' });
+
+    expect(save.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(save);
+    expect(reviewAttempts).toBe(0);
   });
 
   it('imports an uploaded file for the current act after server-side validation', async () => {

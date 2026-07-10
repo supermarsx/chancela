@@ -934,6 +934,35 @@ export interface ImportDocumentBody {
   act_id?: string | null;
 }
 
+export type ImportedDocumentReviewStatus =
+  | 'operator_review_required'
+  | 'ocr_review_required'
+  | 'canonical_conversion_review_required'
+  | 'reviewed_non_canonical_original_only'
+  | 'rejected_non_canonical_evidence'
+  | string;
+
+export type ImportedDocumentReviewPatchStatus =
+  'reviewed_non_canonical_original_only' | 'rejected_non_canonical_evidence';
+
+/** Body for `PATCH /v1/documents/imported/{id}/review`: metadata-only review transition. */
+export interface ImportedDocumentReviewBody {
+  review_status: ImportedDocumentReviewPatchStatus;
+  review_note?: string | null;
+}
+
+export interface DocumentPreservationPolicyReport {
+  review_state: string;
+  requires_operator_review: boolean;
+  requires_ocr_review: boolean;
+  canonical_conversion_status: string;
+  original_bytes_preservation_status: string;
+  preservation_action: string;
+  canonical_conversion_performed: boolean;
+  canonical_pdfa_generated: boolean;
+  legal_acceptance_claimed: boolean;
+}
+
 /** Non-canonical imported document metadata. Raw bytes are fetched via `bytes_download`. */
 export interface ImportedDocumentView {
   id: string;
@@ -947,7 +976,18 @@ export interface ImportedDocumentView {
   classification: string;
   imported_at: string;
   imported_by: string;
+  /** Optional additive review metadata; older API responses omit it. */
+  operator_review_status?: ImportedDocumentReviewStatus | null;
+  operator_reviewed_at?: string | null;
+  operator_reviewed_by?: string | null;
+  operator_review_note?: string | null;
+  operator_review_notice?: string | null;
   non_canonical: boolean;
+  requires_ocr_review?: boolean;
+  canonical_conversion_status?: string;
+  canonical_conversion_performed?: boolean;
+  legal_acceptance_claimed?: boolean;
+  preservation_policy?: DocumentPreservationPolicyReport;
   legal_notice: string;
   bytes_download: string;
 }

@@ -51,6 +51,7 @@ import type {
   NotificationTriageUpdateResponse,
   DocumentBundle,
   ImportedDocumentView,
+  ImportedDocumentReviewBody,
   ImportDocumentBody,
   DocumentModel,
   DraftActBody,
@@ -548,6 +549,8 @@ export const api = {
     get<ImportedDocumentView[]>(`/v1/documents/imported${query(params)}`),
   getImportedDocument: (id: string) =>
     get<ImportedDocumentView>(`/v1/documents/imported/${encodeURIComponent(id)}`),
+  reviewImportedDocument: (id: string, body: ImportedDocumentReviewBody) =>
+    patch<ImportedDocumentView>(`/v1/documents/imported/${encodeURIComponent(id)}/review`, body),
   fetchImportedDocumentBytes: (id: string) =>
     fetchBlob(`/v1/documents/imported/${encodeURIComponent(id)}/bytes`),
 
