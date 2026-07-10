@@ -4608,6 +4608,7 @@ export interface DataPermissionStatus {
 
 export interface DataUsageConcern {
   id: string;
+  kind?: string;
   label: string;
   bytes: number;
   basis: DataUsageBasis;

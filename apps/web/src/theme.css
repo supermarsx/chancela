@@ -8288,6 +8288,54 @@ input[type='radio']:disabled {
   border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
+.data-status-sqlite-usage {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.data-status-sqlite-table-list {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  overflow: hidden;
+  list-style: none;
+}
+
+.data-status-sqlite-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(5.6rem, auto) minmax(4.5rem, auto);
+  align-items: baseline;
+  gap: 0.28rem 0.6rem;
+  min-width: 0;
+  padding: 0.42rem 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.data-status-sqlite-table-row + .data-status-sqlite-table-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.data-status-sqlite-table-row__label {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.data-status-sqlite-table-row__rows,
+.data-status-sqlite-table-row__bytes {
+  justify-self: end;
+  white-space: nowrap;
+}
+
 .data-status-total {
   margin-top: 0;
 }
@@ -8409,6 +8457,24 @@ input[type='radio']:disabled {
 
   .data-status-cleanup > .btn {
     justify-self: stretch;
+  }
+
+  .data-status-sqlite-table-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .data-status-sqlite-table-row__label {
+    grid-column: 1 / -1;
+  }
+
+  .data-status-sqlite-table-row__rows {
+    grid-column: 1;
+    justify-self: start;
+    white-space: normal;
+  }
+
+  .data-status-sqlite-table-row__bytes {
+    grid-column: 2;
   }
 }
 

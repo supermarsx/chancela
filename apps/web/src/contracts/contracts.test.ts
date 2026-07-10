@@ -471,9 +471,12 @@ function assertDataUsageConcern(obj: unknown, label: string): DataUsageConcern {
       relative_roots: true,
     },
     label,
-    ['row_count'],
+    ['kind', 'row_count'],
   );
   expect(concern.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  if (concern.kind !== undefined) {
+    expect(concern.kind.length, `${label}.kind should be non-empty`).toBeGreaterThan(0);
+  }
   expect(concern.label.length, `${label}.label should be non-empty`).toBeGreaterThan(0);
   expect(Number.isInteger(concern.bytes), `${label}.bytes should be an integer`).toBe(true);
   expect(concern.bytes, `${label}.bytes should be non-negative`).toBeGreaterThanOrEqual(0);

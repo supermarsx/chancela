@@ -97,6 +97,30 @@ const durableStatus: DataStatusResponse = {
         row_count: 3,
         relative_roots: ['ledger_events'],
       },
+      {
+        id: 'sqlite_table_ledger_events',
+        kind: 'sqlite_logical_table',
+        label: 'SQLite table ledger_events',
+        bytes: 768,
+        basis: 'sqlite_logical_payload',
+        exact: false,
+        file_count: 0,
+        directory_count: 0,
+        row_count: 3,
+        relative_roots: ['ledger_events'],
+      },
+      {
+        id: 'sqlite_table_entity_enrichment_cache_with_a_very_long_table_name',
+        kind: 'sqlite_logical_table',
+        label: 'SQLite table entity_enrichment_cache_with_a_very_long_table_name',
+        bytes: 256,
+        basis: 'sqlite_logical_payload',
+        exact: false,
+        file_count: 0,
+        directory_count: 0,
+        row_count: 12,
+        relative_roots: ['entity_enrichment_cache_with_a_very_long_table_name'],
+      },
     ],
     scan_errors: ['failed to read exports: access denied'],
   },
@@ -239,6 +263,22 @@ describe('GestaoDadosSection', () => {
     expect(within(databaseRow).getByText('Raízes: chancela.db, chancela.db-wal')).toBeTruthy();
     const ledgerRow = within(usageSection).getByText('Ledger payloads').closest('li')!;
     expect(within(ledgerRow).getByText('Linhas: 3')).toBeTruthy();
+    const sqliteGroup = within(usageSection)
+      .getByRole('heading', { name: 'SQLite lógico' })
+      .closest('.data-status-usage-group')!;
+    const tablePayloads = sqliteGroup.querySelector('.data-status-sqlite-table-list')!;
+    expect(tablePayloads).toBeTruthy();
+    const tableRows = tablePayloads.querySelectorAll('.data-status-sqlite-table-row');
+    expect(tableRows).toHaveLength(2);
+    expect(within(tablePayloads as HTMLElement).getByText('ledger_events')).toBeTruthy();
+    expect(
+      within(tablePayloads as HTMLElement).getByText(
+        'entity_enrichment_cache_with_a_very_long_table_name',
+      ),
+    ).toBeTruthy();
+    expect(within(tablePayloads as HTMLElement).getByText('Linhas: 12')).toBeTruthy();
+    expect(within(tablePayloads as HTMLElement).getByText('768 B')).toBeTruthy();
+    expect(tablePayloads.textContent).not.toContain('SQLite table ledger_events');
     expect(screen.getByText('failed to read exports: access denied')).toBeTruthy();
 
     const open = screen.getByRole('button', { name: 'Abrir pasta' }) as HTMLButtonElement;

@@ -101,6 +101,9 @@ const BASIS_LABEL: Record<DataUsageBasis, MessageKey> = {
   sqlite_logical_payload: 'data.status.basis.sqlite_logical_payload',
 };
 
+const SQLITE_LOGICAL_TABLE_KIND = 'sqlite_logical_table';
+const SQLITE_TABLE_ID_PREFIX = 'sqlite_table_';
+
 const PERMISSION_ROWS: {
   key: keyof DataPermissionStatus;
   label: MessageKey;
@@ -188,6 +191,29 @@ function concernMetaItems(concern: DataUsageConcern, t: TFunction, locale: strin
     parts.push(t('data.status.roots', { roots: concern.relative_roots.join(', ') }));
   }
   return parts;
+}
+
+function isSqliteTableConcern(concern: DataUsageConcern): boolean {
+  return (
+    concern.kind === SQLITE_LOGICAL_TABLE_KIND || concern.id.startsWith(SQLITE_TABLE_ID_PREFIX)
+  );
+}
+
+function stripSqliteTablePrefix(value: string): string {
+  const trimmed = value.trim();
+  const withoutIdPrefix = trimmed.startsWith(SQLITE_TABLE_ID_PREFIX)
+    ? trimmed.slice(SQLITE_TABLE_ID_PREFIX.length)
+    : trimmed;
+  const withoutLabelPrefix = withoutIdPrefix
+    .replace(/^sqlite(?:\s+logical)?\s+table\s*[:-]?\s*/i, '')
+    .trim();
+  return withoutLabelPrefix || trimmed;
+}
+
+function sqliteTableLabel(concern: DataUsageConcern): string {
+  const root = concern.relative_roots.find((candidate) => candidate.trim().length > 0);
+  const label = stripSqliteTablePrefix(root ?? concern.label);
+  return label || stripSqliteTablePrefix(concern.id);
 }
 
 function usageForTarget(
@@ -452,6 +478,78 @@ function UsageList({
   );
 }
 
+function SqliteTablePayloadList({
+  concerns,
+  locale,
+  t,
+}: {
+  concerns: DataUsageConcern[];
+  locale: string;
+  t: TFunction;
+}) {
+  return (
+    <ul className="data-status-sqlite-table-list" aria-label={t('data.status.usage.sqliteLogical')}>
+      {concerns.map((concern) => {
+        const label = sqliteTableLabel(concern);
+        const rowCount =
+          concern.row_count === undefined
+            ? '—'
+            : t('data.status.rows', {
+                count: new Intl.NumberFormat(locale).format(concern.row_count),
+              });
+        const meta = [
+          label,
+          formatBytes(concern.bytes, locale),
+          ...concernMetaItems(concern, t, locale),
+        ];
+        return (
+          <li
+            key={`${concern.id}:${concern.basis}`}
+            className="data-status-sqlite-table-row"
+            aria-label={meta.join(' · ')}
+          >
+            <span className="data-status-sqlite-table-row__label" title={concern.label}>
+              {label}
+            </span>
+            <span className="data-status-sqlite-table-row__rows">{rowCount}</span>
+            <span className="data-status-sqlite-table-row__bytes mono">
+              {formatBytes(concern.bytes, locale)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function SqliteLogicalUsageList({
+  concerns,
+  locale,
+  t,
+}: {
+  concerns: DataUsageConcern[];
+  locale: string;
+  t: TFunction;
+}) {
+  if (concerns.length === 0) {
+    return <p className="muted">{t('data.status.usage.empty')}</p>;
+  }
+
+  const tableConcerns = concerns.filter(isSqliteTableConcern);
+  const summaryConcerns = concerns.filter((concern) => !isSqliteTableConcern(concern));
+
+  return (
+    <div className="data-status-sqlite-usage">
+      {summaryConcerns.length > 0 ? (
+        <UsageList concerns={summaryConcerns} locale={locale} t={t} />
+      ) : null}
+      {tableConcerns.length > 0 ? (
+        <SqliteTablePayloadList concerns={tableConcerns} locale={locale} t={t} />
+      ) : null}
+    </div>
+  );
+}
+
 function DataStatusPanel() {
   const t = useT();
   const locale = useLocale();
@@ -682,7 +780,11 @@ function DataStatusPanel() {
               </div>
               <div className="data-status-usage-group">
                 <h5>{t('data.status.usage.sqliteLogical')}</h5>
-                <UsageList concerns={data.usage.sqlite_logical} locale={locale} t={t} />
+                <SqliteLogicalUsageList
+                  concerns={data.usage.sqlite_logical}
+                  locale={locale}
+                  t={t}
+                />
               </div>
             </div>
 
