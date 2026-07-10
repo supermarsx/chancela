@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { DashboardPage } from './DashboardPage';
 import { fetchTable, renderWithProviders } from '../../test/utils';
-import type { Dashboard, LedgerEventView } from '../../api/types';
+import type {
+  Dashboard,
+  DashboardOpenBook,
+  DashboardReminder,
+  LedgerEventView,
+} from '../../api/types';
 
 const baseDashboard: Dashboard = {
   entities: 1,
@@ -54,8 +59,46 @@ function eventFor(
   };
 }
 
+function openBookFor(seq: number, openingDate: string): DashboardOpenBook {
+  return {
+    book_id: `book-${seq}`,
+    entity_id: `entity-${seq}`,
+    entity_name: `Entidade ${seq}, Lda.`,
+    kind: 'AssembleiaGeral',
+    purpose: `Livro de atas ${seq}`,
+    opening_date: openingDate,
+    last_ata_number: seq,
+    total_acts: seq + 1,
+    open_acts: seq % 3,
+    next_ata_number: seq + 1,
+    links: {
+      entity: `/v1/entities/entity-${seq}`,
+      book: `/v1/books/book-${seq}`,
+      act: null,
+      ledger: `/v1/ledger/events?chain=book:book-${seq}`,
+    },
+  };
+}
+
+function reminderFor(
+  seq: number,
+  dueDate: string,
+  status: DashboardReminder['status'],
+): DashboardReminder {
+  return {
+    due_date: dueDate,
+    severity: status === 'Upcoming' ? 'Advisory' : 'Warning',
+    status,
+    reason: `Lembrete ${seq}`,
+    entity_id: `entity-${seq}`,
+    entity_name: `Entidade ${seq}, Lda.`,
+    source_rule: `rule-${seq}`,
+    source_profile: `profile-${seq}`,
+  };
+}
+
 function renderDashboard() {
-  renderWithProviders(<DashboardPage />);
+  return renderWithProviders(<DashboardPage />);
 }
 
 async function openDashboardTab(name: string) {
@@ -279,6 +322,81 @@ describe('DashboardPage', () => {
     const dates = screen.getByRole('list', { name: 'Lembretes com data' });
     expect(within(dates).getByText('Vence em 2026-03-31')).toBeTruthy();
     expect(within(dates).getByText('Fonte csc-art376-annual / csc-commercial')).toBeTruthy();
+  });
+
+  it('keeps current open books to the five newest and reports hidden items', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      current_work: {
+        ...baseDashboard.current_work,
+        open_books: [
+          openBookFor(1, '2026-01-15'),
+          openBookFor(2, '2026-06-15'),
+          openBookFor(3, '2026-05-01'),
+          openBookFor(4, '2026-04-01'),
+          openBookFor(5, '2026-07-01'),
+          openBookFor(6, '2026-03-01'),
+          openBookFor(7, '2026-02-01'),
+        ],
+      },
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Atividades atuais');
+
+    const openItems = await screen.findByRole('list', {
+      name: 'Livros abertos atualmente em uso',
+    });
+    const items = within(openItems).getAllByRole('listitem');
+    expect(items).toHaveLength(5);
+    expect(items.map((item) => within(item).getByRole('link').textContent)).toEqual([
+      'Entidade 5, Lda.',
+      'Entidade 2, Lda.',
+      'Entidade 3, Lda.',
+      'Entidade 4, Lda.',
+      'Entidade 6, Lda.',
+    ]);
+    expect(within(items[0]).getByText('Aberto em 2026-07-01')).toBeTruthy();
+    expect(screen.getByText('Mais 2 itens em uso')).toBeTruthy();
+    expect(screen.queryByText('Entidade 1, Lda.')).toBeNull();
+    expect(screen.queryByText('Entidade 7, Lda.')).toBeNull();
+  });
+
+  it('keeps dated reminders to the five earliest dates after dedupe', async () => {
+    const duplicate = reminderFor(8, '2026-02-01', 'DueSoon');
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: [
+        reminderFor(1, '2026-05-20', 'Upcoming'),
+        reminderFor(2, '2026-01-15', 'Overdue'),
+        reminderFor(3, '2026-03-10', 'DueSoon'),
+        reminderFor(4, '2026-06-01', 'Upcoming'),
+        reminderFor(5, '2026-04-01', 'Upcoming'),
+        reminderFor(6, '2026-07-01', 'Upcoming'),
+        duplicate,
+        { ...duplicate },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderDashboard();
+    await openDashboardTab('Atividades atuais');
+
+    const dates = await screen.findByRole('list', { name: 'Lembretes com data' });
+    const items = within(dates).getAllByRole('listitem');
+    expect(items).toHaveLength(5);
+    expect(items.map((item) => within(item).getByRole('link').textContent)).toEqual([
+      'Entidade 2, Lda.',
+      'Entidade 8, Lda.',
+      'Entidade 3, Lda.',
+      'Entidade 5, Lda.',
+      'Entidade 1, Lda.',
+    ]);
+    expect(within(items[0]).getByText('Vence em 2026-01-15')).toBeTruthy();
+    expect(within(items[1]).getByText('Vence em 2026-02-01')).toBeTruthy();
+    expect(screen.getByText('Mais 2 lembretes com data')).toBeTruthy();
+    expect(screen.queryByText('Entidade 6, Lda.')).toBeNull();
   });
 
   it('renders annual-meeting reminders in the work queue without adding rows to the recent-events table', async () => {

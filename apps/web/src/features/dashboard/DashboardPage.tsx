@@ -479,7 +479,7 @@ function buildWorkQueue({
 
 function WorkQueueActionLink({ href, label }: { href: string; label: string }) {
   return (
-    <Tooltip label={label}>
+    <Tooltip label={label} placement="left">
       <Link
         className="btn btn--ghost btn--icon btn--iconOnly dashboard-workqueue__action"
         to={href}
