@@ -2549,12 +2549,7 @@ export interface PlatformControlResponse {
 }
 
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: JsonValue }
-  | JsonValue[];
+  string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
 
 export interface PlatformLogEntry {
   id: string;
@@ -3537,6 +3532,75 @@ export interface ReinitBookView {
 export interface StartOverBookResult {
   reinit: ReinitBookView;
   new_book: BookView;
+}
+
+// --- Data status (`GET /v1/data/status`) ---------------------------------------
+
+/** Backend persistence mode for the current instance. */
+export const DATA_PERSISTENCE_MODES = ['durable', 'in_memory', 'fallback_in_memory'] as const;
+export type DataPersistenceMode = (typeof DATA_PERSISTENCE_MODES)[number];
+
+/** How a usage row was measured. */
+export const DATA_USAGE_BASES = ['filesystem', 'sqlite_logical_payload', 'sqlite_file'] as const;
+export type DataUsageBasis = (typeof DATA_USAGE_BASES)[number];
+
+export interface DataPersistenceStatus {
+  mode: DataPersistenceMode;
+  data_dir_configured: boolean;
+  durable_store_open: boolean;
+  database_encryption_configured: boolean;
+  store_schema_version: number | null;
+  ledger_length: number;
+  ledger_verified: boolean | null;
+  degraded: boolean;
+}
+
+export interface DataDirStatus {
+  path: string | null;
+  exists: boolean | null;
+  is_directory: boolean | null;
+}
+
+export interface DataPermissionCheck {
+  ok: boolean;
+  checked: boolean;
+  message: string;
+}
+
+export interface DataPermissionStatus {
+  read_dir: DataPermissionCheck;
+  create_file: DataPermissionCheck;
+  write_file: DataPermissionCheck;
+  delete_probe_file: DataPermissionCheck;
+  sqlite_store_open: DataPermissionCheck;
+}
+
+export interface DataUsageConcern {
+  id: string;
+  label: string;
+  bytes: number;
+  basis: DataUsageBasis;
+  exact: boolean;
+  file_count: number;
+  directory_count: number;
+  row_count?: number;
+  relative_roots: string[];
+}
+
+export interface DataUsageStatus {
+  total_bytes: number;
+  filesystem: DataUsageConcern[];
+  sqlite_logical: DataUsageConcern[];
+  scan_errors: string[];
+}
+
+/** Read-only storage, data-directory and usage telemetry for Settings → Dados. */
+export interface DataStatusResponse {
+  generated_at: string;
+  persistence: DataPersistenceStatus;
+  data_dir: DataDirStatus;
+  permissions: DataPermissionStatus;
+  usage: DataUsageStatus;
 }
 
 /** The destructive data-management scope (§2.11). */

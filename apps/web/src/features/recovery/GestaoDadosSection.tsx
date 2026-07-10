@@ -21,16 +21,27 @@
  */
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useResetData, useStartOverInstance } from '../../api/hooks';
-import { RESET_PHRASE, type ResetOutcomeView } from '../../api/types';
-import { useT } from '../../i18n';
+import { useDataStatus, useResetData, useStartOverInstance } from '../../api/hooks';
 import {
+  RESET_PHRASE,
+  type DataPermissionCheck,
+  type DataPermissionStatus,
+  type DataPersistenceMode,
+  type DataUsageBasis,
+  type DataUsageConcern,
+  type ResetOutcomeView,
+} from '../../api/types';
+import { useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
+import {
+  Badge,
   Button,
   Card,
   ConfirmActionModal,
+  ErrorNote,
   Field,
   Icon,
   InlineWarning,
+  Loading,
   TextArea,
   useToast,
 } from '../../ui';
@@ -38,6 +49,320 @@ import { GateButton } from '../session/permissions';
 import { resetFrontend } from './frontendReset';
 
 type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
+
+const MODE_LABEL: Record<DataPersistenceMode, MessageKey> = {
+  durable: 'data.status.mode.durable',
+  in_memory: 'data.status.mode.in_memory',
+  fallback_in_memory: 'data.status.mode.fallback_in_memory',
+};
+
+const BASIS_LABEL: Record<DataUsageBasis, MessageKey> = {
+  filesystem: 'data.status.basis.filesystem',
+  sqlite_file: 'data.status.basis.sqlite_file',
+  sqlite_logical_payload: 'data.status.basis.sqlite_logical_payload',
+};
+
+const PERMISSION_ROWS: {
+  key: keyof DataPermissionStatus;
+  label: MessageKey;
+}[] = [
+  { key: 'read_dir', label: 'data.status.permission.read_dir' },
+  { key: 'create_file', label: 'data.status.permission.create_file' },
+  { key: 'write_file', label: 'data.status.permission.write_file' },
+  { key: 'delete_probe_file', label: 'data.status.permission.delete_probe_file' },
+  { key: 'sqlite_store_open', label: 'data.status.permission.sqlite_store_open' },
+];
+
+function formatTimestamp(value: string, locale: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale);
+}
+
+function formatBytes(value: number, locale: string): string {
+  if (!Number.isFinite(value) || value < 0) return '—';
+  if (value < 1024) return `${new Intl.NumberFormat(locale).format(value)} B`;
+  const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+  let amount = value;
+  let unit = 'B';
+  for (const candidate of units) {
+    amount /= 1024;
+    unit = candidate;
+    if (amount < 1024) break;
+  }
+  return `${new Intl.NumberFormat(locale, {
+    maximumFractionDigits: amount >= 10 ? 0 : 1,
+  }).format(amount)} ${unit}`;
+}
+
+function formatOptionalNumber(value: number | null | undefined, locale: string): string {
+  return value === null || value === undefined ? '—' : new Intl.NumberFormat(locale).format(value);
+}
+
+function yesNo(value: boolean | null, t: TFunction): string {
+  if (value === null) return '—';
+  return value ? t('common.yes') : t('common.no');
+}
+
+function permissionTone(check: DataPermissionCheck): 'ok' | 'warn' | 'neutral' {
+  if (!check.checked) return 'neutral';
+  return check.ok ? 'ok' : 'warn';
+}
+
+function permissionLabel(check: DataPermissionCheck, t: TFunction): string {
+  if (!check.checked) return t('data.status.permission.unchecked');
+  return check.ok ? t('data.status.permission.ok') : t('data.status.permission.warn');
+}
+
+function concernMeta(concern: DataUsageConcern, t: TFunction, locale: string): string {
+  const parts = [
+    t(BASIS_LABEL[concern.basis]),
+    t(concern.exact ? 'data.status.exact' : 'data.status.estimated'),
+    t('data.status.files', {
+      count: new Intl.NumberFormat(locale).format(concern.file_count),
+    }),
+    t('data.status.directories', {
+      count: new Intl.NumberFormat(locale).format(concern.directory_count),
+    }),
+  ];
+  if (concern.row_count !== undefined) {
+    parts.push(
+      t('data.status.rows', {
+        count: new Intl.NumberFormat(locale).format(concern.row_count),
+      }),
+    );
+  }
+  if (concern.relative_roots.length > 0) {
+    parts.push(t('data.status.roots', { roots: concern.relative_roots.join(', ') }));
+  }
+  return parts.join(' · ');
+}
+
+function StatusBadge({
+  value,
+  positive = true,
+  t,
+}: {
+  value: boolean | null;
+  positive?: boolean;
+  t: TFunction;
+}) {
+  if (value === null) return <Badge>{'—'}</Badge>;
+  const ok = positive ? value : !value;
+  return <Badge tone={ok ? 'ok' : 'warn'}>{value ? t('common.yes') : t('common.no')}</Badge>;
+}
+
+function UsageList({
+  concerns,
+  locale,
+  t,
+}: {
+  concerns: DataUsageConcern[];
+  locale: string;
+  t: TFunction;
+}) {
+  if (concerns.length === 0) {
+    return <p className="muted">{t('data.status.usage.empty')}</p>;
+  }
+  return (
+    <ul className="data-status-usage-list">
+      {concerns.map((concern) => (
+        <li key={`${concern.id}:${concern.basis}`} className="data-status-usage-row">
+          <div className="data-status-usage-row__head">
+            <span className="data-status-usage-row__label">{concern.label}</span>
+            <span className="mono">{formatBytes(concern.bytes, locale)}</span>
+          </div>
+          <p className="data-status-usage-row__meta">{concernMeta(concern, t, locale)}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DataStatusPanel() {
+  const t = useT();
+  const locale = useLocale();
+  const toast = useToast();
+  const status = useDataStatus();
+  const data = status.data;
+  const dataPath = data?.data_dir.path ?? null;
+
+  async function copyPath() {
+    if (!dataPath) return;
+    if (!navigator.clipboard) {
+      toast.error(t('data.status.copyUnsupported'));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(dataPath);
+      toast.success(t('data.status.copyDone'));
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+
+  return (
+    <Card
+      title={t('data.status.title')}
+      actions={
+        <Button
+          type="button"
+          variant="secondary"
+          icon={<Icon.Refresh />}
+          disabled={status.isFetching}
+          onClick={() => void status.refetch()}
+        >
+          {status.isFetching ? t('data.status.refreshing') : t('data.status.refresh')}
+        </Button>
+      }
+    >
+      {status.isLoading ? <Loading label={t('data.status.loading')} /> : null}
+      {status.isError ? <ErrorNote error={status.error} /> : null}
+      {data ? (
+        <div className="data-status">
+          <dl className="deflist data-status-summary">
+            <div>
+              <dt>{t('data.status.mode')}</dt>
+              <dd>
+                <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
+                  {t(MODE_LABEL[data.persistence.mode])}
+                </Badge>
+              </dd>
+            </div>
+            <div>
+              <dt>{t('data.status.generatedAt')}</dt>
+              <dd>{formatTimestamp(data.generated_at, locale)}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.durable')}</dt>
+              <dd>
+                <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
+                  {data.persistence.durable_store_open
+                    ? t('data.status.durable.open')
+                    : t('data.status.durable.closed')}
+                </Badge>
+              </dd>
+            </div>
+            <div>
+              <dt>{t('data.status.encryption')}</dt>
+              <dd>
+                <StatusBadge value={data.persistence.database_encryption_configured} t={t} />
+              </dd>
+            </div>
+            <div>
+              <dt>{t('data.status.schemaVersion')}</dt>
+              <dd>{formatOptionalNumber(data.persistence.store_schema_version, locale)}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.ledgerLength')}</dt>
+              <dd>{formatOptionalNumber(data.persistence.ledger_length, locale)}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.ledgerVerified')}</dt>
+              <dd>
+                <StatusBadge value={data.persistence.ledger_verified} t={t} />
+              </dd>
+            </div>
+            <div>
+              <dt>{t('data.status.degraded')}</dt>
+              <dd>
+                <StatusBadge value={data.persistence.degraded} positive={false} t={t} />
+              </dd>
+            </div>
+          </dl>
+
+          <section className="data-status-section" aria-labelledby="data-status-folder">
+            <div className="data-status-section__head">
+              <h4 id="data-status-folder">{t('data.status.dataDir')}</h4>
+              <div className="row-wrap">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.Copy />}
+                  disabled={!dataPath}
+                  onClick={() => void copyPath()}
+                >
+                  {t('data.status.copyPath')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.ExternalLink />}
+                  disabled
+                  title={t('data.status.openUnavailable')}
+                >
+                  {t('data.status.openFolder')}
+                </Button>
+              </div>
+            </div>
+            <p className="data-status-path mono">
+              {dataPath ?? t('data.status.path.unconfigured')}
+            </p>
+            <p className="field__hint">
+              {t('data.status.folderState', {
+                configured: yesNo(data.persistence.data_dir_configured, t),
+                exists: yesNo(data.data_dir.exists, t),
+                directory: yesNo(data.data_dir.is_directory, t),
+              })}
+            </p>
+            <p className="field__hint">{t('data.status.openUnavailable')}</p>
+          </section>
+
+          <section className="data-status-section" aria-labelledby="data-status-permissions">
+            <h4 id="data-status-permissions">{t('data.status.permissions.title')}</h4>
+            <ul className="data-status-permissions">
+              {PERMISSION_ROWS.map((row) => {
+                const check = data.permissions[row.key];
+                return (
+                  <li
+                    key={row.key}
+                    className={`data-status-probe data-status-probe--${permissionTone(check)}`}
+                  >
+                    <div className="data-status-probe__head">
+                      <span>{t(row.label)}</span>
+                      <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
+                    </div>
+                    {check.message ? <p>{check.message}</p> : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+
+          <section className="data-status-section" aria-labelledby="data-status-usage">
+            <div className="data-status-section__head">
+              <h4 id="data-status-usage">{t('data.status.usage.title')}</h4>
+              <p className="data-status-total">
+                {t('data.status.usage.total')}:{' '}
+                <span className="mono">{formatBytes(data.usage.total_bytes, locale)}</span>
+              </p>
+            </div>
+
+            <div className="data-status-usage-groups">
+              <div>
+                <h5>{t('data.status.usage.filesystem')}</h5>
+                <UsageList concerns={data.usage.filesystem} locale={locale} t={t} />
+              </div>
+              <div>
+                <h5>{t('data.status.usage.sqliteLogical')}</h5>
+                <UsageList concerns={data.usage.sqlite_logical} locale={locale} t={t} />
+              </div>
+            </div>
+
+            {data.usage.scan_errors.length > 0 ? (
+              <InlineWarning tone="warn" title={t('data.status.scanErrors.title')}>
+                <ul className="plain-list">
+                  {data.usage.scan_errors.map((error) => (
+                    <li key={error}>{error}</li>
+                  ))}
+                </ul>
+              </InlineWarning>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
 
 export function GestaoDadosSection() {
   const t = useT();
@@ -53,6 +378,8 @@ export function GestaoDadosSection() {
 
   return (
     <div className="stack">
+      <DataStatusPanel />
+
       {/* 1 · Repor interface (client-only) -------------------------------------- */}
       <Card title={t('data.frontend.title')}>
         <div className="stack--tight">

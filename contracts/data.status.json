@@ -1,0 +1,84 @@
+{
+  "generated_at": "2026-07-10T10:20:30Z",
+  "persistence": {
+    "mode": "durable",
+    "data_dir_configured": true,
+    "durable_store_open": true,
+    "database_encryption_configured": true,
+    "store_schema_version": 7,
+    "ledger_length": 42,
+    "ledger_verified": true,
+    "degraded": false
+  },
+  "data_dir": {
+    "path": "F:\\ChancelaData",
+    "exists": true,
+    "is_directory": true
+  },
+  "permissions": {
+    "read_dir": {
+      "ok": true,
+      "checked": true,
+      "message": "directory can be read"
+    },
+    "create_file": {
+      "ok": true,
+      "checked": true,
+      "message": "probe file can be created"
+    },
+    "write_file": {
+      "ok": true,
+      "checked": true,
+      "message": "probe file can be written"
+    },
+    "delete_probe_file": {
+      "ok": true,
+      "checked": true,
+      "message": "probe file can be deleted"
+    },
+    "sqlite_store_open": {
+      "ok": true,
+      "checked": true,
+      "message": "durable SQLite store is open"
+    }
+  },
+  "usage": {
+    "total_bytes": 4096,
+    "filesystem": [
+      {
+        "id": "database",
+        "label": "Database",
+        "bytes": 2048,
+        "basis": "sqlite_file",
+        "exact": true,
+        "file_count": 2,
+        "directory_count": 0,
+        "relative_roots": ["chancela.db", "chancela.db-wal"]
+      },
+      {
+        "id": "settings",
+        "label": "Settings",
+        "bytes": 1024,
+        "basis": "filesystem",
+        "exact": true,
+        "file_count": 1,
+        "directory_count": 0,
+        "relative_roots": ["settings.json"]
+      }
+    ],
+    "sqlite_logical": [
+      {
+        "id": "ledger",
+        "label": "Ledger payloads",
+        "bytes": 1024,
+        "basis": "sqlite_logical_payload",
+        "exact": false,
+        "file_count": 0,
+        "directory_count": 0,
+        "row_count": 3,
+        "relative_roots": ["ledger_events"]
+      }
+    ],
+    "scan_errors": ["failed to read exports: access denied"]
+  }
+}

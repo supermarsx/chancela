@@ -104,6 +104,7 @@ export const keys = {
   ledger: (params: LedgerQueryParams) => ['ledger', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
   ledgerIntegrity: ['ledger', 'integrity'] as const,
+  dataStatus: ['data', 'status'] as const,
   dashboard: ['dashboard'] as const,
   settings: ['settings'] as const,
   platformServices: ['platform', 'services'] as const,
@@ -841,11 +842,22 @@ export function useLedgerIntegrity() {
   return useQuery({ queryKey: keys.ledgerIntegrity, queryFn: () => api.ledgerIntegrity() });
 }
 
+/** Read-only data-directory and storage telemetry for the Data Management tab. */
+export function useDataStatus() {
+  return useQuery({
+    queryKey: keys.dataStatus,
+    queryFn: () => api.dataStatus(),
+    staleTime: 15_000,
+    retry: false,
+  });
+}
+
 /** Invalidate every read that a recovery / data-management op can change (integrity,
  *  verify, ledger feed, dashboard, books, entities, health). */
 function invalidateAfterRecovery(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: keys.ledgerIntegrity });
   void qc.invalidateQueries({ queryKey: keys.ledgerVerify });
+  void qc.invalidateQueries({ queryKey: keys.dataStatus });
   void qc.invalidateQueries({ queryKey: ['ledger'] });
   void qc.invalidateQueries({ queryKey: keys.dashboard });
   void qc.invalidateQueries({ queryKey: ['books'] });

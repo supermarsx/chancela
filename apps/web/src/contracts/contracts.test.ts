@@ -24,6 +24,8 @@ import {
   CAE_LEVELS,
   CAE_REVISIONS,
   CAE_ROLES,
+  DATA_PERSISTENCE_MODES,
+  DATA_USAGE_BASES,
   DSR_REQUEST_OUTCOMES,
   DSR_REQUEST_STATUSES,
   DSR_REQUEST_TYPES,
@@ -82,6 +84,13 @@ import {
   type DashboardOpenBook,
   type DashboardReminder,
   type DashboardTargetLinks,
+  type DataDirStatus,
+  type DataPermissionCheck,
+  type DataPermissionStatus,
+  type DataPersistenceStatus,
+  type DataStatusResponse,
+  type DataUsageConcern,
+  type DataUsageStatus,
   type DocumentSettings,
   type DpiaRecordView,
   type DsrRequestView,
@@ -417,6 +426,58 @@ function assertApiKeyCreated(obj: unknown, label: string): ApiKeyCreated {
   );
   expect(key.secret.startsWith(`${key.prefix}_`), `${label}.secret should match prefix`).toBe(true);
   return key;
+}
+
+function assertDataPermissionCheck(obj: unknown, label: string): DataPermissionCheck {
+  const check = assertExactKeys<DataPermissionCheck>(
+    obj,
+    { ok: true, checked: true, message: true },
+    label,
+  );
+  expect(typeof check.ok, `${label}.ok should be boolean`).toBe('boolean');
+  expect(typeof check.checked, `${label}.checked should be boolean`).toBe('boolean');
+  expect(typeof check.message, `${label}.message should be string`).toBe('string');
+  expect(check.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
+  return check;
+}
+
+function assertDataUsageConcern(obj: unknown, label: string): DataUsageConcern {
+  const concern = assertExactKeys<DataUsageConcern>(
+    obj,
+    {
+      id: true,
+      label: true,
+      bytes: true,
+      basis: true,
+      exact: true,
+      file_count: true,
+      directory_count: true,
+      relative_roots: true,
+    },
+    label,
+    ['row_count'],
+  );
+  expect(concern.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(concern.label.length, `${label}.label should be non-empty`).toBeGreaterThan(0);
+  expect(Number.isInteger(concern.bytes), `${label}.bytes should be an integer`).toBe(true);
+  expect(concern.bytes, `${label}.bytes should be non-negative`).toBeGreaterThanOrEqual(0);
+  inEnum(DATA_USAGE_BASES, concern.basis, `${label}.basis`);
+  expect(typeof concern.exact, `${label}.exact should be boolean`).toBe('boolean');
+  expect(Number.isInteger(concern.file_count), `${label}.file_count should be integer`).toBe(true);
+  expect(
+    Number.isInteger(concern.directory_count),
+    `${label}.directory_count should be integer`,
+  ).toBe(true);
+  if (concern.row_count !== undefined) {
+    expect(Number.isInteger(concern.row_count), `${label}.row_count should be integer`).toBe(true);
+  }
+  expect(Array.isArray(concern.relative_roots), `${label}.relative_roots should be array`).toBe(
+    true,
+  );
+  for (const root of concern.relative_roots) {
+    expect(root.length, `${label}.relative_roots[] should be non-empty`).toBeGreaterThan(0);
+  }
+  return concern;
 }
 
 function assertPrivacyRecordBase(
@@ -1840,8 +1901,10 @@ describe('contract fixtures parse through the real client', () => {
     expect(parsed.tail).toBe(5);
     expect(parsed.order).toBe('chronological');
     expect(Array.isArray(parsed.logs), 'PlatformLogsResponse.logs should be an array').toBe(true);
-    expect(Array.isArray(parsed.limitations), 'PlatformLogsResponse.limitations should be an array')
-      .toBe(true);
+    expect(
+      Array.isArray(parsed.limitations),
+      'PlatformLogsResponse.limitations should be an array',
+    ).toBe(true);
     expect(parsed.limitations.length).toBeGreaterThan(0);
     const first = assertPlatformLogEntry(parsed.logs[0], 'PlatformLogsResponse.logs[0]');
     expect(first.context).toEqual({ service_count: 2 });
@@ -2767,6 +2830,105 @@ describe('contract fixtures parse through the real client', () => {
     }
   });
 
+  it('data.status.json → DataStatusResponse (GET /v1/data/status)', async () => {
+    stubFetch(fixture('data.status.json'));
+    const status: DataStatusResponse = await api.dataStatus();
+    assertExactKeys<DataStatusResponse>(
+      status,
+      {
+        generated_at: true,
+        persistence: true,
+        data_dir: true,
+        permissions: true,
+        usage: true,
+      },
+      'DataStatusResponse',
+    );
+    assertTimestamp(status.generated_at, 'DataStatusResponse.generated_at');
+
+    const persistence = assertExactKeys<DataPersistenceStatus>(
+      status.persistence,
+      {
+        mode: true,
+        data_dir_configured: true,
+        durable_store_open: true,
+        database_encryption_configured: true,
+        store_schema_version: true,
+        ledger_length: true,
+        ledger_verified: true,
+        degraded: true,
+      },
+      'DataStatusResponse.persistence',
+    );
+    inEnum(DATA_PERSISTENCE_MODES, persistence.mode, 'DataStatusResponse.persistence.mode');
+    expect(typeof persistence.data_dir_configured).toBe('boolean');
+    expect(typeof persistence.durable_store_open).toBe('boolean');
+    expect(typeof persistence.database_encryption_configured).toBe('boolean');
+    if (persistence.store_schema_version !== null) {
+      expect(Number.isInteger(persistence.store_schema_version)).toBe(true);
+    }
+    expect(Number.isInteger(persistence.ledger_length)).toBe(true);
+    if (persistence.ledger_verified !== null) {
+      expect(typeof persistence.ledger_verified).toBe('boolean');
+    }
+    expect(typeof persistence.degraded).toBe('boolean');
+
+    const dataDir = assertExactKeys<DataDirStatus>(
+      status.data_dir,
+      { path: true, exists: true, is_directory: true },
+      'DataStatusResponse.data_dir',
+    );
+    if (dataDir.path !== null) expect(dataDir.path.length).toBeGreaterThan(0);
+    if (dataDir.exists !== null) expect(typeof dataDir.exists).toBe('boolean');
+    if (dataDir.is_directory !== null) expect(typeof dataDir.is_directory).toBe('boolean');
+
+    const permissions = assertExactKeys<DataPermissionStatus>(
+      status.permissions,
+      {
+        read_dir: true,
+        create_file: true,
+        write_file: true,
+        delete_probe_file: true,
+        sqlite_store_open: true,
+      },
+      'DataStatusResponse.permissions',
+    );
+    assertDataPermissionCheck(permissions.read_dir, 'DataStatusResponse.permissions.read_dir');
+    assertDataPermissionCheck(
+      permissions.create_file,
+      'DataStatusResponse.permissions.create_file',
+    );
+    assertDataPermissionCheck(permissions.write_file, 'DataStatusResponse.permissions.write_file');
+    assertDataPermissionCheck(
+      permissions.delete_probe_file,
+      'DataStatusResponse.permissions.delete_probe_file',
+    );
+    assertDataPermissionCheck(
+      permissions.sqlite_store_open,
+      'DataStatusResponse.permissions.sqlite_store_open',
+    );
+
+    const usage = assertExactKeys<DataUsageStatus>(
+      status.usage,
+      { total_bytes: true, filesystem: true, sqlite_logical: true, scan_errors: true },
+      'DataStatusResponse.usage',
+    );
+    expect(Number.isInteger(usage.total_bytes), 'usage.total_bytes integer').toBe(true);
+    expect(usage.total_bytes, 'usage.total_bytes non-negative').toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(usage.filesystem)).toBe(true);
+    expect(Array.isArray(usage.sqlite_logical)).toBe(true);
+    expect(Array.isArray(usage.scan_errors)).toBe(true);
+    for (const concern of usage.filesystem) {
+      assertDataUsageConcern(concern, 'DataStatusResponse.usage.filesystem[]');
+    }
+    for (const concern of usage.sqlite_logical) {
+      assertDataUsageConcern(concern, 'DataStatusResponse.usage.sqlite_logical[]');
+    }
+    for (const error of usage.scan_errors) {
+      expect(error.length, 'DataStatusResponse.usage.scan_errors[] non-empty').toBeGreaterThan(0);
+    }
+  });
+
   it('user.json → UserView (POST/GET /v1/users)', async () => {
     stubFetch(fixture('user.json'));
     const user: UserView = await api.getUser('6d5e4f00-0000-4000-8000-000000000005');
@@ -3190,6 +3352,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'law.article.json',
       'law.search.json',
       'backup.manifest.json',
+      'data.status.json',
       'user.json',
       'session.json',
       'session.roster.json',
