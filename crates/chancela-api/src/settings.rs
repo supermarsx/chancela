@@ -348,6 +348,9 @@ impl PlatformSettings {
 
 /// Logging level controls. The service overrides are keyed by stable service id: `app`, `api`,
 /// and `mcp_stdio`.
+///
+/// `global = off` is a platform-wide kill switch. Otherwise a service override is absolute for
+/// that service; services without an override use the stricter global/area threshold.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PlatformLoggingSettings {
@@ -379,15 +382,19 @@ impl PlatformLoggingSettings {
     }
 
     pub(crate) fn effective_for(&self, service_id: &str) -> PlatformLogLevel {
+        if self.global == PlatformLogLevel::Off {
+            return PlatformLogLevel::Off;
+        }
         if let Some(level) = self.service_overrides.get(service_id) {
             return *level;
         }
-        match service_id {
+        let area = match service_id {
             PLATFORM_APP_SERVICE_ID => self.app,
             PLATFORM_API_SERVICE_ID => self.api,
             PLATFORM_MCP_STDIO_SERVICE_ID => self.mcp,
             _ => self.global,
-        }
+        };
+        self.global.stricter(area)
     }
 }
 
@@ -402,6 +409,31 @@ pub enum PlatformLogLevel {
     Warn,
     Error,
     Off,
+}
+
+impl PlatformLogLevel {
+    pub(crate) fn allows(self, emitted: PlatformLogLevel) -> bool {
+        self != PlatformLogLevel::Off && emitted.rank() >= self.rank()
+    }
+
+    fn stricter(self, other: PlatformLogLevel) -> PlatformLogLevel {
+        if self.rank() >= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+
+    fn rank(self) -> u8 {
+        match self {
+            PlatformLogLevel::Trace => 0,
+            PlatformLogLevel::Debug => 1,
+            PlatformLogLevel::Info => 2,
+            PlatformLogLevel::Warn => 3,
+            PlatformLogLevel::Error => 4,
+            PlatformLogLevel::Off => 5,
+        }
+    }
 }
 
 /// Desired-state controls for one platform service.

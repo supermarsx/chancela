@@ -5658,6 +5658,15 @@ mod tests {
             None,
         )
         .await;
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Trace,
+            "platform.threshold",
+            "api trace suppressed by service override",
+            None,
+        )
+        .await;
         state
             .settings
             .write()
@@ -5685,6 +5694,90 @@ mod tests {
             .map(|entry| entry["message"].as_str().expect("message"))
             .collect::<Vec<_>>();
         assert_eq!(messages, vec!["api debug recorded by service override"]);
+    }
+
+    #[tokio::test]
+    async fn platform_logs_service_override_bypasses_global_floor_when_global_is_not_off() {
+        let state = AppState::default();
+        {
+            let mut settings = state.settings.write().await;
+            settings.platform.logging.global = PlatformLogLevel::Warn;
+            settings.platform.logging.api = PlatformLogLevel::Debug;
+            settings
+                .platform
+                .logging
+                .service_overrides
+                .insert("api".to_owned(), PlatformLogLevel::Debug);
+        }
+
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Debug,
+            "platform.threshold",
+            "api debug recorded by service override",
+            None,
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Warn,
+            "platform.threshold",
+            "api warn recorded above service override",
+            None,
+        )
+        .await;
+
+        let (status, body) = send(state, get("/v1/platform/logs?service_id=api&tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        let messages = body["logs"]
+            .as_array()
+            .expect("logs array")
+            .iter()
+            .map(|entry| entry["message"].as_str().expect("message"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            messages,
+            vec![
+                "api debug recorded by service override",
+                "api warn recorded above service override"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_logs_global_off_suppresses_service_override_and_sidecar() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        {
+            let mut settings = state.settings.write().await;
+            settings.platform.logging.global = PlatformLogLevel::Off;
+            settings.platform.logging.api = PlatformLogLevel::Trace;
+            settings
+                .platform
+                .logging
+                .service_overrides
+                .insert("api".to_owned(), PlatformLogLevel::Trace);
+        }
+
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Error,
+            "platform.threshold",
+            "api error suppressed by global off",
+            None,
+        )
+        .await;
+
+        let (status, body) = send(state, get("/v1/platform/logs?service_id=api&tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["logs"], json!([]));
+        assert!(
+            !tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE).exists(),
+            "global off should suppress sidecar creation even with a service override"
+        );
     }
 
     #[tokio::test]
@@ -5764,14 +5857,16 @@ mod tests {
     #[tokio::test]
     async fn platform_services_status_exposes_api_and_mcp_records() {
         let state = AppState::default();
-        state
-            .settings
-            .write()
-            .await
-            .platform
-            .logging
-            .service_overrides
-            .insert("api".to_owned(), PlatformLogLevel::Debug);
+        {
+            let mut settings = state.settings.write().await;
+            settings.platform.logging.global = PlatformLogLevel::Trace;
+            settings.platform.logging.api = PlatformLogLevel::Trace;
+            settings
+                .platform
+                .logging
+                .service_overrides
+                .insert("api".to_owned(), PlatformLogLevel::Debug);
+        }
 
         let (status, body) = send(state.clone(), get("/v1/platform/services")).await;
         assert_eq!(status, StatusCode::OK);
@@ -5844,6 +5939,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn platform_services_status_reports_effective_logging_thresholds() {
+        let state = AppState::default();
+        {
+            let mut settings = state.settings.write().await;
+            settings.platform.logging.global = PlatformLogLevel::Warn;
+            settings.platform.logging.api = PlatformLogLevel::Debug;
+            settings
+                .platform
+                .logging
+                .service_overrides
+                .insert("api".to_owned(), PlatformLogLevel::Debug);
+            settings.platform.logging.mcp = PlatformLogLevel::Off;
+        }
+
+        let (status, body) = send(state, get("/v1/platform/services")).await;
+        assert_eq!(status, StatusCode::OK);
+        let services = body["services"].as_array().expect("services array");
+        let api = services
+            .iter()
+            .find(|service| service["id"] == "api")
+            .expect("api service");
+        let mcp = services
+            .iter()
+            .find(|service| service["id"] == "mcp_stdio")
+            .expect("mcp stdio service");
+        assert_eq!(api["logging_level"], "debug");
+        assert_eq!(mcp["logging_level"], "off");
+    }
+
+    #[tokio::test]
     async fn platform_api_restart_records_unsupported_result_and_audit() {
         let state = AppState::default();
         let (status, body) = send(
@@ -5910,6 +6035,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn platform_api_stop_records_unsupported_desired_state_but_runtime_stays_running() {
+        let state = AppState::default();
+        let (status, body) = send(
+            state.clone(),
+            post_json("/v1/platform/services/api/actions/stop", json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "control response: {body}");
+        assert_eq!(body["action"], "stop");
+        assert_eq!(body["result"]["kind"], "unsupported");
+        assert_eq!(body["result"]["supported"], false);
+        assert_eq!(body["result"]["applied_to_settings"], true);
+        assert_eq!(body["result"]["desired_state"], "stopped");
+        assert_eq!(body["result"]["actual_runtime_status"], "running");
+        assert_eq!(body["service"]["enabled"], false);
+        assert_eq!(body["service"]["desired_state"], "stopped");
+        assert_eq!(body["service"]["actual_runtime_status"], "running");
+
+        let settings = state.settings.read().await.clone();
+        assert_eq!(
+            settings.platform.api_server.desired_state,
+            PlatformServiceDesiredState::Stopped
+        );
+        assert!(!settings.platform.api_server.enabled);
+        assert_eq!(
+            settings
+                .platform
+                .api_server
+                .last_action
+                .expect("last api action")
+                .outcome,
+            PlatformControlOutcomeKind::Unsupported
+        );
+
+        let (status, status_body) = send(state, get("/v1/platform/services")).await;
+        assert_eq!(status, StatusCode::OK);
+        let api = status_body["services"]
+            .as_array()
+            .expect("services array")
+            .iter()
+            .find(|service| service["id"] == "api")
+            .expect("api service");
+        assert_eq!(api["desired_state"], "stopped");
+        assert_eq!(api["actual_runtime_status"], "running");
+    }
+
+    #[tokio::test]
     async fn platform_mcp_start_records_supervisor_required_result() {
         let state = AppState::default();
         let (status, body) = send(
@@ -5947,6 +6119,68 @@ mod tests {
             PlatformServiceDesiredState::Running
         );
         assert_eq!(settings.platform.audit[0].service_id, "mcp_stdio");
+    }
+
+    #[tokio::test]
+    async fn platform_desired_state_and_audit_persist_through_data_dir_reload() {
+        let tmp = TempDir::new();
+        let first = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(
+            first,
+            post_json("/v1/platform/services/mcp_stdio/actions/start", json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "control response: {body}");
+
+        let settings_file = tmp.dir.join("settings.json");
+        let persisted: Settings =
+            serde_json::from_slice(&std::fs::read(&settings_file).expect("settings sidecar"))
+                .expect("valid persisted settings");
+        assert_eq!(
+            persisted.platform.mcp_stdio_server.desired_state,
+            PlatformServiceDesiredState::Running
+        );
+        assert_eq!(persisted.platform.audit.len(), 1);
+        assert_eq!(persisted.platform.audit[0].service_id, "mcp_stdio");
+        assert_eq!(
+            persisted.platform.audit[0].outcome,
+            PlatformControlOutcomeKind::SupervisorRequired
+        );
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        {
+            let settings = restarted.settings.read().await;
+            assert_eq!(
+                settings.platform.mcp_stdio_server.desired_state,
+                PlatformServiceDesiredState::Running
+            );
+            assert_eq!(settings.platform.audit.len(), 1);
+        }
+
+        let (status, status_body) = send(restarted.clone(), get("/v1/platform/services")).await;
+        assert_eq!(status, StatusCode::OK);
+        let mcp = status_body["services"]
+            .as_array()
+            .expect("services array")
+            .iter()
+            .find(|service| service["id"] == "mcp_stdio")
+            .expect("mcp stdio service");
+        assert_eq!(mcp["enabled"], true);
+        assert_eq!(mcp["desired_state"], "running");
+        assert_eq!(mcp["actual_runtime_status"], "unknown");
+        assert_eq!(mcp["last_action"]["outcome"], "supervisor_required");
+
+        let (status, events) = send(restarted, get("/v1/ledger/events")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            events
+                .as_array()
+                .expect("events array")
+                .iter()
+                .any(|event| event["kind"] == "platform.service.control"
+                    && event["scope"] == "platform"),
+            "platform control ledger event should persist through reload: {events}"
+        );
     }
 
     // --- Scoped RBAC stores + migration + bootstrap + resolution seam (t64-E2) ------------

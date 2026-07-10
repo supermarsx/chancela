@@ -29,6 +29,9 @@ counts, state transitions). Together they pin both shape and semantics.
 | `ledger.events.json`           | `[LedgerEventView]` — `GET /v1/ledger/events`                                          | t5 §2.6                                                            |
 | `dashboard.json`               | `DashboardResponse` — `GET /v1/dashboard`                                              | t5 §2.7                                                            |
 | `settings.json`                | `Settings` — `GET/PUT /v1/settings`                                                    | t8 §2.8 (`t8-e1.md`)                                               |
+| `platform.services.json`       | `PlatformServicesResponse` — `GET /v1/platform/services`                               | platform service status/control                                    |
+| `platform.control.json`        | `PlatformControlResponse` — `POST /v1/platform/services/{id}/actions/{action}`         | platform service desired-state control                             |
+| `platform.logs.json`           | `PlatformLogsResponse` — `GET /v1/platform/logs`                                       | API-owned structured platform log tail                             |
 | `registry.extract.json`        | `RegistryExtractView` — `GET /v1/entities/{id}/registry`                               | t11 §2.7 (`t11-e2.md`) + t14 §2.7 (`t14-e3.md`, role-tagged `cae`) |
 | `cae.entry.json`               | `CaeEntryView` (single-code, with hierarchy) — `GET /v1/cae/{code}`                    | t14 §2.7 (`t14-e3.md`)                                             |
 | `cae.catalog.json`             | `CaeCatalogView` — `GET /v1/cae` (no-search metadata)                                  | t14 §2.7/§2.8 (`t14-e3.md`)                                        |
