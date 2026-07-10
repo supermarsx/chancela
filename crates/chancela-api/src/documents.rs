@@ -32,7 +32,7 @@ use chancela_core::{
 use chancela_store::{
     StoredDocument, StoredImportedDocument, StoredImportedDocumentMeta, StoredSignedDocument,
 };
-use chancela_templates::{Registry, TemplateSpec};
+use chancela_templates::{Registry, TemplateLawReference, TemplateSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -3470,6 +3470,7 @@ pub struct TemplateSummary {
     pub channels: Vec<MeetingChannel>,
     pub signature_policy: SignaturePolicyHint,
     pub rule_pack_id: String,
+    pub law_references: Vec<TemplateLawReference>,
     pub locale: String,
 }
 
@@ -3482,6 +3483,7 @@ impl From<&TemplateSpec> for TemplateSummary {
             channels: s.channels.clone(),
             signature_policy: s.signature_policy,
             rule_pack_id: s.rule_pack_id.clone(),
+            law_references: s.law_references.clone(),
             locale: s.locale.clone(),
         }
     }
@@ -4451,6 +4453,37 @@ mod tests {
             assert!(default_spec(family, LifecycleStage::TermoAbertura).is_some());
             assert!(default_spec(family, LifecycleStage::TermoEncerramento).is_some());
         }
+    }
+
+    #[test]
+    fn template_summary_exposes_structured_law_references() {
+        let csc =
+            default_spec(EntityFamily::CommercialCompany, LifecycleStage::Ata).expect("csc spine");
+        let csc_summary = TemplateSummary::from(csc);
+        assert!(csc_summary.law_references.iter().any(|r| {
+            r.source == chancela_templates::TemplateLawReferenceSource::RulePack
+                && r.source_id == "csc"
+                && r.article.as_deref() == Some("63")
+                && r.citation == "Código das Sociedades Comerciais, Artigo 63.º"
+        }));
+
+        let condominium = default_spec(EntityFamily::Condominium, LifecycleStage::Ata)
+            .expect("condominium spine");
+        let condominium_summary = TemplateSummary::from(condominium);
+        assert!(condominium_summary.law_references.iter().any(|r| {
+            r.source == chancela_templates::TemplateLawReferenceSource::ThresholdRegistry
+                && r.threshold_id.as_deref() == Some("condominio.deliberacao.maioria_permilagem")
+                && r.citation == "CC art. 1432.º"
+        }));
+
+        let association = default_spec(EntityFamily::Association, LifecycleStage::Ata)
+            .expect("association spine");
+        let association_summary = TemplateSummary::from(association);
+        assert!(association_summary.law_references.iter().any(|r| {
+            r.threshold_id.as_deref() == Some("assoc.convocatoria_maioria")
+                && r.citation == "CC arts. 173.º e 175.º"
+                && r.verification == chancela_templates::TemplateLawReferenceVerification::Pending
+        }));
     }
 
     #[test]

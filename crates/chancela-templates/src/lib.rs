@@ -65,10 +65,51 @@ pub struct TemplateSpec {
     pub signature_policy: SignaturePolicyHint,
     /// The compliance rule pack bound to this template (TPL-30); the id, not the pack itself.
     pub rule_pack_id: String,
+    /// Structured law references derived from stable catalog metadata. These are citation anchors
+    /// for discovery/insertion only: they are not exhaustive and do not claim legal verification.
+    pub law_references: Vec<TemplateLawReference>,
     /// The ordered block layout that produces the [`DocumentModel`].
     pub blocks: Vec<BlockSpec>,
     /// The locale the prose is authored in (v1: `"pt-PT"`, UX-21).
     pub locale: String,
+}
+
+/// Where a template law reference came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum TemplateLawReferenceSource {
+    /// The reference is attached to the template's `rule_pack_id`.
+    RulePack,
+    /// The reference is attached to a `threshold("<id>")` used by the template prose.
+    ThresholdRegistry,
+}
+
+/// Verification state of a template law reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum TemplateLawReferenceVerification {
+    /// The citation is structurally derived from local metadata, but the legal article text/value
+    /// has not been lawyer-verified for this template.
+    Pending,
+}
+
+/// A bounded, structured citation candidate for a template.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TemplateLawReference {
+    /// Stable source id used by the law shelf where available (`csc`, `cc`, `dl-268-94`, ...).
+    pub source_id: String,
+    /// Human-readable source label.
+    pub source_label: String,
+    /// Article number when a single article is known; omitted for whole-diploma or multi-article
+    /// references.
+    pub article: Option<String>,
+    /// Human-readable citation, preserving threshold registry wording where that is the source.
+    pub citation: String,
+    /// How this reference was derived.
+    pub source: TemplateLawReferenceSource,
+    /// Honest verification state; this surface does not certify legal completeness/validity.
+    pub verification: TemplateLawReferenceVerification,
+    /// Threshold id when the reference came from the threshold registry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold_id: Option<String>,
 }
 
 /// One row of a [`BlockSpec::KeyValue`]: `key` and `value` are **minijinja templates** (usually
@@ -217,6 +258,7 @@ struct TemplateSpecDto {
 
 impl From<TemplateSpecDto> for TemplateSpec {
     fn from(dto: TemplateSpecDto) -> Self {
+        let law_references = derive_template_law_references(&dto.rule_pack_id, &dto.blocks);
         TemplateSpec {
             id: dto.id,
             family: dto.family,
@@ -224,10 +266,189 @@ impl From<TemplateSpecDto> for TemplateSpec {
             channels: dto.channels,
             signature_policy: dto.signature_policy.into(),
             rule_pack_id: dto.rule_pack_id,
+            law_references,
             blocks: dto.blocks,
             locale: dto.locale,
         }
     }
+}
+
+fn derive_template_law_references(
+    rule_pack_id: &str,
+    blocks: &[BlockSpec],
+) -> Vec<TemplateLawReference> {
+    let mut refs = Vec::new();
+    for r in rule_pack_law_references(rule_pack_id) {
+        push_unique_law_reference(&mut refs, r);
+    }
+    for threshold_id in threshold_references_in_blocks(blocks) {
+        if let Some(threshold) = find_threshold(&threshold_id) {
+            if let Some(r) = threshold_law_reference(threshold) {
+                push_unique_law_reference(&mut refs, r);
+            }
+        }
+    }
+    refs
+}
+
+fn push_unique_law_reference(
+    refs: &mut Vec<TemplateLawReference>,
+    reference: TemplateLawReference,
+) {
+    let duplicate = refs.iter().any(|r| {
+        r.source_id == reference.source_id
+            && r.article == reference.article
+            && r.citation == reference.citation
+            && r.source == reference.source
+            && r.threshold_id == reference.threshold_id
+    });
+    if !duplicate {
+        refs.push(reference);
+    }
+}
+
+fn rule_pack_law_references(rule_pack_id: &str) -> Vec<TemplateLawReference> {
+    match rule_pack_id {
+        "csc-art63/v2" => vec![rule_pack_reference(
+            "csc",
+            "Código das Sociedades Comerciais",
+            Some("63"),
+            "Código das Sociedades Comerciais, Artigo 63.º",
+        )],
+        "condominio-dl268/v1" => vec![
+            rule_pack_reference(
+                "dl-268-94",
+                "Decreto-Lei n.º 268/94, de 25 de outubro",
+                None,
+                "Decreto-Lei n.º 268/94, de 25 de outubro",
+            ),
+            rule_pack_reference(
+                "cc",
+                "Código Civil",
+                Some("1432"),
+                "Código Civil, Artigo 1432.º",
+            ),
+        ],
+        "assoc-cc/v1" => vec![rule_pack_reference(
+            "cc",
+            "Código Civil",
+            None,
+            "Código Civil",
+        )],
+        "fundacao-cc/v1" => vec![
+            rule_pack_reference("cc", "Código Civil", None, "Código Civil"),
+            rule_pack_reference(
+                "lei-24-2012",
+                "Lei-Quadro das Fundações",
+                None,
+                "Lei n.º 24/2012, de 9 de julho",
+            ),
+        ],
+        "cooperativa-ccoop/v1" => vec![rule_pack_reference(
+            "cod-cooperativo",
+            "Código Cooperativo",
+            None,
+            "Código Cooperativo (Lei n.º 119/2015)",
+        )],
+        _ => Vec::new(),
+    }
+}
+
+fn rule_pack_reference(
+    source_id: &str,
+    source_label: &str,
+    article: Option<&str>,
+    citation: &str,
+) -> TemplateLawReference {
+    TemplateLawReference {
+        source_id: source_id.to_owned(),
+        source_label: source_label.to_owned(),
+        article: article.map(str::to_owned),
+        citation: citation.to_owned(),
+        source: TemplateLawReferenceSource::RulePack,
+        verification: TemplateLawReferenceVerification::Pending,
+        threshold_id: None,
+    }
+}
+
+fn threshold_law_reference(threshold: &LegalThreshold) -> Option<TemplateLawReference> {
+    let (source_id, source_label) = threshold_source(threshold.article_ref)?;
+    Some(TemplateLawReference {
+        source_id: source_id.to_owned(),
+        source_label: source_label.to_owned(),
+        article: threshold_single_article(threshold.article_ref),
+        citation: threshold.article_ref.to_owned(),
+        source: TemplateLawReferenceSource::ThresholdRegistry,
+        verification: TemplateLawReferenceVerification::Pending,
+        threshold_id: Some(threshold.id.to_owned()),
+    })
+}
+
+fn threshold_source(article_ref: &str) -> Option<(&'static str, &'static str)> {
+    if article_ref.starts_with("CSC ") {
+        Some(("csc", "Código das Sociedades Comerciais"))
+    } else if article_ref.starts_with("CC ") {
+        Some(("cc", "Código Civil"))
+    } else if article_ref.starts_with("Código Cooperativo ") {
+        Some(("cod-cooperativo", "Código Cooperativo"))
+    } else if article_ref.starts_with("DL 76-A/2006") {
+        Some(("dl-76-a-2006", "Decreto-Lei n.º 76-A/2006, de 29 de março"))
+    } else if article_ref.starts_with("Lei n.º 24/2012") {
+        Some(("lei-24-2012", "Lei-Quadro das Fundações"))
+    } else {
+        None
+    }
+}
+
+fn threshold_single_article(article_ref: &str) -> Option<String> {
+    if article_ref.contains("arts.") {
+        return None;
+    }
+    let marker = "art. ";
+    let start = article_ref.find(marker)? + marker.len();
+    let tail = &article_ref[start..];
+    let article = tail
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>();
+    if article.is_empty() {
+        None
+    } else {
+        Some(article)
+    }
+}
+
+fn threshold_references_in_blocks(blocks: &[BlockSpec]) -> Vec<String> {
+    let mut refs = Vec::new();
+    for block in blocks {
+        match block {
+            BlockSpec::Heading { template, .. } | BlockSpec::Paragraph { template, .. } => {
+                refs.extend(scan_threshold_references(template));
+            }
+            BlockSpec::KeyValue { rows, .. } => {
+                for row in rows {
+                    refs.extend(scan_threshold_references(&row.key));
+                    refs.extend(scan_threshold_references(&row.value));
+                }
+            }
+            BlockSpec::VoteTable {
+                label,
+                unanimous_total,
+                ..
+            } => {
+                refs.extend(scan_threshold_references(label));
+                if let Some(unanimous_total) = unanimous_total {
+                    refs.extend(scan_threshold_references(unanimous_total));
+                }
+            }
+            BlockSpec::SignatureBlock { role, name, .. } => {
+                refs.extend(scan_threshold_references(role));
+                refs.extend(scan_threshold_references(name));
+            }
+            BlockSpec::PageBreak | BlockSpec::Rule => {}
+        }
+    }
+    refs
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -739,6 +960,13 @@ mod tests {
         assert_eq!(spec.family, EntityFamily::CommercialCompany);
         assert_eq!(spec.stage, LifecycleStage::Ata);
         assert_eq!(spec.rule_pack_id, "csc-art63/v2");
+        assert_eq!(spec.law_references.len(), 1);
+        assert_eq!(spec.law_references[0].source_id, "csc");
+        assert_eq!(spec.law_references[0].article.as_deref(), Some("63"));
+        assert_eq!(
+            spec.law_references[0].source,
+            TemplateLawReferenceSource::RulePack
+        );
         assert_eq!(
             spec.signature_policy,
             SignaturePolicyHint::QualifiedPreferred
@@ -747,6 +975,62 @@ mod tests {
         // Filter by (family, stage) surfaces it.
         let found = reg.find(EntityFamily::CommercialCompany, LifecycleStage::Ata);
         assert!(found.iter().any(|s| s.id == "csc-ata-ag/v1"));
+    }
+
+    #[test]
+    fn condominium_template_references_rule_pack_and_threshold_law() {
+        let reg = load_registry().expect("registry loads");
+        let spec = reg
+            .get("condominio-ata-assembleia/v1")
+            .expect("condominium ata present");
+        assert!(spec.law_references.iter().any(|r| {
+            r.source == TemplateLawReferenceSource::RulePack
+                && r.source_id == "dl-268-94"
+                && r.article.is_none()
+        }));
+        assert!(spec.law_references.iter().any(|r| {
+            r.source == TemplateLawReferenceSource::RulePack
+                && r.source_id == "cc"
+                && r.article.as_deref() == Some("1432")
+        }));
+        assert!(spec.law_references.iter().any(|r| {
+            r.source == TemplateLawReferenceSource::ThresholdRegistry
+                && r.threshold_id.as_deref() == Some("condominio.deliberacao.maioria_permilagem")
+                && r.citation == "CC art. 1432.º"
+        }));
+    }
+
+    #[test]
+    fn association_template_references_cc_and_unverified_threshold() {
+        let reg = load_registry().expect("registry loads");
+        let spec = reg.get("assoc-ata-ga/v1").expect("association ata present");
+        assert!(spec.law_references.iter().any(|r| {
+            r.source == TemplateLawReferenceSource::RulePack
+                && r.source_id == "cc"
+                && r.citation == "Código Civil"
+        }));
+        let threshold_ref = spec
+            .law_references
+            .iter()
+            .find(|r| r.threshold_id.as_deref() == Some("assoc.convocatoria_maioria"))
+            .expect("association threshold reference");
+        assert_eq!(threshold_ref.source_id, "cc");
+        assert_eq!(threshold_ref.article, None);
+        assert_eq!(threshold_ref.citation, "CC arts. 173.º e 175.º");
+        assert_eq!(
+            threshold_ref.verification,
+            TemplateLawReferenceVerification::Pending
+        );
+    }
+
+    #[test]
+    fn unknown_rule_pack_without_thresholds_has_no_law_references() {
+        let json = r#"{"id":"unknown-law/v1","family":"Association","stage":"Ata","channels":[],
+            "signature_policy":"ManualAttested","rule_pack_id":"unknown/v1","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Sem citação estruturada."}]}"#;
+        let reg = registry_from(&[("unknown-law", json)]).expect("registry loads");
+        let spec = reg.get("unknown-law/v1").expect("spec present");
+        assert!(spec.law_references.is_empty());
     }
 
     #[test]
@@ -924,6 +1208,13 @@ mod tests {
         assert!(
             text.contains("[a definir:"),
             "unresolved threshold must render the marker, got: {text:?}"
+        );
+        assert!(
+            text.contains(
+                "[a definir: prazo de convocatória da assembleia geral de sociedade anónima \
+                 (CSC art. 377.º/4)]"
+            ),
+            "unresolved threshold marker changed: {text:?}"
         );
         // No day-count leaked: the only digits are inside the "(CSC art. 377.º/4)" citation.
         let without_ref = text.replacen("CSC art. 377.º/4", "", 1);
