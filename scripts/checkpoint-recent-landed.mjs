@@ -74,6 +74,36 @@ const checks = [
     ],
   },
   {
+    name: "API privacy breach playbook evidence tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "privacy",
+        "--locked",
+        "breach_playbooks_allow_settings_manage_persist_and_audit",
+      ],
+    ],
+  },
+  {
+    name: "API privacy transfer control evidence tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "privacy",
+        "--locked",
+        "transfer_controls_allow_user_manage_validate_persist_and_audit",
+      ],
+    ],
+  },
+  {
     name: "API data key operation tests",
     command: [
       "cargo",
@@ -246,6 +276,31 @@ function assertCheckpointMap() {
     "crates/chancela-api/tests/privacy.rs",
     "retention_execution_records_bounded_archive_and_idempotent_repeat",
     "bounded retention execution regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "evidence_receipts",
+    "privacy evidence receipt persistence coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "authority_notified: false",
+    "breach receipt false notification flag",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "data_transfer_executed: false",
+    "transfer receipt false execution flag",
+  );
+  assertFileContains(
+    "contracts/privacy.breach-playbooks.json",
+    "\"authority_notified\": false",
+    "breach playbook receipt contract fixture",
+  );
+  assertFileContains(
+    "contracts/privacy.transfer-controls.json",
+    "\"data_transfer_executed\": false",
+    "transfer control receipt contract fixture",
   );
   assertFileContains(
     "crates/chancela-api/tests/data_key_ops.rs",
