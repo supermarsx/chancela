@@ -301,6 +301,41 @@ function assertCheckpointMap() {
     "paper import local OCR command configuration",
   );
   assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "accepted_paper_book_ocr_draft_creates_one_mutable_draft_act_and_metadata_event",
+    "paper import accepted OCR draft to mutable draft-act coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "paper_book_ocr_draft_act_creation_refuses_non_accepted_and_closed_book_cases",
+    "paper import accepted OCR draft-act refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "paper_book_ocr_draft_act_creation_refuses_digest_only_accepted_draft",
+    "paper import digest-only OCR draft-act refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/canonical-draft",
+    "paper import accepted OCR draft to mutable draft-act route",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "create_act_draft_from_accepted_paper_book_ocr_draft",
+    "paper import accepted OCR draft to mutable draft-act handler",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    "PAPER_BOOK_OCR_DRAFT_TO_ACT_NOTICE",
+    "paper import accepted OCR draft to mutable draft-act boundary notice",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/paper_import.rs",
+    '"source_extracted_text_in_payload": false',
+    "paper import OCR draft-act ledger excludes raw OCR text marker",
+  );
+  assertFileContains(
     "apps/web/e2e/paper-book-import-ocr.spec.ts",
     "paper-book import preserves non-canonical package and OCR review stays auxiliary",
     "paper-book OCR review browser workflow coverage",
@@ -781,6 +816,21 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/api/client.ts",
+    "createPaperBookOcrDraftActDraft",
+    "web client accepted OCR draft to mutable draft-act API",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "useCreatePaperBookOcrDraftActDraft",
+    "web hook accepted OCR draft to mutable draft-act mutation",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "PaperBookOcrDraftCanonicalDraftResponse",
+    "web type accepted OCR draft to mutable draft-act response",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
     "listExternalValidatorReports",
     "web client external-validator metadata list API",
   );
@@ -813,6 +863,26 @@ function assertCheckpointMap() {
     "apps/web/src/features/books/books.test.tsx",
     "surfaces missing local OCR configuration without creating an auxiliary draft",
     "paper-book local OCR missing-config UI coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "Rascunho de ata criado sem documento canónico, PDF/A, assinatura ou selo.",
+    "paper-book accepted OCR draft to mutable act UI coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "ocr_text_in_ledger_event: false",
+    "paper-book accepted OCR draft UI boundary response coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "Criar rascunho de ata",
+    "paper-book accepted OCR draft mutable act action",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "PDF/A: {createdActDrafts[draft.draft_id].pdfa_created ? 'sim' : 'não'}",
+    "paper-book accepted OCR draft mutable act false PDF/A marker",
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",

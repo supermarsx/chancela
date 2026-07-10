@@ -32,8 +32,9 @@ guardrail acknowledgements, written-resolution evidence status binding, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
 assurance, MCP resource/prompt coverage, web fixtures, registry chronology graph
 markers, PDF writer spacing and PDF/UA blocker-decomposition markers, archive
-timestamp append markers, paper-book OCR API/UI markers plus focused paper-book
-OCR review browser workflow markers, recovery/document/dashboard/notification
+timestamp append markers, paper-book OCR API/UI markers including accepted OCR
+draft to mutable draft-act creation plus focused paper-book OCR review browser
+workflow markers, recovery/document/dashboard/notification
 UI, Ferramentas external-validator metadata UI and compact validator-report
 actions, template provenance UI, validator fixtures, and the standalone desktop
 Cargo workspace.
@@ -42,7 +43,8 @@ It intentionally reuses existing test surfaces:
 
 - API paper import: `cargo test -p chancela-api --test paper_import --locked`
   including the non-canonical canonical-conversion preflight guard and
-  operator-configured local OCR run coverage. Focused Playwright coverage for
+  operator-configured local OCR run coverage, plus the accepted OCR draft to
+  mutable draft-act endpoint and refusal cases. Focused Playwright coverage for
   the non-canonical paper-book OCR review workflow is pinned statically here and
   executed in browser jobs.
 - API archive package and `/DocTimeStamp` evidence:
@@ -78,7 +80,8 @@ evidence markers with `not_checked_by_scap` and
 dashboard/notification icon-only markers, template law-reference UI markers,
 structured registry chronology graph markers, mapped PDF inter-word space and
 PDF/UA blocker-decomposition markers, local paper-book OCR API/UI/contract
-markers, focused paper-book OCR review browser workflow markers,
+markers, accepted OCR draft to mutable draft-act API/UI/refusal markers,
+focused paper-book OCR review browser workflow markers,
 caller-supplied archive timestamp append API markers, external-validator
 metadata API durability markers, the settings.read raw metadata download
 route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
@@ -92,8 +95,9 @@ execution remains in the browser jobs so this recent-landed lane stays focused.
 Static markers are deletion/rename guards only; they do not certify legal
 validity, legal retention schedules or approvals, retention deletion or
 anonymization execution, GDPR erasure, PDF/UA, production B-LT/B-LTA, SCAP
-verification, representative authority, live provider validity, or canonical OCR
-conversion.
+verification, representative authority, live provider validity, canonical OCR
+conversion, or legal effect for mutable draft acts created from accepted OCR
+drafts.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 
