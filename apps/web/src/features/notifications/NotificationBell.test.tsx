@@ -87,6 +87,17 @@ function expectIconOnlyControl(control: HTMLElement, label: string) {
     .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === label);
 
   expect(tooltip?.textContent).toBe(label);
+  expect(tooltip?.className).not.toContain('is-open');
+
+  fireEvent.focus(control);
+  expect(tooltip?.className).toContain('is-open');
+  fireEvent.blur(control);
+  expect(tooltip?.className).not.toContain('is-open');
+
+  fireEvent.mouseEnter(control);
+  expect(tooltip?.className).toContain('is-open');
+  fireEvent.mouseLeave(control);
+  expect(tooltip?.className).not.toContain('is-open');
 }
 
 afterEach(() => {

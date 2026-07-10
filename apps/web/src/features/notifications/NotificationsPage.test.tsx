@@ -72,6 +72,17 @@ function expectIconOnlyControl(control: HTMLElement, label: string) {
     .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === label);
 
   expect(tooltip?.textContent).toBe(label);
+  expect(tooltip?.className).not.toContain('is-open');
+
+  fireEvent.focus(control);
+  expect(tooltip?.className).toContain('is-open');
+  fireEvent.blur(control);
+  expect(tooltip?.className).not.toContain('is-open');
+
+  fireEvent.mouseEnter(control);
+  expect(tooltip?.className).toContain('is-open');
+  fireEvent.mouseLeave(control);
+  expect(tooltip?.className).not.toContain('is-open');
 }
 
 function expectIconOnlyFilter(label: string) {
@@ -79,6 +90,24 @@ function expectIconOnlyFilter(label: string) {
   expect(control.className).toContain('subnav__btn--iconOnly');
   expect(control.getAttribute('aria-label')).toBe(label);
   expect(control.textContent).not.toContain(label);
+
+  const tooltipIds = (control.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+  const tooltip = tooltipIds
+    .map((id) => document.getElementById(id))
+    .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === label);
+
+  expect(tooltip?.textContent).toBe(label);
+  expect(tooltip?.className).not.toContain('is-open');
+
+  fireEvent.focus(control);
+  expect(tooltip?.className).toContain('is-open');
+  fireEvent.blur(control);
+  expect(tooltip?.className).not.toContain('is-open');
+
+  fireEvent.mouseEnter(control);
+  expect(tooltip?.className).toContain('is-open');
+  fireEvent.mouseLeave(control);
+  expect(tooltip?.className).not.toContain('is-open');
 }
 
 afterEach(() => {
