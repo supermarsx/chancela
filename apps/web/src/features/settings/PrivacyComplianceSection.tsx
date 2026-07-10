@@ -3,14 +3,18 @@ import {
   useCreatePrivacyBreachPlaybook,
   useCreatePrivacyDpia,
   useCreatePrivacyProcessor,
+  useCreatePrivacyRetentionPolicy,
   useCreatePrivacyTransferControl,
+  useDryRunPrivacyRetentionPolicy,
   usePatchPrivacyBreachPlaybook,
   usePatchPrivacyDpia,
   usePatchPrivacyProcessor,
+  usePatchPrivacyRetentionPolicy,
   usePatchPrivacyTransferControl,
   usePrivacyBreachPlaybooks,
   usePrivacyDpias,
   usePrivacyProcessors,
+  usePrivacyRetentionPolicies,
   usePrivacyTransferControls,
 } from '../../api/hooks';
 import {
@@ -19,20 +23,28 @@ import {
   type CreateBreachPlaybookBody,
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
+  RETENTION_DISPOSAL_ACTIONS,
+  RETENTION_POLICY_STATUSES,
   type CreateDpiaRecordBody,
   type CreateProcessorRecordBody,
+  type CreateRetentionPolicyBody,
   type CreateTransferControlBody,
   type DpiaRecordView,
   type PatchBreachPlaybookBody,
   type PatchDpiaRecordBody,
   type PatchProcessorRecordBody,
+  type PatchRetentionPolicyBody,
   type PatchTransferControlBody,
   type PrivacyRecordStatus,
   type PrivacyRiskLevel,
   type ProcessorRecordView,
+  type RetentionDisposalAction,
+  type RetentionDryRunReport,
+  type RetentionPolicyStatus,
+  type RetentionPolicyView,
   type TransferControlView,
 } from '../../api/types';
-import { useT } from '../../i18n';
+import { useT, type MessageKey, type TFunction } from '../../i18n';
 import {
   Badge,
   Button,
@@ -96,6 +108,25 @@ interface TransferControlFormState {
   evidenceNotes: string;
 }
 
+interface RetentionPolicyFormState {
+  name: string;
+  scope: string;
+  category: string;
+  scheduleId: string;
+  retentionPeriod: string;
+  legalBasis: string;
+  disposalAction: RetentionDisposalAction;
+  status: RetentionPolicyStatus;
+  active: boolean;
+  notes: string;
+}
+
+interface RetentionDryRunFormState {
+  scope: string;
+  category: string;
+  recordId: string;
+}
+
 const EMPTY_FORM: RegisterFormState = {
   primary: '',
   purpose: '',
@@ -136,6 +167,25 @@ const EMPTY_TRANSFER_FORM: TransferControlFormState = {
   evidenceNotes: '',
 };
 
+const EMPTY_RETENTION_FORM: RetentionPolicyFormState = {
+  name: '',
+  scope: '',
+  category: '',
+  scheduleId: '',
+  retentionPeriod: '',
+  legalBasis: '',
+  disposalAction: 'review',
+  status: 'draft',
+  active: true,
+  notes: '',
+};
+
+const EMPTY_RETENTION_DRY_RUN_FORM: RetentionDryRunFormState = {
+  scope: '',
+  category: '',
+  recordId: '',
+};
+
 const STATUS_LABELS: Record<PrivacyRecordStatus, string> = {
   draft: 'Rascunho',
   active: 'Ativo',
@@ -148,6 +198,22 @@ const RISK_LABELS: Record<PrivacyRiskLevel, string> = {
   medium: 'Médio',
   high: 'Elevado',
   critical: 'Crítico',
+};
+
+const RETENTION_STATUS_LABEL_KEYS: Record<RetentionPolicyStatus, MessageKey> = {
+  draft: 'settings.privacy.retention.status.draft',
+  active: 'settings.privacy.retention.status.active',
+  suspended: 'settings.privacy.retention.status.suspended',
+  retired: 'settings.privacy.retention.status.retired',
+};
+
+const RETENTION_DISPOSAL_LABEL_KEYS: Record<RetentionDisposalAction, MessageKey> = {
+  review: 'settings.privacy.retention.disposal.review',
+  archive: 'settings.privacy.retention.disposal.archive',
+  anonymize: 'settings.privacy.retention.disposal.anonymize',
+  delete: 'settings.privacy.retention.disposal.delete',
+  legal_hold: 'settings.privacy.retention.disposal.legal_hold',
+  no_action: 'settings.privacy.retention.disposal.no_action',
 };
 
 const statusOptions = [
@@ -174,6 +240,14 @@ const breachEvidenceOptions: { value: BreachEvidenceKind; label: string }[] = [
   { value: 'review', label: 'Revisão' },
   { value: 'drill', label: 'Exercício' },
 ];
+
+function retentionStatusLabel(t: TFunction, status: RetentionPolicyStatus): string {
+  return t(RETENTION_STATUS_LABEL_KEYS[status]);
+}
+
+function retentionDisposalLabel(t: TFunction, action: RetentionDisposalAction): string {
+  return t(RETENTION_DISPOSAL_LABEL_KEYS[action]);
+}
 
 function primaryValue(kind: RegisterKind, record: RegisterRecord): string {
   return kind === 'processor'
@@ -243,6 +317,21 @@ function transferFormFromRecord(record: TransferControlView): TransferControlFor
     status: record.status,
     reviewNotes: record.review_notes ?? '',
     evidenceNotes: '',
+  };
+}
+
+function retentionFormFromRecord(record: RetentionPolicyView): RetentionPolicyFormState {
+  return {
+    name: record.name,
+    scope: record.scope,
+    category: record.category,
+    scheduleId: record.schedule_id,
+    retentionPeriod: record.retention_period,
+    legalBasis: record.legal_basis,
+    disposalAction: record.disposal_action,
+    status: record.status,
+    active: record.active,
+    notes: record.notes ?? '',
   };
 }
 
@@ -316,6 +405,21 @@ function transferCreateBody(form: TransferControlFormState): CreateTransferContr
   };
 }
 
+function retentionCreateBody(form: RetentionPolicyFormState): CreateRetentionPolicyBody {
+  return {
+    name: form.name.trim(),
+    scope: form.scope.trim(),
+    category: form.category.trim(),
+    schedule_id: form.scheduleId.trim(),
+    retention_period: form.retentionPeriod.trim(),
+    legal_basis: form.legalBasis.trim(),
+    disposal_action: form.disposalAction,
+    status: form.status,
+    active: form.active,
+    notes: optionalText(form.notes),
+  };
+}
+
 function breachSearchText(record: BreachPlaybookView): string {
   return normalizeSearch(
     [
@@ -351,6 +455,22 @@ function transferSearchText(record: TransferControlView): string {
   );
 }
 
+function retentionSearchText(record: RetentionPolicyView): string {
+  return normalizeSearch(
+    [
+      record.name,
+      record.scope,
+      record.category,
+      record.schedule_id,
+      record.retention_period,
+      record.legal_basis,
+      record.disposal_action,
+      record.status,
+      record.notes ?? '',
+    ].join(' '),
+  );
+}
+
 function recordSearchText(kind: RegisterKind, record: RegisterRecord): string {
   return normalizeSearch(
     [
@@ -375,6 +495,12 @@ function riskTone(risk: PrivacyRiskLevel): 'neutral' | 'warn' | 'error' | 'ok' {
 function statusTone(status: PrivacyRecordStatus): 'neutral' | 'warn' | 'ok' {
   if (status === 'active') return 'ok';
   if (status === 'under_review') return 'warn';
+  return 'neutral';
+}
+
+function retentionStatusTone(status: RetentionPolicyStatus): 'neutral' | 'warn' | 'ok' {
+  if (status === 'active') return 'ok';
+  if (status === 'suspended') return 'warn';
   return 'neutral';
 }
 
@@ -1430,8 +1556,8 @@ function TransferControlPanel({
                           Revisão por {receipt.recorded_by}
                           <br />
                           <span className="muted">
-                            {formatDateTime(receipt.recorded_at)} · Sem aprovação · Sem execução
-                            de transferência
+                            {formatDateTime(receipt.recorded_at)} · Sem aprovação · Sem execução de
+                            transferência
                           </span>
                         </>
                       ) : (
@@ -1471,6 +1597,489 @@ function TransferControlPanel({
   );
 }
 
+function RetentionPolicyForm({
+  form,
+  setForm,
+  editing,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  form: RetentionPolicyFormState;
+  setForm: (next: RetentionPolicyFormState) => void;
+  editing: boolean;
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const t = useT();
+  const idPrefix = `privacy-retention-${editing ? 'edit' : 'new'}`;
+  const retentionStatusOptions = RETENTION_POLICY_STATUSES.map((status) => ({
+    value: status,
+    label: retentionStatusLabel(t, status),
+  }));
+  const retentionDisposalOptions = RETENTION_DISPOSAL_ACTIONS.map((action) => ({
+    value: action,
+    label: retentionDisposalLabel(t, action),
+  }));
+  const canSubmit =
+    form.name.trim().length > 0 &&
+    form.scope.trim().length > 0 &&
+    form.category.trim().length > 0 &&
+    form.scheduleId.trim().length > 0 &&
+    form.retentionPeriod.trim().length > 0 &&
+    form.legalBasis.trim().length > 0 &&
+    !saving;
+
+  return (
+    <form
+      className="form"
+      onSubmit={(e: FormEvent) => {
+        e.preventDefault();
+        if (canSubmit) onSubmit();
+      }}
+    >
+      <Field label={t('settings.privacy.retention.field.name')} htmlFor={`${idPrefix}-name`}>
+        <Input
+          id={`${idPrefix}-name`}
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          autoComplete="off"
+        />
+      </Field>
+      <div className="api-key-rate-grid">
+        <Field label={t('settings.privacy.retention.field.scope')} htmlFor={`${idPrefix}-scope`}>
+          <Input
+            id={`${idPrefix}-scope`}
+            value={form.scope}
+            onChange={(e) => setForm({ ...form, scope: e.target.value })}
+            autoComplete="off"
+          />
+        </Field>
+        <Field
+          label={t('settings.privacy.retention.field.category')}
+          htmlFor={`${idPrefix}-category`}
+        >
+          <Input
+            id={`${idPrefix}-category`}
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            autoComplete="off"
+          />
+        </Field>
+      </div>
+      <div className="api-key-rate-grid">
+        <Field
+          label={t('settings.privacy.retention.field.scheduleId')}
+          htmlFor={`${idPrefix}-schedule`}
+        >
+          <Input
+            id={`${idPrefix}-schedule`}
+            value={form.scheduleId}
+            onChange={(e) => setForm({ ...form, scheduleId: e.target.value })}
+            autoComplete="off"
+          />
+        </Field>
+        <Field
+          label={t('settings.privacy.retention.field.retentionPeriod')}
+          htmlFor={`${idPrefix}-period`}
+        >
+          <Input
+            id={`${idPrefix}-period`}
+            value={form.retentionPeriod}
+            onChange={(e) => setForm({ ...form, retentionPeriod: e.target.value })}
+            autoComplete="off"
+          />
+        </Field>
+      </div>
+      <Field label={t('settings.privacy.retention.field.legalBasis')} htmlFor={`${idPrefix}-legal`}>
+        <Input
+          id={`${idPrefix}-legal`}
+          value={form.legalBasis}
+          onChange={(e) => setForm({ ...form, legalBasis: e.target.value })}
+          autoComplete="off"
+        />
+      </Field>
+      <div className="api-key-rate-grid">
+        <Field
+          label={t('settings.privacy.retention.field.disposalAction')}
+          htmlFor={`${idPrefix}-action`}
+        >
+          <Select
+            id={`${idPrefix}-action`}
+            value={form.disposalAction}
+            onChange={(e) =>
+              setForm({ ...form, disposalAction: e.target.value as RetentionDisposalAction })
+            }
+            options={retentionDisposalOptions}
+          />
+        </Field>
+        <Field label={t('settings.privacy.field.status')} htmlFor={`${idPrefix}-status`}>
+          <Select
+            id={`${idPrefix}-status`}
+            value={form.status}
+            onChange={(e) => setForm({ ...form, status: e.target.value as RetentionPolicyStatus })}
+            options={retentionStatusOptions}
+          />
+        </Field>
+      </div>
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
+          checked={form.active}
+          onChange={(e) => setForm({ ...form, active: e.target.checked })}
+        />
+        {t('settings.privacy.retention.field.active')}
+      </label>
+      <Field label={t('settings.privacy.retention.field.notes')} htmlFor={`${idPrefix}-notes`}>
+        <TextArea
+          id={`${idPrefix}-notes`}
+          value={form.notes}
+          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          rows={3}
+        />
+      </Field>
+      <InlineWarning tone="info" title={t('settings.privacy.retention.notice.title')}>
+        {t('settings.privacy.retention.notice.body')}
+      </InlineWarning>
+      <div className="form__actions">
+        <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
+          {t('settings.privacy.action.cancel')}
+        </Button>
+        <Button type="submit" variant="primary" icon={<Icon.Check />} disabled={!canSubmit}>
+          {saving
+            ? t('settings.privacy.action.saving')
+            : editing
+              ? t('settings.privacy.action.save')
+              : t('settings.privacy.action.create')}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function RetentionDryRunPanel({
+  running,
+  report,
+  onDryRun,
+}: {
+  running: boolean;
+  report: RetentionDryRunReport | null;
+  onDryRun: (form: RetentionDryRunFormState) => Promise<void>;
+}) {
+  const t = useT();
+  const [form, setForm] = useState(EMPTY_RETENTION_DRY_RUN_FORM);
+  const canSubmit = form.scope.trim().length > 0 && form.category.trim().length > 0 && !running;
+
+  return (
+    <Card title={t('settings.privacy.retention.dryRun.title')}>
+      <form
+        className="form"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          if (canSubmit) void onDryRun(form);
+        }}
+      >
+        <div className="api-key-rate-grid">
+          <Field
+            label={t('settings.privacy.retention.field.scope')}
+            htmlFor="privacy-retention-dry-run-scope"
+          >
+            <Input
+              id="privacy-retention-dry-run-scope"
+              value={form.scope}
+              onChange={(e) => setForm({ ...form, scope: e.target.value })}
+              autoComplete="off"
+            />
+          </Field>
+          <Field
+            label={t('settings.privacy.retention.field.category')}
+            htmlFor="privacy-retention-dry-run-category"
+          >
+            <Input
+              id="privacy-retention-dry-run-category"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              autoComplete="off"
+            />
+          </Field>
+        </div>
+        <Field
+          label={t('settings.privacy.retention.dryRun.field.recordId')}
+          htmlFor="privacy-retention-dry-run-record"
+        >
+          <Input
+            id="privacy-retention-dry-run-record"
+            value={form.recordId}
+            onChange={(e) => setForm({ ...form, recordId: e.target.value })}
+            autoComplete="off"
+          />
+        </Field>
+        <InlineWarning tone="info" title={t('settings.privacy.retention.dryRun.notice.title')}>
+          {t('settings.privacy.retention.dryRun.notice.body')}
+        </InlineWarning>
+        <div className="form__actions">
+          <Button type="submit" variant="primary" icon={<Icon.Check />} disabled={!canSubmit}>
+            {running
+              ? t('settings.privacy.retention.dryRun.running')
+              : t('settings.privacy.retention.dryRun.action')}
+          </Button>
+        </div>
+      </form>
+      {report ? (
+        <div className="stack">
+          <p>
+            <strong>{t('settings.privacy.retention.dryRun.mode')}:</strong> {report.mode} ·{' '}
+            <strong>{t('settings.privacy.retention.dryRun.executionSupported')}:</strong>{' '}
+            {String(report.execution_supported)} · <strong>destructive_execution_supported:</strong>{' '}
+            {String(report.destructive_execution_supported)}
+          </p>
+          <p>
+            <strong>{t('settings.privacy.retention.dryRun.candidate')}:</strong>{' '}
+            {report.candidate.scope} / {report.candidate.category}
+            {report.candidate.record_id ? ` / ${report.candidate.record_id}` : ''}
+          </p>
+          {report.matches.length === 0 ? (
+            <EmptyState title={t('settings.privacy.retention.dryRun.empty.title')}>
+              <p>{t('settings.privacy.retention.dryRun.empty.body')}</p>
+            </EmptyState>
+          ) : (
+            <Table
+              head={
+                <tr>
+                  <th>{t('settings.privacy.retention.column.policy')}</th>
+                  <th>{t('settings.privacy.retention.column.schedule')}</th>
+                  <th>{t('settings.privacy.retention.column.disposalAction')}</th>
+                  <th>{t('settings.privacy.retention.dryRun.column.result')}</th>
+                </tr>
+              }
+            >
+              {report.matches.map((match) => (
+                <tr key={match.policy_id}>
+                  <td>
+                    {match.name}
+                    <br />
+                    <span className="muted">
+                      {match.scope} / {match.category}
+                    </span>
+                  </td>
+                  <td>
+                    {match.schedule_id}
+                    <br />
+                    <span className="muted">{match.retention_period}</span>
+                  </td>
+                  <td>{retentionDisposalLabel(t, match.disposal_action)}</td>
+                  <td>
+                    {match.reason}
+                    <br />
+                    <span className="muted">
+                      destructive_action: {String(match.destructive_action)} · would_execute:{' '}
+                      {String(match.would_execute)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          )}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function RetentionPolicyPanel({
+  records,
+  loading,
+  error,
+  saving,
+  runningDryRun,
+  dryRunReport,
+  onCreate,
+  onPatch,
+  onDryRun,
+}: {
+  records: RetentionPolicyView[];
+  loading: boolean;
+  error: unknown;
+  saving: boolean;
+  runningDryRun: boolean;
+  dryRunReport: RetentionDryRunReport | null;
+  onCreate: (body: CreateRetentionPolicyBody) => Promise<RetentionPolicyView>;
+  onPatch: (id: string, body: PatchRetentionPolicyBody) => Promise<RetentionPolicyView>;
+  onDryRun: (form: RetentionDryRunFormState) => Promise<void>;
+}) {
+  const t = useT();
+  const toast = useToast();
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const retentionStatusOptions = RETENTION_POLICY_STATUSES.map((status) => ({
+    value: status,
+    label: retentionStatusLabel(t, status),
+  }));
+  const [form, setForm] = useState<RetentionPolicyFormState | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const filtered = useMemo(() => {
+    const q = normalizeSearch(search.trim());
+    return records.filter((record) => {
+      if (statusFilter !== 'all' && record.status !== statusFilter) return false;
+      return q.length === 0 || retentionSearchText(record).includes(q);
+    });
+  }, [records, search, statusFilter]);
+
+  async function submitForm() {
+    if (!form) return;
+    try {
+      if (editingId) {
+        await onPatch(editingId, retentionCreateBody(form));
+        toast.success(t('settings.privacy.toast.updated'));
+      } else {
+        await onCreate(retentionCreateBody(form));
+        toast.success(t('settings.privacy.toast.created'));
+      }
+      setForm(null);
+      setEditingId(null);
+    } catch (e) {
+      toast.error(e);
+    }
+  }
+
+  return (
+    <div className="stack">
+      {form ? (
+        <Card title={editingId ? t('settings.privacy.form.edit') : t('settings.privacy.form.new')}>
+          <RetentionPolicyForm
+            form={form}
+            setForm={setForm}
+            editing={editingId !== null}
+            saving={saving}
+            onCancel={() => {
+              setForm(null);
+              setEditingId(null);
+            }}
+            onSubmit={submitForm}
+          />
+        </Card>
+      ) : null}
+      <Card
+        title={t('settings.privacy.retention.title')}
+        actions={
+          <Button
+            type="button"
+            variant="primary"
+            icon={<Icon.Plus />}
+            onClick={() => {
+              setEditingId(null);
+              setForm(EMPTY_RETENTION_FORM);
+            }}
+          >
+            {t('settings.privacy.action.new')}
+          </Button>
+        }
+      >
+        <div className="stack">
+          <p className="field__hint">{t('settings.privacy.retention.lede')}</p>
+          <div className="filter">
+            <Field label={t('settings.privacy.filter.search')} htmlFor="privacy-retention-search">
+              <Input
+                id="privacy-retention-search"
+                value={search}
+                placeholder={t('settings.privacy.retention.searchPlaceholder')}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </Field>
+            <Field label={t('settings.privacy.field.status')} htmlFor="privacy-retention-status">
+              <Select
+                id="privacy-retention-status"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                options={[
+                  { value: 'all', label: t('settings.privacy.retention.status.all') },
+                  ...retentionStatusOptions,
+                ]}
+              />
+            </Field>
+          </div>
+          {loading ? (
+            <SkeletonTable cols={8} />
+          ) : error ? (
+            <ErrorNote error={error} />
+          ) : records.length === 0 ? (
+            <EmptyState title={t('settings.privacy.empty.title')}>
+              <p>{t('settings.privacy.empty.body')}</p>
+            </EmptyState>
+          ) : filtered.length === 0 ? (
+            <EmptyState title={t('settings.privacy.emptyResults.title')}>
+              <p>{t('settings.privacy.emptyResults.body')}</p>
+            </EmptyState>
+          ) : (
+            <Table
+              head={
+                <tr>
+                  <th>{t('settings.privacy.retention.column.policy')}</th>
+                  <th>{t('settings.privacy.retention.column.scope')}</th>
+                  <th>{t('settings.privacy.retention.column.schedule')}</th>
+                  <th>{t('settings.privacy.retention.column.disposalAction')}</th>
+                  <th>{t('settings.privacy.field.status')}</th>
+                  <th>{t('settings.privacy.retention.column.execution')}</th>
+                  <th>{t('settings.privacy.table.action')}</th>
+                </tr>
+              }
+            >
+              {filtered.map((record) => (
+                <tr key={record.id}>
+                  <td>
+                    {record.name}
+                    <br />
+                    <span className="muted">{record.legal_basis}</span>
+                  </td>
+                  <td>
+                    {record.scope}
+                    <br />
+                    <span className="muted">{record.category}</span>
+                  </td>
+                  <td>
+                    {record.schedule_id}
+                    <br />
+                    <span className="muted">{record.retention_period}</span>
+                  </td>
+                  <td>{retentionDisposalLabel(t, record.disposal_action)}</td>
+                  <td>
+                    <Badge tone={retentionStatusTone(record.status)}>
+                      {retentionStatusLabel(t, record.status)}
+                    </Badge>
+                    <br />
+                    <span className="muted">
+                      {record.active
+                        ? t('settings.privacy.retention.active.true')
+                        : t('settings.privacy.retention.active.false')}
+                    </span>
+                  </td>
+                  <td>{t('settings.privacy.retention.execution.false')}</td>
+                  <td className="users-actions">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      icon={<Icon.Pencil />}
+                      disabled={saving}
+                      onClick={() => {
+                        setEditingId(record.id);
+                        setForm(retentionFormFromRecord(record));
+                      }}
+                    >
+                      {t('settings.privacy.action.edit')}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </Table>
+          )}
+        </div>
+      </Card>
+      <RetentionDryRunPanel running={runningDryRun} report={dryRunReport} onDryRun={onDryRun} />
+    </div>
+  );
+}
+
 export function PrivacyComplianceSection() {
   const t = useT();
   const can = useCan();
@@ -1479,6 +2088,7 @@ export function PrivacyComplianceSection() {
   const dpias = usePrivacyDpias(canManage);
   const breachPlaybooks = usePrivacyBreachPlaybooks(canManage);
   const transferControls = usePrivacyTransferControls(canManage);
+  const retentionPolicies = usePrivacyRetentionPolicies(canManage);
   const createProcessor = useCreatePrivacyProcessor();
   const patchProcessor = usePatchPrivacyProcessor();
   const createDpia = useCreatePrivacyDpia();
@@ -1487,6 +2097,22 @@ export function PrivacyComplianceSection() {
   const patchBreachPlaybook = usePatchPrivacyBreachPlaybook();
   const createTransferControl = useCreatePrivacyTransferControl();
   const patchTransferControl = usePatchPrivacyTransferControl();
+  const createRetentionPolicy = useCreatePrivacyRetentionPolicy();
+  const patchRetentionPolicy = usePatchPrivacyRetentionPolicy();
+  const dryRunRetentionPolicy = useDryRunPrivacyRetentionPolicy();
+  const toast = useToast();
+
+  async function dryRunRetention(form: RetentionDryRunFormState) {
+    try {
+      await dryRunRetentionPolicy.mutateAsync({
+        scope: form.scope.trim(),
+        category: form.category.trim(),
+        record_id: optionalText(form.recordId),
+      });
+    } catch (e) {
+      toast.error(e);
+    }
+  }
 
   if (!canManage) {
     return (
@@ -1544,6 +2170,18 @@ export function PrivacyComplianceSection() {
         saving={createTransferControl.isPending || patchTransferControl.isPending}
         onCreate={(body) => createTransferControl.mutateAsync(body)}
         onPatch={(id, body) => patchTransferControl.mutateAsync({ id, body })}
+      />
+
+      <RetentionPolicyPanel
+        records={retentionPolicies.data ?? []}
+        loading={retentionPolicies.isLoading}
+        error={retentionPolicies.error}
+        saving={createRetentionPolicy.isPending || patchRetentionPolicy.isPending}
+        runningDryRun={dryRunRetentionPolicy.isPending}
+        dryRunReport={dryRunRetentionPolicy.data ?? null}
+        onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
+        onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
+        onDryRun={dryRunRetention}
       />
     </div>
   );

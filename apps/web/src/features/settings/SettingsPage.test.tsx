@@ -170,10 +170,29 @@ const TRANSFER_CONTROL_ONE = {
   updated_by: 'amelia.marques',
 };
 
+const RETENTION_POLICY_ONE = {
+  id: 'retention-1',
+  name: 'Mensagens de suporte',
+  scope: 'support',
+  category: 'messages',
+  schedule_id: 'support-messages-v1',
+  retention_period: 'P2Y',
+  legal_basis: 'Obrigação contratual',
+  disposal_action: 'delete',
+  status: 'active',
+  active: true,
+  notes: 'Revisão antes de qualquer descarte.',
+  created_at: '2026-07-09T12:50:00Z',
+  created_by: 'amelia.marques',
+  updated_at: '2026-07-09T12:50:00Z',
+  updated_by: 'amelia.marques',
+};
+
 type ProcessorRecordMetadata = typeof PROCESSOR_ONE;
 type DpiaRecordMetadata = typeof DPIA_ONE;
 type BreachPlaybookMetadata = typeof BREACH_PLAYBOOK_ONE;
 type TransferControlMetadata = typeof TRANSFER_CONTROL_ONE;
+type RetentionPolicyMetadata = typeof RETENTION_POLICY_ONE;
 
 function apiKeyIdFromUrl(url: string): string | undefined {
   return url.match(/\/v1\/api-keys\/([^/]+)/)?.[1];
@@ -181,7 +200,7 @@ function apiKeyIdFromUrl(url: string): string | undefined {
 
 function privacyRecordIdFromUrl(
   url: string,
-  root: 'processors' | 'dpias' | 'breach-playbooks' | 'transfer-controls',
+  root: 'processors' | 'dpias' | 'breach-playbooks' | 'transfer-controls' | 'retention-policies',
 ): string | undefined {
   return url.match(new RegExp(`/v1/privacy/${root}/([^/]+)`))?.[1];
 }
@@ -653,6 +672,7 @@ function privacyFetch(
   initialDpias: DpiaRecordMetadata[] = [DPIA_ONE],
   initialBreachPlaybooks: BreachPlaybookMetadata[] = [BREACH_PLAYBOOK_ONE],
   initialTransferControls: TransferControlMetadata[] = [TRANSFER_CONTROL_ONE],
+  initialRetentionPolicies: RetentionPolicyMetadata[] = [RETENTION_POLICY_ONE],
 ): {
   fn: typeof fetch;
   calls: Recorded[];
@@ -681,6 +701,7 @@ function privacyFetch(
     safeguards: [...record.safeguards],
     evidence_receipts: [...record.evidence_receipts],
   }));
+  let retentionPolicies = initialRetentionPolicies.map((record) => ({ ...record }));
 
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -776,6 +797,63 @@ function privacyFetch(
       transferControls = transferControls.map((record) => (record.id === id ? updated : record));
       return Promise.resolve(jsonResponse(updated));
     }
+    if (url.includes('/v1/privacy/retention-policies/') && method === 'PATCH') {
+      const id = privacyRecordIdFromUrl(url, 'retention-policies');
+      const patch = JSON.parse(init?.body as string) as Partial<RetentionPolicyMetadata>;
+      const current = retentionPolicies.find((record) => record.id === id);
+      if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const updated = {
+        ...current,
+        ...patch,
+        updated_at: '2026-07-09T13:20:00Z',
+        updated_by: 'amelia.marques',
+      };
+      retentionPolicies = retentionPolicies.map((record) => (record.id === id ? updated : record));
+      return Promise.resolve(jsonResponse(updated));
+    }
+    if (url.includes('/v1/privacy/retention-policies/dry-run') && method === 'POST') {
+      const body = JSON.parse(init?.body as string) as {
+        scope: string;
+        category: string;
+        record_id?: string;
+      };
+      const matches = retentionPolicies
+        .filter(
+          (policy) =>
+            policy.scope === body.scope &&
+            policy.category === body.category &&
+            policy.status === 'active' &&
+            policy.active,
+        )
+        .map((policy) => ({
+          policy_id: policy.id,
+          name: policy.name,
+          scope: policy.scope,
+          category: policy.category,
+          schedule_id: policy.schedule_id,
+          retention_period: policy.retention_period,
+          disposal_action: policy.disposal_action,
+          status: policy.status,
+          active: policy.active,
+          destructive_action: ['delete', 'anonymize'].includes(policy.disposal_action),
+          would_execute: false,
+          reason: 'Dry-run only; no disposal executed.',
+        }));
+      return Promise.resolve(
+        jsonResponse({
+          mode: 'dry_run',
+          execution_supported: false,
+          destructive_execution_supported: false,
+          candidate: {
+            scope: body.scope,
+            category: body.category,
+            record_id: body.record_id,
+          },
+          matched_count: matches.length,
+          matches,
+        }),
+      );
+    }
     if (url.includes('/v1/privacy/processors')) {
       if (method === 'POST') {
         const body = JSON.parse(init?.body as string) as Omit<ProcessorRecordMetadata, 'id'>;
@@ -870,6 +948,22 @@ function privacyFetch(
         return Promise.resolve(jsonResponse(created, 201));
       }
       return Promise.resolve(jsonResponse(transferControls));
+    }
+    if (url.includes('/v1/privacy/retention-policies')) {
+      if (method === 'POST') {
+        const body = JSON.parse(init?.body as string) as Omit<RetentionPolicyMetadata, 'id'>;
+        const created = {
+          ...body,
+          id: 'retention-2',
+          created_at: '2026-07-09T13:10:00Z',
+          created_by: 'amelia.marques',
+          updated_at: '2026-07-09T13:10:00Z',
+          updated_by: 'amelia.marques',
+        };
+        retentionPolicies = [...retentionPolicies, created];
+        return Promise.resolve(jsonResponse(created, 201));
+      }
+      return Promise.resolve(jsonResponse(retentionPolicies));
     }
     if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
     if (url.includes('/v1/ledger/verify')) {
@@ -1658,6 +1752,151 @@ describe('SettingsPage', () => {
       },
     });
     expect(await screen.findByText('EU to US analytics export')).toBeTruthy();
+  });
+
+  it('lists, creates, patches, and dry-runs retention policies without destructive execution', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const retentionPanel = (await screen.findByText('Políticas de retenção')).closest('section');
+    expect(retentionPanel).toBeTruthy();
+    expect(await within(retentionPanel!).findByText('Mensagens de suporte')).toBeTruthy();
+    expect(
+      within(retentionPanel!).getByText('destructive_execution_supported: false'),
+    ).toBeTruthy();
+    fireEvent.click(within(retentionPanel!).getByRole('button', { name: 'Novo registo' }));
+
+    let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
+    let form = formCard.closest('section');
+    expect(form).toBeTruthy();
+    fireEvent.change(within(form!).getByLabelText('Nome da política'), {
+      target: { value: 'Registos de auditoria' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Âmbito'), {
+      target: { value: 'audit' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Categoria'), {
+      target: { value: 'events' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Identificador do calendário'), {
+      target: { value: 'audit-events-v1' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Período de retenção'), {
+      target: { value: 'P10Y' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Base legal'), {
+      target: { value: 'Obrigação legal' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Ação prevista'), {
+      target: { value: 'archive' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Estado'), {
+      target: { value: 'active' },
+    });
+    fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
+
+    const retentionPost = await waitFor(() => {
+      const call = calls.find(
+        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/retention-policies'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(retentionPost.body as string)).toMatchObject({
+      name: 'Registos de auditoria',
+      scope: 'audit',
+      category: 'events',
+      schedule_id: 'audit-events-v1',
+      retention_period: 'P10Y',
+      legal_basis: 'Obrigação legal',
+      disposal_action: 'archive',
+      status: 'active',
+      active: true,
+    });
+    expect(await screen.findByText('Registos de auditoria')).toBeTruthy();
+
+    const updatedPanel = screen.getByText('Políticas de retenção').closest('section');
+    expect(updatedPanel).toBeTruthy();
+    fireEvent.click(within(updatedPanel!).getAllByRole('button', { name: 'Editar' }).at(-1)!);
+
+    formCard = await screen.findByRole('heading', { name: 'Editar registo' });
+    form = formCard.closest('section');
+    expect(form).toBeTruthy();
+    fireEvent.change(within(form!).getByLabelText('Estado'), {
+      target: { value: 'suspended' },
+    });
+    fireEvent.click(within(form!).getByRole('button', { name: 'Guardar alterações' }));
+
+    const retentionPatch = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'PATCH' &&
+          c.url.endsWith('/v1/privacy/retention-policies/retention-2') &&
+          c.body?.includes('suspended'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(retentionPatch.body as string)).toMatchObject({
+      status: 'suspended',
+      disposal_action: 'archive',
+    });
+
+    const dryRunPanel = (await screen.findByText('Simulação de retenção')).closest('section');
+    expect(dryRunPanel).toBeTruthy();
+    fireEvent.change(within(dryRunPanel!).getByLabelText('Âmbito'), {
+      target: { value: 'support' },
+    });
+    fireEvent.change(within(dryRunPanel!).getByLabelText('Categoria'), {
+      target: { value: 'messages' },
+    });
+    fireEvent.change(within(dryRunPanel!).getByLabelText('ID do registo'), {
+      target: { value: 'ticket-123' },
+    });
+    fireEvent.click(within(dryRunPanel!).getByRole('button', { name: 'Simular retenção' }));
+
+    const dryRun = await waitFor(() => {
+      const call = calls.find(
+        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/retention-policies/dry-run'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(dryRun.body as string)).toEqual({
+      scope: 'support',
+      category: 'messages',
+      record_id: 'ticket-123',
+    });
+    expect(await within(dryRunPanel!).findByText(/destructive_execution_supported:/)).toBeTruthy();
+    expect(await within(dryRunPanel!).findByText(/would_execute: false/)).toBeTruthy();
+    const retentionCalls = calls.filter((call) =>
+      call.url.includes('/v1/privacy/retention-policies'),
+    );
+    expect(
+      retentionCalls.every(
+        (call) =>
+          call.url.endsWith('/v1/privacy/retention-policies') ||
+          call.url.endsWith('/v1/privacy/retention-policies/retention-2') ||
+          call.url.endsWith('/v1/privacy/retention-policies/dry-run'),
+      ),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (call) => /execute|delete|anonymize/.test(call.url) && !call.url.includes('dry-run'),
+      ),
+    ).toBe(false);
+    expect(
+      calls.every(
+        (call) =>
+          !call.body?.includes('execution_request') &&
+          !call.body?.includes('execute_supported') &&
+          !call.body?.includes('"execute"') &&
+          !call.body?.includes('"delete"') &&
+          !call.body?.includes('"anonymize"'),
+      ),
+    ).toBe(true);
   });
 
   it('matches privacy register permission gating to user.manage or settings.manage', async () => {

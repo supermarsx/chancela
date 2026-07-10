@@ -19,6 +19,7 @@ import type {
   CreateDpiaRecordBody,
   CreateEntityBody,
   CreateProcessorRecordBody,
+  CreateRetentionPolicyBody,
   CreateUserBody,
   DraftActBody,
   EntityFamily,
@@ -84,7 +85,10 @@ import type {
   PatchBreachPlaybookBody,
   PatchDpiaRecordBody,
   PatchProcessorRecordBody,
+  PatchRetentionPolicyBody,
   ProcessorRecordView,
+  RetentionDryRunBody,
+  RetentionPolicyView,
   TransferControlView,
   CreateTransferControlBody,
   PatchTransferControlBody,
@@ -181,6 +185,7 @@ export const keys = {
   privacyDpias: ['privacy', 'dpias'] as const,
   privacyBreachPlaybooks: ['privacy', 'breach-playbooks'] as const,
   privacyTransferControls: ['privacy', 'transfer-controls'] as const,
+  privacyRetentionPolicies: ['privacy', 'retention-policies'] as const,
 };
 
 // --- Entities -------------------------------------------------------------------
@@ -2122,6 +2127,50 @@ export function usePatchPrivacyTransferControl() {
       void qc.invalidateQueries({ queryKey: keys.privacyTransferControls });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
+  });
+}
+
+export function usePrivacyRetentionPolicies(enabled = true) {
+  return useQuery({
+    queryKey: keys.privacyRetentionPolicies,
+    queryFn: () => api.listRetentionPolicies(),
+    enabled,
+  });
+}
+
+export function useCreatePrivacyRetentionPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateRetentionPolicyBody) => api.createRetentionPolicy(body),
+    onSuccess: (created) => {
+      qc.setQueryData<RetentionPolicyView[]>(keys.privacyRetentionPolicies, (current = []) => [
+        ...current,
+        created,
+      ]);
+      void qc.invalidateQueries({ queryKey: keys.privacyRetentionPolicies });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchPrivacyRetentionPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: PatchRetentionPolicyBody }) =>
+      api.patchRetentionPolicy(id, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<RetentionPolicyView[]>(keys.privacyRetentionPolicies, (current = []) =>
+        current.map((record) => (record.id === updated.id ? updated : record)),
+      );
+      void qc.invalidateQueries({ queryKey: keys.privacyRetentionPolicies });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useDryRunPrivacyRetentionPolicy() {
+  return useMutation({
+    mutationFn: (body: RetentionDryRunBody) => api.dryRunRetentionPolicy(body),
   });
 }
 
