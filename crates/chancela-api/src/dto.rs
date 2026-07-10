@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use chancela_authz::{Permission, ScopedPermissionSet};
 use chancela_cae::CaeCatalog;
+use chancela_core::act::{AiHumanVerification, AiHumanVerificationStatus, AiProvenance};
 use chancela_core::book::ClosingReason;
 #[cfg(test)]
 use chancela_core::book::{BookId, TermoDeAbertura};
@@ -1275,6 +1276,9 @@ pub struct ActView {
     /// act with no attendees emits **no** `attendees` key.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attendees: Vec<AttendeeView>,
+    /// Non-authoritative AI provenance. Omitted when absent so existing act responses do not churn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_provenance: Option<AiProvenanceView>,
 }
 
 impl From<&Act> for ActView {
@@ -1314,6 +1318,7 @@ impl From<&Act> for ActView {
             retifies: a.retifies.map(|r| r.to_string()),
             convening: a.convening.as_ref().map(ConveningView::from),
             attendees: a.attendees.iter().map(AttendeeView::from).collect(),
+            ai_provenance: a.ai_provenance.as_ref().map(AiProvenanceView::from),
         }
     }
 }
@@ -1357,6 +1362,65 @@ impl ActView {
         for attendee in &mut self.attendees {
             attendee.redact_sensitive();
         }
+        if let Some(provenance) = &mut self.ai_provenance {
+            provenance.redact_sensitive();
+        }
+    }
+}
+
+/// Wire view of non-authoritative AI provenance. Human verification means human review only.
+#[derive(Serialize)]
+pub struct AiProvenanceView {
+    pub source: String,
+    pub tool: Option<String>,
+    pub statement_source: Option<String>,
+    pub human_verification: AiHumanVerificationView,
+}
+
+impl From<&AiProvenance> for AiProvenanceView {
+    fn from(p: &AiProvenance) -> Self {
+        AiProvenanceView {
+            source: p.source.clone(),
+            tool: p.tool.clone(),
+            statement_source: p.statement_source.clone(),
+            human_verification: AiHumanVerificationView::from(&p.human_verification),
+        }
+    }
+}
+
+impl AiProvenanceView {
+    fn redact_sensitive(&mut self) {
+        self.statement_source = self.statement_source.as_ref().map(|_| redacted());
+        self.human_verification.redact_sensitive();
+    }
+}
+
+/// Wire view of AI human-review evidence. `Accepted` is not a legal-validity claim.
+#[derive(Serialize)]
+pub struct AiHumanVerificationView {
+    pub status: AiHumanVerificationStatus,
+    pub actor: Option<String>,
+    pub reviewed_at: Option<String>,
+    pub note: Option<String>,
+}
+
+impl From<&AiHumanVerification> for AiHumanVerificationView {
+    fn from(v: &AiHumanVerification) -> Self {
+        AiHumanVerificationView {
+            status: v.status,
+            actor: v.actor.clone(),
+            reviewed_at: v
+                .reviewed_at
+                .map(|t| t.format(&Rfc3339).unwrap_or_default()),
+            note: v.note.clone(),
+        }
+    }
+}
+
+impl AiHumanVerificationView {
+    fn redact_sensitive(&mut self) {
+        self.actor = self.actor.as_ref().map(|_| redacted());
+        self.note = self.note.as_ref().map(|_| redacted());
     }
 }
 
@@ -1367,10 +1431,39 @@ pub struct DraftAct {
     pub title: String,
     pub channel: MeetingChannel,
     #[serde(default)]
+    pub ai_provenance: Option<AiProvenanceInput>,
+    #[serde(default)]
     pub convening: Option<ConveningInput>,
     pub retifies: Option<Uuid>,
     #[serde(default = "default_actor")]
     pub actor: String,
+}
+
+/// Non-authoritative AI provenance accepted when drafting. Human verification is intentionally not
+/// accepted here; it is recorded only by the dedicated review route.
+#[derive(Deserialize)]
+pub struct AiProvenanceInput {
+    pub source: String,
+    #[serde(default)]
+    pub tool: Option<String>,
+    #[serde(default)]
+    pub statement_source: Option<String>,
+}
+
+impl AiProvenanceInput {
+    pub fn into_core(self) -> Result<AiProvenance, ApiError> {
+        if self.source.trim().is_empty() {
+            return Err(ApiError::Unprocessable(
+                "ai_provenance.source must not be empty".to_owned(),
+            ));
+        }
+        Ok(AiProvenance {
+            source: self.source,
+            tool: self.tool,
+            statement_source: self.statement_source,
+            human_verification: Default::default(),
+        })
+    }
 }
 
 /// Attachment as accepted on a PATCH (input side: digest is an optional hex string).
@@ -1479,6 +1572,23 @@ pub struct AdvanceAct {
     pub to: ActState,
     #[serde(default = "default_actor")]
     pub actor: String,
+}
+
+/// Body of `POST /v1/acts/{id}/human-verification`.
+#[derive(Deserialize)]
+pub struct VerifyAiHumanReview {
+    pub decision: HumanVerificationDecision,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default = "default_actor")]
+    pub actor: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HumanVerificationDecision {
+    Accept,
+    Reject,
 }
 
 /// Body of `POST /v1/acts/{id}/seal` (all fields optional; empty body allowed).

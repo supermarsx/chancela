@@ -17,7 +17,8 @@
 //! - `POST|GET /v1/books`, `GET /v1/books/{id}`, `POST /v1/books/{id}/close`,
 //!   `GET /v1/books/{id}/acts` — book open/list/close and the acts-in-a-book feed (§2.4).
 //! - `POST /v1/acts`, `GET|PATCH /v1/acts/{id}`, `POST /v1/acts/{id}/advance`,
-//!   `GET /v1/acts/{id}/compliance`, `POST /v1/acts/{id}/seal`,
+//!   `POST /v1/acts/{id}/human-verification`, `GET /v1/acts/{id}/compliance`,
+//!   `POST /v1/acts/{id}/seal`,
 //!   `POST /v1/acts/{id}/archive` — the ata lifecycle, compliance gate, and seal (§2.5).
 //! - `GET /v1/acts/{id}/document/working-copy[?format=markdown|txt|html|rtf|odt]` — deterministic
 //!   non-evidentiary text working copies.
@@ -1080,6 +1081,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/acts", post(acts::draft_act))
         .route("/v1/acts/{id}", get(acts::get_act).patch(acts::patch_act))
         .route("/v1/acts/{id}/advance", post(acts::advance_act))
+        .route(
+            "/v1/acts/{id}/human-verification",
+            post(acts::verify_ai_human_review),
+        )
         .route("/v1/acts/{id}/compliance", get(acts::get_compliance))
         .route("/v1/acts/{id}/seal", post(acts::seal_act_handler))
         .route("/v1/acts/{id}/archive", post(acts::archive_act))
@@ -2301,6 +2306,129 @@ mod tests {
         let arr = book_acts.as_array().expect("acts array");
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["ata_number"], 1);
+    }
+
+    #[tokio::test]
+    async fn ai_draft_requires_accepted_human_verification_before_signing() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+
+        let (status, act) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({
+                    "book_id": book_id,
+                    "title": "Ata assistida por IA",
+                    "channel": "Physical",
+                    "ai_provenance": {
+                        "source": "mcp",
+                        "tool": "draft_act",
+                        "statement_source": "operator instruction"
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(act["ai_provenance"]["source"], "mcp");
+        assert_eq!(
+            act["ai_provenance"]["human_verification"]["status"],
+            "pending_human_verification"
+        );
+        let act_id = act["id"].as_str().expect("act id").to_owned();
+
+        for to in ["Review", "Convened", "Deliberated", "TextApproved"] {
+            let (status, advanced) = send(
+                state.clone(),
+                post_json(&format!("/v1/acts/{act_id}/advance"), json!({ "to": to })),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "advance to {to}");
+            assert_eq!(advanced["state"], to);
+        }
+
+        let (status, blocked) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/advance"),
+                json!({ "to": "Signing" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            blocked["error"]
+                .as_str()
+                .expect("error")
+                .contains("accepted human review before Signing"),
+            "{blocked}"
+        );
+
+        let (status, rejected) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/human-verification"),
+                json!({ "decision": "reject", "note": "needs correction" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            rejected["ai_provenance"]["human_verification"]["status"],
+            "rejected_by_human"
+        );
+
+        let (status, _) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/advance"),
+                json!({ "to": "Signing" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+
+        let (status, accepted) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/human-verification"),
+                json!({ "decision": "accept", "note": "human reviewed only" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            accepted["ai_provenance"]["human_verification"]["status"],
+            "accepted_by_human"
+        );
+        assert!(
+            accepted["ai_provenance"]["human_verification"]["reviewed_at"]
+                .as_str()
+                .is_some_and(|ts| ts.ends_with('Z')),
+            "{accepted}"
+        );
+
+        let (status, signed) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/advance"),
+                json!({ "to": "Signing" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(signed["state"], "Signing");
+
+        let (status, events) = send(state, get("/v1/ledger/events")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "act.ai_human_verification"),
+            "{events}"
+        );
     }
 
     /// Send a request and return (status, content-type, raw body bytes) — for the non-JSON PDF

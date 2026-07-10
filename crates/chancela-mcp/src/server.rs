@@ -1535,6 +1535,11 @@ mod tests {
             body,
             json!({
                 "actor": "mcp",
+                "ai_provenance": {
+                    "source": "mcp",
+                    "tool": "draft_minutes",
+                    "statement_source": "mcp tool arguments"
+                },
                 "book_id": "book-7",
                 "channel": "Physical",
                 "title": "Ata da Assembleia Geral Anual"

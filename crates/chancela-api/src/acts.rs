@@ -11,9 +11,10 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use chancela_core::act::AiHumanVerificationStatus;
 use chancela_core::{
-    Act, ActError, ActId, Book, BookId, Entity, EntityFamily, EntityKind, Severity, rule_pack_for,
-    seal_act,
+    Act, ActError, ActId, ActState, Book, BookId, Entity, EntityFamily, EntityKind, Severity,
+    rule_pack_for, seal_act,
 };
 use uuid::Uuid;
 
@@ -24,7 +25,8 @@ use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_act, scope_of_book};
 use crate::dto::{
     ActView, AdvanceAct, ArchiveAct, ComplianceResponse, ConveningAdvisory, DispatchConvening,
-    DraftAct, IssueView, PatchAct, SealAct, SealResponse, read_redaction_for_actor,
+    DraftAct, HumanVerificationDecision, IssueView, PatchAct, SealAct, SealResponse,
+    VerifyAiHumanReview, read_redaction_for_actor,
 };
 use crate::error::ApiError;
 
@@ -58,6 +60,9 @@ pub async fn draft_act(
     }
     if let Some(convening) = req.convening {
         act.convening = Some(convening.into_core()?);
+    }
+    if let Some(ai_provenance) = req.ai_provenance {
+        act.ai_provenance = Some(ai_provenance.into_core()?);
     }
 
     let scope = format!("entity:{}/book:{}/act:{}", entity_id, act.book_id, act.id);
@@ -233,6 +238,15 @@ pub async fn advance_act(
     // Apply the transition to a clone, so the in-memory map is only mutated after the durable write
     // succeeds (nothing to roll back on a store failure). Invalid transition → 422 (contract §2.5).
     let mut next = act.clone();
+    if next.state == ActState::TextApproved
+        && req.to == ActState::Signing
+        && next.requires_ai_human_verification()
+    {
+        return Err(ApiError::Conflict(
+            "AI-assisted act requires accepted human review before Signing; accepted means human reviewed only"
+                .to_owned(),
+        ));
+    }
     next.advance_to(req.to)
         .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
 
@@ -245,6 +259,78 @@ pub async fn advance_act(
         &scope,
         "act.advanced",
         Some(&justification),
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
+    state.attest_latest(&attestor, &ledger).await;
+    *act = next;
+
+    Ok(Json(ActView::from(&*act)))
+}
+
+/// `POST /v1/acts/{id}/human-verification` — accept/reject human review of AI-assisted draft text.
+pub async fn verify_ai_human_review(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<VerifyAiHumanReview>,
+) -> Result<Json<ActView>, ApiError> {
+    // RBAC: human verification controls the Signing gate, so it uses the same scoped lifecycle
+    // permission as advancing the act.
+    let scope = scope_of_act(&state, ActId(id)).await;
+    require_permission(&state, &actor, Permission::ActAdvance, scope).await?;
+    let actor = actor.resolve(&req.actor);
+    // books → acts → ledger (books only to resolve event scope and open-book mutation rules).
+    let books = state.books.read().await;
+    let mut acts = state.acts.write().await;
+    let mut ledger = state.ledger.write().await;
+
+    let act = acts.get_mut(&ActId(id)).ok_or(ApiError::NotFound)?;
+    let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+    ensure_book_open_for_act_mutation(book)?;
+    if !act.is_mutable() {
+        return Err(ApiError::Conflict(ActError::Sealed.to_string()));
+    }
+    if act.ai_provenance.is_none() {
+        return Err(ApiError::Conflict(
+            "act has no AI provenance to human-review".to_owned(),
+        ));
+    }
+
+    let mut next = act.clone();
+    let status = match req.decision {
+        HumanVerificationDecision::Accept => AiHumanVerificationStatus::Accepted,
+        HumanVerificationDecision::Reject => AiHumanVerificationStatus::Rejected,
+    };
+    next.set_ai_human_verification(
+        status,
+        actor.clone(),
+        time::OffsetDateTime::now_utc(),
+        req.note,
+    )
+    .map_err(|e| ApiError::Conflict(e.to_string()))?;
+
+    let scope = format!(
+        "entity:{}/book:{}/act:{}",
+        book.entity_id, next.book_id, next.id
+    );
+    let justification = match status {
+        AiHumanVerificationStatus::Accepted => {
+            "AI human verification accepted; human review only, not legal validity"
+        }
+        AiHumanVerificationStatus::Rejected => {
+            "AI human verification rejected; human review only, not legal validity"
+        }
+        AiHumanVerificationStatus::Pending => "AI human verification pending",
+    };
+    let payload = serde_json::to_vec(&next)?;
+    crate::try_append_event(
+        &mut ledger,
+        &actor,
+        &scope,
+        "act.ai_human_verification",
+        Some(justification),
         &payload,
     )?;
     state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&next))?;
@@ -718,7 +804,7 @@ mod tests {
 
     use axum::extract::State;
     use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
-    use chancela_core::{Book, BookKind, MeetingChannel, Nipc};
+    use chancela_core::{Book, BookKind, MeetingChannel, Nipc, NumberingScheme, TermoDeAbertura};
     use serde_json::json;
     use time::format_description::well_known::Rfc3339;
 
@@ -755,6 +841,22 @@ mod tests {
         )
     }
 
+    fn opened_book(entity: &Entity, kind: BookKind) -> Book {
+        let mut book = Book::new(entity.id, kind);
+        book.open(TermoDeAbertura {
+            entity_name: entity.name.clone(),
+            entity_nipc: entity.nipc.to_string(),
+            entity_seat: entity.seat.clone(),
+            purpose: "Livro de atas de teste".to_owned(),
+            numbering_scheme: NumberingScheme::Sequential,
+            opening_date: time::Date::from_calendar_date(2026, time::Month::January, 15)
+                .expect("valid opening date"),
+            required_signatories: vec!["Administrador".to_owned()],
+        })
+        .expect("test book opens");
+        book
+    }
+
     async fn seed_owner(state: &AppState) -> CurrentActor {
         {
             let mut roles = state.roles.write().await;
@@ -789,7 +891,7 @@ mod tests {
         let state = AppState::with_data_dir(tmp.path());
         let actor = seed_owner(&state).await;
         let entity = entity_of(EntityKind::SociedadePorQuotas);
-        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
         let act = Act::draft(book.id, "Draft title", MeetingChannel::Physical);
 
         state
@@ -869,7 +971,7 @@ mod tests {
         let state = AppState::default();
         let actor = seed_owner(&state).await;
         let entity = entity_of(EntityKind::Condominio);
-        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
         let act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
         let act_id = act.id;
 
@@ -989,7 +1091,7 @@ mod tests {
         let state = AppState::default();
         let actor = seed_owner(&state).await;
         let entity = entity_of(EntityKind::SociedadePorQuotas);
-        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
         let act = Act::draft(book.id, "Ata", MeetingChannel::Physical);
         let act_id = act.id;
 

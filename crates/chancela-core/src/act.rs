@@ -6,7 +6,7 @@
 //! be a new act referencing it (WFL-21).
 
 use serde::{Deserialize, Serialize};
-use time::{Date, Time};
+use time::{Date, OffsetDateTime, Time};
 use uuid::Uuid;
 
 use crate::book::BookId;
@@ -68,6 +68,95 @@ pub enum ActState {
     Sealed,
     /// Archived into a preservation package.
     Archived,
+}
+
+/// Human-review status for AI-assisted act text. `Accepted` means only that a person reviewed the
+/// AI-assisted draft; it is not a legal-validity assertion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AiHumanVerificationStatus {
+    /// Awaiting human review.
+    #[serde(rename = "pending_human_verification")]
+    Pending,
+    /// A human reviewed the AI-assisted content.
+    #[serde(rename = "accepted_by_human")]
+    Accepted,
+    /// A human rejected the AI-assisted content.
+    #[serde(rename = "rejected_by_human")]
+    Rejected,
+}
+
+impl Default for AiHumanVerificationStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
+/// Human-review evidence attached to AI provenance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiHumanVerification {
+    /// Review status. Defaults to pending for additive compatibility.
+    #[serde(default)]
+    pub status: AiHumanVerificationStatus,
+    /// Actor who accepted/rejected the review, when reviewed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+    /// UTC review timestamp, when reviewed.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub reviewed_at: Option<OffsetDateTime>,
+    /// Operator note. This is human-review context only, not a legal-validity claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+impl Default for AiHumanVerification {
+    fn default() -> Self {
+        AiHumanVerification {
+            status: AiHumanVerificationStatus::Pending,
+            actor: None,
+            reviewed_at: None,
+            note: None,
+        }
+    }
+}
+
+/// Non-authoritative provenance for AI-assisted draft creation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiProvenance {
+    /// Declared source of the AI assistance (for example, "mcp" or "api").
+    pub source: String,
+    /// Tool/model/integration identifier, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    /// Where the human statement or instruction came from, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub statement_source: Option<String>,
+    /// Human-review status for the AI-assisted draft. Defaults to pending.
+    #[serde(default)]
+    pub human_verification: AiHumanVerification,
+}
+
+impl AiProvenance {
+    /// Whether the human review gate has been accepted. This is not a legal-validity claim.
+    #[must_use]
+    pub fn human_review_accepted(&self) -> bool {
+        self.human_verification.status == AiHumanVerificationStatus::Accepted
+    }
+
+    /// Record a human accept/reject decision.
+    pub fn set_human_verification(
+        &mut self,
+        status: AiHumanVerificationStatus,
+        actor: impl Into<String>,
+        reviewed_at: OffsetDateTime,
+        note: Option<String>,
+    ) {
+        self.human_verification = AiHumanVerification {
+            status,
+            actor: Some(actor.into()),
+            reviewed_at: Some(reviewed_at),
+            note,
+        };
+    }
 }
 
 /// The kind of a supporting document chained to the act (WFL-02 / WFL-33).
@@ -452,6 +541,10 @@ pub struct Act {
     /// to empty so acts predating this field round-trip unchanged.
     #[serde(default)]
     pub attendees: Vec<Attendee>,
+    /// Non-authoritative AI provenance. Absent for human-authored or historical acts; when present,
+    /// `TextApproved -> Signing` requires accepted human review first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_provenance: Option<AiProvenance>,
 }
 
 impl Act {
@@ -484,6 +577,7 @@ impl Act {
             retifies: None,
             convening: None,
             attendees: Vec::new(),
+            ai_provenance: None,
         }
     }
 
@@ -528,6 +622,15 @@ impl Act {
     /// and archiving (`Sealed → Archived`) by [`Act::archive`], because both do more than
     /// flip the state.
     pub fn advance_to(&mut self, to: ActState) -> Result<(), ActError> {
+        if self.state == ActState::TextApproved
+            && to == ActState::Signing
+            && self.requires_ai_human_verification()
+        {
+            return Err(ActError::InvalidTransition {
+                from: self.state,
+                to,
+            });
+        }
         let ok = matches!(
             (self.state, to),
             (ActState::Draft, ActState::Review)
@@ -545,6 +648,29 @@ impl Act {
                 to,
             })
         }
+    }
+
+    /// Whether an AI-assisted act still needs accepted human review before signing.
+    #[must_use]
+    pub fn requires_ai_human_verification(&self) -> bool {
+        self.ai_provenance
+            .as_ref()
+            .is_some_and(|p| !p.human_review_accepted())
+    }
+
+    /// Record a human review decision for AI-assisted draft content.
+    pub fn set_ai_human_verification(
+        &mut self,
+        status: AiHumanVerificationStatus,
+        actor: impl Into<String>,
+        reviewed_at: OffsetDateTime,
+        note: Option<String>,
+    ) -> Result<(), ActError> {
+        self.ensure_mutable()?;
+        if let Some(provenance) = &mut self.ai_provenance {
+            provenance.set_human_verification(status, actor, reviewed_at, note);
+        }
+        Ok(())
     }
 
     /// Archive a sealed act (`Sealed → Archived`).
@@ -721,12 +847,15 @@ mod tests {
         let obj = value.as_object_mut().unwrap();
         obj.remove("convening");
         obj.remove("attendees");
+        obj.remove("ai_provenance");
         assert!(!obj.contains_key("convening"));
         assert!(!obj.contains_key("attendees"));
+        assert!(!obj.contains_key("ai_provenance"));
 
         let restored: Act = serde_json::from_value(value).unwrap();
         assert_eq!(restored.convening, None);
         assert!(restored.attendees.is_empty());
+        assert_eq!(restored.ai_provenance, None);
         // Everything round-trips: the defaulted act equals the original, and re-serializes
         // identically.
         assert_eq!(restored, act);
@@ -780,5 +909,52 @@ mod tests {
         let json = serde_json::to_string(&act).unwrap();
         let restored: Act = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, act);
+    }
+
+    #[test]
+    fn ai_provenance_is_additive_and_blocks_signing_until_human_review_accepted() {
+        let act = draft();
+        let value = serde_json::to_value(&act).unwrap();
+        assert!(
+            !value.as_object().unwrap().contains_key("ai_provenance"),
+            "absent AI provenance is skipped to avoid contract churn"
+        );
+        let restored: Act = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.ai_provenance, None);
+
+        let mut ai_act = draft();
+        ai_act.ai_provenance = Some(AiProvenance {
+            source: "mcp".to_owned(),
+            tool: Some("draft_act".to_owned()),
+            statement_source: Some("operator instruction".to_owned()),
+            human_verification: Default::default(),
+        });
+        for state in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+        ] {
+            ai_act.advance_to(state).unwrap();
+        }
+        assert!(ai_act.requires_ai_human_verification());
+        assert!(matches!(
+            ai_act.advance_to(ActState::Signing),
+            Err(ActError::InvalidTransition {
+                from: ActState::TextApproved,
+                to: ActState::Signing
+            })
+        ));
+
+        ai_act
+            .set_ai_human_verification(
+                AiHumanVerificationStatus::Accepted,
+                "ana",
+                time::OffsetDateTime::UNIX_EPOCH,
+                Some("human reviewed only".to_owned()),
+            )
+            .unwrap();
+        assert!(!ai_act.requires_ai_human_verification());
+        ai_act.advance_to(ActState::Signing).unwrap();
     }
 }

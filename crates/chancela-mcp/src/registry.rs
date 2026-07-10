@@ -137,7 +137,7 @@ pub fn resolve_call(tool: &McpTool, arguments: &Value) -> Result<ResolvedCall, T
         }
     }
 
-    let (query, body) = if tool.call.method == HttpMethod::Get {
+    let (query, mut body) = if tool.call.method == HttpMethod::Get {
         let q = rest
             .into_iter()
             .map(|(k, v)| (k, scalar_to_string(&v)))
@@ -149,6 +149,7 @@ pub fn resolve_call(tool: &McpTool, arguments: &Value) -> Result<ResolvedCall, T
         let obj = rest.into_iter().collect::<serde_json::Map<_, _>>();
         (Vec::new(), Some(Value::Object(obj)))
     };
+    ensure_mcp_ai_draft_provenance(tool, &mut body);
 
     Ok(ResolvedCall {
         method: tool.call.method,
@@ -156,6 +157,32 @@ pub fn resolve_call(tool: &McpTool, arguments: &Value) -> Result<ResolvedCall, T
         query,
         body,
     })
+}
+
+fn ensure_mcp_ai_draft_provenance(tool: &McpTool, body: &mut Option<Value>) {
+    if !matches!(tool.name, "draft_act" | "draft_minutes") {
+        return;
+    }
+    let Some(Value::Object(map)) = body else {
+        return;
+    };
+
+    let statement_source = map
+        .get("ai_provenance")
+        .and_then(Value::as_object)
+        .and_then(|p| p.get("statement_source"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or_else(|| "mcp tool arguments".to_owned());
+
+    map.insert(
+        "ai_provenance".to_owned(),
+        serde_json::json!({
+            "source": "mcp",
+            "tool": tool.name,
+            "statement_source": statement_source,
+        }),
+    );
 }
 
 fn validate_arguments(
@@ -309,6 +336,26 @@ pub fn catalog() -> Vec<McpTool> {
                 "retifies": {
                     "type": "string",
                     "description": "optional sealed act id this draft rectifies"
+                },
+                "ai_provenance": {
+                    "type": "object",
+                    "description": "optional non-authoritative AI provenance for a draft; accepted human verification is recorded later by the API",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "declared AI-assistance source, e.g. mcp"
+                        },
+                        "tool": {
+                            "type": "string",
+                            "description": "tool/model/integration identifier when known"
+                        },
+                        "statement_source": {
+                            "type": "string",
+                            "description": "where the human statement/instruction came from when known"
+                        }
+                    },
+                    "required": ["source"],
+                    "additionalProperties": false
                 },
                 "actor": {
                     "type": "string",
@@ -759,19 +806,64 @@ mod tests {
             alias.input_schema["additionalProperties"],
             Value::Bool(false)
         );
+        assert_eq!(
+            alias.input_schema["properties"]["ai_provenance"]["required"],
+            serde_json::json!(["source"])
+        );
+        assert_eq!(
+            alias.input_schema["properties"]["ai_provenance"]["additionalProperties"],
+            Value::Bool(false)
+        );
 
         let args = serde_json::json!({
             "book_id": "book-7",
             "title": "Ata da Assembleia Geral Anual",
             "channel": "Physical",
             "retifies": "act-3",
+            "ai_provenance": {
+                "source": "caller-supplied",
+                "tool": "caller-tool",
+                "statement_source": "operator instruction"
+            },
+            "actor": "mcp"
+        });
+        let expected_body = serde_json::json!({
+            "book_id": "book-7",
+            "title": "Ata da Assembleia Geral Anual",
+            "channel": "Physical",
+            "retifies": "act-3",
+            "ai_provenance": {
+                "source": "mcp",
+                "tool": "draft_minutes",
+                "statement_source": "operator instruction"
+            },
             "actor": "mcp"
         });
         let call = resolve_call(&alias, &args).unwrap();
         assert_eq!(call.method, HttpMethod::Post);
         assert_eq!(call.path, "/acts");
         assert!(call.query.is_empty());
-        assert_eq!(call.body, Some(args));
+        assert_eq!(call.body, Some(expected_body));
+
+        let no_provenance = serde_json::json!({
+            "book_id": "book-7",
+            "title": "Ata da Assembleia Geral Anual",
+            "channel": "Physical",
+            "actor": "mcp"
+        });
+        let call = resolve_call(&alias, &no_provenance).unwrap();
+        assert_eq!(
+            call.body
+                .as_ref()
+                .expect("body")
+                .get("ai_provenance")
+                .expect("mcp provenance is injected"),
+            &serde_json::json!({
+                "source": "mcp",
+                "tool": "draft_minutes",
+                "statement_source": "mcp tool arguments"
+            })
+        );
     }
 
     #[test]

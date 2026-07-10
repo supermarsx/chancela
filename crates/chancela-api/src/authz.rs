@@ -323,6 +323,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts", RouteClass::Gated), // POST act.draft@Book(body.book_id)
     ("/v1/acts/{id}", RouteClass::Gated), // GET act.read@Book · PATCH act.edit@Book
     ("/v1/acts/{id}/advance", RouteClass::Gated), // POST act.advance@Book
+    ("/v1/acts/{id}/human-verification", RouteClass::Gated), // POST act.advance@Book
     ("/v1/acts/{id}/compliance", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/seal", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/archive", RouteClass::Gated), // POST act.archive@Book
@@ -340,6 +341,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/documents/imported", RouteClass::Gated), // GET act.read@Global|Book(act_id)
     ("/v1/documents/imported/{id}", RouteClass::Gated), // GET act.read@import scope
     ("/v1/documents/imported/{id}/bytes", RouteClass::Gated), // GET act.read@import scope
+    ("/v1/documents/imported/{id}/review", RouteClass::Gated), // PATCH document.generate@import scope
     ("/v1/documents/import/validate", RouteClass::Gated), // POST act.read@Global (read-only validation)
     ("/v1/signature/pdf/validate", RouteClass::Gated), // POST act.read@Global (read-only technical PDF/PAdES validation)
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
@@ -420,6 +422,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/law/corpus/search", RouteClass::Gated), // GET law.read@Global (full-text search)
     ("/v1/law/corpus/{diploma}", RouteClass::Gated), // GET law.read@Global
     ("/v1/law/corpus/{diploma}/{article}", RouteClass::Gated), // GET law.read@Global
+    ("/v1/law/citations/resolve", RouteClass::Gated), // POST law.read@Global
     ("/v1/law/{id}/fetch", RouteClass::Gated), // POST law.manage@Global
     ("/v1/law/{id}/pdf", RouteClass::Gated), // GET law.read@Global · DELETE law.manage@Global
     // --- Users ----------------------------------------------------------------------------------
@@ -446,6 +449,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/privacy/transfer-controls/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies/dry-run", RouteClass::Gated), // POST user.manage|settings.manage@Global, non-destructive
+    ("/v1/privacy/retention-executions", RouteClass::Gated), // GET user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
     // --- API keys -------------------------------------------------------------------------------
     ("/v1/api-keys", RouteClass::Gated), // GET/POST user.manage@Global + interactive session
@@ -555,6 +559,10 @@ mod tests {
         // Sensitive endpoints are never exempt.
         assert_eq!(classify("/v1/data/reset"), Some(RouteClass::Gated));
         assert_eq!(classify("/v1/entities"), Some(RouteClass::Gated));
+        assert_eq!(
+            classify("/v1/acts/{id}/human-verification"),
+            Some(RouteClass::Gated)
+        );
     }
 
     #[test]
