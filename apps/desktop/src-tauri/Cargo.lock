@@ -950,6 +950,7 @@ dependencies = [
 name = "chancela-signing"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chancela-cades",
  "chancela-cmd",
  "chancela-pades",
@@ -959,6 +960,7 @@ dependencies = [
  "der",
  "p12",
  "p256",
+ "quick-xml",
  "rand_core 0.6.4",
  "reqwest",
  "rsa",
@@ -972,6 +974,7 @@ dependencies = [
  "x509-cert",
  "x509-ocsp",
  "zeroize",
+ "zip",
 ]
 
 [[package]]

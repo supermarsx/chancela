@@ -99,6 +99,15 @@ const EVIDENTIARY_QUALIFIED: &str = "Qualified";
 const FAMILY_OFFICIAL_HANDOFF: &str = "AutenticacaoGovOfficialHandoff";
 /// Imported official handoff evidence is cryptographically screened but not TSL/qualified-validated.
 const EVIDENTIARY_IMPORTED_OFFICIAL: &str = "ImportedOfficialHandoffTechnicalEvidence";
+const OFFICIAL_SIGNATURE_IMPORT_ACKNOWLEDGEMENT_NOTICE: &str = "Official handoff import stores technical signed-PDF evidence only; acknowledgements record \
+     guardrails and do not claim trust-list, qualified-signature, or legal completion.";
+const OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS: &[&str] = &[
+    "official_import_preserves_uploaded_signed_pdf_as_technical_evidence",
+    "official_import_trust_validation_not_performed",
+    "official_import_qualified_status_not_claimed",
+    "official_import_legal_status_not_claimed",
+    "official_import_no_secret_factor_collected",
+];
 /// External signer invite uploads are stored as technical evidence only, never as legal validation.
 const FAMILY_EXTERNAL_SIGNER_HANDOFF: &str = "ExternalSignerHandoff";
 const EVIDENTIARY_EXTERNAL_SIGNED_PDF: &str = "ExternalSignedPdfTechnicalEvidence";
@@ -445,6 +454,13 @@ pub struct OfficialSignatureImportRequest {
     pub source: Option<String>,
     #[serde(default)]
     pub filename: Option<String>,
+    #[serde(
+        default,
+        alias = "acknowledged_guardrails",
+        alias = "guardrail_acknowledgements",
+        alias = "acknowledged_official_import_guardrail_ids"
+    )]
+    pub acknowledged_guardrail_ids: Vec<String>,
     /// Actor override for attribution when no session names one.
     #[serde(default)]
     pub actor: Option<String>,
@@ -456,6 +472,7 @@ struct OfficialSignatureImportCandidate {
     provider: Option<String>,
     source: Option<String>,
     filename: Option<String>,
+    acknowledged_guardrail_ids: Vec<String>,
     actor: Option<String>,
 }
 
@@ -482,6 +499,9 @@ pub struct OfficialSignatureImportResponse {
     pub finalization: &'static str,
     pub qualification_claimed: bool,
     pub client_metadata_authoritative: bool,
+    pub guardrail_ids: Vec<&'static str>,
+    pub acknowledged_guardrail_ids: Vec<String>,
+    pub acknowledgement_notice: &'static str,
 }
 
 /// Explicit legal-validation boundary for official handoff imports.
@@ -2751,6 +2771,9 @@ pub async fn import_official_signature(
 
     let candidate = official_import_candidate_from_request(&headers, &body)?;
     let client_metadata_present = candidate.has_client_metadata();
+    let acknowledged_guardrail_ids = validate_official_import_guardrail_acknowledgements(
+        candidate.acknowledged_guardrail_ids.clone(),
+    )?;
     let actor = actor.resolve(candidate.actor.as_deref().unwrap_or("api"));
 
     let sealed = {
@@ -2850,6 +2873,24 @@ pub async fn import_official_signature(
         "client_declared_metadata": {
             "present": client_metadata_present,
             "authoritative": false
+        },
+        "guardrail_ids": official_signature_import_guardrail_ids(),
+        "acknowledged_guardrail_ids": acknowledged_guardrail_ids.clone(),
+        "guardrail_acknowledgement": {
+            "required_guardrail_ids": official_signature_import_guardrail_ids(),
+            "acknowledged_guardrail_ids": acknowledged_guardrail_ids.clone(),
+            "all_required_guardrails_acknowledged": true
+        },
+        "acknowledgement_notice": OFFICIAL_SIGNATURE_IMPORT_ACKNOWLEDGEMENT_NOTICE,
+        "status_scope": TECHNICAL_EVIDENCE_ONLY,
+        "secrets_in_payload": {
+            "pin": false,
+            "otp": false,
+            "can": false,
+            "credential": false,
+            "private_key": false,
+            "passphrase": false,
+            "token": false
         }
     });
     let payload = serde_json::to_vec(&event_payload)?;
@@ -2886,6 +2927,9 @@ pub async fn import_official_signature(
         finalization,
         qualification_claimed: false,
         client_metadata_authoritative: false,
+        guardrail_ids: official_signature_import_guardrail_ids(),
+        acknowledged_guardrail_ids,
+        acknowledgement_notice: OFFICIAL_SIGNATURE_IMPORT_ACKNOWLEDGEMENT_NOTICE,
     }))
 }
 
@@ -4101,6 +4145,7 @@ fn official_import_candidate_from_request(
             provider: optional_trimmed(req.provider),
             source: optional_trimmed(req.source),
             filename: optional_trimmed(req.filename),
+            acknowledged_guardrail_ids: req.acknowledged_guardrail_ids,
             actor: optional_trimmed(req.actor),
         });
     }
@@ -4110,8 +4155,66 @@ fn official_import_candidate_from_request(
         provider: None,
         source: None,
         filename: None,
+        acknowledged_guardrail_ids: Vec::new(),
         actor: None,
     })
+}
+
+fn validate_official_import_guardrail_acknowledgements(
+    raw: Vec<String>,
+) -> Result<Vec<String>, ApiError> {
+    normalize_required_guardrail_acknowledgements(
+        raw,
+        OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS,
+        "acknowledged_guardrail_ids",
+    )
+}
+
+fn normalize_required_guardrail_acknowledgements(
+    raw: Vec<String>,
+    required: &[&'static str],
+    field: &'static str,
+) -> Result<Vec<String>, ApiError> {
+    let mut acknowledged = Vec::new();
+    for raw_id in raw {
+        let id = raw_id.trim();
+        if id.is_empty() {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} cannot contain empty guardrail ids"
+            )));
+        }
+        if !required.contains(&id) {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} contains unknown guardrail id {id:?}; expected ids: {}",
+                required.join(", ")
+            )));
+        }
+        if !acknowledged.iter().any(|existing: &String| existing == id) {
+            acknowledged.push(id.to_owned());
+        }
+    }
+
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|required_id| {
+            !acknowledged
+                .iter()
+                .any(|acknowledged_id| acknowledged_id == required_id)
+        })
+        .collect();
+    if !missing.is_empty() {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must include all required official-signature import guardrail ids: {}",
+            missing.join(", ")
+        )));
+    }
+
+    Ok(required.iter().map(|id| (*id).to_owned()).collect())
+}
+
+fn official_signature_import_guardrail_ids() -> Vec<&'static str> {
+    OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS.to_vec()
 }
 
 fn request_content_type_is_json(headers: &HeaderMap) -> bool {

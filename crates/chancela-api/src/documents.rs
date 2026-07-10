@@ -1100,6 +1100,13 @@ pub struct ImportedDocumentsQuery {
 pub struct ImportedDocumentReviewRequest {
     pub review_status: String,
     pub review_note: Option<String>,
+    #[serde(
+        default,
+        alias = "acknowledged_guardrails",
+        alias = "guardrail_acknowledgements",
+        alias = "acknowledged_review_guardrail_ids"
+    )]
+    pub acknowledged_guardrail_ids: Vec<String>,
 }
 
 /// Wire metadata for an imported, non-canonical document. No raw bytes ride in JSON; callers fetch
@@ -1121,6 +1128,7 @@ pub struct ImportedDocumentView {
     pub operator_reviewed_at: Option<String>,
     pub operator_reviewed_by: Option<String>,
     pub operator_review_note: Option<String>,
+    pub acknowledged_guardrail_ids: Vec<String>,
     pub operator_review_notice: &'static str,
     pub non_canonical: bool,
     pub requires_ocr_review: bool,
@@ -1200,6 +1208,7 @@ pub async fn import_document(
             operator_reviewed_at: None,
             operator_reviewed_by: None,
             operator_review_note: None,
+            operator_acknowledged_guardrail_ids: Vec::new(),
         },
         bytes: candidate.bytes,
     };
@@ -1287,6 +1296,8 @@ pub async fn review_imported_document(
         "review_note",
         MAX_IMPORTED_DOCUMENT_REVIEW_NOTE_CHARS,
     )?;
+    let acknowledged_guardrail_ids =
+        validate_imported_document_review_acknowledgements(req.acknowledged_guardrail_ids)?;
     let Some(store) = &state.store else {
         require_permission(&state, &actor, Permission::DocumentGenerate, Scope::Global).await?;
         return Err(ApiError::Unprocessable(
@@ -1310,6 +1321,7 @@ pub async fn review_imported_document(
         &current.meta,
         status,
         &reviewed_by,
+        &acknowledged_guardrail_ids,
     ))?;
 
     let mut ledger = state.ledger.write().await;
@@ -1328,6 +1340,7 @@ pub async fn review_imported_document(
             Some(reviewed_at),
             Some(&reviewed_by),
             review_note.as_deref(),
+            &acknowledged_guardrail_ids,
         )
     })?;
     state.attest_latest(&attestor, &ledger).await;
@@ -1427,6 +1440,7 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
             .map(|t| t.format(&Rfc3339).unwrap_or_default()),
         operator_reviewed_by: meta.operator_reviewed_by.clone(),
         operator_review_note: meta.operator_review_note.clone(),
+        acknowledged_guardrail_ids: meta.operator_acknowledged_guardrail_ids.clone(),
         operator_review_notice: IMPORTED_DOCUMENT_REVIEW_NOTICE,
         non_canonical: true,
         requires_ocr_review: preservation_policy.requires_ocr_review,
@@ -1551,6 +1565,13 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
         "operator_reviewed_at": meta.operator_reviewed_at.map(|t| t.format(&Rfc3339).unwrap_or_default()),
         "operator_reviewed_by": meta.operator_reviewed_by.clone(),
         "operator_review_note_in_payload": false,
+        "acknowledged_guardrail_ids": meta.operator_acknowledged_guardrail_ids.clone(),
+        "guardrail_acknowledgement": {
+            "required_guardrail_ids": imported_document_review_guardrail_checklist(),
+            "acknowledged_guardrail_ids": meta.operator_acknowledged_guardrail_ids.clone(),
+            "all_required_guardrails_acknowledged": meta.operator_acknowledged_guardrail_ids
+                == imported_document_review_guardrail_ids_as_strings(),
+        },
         "operator_review_notice": IMPORTED_DOCUMENT_REVIEW_NOTICE,
         "requires_ocr_review": preservation_policy.requires_ocr_review,
         "canonical_record_status": preservation_policy.canonical_record_status,
@@ -1574,6 +1595,7 @@ fn imported_document_review_event_payload(
     meta: &StoredImportedDocumentMeta,
     status: StoredImportedDocumentReviewStatus,
     reviewed_by: &str,
+    acknowledged_guardrail_ids: &[String],
 ) -> Value {
     json!({
         "document_id": meta.id.clone(),
@@ -1582,6 +1604,12 @@ fn imported_document_review_event_payload(
         "operator_review_status": status.as_str(),
         "reviewed_by": reviewed_by,
         "review_note_in_payload": false,
+        "acknowledged_guardrail_ids": acknowledged_guardrail_ids,
+        "guardrail_acknowledgement": {
+            "required_guardrail_ids": imported_document_review_guardrail_checklist(),
+            "acknowledged_guardrail_ids": acknowledged_guardrail_ids,
+            "all_required_guardrails_acknowledged": true,
+        },
         "operator_review_notice": IMPORTED_DOCUMENT_REVIEW_NOTICE,
         "non_canonical": true,
         "bytes_in_payload": false,
@@ -1611,6 +1639,66 @@ fn parse_imported_document_review_status(
             "review_status must be one of reviewed_non_canonical_original_only or rejected_non_canonical_evidence".to_owned(),
         )),
     }
+}
+
+fn validate_imported_document_review_acknowledgements(
+    raw: Vec<String>,
+) -> Result<Vec<String>, ApiError> {
+    normalize_required_guardrail_acknowledgements(
+        raw,
+        IMPORTED_DOCUMENT_REVIEW_GUARDRAIL_CHECKLIST,
+        "acknowledged_guardrail_ids",
+    )
+}
+
+fn normalize_required_guardrail_acknowledgements(
+    raw: Vec<String>,
+    required: &[&'static str],
+    field: &'static str,
+) -> Result<Vec<String>, ApiError> {
+    let mut acknowledged = Vec::new();
+    for raw_id in raw {
+        let id = raw_id.trim();
+        if id.is_empty() {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} cannot contain empty guardrail ids"
+            )));
+        }
+        if !required.contains(&id) {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} contains unknown guardrail id {id:?}; expected ids: {}",
+                required.join(", ")
+            )));
+        }
+        if !acknowledged.iter().any(|existing: &String| existing == id) {
+            acknowledged.push(id.to_owned());
+        }
+    }
+
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|required_id| {
+            !acknowledged
+                .iter()
+                .any(|acknowledged_id| acknowledged_id == required_id)
+        })
+        .collect();
+    if !missing.is_empty() {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must include all required imported-document review guardrail ids: {}",
+            missing.join(", ")
+        )));
+    }
+
+    Ok(required.iter().map(|id| (*id).to_owned()).collect())
+}
+
+fn imported_document_review_guardrail_ids_as_strings() -> Vec<String> {
+    IMPORTED_DOCUMENT_REVIEW_GUARDRAIL_CHECKLIST
+        .iter()
+        .map(|id| (*id).to_owned())
+        .collect()
 }
 
 fn imported_document_review_guardrail_checklist() -> Vec<&'static str> {
@@ -4808,6 +4896,7 @@ mod tests {
             operator_reviewed_at: None,
             operator_reviewed_by: None,
             operator_review_note: None,
+            operator_acknowledged_guardrail_ids: Vec::new(),
         };
 
         let payload = imported_document_event_payload(&meta);
@@ -4837,6 +4926,7 @@ mod tests {
             operator_reviewed_at: None,
             operator_reviewed_by: None,
             operator_review_note: None,
+            operator_acknowledged_guardrail_ids: Vec::new(),
         };
 
         let view = imported_document_view_with_redaction(&meta, ReadRedaction::Guest);
@@ -5342,6 +5432,47 @@ mod tests {
             .imported_document(&imported.id)
             .expect("store read")
             .expect("imported doc stored");
+        let ledger_before_missing_ack = state.ledger.read().await.events().len();
+        let err = review_imported_document(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(imported.id.clone()),
+            Json(ImportedDocumentReviewRequest {
+                review_status: "reviewed_non_canonical_original_only".to_owned(),
+                review_note: None,
+                acknowledged_guardrail_ids: Vec::new(),
+            }),
+        )
+        .await
+        .expect_err("missing guardrail acknowledgements are rejected");
+        assert!(
+            matches!(err, ApiError::Unprocessable(ref message) if message.contains("acknowledged_guardrail_ids")),
+            "error names acknowledgement field: {err:?}"
+        );
+        assert_eq!(
+            state.ledger.read().await.events().len(),
+            ledger_before_missing_ack,
+            "rejected review must not append an audit event"
+        );
+        let unchanged = state
+            .store
+            .as_ref()
+            .expect("store")
+            .imported_document(&imported.id)
+            .expect("store read")
+            .expect("imported doc remains");
+        assert_eq!(
+            unchanged.meta.operator_review_status,
+            before.meta.operator_review_status
+        );
+        assert!(
+            unchanged
+                .meta
+                .operator_acknowledged_guardrail_ids
+                .is_empty()
+        );
+
         let review_note = "Reviewed only as preserved non-canonical evidence.".to_owned();
         let Json(reviewed) = review_imported_document(
             State(state.clone()),
@@ -5351,6 +5482,7 @@ mod tests {
             Json(ImportedDocumentReviewRequest {
                 review_status: "reviewed_non_canonical_original_only".to_owned(),
                 review_note: Some(review_note.clone()),
+                acknowledged_guardrail_ids: imported_document_review_guardrail_ids_as_strings(),
             }),
         )
         .await
@@ -5367,6 +5499,10 @@ mod tests {
         assert_eq!(
             reviewed.operator_review_note.as_deref(),
             Some(review_note.as_str())
+        );
+        assert_eq!(
+            reviewed.acknowledged_guardrail_ids,
+            imported_document_review_guardrail_ids_as_strings()
         );
         assert!(!reviewed.preservation_policy.requires_operator_review);
         assert_eq!(
@@ -5394,6 +5530,10 @@ mod tests {
             after.meta.operator_review_status,
             StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly
         );
+        assert_eq!(
+            after.meta.operator_acknowledged_guardrail_ids,
+            imported_document_review_guardrail_ids_as_strings()
+        );
 
         let event = state
             .ledger
@@ -5409,6 +5549,7 @@ mod tests {
             &before.meta,
             StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly,
             "document.owner",
+            &imported_document_review_guardrail_ids_as_strings(),
         );
         assert_eq!(
             payload["previous_operator_review_status"],
@@ -5425,6 +5566,14 @@ mod tests {
         assert_eq!(payload["legal_acceptance_claimed"], false);
         assert_eq!(payload["legal_validity_claimed"], false);
         assert_eq!(payload["review_note_in_payload"], false);
+        assert_eq!(
+            payload["acknowledged_guardrail_ids"],
+            json!(imported_document_review_guardrail_checklist())
+        );
+        assert_eq!(
+            payload["guardrail_acknowledgement"]["all_required_guardrails_acknowledged"],
+            true
+        );
         let payload_text = serde_json::to_string(&payload).expect("payload serializes");
         assert!(!payload_text.contains(&review_note));
     }

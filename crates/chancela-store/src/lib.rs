@@ -929,6 +929,8 @@ pub struct StoredImportedDocumentMeta {
     pub operator_reviewed_by: Option<String>,
     /// Optional operator note for the review decision.
     pub operator_review_note: Option<String>,
+    /// Stable guardrail ids explicitly acknowledged by the operator during the review transition.
+    pub operator_acknowledged_guardrail_ids: Vec<String>,
 }
 
 /// A validated, non-canonical document evidence import with retained bytes. These bytes live beside
@@ -1586,7 +1588,8 @@ impl Store {
             let mut stmt = guard.prepare(
                 "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
                  sha256, size_bytes, imported_at, imported_by, operator_review_status, \
-                 operator_reviewed_at, operator_reviewed_by, operator_review_note \
+                 operator_reviewed_at, operator_reviewed_by, operator_review_note, \
+                 operator_acknowledged_guardrail_ids_json \
                  FROM imported_documents \
                  WHERE act_id = ?1 ORDER BY imported_at DESC, rowid DESC",
             )?;
@@ -1599,7 +1602,8 @@ impl Store {
             let mut stmt = guard.prepare(
                 "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
                  sha256, size_bytes, imported_at, imported_by, operator_review_status, \
-                 operator_reviewed_at, operator_reviewed_by, operator_review_note \
+                 operator_reviewed_at, operator_reviewed_by, operator_review_note, \
+                 operator_acknowledged_guardrail_ids_json \
                  FROM imported_documents \
                  ORDER BY imported_at DESC, rowid DESC",
             )?;
@@ -1620,7 +1624,8 @@ impl Store {
         let mut stmt = guard.prepare(
             "SELECT id, act_id, filename, declared_content_type, detected_content_type, sha256, \
              size_bytes, imported_at, imported_by, operator_review_status, operator_reviewed_at, \
-             operator_reviewed_by, operator_review_note, bytes FROM imported_documents \
+             operator_reviewed_by, operator_review_note, operator_acknowledged_guardrail_ids_json, \
+             bytes FROM imported_documents \
              WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_imported_document)
@@ -2129,8 +2134,9 @@ impl Tx<'_> {
             "INSERT OR REPLACE INTO imported_documents \
              (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
               size_bytes, imported_at, imported_by, operator_review_status, \
-              operator_reviewed_at, operator_reviewed_by, operator_review_note, bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+              operator_reviewed_at, operator_reviewed_by, operator_review_note, \
+              operator_acknowledged_guardrail_ids_json, bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 doc.meta.id,
                 doc.meta.act_id.as_ref().map(ToString::to_string),
@@ -2147,6 +2153,7 @@ impl Tx<'_> {
                     .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())),
                 doc.meta.operator_reviewed_by,
                 doc.meta.operator_review_note,
+                serde_json::to_string(&doc.meta.operator_acknowledged_guardrail_ids)?,
                 doc.bytes,
             ],
         )?;
@@ -2162,16 +2169,26 @@ impl Tx<'_> {
         reviewed_at: Option<OffsetDateTime>,
         reviewed_by: Option<&str>,
         review_note: Option<&str>,
+        acknowledged_guardrail_ids: &[String],
     ) -> Result<(), StoreError> {
         let reviewed_at = reviewed_at.map(|t| {
             t.format(&Rfc3339)
                 .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
         });
+        let acknowledged_guardrail_ids_json = serde_json::to_string(acknowledged_guardrail_ids)?;
         let changed = self.txn.execute(
             "UPDATE imported_documents SET operator_review_status = ?1, \
-             operator_reviewed_at = ?2, operator_reviewed_by = ?3, operator_review_note = ?4 \
-             WHERE id = ?5",
-            params![status.as_str(), reviewed_at, reviewed_by, review_note, id,],
+             operator_reviewed_at = ?2, operator_reviewed_by = ?3, operator_review_note = ?4, \
+             operator_acknowledged_guardrail_ids_json = ?5 \
+             WHERE id = ?6",
+            params![
+                status.as_str(),
+                reviewed_at,
+                reviewed_by,
+                review_note,
+                acknowledged_guardrail_ids_json,
+                id,
+            ],
         )?;
         if changed == 0 {
             return Err(StoreError::NotFound(format!("imported document {id}")));
@@ -2539,6 +2556,7 @@ fn row_to_imported_document_meta(
     let operator_reviewed_at_raw: Option<String> = row.get(10)?;
     let operator_reviewed_by: Option<String> = row.get(11)?;
     let operator_review_note: Option<String> = row.get(12)?;
+    let operator_acknowledged_guardrail_ids_json: String = row.get(13)?;
     Ok(imported_document_meta_from_raw(
         id,
         act_id_raw,
@@ -2553,6 +2571,7 @@ fn row_to_imported_document_meta(
         operator_reviewed_at_raw,
         operator_reviewed_by,
         operator_review_note,
+        operator_acknowledged_guardrail_ids_json,
     ))
 }
 
@@ -2574,7 +2593,8 @@ fn row_to_imported_document(
     let operator_reviewed_at_raw: Option<String> = row.get(10)?;
     let operator_reviewed_by: Option<String> = row.get(11)?;
     let operator_review_note: Option<String> = row.get(12)?;
-    let bytes: Vec<u8> = row.get(13)?;
+    let operator_acknowledged_guardrail_ids_json: String = row.get(13)?;
+    let bytes: Vec<u8> = row.get(14)?;
     Ok((|| {
         Ok(StoredImportedDocument {
             meta: imported_document_meta_from_raw(
@@ -2591,6 +2611,7 @@ fn row_to_imported_document(
                 operator_reviewed_at_raw,
                 operator_reviewed_by,
                 operator_review_note,
+                operator_acknowledged_guardrail_ids_json,
             )?,
             bytes,
         })
@@ -2612,6 +2633,7 @@ fn imported_document_meta_from_raw(
     operator_reviewed_at_raw: Option<String>,
     operator_reviewed_by: Option<String>,
     operator_review_note: Option<String>,
+    operator_acknowledged_guardrail_ids_json: String,
 ) -> Result<StoredImportedDocumentMeta, StoreError> {
     let size_bytes = usize::try_from(size_raw).map_err(|_| {
         StoreError::Io(std::io::Error::new(
@@ -2623,6 +2645,8 @@ fn imported_document_meta_from_raw(
         .as_deref()
         .map(parse_uuid_newtype::<ActId>)
         .transpose()?;
+    let operator_acknowledged_guardrail_ids =
+        serde_json::from_str(&operator_acknowledged_guardrail_ids_json)?;
     Ok(StoredImportedDocumentMeta {
         id,
         act_id,
@@ -2642,6 +2666,7 @@ fn imported_document_meta_from_raw(
             .transpose()?,
         operator_reviewed_by,
         operator_review_note,
+        operator_acknowledged_guardrail_ids,
     })
 }
 
@@ -3233,6 +3258,16 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
     }
     if !table_has_column(conn, "imported_documents", "operator_review_note")? {
         conn.execute_batch("ALTER TABLE imported_documents ADD COLUMN operator_review_note TEXT;")?;
+    }
+    if !table_has_column(
+        conn,
+        "imported_documents",
+        "operator_acknowledged_guardrail_ids_json",
+    )? {
+        conn.execute_batch(
+            "ALTER TABLE imported_documents ADD COLUMN \
+             operator_acknowledged_guardrail_ids_json TEXT NOT NULL DEFAULT '[]';",
+        )?;
     }
 
     if !table_has_column(conn, "paper_book_imports", "page_from")? {

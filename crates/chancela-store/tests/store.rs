@@ -142,6 +142,7 @@ fn sample_imported_document(
             operator_reviewed_at: None,
             operator_reviewed_by: None,
             operator_review_note: None,
+            operator_acknowledged_guardrail_ids: Vec::new(),
         },
         bytes: bytes.to_vec(),
     }
@@ -1517,6 +1518,12 @@ fn imported_document_review_transition_updates_metadata_without_replacing_bytes(
                 Some(reviewed_at),
                 Some("document.owner"),
                 Some("Kept as non-canonical supporting evidence."),
+                &[
+                    "preserved_original_bytes_remain_non_canonical_evidence".to_string(),
+                    "canonical_pdfa_record_is_not_replaced".to_string(),
+                    "signed_pdf_artifact_is_not_created_or_validated".to_string(),
+                    "ocr_or_conversion_output_is_not_promoted_to_canonical_records".to_string(),
+                ],
             )
         })
         .expect("review imported doc");
@@ -1538,6 +1545,15 @@ fn imported_document_review_transition_updates_metadata_without_replacing_bytes(
     assert_eq!(
         reviewed.meta.operator_review_note.as_deref(),
         Some("Kept as non-canonical supporting evidence.")
+    );
+    assert_eq!(
+        reviewed.meta.operator_acknowledged_guardrail_ids,
+        vec![
+            "preserved_original_bytes_remain_non_canonical_evidence",
+            "canonical_pdfa_record_is_not_replaced",
+            "signed_pdf_artifact_is_not_created_or_validated",
+            "ocr_or_conversion_output_is_not_promoted_to_canonical_records",
+        ]
     );
 }
 

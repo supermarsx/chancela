@@ -152,6 +152,16 @@ fn import_req(act_id: &str, token: &str, signed_pdf: &[u8]) -> Request<Body> {
     )
 }
 
+fn official_import_guardrail_ids() -> Vec<&'static str> {
+    vec![
+        "official_import_preserves_uploaded_signed_pdf_as_technical_evidence",
+        "official_import_trust_validation_not_performed",
+        "official_import_qualified_status_not_claimed",
+        "official_import_legal_status_not_claimed",
+        "official_import_no_secret_factor_collected",
+    ]
+}
+
 fn external_invite_response_with_signed_pdf_req(token: &str, signed_pdf: &[u8]) -> Request<Body> {
     Request::builder()
         .method("POST")
@@ -184,6 +194,25 @@ fn import_req_with_metadata(
             "signed_pdf_base64": B64.encode(signed_pdf),
             "provider": provider,
             "source": source,
+            "filename": "signed-by-official-app.pdf",
+            "acknowledged_guardrail_ids": official_import_guardrail_ids()
+        }),
+    )
+}
+
+fn import_req_without_acknowledgement(
+    act_id: &str,
+    token: &str,
+    signed_pdf: &[u8],
+) -> Request<Body> {
+    json_req(
+        "POST",
+        &format!("/v1/acts/{act_id}/signature/official/import"),
+        token,
+        json!({
+            "signed_pdf_base64": B64.encode(signed_pdf),
+            "provider": "Autenticacao.gov",
+            "source": "operator_selected_cc_or_cmd",
             "filename": "signed-by-official-app.pdf"
         }),
     )
@@ -457,6 +486,24 @@ fn expected_official_import_event_digest(
         "client_declared_metadata": {
             "present": true,
             "authoritative": false
+        },
+        "guardrail_ids": official_import_guardrail_ids(),
+        "acknowledged_guardrail_ids": official_import_guardrail_ids(),
+        "guardrail_acknowledgement": {
+            "required_guardrail_ids": official_import_guardrail_ids(),
+            "acknowledged_guardrail_ids": official_import_guardrail_ids(),
+            "all_required_guardrails_acknowledged": true
+        },
+        "acknowledgement_notice": "Official handoff import stores technical signed-PDF evidence only; acknowledgements record guardrails and do not claim trust-list, qualified-signature, or legal completion.",
+        "status_scope": "technical_evidence_only",
+        "secrets_in_payload": {
+            "pin": false,
+            "otp": false,
+            "can": false,
+            "credential": false,
+            "private_key": false,
+            "passphrase": false,
+            "token": false
         }
     });
     let bytes = serde_json::to_vec(&payload).expect("event payload serializes");
@@ -502,6 +549,19 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
     assert_eq!(imported["legal_validation"], legal_validation_json());
     assert_eq!(imported["qualification_claimed"], false);
     assert_eq!(imported["client_metadata_authoritative"], false);
+    assert_eq!(
+        imported["guardrail_ids"],
+        json!(official_import_guardrail_ids())
+    );
+    assert_eq!(
+        imported["acknowledged_guardrail_ids"],
+        json!(official_import_guardrail_ids())
+    );
+    assert!(
+        imported["acknowledgement_notice"]
+            .as_str()
+            .is_some_and(|notice| notice.contains("technical signed-PDF evidence"))
+    );
     assert_eq!(imported["finalization"], "aguarda_assinatura_qualificada");
     assert_eq!(imported["signed_pdf_digest"], sha256_hex(&signed_pdf));
     assert_eq!(
@@ -544,6 +604,35 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
     assert_eq!(view["evidence"]["legal_b_lt_claimed"], false);
     assert_eq!(view["evidence"]["status_scope"], "technical_evidence_only");
     assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+}
+
+#[tokio::test]
+async fn official_import_requires_guardrail_acknowledgement_without_artifact_or_event() {
+    let state = AppState::default();
+    let (token, _) = bootstrap(&state).await;
+    let book_id = seed_book(&state, &token).await;
+    let act_id = create_signing_act(&state, &token, &book_id, "Ata acknowledge").await;
+    seal_act(&state, &token, &act_id).await;
+
+    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &act_id).await, 8);
+    let (status, body) = send(
+        &state,
+        import_req_without_acknowledgement(&act_id, &token, &signed_pdf),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing acknowledgement refused: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("acknowledged_guardrail_ids")),
+        "error names acknowledgement field: {body}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 
 #[tokio::test]
