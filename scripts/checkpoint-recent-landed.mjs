@@ -39,6 +39,19 @@ const checks = [
     ],
   },
   {
+    name: "API external-validator report metadata tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--locked",
+        "external_validator_report_metadata_api",
+      ],
+    ],
+  },
+  {
     name: "API local PKCS#12 signing tests",
     command: [
       "cargo",
@@ -167,6 +180,7 @@ const checks = [
       "src/features/documents/ActDocumentPanel.test.tsx",
       "src/features/entities/entities.test.tsx",
       "src/features/ferramentas/ferramentas.test.tsx",
+      "src/features/ferramentas/trust.test.tsx",
       "src/features/notifications/NotificationBell.test.tsx",
       "src/features/notifications/NotificationsPage.test.tsx",
       "src/features/recovery/GestaoDadosSection.test.tsx",
@@ -277,6 +291,21 @@ function assertCheckpointMap() {
     "document bundle runtime external-validator metadata coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/external_validator_evidence.rs",
+    "create_external_validator_report_metadata",
+    "external-validator report metadata capture API",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/external_validator_evidence.rs",
+    "metadata_list_response",
+    "external-validator report metadata list API",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "external_validator_report_metadata_api_accepts_and_lists_redacted_summary",
+    "API external-validator metadata capture/list regression coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/local_pkcs12_signing.rs",
     "local_pkcs12_signs_as_advanced_technical_evidence_only",
     "local PKCS#12 signing API regression coverage",
@@ -375,6 +404,26 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/trust.rs",
     "structured_identifier_filters_match_complete_material_only",
     "API trust identifier filter regression coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    'id="trust-identifier-filter"',
+    "web TSL identifier lookup control",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/TrustCatalogPage.tsx",
+    'id="tsa-identifier-filter"',
+    "web TSA identifier lookup control",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "passes identifier lookups to the TSL catalog endpoint and renders matching services",
+    "web TSL identifier lookup coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/trust.test.tsx",
+    "passes identifier lookups to TSA search and shows the empty state for no matches",
+    "web TSA identifier lookup coverage",
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
@@ -545,6 +594,21 @@ function assertCheckpointMap() {
     "apps/web/e2e/data-key-rotation-execution.spec.ts",
     "not.toHaveProperty('current_key')",
     "data key rotation browser secret-minimization coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/chronology-and-pdf-validator.spec.ts",
+    "entity detail loads route-stubbed chronology rows and exposes copyable Mermaid source",
+    "entity chronology browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/chronology-and-pdf-validator.spec.ts",
+    "PDF validator shows technical JSON actions after a report body and downloads/copies it",
+    "PDF validator JSON copy/download browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/chronology-and-pdf-validator.spec.ts",
+    "PDF validator fail-closed refusals do not expose technical JSON actions",
+    "PDF validator fail-closed browser coverage",
   );
   assertFileExists(
     "docs/fixtures/validator-corpus/manifest.json",
