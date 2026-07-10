@@ -2042,8 +2042,14 @@ export const enUS: Catalog = {
     'Qualified electronic signature (qualified certificate from a trust service provider).',
   'signing.signed.localPkcs12Title': 'Minutes signed with a local software certificate',
   'signing.signed.localPkcs12Label':
-    'Local PKCS#12/PFX software-certificate signature: advanced technical evidence only; not qualified, CMD, or a legal-validity statement.',
+    'Local PKCS#12/PFX software-certificate signature: advanced technical evidence only; not qualified, CMD, or legal completion.',
+  'signing.signed.officialTitle': 'Minutes with a signed PDF imported from Autenticação.gov',
+  'signing.signed.officialLabel':
+    'Signed PDF imported from an official handoff: technical evidence only; does not claim Trusted List validation, qualified status, or legal completion.',
+  'signing.signed.officialNote':
+    'The import stores the signed PDF and observed technical evidence. Operator-entered metadata is not authority for trust, qualification, or legal completion.',
   'signing.recommended': 'Recommended',
+  'signing.official.family': 'Official Autenticação.gov handoff',
   'signing.csc.start': 'Sign with {provider}',
   'signing.csc.notConfigured': 'not configured',
   'signing.csc.credentials.intro':
@@ -2061,10 +2067,11 @@ export const enUS: Catalog = {
   'signing.status.signed': 'Signed',
   'signing.status.localCard': 'Local card',
   'signing.status.localPkcs12': 'Local PKCS#12',
+  'signing.status.officialHandoff': 'Official handoff',
   'signing.status.required': 'Required',
   'signing.status.unsigned': 'Unsigned',
   'signing.signed.validityNote':
-    'Chancela shows the technical signature record and available evidence; legal validity depends on context and the applicable verification.',
+    'Chancela shows the technical signature record and available evidence; any legal decision depends on context and the applicable verification.',
   'signing.signed.signer.help':
     'Certificate subject used for the signature, as read from the certificate.',
   'signing.signed.trustedList.help':
@@ -2102,7 +2109,7 @@ export const enUS: Catalog = {
   'signing.evidence.longTerm.ltaNotImplemented': 'B-LTA not implemented',
   'signing.evidence.noDetails': 'No details',
   'signing.evidence.disclaimer':
-    'This is not a legal-validity statement. It is a summary of the technical evidence available in the file and in the data returned by the server.',
+    'This is not a legal decision. It is a summary of the technical evidence available in the file and in the data returned by the server.',
   'signing.provider.cmd.title': 'Chave Móvel Digital',
   'signing.provider.cmd.description':
     'Two-step remote flow: signing PIN and SMS code. Recommended when CMD is active.',
@@ -2116,7 +2123,7 @@ export const enUS: Catalog = {
   'signing.pkcs12.start': 'Sign with local PKCS#12',
   'signing.pkcs12.title': 'Local software-certificate signing',
   'signing.pkcs12.notice':
-    'Use only when you need local technical evidence. The PFX file and passphrase are sent only for this request and are not stored by the interface; the result is not qualified, CMD, or a legal-validity statement.',
+    'Use only when you need local technical evidence. The PFX file and passphrase are sent only for this request and are not stored by the interface; the result is not qualified, CMD, or legal completion.',
   'signing.pkcs12.file.label': 'PKCS#12/PFX file',
   'signing.pkcs12.file.hint': 'Choose a .p12 or .pfx file from this computer.',
   'signing.pkcs12.passphrase.label': 'Certificate passphrase',
@@ -2128,6 +2135,40 @@ export const enUS: Catalog = {
   'signing.pkcs12.capacity.hint': 'Optional. Records the capacity in which the signer acts.',
   'signing.pkcs12.sign': 'Sign locally',
   'signing.pkcs12.signing': 'Signing locally…',
+  'signing.provider.official.title': 'PDF already signed in Autenticação.gov',
+  'signing.provider.official.description':
+    'Import the PDF signed outside Chancela. Stores technical evidence only; does not claim Trusted List validation, qualified status, or legal completion.',
+  'signing.provider.official.badge': 'Technical import',
+  'signing.official.start': 'Import signed PDF',
+  'signing.official.title': 'Import a signed PDF from an official handoff',
+  'signing.official.notice':
+    'Choose the PDF already signed in Autenticação.gov or another official handoff. Chancela stores the file as technical evidence only and does not claim Trusted List validation, qualified status, or legal completion.',
+  'signing.official.file.label': 'Signed PDF',
+  'signing.official.file.hint': 'Choose the signed PDF received from the official application.',
+  'signing.official.provider.label': 'Provider',
+  'signing.official.provider.hint':
+    'Optional. Records the provider named by the operator; it is not used as authority.',
+  'signing.official.provider.placeholder': 'Autenticação.gov',
+  'signing.official.source.label': 'Source',
+  'signing.official.source.hint':
+    'Optional. For example: official handoff, desktop application, provider portal.',
+  'signing.official.source.placeholder': 'official handoff',
+  'signing.official.filename.label': 'Filename',
+  'signing.official.filename.hint': 'Optional. Stored as upload metadata.',
+  'signing.official.guardrails.title': 'Limits to acknowledge',
+  'signing.official.guardrails.preserve':
+    'The uploaded signed PDF is preserved as technical evidence.',
+  'signing.official.guardrails.trust':
+    'Chancela does not perform Trusted List validation in this flow.',
+  'signing.official.guardrails.qualified':
+    'Chancela does not claim qualified status for this import.',
+  'signing.official.guardrails.legal': 'Chancela does not claim legal completion for this import.',
+  'signing.official.guardrails.noSecret':
+    'This flow does not collect PINs, OTPs, CANs, credentials, tokens, or passwords.',
+  'signing.official.ack.label':
+    'I acknowledge these limits and that this import stores only technical evidence for the signed PDF.',
+  'signing.official.import': 'Import technical evidence',
+  'signing.official.importing': 'Importing…',
   'signing.provider.loading': 'Loading configured remote providers…',
   'signing.provider.unavailable.title': 'Remote providers unavailable',
   'signing.provider.unavailable.body':
@@ -2176,6 +2217,7 @@ export const enUS: Catalog = {
   'signing.invites.revoking': 'Revoking…',
   'toast.signing.otpSent': 'SMS code sent.',
   'toast.signing.signed': 'Minutes signed.',
+  'toast.signing.officialImported': 'Signed PDF imported as technical evidence.',
   'toast.signing.downloaded': 'Signed PDF downloaded.',
 
   // --- Chain integrity + recovery + data management (t54) ------------------------

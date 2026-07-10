@@ -3419,6 +3419,62 @@ export interface LocalPkcs12SignResult {
   notice: string;
 }
 
+// --- Official Autenticação.gov handoff import -----------------------------------
+
+export const OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS = [
+  'official_import_preserves_uploaded_signed_pdf_as_technical_evidence',
+  'official_import_trust_validation_not_performed',
+  'official_import_qualified_status_not_claimed',
+  'official_import_legal_status_not_claimed',
+  'official_import_no_secret_factor_collected',
+] as const;
+export type OfficialSignatureImportGuardrail =
+  (typeof OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS)[number];
+
+/**
+ * `POST /v1/acts/{id}/signature/official/import` — user-mediated import of a PDF already
+ * signed through Autenticação.gov / official provider handoff. The PDF bytes are stored as
+ * technical evidence only; provider/source/filename are client-declared trace context, never
+ * authority for trust-list, qualified-status, or legal-completion claims.
+ */
+export interface OfficialSignatureImportBody {
+  signed_pdf_base64: string;
+  provider?: string;
+  source?: string;
+  filename?: string;
+  acknowledged_guardrail_ids: OfficialSignatureImportGuardrail[];
+}
+
+export interface OfficialSignatureLegalValidation {
+  pades_valid: boolean;
+  byte_range_covers_whole_file: boolean;
+  sealed_pdf_prefix_match: boolean;
+  trust_validation: string;
+  trust_validation_performed: boolean;
+  qualified_status_claimed: boolean;
+  legal_status_claimed: boolean;
+}
+
+/** Technical evidence response for an official handoff import; no qualified/legal claim. */
+export interface OfficialSignatureImportResult {
+  document_id: string;
+  act_id: string;
+  family: string;
+  evidentiary_level: string;
+  trusted_list_status: string | null;
+  legal_validation: OfficialSignatureLegalValidation;
+  signing_time: string;
+  signed_at: string;
+  signed_pdf_digest: string;
+  timestamp_token: boolean;
+  finalization: FinalizationStatus;
+  qualification_claimed: boolean;
+  client_metadata_authoritative: boolean;
+  guardrail_ids: OfficialSignatureImportGuardrail[];
+  acknowledged_guardrail_ids: OfficialSignatureImportGuardrail[];
+  acknowledgement_notice: string;
+}
+
 /**
  * `POST /v1/acts/{id}/signature/dss/attach` — append caller-supplied DER evidence to an
  * existing signed PDF. Base64 fields are technical/local evidence only; no production/legal LTV

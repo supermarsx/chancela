@@ -27,6 +27,7 @@ import type {
   CmdConfirmBody,
   CcSignBody,
   LocalPkcs12SignBody,
+  OfficialSignatureImportBody,
   RemoteInitiateBody,
   RemoteConfirmBody,
   CompleteFollowUpBody,
@@ -777,6 +778,23 @@ export function useLocalPkcs12SignSignature(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: LocalPkcs12SignBody) => api.localPkcs12SignSignature(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
+      void qc.invalidateQueries({ queryKey: keys.act(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+/**
+ * Official Autenticação.gov/provider handoff import. The upload is already signed outside
+ * Chancela, and the server stores technical evidence only after all guardrails are acknowledged.
+ */
+export function useImportOfficialSignature(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: OfficialSignatureImportBody) => api.importOfficialSignature(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
       void qc.invalidateQueries({ queryKey: keys.act(id) });

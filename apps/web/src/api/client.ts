@@ -118,6 +118,8 @@ import type {
   CcSignResult,
   LocalPkcs12SignBody,
   LocalPkcs12SignResult,
+  OfficialSignatureImportBody,
+  OfficialSignatureImportResult,
   CreateExternalSignerInviteBody,
   CreateExternalSignerInviteResult,
   ExternalSignerInviteDecision,
@@ -581,6 +583,10 @@ export const api = {
   // ride only in this request body; the response is local technical evidence, not qualified/CMD.
   localPkcs12SignSignature: (id: string, body: LocalPkcs12SignBody) =>
     post<LocalPkcs12SignResult>(`/v1/acts/${id}/signature/local/pkcs12/sign`, body),
+  // Official Autenticação.gov/provider handoff import. The uploaded signed PDF is stored as
+  // technical evidence only; provider/source/filename are non-authoritative trace metadata.
+  importOfficialSignature: (id: string, body: OfficialSignatureImportBody) =>
+    post<OfficialSignatureImportResult>(`/v1/acts/${id}/signature/official/import`, body),
   fetchSignedActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document/signed`),
 
   // Generic remote qualified signing (§ t59) — the provider picker + the provider-agnostic

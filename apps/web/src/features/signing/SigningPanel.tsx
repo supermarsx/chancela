@@ -1,5 +1,5 @@
 /**
- * SigningPanel — the qualified signing surface on a sealed act (plans t57 + t58 + t59).
+ * SigningPanel — signing and signed-PDF evidence on a sealed act (plans t57 + t58 + t59).
  *
  * A sealed act's unsigned PDF/A can be turned into a **qualified** signed PDF through a chosen
  * signing method. The panel presents a provider picker and routes each choice to the right flow:
@@ -22,6 +22,11 @@
  *     `confirm` → the act is signed. Only **configured** QTSPs are offered; an unconfigured one is
  *     shown disabled with an honest «não configurado» note.
  *
+ *   • **Official Autenticação.gov/provider handoff import** — the operator uploads a PDF already
+ *     signed outside Chancela. This stores technical signed-PDF evidence only after explicit
+ *     guardrail acknowledgement; it does not collect secrets or claim trust-list validation,
+ *     qualified status, or legal completion.
+ *
  * The picker is fed by `GET /v1/signature/providers`; CMD and CC are always offered (each has a
  * dedicated flow that does not depend on the list), and every configured CSC QTSP is appended. The
  * settings `preferred_family` marks the recommended method. When the list is unavailable (an older
@@ -32,8 +37,8 @@
  * user-reference/credential/activation (CSC) are TRANSIENT — held only in this component's form
  * state for the duration of the request that consumes them, cleared the instant they are sent, and
  * never stored client-side. The CC PIN never enters the web app at all (it is entered at the
- * reader). All produce a qualified electronic signature; the copy labels it accurately per method
- * (never "valor probatório").
+ * reader). The qualified-signing methods label their qualified status accurately, while imported
+ * and local technical evidence are kept visibly separate.
  *
  * Read errors render inline; the mutations follow the toast idiom (success + error) per
  * CONVENTIONS §2/§3. The sign actions are gated with `useCan('signing.perform', <act's book
@@ -44,10 +49,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import type {
   ActView,
   ExternalSignerInviteView,
+  OfficialSignatureImportGuardrail,
   Settings,
   SignatureEvidenceStatus,
   SignatureFamily,
 } from '../../api/types';
+import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import { ApiError } from '../../api/client';
 import { signatureFamilyLabels } from '../../api/labels';
 import {
@@ -59,6 +66,7 @@ import {
   useCreateExternalSignerInvite,
   useDownloadSignedDocument,
   useExternalSignerInvites,
+  useImportOfficialSignature,
   useLocalPkcs12SignSignature,
   useRemoteConfirmSignature,
   useRemoteInitiateSignature,
@@ -92,6 +100,8 @@ const FAMILY_CC = 'CartaoDeCidadao';
 const FAMILY_CSC = 'QualifiedCertificate';
 /** The serialized signing family for local PKCS#12/PFX software-certificate signatures. */
 const FAMILY_LOCAL_PKCS12 = 'LocalPkcs12SoftwareCertificate';
+/** The serialized family for official Autenticação.gov/provider handoff imports. */
+const FAMILY_OFFICIAL_HANDOFF = 'AutenticacaoGovOfficialHandoff';
 /** The built-in Chave Móvel Digital provider id (its `{provider}` path segment). */
 const CMD_PROVIDER_ID = 'cmd';
 
@@ -162,6 +172,26 @@ function trustedListTone(status: string): 'ok' | 'warn' {
   return status === 'Granted' ? 'ok' : 'warn';
 }
 
+function officialImportGuardrailLabel(
+  guardrail: OfficialSignatureImportGuardrail,
+  t: TFunction,
+): string {
+  switch (guardrail) {
+    case 'official_import_preserves_uploaded_signed_pdf_as_technical_evidence':
+      return t('signing.official.guardrails.preserve');
+    case 'official_import_trust_validation_not_performed':
+      return t('signing.official.guardrails.trust');
+    case 'official_import_qualified_status_not_claimed':
+      return t('signing.official.guardrails.qualified');
+    case 'official_import_legal_status_not_claimed':
+      return t('signing.official.guardrails.legal');
+    case 'official_import_no_secret_factor_collected':
+      return t('signing.official.guardrails.noSecret');
+    default:
+      return guardrail;
+  }
+}
+
 function evidenceLevelTone(level: string): 'neutral' | 'accent' | 'ok' {
   if (level === 'B-LT-local' || level === 'B-LTA-local') return 'ok';
   if (level === 'B-T') return 'ok';
@@ -226,7 +256,8 @@ type Step =
   | { kind: 'credentials'; provider: SigningProvider }
   | { kind: 'otp'; provider: SigningProvider; sessionId: string; hint: string }
   | { kind: 'cc' }
-  | { kind: 'pkcs12' };
+  | { kind: 'pkcs12' }
+  | { kind: 'officialImport' };
 
 function SignatureEvidenceSummary({ evidence }: { evidence: SignatureEvidenceStatus }) {
   const t = useT();
@@ -712,6 +743,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const remoteConfirm = useRemoteConfirmSignature(act.id);
   const ccSign = useCcSignSignature(act.id);
   const localPkcs12Sign = useLocalPkcs12SignSignature(act.id);
+  const importOfficialSignature = useImportOfficialSignature(act.id);
   const download = useDownloadSignedDocument(act.id);
   // The sign actions are gated at the act's book scope (disable-with-explanation, t64-E5).
   const bookScope = scopeBook(act.book_id);
@@ -729,6 +761,12 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const [pkcs12FriendlyName, setPkcs12FriendlyName] = useState('');
   const [pkcs12Capacity, setPkcs12Capacity] = useState('');
   const [pkcs12Error, setPkcs12Error] = useState<unknown>(null);
+  const [officialImportFile, setOfficialImportFile] = useState<File | null>(null);
+  const [officialImportProvider, setOfficialImportProvider] = useState('');
+  const [officialImportSource, setOfficialImportSource] = useState('');
+  const [officialImportFilename, setOfficialImportFilename] = useState('');
+  const [officialImportAcknowledged, setOfficialImportAcknowledged] = useState(false);
+  const [officialImportError, setOfficialImportError] = useState<unknown>(null);
   const [expired, setExpired] = useState(false);
   // Set once a CC sign attempt 409s: the API is not co-located with a card reader (browser /
   // remote server). We then swap the CC affordance for an honest note rather than fake it.
@@ -862,6 +900,15 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
     setPkcs12Error(null);
   }
 
+  function resetOfficialImportForm() {
+    setOfficialImportFile(null);
+    setOfficialImportProvider('');
+    setOfficialImportSource('');
+    setOfficialImportFilename('');
+    setOfficialImportAcknowledged(false);
+    setOfficialImportError(null);
+  }
+
   async function onLocalPkcs12Sign(e: React.FormEvent) {
     e.preventDefault();
     if (!pkcs12File || pkcs12Passphrase.length === 0 || localPkcs12Sign.isPending) return;
@@ -882,6 +929,32 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
       toast.error(err);
     } finally {
       localPkcs12Sign.reset();
+    }
+  }
+
+  async function onImportOfficialSignature(e: React.FormEvent) {
+    e.preventDefault();
+    if (!officialImportFile || !officialImportAcknowledged || importOfficialSignature.isPending) {
+      return;
+    }
+    setOfficialImportError(null);
+    try {
+      const signedPdfBase64 = await fileToBase64(officialImportFile);
+      await importOfficialSignature.mutateAsync({
+        signed_pdf_base64: signedPdfBase64,
+        provider: officialImportProvider.trim() || undefined,
+        source: officialImportSource.trim() || undefined,
+        filename: officialImportFilename.trim() || undefined,
+        acknowledged_guardrail_ids: [...OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS],
+      });
+      resetOfficialImportForm();
+      setStep({ kind: 'view' });
+      toast.success(t('toast.signing.officialImported'));
+    } catch (err) {
+      setOfficialImportError(err);
+      toast.error(err);
+    } finally {
+      importOfficialSignature.reset();
     }
   }
 
@@ -915,19 +988,27 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   }
 
   function familyLabel(family: string): string {
+    if (family === FAMILY_OFFICIAL_HANDOFF) return t('signing.official.family');
     return signatureFamilyLabels[family as SignatureFamily] ?? family;
   }
 
   /** The honest, method-accurate qualified-signature label for a signed record. */
   function qualifiedLabel(family: string): string {
     if (family === FAMILY_LOCAL_PKCS12) return t('signing.signed.localPkcs12Label');
+    if (family === FAMILY_OFFICIAL_HANDOFF) return t('signing.signed.officialLabel');
     if (family === FAMILY_CC) return t('signing.signed.qualifiedLabelCc');
     if (family === FAMILY_CSC) return t('signing.signed.qualifiedLabelCsc');
     return t('signing.signed.qualifiedLabel');
   }
 
+  function signedBoundaryNote(family: string): string {
+    if (family === FAMILY_OFFICIAL_HANDOFF) return t('signing.signed.officialNote');
+    return t('signing.signed.validityNote');
+  }
+
   function signedTitle(family: string): string {
     if (family === FAMILY_LOCAL_PKCS12) return t('signing.signed.localPkcs12Title');
+    if (family === FAMILY_OFFICIAL_HANDOFF) return t('signing.signed.officialTitle');
     return t('signing.signed.title');
   }
 
@@ -947,7 +1028,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               title={signedTitle(data.signed.family)}
             >
               <p>{qualifiedLabel(data.signed.family)}</p>
-              <p>{t('signing.signed.validityNote')}</p>
+              <p>{signedBoundaryNote(data.signed.family)}</p>
             </StatusSummary>
             <dl className="deflist signing-deflist">
               <div>
@@ -1006,6 +1087,124 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               {download.isPending ? t('documents.download.pending') : t('signing.download')}
             </Button>
           </div>
+        ) : step.kind === 'officialImport' ? (
+          // --- Official app/provider handoff: upload an already-signed PDF as evidence only.
+          <form className="form" onSubmit={onImportOfficialSignature}>
+            <StatusSummary
+              tone="warn"
+              badge={t('signing.status.officialHandoff')}
+              title={t('signing.official.title')}
+            >
+              <p>{t('signing.official.notice')}</p>
+            </StatusSummary>
+            <div className="form__grid">
+              <Field
+                label={t('signing.official.file.label')}
+                htmlFor="sign-official-file"
+                hint={t('signing.official.file.hint')}
+              >
+                <Input
+                  id="sign-official-file"
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  autoComplete="off"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setOfficialImportFile(file);
+                    setOfficialImportFilename(file?.name ?? '');
+                  }}
+                />
+              </Field>
+              <Field
+                label={t('signing.official.provider.label')}
+                htmlFor="sign-official-provider"
+                hint={t('signing.official.provider.hint')}
+              >
+                <Input
+                  id="sign-official-provider"
+                  type="text"
+                  autoComplete="off"
+                  value={officialImportProvider}
+                  placeholder={t('signing.official.provider.placeholder')}
+                  onChange={(event) => setOfficialImportProvider(event.target.value)}
+                />
+              </Field>
+              <Field
+                label={t('signing.official.source.label')}
+                htmlFor="sign-official-source"
+                hint={t('signing.official.source.hint')}
+              >
+                <Input
+                  id="sign-official-source"
+                  type="text"
+                  autoComplete="off"
+                  value={officialImportSource}
+                  placeholder={t('signing.official.source.placeholder')}
+                  onChange={(event) => setOfficialImportSource(event.target.value)}
+                />
+              </Field>
+              <Field
+                label={t('signing.official.filename.label')}
+                htmlFor="sign-official-filename"
+                hint={t('signing.official.filename.hint')}
+              >
+                <Input
+                  id="sign-official-filename"
+                  type="text"
+                  autoComplete="off"
+                  value={officialImportFilename}
+                  onChange={(event) => setOfficialImportFilename(event.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="stack--tight">
+              <p className="card__label">{t('signing.official.guardrails.title')}</p>
+              <ul className="plain-list">
+                {OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS.map((guardrail) => (
+                  <li key={guardrail}>{officialImportGuardrailLabel(guardrail, t)}</li>
+                ))}
+              </ul>
+              <label className="checkline" htmlFor="sign-official-guardrails">
+                <input
+                  id="sign-official-guardrails"
+                  type="checkbox"
+                  checked={officialImportAcknowledged}
+                  disabled={importOfficialSignature.isPending}
+                  onChange={(event) => setOfficialImportAcknowledged(event.target.checked)}
+                />
+                {t('signing.official.ack.label')}
+              </label>
+            </div>
+            {officialImportError ? <ErrorNote error={officialImportError} /> : null}
+            <div className="rowline">
+              <Button
+                type="submit"
+                variant="primary"
+                icon={<Icon.FileText />}
+                disabled={
+                  !officialImportFile ||
+                  !officialImportAcknowledged ||
+                  importOfficialSignature.isPending
+                }
+              >
+                {importOfficialSignature.isPending
+                  ? t('signing.official.importing')
+                  : t('signing.official.import')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<Icon.Refresh />}
+                disabled={importOfficialSignature.isPending}
+                onClick={() => {
+                  resetOfficialImportForm();
+                  setStep({ kind: 'view' });
+                }}
+              >
+                {t('signing.cc.cancel')}
+              </Button>
+            </div>
+          </form>
         ) : step.kind === 'pkcs12' ? (
           // --- Local PKCS#12/PFX: advanced software-certificate signing, technical evidence only.
           <form className="form" onSubmit={onLocalPkcs12Sign}>
@@ -1339,6 +1538,25 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                   }}
                 >
                   {t('signing.pkcs12.start')}
+                </GateButton>
+              </ProviderChoice>
+              <ProviderChoice
+                title={t('signing.provider.official.title')}
+                description={t('signing.provider.official.description')}
+                badges={<Badge tone="warn">{t('signing.provider.official.badge')}</Badge>}
+              >
+                <GateButton
+                  perm="signing.perform"
+                  scope={bookScope}
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.FileText />}
+                  onClick={() => {
+                    resetOfficialImportForm();
+                    setStep({ kind: 'officialImport' });
+                  }}
+                >
+                  {t('signing.official.start')}
                 </GateButton>
               </ProviderChoice>
               {providers.isLoading ? (

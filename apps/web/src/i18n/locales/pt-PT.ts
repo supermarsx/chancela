@@ -2037,8 +2037,14 @@ export const ptPT = {
     'Assinatura eletrónica qualificada (certificado qualificado de prestador de confiança).',
   'signing.signed.localPkcs12Title': 'Ata assinada com certificado de software local',
   'signing.signed.localPkcs12Label':
-    'Assinatura local com certificado PKCS#12/PFX: evidência técnica avançada apenas; não é assinatura qualificada, CMD ou declaração de validade legal.',
+    'Assinatura local com certificado PKCS#12/PFX: evidência técnica avançada apenas; não é assinatura qualificada, CMD ou conclusão jurídica.',
+  'signing.signed.officialTitle': 'Ata com PDF assinado importado da Autenticação.gov',
+  'signing.signed.officialLabel':
+    'PDF assinado importado de handoff oficial: evidência técnica apenas; não afirma validação na Lista de Confiança, estatuto qualificado ou conclusão jurídica.',
+  'signing.signed.officialNote':
+    'A importação guarda o PDF assinado e a evidência técnica observada. Os metadados indicados pelo operador não são autoridade para confiança, qualificação ou conclusão jurídica.',
   'signing.recommended': 'Recomendada',
+  'signing.official.family': 'Handoff oficial Autenticação.gov',
   'signing.signed.signer': 'Signatário',
   'signing.signed.family': 'Família',
   'signing.signed.signingTime': 'Data e hora da assinatura',
@@ -2076,10 +2082,11 @@ export const ptPT = {
   'signing.status.signed': 'Assinada',
   'signing.status.localCard': 'Cartão local',
   'signing.status.localPkcs12': 'PKCS#12 local',
+  'signing.status.officialHandoff': 'Handoff oficial',
   'signing.status.required': 'Obrigatória',
   'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
-    'Chancela mostra o registo técnico da assinatura e a evidência disponível; a apreciação de validade jurídica depende do contexto e da verificação aplicável.',
+    'Chancela mostra o registo técnico da assinatura e a evidência disponível; qualquer decisão jurídica depende do contexto e da verificação aplicável.',
   'signing.signed.signer.help':
     'Sujeito do certificado usado na assinatura, tal como foi lido do certificado.',
   'signing.signed.trustedList.help':
@@ -2118,7 +2125,7 @@ export const ptPT = {
   'signing.evidence.longTerm.ltaNotImplemented': 'B-LTA não implementado',
   'signing.evidence.noDetails': 'Sem detalhes',
   'signing.evidence.disclaimer':
-    'Não é uma declaração de validade legal. É um resumo da evidência técnica disponível no ficheiro e nos dados devolvidos pelo servidor.',
+    'Não é uma decisão jurídica. É um resumo da evidência técnica disponível no ficheiro e nos dados devolvidos pelo servidor.',
   'signing.provider.cmd.title': 'Chave Móvel Digital',
   'signing.provider.cmd.description':
     'Fluxo remoto em dois passos: PIN de assinatura e código SMS. Recomendado quando a CMD está ativa.',
@@ -2132,7 +2139,7 @@ export const ptPT = {
   'signing.pkcs12.start': 'Assinar com PKCS#12 local',
   'signing.pkcs12.title': 'Assinatura local com certificado de software',
   'signing.pkcs12.notice':
-    'Use apenas quando precisa de evidência técnica local. O ficheiro PFX e a palavra-passe são enviados só para este pedido e não são guardados pela interface; o resultado não é assinatura qualificada, CMD ou declaração de validade legal.',
+    'Use apenas quando precisa de evidência técnica local. O ficheiro PFX e a palavra-passe são enviados só para este pedido e não são guardados pela interface; o resultado não é assinatura qualificada, CMD ou conclusão jurídica.',
   'signing.pkcs12.file.label': 'Ficheiro PKCS#12/PFX',
   'signing.pkcs12.file.hint': 'Selecione um ficheiro .p12 ou .pfx deste computador.',
   'signing.pkcs12.passphrase.label': 'Palavra-passe do certificado',
@@ -2143,6 +2150,41 @@ export const ptPT = {
   'signing.pkcs12.capacity.hint': 'Opcional. Regista a qualidade em que o signatário atua.',
   'signing.pkcs12.sign': 'Assinar localmente',
   'signing.pkcs12.signing': 'A assinar localmente…',
+  'signing.provider.official.title': 'PDF já assinado na Autenticação.gov',
+  'signing.provider.official.description':
+    'Importe o PDF assinado fora da Chancela. Guarda evidência técnica apenas; não afirma validação na Lista de Confiança, estatuto qualificado ou conclusão jurídica.',
+  'signing.provider.official.badge': 'Importação técnica',
+  'signing.official.start': 'Importar PDF assinado',
+  'signing.official.title': 'Importar PDF assinado por handoff oficial',
+  'signing.official.notice':
+    'Escolha o PDF já assinado na Autenticação.gov ou noutro handoff oficial. Chancela guarda o ficheiro como evidência técnica apenas e não afirma validação na Lista de Confiança, estatuto qualificado ou conclusão jurídica.',
+  'signing.official.file.label': 'PDF assinado',
+  'signing.official.file.hint': 'Selecione o PDF assinado que recebeu da aplicação oficial.',
+  'signing.official.provider.label': 'Prestador',
+  'signing.official.provider.hint':
+    'Opcional. Regista o prestador indicado pelo operador; não é usado como autoridade.',
+  'signing.official.provider.placeholder': 'Autenticação.gov',
+  'signing.official.source.label': 'Origem',
+  'signing.official.source.hint':
+    'Opcional. Exemplo: handoff oficial, aplicação de secretária, portal do prestador.',
+  'signing.official.source.placeholder': 'handoff oficial',
+  'signing.official.filename.label': 'Nome do ficheiro',
+  'signing.official.filename.hint': 'Opcional. Guardado como metadado do upload.',
+  'signing.official.guardrails.title': 'Limites a reconhecer',
+  'signing.official.guardrails.preserve':
+    'O PDF assinado carregado é preservado como evidência técnica.',
+  'signing.official.guardrails.trust':
+    'Chancela não realiza validação na Lista de Confiança neste fluxo.',
+  'signing.official.guardrails.qualified':
+    'Chancela não afirma estatuto qualificado para esta importação.',
+  'signing.official.guardrails.legal':
+    'Chancela não afirma conclusão jurídica para esta importação.',
+  'signing.official.guardrails.noSecret':
+    'Este fluxo não recolhe PIN, OTP, CAN, credenciais, tokens ou palavras-passe.',
+  'signing.official.ack.label':
+    'Confirmo que reconheço estes limites e que esta importação guarda apenas evidência técnica do PDF assinado.',
+  'signing.official.import': 'Importar evidência técnica',
+  'signing.official.importing': 'A importar…',
   'signing.provider.loading': 'A carregar prestadores remotos configurados…',
   'signing.provider.unavailable.title': 'Prestadores remotos indisponíveis',
   'signing.provider.unavailable.body':
@@ -2191,6 +2233,7 @@ export const ptPT = {
   'signing.invites.revoking': 'A revogar…',
   'toast.signing.otpSent': 'Código SMS enviado.',
   'toast.signing.signed': 'Ata assinada.',
+  'toast.signing.officialImported': 'PDF assinado importado como evidência técnica.',
   'toast.signing.downloaded': 'PDF assinado descarregado.',
 
   // --- Chain integrity + recovery + data management (t54) ------------------------

@@ -8,6 +8,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { SigningPanel } from './SigningPanel';
 import { renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
+import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import type { ActView, SignatureEvidenceStatus, SignatureStatusView } from '../../api/types';
 
 const sealedAct: ActView = {
@@ -313,7 +314,7 @@ describe('SigningPanel — signed status + download', () => {
     expect(screen.getByText('Com selo temporal')).toBeTruthy();
     expect(screen.getByText(/B-LT não implementado/)).toBeTruthy();
     expect(screen.getByText(/B-LTA não implementado/)).toBeTruthy();
-    expect(screen.getByText(/Não é uma declaração de validade legal/)).toBeTruthy();
+    expect(screen.getByText(/Não é uma decisão jurídica/)).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Ajuda' }).length).toBeGreaterThan(0);
   });
 });
@@ -579,6 +580,24 @@ const localPkcs12SignedStatus: SignatureStatusView = {
   evidence: evidence('B-B', false, ['not_configured', 'lt_not_implemented', 'lta_not_implemented']),
 };
 
+const officialHandoffSignedStatus: SignatureStatusView = {
+  status: 'signed',
+  finalization: 'finalizado',
+  require_qualified_for_seal: false,
+  signed: {
+    family: 'AutenticacaoGovOfficialHandoff',
+    evidentiary_level: 'ImportedOfficialHandoffTechnicalEvidence',
+    trusted_list_status: null,
+    signer_cert_subject: 'CN=Amélia Marques,O=Encosto Estratégico Lda',
+    signing_time: '2026-07-06T10:00:00Z',
+    signed_at: '2026-07-06T10:00:05Z',
+    signed_pdf_digest: 'c1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
+    timestamp_token: false,
+    download: '/v1/acts/act-1/document/signed',
+  },
+  evidence: evidence('B-B', false, ['not_configured', 'lt_not_implemented', 'lta_not_implemented']),
+};
+
 /** A provider-list row builder (matches `SignatureProviderView`). */
 function provider(id: string, label: string, family: string, configured: boolean) {
   return { id, family, label, evidentiary_level: 'Qualified', configured };
@@ -625,7 +644,9 @@ describe('SigningPanel — local PKCS#12 software certificate', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Assinar com PKCS#12 local' }));
     expect(await screen.findByText('Assinatura local com certificado de software')).toBeTruthy();
-    expect(screen.getByText(/não é assinatura qualificada, CMD ou declaração/)).toBeTruthy();
+    expect(
+      screen.getByText(/não é assinatura qualificada, CMD ou conclusão jurídica/),
+    ).toBeTruthy();
 
     const file = new File(['pfx-bytes'], 'signer.pfx', { type: 'application/x-pkcs12' });
     Object.defineProperty(file, 'arrayBuffer', {
@@ -658,6 +679,107 @@ describe('SigningPanel — local PKCS#12 software certificate', () => {
       screen.getByText(/evidência técnica avançada apenas; não é assinatura qualificada/),
     ).toBeTruthy();
     expect(screen.queryByLabelText('Palavra-passe do certificado')).toBeNull();
+  });
+});
+
+describe('SigningPanel — official handoff import', () => {
+  it('requires guardrail acknowledgement and submits the signed PDF with required ids', async () => {
+    let signed = false;
+    let requestBody: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.includes('/signature/official/import')) {
+        requestBody = JSON.parse(String(init?.body));
+        signed = true;
+        return json({
+          document_id: 'doc-1',
+          act_id: 'act-1',
+          family: 'AutenticacaoGovOfficialHandoff',
+          evidentiary_level: 'ImportedOfficialHandoffTechnicalEvidence',
+          trusted_list_status: null,
+          legal_validation: {
+            pades_valid: true,
+            byte_range_covers_whole_file: true,
+            sealed_pdf_prefix_match: true,
+            trust_validation: 'not_performed',
+            trust_validation_performed: false,
+            qualified_status_claimed: false,
+            legal_status_claimed: false,
+          },
+          signing_time: '2026-07-06T10:00:00Z',
+          signed_at: '2026-07-06T10:00:05Z',
+          signed_pdf_digest: officialHandoffSignedStatus.signed!.signed_pdf_digest,
+          timestamp_token: false,
+          finalization: 'finalizado',
+          qualification_claimed: false,
+          client_metadata_authoritative: false,
+          guardrail_ids: OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS,
+          acknowledged_guardrail_ids: OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS,
+          acknowledgement_notice: 'technical evidence only',
+        });
+      }
+      if (url.endsWith('/signature') && method === 'GET') {
+        return json(signed ? officialHandoffSignedStatus : unsignedStatus);
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Importar PDF assinado' }));
+    expect(await screen.findByText('Importar PDF assinado por handoff oficial')).toBeTruthy();
+    expect(screen.getByText(/evidência técnica apenas/)).toBeTruthy();
+    expect(screen.getByText(/não afirma validação na Lista de Confiança/)).toBeTruthy();
+    expect(
+      screen.queryByText(/validade legal|validade jurídica|legal-validity|legal validity/i),
+    ).toBeNull();
+    expect(screen.queryByLabelText('PIN de assinatura da CMD')).toBeNull();
+    expect(screen.queryByLabelText('Código SMS (OTP)')).toBeNull();
+
+    const submit = screen.getByRole('button', { name: 'Importar evidência técnica' });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+
+    const file = new File(['%PDF-signed'], 'signed-by-official-app.pdf', {
+      type: 'application/pdf',
+    });
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: () => Promise.resolve(new TextEncoder().encode('%PDF-signed').buffer),
+    });
+    fireEvent.change(screen.getByLabelText('PDF assinado'), {
+      target: { files: [file] },
+    });
+    fireEvent.change(screen.getByLabelText('Prestador'), {
+      target: { value: 'Autenticação.gov' },
+    });
+    fireEvent.change(screen.getByLabelText('Origem'), {
+      target: { value: 'operator_selected_cc_or_cmd' },
+    });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(submit);
+    expect(requestBody).toBeNull();
+
+    fireEvent.click(screen.getByLabelText(/reconheço estes limites/));
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(requestBody).toMatchObject({
+        signed_pdf_base64: btoa('%PDF-signed'),
+        provider: 'Autenticação.gov',
+        source: 'operator_selected_cc_or_cmd',
+        filename: 'signed-by-official-app.pdf',
+        acknowledged_guardrail_ids: [...OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS],
+      }),
+    );
+    expect(requestBody).not.toHaveProperty('pin');
+    expect(requestBody).not.toHaveProperty('otp');
+    expect(requestBody).not.toHaveProperty('credential');
+    expect(requestBody).not.toHaveProperty('passphrase');
+    expect(
+      await screen.findByText('Ata com PDF assinado importado da Autenticação.gov'),
+    ).toBeTruthy();
   });
 });
 
