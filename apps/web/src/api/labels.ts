@@ -19,6 +19,7 @@ import type {
   CaeRevision,
   CaeRole,
   ClosingReason,
+  DispatchChannel,
   EntityFamily,
   EntityKind,
   LifecycleStage,
@@ -55,6 +56,7 @@ export const bookStateLabels = enumLabels<BookState>('bookState');
 export const numberingSchemeLabels = enumLabels<NumberingScheme>('numberingScheme');
 export const closingReasonLabels = enumLabels<ClosingReason>('closingReason');
 export const meetingChannelLabels = enumLabels<MeetingChannel>('meetingChannel');
+export const dispatchChannelLabels = enumLabels<DispatchChannel>('dispatchChannel');
 export const actStateLabels = enumLabels<ActState>('actState');
 export const attachmentKindLabels = enumLabels<AttachmentKind>('attachmentKind');
 export const signatoryCapacityLabels = enumLabels<SignatoryCapacity>('signatoryCapacity');

@@ -165,7 +165,46 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     expect(document.body.textContent).toContain(ataFieldHelp.membersPresent);
     expect(document.body.textContent).toContain(ataFieldHelp.membersRepresented);
     expect(document.body.textContent).toContain(ataFieldHelp.telematicEvidence);
+    expect(document.body.textContent).toContain(ataFieldHelp.conveningDispatchDate);
+    expect(document.body.textContent).toContain(ataFieldHelp.conveningChannel);
+    expect(document.body.textContent).toContain(ataFieldHelp.conveningAntecedenceDays);
+    expect(document.body.textContent).toContain(ataFieldHelp.conveningEvidenceReference);
     expect(document.body.textContent).toContain(ataFieldHelp.deliberationsText);
+  });
+
+  it('saves bounded convening evidence through the act patch body', async () => {
+    const withChair = { ...baseAct, mesa: { presidente: 'Ana', secretarios: [] } };
+    const shared = stateful(withChair);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    await screen.findByDisplayValue('Assembleia Geral Anual');
+    fireEvent.change(screen.getByLabelText('Data da convocatória'), {
+      target: { value: '2026-06-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Meio da convocatória'), {
+      target: { value: 'Email' },
+    });
+    fireEvent.change(screen.getByLabelText('Antecedência efetiva (dias)'), {
+      target: { value: '29' },
+    });
+    fireEvent.change(screen.getByLabelText('Prova da convocatória'), {
+      target: { value: 'doc:convocatoria-2026-06-01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => {
+      expect(shared.patches.at(-1)?.convening).toEqual({
+        convener: null,
+        convener_capacity: null,
+        dispatch_date: '2026-06-01',
+        antecedence_days: 29,
+        channel: 'Email',
+        evidence_reference: 'doc:convocatoria-2026-06-01',
+        recipients: [],
+        second_call: null,
+      });
+    });
   });
 
   it('clears the mesa-presidente compliance error once the chair is filled and saved', async () => {

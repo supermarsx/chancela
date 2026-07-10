@@ -154,7 +154,7 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[3][1].method).toBe('DELETE');
   });
 
-  it('uses the privacy processor and DPIA register endpoints', async () => {
+  it('uses the privacy register endpoints', async () => {
     const fetchMock = vi.fn().mockImplementation(() =>
       Promise.resolve(
         jsonResponse({
@@ -225,6 +225,59 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[5][0]).toBe('/v1/privacy/dpias/dpia-1');
     expect(fetchMock.mock.calls[5][1].method).toBe('PATCH');
     expect(JSON.parse(fetchMock.mock.calls[5][1].body)).toEqual({ risk_level: 'critical' });
+
+    await api.listBreachPlaybooks();
+    expect(fetchMock.mock.calls[6][0]).toBe('/v1/privacy/breach-playbooks');
+
+    await api.createBreachPlaybook({
+      title: 'Suspected compromise',
+      scope: 'account-access',
+      detection_channels: ['SIEM alert'],
+      containment_steps: ['Disable sessions'],
+      notification_roles: ['DPO'],
+      risk_level: 'high',
+      status: 'active',
+    });
+    expect(fetchMock.mock.calls[7][0]).toBe('/v1/privacy/breach-playbooks');
+    expect(fetchMock.mock.calls[7][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[7][1].body)).toMatchObject({
+      title: 'Suspected compromise',
+      detection_channels: ['SIEM alert'],
+      risk_level: 'high',
+    });
+
+    await api.patchBreachPlaybook('breach-1', { status: 'under_review' });
+    expect(fetchMock.mock.calls[8][0]).toBe('/v1/privacy/breach-playbooks/breach-1');
+    expect(fetchMock.mock.calls[8][1].method).toBe('PATCH');
+    expect(JSON.parse(fetchMock.mock.calls[8][1].body)).toEqual({ status: 'under_review' });
+
+    await api.listTransferControls();
+    expect(fetchMock.mock.calls[9][0]).toBe('/v1/privacy/transfer-controls');
+
+    await api.createTransferControl({
+      name: 'EU to UK support access',
+      purpose: 'Support',
+      legal_basis: 'Contract',
+      data_categories: ['Support messages'],
+      recipient: 'UK Support Ltd',
+      destination_country: 'United Kingdom',
+      transfer_mechanism: 'UK adequacy regulation',
+      safeguards: ['Ticket-scoped access'],
+      risk_level: 'medium',
+      status: 'draft',
+    });
+    expect(fetchMock.mock.calls[10][0]).toBe('/v1/privacy/transfer-controls');
+    expect(fetchMock.mock.calls[10][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[10][1].body)).toMatchObject({
+      name: 'EU to UK support access',
+      recipient: 'UK Support Ltd',
+      safeguards: ['Ticket-scoped access'],
+    });
+
+    await api.patchTransferControl('transfer-1', { risk_level: 'high' });
+    expect(fetchMock.mock.calls[11][0]).toBe('/v1/privacy/transfer-controls/transfer-1');
+    expect(fetchMock.mock.calls[11][1].method).toBe('PATCH');
+    expect(JSON.parse(fetchMock.mock.calls[11][1].body)).toEqual({ risk_level: 'high' });
   });
 
   it('downloads the read-only book preservation package from the archive endpoint', async () => {

@@ -19,6 +19,10 @@ use uuid::Uuid;
 use chancela_authz::{Permission, ScopedPermissionSet};
 use chancela_cae::CaeCatalog;
 use chancela_core::book::ClosingReason;
+#[cfg(test)]
+use chancela_core::book::{BookId, TermoDeAbertura};
+#[cfg(test)]
+use chancela_core::entity::EntityId;
 use chancela_core::{
     Act, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee, Book,
     BookKind, BookState, ComplianceIssue, Convening, ConveningRecipient, DeliberationItem,
@@ -486,6 +490,31 @@ impl From<&Book> for BookView {
     }
 }
 
+impl BookView {
+    /// Build a book read view under the selected privacy policy.
+    #[must_use]
+    pub(crate) fn build(b: &Book, redaction: ReadRedaction) -> Self {
+        let mut view = BookView::from(b);
+        if redaction.is_guest() {
+            view.redact_sensitive();
+        }
+        view
+    }
+
+    fn redact_sensitive(&mut self) {
+        self.purpose = None;
+        self.predecessor = None;
+        self.required_signatories_abertura = self
+            .required_signatories_abertura
+            .as_ref()
+            .map(|items| vec![redacted(); items.len()]);
+        self.required_signatories_encerramento = self
+            .required_signatories_encerramento
+            .as_ref()
+            .map(|items| vec![redacted(); items.len()]);
+    }
+}
+
 /// Body of `POST /v1/books` (create + open in one step, WFL-10/11).
 #[derive(Deserialize)]
 pub struct CreateBook {
@@ -540,6 +569,13 @@ impl From<&Attachment> for AttachmentView {
     }
 }
 
+impl AttachmentView {
+    fn redact_sensitive(&mut self) {
+        self.label = redacted();
+        self.digest = None;
+    }
+}
+
 /// Wire view of a signatory slot.
 #[derive(Serialize)]
 pub struct SignatoryView {
@@ -561,6 +597,13 @@ impl From<&SignatorySlot> for SignatoryView {
             signed: s.signed,
             permilage: s.permilage,
         }
+    }
+}
+
+impl SignatoryView {
+    fn redact_sensitive(&mut self) {
+        self.name = redacted();
+        self.email = None;
     }
 }
 
@@ -603,6 +646,13 @@ impl From<&Mesa> for MesaView {
     }
 }
 
+impl MesaView {
+    fn redact_sensitive(&mut self) {
+        self.presidente = self.presidente.as_ref().map(|_| redacted());
+        self.secretarios = vec![redacted(); self.secretarios.len()];
+    }
+}
+
 impl From<MesaView> for Mesa {
     fn from(m: MesaView) -> Self {
         Mesa {
@@ -628,6 +678,12 @@ impl From<&AgendaItem> for AgendaItemView {
     }
 }
 
+impl AgendaItemView {
+    fn redact_sensitive(&mut self) {
+        self.text = redacted();
+    }
+}
+
 impl From<AgendaItemView> for AgendaItem {
     fn from(a: AgendaItemView) -> Self {
         AgendaItem {
@@ -650,6 +706,13 @@ impl From<&DocumentReference> for DocumentReferenceView {
             label: d.label.clone(),
             reference: d.reference.clone(),
         }
+    }
+}
+
+impl DocumentReferenceView {
+    fn redact_sensitive(&mut self) {
+        self.label = redacted();
+        self.reference = None;
     }
 }
 
@@ -726,6 +789,13 @@ impl From<&MemberStatement> for MemberStatementView {
     }
 }
 
+impl MemberStatementView {
+    fn redact_sensitive(&mut self) {
+        self.member = redacted();
+        self.text = redacted();
+    }
+}
+
 impl From<MemberStatementView> for MemberStatement {
     fn from(s: MemberStatementView) -> Self {
         MemberStatement {
@@ -754,6 +824,15 @@ impl From<&DeliberationItem> for DeliberationItemView {
             text: d.text.clone(),
             vote: d.vote.as_ref().map(VoteResultView::from),
             statements: d.statements.iter().map(MemberStatementView::from).collect(),
+        }
+    }
+}
+
+impl DeliberationItemView {
+    fn redact_sensitive(&mut self) {
+        self.text = redacted();
+        for statement in &mut self.statements {
+            statement.redact_sensitive();
         }
     }
 }
@@ -792,6 +871,13 @@ impl From<&ConveningRecipient> for ConveningRecipientView {
     }
 }
 
+impl ConveningRecipientView {
+    fn redact_sensitive(&mut self) {
+        self.name = redacted();
+        self.reference = None;
+    }
+}
+
 /// Wire view of a second-call record (split `date` + `time` as `YYYY-MM-DD` / `HH:MM`).
 #[derive(Serialize)]
 pub struct SecondCallView {
@@ -819,6 +905,7 @@ pub struct ConveningView {
     pub dispatch_date: Option<String>,
     pub antecedence_days: Option<u16>,
     pub channel: Option<DispatchChannel>,
+    pub evidence_reference: Option<String>,
     pub recipients: Vec<ConveningRecipientView>,
     pub second_call: Option<SecondCallView>,
 }
@@ -831,12 +918,23 @@ impl From<&Convening> for ConveningView {
             dispatch_date: c.dispatch_date.map(format_date),
             antecedence_days: c.antecedence_days,
             channel: c.channel,
+            evidence_reference: c.evidence_reference.clone(),
             recipients: c
                 .recipients
                 .iter()
                 .map(ConveningRecipientView::from)
                 .collect(),
             second_call: c.second_call.as_ref().map(SecondCallView::from),
+        }
+    }
+}
+
+impl ConveningView {
+    fn redact_sensitive(&mut self) {
+        self.convener = self.convener.as_ref().map(|_| redacted());
+        self.evidence_reference = None;
+        for recipient in &mut self.recipients {
+            recipient.redact_sensitive();
         }
     }
 }
@@ -863,6 +961,13 @@ impl From<&Attendee> for AttendeeView {
     }
 }
 
+impl AttendeeView {
+    fn redact_sensitive(&mut self) {
+        self.name = redacted();
+        self.represented_by = self.represented_by.as_ref().map(|_| redacted());
+    }
+}
+
 /// Convening/dispatch record as accepted on a PATCH (input side: dates are ISO strings, parsed to
 /// `time` in [`ConveningInput::into_core`], a malformed value being a `422`).
 #[derive(Deserialize)]
@@ -877,6 +982,8 @@ pub struct ConveningInput {
     pub antecedence_days: Option<u16>,
     #[serde(default)]
     pub channel: Option<DispatchChannel>,
+    #[serde(default)]
+    pub evidence_reference: Option<String>,
     #[serde(default)]
     pub recipients: Vec<ConveningRecipientInput>,
     #[serde(default)]
@@ -904,6 +1011,7 @@ impl ConveningInput {
             dispatch_date,
             antecedence_days: self.antecedence_days,
             channel: self.channel,
+            evidence_reference: self.evidence_reference,
             recipients,
             second_call,
         })
@@ -1210,12 +1318,56 @@ impl From<&Act> for ActView {
     }
 }
 
+impl ActView {
+    /// Build an act read view under the selected privacy policy.
+    #[must_use]
+    pub(crate) fn build(a: &Act, redaction: ReadRedaction) -> Self {
+        let mut view = ActView::from(a);
+        if redaction.is_guest() {
+            view.redact_sensitive();
+        }
+        view
+    }
+
+    fn redact_sensitive(&mut self) {
+        self.title = redacted();
+        self.place = self.place.as_ref().map(|_| redacted());
+        self.mesa.redact_sensitive();
+        for item in &mut self.agenda {
+            item.redact_sensitive();
+        }
+        self.attendance_reference = self.attendance_reference.as_ref().map(|_| redacted());
+        for document in &mut self.referenced_documents {
+            document.redact_sensitive();
+        }
+        self.deliberations = redacted();
+        for item in &mut self.deliberation_items {
+            item.redact_sensitive();
+        }
+        self.telematic_evidence = self.telematic_evidence.as_ref().map(|_| redacted());
+        for attachment in &mut self.attachments {
+            attachment.redact_sensitive();
+        }
+        for signatory in &mut self.signatories {
+            signatory.redact_sensitive();
+        }
+        if let Some(convening) = &mut self.convening {
+            convening.redact_sensitive();
+        }
+        for attendee in &mut self.attendees {
+            attendee.redact_sensitive();
+        }
+    }
+}
+
 /// Body of `POST /v1/acts` (draft a new ata, WFL-14).
 #[derive(Deserialize)]
 pub struct DraftAct {
     pub book_id: Uuid,
     pub title: String,
     pub channel: MeetingChannel,
+    #[serde(default)]
+    pub convening: Option<ConveningInput>,
     pub retifies: Option<Uuid>,
     #[serde(default = "default_actor")]
     pub actor: String,
@@ -2327,5 +2479,125 @@ mod tests {
             serde_json::Value::Null
         );
         assert_eq!(value["legal_basis"][0]["source_complete"], false);
+    }
+
+    #[test]
+    fn guest_book_view_redacts_opening_signatories_and_purpose() {
+        let mut book = Book::new(EntityId(Uuid::from_u128(1)), BookKind::AssembleiaGeral);
+        book.open(TermoDeAbertura {
+            entity_name: "Encosto Estratégico Lda".to_owned(),
+            entity_nipc: "503004642".to_owned(),
+            entity_seat: "Rua da Liberdade".to_owned(),
+            purpose: "Ata com assunto reservado".to_owned(),
+            numbering_scheme: NumberingScheme::Sequential,
+            opening_date: parse_date("2026-07-10").expect("valid date"),
+            required_signatories: vec!["Amélia Marques".to_owned(), "Rui Nunes".to_owned()],
+        })
+        .expect("book opens");
+
+        let view = BookView::build(&book, ReadRedaction::Guest);
+        assert_eq!(view.purpose, None);
+        assert_eq!(
+            view.required_signatories_abertura,
+            Some(vec![REDACTED.to_owned(), REDACTED.to_owned()])
+        );
+        let raw = serde_json::to_string(&view).expect("book view JSON");
+        assert!(!raw.contains("Ata com assunto reservado"));
+        assert!(!raw.contains("Amélia Marques"));
+        assert!(!raw.contains("Rui Nunes"));
+    }
+
+    #[test]
+    fn guest_act_view_redacts_participants_and_free_text_metadata() {
+        let mut act = Act::draft(
+            BookId(Uuid::from_u128(2)),
+            "Deliberação reservada",
+            MeetingChannel::Physical,
+        );
+        act.place = Some("Sala do Conselho".to_owned());
+        act.mesa.presidente = Some("Amélia Marques".to_owned());
+        act.mesa.secretarios = vec!["Rui Nunes".to_owned()];
+        act.agenda.push(AgendaItem {
+            number: 1,
+            text: "Avaliar processo disciplinar".to_owned(),
+        });
+        act.attendance_reference = Some("Lista nominal assinada".to_owned());
+        act.referenced_documents.push(DocumentReference {
+            label: "Relatório médico".to_owned(),
+            reference: Some("doc-123".to_owned()),
+        });
+        act.deliberations = "Texto de deliberação com dados pessoais".to_owned();
+        act.deliberation_items.push(DeliberationItem {
+            agenda_number: Some(1),
+            text: "Voto vencido com fundamento pessoal".to_owned(),
+            vote: None,
+            statements: vec![MemberStatement {
+                member: "Joana Silva".to_owned(),
+                text: "Declaração pessoal".to_owned(),
+            }],
+        });
+        act.telematic_evidence = Some("IP e sessão".to_owned());
+        act.attachments.push(Attachment {
+            label: "Anexo confidencial".to_owned(),
+            kind: AttachmentKind::Other,
+            digest: Some([7; 32]),
+            beginning_of_proof: false,
+        });
+        act.signatories.push(SignatorySlot {
+            name: "Carlos Costa".to_owned(),
+            email: Some("carlos@example.test".to_owned()),
+            capacity: SignatoryCapacity::Chair,
+            signed: false,
+            permilage: None,
+        });
+        act.convening = Some(Convening {
+            convener: Some("Administração".to_owned()),
+            convener_capacity: Some(SignatoryCapacity::Manager),
+            dispatch_date: None,
+            antecedence_days: Some(15),
+            channel: None,
+            evidence_reference: Some("email-msg-123".to_owned()),
+            recipients: vec![ConveningRecipient {
+                name: "Sócia Identificada".to_owned(),
+                channel: None,
+                reference: Some("email pessoal".to_owned()),
+                dispatched_at: None,
+            }],
+            second_call: None,
+        });
+        act.attendees.push(Attendee {
+            name: "Presente Identificado".to_owned(),
+            quality: SignatoryCapacity::Member,
+            presence: PresenceMode::InPerson,
+            represented_by: None,
+            weight: None,
+        });
+
+        let view = ActView::build(&act, ReadRedaction::Guest);
+        let raw = serde_json::to_string(&view).expect("act view JSON");
+        for leaked in [
+            "Deliberação reservada",
+            "Sala do Conselho",
+            "Amélia Marques",
+            "Rui Nunes",
+            "Avaliar processo disciplinar",
+            "Lista nominal assinada",
+            "Relatório médico",
+            "Texto de deliberação",
+            "Joana Silva",
+            "IP e sessão",
+            "Anexo confidencial",
+            "carlos@example.test",
+            "Administração",
+            "email-msg-123",
+            "Sócia Identificada",
+            "Presente Identificado",
+        ] {
+            assert!(
+                !raw.contains(leaked),
+                "guest act view leaked {leaked}: {raw}"
+            );
+        }
+        assert!(raw.contains(REDACTED));
     }
 }

@@ -17,6 +17,7 @@ type MetadataRecord = Record<string, unknown>;
 interface SourceReference {
   label: string;
   href: string | null;
+  verification: 'Verified' | 'Pending' | null;
 }
 
 const SOURCE_CONTAINER_KEYS = [
@@ -116,14 +117,22 @@ function parseSourceRecord(record: MetadataRecord): SourceReference | null {
     record.verification === 'Pending' ||
     record.source_complete === false ||
     record.complete === false;
+  const verified =
+    record.verification === 'Verified' &&
+    record.source_complete !== false &&
+    record.complete !== false;
   const pendingSuffix = pending ? ' · fonte pendente' : '';
   const unsafeUrl = urlText && !href && !visible.includes(urlText) ? ` (${urlText})` : '';
-  return { label: `${visible}${pendingSuffix}${unsafeUrl}`, href };
+  return {
+    label: `${visible}${pendingSuffix}${unsafeUrl}`,
+    href,
+    verification: pending ? 'Pending' : verified ? 'Verified' : null,
+  };
 }
 
 function parseSourceValue(value: unknown): SourceReference[] {
   const text = asNonEmptyString(value);
-  if (text) return [{ label: text, href: httpHref(text) }];
+  if (text) return [{ label: text, href: httpHref(text), verification: null }];
 
   if (Array.isArray(value)) return value.flatMap(parseSourceValue);
 
@@ -165,33 +174,42 @@ function SourceReferences({ references }: { references: SourceReference[] }) {
       <span>{sourceLabel}</span>
       {references.map((ref, i) => {
         const href = ref.href;
-        return href ? (
-          <a
-            key={`${href}-${ref.label}-${i}`}
-            className="mono truncate"
-            href={href}
-            target="_blank"
-            rel="noreferrer noopener"
-            title={ref.label}
-            aria-label={`${t('common.open')}: ${ref.label}`}
-            style={{ maxWidth: 'min(100%, 28rem)' }}
-            onClick={(e: MouseEvent<HTMLAnchorElement>) => {
-              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-              e.preventDefault();
-              void openExternal(href);
-            }}
-          >
-            {ref.label}
-          </a>
-        ) : (
-          <span
-            key={`${ref.label}-${i}`}
-            className="mono truncate"
-            title={ref.label}
-            aria-label={`${sourceLabel}: ${ref.label}`}
-            style={{ maxWidth: 'min(100%, 28rem)' }}
-          >
-            {ref.label}
+        return (
+          <span key={`${href ?? ''}-${ref.label}-${i}`} className="source-reference">
+            {href ? (
+              <a
+                className="mono truncate"
+                href={href}
+                target="_blank"
+                rel="noreferrer noopener"
+                title={ref.label}
+                aria-label={`${t('common.open')}: ${ref.label}`}
+                style={{ maxWidth: 'min(100%, 28rem)' }}
+                onClick={(e: MouseEvent<HTMLAnchorElement>) => {
+                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  e.preventDefault();
+                  void openExternal(href);
+                }}
+              >
+                {ref.label}
+              </a>
+            ) : (
+              <span
+                className="mono truncate"
+                title={ref.label}
+                aria-label={`${sourceLabel}: ${ref.label}`}
+                style={{ maxWidth: 'min(100%, 28rem)' }}
+              >
+                {ref.label}
+              </span>
+            )}
+            {ref.verification ? (
+              <Badge tone={ref.verification === 'Verified' ? 'ok' : 'warn'}>
+                {ref.verification === 'Verified'
+                  ? t('legislacao.corpus.badge.verified')
+                  : t('legislacao.corpus.badge.pending')}
+              </Badge>
+            ) : null}
           </span>
         );
       })}

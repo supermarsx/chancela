@@ -600,6 +600,8 @@ const DEFAULT_LAW_SEARCH_LIMIT: usize = 50;
 const MAX_LAW_SEARCH_LIMIT: usize = 500;
 /// Characters of context included on each side of a search match in a snippet.
 const SNIPPET_CONTEXT: usize = 90;
+/// Maximum article references accepted by the bounded citation resolver.
+const MAX_LAW_CITATION_REFS: usize = 32;
 
 // --- Corpus views -----------------------------------------------------------------------------
 
@@ -653,6 +655,66 @@ pub struct LawArticleView {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub cross_refs: Vec<String>,
     pub source: LawSourceView,
+}
+
+/// One requested corpus citation key.
+#[derive(Debug, Deserialize)]
+pub struct LawCitationRef {
+    pub diploma_id: String,
+    pub article: String,
+}
+
+/// Request body for `POST /v1/law/citations/resolve`.
+#[derive(Debug, Deserialize)]
+pub struct LawCitationRequest {
+    pub references: Vec<LawCitationRef>,
+}
+
+/// A compliance/draft-friendly legal basis view derived from a corpus article. It deliberately
+/// carries the corpus verification state as-is: `Pending` remains pending and incomplete.
+#[derive(Debug, Serialize)]
+pub struct LawCitationView {
+    pub source_id: String,
+    pub source_label: String,
+    pub article: String,
+    pub article_label: String,
+    pub citation: String,
+    pub verification: Verification,
+    pub source_url: Option<String>,
+    pub source_complete: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dr_reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retrieved_at: Option<String>,
+}
+
+impl LawCitationView {
+    fn from_article(diploma: &LawDiploma, article: &LawArticle) -> Self {
+        LawCitationView {
+            source_id: diploma.id.clone(),
+            source_label: diploma.title.clone(),
+            article: article.number.clone(),
+            article_label: article.label.clone(),
+            citation: format!("{}, {}", diploma.reference, article.label),
+            verification: article.verification,
+            source_url: article.source.url.clone(),
+            source_complete: article.source.is_complete(),
+            dr_reference: article.source.dr_reference.clone(),
+            source_digest: article.source.source_digest.clone(),
+            retrieved_at: article.source.retrieved_at.clone(),
+        }
+    }
+}
+
+/// The bounded citation report returned to draft/compliance UIs. It is reference metadata only,
+/// not persistence and not a legal-validity assertion.
+#[derive(Debug, Serialize)]
+pub struct LawCitationReport {
+    pub legal_notice: &'static str,
+    pub count: usize,
+    pub citations: Vec<LawCitationView>,
 }
 
 impl LawArticleView {
@@ -823,6 +885,40 @@ pub async fn get_law_article(
         .article(&diploma, &article)
         .ok_or(ApiError::NotFound)?;
     Ok(Json(LawArticleView::from_article(a)))
+}
+
+/// `POST /v1/law/citations/resolve` — normalize selected corpus article refs into the
+/// compliance-panel legal-basis shape. This is intentionally bounded and read-only: it helps a
+/// draft UI copy/pin references without pretending to persist them or upgrade authenticity.
+pub async fn resolve_law_citations(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(req): Json<LawCitationRequest>,
+) -> Result<Json<LawCitationReport>, ApiError> {
+    require_permission(&state, &actor, Permission::LawRead, Scope::Global).await?;
+    if req.references.len() > MAX_LAW_CITATION_REFS {
+        return Err(ApiError::Unprocessable(format!(
+            "demasiadas referências: máximo de {MAX_LAW_CITATION_REFS}"
+        )));
+    }
+
+    let catalog = LawCatalog::embedded();
+    let mut citations = Vec::with_capacity(req.references.len());
+    for r in req.references {
+        let diploma = catalog
+            .diploma(r.diploma_id.trim())
+            .ok_or(ApiError::NotFound)?;
+        let article = catalog
+            .article(&diploma.id, r.article.trim())
+            .ok_or(ApiError::NotFound)?;
+        citations.push(LawCitationView::from_article(diploma, article));
+    }
+
+    Ok(Json(LawCitationReport {
+        legal_notice: "Referências informativas para apoio à redação/conformidade; não substituem a publicação oficial nem revisão jurídica.",
+        count: citations.len(),
+        citations,
+    }))
 }
 
 /// `GET /v1/law/corpus/search?q=&limit=` — accent/case-insensitive full-text search across every

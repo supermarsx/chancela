@@ -13,6 +13,7 @@ import {
 } from './diplomas';
 import type {
   LawEntryView,
+  LawCitationReport,
   LawCorpusView,
   LawDiplomaDetailView,
   LawSearchView,
@@ -476,10 +477,54 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     ],
   };
 
+  const EIDAS_CITATION: LawCitationReport = {
+    legal_notice:
+      'Referências informativas para apoio à redação/conformidade; não substituem a publicação oficial nem revisão jurídica.',
+    count: 1,
+    citations: [
+      {
+        source_id: 'eidas-910-2014',
+        source_label: 'Regulamento eIDAS',
+        article: '25',
+        article_label: 'Artigo 25.º',
+        citation: 'Regulamento (UE) n.º 910/2014, de 23 de julho, Artigo 25.º',
+        verification: 'Verified',
+        source_url: 'https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:32014R0910',
+        source_complete: true,
+        dr_reference: 'JO L 257 de 28.8.2014, p. 73',
+      },
+    ],
+  };
+
+  const CSC_CITATION: LawCitationReport = {
+    legal_notice:
+      'Referências informativas para apoio à redação/conformidade; não substituem a publicação oficial nem revisão jurídica.',
+    count: 1,
+    citations: [
+      {
+        source_id: 'csc',
+        source_label: 'Código das Sociedades Comerciais',
+        article: '63',
+        article_label: 'Artigo 63.º',
+        citation: 'Decreto-Lei n.º 262/86, de 2 de setembro, Artigo 63.º',
+        verification: 'Pending',
+        source_url: null,
+        source_complete: false,
+      },
+    ],
+  };
+
   /** A fetch stub for the corpus endpoints (search / diploma detail / corpus list), in order. */
   function corpusFetch(): typeof fetch {
-    return vi.fn((input: RequestInfo | URL) => {
+    return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/v1/law/citations/resolve') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body ?? '{}')) as {
+          references?: { diploma_id: string; article: string }[];
+        };
+        const first = body.references?.[0];
+        return Promise.resolve(json(first?.diploma_id === 'csc' ? CSC_CITATION : EIDAS_CITATION));
+      }
       if (url.includes('/v1/law/corpus/search')) return Promise.resolve(json(SEARCH));
       if (url.includes('/v1/law/corpus/eidas-910-2014')) return Promise.resolve(json(EIDAS_DETAIL));
       if (url.includes('/v1/law/corpus/csc')) return Promise.resolve(json(CSC_DETAIL));
@@ -520,9 +565,9 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     // an un-sourced body dressed up as statute.
     expect((await screen.findAllByText('Texto por verificar')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('[NÃO VERIFICADO / fonte pendente]').length).toBeGreaterThan(0);
-    expect(
-      screen.getByRole('button', { name: 'Abrir Artigo 63.º — Ata' }).className,
-    ).toContain('leg-corpus__article-title');
+    expect(screen.getByRole('button', { name: 'Abrir Artigo 63.º — Ata' }).className).toContain(
+      'leg-corpus__article-title',
+    );
   });
 
   it('shows an article view with its full verbatim text and citation (deep-linked)', async () => {
@@ -564,5 +609,45 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     expect(
       await screen.findByText(/efeito legal equivalente ao de uma assinatura manuscrita/),
     ).toBeTruthy();
+  });
+
+  it('pins a verified article citation and copies a draft-ready citation block', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />, ['/?diploma=eidas-910-2014&artigo=25']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Fixar citação' }));
+    expect(
+      await screen.findByText('Regulamento (UE) n.º 910/2014, de 23 de julho, Artigo 25.º'),
+    ).toBeTruthy();
+    expect(screen.getAllByText('Verificado').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar para minuta' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const copied = String(writeText.mock.calls[0][0]);
+    expect(copied).toContain('não substituem a publicação oficial');
+    expect(copied).toContain('[Verificado]');
+    expect(copied).toContain('https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/');
+  });
+
+  it('pins a pending DRE article without presenting it as verified', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    vi.stubGlobal('fetch', corpusFetch());
+    renderWithProviders(<CorpusReader />, ['/?diploma=csc&artigo=63']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Fixar citação' }));
+    expect(
+      await screen.findByText('Decreto-Lei n.º 262/86, de 2 de setembro, Artigo 63.º'),
+    ).toBeTruthy();
+    expect(screen.getAllByText('Por verificar').length).toBeGreaterThan(0);
+    expect(screen.getByText('Fonte pendente; não usar como verificada.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar para minuta' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const copied = String(writeText.mock.calls[0][0]);
+    expect(copied).toContain('[Por verificar - fonte pendente]');
+    expect(copied).not.toContain('[Verificado]');
   });
 });

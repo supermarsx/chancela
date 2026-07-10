@@ -112,14 +112,56 @@ const DPIA_ONE = {
   updated_by: 'amelia.marques',
 };
 
+const BREACH_PLAYBOOK_ONE = {
+  id: 'breach-1',
+  title: 'Suspected account compromise',
+  scope: 'account-access',
+  detection_channels: ['SIEM alert'],
+  containment_steps: ['Disable sessions'],
+  notification_roles: ['DPO'],
+  authority_notification_window: '72 hours when required',
+  subject_notification_guidance: 'Notify high-risk subjects.',
+  risk_level: 'high',
+  status: 'active',
+  review_notes: 'Annual review.',
+  created_at: '2026-07-09T12:00:00Z',
+  created_by: 'amelia.marques',
+  updated_at: '2026-07-09T12:00:00Z',
+  updated_by: 'amelia.marques',
+};
+
+const TRANSFER_CONTROL_ONE = {
+  id: 'transfer-1',
+  name: 'EU to UK support access',
+  purpose: 'Support ticket investigation',
+  legal_basis: 'Contract',
+  data_categories: ['Support messages'],
+  recipient: 'UK Support Ltd',
+  destination_country: 'United Kingdom',
+  transfer_mechanism: 'UK adequacy regulation',
+  safeguards: ['Ticket-scoped access'],
+  risk_level: 'medium',
+  status: 'draft',
+  review_notes: 'Quarterly review.',
+  created_at: '2026-07-09T12:30:00Z',
+  created_by: 'amelia.marques',
+  updated_at: '2026-07-09T12:30:00Z',
+  updated_by: 'amelia.marques',
+};
+
 type ProcessorRecordMetadata = typeof PROCESSOR_ONE;
 type DpiaRecordMetadata = typeof DPIA_ONE;
+type BreachPlaybookMetadata = typeof BREACH_PLAYBOOK_ONE;
+type TransferControlMetadata = typeof TRANSFER_CONTROL_ONE;
 
 function apiKeyIdFromUrl(url: string): string | undefined {
   return url.match(/\/v1\/api-keys\/([^/]+)/)?.[1];
 }
 
-function privacyRecordIdFromUrl(url: string, root: 'processors' | 'dpias'): string | undefined {
+function privacyRecordIdFromUrl(
+  url: string,
+  root: 'processors' | 'dpias' | 'breach-playbooks' | 'transfer-controls',
+): string | undefined {
   return url.match(new RegExp(`/v1/privacy/${root}/([^/]+)`))?.[1];
 }
 
@@ -588,6 +630,8 @@ function apiKeysFetch(initialKeys: ApiKeyMetadata[] = [API_KEY_ONE]): {
 function privacyFetch(
   initialProcessors: ProcessorRecordMetadata[] = [PROCESSOR_ONE],
   initialDpias: DpiaRecordMetadata[] = [DPIA_ONE],
+  initialBreachPlaybooks: BreachPlaybookMetadata[] = [BREACH_PLAYBOOK_ONE],
+  initialTransferControls: TransferControlMetadata[] = [TRANSFER_CONTROL_ONE],
 ): {
   fn: typeof fetch;
   calls: Recorded[];
@@ -602,6 +646,17 @@ function privacyFetch(
     ...record,
     data_categories: [...record.data_categories],
     subprocessors: [...record.subprocessors],
+  }));
+  let breachPlaybooks = initialBreachPlaybooks.map((record) => ({
+    ...record,
+    detection_channels: [...record.detection_channels],
+    containment_steps: [...record.containment_steps],
+    notification_roles: [...record.notification_roles],
+  }));
+  let transferControls = initialTransferControls.map((record) => ({
+    ...record,
+    data_categories: [...record.data_categories],
+    safeguards: [...record.safeguards],
   }));
 
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -637,6 +692,34 @@ function privacyFetch(
       dpias = dpias.map((record) => (record.id === id ? updated : record));
       return Promise.resolve(jsonResponse(updated));
     }
+    if (url.includes('/v1/privacy/breach-playbooks/') && method === 'PATCH') {
+      const id = privacyRecordIdFromUrl(url, 'breach-playbooks');
+      const patch = JSON.parse(init?.body as string) as Partial<BreachPlaybookMetadata>;
+      const current = breachPlaybooks.find((record) => record.id === id);
+      if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const updated = {
+        ...current,
+        ...patch,
+        updated_at: '2026-07-09T13:00:00Z',
+        updated_by: 'amelia.marques',
+      };
+      breachPlaybooks = breachPlaybooks.map((record) => (record.id === id ? updated : record));
+      return Promise.resolve(jsonResponse(updated));
+    }
+    if (url.includes('/v1/privacy/transfer-controls/') && method === 'PATCH') {
+      const id = privacyRecordIdFromUrl(url, 'transfer-controls');
+      const patch = JSON.parse(init?.body as string) as Partial<TransferControlMetadata>;
+      const current = transferControls.find((record) => record.id === id);
+      if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const updated = {
+        ...current,
+        ...patch,
+        updated_at: '2026-07-09T13:00:00Z',
+        updated_by: 'amelia.marques',
+      };
+      transferControls = transferControls.map((record) => (record.id === id ? updated : record));
+      return Promise.resolve(jsonResponse(updated));
+    }
     if (url.includes('/v1/privacy/processors')) {
       if (method === 'POST') {
         const body = JSON.parse(init?.body as string) as Omit<ProcessorRecordMetadata, 'id'>;
@@ -668,6 +751,38 @@ function privacyFetch(
         return Promise.resolve(jsonResponse(created, 201));
       }
       return Promise.resolve(jsonResponse(dpias));
+    }
+    if (url.includes('/v1/privacy/breach-playbooks')) {
+      if (method === 'POST') {
+        const body = JSON.parse(init?.body as string) as Omit<BreachPlaybookMetadata, 'id'>;
+        const created = {
+          ...body,
+          id: 'breach-2',
+          created_at: '2026-07-09T13:00:00Z',
+          created_by: 'amelia.marques',
+          updated_at: '2026-07-09T13:00:00Z',
+          updated_by: 'amelia.marques',
+        };
+        breachPlaybooks = [...breachPlaybooks, created];
+        return Promise.resolve(jsonResponse(created, 201));
+      }
+      return Promise.resolve(jsonResponse(breachPlaybooks));
+    }
+    if (url.includes('/v1/privacy/transfer-controls')) {
+      if (method === 'POST') {
+        const body = JSON.parse(init?.body as string) as Omit<TransferControlMetadata, 'id'>;
+        const created = {
+          ...body,
+          id: 'transfer-2',
+          created_at: '2026-07-09T13:00:00Z',
+          created_by: 'amelia.marques',
+          updated_at: '2026-07-09T13:00:00Z',
+          updated_by: 'amelia.marques',
+        };
+        transferControls = [...transferControls, created];
+        return Promise.resolve(jsonResponse(created, 201));
+      }
+      return Promise.resolve(jsonResponse(transferControls));
     }
     if (url.includes('/v1/settings')) return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
     if (url.includes('/v1/ledger/verify')) {
@@ -1328,6 +1443,115 @@ describe('SettingsPage', () => {
       return call!;
     });
     expect(JSON.parse(patch!.body as string)).toEqual({ status: 'under_review' });
+  });
+
+  it('creates breach playbook and transfer-control records from the privacy settings tab', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const breachPanel = (await screen.findByText('Playbooks de resposta a violações')).closest(
+      'section',
+    );
+    expect(breachPanel).toBeTruthy();
+    expect(await within(breachPanel!).findByText('Suspected account compromise')).toBeTruthy();
+    fireEvent.click(within(breachPanel!).getByRole('button', { name: 'Novo registo' }));
+
+    let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
+    let form = formCard.closest('section');
+    expect(form).toBeTruthy();
+    fireEvent.change(within(form!).getByLabelText('Título do playbook'), {
+      target: { value: 'Suspected exfiltration' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Âmbito'), {
+      target: { value: 'document exports' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Canais de deteção'), {
+      target: { value: 'DLP alert\nSupport report' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Passos de contenção'), {
+      target: { value: 'Disable export\nPreserve evidence' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Funções notificadas'), {
+      target: { value: 'DPO' },
+    });
+    fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
+
+    const breachPost = await waitFor(() => {
+      const call = calls.find(
+        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/breach-playbooks'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(breachPost.body as string)).toMatchObject({
+      title: 'Suspected exfiltration',
+      scope: 'document exports',
+      detection_channels: ['DLP alert', 'Support report'],
+      containment_steps: ['Disable export', 'Preserve evidence'],
+      notification_roles: ['DPO'],
+      risk_level: 'high',
+      status: 'draft',
+    });
+    expect(await screen.findByText('Suspected exfiltration')).toBeTruthy();
+
+    const transferPanel = (await screen.findByText('Controlos de transferência')).closest(
+      'section',
+    );
+    expect(transferPanel).toBeTruthy();
+    expect(await within(transferPanel!).findByText('EU to UK support access')).toBeTruthy();
+    fireEvent.click(within(transferPanel!).getByRole('button', { name: 'Novo registo' }));
+
+    formCard = await screen.findByRole('heading', { name: 'Novo registo' });
+    form = formCard.closest('section');
+    expect(form).toBeTruthy();
+    fireEvent.change(within(form!).getByLabelText('Nome do controlo'), {
+      target: { value: 'EU to US analytics export' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Finalidade'), {
+      target: { value: 'Product analytics' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Base legal'), {
+      target: { value: 'Legitimate interest' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Categorias de dados'), {
+      target: { value: 'Usage metrics\nAccount metadata' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Destinatário'), {
+      target: { value: 'Analytics Inc' },
+    });
+    fireEvent.change(within(form!).getByLabelText('País de destino'), {
+      target: { value: 'United States' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Mecanismo de transferência'), {
+      target: { value: 'SCCs' },
+    });
+    fireEvent.change(within(form!).getByLabelText('Salvaguardas'), {
+      target: { value: 'Pseudonymisation\nAccess review' },
+    });
+    fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
+
+    const transferPost = await waitFor(() => {
+      const call = calls.find(
+        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/transfer-controls'),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(transferPost.body as string)).toMatchObject({
+      name: 'EU to US analytics export',
+      purpose: 'Product analytics',
+      legal_basis: 'Legitimate interest',
+      data_categories: ['Usage metrics', 'Account metadata'],
+      recipient: 'Analytics Inc',
+      destination_country: 'United States',
+      transfer_mechanism: 'SCCs',
+      safeguards: ['Pseudonymisation', 'Access review'],
+      risk_level: 'medium',
+      status: 'draft',
+    });
+    expect(await screen.findByText('EU to US analytics export')).toBeTruthy();
   });
 
   it('matches privacy register permission gating to user.manage or settings.manage', async () => {

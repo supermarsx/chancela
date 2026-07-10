@@ -32,6 +32,8 @@ import type {
   ComplianceIssue,
   ComplianceReport,
   CompleteFollowUpBody,
+  BreachPlaybookView,
+  CreateBreachPlaybookBody,
   CreateDsrRequestBody,
   CreateDpiaRecordBody,
   CreateEntityBody,
@@ -63,6 +65,8 @@ import type {
   LawCorpusView,
   LawDiplomaDetailView,
   LawArticleView,
+  LawCitationRequest,
+  LawCitationReport,
   LawSearchView,
   FollowUpView,
   LedgerArchiveDocumentParams,
@@ -94,6 +98,7 @@ import type {
   RegistryLookupBody,
   SealActBody,
   SealResult,
+  PatchBreachPlaybookBody,
   PatchFollowUpBody,
   PatchDpiaRecordBody,
   PatchProcessorRecordBody,
@@ -124,6 +129,9 @@ import type {
   SessionView,
   PasswordPolicyView,
   ProcessorRecordView,
+  CreateTransferControlBody,
+  PatchTransferControlBody,
+  TransferControlView,
   SetSecretBody,
   RemoveSecretBody,
   AttestationKeyBody,
@@ -663,6 +671,8 @@ export const api = {
     ),
   searchLawCorpus: (q: string, limit?: number) =>
     get<LawSearchView>(`/v1/law/corpus/search${query({ q, limit })}`),
+  resolveLawCitations: (body: LawCitationRequest) =>
+    post<LawCitationReport>('/v1/law/citations/resolve', body),
 
   // Users + session (§2.8, plan t14). The session token is stored in memory (see
   // `./session`) and sent as `X-Chancela-Session` on every request by `request`.
@@ -686,6 +696,16 @@ export const api = {
   createDpiaRecord: (body: CreateDpiaRecordBody) => post<DpiaRecordView>('/v1/privacy/dpias', body),
   patchDpiaRecord: (id: string, body: PatchDpiaRecordBody) =>
     patch<DpiaRecordView>(`/v1/privacy/dpias/${id}`, body),
+  listBreachPlaybooks: () => get<BreachPlaybookView[]>('/v1/privacy/breach-playbooks'),
+  createBreachPlaybook: (body: CreateBreachPlaybookBody) =>
+    post<BreachPlaybookView>('/v1/privacy/breach-playbooks', body),
+  patchBreachPlaybook: (id: string, body: PatchBreachPlaybookBody) =>
+    patch<BreachPlaybookView>(`/v1/privacy/breach-playbooks/${id}`, body),
+  listTransferControls: () => get<TransferControlView[]>('/v1/privacy/transfer-controls'),
+  createTransferControl: (body: CreateTransferControlBody) =>
+    post<TransferControlView>('/v1/privacy/transfer-controls', body),
+  patchTransferControl: (id: string, body: PatchTransferControlBody) =>
+    patch<TransferControlView>(`/v1/privacy/transfer-controls/${id}`, body),
   listRetentionPolicies: () => get<RetentionPolicyView[]>('/v1/privacy/retention-policies'),
   createRetentionPolicy: (body: CreateRetentionPolicyBody) =>
     post<RetentionPolicyView>('/v1/privacy/retention-policies', body),
@@ -812,8 +832,7 @@ export const api = {
   startOverBook: (id: string, body: StartOverBookBody) =>
     post<StartOverBookResult>(`/v1/books/${id}/start-over`, body),
   dataStatus: () => get<DataStatusResponse>('/v1/data/status'),
-  cleanDataStorage: (body: DataCleanupBody) =>
-    post<DataCleanupResult>('/v1/data/cleanup', body),
+  cleanDataStorage: (body: DataCleanupBody) => post<DataCleanupResult>('/v1/data/cleanup', body),
   // Data management (§2.11). Frontend-reset is client-only — it has NO endpoint here.
   resetData: (body: ResetDataBody) => post<ResetOutcomeView>('/v1/data/reset', body),
   startOverInstance: (body: StartOverInstanceBody) =>

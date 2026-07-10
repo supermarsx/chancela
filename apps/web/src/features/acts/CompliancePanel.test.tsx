@@ -183,7 +183,39 @@ describe('CompliancePanel legal-source references', () => {
     expect(
       screen.getByText('Código das Sociedades Comerciais, Artigo 63.º · fonte pendente'),
     ).toBeTruthy();
+    expect(screen.getByText('Por verificar')).toBeTruthy();
     expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  it('renders verified legal_basis metadata without downgrading its link', () => {
+    const report = complianceReport({
+      issues: [
+        {
+          rule_id: 'eidas-art25',
+          severity: 'Warning',
+          message: 'A assinatura qualificada deve manter a equivalência legal.',
+          legal_basis: [
+            {
+              source_id: 'eidas-910-2014',
+              source_label: 'Regulamento eIDAS',
+              article: '25',
+              article_label: 'Artigo 25.º',
+              citation: 'Regulamento eIDAS, Artigo 25.º',
+              verification: 'Verified',
+              source_url: 'https://eur-lex.europa.eu/eli/reg/2014/910/oj',
+              source_complete: true,
+            },
+          ],
+        },
+      ],
+      warnings: 1,
+    });
+
+    render(<CompliancePanel report={report} />);
+
+    expect(screen.getByRole('link', { name: /Regulamento eIDAS, Artigo 25.º/ })).toBeTruthy();
+    expect(screen.getByText('Verificado')).toBeTruthy();
+    expect(screen.queryByText(/fonte pendente/)).toBeNull();
   });
 
   it('renders unsafe and non-http URL metadata as inert text', () => {

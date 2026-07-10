@@ -1039,6 +1039,8 @@ fn concern_for_root(root: &str) -> ConcernDef {
         crate::privacy::DSR_REQUESTS_FILE
         | crate::privacy::PROCESSORS_FILE
         | crate::privacy::DPIAS_FILE
+        | crate::privacy::BREACH_PLAYBOOKS_FILE
+        | crate::privacy::TRANSFER_CONTROLS_FILE
         | crate::privacy::RETENTION_POLICIES_FILE => ConcernDef {
             id: "privacy",
             label: "Privacy sidecars",

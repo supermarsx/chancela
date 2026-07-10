@@ -24,7 +24,7 @@ use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_act, scope_of_book};
 use crate::dto::{
     ActView, AdvanceAct, ArchiveAct, ComplianceResponse, ConveningAdvisory, DispatchConvening,
-    DraftAct, IssueView, PatchAct, SealAct, SealResponse,
+    DraftAct, IssueView, PatchAct, SealAct, SealResponse, read_redaction_for_actor,
 };
 use crate::error::ApiError;
 
@@ -56,6 +56,9 @@ pub async fn draft_act(
     if let Some(r) = req.retifies {
         act.retifies = Some(ActId(r));
     }
+    if let Some(convening) = req.convening {
+        act.convening = Some(convening.into_core()?);
+    }
 
     let scope = format!("entity:{}/book:{}/act:{}", entity_id, act.book_id, act.id);
     let payload = serde_json::to_vec(&act)?;
@@ -78,9 +81,10 @@ pub async fn get_act(
     // RBAC (t64-E3): `act.read` scoped to the act's owning book.
     let scope = scope_of_act(&state, ActId(id)).await;
     require_permission(&state, &actor, Permission::ActRead, scope).await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     let acts = state.acts.read().await;
     acts.get(&ActId(id))
-        .map(|a| Json(ActView::from(a)))
+        .map(|a| Json(ActView::build(a, redaction)))
         .ok_or(ApiError::NotFound)
 }
 

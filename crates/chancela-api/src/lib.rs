@@ -42,9 +42,11 @@
 //!   request tracking with JSON sidecar durability in data-dir mode and ledger-audited lifecycle
 //!   transitions.
 //! - `GET|POST /v1/privacy/processors`, `PATCH /v1/privacy/processors/{id}`,
-//!   `GET|POST /v1/privacy/dpias`, `PATCH /v1/privacy/dpias/{id}` — GDPR processor and DPIA
-//!   registers with JSON sidecar durability in data-dir mode and ledger-audited create/update
-//!   transitions.
+//!   `GET|POST /v1/privacy/dpias`, `PATCH /v1/privacy/dpias/{id}`,
+//!   `GET|POST /v1/privacy/breach-playbooks`, `PATCH /v1/privacy/breach-playbooks/{id}`,
+//!   `GET|POST /v1/privacy/transfer-controls`, `PATCH /v1/privacy/transfer-controls/{id}` —
+//!   bounded privacy control registers with JSON sidecar durability in data-dir mode and
+//!   ledger-audited create/update transitions.
 //! - `GET|POST /v1/privacy/retention-policies`, `PATCH /v1/privacy/retention-policies/{id}`,
 //!   `POST /v1/privacy/retention-policies/dry-run` — bounded retention policy register and
 //!   non-destructive applicability reporting.
@@ -166,7 +168,7 @@ pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 /// to mutate concurrently. Cloning an [`AppState`] shares the same underlying maps and ledger.
 /// Handlers that take several locks acquire them in the fixed order **entities → books → acts
 /// → follow_ups → registry_extracts → registry_auto_updates → users → dsr_requests → processor_records →
-/// dpia_records → retention_policies → ledger** to avoid deadlock. The `cae` and `sessions` locks
+/// dpia_records → breach_playbooks → transfer_controls → retention_policies → ledger** to avoid deadlock. The `cae` and `sessions` locks
 /// are independent, short-lived locks not part of that chain (a handler acquires and releases one
 /// before touching the ordered locks, or after — never interleaved with them).
 #[derive(Clone, Default)]
@@ -247,6 +249,14 @@ pub struct AppState {
     /// DPIA register records. File-backed states load and write these through `privacy-dpias.json`;
     /// create and update transitions are also chained into the ledger.
     pub dpia_records: Arc<RwLock<HashMap<privacy::DpiaRecordId, privacy::DpiaRecord>>>,
+    /// Breach-response playbook register records. File-backed states load and write these through
+    /// `privacy-breach-playbooks.json`; create and update transitions are ledger-audited.
+    pub breach_playbooks:
+        Arc<RwLock<HashMap<privacy::BreachPlaybookId, privacy::BreachPlaybookRecord>>>,
+    /// Transfer-control register records. File-backed states load and write these through
+    /// `privacy-transfer-controls.json`; create and update transitions are ledger-audited.
+    pub transfer_controls:
+        Arc<RwLock<HashMap<privacy::TransferControlId, privacy::TransferControlRecord>>>,
     /// Retention policy register records. File-backed states load and write these through
     /// `retention-policies.json`; create and update transitions are also chained into the ledger.
     pub retention_policies:
@@ -258,6 +268,10 @@ pub struct AppState {
     pub processor_records_path: Option<Arc<PathBuf>>,
     /// Where `privacy-dpias.json` is persisted, or `None` for in-memory registers.
     pub dpia_records_path: Option<Arc<PathBuf>>,
+    /// Where `privacy-breach-playbooks.json` is persisted, or `None` for in-memory registers.
+    pub breach_playbooks_path: Option<Arc<PathBuf>>,
+    /// Where `privacy-transfer-controls.json` is persisted, or `None` for in-memory registers.
+    pub transfer_controls_path: Option<Arc<PathBuf>>,
     /// Where `retention-policies.json` is persisted, or `None` for in-memory registers.
     pub retention_policies_path: Option<Arc<PathBuf>>,
     /// Where `notification-triage.json` is persisted, or `None` for in-memory triage.
@@ -489,6 +503,12 @@ impl AppState {
         let dpia_records_path = dir.join(privacy::DPIAS_FILE);
         let loaded_dpia_records =
             privacy::load_dpia_records(&dpia_records_path).unwrap_or_default();
+        let breach_playbooks_path = dir.join(privacy::BREACH_PLAYBOOKS_FILE);
+        let loaded_breach_playbooks =
+            privacy::load_breach_playbooks(&breach_playbooks_path).unwrap_or_default();
+        let transfer_controls_path = dir.join(privacy::TRANSFER_CONTROLS_FILE);
+        let loaded_transfer_controls =
+            privacy::load_transfer_controls(&transfer_controls_path).unwrap_or_default();
         let retention_policies_path = dir.join(privacy::RETENTION_POLICIES_FILE);
         let loaded_retention_policies =
             privacy::load_retention_policies(&retention_policies_path).unwrap_or_default();
@@ -524,6 +544,10 @@ impl AppState {
             processor_records_path: Some(Arc::new(processor_records_path)),
             dpia_records: Arc::new(RwLock::new(loaded_dpia_records)),
             dpia_records_path: Some(Arc::new(dpia_records_path)),
+            breach_playbooks: Arc::new(RwLock::new(loaded_breach_playbooks)),
+            breach_playbooks_path: Some(Arc::new(breach_playbooks_path)),
+            transfer_controls: Arc::new(RwLock::new(loaded_transfer_controls)),
+            transfer_controls_path: Some(Arc::new(transfer_controls_path)),
             retention_policies: Arc::new(RwLock::new(loaded_retention_policies)),
             retention_policies_path: Some(Arc::new(retention_policies_path)),
             notification_triage: Arc::new(RwLock::new(loaded_notification_triage)),
@@ -719,6 +743,8 @@ impl AppState {
                 dir.join(crate::privacy::DSR_REQUESTS_FILE),
                 dir.join(crate::privacy::PROCESSORS_FILE),
                 dir.join(crate::privacy::DPIAS_FILE),
+                dir.join(crate::privacy::BREACH_PLAYBOOKS_FILE),
+                dir.join(crate::privacy::TRANSFER_CONTROLS_FILE),
                 dir.join(crate::privacy::RETENTION_POLICIES_FILE),
                 dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
                 dir.join(crate::apikeys::API_KEYS_FILE),
@@ -782,6 +808,12 @@ impl AppState {
                     .unwrap_or_default();
             *self.dpia_records.write().await =
                 privacy::load_dpia_records(&dir.join(privacy::DPIAS_FILE)).unwrap_or_default();
+            *self.breach_playbooks.write().await =
+                privacy::load_breach_playbooks(&dir.join(privacy::BREACH_PLAYBOOKS_FILE))
+                    .unwrap_or_default();
+            *self.transfer_controls.write().await =
+                privacy::load_transfer_controls(&dir.join(privacy::TRANSFER_CONTROLS_FILE))
+                    .unwrap_or_default();
             *self.retention_policies.write().await =
                 privacy::load_retention_policies(&dir.join(privacy::RETENTION_POLICIES_FILE))
                     .unwrap_or_default();
@@ -1209,6 +1241,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/trust/providers/{id}", get(trust::trust_provider))
         .route("/v1/trust/services/{id}", get(trust::trust_service))
         .route("/v1/law", get(law::list_law))
+        .route(
+            "/v1/law/citations/resolve",
+            post(law::resolve_law_citations),
+        )
         .route("/v1/law/corpus", get(law::list_law_corpus))
         .route("/v1/law/corpus/search", get(law::search_law_corpus))
         .route("/v1/law/corpus/{diploma}", get(law::get_law_diploma))
@@ -1265,6 +1301,22 @@ pub fn router(state: AppState) -> Router {
             get(privacy::list_dpia_records).post(privacy::create_dpia_record),
         )
         .route("/v1/privacy/dpias/{id}", patch(privacy::patch_dpia_record))
+        .route(
+            "/v1/privacy/breach-playbooks",
+            get(privacy::list_breach_playbooks).post(privacy::create_breach_playbook),
+        )
+        .route(
+            "/v1/privacy/breach-playbooks/{id}",
+            patch(privacy::patch_breach_playbook),
+        )
+        .route(
+            "/v1/privacy/transfer-controls",
+            get(privacy::list_transfer_controls).post(privacy::create_transfer_control),
+        )
+        .route(
+            "/v1/privacy/transfer-controls/{id}",
+            patch(privacy::patch_transfer_control),
+        )
         .route(
             "/v1/privacy/retention-policies",
             get(privacy::list_retention_policies).post(privacy::create_retention_policy),
@@ -6144,6 +6196,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn law_citation_resolver_preserves_verified_and_pending_state() {
+        let (status, body) = send(
+            AppState::default(),
+            post_json(
+                "/v1/law/citations/resolve",
+                json!({
+                    "references": [
+                        { "diploma_id": "eidas-910-2014", "article": "1" },
+                        { "diploma_id": "csc", "article": "63" }
+                    ]
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["count"], 2);
+        assert!(
+            body["legal_notice"]
+                .as_str()
+                .expect("notice")
+                .contains("não substituem"),
+            "non-authoritative notice is explicit"
+        );
+
+        let citations = body["citations"].as_array().expect("citations");
+        assert_eq!(citations[0]["source_id"], "eidas-910-2014");
+        assert_eq!(citations[0]["verification"], "Verified");
+        assert_eq!(citations[0]["source_complete"], true);
+        assert!(citations[0]["source_url"].is_string());
+
+        // CSC/DRE text in the embedded corpus is still pending. The resolver must never upgrade it.
+        assert_eq!(citations[1]["source_id"], "csc");
+        assert_eq!(citations[1]["verification"], "Pending");
+        assert_eq!(citations[1]["source_complete"], false);
+        assert!(citations[1]["source_url"].is_null());
+    }
+
+    #[tokio::test]
+    async fn law_citation_resolver_is_bounded_and_gated() {
+        let too_many: Vec<_> = (0..33)
+            .map(|_| json!({ "diploma_id": "csc", "article": "63" }))
+            .collect();
+        let (status, _) = send(
+            AppState::default(),
+            post_json(
+                "/v1/law/citations/resolve",
+                json!({ "references": too_many }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+        let (status, _) = send_raw(
+            AppState::default(),
+            post_json(
+                "/v1/law/citations/resolve",
+                json!({ "references": [{ "diploma_id": "csc", "article": "63" }] }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
     async fn law_corpus_404_on_unknown_diploma_and_article() {
         let (status, _) = send(AppState::default(), get("/v1/law/corpus/nope")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -10454,6 +10570,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn draft_act_accepts_initial_convening_evidence() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+
+        let (status, act) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({
+                    "book_id": book_id,
+                    "title": "Ata com convocatória",
+                    "channel": "Physical",
+                    "convening": {
+                        "dispatch_date": "2026-03-01",
+                        "antecedence_days": 21,
+                        "channel": "RegisteredLetterAR",
+                        "evidence_reference": "doc:convocatoria-inicial"
+                    }
+                }),
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CREATED, "draft with convening: {act}");
+        assert_eq!(act["convening"]["dispatch_date"], "2026-03-01");
+        assert_eq!(act["convening"]["channel"], "RegisteredLetterAR");
+        assert_eq!(
+            act["convening"]["evidence_reference"],
+            "doc:convocatoria-inicial"
+        );
+    }
+
+    #[tokio::test]
     async fn follow_up_routes_create_patch_complete_and_leave_sealed_act_unchanged() {
         use chancela_core::ActState;
 
@@ -10744,6 +10892,7 @@ mod tests {
                         "dispatch_date": "2026-03-01",
                         "antecedence_days": 21,
                         "channel": "RegisteredLetter",
+                        "evidence_reference": "doc:convocatoria-2026-03-01",
                         "recipients": [
                             { "name": "Amélia Marques", "channel": "Email" },
                             { "name": "Bruno Dias" }
@@ -10763,6 +10912,10 @@ mod tests {
         assert_eq!(patched["convening"]["convener"], "Amélia Marques");
         assert_eq!(patched["convening"]["antecedence_days"], 21);
         assert_eq!(patched["convening"]["dispatch_date"], "2026-03-01");
+        assert_eq!(
+            patched["convening"]["evidence_reference"],
+            "doc:convocatoria-2026-03-01"
+        );
         assert_eq!(patched["convening"]["second_call"]["time"], "11:00");
         assert_eq!(patched["convening"]["second_call"]["reduced_quorum"], true);
         assert_eq!(
@@ -10776,6 +10929,10 @@ mod tests {
         let (status, fetched) = send(state.clone(), get(&format!("/v1/acts/{act_id}"))).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(fetched["convening"]["antecedence_days"], 21);
+        assert_eq!(
+            fetched["convening"]["evidence_reference"],
+            "doc:convocatoria-2026-03-01"
+        );
         assert_eq!(fetched["attendees"].as_array().expect("attendees").len(), 2);
 
         // Explicit null clears convening; omitting attendees leaves them untouched.

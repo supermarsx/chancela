@@ -48,7 +48,7 @@ use chancela_authz::{Permission, Scope};
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_act};
-use crate::dto::{format_date, format_time};
+use crate::dto::{ReadRedaction, format_date, format_time, read_redaction_for_actor};
 use crate::error::ApiError;
 
 /// The frozen PDF/A profile string bound into every `document.generated` event and stored row
@@ -1161,6 +1161,7 @@ pub async fn list_imported_documents(
         None => Scope::Global,
     };
     require_permission(&state, &actor, Permission::ActRead, scope).await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     if let Some(act_id) = act_id {
         if !state.acts.read().await.contains_key(&act_id) {
             return Err(ApiError::NotFound);
@@ -1172,7 +1173,11 @@ pub async fn list_imported_documents(
     let rows = store
         .imported_documents(act_id)
         .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?;
-    Ok(Json(rows.iter().map(imported_document_view).collect()))
+    Ok(Json(
+        rows.iter()
+            .map(|meta| imported_document_view_with_redaction(meta, redaction))
+            .collect(),
+    ))
 }
 
 /// `GET /v1/documents/imported/{id}` — read imported-document metadata only.
@@ -1182,7 +1187,10 @@ pub async fn get_imported_document(
     actor: CurrentActor,
 ) -> Result<Json<ImportedDocumentView>, ApiError> {
     let doc = load_imported_document_for_actor(&state, &actor, &id).await?;
-    Ok(Json(imported_document_view(&doc.meta)))
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
+    Ok(Json(imported_document_view_with_redaction(
+        &doc.meta, redaction,
+    )))
 }
 
 /// `GET /v1/documents/imported/{id}/bytes` — stream the retained imported bytes. This is explicitly
@@ -1269,6 +1277,20 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
         legal_notice: DOCUMENT_IMPORTED_NOTICE,
         bytes_download: format!("/v1/documents/imported/{}/bytes", meta.id),
     }
+}
+
+fn imported_document_view_with_redaction(
+    meta: &StoredImportedDocumentMeta,
+    redaction: ReadRedaction,
+) -> ImportedDocumentView {
+    let mut view = imported_document_view(meta);
+    if redaction.is_guest() {
+        view.filename = None;
+        view.sha256 = crate::dto::REDACTED.to_owned();
+        view.imported_by = crate::dto::REDACTED.to_owned();
+        view.bytes_download = crate::dto::REDACTED.to_owned();
+    }
+    view
 }
 
 fn imported_document_download_filename(meta: &StoredImportedDocumentMeta) -> String {
@@ -4377,6 +4399,31 @@ mod tests {
     }
 
     #[test]
+    fn guest_imported_document_metadata_redacts_filename_digest_importer_and_download() {
+        let meta = StoredImportedDocumentMeta {
+            id: "11111111-1111-4111-8111-111111111112".to_owned(),
+            act_id: Some(ActId(Uuid::new_v4())),
+            filename: Some("medical-report-joana.pdf".to_owned()),
+            declared_content_type: Some("application/pdf".to_owned()),
+            detected_content_type: "application/pdf".to_owned(),
+            sha256: "cd".repeat(32),
+            size_bytes: 2048,
+            imported_at: time::OffsetDateTime::UNIX_EPOCH,
+            imported_by: "amelia.marques".to_owned(),
+        };
+
+        let view = imported_document_view_with_redaction(&meta, ReadRedaction::Guest);
+        assert_eq!(view.filename, None);
+        assert_eq!(view.sha256, crate::dto::REDACTED);
+        assert_eq!(view.imported_by, crate::dto::REDACTED);
+        assert_eq!(view.bytes_download, crate::dto::REDACTED);
+        let raw = serde_json::to_string(&view).expect("imported document view JSON");
+        assert!(!raw.contains("medical-report-joana.pdf"));
+        assert!(!raw.contains("amelia.marques"));
+        assert!(!raw.contains(&"cd".repeat(32)));
+    }
+
+    #[test]
     fn document_import_validation_reports_empty_body() {
         let report = validate_document_candidate(b"", None, None);
 
@@ -5165,6 +5212,7 @@ mod tests {
             dispatch_date: None,
             antecedence_days: Some(15),
             channel: Some(DispatchChannel::RegisteredLetter),
+            evidence_reference: Some("doc:convocatoria-condominio".to_string()),
             recipients: vec![],
             second_call: Some(SecondCall {
                 date: None,
@@ -5177,6 +5225,10 @@ mod tests {
         // Frozen field paths (plan §1e) resolve.
         assert_eq!(ctx["convening"]["antecedence_days"], 15);
         assert_eq!(ctx["convening"]["convener"], "Amélia Marques");
+        assert_eq!(
+            ctx["convening"]["evidence_reference"],
+            "doc:convocatoria-condominio"
+        );
         assert_eq!(ctx["convening"]["second_call"]["reduced_quorum"], true);
         assert_eq!(ctx["attendees"][0]["name"], "Amélia Marques");
         assert_eq!(ctx["attendees"][0]["presence"], "InPerson");

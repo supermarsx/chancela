@@ -23,7 +23,7 @@ use chancela_authz::Permission;
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_book, scope_of_entity};
-use crate::dto::{ActView, BookView, BooksQuery, CloseBook, CreateBook};
+use crate::dto::{ActView, BookView, BooksQuery, CloseBook, CreateBook, read_redaction_for_actor};
 use crate::error::ApiError;
 
 #[derive(Debug, Deserialize)]
@@ -155,13 +155,14 @@ pub async fn list_books(
     actor: CurrentActor,
 ) -> Result<Json<Vec<BookView>>, ApiError> {
     let authz = crate::authz::authorizer(&state, &actor).await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     let books = state.books.read().await;
     let filter = q.entity_id.map(EntityId);
     let views = books
         .values()
         .filter(|b| filter.is_none_or(|eid| b.entity_id == eid))
         .filter(|b| authz.permits(Permission::BookRead, scope_of_book(b.id)))
-        .map(BookView::from)
+        .map(|b| BookView::build(b, redaction))
         .collect();
     Ok(Json(views))
 }
@@ -179,10 +180,11 @@ pub async fn get_book(
         scope_of_book(BookId(id)),
     )
     .await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     let books = state.books.read().await;
     books
         .get(&BookId(id))
-        .map(|b| Json(BookView::from(b)))
+        .map(|b| Json(BookView::build(b, redaction)))
         .ok_or(ApiError::NotFound)
 }
 
@@ -295,6 +297,7 @@ pub async fn list_book_acts(
     let book_id = BookId(id);
     // RBAC (t64-E3): reading a book's acts is `book.read` scoped to the book.
     require_permission(&state, &actor, Permission::BookRead, scope_of_book(book_id)).await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     // books → acts.
     let books = state.books.read().await;
     if !books.contains_key(&book_id) {
@@ -309,7 +312,12 @@ pub async fn list_book_acts(
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (None, None) => std::cmp::Ordering::Equal,
     });
-    Ok(Json(in_book.into_iter().map(ActView::from).collect()))
+    Ok(Json(
+        in_book
+            .into_iter()
+            .map(|act| ActView::build(act, redaction))
+            .collect(),
+    ))
 }
 
 /// `GET /v1/books/{id}/legal-hold` — read the persisted book-level legal hold.

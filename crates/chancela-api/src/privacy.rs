@@ -32,11 +32,17 @@ const PROCESSOR_CREATED_KIND: &str = "privacy.processor.created";
 const PROCESSOR_UPDATED_KIND: &str = "privacy.processor.updated";
 const DPIA_CREATED_KIND: &str = "privacy.dpia.created";
 const DPIA_UPDATED_KIND: &str = "privacy.dpia.updated";
+const BREACH_PLAYBOOK_CREATED_KIND: &str = "privacy.breach.playbook.created";
+const BREACH_PLAYBOOK_UPDATED_KIND: &str = "privacy.breach.playbook.updated";
+const TRANSFER_CONTROL_CREATED_KIND: &str = "privacy.transfer.control.created";
+const TRANSFER_CONTROL_UPDATED_KIND: &str = "privacy.transfer.control.updated";
 const RETENTION_POLICY_CREATED_KIND: &str = "privacy.retention.policy.created";
 const RETENTION_POLICY_UPDATED_KIND: &str = "privacy.retention.policy.updated";
 const RETENTION_EXECUTION_REQUESTED_KIND: &str = "privacy.retention.execution.requested";
 pub(crate) const PROCESSORS_FILE: &str = "privacy-processors.json";
 pub(crate) const DPIAS_FILE: &str = "privacy-dpias.json";
+pub(crate) const BREACH_PLAYBOOKS_FILE: &str = "privacy-breach-playbooks.json";
+pub(crate) const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json";
 pub(crate) const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 pub(crate) const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
 const MAX_DSR_EXECUTION_NOTE_CHARS: usize = 4096;
@@ -49,6 +55,10 @@ const MAX_RETENTION_FIELD_CHARS: usize = 128;
 const MAX_RETENTION_TEXT_CHARS: usize = 4096;
 const MAX_RETENTION_EXECUTION_EVIDENCE_ITEMS: usize = 16;
 const MAX_RETENTION_EXECUTION_EVIDENCE_LABEL_CHARS: usize = 64;
+const MAX_PRIVACY_CONTROL_NAME_CHARS: usize = 160;
+const MAX_PRIVACY_CONTROL_FIELD_CHARS: usize = 128;
+const MAX_PRIVACY_CONTROL_TEXT_CHARS: usize = 4096;
+const MAX_PRIVACY_CONTROL_LIST_ITEMS: usize = 32;
 const SENSITIVE_EVIDENCE_MARKERS: &[&str] = &[
     "password_hash",
     "recovery_hash",
@@ -369,6 +379,24 @@ impl std::fmt::Display for DpiaRecordId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BreachPlaybookId(pub Uuid);
+
+impl std::fmt::Display for BreachPlaybookId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TransferControlId(pub Uuid);
+
+impl std::fmt::Display for TransferControlId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrivacyRiskLevel {
@@ -452,6 +480,54 @@ pub struct DpiaRecord {
     pub updated_by: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BreachPlaybookRecord {
+    pub id: BreachPlaybookId,
+    pub title: String,
+    pub scope: String,
+    #[serde(default)]
+    pub detection_channels: Vec<String>,
+    #[serde(default)]
+    pub containment_steps: Vec<String>,
+    #[serde(default)]
+    pub notification_roles: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority_notification_window: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject_notification_guidance: Option<String>,
+    pub risk_level: PrivacyRiskLevel,
+    pub status: PrivacyRecordStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_notes: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransferControlRecord {
+    pub id: TransferControlId,
+    pub name: String,
+    pub purpose: String,
+    pub legal_basis: String,
+    #[serde(default)]
+    pub data_categories: Vec<String>,
+    pub recipient: String,
+    pub destination_country: String,
+    pub transfer_mechanism: String,
+    #[serde(default)]
+    pub safeguards: Vec<String>,
+    pub risk_level: PrivacyRiskLevel,
+    pub status: PrivacyRecordStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_notes: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
 #[derive(Serialize)]
 pub struct ProcessorRecordView {
     pub id: String,
@@ -514,6 +590,94 @@ impl From<&DpiaRecord> for DpiaRecordView {
             subprocessors: record.subprocessors.clone(),
             risk_level: record.risk_level,
             status: record.status,
+            created_at: record.created_at.clone(),
+            created_by: record.created_by.clone(),
+            updated_at: record.updated_at.clone(),
+            updated_by: record.updated_by.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct BreachPlaybookView {
+    pub id: String,
+    pub title: String,
+    pub scope: String,
+    pub detection_channels: Vec<String>,
+    pub containment_steps: Vec<String>,
+    pub notification_roles: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authority_notification_window: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject_notification_guidance: Option<String>,
+    pub risk_level: PrivacyRiskLevel,
+    pub status: PrivacyRecordStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_notes: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+impl From<&BreachPlaybookRecord> for BreachPlaybookView {
+    fn from(record: &BreachPlaybookRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            title: record.title.clone(),
+            scope: record.scope.clone(),
+            detection_channels: record.detection_channels.clone(),
+            containment_steps: record.containment_steps.clone(),
+            notification_roles: record.notification_roles.clone(),
+            authority_notification_window: record.authority_notification_window.clone(),
+            subject_notification_guidance: record.subject_notification_guidance.clone(),
+            risk_level: record.risk_level,
+            status: record.status,
+            review_notes: record.review_notes.clone(),
+            created_at: record.created_at.clone(),
+            created_by: record.created_by.clone(),
+            updated_at: record.updated_at.clone(),
+            updated_by: record.updated_by.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct TransferControlView {
+    pub id: String,
+    pub name: String,
+    pub purpose: String,
+    pub legal_basis: String,
+    pub data_categories: Vec<String>,
+    pub recipient: String,
+    pub destination_country: String,
+    pub transfer_mechanism: String,
+    pub safeguards: Vec<String>,
+    pub risk_level: PrivacyRiskLevel,
+    pub status: PrivacyRecordStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_notes: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    pub updated_at: String,
+    pub updated_by: String,
+}
+
+impl From<&TransferControlRecord> for TransferControlView {
+    fn from(record: &TransferControlRecord) -> Self {
+        Self {
+            id: record.id.to_string(),
+            name: record.name.clone(),
+            purpose: record.purpose.clone(),
+            legal_basis: record.legal_basis.clone(),
+            data_categories: record.data_categories.clone(),
+            recipient: record.recipient.clone(),
+            destination_country: record.destination_country.clone(),
+            transfer_mechanism: record.transfer_mechanism.clone(),
+            safeguards: record.safeguards.clone(),
+            risk_level: record.risk_level,
+            status: record.status,
+            review_notes: record.review_notes.clone(),
             created_at: record.created_at.clone(),
             created_by: record.created_by.clone(),
             updated_at: record.updated_at.clone(),
@@ -592,6 +756,106 @@ pub struct PatchDpiaRecord {
     pub risk_level: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateBreachPlaybook {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub detection_channels: Vec<String>,
+    #[serde(default)]
+    pub containment_steps: Vec<String>,
+    #[serde(default)]
+    pub notification_roles: Vec<String>,
+    #[serde(default)]
+    pub authority_notification_window: Option<String>,
+    #[serde(default)]
+    pub subject_notification_guidance: Option<String>,
+    #[serde(default)]
+    pub risk_level: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub review_notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PatchBreachPlaybook {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub detection_channels: Option<Vec<String>>,
+    #[serde(default)]
+    pub containment_steps: Option<Vec<String>>,
+    #[serde(default)]
+    pub notification_roles: Option<Vec<String>>,
+    #[serde(default)]
+    pub authority_notification_window: Option<String>,
+    #[serde(default)]
+    pub subject_notification_guidance: Option<String>,
+    #[serde(default)]
+    pub risk_level: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub review_notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateTransferControl {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
+    pub legal_basis: Option<String>,
+    #[serde(default)]
+    pub data_categories: Vec<String>,
+    #[serde(default)]
+    pub recipient: Option<String>,
+    #[serde(default)]
+    pub destination_country: Option<String>,
+    #[serde(default)]
+    pub transfer_mechanism: Option<String>,
+    #[serde(default)]
+    pub safeguards: Vec<String>,
+    #[serde(default)]
+    pub risk_level: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub review_notes: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PatchTransferControl {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
+    pub legal_basis: Option<String>,
+    #[serde(default)]
+    pub data_categories: Option<Vec<String>>,
+    #[serde(default)]
+    pub recipient: Option<String>,
+    #[serde(default)]
+    pub destination_country: Option<String>,
+    #[serde(default)]
+    pub transfer_mechanism: Option<String>,
+    #[serde(default)]
+    pub safeguards: Option<Vec<String>>,
+    #[serde(default)]
+    pub risk_level: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub review_notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -985,6 +1249,38 @@ pub(crate) fn load_dpia_records(path: &FsPath) -> Option<HashMap<DpiaRecordId, D
     }
 }
 
+pub(crate) fn load_breach_playbooks(
+    path: &FsPath,
+) -> Option<HashMap<BreachPlaybookId, BreachPlaybookRecord>> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<Vec<BreachPlaybookRecord>>(&bytes) {
+        Ok(list) => Some(list.into_iter().map(|record| (record.id, record)).collect()),
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid privacy breach playbook document ({e}); ignoring it",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+pub(crate) fn load_transfer_controls(
+    path: &FsPath,
+) -> Option<HashMap<TransferControlId, TransferControlRecord>> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<Vec<TransferControlRecord>>(&bytes) {
+        Ok(list) => Some(list.into_iter().map(|record| (record.id, record)).collect()),
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid privacy transfer control document ({e}); ignoring it",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
 pub(crate) fn load_retention_policies(
     path: &FsPath,
 ) -> Option<HashMap<RetentionPolicyId, RetentionPolicyRecord>> {
@@ -1070,6 +1366,52 @@ pub(crate) fn write_dpia_records_atomic(
     }
 }
 
+pub(crate) fn write_breach_playbooks_atomic(
+    path: &FsPath,
+    records: &HashMap<BreachPlaybookId, BreachPlaybookRecord>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut list: Vec<&BreachPlaybookRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    let json = serde_json::to_vec_pretty(&list).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, BREACH_PLAYBOOKS_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+pub(crate) fn write_transfer_controls_atomic(
+    path: &FsPath,
+    records: &HashMap<TransferControlId, TransferControlRecord>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut list: Vec<&TransferControlRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    let json = serde_json::to_vec_pretty(&list).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, TRANSFER_CONTROLS_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
 pub(crate) fn write_retention_policies_atomic(
     path: &FsPath,
     records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
@@ -1125,6 +1467,24 @@ async fn persist_dpia_records(state: &AppState) -> Result<(), ApiError> {
         let records = state.dpia_records.read().await;
         write_dpia_records_atomic(path, &records)
             .map_err(|e| ApiError::Internal(format!("failed to persist DPIA records: {e}")))?;
+    }
+    Ok(())
+}
+
+async fn persist_breach_playbooks(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.breach_playbooks_path {
+        let records = state.breach_playbooks.read().await;
+        write_breach_playbooks_atomic(path, &records)
+            .map_err(|e| ApiError::Internal(format!("failed to persist breach playbooks: {e}")))?;
+    }
+    Ok(())
+}
+
+async fn persist_transfer_controls(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.transfer_controls_path {
+        let records = state.transfer_controls.read().await;
+        write_transfer_controls_atomic(path, &records)
+            .map_err(|e| ApiError::Internal(format!("failed to persist transfer controls: {e}")))?;
     }
     Ok(())
 }
@@ -1534,6 +1894,291 @@ pub async fn patch_dpia_record(
     Ok(Json(view))
 }
 
+/// `POST /v1/privacy/breach-playbooks` — create a breach-response playbook register record.
+pub async fn create_breach_playbook(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CreateBreachPlaybook>,
+) -> Result<(StatusCode, Json<BreachPlaybookView>), ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+
+    let actor_name = actor.resolve("api");
+    let now = now_rfc3339();
+    let record = BreachPlaybookRecord {
+        id: BreachPlaybookId(Uuid::new_v4()),
+        title: required_privacy_control_segment(
+            req.title,
+            "title",
+            MAX_PRIVACY_CONTROL_NAME_CHARS,
+        )?,
+        scope: required_privacy_control_segment(
+            req.scope,
+            "scope",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?,
+        detection_channels: sanitized_privacy_control_list(
+            req.detection_channels,
+            "detection_channels",
+            true,
+        )?,
+        containment_steps: sanitized_privacy_control_list(
+            req.containment_steps,
+            "containment_steps",
+            true,
+        )?,
+        notification_roles: sanitized_privacy_control_list(
+            req.notification_roles,
+            "notification_roles",
+            false,
+        )?,
+        authority_notification_window: optional_sensitive_checked_text(
+            req.authority_notification_window,
+            "authority_notification_window",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?,
+        subject_notification_guidance: optional_sensitive_checked_text(
+            req.subject_notification_guidance,
+            "subject_notification_guidance",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?,
+        risk_level: req
+            .risk_level
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("risk_level is required".to_owned()))
+            .and_then(PrivacyRiskLevel::parse)?,
+        status: req
+            .status
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("status is required".to_owned()))
+            .and_then(PrivacyRecordStatus::parse)?,
+        review_notes: optional_sensitive_checked_text(
+            req.review_notes,
+            "review_notes",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?,
+        created_at: now.clone(),
+        created_by: actor_name.clone(),
+        updated_at: now,
+        updated_by: actor_name.clone(),
+    };
+    let view = BreachPlaybookView::from(&record);
+    state
+        .breach_playbooks
+        .write()
+        .await
+        .insert(record.id, record);
+    persist_breach_playbooks(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:breach-playbook:{}", view.id),
+        BREACH_PLAYBOOK_CREATED_KIND,
+        "Breach-response playbook created",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `GET /v1/privacy/breach-playbooks` — list breach-response playbook register records.
+pub async fn list_breach_playbooks(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<BreachPlaybookView>>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let records = state.breach_playbooks.read().await;
+    let mut list: Vec<&BreachPlaybookRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    Ok(Json(
+        list.into_iter().map(BreachPlaybookView::from).collect(),
+    ))
+}
+
+/// `PATCH /v1/privacy/breach-playbooks/{id}` — update a breach-response playbook record.
+pub async fn patch_breach_playbook(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PatchBreachPlaybook>,
+) -> Result<Json<BreachPlaybookView>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+    let playbook_id = BreachPlaybookId(id);
+
+    let mut records = state.breach_playbooks.write().await;
+    let mut record = records
+        .get(&playbook_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    let changed = apply_breach_playbook_patch(&mut record, req, &actor_name)?;
+    if !changed {
+        return Err(ApiError::Unprocessable(
+            "at least one breach playbook field is required".to_owned(),
+        ));
+    }
+    let view = BreachPlaybookView::from(&record);
+    records.insert(record.id, record);
+    drop(records);
+    persist_breach_playbooks(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:breach-playbook:{}", view.id),
+        BREACH_PLAYBOOK_UPDATED_KIND,
+        "Breach-response playbook updated",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok(Json(view))
+}
+
+/// `POST /v1/privacy/transfer-controls` — create a transfer-control register record.
+pub async fn create_transfer_control(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<CreateTransferControl>,
+) -> Result<(StatusCode, Json<TransferControlView>), ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+
+    let actor_name = actor.resolve("api");
+    let now = now_rfc3339();
+    let record = TransferControlRecord {
+        id: TransferControlId(Uuid::new_v4()),
+        name: required_privacy_control_segment(req.name, "name", MAX_PRIVACY_CONTROL_NAME_CHARS)?,
+        purpose: required_sensitive_checked_text(
+            req.purpose,
+            "purpose",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?,
+        legal_basis: required_sensitive_checked_text(
+            req.legal_basis,
+            "legal_basis",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?,
+        data_categories: sanitized_privacy_control_list(
+            req.data_categories,
+            "data_categories",
+            true,
+        )?,
+        recipient: required_privacy_control_segment(
+            req.recipient,
+            "recipient",
+            MAX_PRIVACY_CONTROL_NAME_CHARS,
+        )?,
+        destination_country: required_privacy_control_segment(
+            req.destination_country,
+            "destination_country",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?,
+        transfer_mechanism: required_privacy_control_segment(
+            req.transfer_mechanism,
+            "transfer_mechanism",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?,
+        safeguards: sanitized_privacy_control_list(req.safeguards, "safeguards", true)?,
+        risk_level: req
+            .risk_level
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("risk_level is required".to_owned()))
+            .and_then(PrivacyRiskLevel::parse)?,
+        status: req
+            .status
+            .as_deref()
+            .ok_or_else(|| ApiError::Unprocessable("status is required".to_owned()))
+            .and_then(PrivacyRecordStatus::parse)?,
+        review_notes: optional_sensitive_checked_text(
+            req.review_notes,
+            "review_notes",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?,
+        created_at: now.clone(),
+        created_by: actor_name.clone(),
+        updated_at: now,
+        updated_by: actor_name.clone(),
+    };
+    let view = TransferControlView::from(&record);
+    state
+        .transfer_controls
+        .write()
+        .await
+        .insert(record.id, record);
+    persist_transfer_controls(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:transfer-control:{}", view.id),
+        TRANSFER_CONTROL_CREATED_KIND,
+        "Transfer-control record created",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// `GET /v1/privacy/transfer-controls` — list transfer-control records.
+pub async fn list_transfer_controls(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<TransferControlView>>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let records = state.transfer_controls.read().await;
+    let mut list: Vec<&TransferControlRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    Ok(Json(
+        list.into_iter().map(TransferControlView::from).collect(),
+    ))
+}
+
+/// `PATCH /v1/privacy/transfer-controls/{id}` — update a transfer-control record.
+pub async fn patch_transfer_control(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PatchTransferControl>,
+) -> Result<Json<TransferControlView>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+    let control_id = TransferControlId(id);
+
+    let mut records = state.transfer_controls.write().await;
+    let mut record = records
+        .get(&control_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    let changed = apply_transfer_control_patch(&mut record, req, &actor_name)?;
+    if !changed {
+        return Err(ApiError::Unprocessable(
+            "at least one transfer control field is required".to_owned(),
+        ));
+    }
+    let view = TransferControlView::from(&record);
+    records.insert(record.id, record);
+    drop(records);
+    persist_transfer_controls(&state).await?;
+    record_privacy_event(
+        &state,
+        &format!("privacy:transfer-control:{}", view.id),
+        TRANSFER_CONTROL_UPDATED_KIND,
+        "Transfer-control record updated",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok(Json(view))
+}
+
 /// `POST /v1/privacy/retention-policies` — create a retention policy register record.
 pub async fn create_retention_policy(
     State(state): State<AppState>,
@@ -1896,6 +2541,162 @@ fn apply_dpia_patch(
     Ok(changed)
 }
 
+fn apply_breach_playbook_patch(
+    record: &mut BreachPlaybookRecord,
+    req: PatchBreachPlaybook,
+    actor_name: &str,
+) -> Result<bool, ApiError> {
+    let mut changed = false;
+    if let Some(title) = req.title {
+        record.title =
+            required_privacy_control_segment(Some(title), "title", MAX_PRIVACY_CONTROL_NAME_CHARS)?;
+        changed = true;
+    }
+    if let Some(scope) = req.scope {
+        record.scope = required_privacy_control_segment(
+            Some(scope),
+            "scope",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(detection_channels) = req.detection_channels {
+        record.detection_channels =
+            sanitized_privacy_control_list(detection_channels, "detection_channels", true)?;
+        changed = true;
+    }
+    if let Some(containment_steps) = req.containment_steps {
+        record.containment_steps =
+            sanitized_privacy_control_list(containment_steps, "containment_steps", true)?;
+        changed = true;
+    }
+    if let Some(notification_roles) = req.notification_roles {
+        record.notification_roles =
+            sanitized_privacy_control_list(notification_roles, "notification_roles", false)?;
+        changed = true;
+    }
+    if let Some(authority_notification_window) = req.authority_notification_window {
+        record.authority_notification_window = optional_sensitive_checked_text(
+            Some(authority_notification_window),
+            "authority_notification_window",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(subject_notification_guidance) = req.subject_notification_guidance {
+        record.subject_notification_guidance = optional_sensitive_checked_text(
+            Some(subject_notification_guidance),
+            "subject_notification_guidance",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(risk_level) = req.risk_level {
+        record.risk_level = PrivacyRiskLevel::parse(&risk_level)?;
+        changed = true;
+    }
+    if let Some(status) = req.status {
+        record.status = PrivacyRecordStatus::parse(&status)?;
+        changed = true;
+    }
+    if let Some(review_notes) = req.review_notes {
+        record.review_notes = optional_sensitive_checked_text(
+            Some(review_notes),
+            "review_notes",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?;
+        changed = true;
+    }
+    if changed {
+        record.updated_at = now_rfc3339();
+        record.updated_by = actor_name.to_owned();
+    }
+    Ok(changed)
+}
+
+fn apply_transfer_control_patch(
+    record: &mut TransferControlRecord,
+    req: PatchTransferControl,
+    actor_name: &str,
+) -> Result<bool, ApiError> {
+    let mut changed = false;
+    if let Some(name) = req.name {
+        record.name =
+            required_privacy_control_segment(Some(name), "name", MAX_PRIVACY_CONTROL_NAME_CHARS)?;
+        changed = true;
+    }
+    if let Some(purpose) = req.purpose {
+        record.purpose = required_sensitive_checked_text(
+            Some(purpose),
+            "purpose",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(legal_basis) = req.legal_basis {
+        record.legal_basis = required_sensitive_checked_text(
+            Some(legal_basis),
+            "legal_basis",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(data_categories) = req.data_categories {
+        record.data_categories =
+            sanitized_privacy_control_list(data_categories, "data_categories", true)?;
+        changed = true;
+    }
+    if let Some(recipient) = req.recipient {
+        record.recipient = required_privacy_control_segment(
+            Some(recipient),
+            "recipient",
+            MAX_PRIVACY_CONTROL_NAME_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(destination_country) = req.destination_country {
+        record.destination_country = required_privacy_control_segment(
+            Some(destination_country),
+            "destination_country",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(transfer_mechanism) = req.transfer_mechanism {
+        record.transfer_mechanism = required_privacy_control_segment(
+            Some(transfer_mechanism),
+            "transfer_mechanism",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?;
+        changed = true;
+    }
+    if let Some(safeguards) = req.safeguards {
+        record.safeguards = sanitized_privacy_control_list(safeguards, "safeguards", true)?;
+        changed = true;
+    }
+    if let Some(risk_level) = req.risk_level {
+        record.risk_level = PrivacyRiskLevel::parse(&risk_level)?;
+        changed = true;
+    }
+    if let Some(status) = req.status {
+        record.status = PrivacyRecordStatus::parse(&status)?;
+        changed = true;
+    }
+    if let Some(review_notes) = req.review_notes {
+        record.review_notes = optional_sensitive_checked_text(
+            Some(review_notes),
+            "review_notes",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?;
+        changed = true;
+    }
+    if changed {
+        record.updated_at = now_rfc3339();
+        record.updated_by = actor_name.to_owned();
+    }
+    Ok(changed)
+}
+
 fn apply_retention_policy_patch(
     record: &mut RetentionPolicyRecord,
     req: PatchRetentionPolicy,
@@ -2210,6 +3011,16 @@ fn required_retention_segment(
     Ok(value)
 }
 
+fn required_privacy_control_segment(
+    raw: Option<String>,
+    field: &str,
+    max_chars: usize,
+) -> Result<String, ApiError> {
+    let value = required_bounded_string(raw, field, max_chars)?;
+    reject_path_like_value(&value, field)?;
+    Ok(value)
+}
+
 fn required_sensitive_checked_text(
     raw: Option<String>,
     field: &str,
@@ -2419,6 +3230,42 @@ fn sanitized_strings(
             continue;
         }
         out.push(value.to_owned());
+    }
+    if require_non_empty && out.is_empty() {
+        Err(ApiError::Unprocessable(format!(
+            "{field} must include at least one non-empty value"
+        )))
+    } else {
+        Ok(out)
+    }
+}
+
+fn sanitized_privacy_control_list(
+    raw: Vec<String>,
+    field: &str,
+    require_non_empty: bool,
+) -> Result<Vec<String>, ApiError> {
+    if raw.len() > MAX_PRIVACY_CONTROL_LIST_ITEMS {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must include at most {MAX_PRIVACY_CONTROL_LIST_ITEMS} entries"
+        )));
+    }
+    let mut out: Vec<String> = Vec::new();
+    for item in raw {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let value = required_bounded_string(
+            Some(trimmed.to_owned()),
+            field,
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?;
+        reject_path_like_value(&value, field)?;
+        if out.iter().any(|existing| existing.as_str() == value) {
+            continue;
+        }
+        out.push(value);
     }
     if require_non_empty && out.is_empty() {
         Err(ApiError::Unprocessable(format!(

@@ -11,6 +11,14 @@ export const ataFieldHelp = {
   membersRepresented: 'Número de membros representados por procuração ou outro meio admitido.',
   telematicEvidence:
     'Registo da plataforma, gravação ou outra prova que suporte a reunião remota ou híbrida.',
+  conveningDispatchDate:
+    'Data em que a convocatória foi expedida ou disponibilizada aos destinatários.',
+  conveningChannel:
+    'Meio principal usado para a convocatória. Use o registo por destinatário quando houver variação relevante.',
+  conveningAntecedenceDays:
+    'Antecedência efetiva entre a convocatória e a reunião. É comparada apenas com mínimos estatutários registados ou limiares já resolvidos.',
+  conveningEvidenceReference:
+    'Referência curta ao comprovativo conservado, como identificador documental, registo postal, mensagem, publicação ou localização de arquivo.',
   mesaPresidente:
     'Identifica quem presidiu à mesa; para sociedades comerciais é necessário para a conformidade da selagem.',
   mesaSecretarios: 'Nomes dos secretários ou escrutinadores que assistiram a mesa, quando existam.',

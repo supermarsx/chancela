@@ -46,6 +46,16 @@ export type ClosingReason = (typeof CLOSING_REASONS)[number];
 export const MEETING_CHANNELS = ['Physical', 'Hybrid', 'Telematic', 'WrittenResolution'] as const;
 export type MeetingChannel = (typeof MEETING_CHANNELS)[number];
 
+export const DISPATCH_CHANNELS = [
+  'RegisteredLetter',
+  'RegisteredLetterAR',
+  'Email',
+  'HandDelivery',
+  'Publication',
+  'Portal',
+] as const;
+export type DispatchChannel = (typeof DISPATCH_CHANNELS)[number];
+
 // Ordered lifecycle (WFL). `advance_to` walks Draft → … → Signing; Sealed/Archived
 // are reached only via the seal/archive endpoints, never `advance`.
 export const ACT_STATES = [
@@ -331,6 +341,30 @@ export interface ActDeliberationItem {
   statements: ActMemberStatement[];
 }
 
+export interface ActConveningRecipient {
+  name: string;
+  channel: DispatchChannel | null;
+  reference: string | null;
+  dispatched_at: string | null;
+}
+
+export interface ActSecondCall {
+  date: string | null;
+  time: string | null;
+  reduced_quorum: boolean;
+}
+
+export interface ActConvening {
+  convener: string | null;
+  convener_capacity: SignatoryCapacity | null;
+  dispatch_date: string | null;
+  antecedence_days: number | null;
+  channel: DispatchChannel | null;
+  evidence_reference: string | null;
+  recipients: ActConveningRecipient[];
+  second_call: ActSecondCall | null;
+}
+
 export interface ActSealMetadata {
   rule_pack_id: string;
   version: string;
@@ -363,6 +397,7 @@ export interface ActView {
   seal_event_seq: number | null;
   seal_metadata: ActSealMetadata | null;
   retifies: string | null;
+  convening?: ActConvening;
 }
 
 export interface ComplianceIssue {
@@ -1834,6 +1869,42 @@ export interface LawSearchView {
   results: LawSearchHitView[];
 }
 
+/** One selected corpus article reference to normalize for draft/compliance citation use. */
+export interface LawCitationRef {
+  diploma_id: string;
+  article: string;
+}
+
+/** `POST /v1/law/citations/resolve` request body. Bounded server-side. */
+export interface LawCitationRequest {
+  references: LawCitationRef[];
+}
+
+/**
+ * Draft/compliance-friendly legal-basis metadata derived from the corpus. `verification` and
+ * `source_complete` are carried through without upgrading pending DRE entries.
+ */
+export interface LawCitationView {
+  source_id: string;
+  source_label: string;
+  article: string;
+  article_label: string;
+  citation: string;
+  verification: LawVerification;
+  source_url: string | null;
+  source_complete: boolean;
+  dr_reference?: string;
+  source_digest?: string;
+  retrieved_at?: string;
+}
+
+/** Read-only citation report; `legal_notice` is non-authoritative wording from the API. */
+export interface LawCitationReport {
+  legal_notice: string;
+  count: number;
+  citations: LawCitationView[];
+}
+
 // --- Users + session (§2.8, plan t14; auth t41/t29) -----------------------------
 //
 // User accounts identify the actor behind every ledger mutation AND gate access to it:
@@ -2277,6 +2348,45 @@ export interface DpiaRecordView extends PrivacyRegisterRecordBase {
   title: string;
 }
 
+/** One breach-response playbook register record (`GET /v1/privacy/breach-playbooks`). */
+export interface BreachPlaybookView {
+  id: string;
+  title: string;
+  scope: string;
+  detection_channels: string[];
+  containment_steps: string[];
+  notification_roles: string[];
+  authority_notification_window?: string;
+  subject_notification_guidance?: string;
+  risk_level: PrivacyRiskLevel;
+  status: PrivacyRecordStatus;
+  review_notes?: string;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+/** One transfer-control register record (`GET /v1/privacy/transfer-controls`). */
+export interface TransferControlView {
+  id: string;
+  name: string;
+  purpose: string;
+  legal_basis: string;
+  data_categories: string[];
+  recipient: string;
+  destination_country: string;
+  transfer_mechanism: string;
+  safeguards: string[];
+  risk_level: PrivacyRiskLevel;
+  status: PrivacyRecordStatus;
+  review_notes?: string;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string;
+}
+
 /** One bounded retention policy register record (`GET /v1/privacy/retention-policies`). */
 export interface RetentionPolicyView {
   id: string;
@@ -2406,6 +2516,64 @@ export interface PatchDpiaRecordBody {
   status?: PrivacyRecordStatus;
 }
 
+/** Body of `POST /v1/privacy/breach-playbooks`. */
+export interface CreateBreachPlaybookBody {
+  title: string;
+  scope: string;
+  detection_channels: string[];
+  containment_steps: string[];
+  notification_roles: string[];
+  authority_notification_window?: string;
+  subject_notification_guidance?: string;
+  risk_level: PrivacyRiskLevel;
+  status: PrivacyRecordStatus;
+  review_notes?: string;
+}
+
+/** Body of `PATCH /v1/privacy/breach-playbooks/{id}`. */
+export interface PatchBreachPlaybookBody {
+  title?: string;
+  scope?: string;
+  detection_channels?: string[];
+  containment_steps?: string[];
+  notification_roles?: string[];
+  authority_notification_window?: string;
+  subject_notification_guidance?: string;
+  risk_level?: PrivacyRiskLevel;
+  status?: PrivacyRecordStatus;
+  review_notes?: string;
+}
+
+/** Body of `POST /v1/privacy/transfer-controls`. */
+export interface CreateTransferControlBody {
+  name: string;
+  purpose: string;
+  legal_basis: string;
+  data_categories: string[];
+  recipient: string;
+  destination_country: string;
+  transfer_mechanism: string;
+  safeguards: string[];
+  risk_level: PrivacyRiskLevel;
+  status: PrivacyRecordStatus;
+  review_notes?: string;
+}
+
+/** Body of `PATCH /v1/privacy/transfer-controls/{id}`. */
+export interface PatchTransferControlBody {
+  name?: string;
+  purpose?: string;
+  legal_basis?: string;
+  data_categories?: string[];
+  recipient?: string;
+  destination_country?: string;
+  transfer_mechanism?: string;
+  safeguards?: string[];
+  risk_level?: PrivacyRiskLevel;
+  status?: PrivacyRecordStatus;
+  review_notes?: string;
+}
+
 /** One role assignment embedded in the non-secret DSR user export. */
 export interface UserDsrRoleAssignment {
   role_id: string;
@@ -2496,6 +2664,7 @@ export interface DraftActBody {
   book_id: string;
   title: string;
   channel: MeetingChannel;
+  convening?: ActConvening | null;
   retifies?: string;
 }
 
@@ -2516,6 +2685,7 @@ export interface UpdateActBody {
   telematic_evidence?: string | null;
   attachments?: ActAttachment[];
   signatories?: ActSignatory[];
+  convening?: ActConvening | null;
 }
 
 export interface AdvanceActBody {

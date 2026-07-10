@@ -440,6 +440,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/privacy/processors/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
     ("/v1/privacy/dpias", RouteClass::Gated),       // GET/POST user.manage|settings.manage@Global
     ("/v1/privacy/dpias/{id}", RouteClass::Gated),  // PATCH user.manage|settings.manage@Global
+    ("/v1/privacy/breach-playbooks", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
+    ("/v1/privacy/breach-playbooks/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
+    ("/v1/privacy/transfer-controls", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
+    ("/v1/privacy/transfer-controls/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies/dry-run", RouteClass::Gated), // POST user.manage|settings.manage@Global, non-destructive
     ("/v1/privacy/retention-policies/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global

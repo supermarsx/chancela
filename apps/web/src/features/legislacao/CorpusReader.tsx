@@ -26,9 +26,15 @@
  */
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useLawCorpus, useLawCorpusSearch, useLawDiploma } from '../../api/hooks';
+import {
+  useLawCorpus,
+  useLawCorpusSearch,
+  useLawDiploma,
+  useResolveLawCitations,
+} from '../../api/hooks';
 import type {
   LawArticleView,
+  LawCitationView,
   LawCorpusView,
   LawDiplomaSummaryView,
   LawSearchHitView,
@@ -43,7 +49,9 @@ import {
   Input,
   Loading,
   InlineWarning,
+  Icon,
   abbreviateDigest,
+  useToast,
 } from '../../ui';
 import { ExternalLink } from './links';
 
@@ -60,6 +68,83 @@ function AuthenticityBadge({ verified }: { verified: boolean }) {
 /** An article's printed title: its label, plus the epígrafe when the article carries one. */
 function articleTitle(label: string, heading: string): string {
   return heading.trim() ? `${label} — ${heading}` : label;
+}
+
+function citationKey(citation: LawCitationView): string {
+  return `${citation.source_id}:${citation.article}`;
+}
+
+function formatCitationLine(citation: LawCitationView, t: TFunction): string {
+  const state =
+    citation.verification === 'Verified'
+      ? t('legislacao.corpus.badge.verified')
+      : t('legislacao.citations.pendingState');
+  const source = citation.source_url ? ` — ${citation.source_url}` : '';
+  return `- ${citation.citation} [${state}]${source}`;
+}
+
+function formatCitationBlock(citations: LawCitationView[], notice: string, t: TFunction): string {
+  return [
+    t('legislacao.citations.copyHeading'),
+    notice,
+    ...citations.map((citation) => formatCitationLine(citation, t)),
+  ].join('\n');
+}
+
+function CitationShelf({
+  citations,
+  notice,
+  onCopy,
+  onClear,
+}: {
+  citations: LawCitationView[];
+  notice: string;
+  onCopy: () => void;
+  onClear: () => void;
+}) {
+  const t = useT();
+
+  return (
+    <aside className="leg-citations" aria-label={t('legislacao.citations.title')}>
+      <div className="leg-citations__head">
+        <h3 className="leg-citations__title">{t('legislacao.citations.title')}</h3>
+        <div className="leg-citations__actions">
+          <Button
+            type="button"
+            variant="ghost"
+            icon={<Icon.Copy />}
+            disabled={citations.length === 0}
+            onClick={onCopy}
+          >
+            {t('legislacao.citations.copy')}
+          </Button>
+          <Button type="button" variant="ghost" disabled={citations.length === 0} onClick={onClear}>
+            {t('legislacao.citations.clear')}
+          </Button>
+        </div>
+      </div>
+      <p className="leg-citations__notice muted">{notice}</p>
+      {citations.length === 0 ? (
+        <p className="leg-citations__empty muted">{t('legislacao.citations.empty')}</p>
+      ) : (
+        <ul className="leg-citations__list">
+          {citations.map((citation) => (
+            <li key={citationKey(citation)} className="leg-citations__item">
+              <span className="leg-citations__text mono">{citation.citation}</span>
+              <Badge tone={citation.verification === 'Verified' ? 'ok' : 'warn'}>
+                {citation.verification === 'Verified'
+                  ? t('legislacao.corpus.badge.verified')
+                  : t('legislacao.corpus.badge.pending')}
+              </Badge>
+              {citation.verification === 'Pending' ? (
+                <span className="muted">{t('legislacao.citations.pendingNote')}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </aside>
+  );
 }
 
 // --- Overview: provenance caveat + diploma browse ---------------------------------------------
@@ -220,9 +305,13 @@ function Citation({ article }: { article: LawArticleView }) {
 function ArticleCard({
   article,
   onOpen,
+  onPin,
+  pinPending,
 }: {
   article: LawArticleView;
   onOpen: (number: string) => void;
+  onPin: (article: LawArticleView) => void;
+  pinPending: boolean;
 }) {
   const t = useT();
   return (
@@ -238,7 +327,19 @@ function ArticleCard({
         >
           {articleTitle(article.label, article.heading)}
         </button>
-        <AuthenticityBadge verified={article.verified} />
+        <span className="leg-corpus__article-actions">
+          <AuthenticityBadge verified={article.verified} />
+          <Button
+            type="button"
+            variant="ghost"
+            className="leg-citation-pin"
+            icon={<Icon.Plus />}
+            disabled={pinPending}
+            onClick={() => onPin(article)}
+          >
+            {t('legislacao.citations.pin')}
+          </Button>
+        </span>
       </header>
       <ArticleBody article={article} />
     </article>
@@ -250,10 +351,14 @@ function ArticleCard({
 function DiplomaDetail({
   diplomaId,
   onOpenArticle,
+  onPinArticle,
+  pinPending,
   onBack,
 }: {
   diplomaId: string;
   onOpenArticle: (diplomaId: string, number: string) => void;
+  onPinArticle: (article: LawArticleView) => void;
+  pinPending: boolean;
   onBack: () => void;
 }) {
   const t = useT();
@@ -291,6 +396,8 @@ function DiplomaDetail({
             key={a.number}
             article={a}
             onOpen={(number) => onOpenArticle(d.id, number)}
+            onPin={onPinArticle}
+            pinPending={pinPending}
           />
         ))}
       </div>
@@ -303,10 +410,14 @@ function DiplomaDetail({
 function ArticleView({
   diplomaId,
   articleNumber,
+  onPinArticle,
+  pinPending,
   onBackToDiploma,
 }: {
   diplomaId: string;
   articleNumber: string;
+  onPinArticle: (article: LawArticleView) => void;
+  pinPending: boolean;
   onBackToDiploma: (id: string) => void;
 }) {
   const t = useT();
@@ -337,7 +448,19 @@ function ArticleView({
               {articleTitle(article.label, article.heading)}
             </h3>
           </div>
-          <AuthenticityBadge verified={article.verified} />
+          <span className="leg-corpus__article-actions">
+            <AuthenticityBadge verified={article.verified} />
+            <Button
+              type="button"
+              variant="ghost"
+              className="leg-citation-pin"
+              icon={<Icon.Plus />}
+              disabled={pinPending}
+              onClick={() => onPinArticle(article)}
+            >
+              {t('legislacao.citations.pin')}
+            </Button>
+          </span>
         </header>
         <ArticleBody article={article} />
         {article.cross_refs && article.cross_refs.length > 0 ? (
@@ -418,13 +541,17 @@ function SearchResults({
 
 export function CorpusReader() {
   const t: TFunction = useT();
+  const toast = useToast();
   const [params, setParams] = useSearchParams();
+  const resolver = useResolveLawCitations();
 
   const diplomaId = params.get('diploma') ?? '';
   const articleNumber = params.get('artigo') ?? '';
   const initialQuery = params.get('q') ?? '';
   const [term, setTerm] = useState(initialQuery);
   const [debounced, setDebounced] = useState(initialQuery);
+  const [citations, setCitations] = useState<LawCitationView[]>([]);
+  const [citationNotice, setCitationNotice] = useState(t('legislacao.citations.notice'));
 
   // Debounce the search box, mirroring the CAE explorer / curated-shelf idiom. The query is
   // seeded from `?q=` on mount (so a search is deep-linkable IN) but kept as local state —
@@ -483,6 +610,41 @@ export function CorpusReader() {
     );
   }
 
+  function pinArticle(article: LawArticleView) {
+    resolver.mutate(
+      { references: [{ diploma_id: article.diploma_id, article: article.number }] },
+      {
+        onSuccess: (report) => {
+          setCitationNotice(report.legal_notice || t('legislacao.citations.notice'));
+          setCitations((current) => {
+            const next = [...current];
+            for (const citation of report.citations) {
+              if (!next.some((item) => citationKey(item) === citationKey(citation))) {
+                next.push(citation);
+              }
+            }
+            return next;
+          });
+          toast.success(t('legislacao.citations.pinned'));
+        },
+        onError: (err) => toast.error(err),
+      },
+    );
+  }
+
+  async function copyCitations() {
+    if (!navigator.clipboard) {
+      toast.error(t('legislacao.citations.copyUnsupported'));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(formatCitationBlock(citations, citationNotice, t));
+      toast.success(t('legislacao.citations.copied'));
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+
   const query = debounced.trim();
   const searching = query.length > 0;
 
@@ -493,6 +655,12 @@ export function CorpusReader() {
       </header>
       <div className="panel__body stack--tight">
         <p className="leg-corpus__lede muted">{t('legislacao.corpus.lede')}</p>
+        <CitationShelf
+          citations={citations}
+          notice={citationNotice}
+          onCopy={() => void copyCitations()}
+          onClear={() => setCitations([])}
+        />
 
         <div className="leg-search">
           <Input
@@ -523,10 +691,18 @@ export function CorpusReader() {
           <ArticleView
             diplomaId={diplomaId}
             articleNumber={articleNumber}
+            onPinArticle={pinArticle}
+            pinPending={resolver.isPending}
             onBackToDiploma={openDiploma}
           />
         ) : diplomaId ? (
-          <DiplomaDetail diplomaId={diplomaId} onOpenArticle={openArticle} onBack={backToCorpus} />
+          <DiplomaDetail
+            diplomaId={diplomaId}
+            onOpenArticle={openArticle}
+            onPinArticle={pinArticle}
+            pinPending={resolver.isPending}
+            onBack={backToCorpus}
+          />
         ) : (
           <CorpusOverview onOpenDiploma={openDiploma} />
         )}

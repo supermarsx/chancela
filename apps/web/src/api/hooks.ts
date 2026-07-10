@@ -13,6 +13,8 @@ import { useEffect } from 'react';
 import type {
   CaeRevision,
   CloseBookBody,
+  BreachPlaybookView,
+  CreateBreachPlaybookBody,
   CreateDsrRequestBody,
   CreateDpiaRecordBody,
   CreateEntityBody,
@@ -33,6 +35,7 @@ import type {
   FollowUpView,
   ImportFromRegistryBody,
   LawEntryView,
+  LawCitationRequest,
   LedgerArchiveDocumentParams,
   LedgerQueryParams,
   OpenBookBody,
@@ -67,9 +70,13 @@ import type {
   DpiaRecordView,
   PatchRoleBody,
   PatchFollowUpBody,
+  PatchBreachPlaybookBody,
   PatchDpiaRecordBody,
   PatchProcessorRecordBody,
   ProcessorRecordView,
+  TransferControlView,
+  CreateTransferControlBody,
+  PatchTransferControlBody,
   RoleAssignmentInput,
   GrantDelegationBody,
   CreateApiKeyBody,
@@ -152,6 +159,8 @@ export const keys = {
   apiKeys: ['api-keys'] as const,
   privacyProcessors: ['privacy', 'processors'] as const,
   privacyDpias: ['privacy', 'dpias'] as const,
+  privacyBreachPlaybooks: ['privacy', 'breach-playbooks'] as const,
+  privacyTransferControls: ['privacy', 'transfer-controls'] as const,
 };
 
 // --- Entities -------------------------------------------------------------------
@@ -1259,6 +1268,16 @@ export function useLawCorpusSearch(q: string, limit?: number) {
   });
 }
 
+/**
+ * Normalize selected corpus article refs into draft/compliance citation metadata. This is a
+ * read-only mutation because the request body carries an explicit bounded list of refs.
+ */
+export function useResolveLawCitations() {
+  return useMutation({
+    mutationFn: (body: LawCitationRequest) => api.resolveLawCitations(body),
+  });
+}
+
 // --- Users + session (plan t14) -------------------------------------------------
 
 export function useUsers() {
@@ -1791,6 +1810,82 @@ export function usePatchPrivacyDpia() {
         current.map((record) => (record.id === updated.id ? updated : record)),
       );
       void qc.invalidateQueries({ queryKey: keys.privacyDpias });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePrivacyBreachPlaybooks(enabled = true) {
+  return useQuery({
+    queryKey: keys.privacyBreachPlaybooks,
+    queryFn: () => api.listBreachPlaybooks(),
+    enabled,
+  });
+}
+
+export function useCreatePrivacyBreachPlaybook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateBreachPlaybookBody) => api.createBreachPlaybook(body),
+    onSuccess: (created) => {
+      qc.setQueryData<BreachPlaybookView[]>(keys.privacyBreachPlaybooks, (current = []) => [
+        ...current,
+        created,
+      ]);
+      void qc.invalidateQueries({ queryKey: keys.privacyBreachPlaybooks });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchPrivacyBreachPlaybook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: PatchBreachPlaybookBody }) =>
+      api.patchBreachPlaybook(id, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<BreachPlaybookView[]>(keys.privacyBreachPlaybooks, (current = []) =>
+        current.map((record) => (record.id === updated.id ? updated : record)),
+      );
+      void qc.invalidateQueries({ queryKey: keys.privacyBreachPlaybooks });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePrivacyTransferControls(enabled = true) {
+  return useQuery({
+    queryKey: keys.privacyTransferControls,
+    queryFn: () => api.listTransferControls(),
+    enabled,
+  });
+}
+
+export function useCreatePrivacyTransferControl() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateTransferControlBody) => api.createTransferControl(body),
+    onSuccess: (created) => {
+      qc.setQueryData<TransferControlView[]>(keys.privacyTransferControls, (current = []) => [
+        ...current,
+        created,
+      ]);
+      void qc.invalidateQueries({ queryKey: keys.privacyTransferControls });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function usePatchPrivacyTransferControl() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: PatchTransferControlBody }) =>
+      api.patchTransferControl(id, body),
+    onSuccess: (updated) => {
+      qc.setQueryData<TransferControlView[]>(keys.privacyTransferControls, (current = []) =>
+        current.map((record) => (record.id === updated.id ? updated : record)),
+      );
+      void qc.invalidateQueries({ queryKey: keys.privacyTransferControls });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });

@@ -16,6 +16,8 @@ use uuid::Uuid;
 
 const PROCESSORS_FILE: &str = "privacy-processors.json";
 const DPIAS_FILE: &str = "privacy-dpias.json";
+const BREACH_PLAYBOOKS_FILE: &str = "privacy-breach-playbooks.json";
+const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json";
 const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
 
@@ -228,6 +230,37 @@ fn retention_policy_payload(disposal_action: &str, status: &str) -> Value {
         "status": status,
         "active": true,
         "notes": "  Register only; disposal execution is out of scope.  "
+    })
+}
+
+fn breach_playbook_payload(risk_level: &str, status: &str) -> Value {
+    json!({
+        "title": "  Suspected account compromise  ",
+        "scope": "  account-access  ",
+        "detection_channels": [" SIEM alert ", "", "support report", "SIEM alert"],
+        "containment_steps": ["Disable affected sessions", "Rotate API keys"],
+        "notification_roles": ["DPO", "Security lead"],
+        "authority_notification_window": "72 hours after awareness when required",
+        "subject_notification_guidance": "Notify affected subjects when high-risk impact is confirmed.",
+        "risk_level": risk_level,
+        "status": status,
+        "review_notes": "Register only; incident execution remains manual."
+    })
+}
+
+fn transfer_control_payload(risk_level: &str, status: &str) -> Value {
+    json!({
+        "name": "  EU to UK support access  ",
+        "purpose": "  Support ticket investigation  ",
+        "legal_basis": "  Contract support obligation  ",
+        "data_categories": ["account metadata", "support messages"],
+        "recipient": "  UK Support Ltd  ",
+        "destination_country": "  United Kingdom  ",
+        "transfer_mechanism": "  UK adequacy regulation  ",
+        "safeguards": ["least-privilege access", "ticket-scoped audit"],
+        "risk_level": risk_level,
+        "status": status,
+        "review_notes": "Review annually."
     })
 }
 
@@ -1406,6 +1439,220 @@ async fn dpia_records_allow_user_manage_list_update_and_audit() {
     assert!(events.iter().any(|e| {
         e["kind"] == "privacy.dpia.updated"
             && e["scope"] == json!(format!("privacy:dpia:{dpia_id}"))
+            && e["actor"] == json!("owner")
+            && e.get("payload").is_none()
+    }));
+}
+
+#[tokio::test]
+async fn breach_playbooks_allow_settings_manage_persist_and_audit() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (owner, _owner_token) = bootstrap_owner(&state).await;
+    let (_settings_user, settings_token) = add_settings_manager(&state).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/breach-playbooks",
+                breach_playbook_payload("high", "active"),
+            ),
+            &settings_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create succeeds: {created}");
+    let playbook_id = created["id"].as_str().expect("playbook id").to_owned();
+    assert_eq!(created["title"], json!("Suspected account compromise"));
+    assert_eq!(created["scope"], json!("account-access"));
+    assert_eq!(
+        created["detection_channels"],
+        json!(["SIEM alert", "support report"])
+    );
+    assert_eq!(
+        created["containment_steps"],
+        json!(["Disable affected sessions", "Rotate API keys"])
+    );
+    assert_eq!(created["risk_level"], json!("high"));
+    assert_eq!(created["status"], json!("active"));
+    assert_eq!(created["created_by"], json!("settings-manager"));
+
+    let (status, updated) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/breach-playbooks/{playbook_id}"),
+                json!({
+                    "status": "under_review",
+                    "risk_level": "critical",
+                    "containment_steps": ["Disable affected sessions", "Preserve audit evidence"],
+                }),
+            ),
+            &settings_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "patch succeeds: {updated}");
+    assert_eq!(updated["status"], json!("under_review"));
+    assert_eq!(updated["risk_level"], json!("critical"));
+    assert_eq!(
+        updated["containment_steps"],
+        json!(["Disable affected sessions", "Preserve audit evidence"])
+    );
+
+    let persisted: Value = serde_json::from_slice(
+        &std::fs::read(tmp.dir.join(BREACH_PLAYBOOKS_FILE)).expect("breach playbooks sidecar"),
+    )
+    .expect("valid breach playbooks sidecar");
+    assert_eq!(persisted.as_array().expect("persisted playbooks").len(), 1);
+    assert_eq!(persisted[0]["id"], json!(playbook_id));
+
+    let restarted = AppState::with_data_dir(tmp.dir.clone());
+    let restarted_token = open_session(&restarted, owner).await;
+    let (status, list) = send(
+        restarted.clone(),
+        with_session(get("/v1/privacy/breach-playbooks"), &restarted_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list after restart: {list}");
+    assert_eq!(list.as_array().expect("playbook list").len(), 1);
+    assert_eq!(list[0]["id"], json!(playbook_id));
+
+    let (status, events) = send(
+        restarted,
+        with_session(
+            get("/v1/ledger/events?scope=privacy:breach-playbook:&limit=1000"),
+            &restarted_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger readable: {events}");
+    let events = events.as_array().expect("events");
+    assert!(events.iter().any(|e| {
+        e["kind"] == "privacy.breach.playbook.created"
+            && e["scope"] == json!(format!("privacy:breach-playbook:{playbook_id}"))
+            && e["actor"] == json!("settings-manager")
+            && e.get("payload").is_none()
+    }));
+    assert!(events.iter().any(|e| {
+        e["kind"] == "privacy.breach.playbook.updated"
+            && e["scope"] == json!(format!("privacy:breach-playbook:{playbook_id}"))
+            && e["actor"] == json!("settings-manager")
+            && e.get("payload").is_none()
+    }));
+}
+
+#[tokio::test]
+async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (owner, owner_token) = bootstrap_owner(&state).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/transfer-controls",
+                transfer_control_payload("medium", "draft"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create succeeds: {created}");
+    let control_id = created["id"].as_str().expect("control id").to_owned();
+    assert_eq!(created["name"], json!("EU to UK support access"));
+    assert_eq!(created["recipient"], json!("UK Support Ltd"));
+    assert_eq!(created["destination_country"], json!("United Kingdom"));
+    assert_eq!(
+        created["transfer_mechanism"],
+        json!("UK adequacy regulation")
+    );
+    assert_eq!(
+        created["safeguards"],
+        json!(["least-privilege access", "ticket-scoped audit"])
+    );
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/transfer-controls/{control_id}"),
+                json!({ "review_notes": "password_hash=secret" }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("sensitive credential")
+    );
+
+    let (status, updated) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/transfer-controls/{control_id}"),
+                json!({
+                    "status": "active",
+                    "risk_level": "high",
+                    "safeguards": ["least-privilege access", "quarterly review"],
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "patch succeeds: {updated}");
+    assert_eq!(updated["status"], json!("active"));
+    assert_eq!(updated["risk_level"], json!("high"));
+    assert_eq!(
+        updated["safeguards"],
+        json!(["least-privilege access", "quarterly review"])
+    );
+
+    let persisted: Value = serde_json::from_slice(
+        &std::fs::read(tmp.dir.join(TRANSFER_CONTROLS_FILE)).expect("transfer controls sidecar"),
+    )
+    .expect("valid transfer controls sidecar");
+    assert_eq!(persisted.as_array().expect("persisted controls").len(), 1);
+    assert_eq!(persisted[0]["id"], json!(control_id));
+
+    let restarted = AppState::with_data_dir(tmp.dir.clone());
+    let restarted_token = open_session(&restarted, owner).await;
+    let (status, list) = send(
+        restarted.clone(),
+        with_session(get("/v1/privacy/transfer-controls"), &restarted_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list after restart: {list}");
+    assert_eq!(list.as_array().expect("transfer list").len(), 1);
+    assert_eq!(list[0]["id"], json!(control_id));
+
+    let (status, events) = send(
+        restarted,
+        with_session(
+            get("/v1/ledger/events?scope=privacy:transfer-control:&limit=1000"),
+            &restarted_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger readable: {events}");
+    let events = events.as_array().expect("events");
+    assert!(events.iter().any(|e| {
+        e["kind"] == "privacy.transfer.control.created"
+            && e["scope"] == json!(format!("privacy:transfer-control:{control_id}"))
+            && e["actor"] == json!("owner")
+            && e.get("payload").is_none()
+    }));
+    assert!(events.iter().any(|e| {
+        e["kind"] == "privacy.transfer.control.updated"
+            && e["scope"] == json!(format!("privacy:transfer-control:{control_id}"))
             && e["actor"] == json!("owner")
             && e.get("payload").is_none()
     }));

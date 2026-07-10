@@ -31,6 +31,7 @@ import {
 import {
   actStateLabels,
   attachmentKindLabels,
+  dispatchChannelLabels,
   meetingChannelLabels,
   optionsFrom,
   severityLabels,
@@ -39,20 +40,25 @@ import {
 import {
   ACT_STATES,
   ATTACHMENT_KINDS,
+  DISPATCH_CHANNELS,
   MEETING_CHANNELS,
   SIGNATORY_CAPACITIES,
   type ActAgendaItem,
   type ActAttachment,
+  type ActConvening,
+  type ActConveningRecipient,
   type ActDeliberationItem,
   type ActDocumentReference,
   type ActMemberStatement,
   type ActMesa,
+  type ActSecondCall,
   type ActSignatory,
   type ActState,
   type ActView,
   type ActVoteResult,
   type AttachmentKind,
   type ComplianceReport,
+  type DispatchChannel,
   type MeetingChannel,
   type SignatoryCapacity,
 } from '../../api/types';
@@ -101,8 +107,33 @@ interface Draft {
   deliberations: string;
   deliberation_items: ActDeliberationItem[];
   telematic_evidence: string;
+  convening: DraftConvening;
   attachments: ActAttachment[];
   signatories: ActSignatory[];
+}
+
+interface DraftConvening {
+  convener: string;
+  convener_capacity: SignatoryCapacity | '';
+  dispatch_date: string;
+  antecedence_days: string;
+  channel: DispatchChannel | '';
+  evidence_reference: string;
+  recipients: ActConveningRecipient[];
+  second_call: ActSecondCall | null;
+}
+
+function toDraftConvening(convening: ActConvening | undefined): DraftConvening {
+  return {
+    convener: convening?.convener ?? '',
+    convener_capacity: convening?.convener_capacity ?? '',
+    dispatch_date: convening?.dispatch_date ?? '',
+    antecedence_days: convening?.antecedence_days == null ? '' : String(convening.antecedence_days),
+    channel: convening?.channel ?? '',
+    evidence_reference: convening?.evidence_reference ?? '',
+    recipients: convening?.recipients ?? [],
+    second_call: convening?.second_call ?? null,
+  };
 }
 
 function toDraft(act: ActView): Draft {
@@ -121,6 +152,7 @@ function toDraft(act: ActView): Draft {
     deliberations: act.deliberations,
     deliberation_items: act.deliberation_items,
     telematic_evidence: act.telematic_evidence ?? '',
+    convening: toDraftConvening(act.convening),
     attachments: act.attachments,
     signatories: act.signatories,
   };
@@ -827,6 +859,86 @@ function AttachmentsEditor({
   );
 }
 
+function ConveningEditor({
+  convening,
+  disabled,
+  onChange,
+}: {
+  convening: DraftConvening;
+  disabled: boolean;
+  onChange: (next: DraftConvening) => void;
+}) {
+  const t = useT();
+  const channelOptions = [
+    { value: '', label: t('acts.convening.channelNone') },
+    ...optionsFrom(DISPATCH_CHANNELS, dispatchChannelLabels),
+  ];
+  const setConvening = <K extends keyof DraftConvening>(key: K, value: DraftConvening[K]) =>
+    onChange({ ...convening, [key]: value });
+
+  return (
+    <div className="form">
+      <div className="rowline">
+        <Field
+          label={t('acts.convening.dispatchDate')}
+          htmlFor="ed-convening-date"
+          help={ataFieldHelp.conveningDispatchDate}
+        >
+          <Input
+            id="ed-convening-date"
+            type="date"
+            value={convening.dispatch_date}
+            disabled={disabled}
+            onChange={(e) => setConvening('dispatch_date', e.target.value)}
+          />
+        </Field>
+        <Field
+          label={t('acts.convening.channel')}
+          htmlFor="ed-convening-channel"
+          help={ataFieldHelp.conveningChannel}
+        >
+          <Select
+            id="ed-convening-channel"
+            value={convening.channel}
+            disabled={disabled}
+            onChange={(e) => setConvening('channel', e.target.value as DispatchChannel | '')}
+            options={channelOptions}
+          />
+        </Field>
+      </div>
+      <div className="rowline">
+        <Field
+          label={t('acts.convening.antecedenceDays')}
+          htmlFor="ed-convening-days"
+          help={ataFieldHelp.conveningAntecedenceDays}
+        >
+          <Input
+            id="ed-convening-days"
+            type="number"
+            min={0}
+            value={convening.antecedence_days}
+            disabled={disabled}
+            onChange={(e) => setConvening('antecedence_days', e.target.value)}
+          />
+        </Field>
+        <Field
+          label={t('acts.convening.evidenceReference')}
+          htmlFor="ed-convening-evidence"
+          help={ataFieldHelp.conveningEvidenceReference}
+        >
+          <Input
+            id="ed-convening-evidence"
+            value={convening.evidence_reference}
+            disabled={disabled}
+            placeholder={t('acts.convening.evidencePlaceholder')}
+            onChange={(e) => setConvening('evidence_reference', e.target.value)}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 function LifecycleStepper({
   current,
   onAdvance,
@@ -875,6 +987,28 @@ function LifecycleStepper({
 
 /** The PATCH body assembled from the working draft (all §2.4 fields, additive). */
 function draftToPatch(draft: Draft) {
+  const convening: ActConvening | null =
+    draft.convening.dispatch_date.trim() === '' &&
+    draft.convening.antecedence_days.trim() === '' &&
+    draft.convening.channel === '' &&
+    draft.convening.evidence_reference.trim() === '' &&
+    draft.convening.convener.trim() === '' &&
+    draft.convening.convener_capacity === '' &&
+    draft.convening.recipients.length === 0 &&
+    draft.convening.second_call == null
+      ? null
+      : {
+          convener: orNull(draft.convening.convener),
+          convener_capacity:
+            draft.convening.convener_capacity === '' ? null : draft.convening.convener_capacity,
+          dispatch_date: orNull(draft.convening.dispatch_date),
+          antecedence_days: orNullNum(draft.convening.antecedence_days),
+          channel: draft.convening.channel === '' ? null : draft.convening.channel,
+          evidence_reference: orNull(draft.convening.evidence_reference),
+          recipients: draft.convening.recipients,
+          second_call: draft.convening.second_call,
+        };
+
   return {
     title: draft.title,
     channel: draft.channel,
@@ -890,6 +1024,7 @@ function draftToPatch(draft: Draft) {
     deliberations: draft.deliberations,
     deliberation_items: draft.deliberation_items,
     telematic_evidence: orNull(draft.telematic_evidence),
+    convening,
     attachments: draft.attachments,
     signatories: draft.signatories,
   };
@@ -1296,6 +1431,15 @@ export function AtaEditorPage() {
                 </Field>
               ) : null}
             </div>
+          </Card>
+
+          <Card title={t('acts.convening')}>
+            <p className="field__hint">{t('acts.convening.hint')}</p>
+            <ConveningEditor
+              convening={draft.convening}
+              disabled={readOnly}
+              onChange={(next) => set('convening', next)}
+            />
           </Card>
 
           <Card title={t('acts.mesa')}>

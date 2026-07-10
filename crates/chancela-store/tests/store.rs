@@ -1546,6 +1546,7 @@ fn populated_g1_g2_act(book_id: chancela_core::BookId) -> Act {
         dispatch_date: Some(mar_10),
         antecedence_days: Some(15),
         channel: Some(DispatchChannel::RegisteredLetterAR),
+        evidence_reference: Some("doc:convocatoria-rr123456789pt".to_string()),
         recipients: vec![ConveningRecipient {
             name: "Encosto Estratégico Lda".to_string(),
             channel: Some(DispatchChannel::Email),
@@ -1675,6 +1676,10 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
     // Spot-check the nested new datums explicitly (not just whole-struct equality).
     let convening = reloaded_full.convening.as_ref().expect("convening present");
     assert_eq!(convening.antecedence_days, Some(15));
+    assert_eq!(
+        convening.evidence_reference.as_deref(),
+        Some("doc:convocatoria-rr123456789pt")
+    );
     assert_eq!(convening.recipients.len(), 1);
     assert_eq!(
         convening.second_call.as_ref().map(|s| s.reduced_quorum),

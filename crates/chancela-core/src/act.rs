@@ -293,6 +293,10 @@ pub struct Convening {
     /// The default dispatch channel for the convocatória.
     #[serde(default)]
     pub channel: Option<DispatchChannel>,
+    /// Short reference to the retained dispatch evidence (file id, archive path, tracking set, or
+    /// other operator note). The actual evidence lives in the document/archive store.
+    #[serde(default)]
+    pub evidence_reference: Option<String>,
     /// Per-recipient dispatch proof (TPL-20).
     #[serde(default)]
     pub recipients: Vec<ConveningRecipient>,
@@ -743,6 +747,7 @@ mod tests {
             dispatch_date: Some(date!(2026 - 03 - 10)),
             antecedence_days: Some(15),
             channel: Some(DispatchChannel::RegisteredLetterAR),
+            evidence_reference: Some("doc:convocatoria-rr123456789pt".into()),
             recipients: vec![ConveningRecipient {
                 name: "Encosto Estratégico Lda".into(),
                 channel: Some(DispatchChannel::Email),
