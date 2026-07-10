@@ -28,6 +28,8 @@
 //!   `PATCH /v1/documents/imported/{id}/review` — validated non-canonical imported document
 //!   evidence and operator review metadata.
 //! - `POST /v1/signature/pdf/validate` — read-only local technical PDF/PAdES evidence validation.
+//! - `POST /v1/acts/{id}/signature/archive-timestamp/append` — caller-supplied local
+//!   `/DocTimeStamp` technical evidence append; no production/legal B-LTA claim.
 //! - `GET /v1/ledger/events`, `GET /v1/ledger/verify` — the audit feed and chain probe (§2.6).
 //! - `GET /v1/ledger/archive/document` — on-demand PDF/A archive export.
 //! - `GET /v1/dashboard` — WFL-40 counts and recent events (§2.7).
@@ -1236,6 +1238,12 @@ pub fn router(state: AppState) -> Router {
             "/v1/acts/{id}/signature/dss/collect-revocation",
             post(signature::collect_revocation_evidence)
                 .layer(DefaultBodyLimit::max(signature::DSS_ATTACH_ENVELOPE_BYTES)),
+        )
+        .route(
+            "/v1/acts/{id}/signature/archive-timestamp/append",
+            post(signature::append_archive_timestamp).layer(DefaultBodyLimit::max(
+                signature::ARCHIVE_TIMESTAMP_APPEND_ENVELOPE_BYTES,
+            )),
         )
         .route(
             "/v1/acts/{id}/signature/remote/{provider}/initiate",

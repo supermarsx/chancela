@@ -43,7 +43,7 @@ use x509_cert::time::Validity;
 use chancela_api::{AppState, router};
 use chancela_cades::{RawSignature, SignatureAlgorithm};
 use chancela_core::ActId;
-use chancela_pades::validate_pdf_signature;
+use chancela_pades::{add_doc_timestamp_revision, inspect_doc_timestamps, validate_pdf_signature};
 use chancela_signing::{
     SignerProvider, SigningError, SmartcardProvider, StaticTrustPolicy, TrustPolicy,
     TrustedListStatus,
@@ -567,6 +567,10 @@ async fn seal_an_act(state: &AppState, token: &str) -> String {
 }
 
 async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usize {
+    event_kind_count(state, token, act_id, "document.signed").await
+}
+
+async fn event_kind_count(state: &AppState, token: &str, act_id: &str, kind: &str) -> usize {
     let (status, events) = send(
         state,
         get_req(&format!("/v1/ledger/events?scope=act:{act_id}"), token),
@@ -577,7 +581,7 @@ async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usiz
         .as_array()
         .unwrap()
         .iter()
-        .filter(|e| e["kind"] == "document.signed")
+        .filter(|e| e["kind"] == kind)
         .count()
 }
 
@@ -600,6 +604,36 @@ async fn assert_no_signed_artifact_or_event(state: &AppState, token: &str, act_i
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest: [u8; 32] = Sha256::digest(bytes).into();
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn fixture_timestamp_token() -> Vec<u8> {
+    let tsa = chancela_tsa::TsaClient::new(chancela_tsa::MockTsaTransport::from_fixture());
+    let req = chancela_tsa::TimestampRequest::new(chancela_tsa::mock::FIXTURE_DIGEST)
+        .with_nonce(chancela_tsa::mock::FIXTURE_NONCE)
+        .without_certificate();
+    tsa.stamp(&req).expect("fixture timestamp token").token_der
+}
+
+fn token_with_replaced_fixture_imprint(imprint: &[u8; 32]) -> Vec<u8> {
+    let mut token = fixture_timestamp_token();
+    let pos = token
+        .windows(chancela_tsa::mock::FIXTURE_DIGEST.len())
+        .position(|w| w == chancela_tsa::mock::FIXTURE_DIGEST)
+        .expect("fixture imprint present");
+    token[pos..pos + imprint.len()].copy_from_slice(imprint);
+    token
+}
+
+fn doc_timestamp_token_for_revision(pdf: &[u8]) -> Vec<u8> {
+    let placeholder =
+        add_doc_timestamp_revision(pdf, &fixture_timestamp_token()).expect("placeholder DTS");
+    let report = inspect_doc_timestamps(&placeholder).expect("inspect placeholder DTS");
+    let digest = report
+        .validations
+        .last()
+        .and_then(|validation| validation.document_digest)
+        .expect("DocTimeStamp ByteRange digest");
+    token_with_replaced_fixture_imprint(&digest)
 }
 
 fn assert_signature_evidence_status(
@@ -658,6 +692,44 @@ fn assert_signature_evidence_status(
             "missing {expected} in long_term_status: {evidence}"
         );
     }
+}
+
+async fn sign_with_cc_timestamp_and_attach_dss(
+    state: &AppState,
+    token: &str,
+    act_id: &str,
+    signature_cert_der: &[u8],
+) -> Value {
+    let (status, done) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            token,
+            json!({ "capacity": "Administrador" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cc sign: {done}");
+    assert_eq!(done["timestamp_token"], true);
+
+    let (status, attached) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/dss/attach"),
+            token,
+            json!({
+                "certificates": [B64.encode(signature_cert_der)],
+                "ocsp_responses": [B64.encode(OCSP_DER_FIXTURE)],
+                "crls": [B64.encode(CRL_DER_FIXTURE)],
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "DSS attach: {attached}");
+    assert_eq!(attached["evidentiary_level"], "B-LT-local");
+    attached
 }
 
 // --- tests ----------------------------------------------------------------------------------------
@@ -1036,6 +1108,254 @@ async fn dss_attach_requires_an_existing_signed_pdf() {
         "DSS attach needs an existing signed PDF: {err}"
     );
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+#[tokio::test]
+async fn archive_timestamp_append_api_persists_caller_supplied_local_technical_evidence() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let signature_cert_der = card.signature_cert_der.clone();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let tsa = MockTsaServer::granted();
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.tsa_url = Some(tsa.url().to_owned());
+        settings.signing.tsl_url = None;
+    }
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+    sign_with_cc_timestamp_and_attach_dss(&state, &token, &act_id, &signature_cert_der).await;
+
+    let (status, before_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let before_digest = sha256_hex(&before_pdf);
+    let stored_before = state
+        .signed_documents
+        .read()
+        .await
+        .get(&ActId(Uuid::parse_str(&act_id).unwrap()))
+        .cloned()
+        .expect("signed artifact stored before archive timestamp");
+    let doc_timestamp_token = doc_timestamp_token_for_revision(&before_pdf);
+
+    let (status, appended) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/archive-timestamp/append"),
+            &token,
+            json!({ "timestamp_token": B64.encode(&doc_timestamp_token) }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "archive timestamp append: {appended}"
+    );
+    assert_eq!(appended["act_id"], act_id);
+    assert_eq!(appended["evidentiary_level"], "B-LTA-local");
+    assert_eq!(appended["status_scope"], "technical_evidence_only");
+    assert_eq!(appended["production_b_lta_status"], "not_claimed");
+    assert_eq!(appended["legal_b_lta_claimed"], false);
+    assert_eq!(appended["archive_timestamp_token"], true);
+    let after_digest = appended["signed_pdf_digest"].as_str().expect("digest");
+    assert_ne!(
+        after_digest, before_digest,
+        "DocTimeStamp append updates signed PDF bytes"
+    );
+
+    let evidence = &appended["evidence"];
+    assert_eq!(evidence["current_level"], "B-LTA-local");
+    assert_eq!(evidence["status_scope"], "technical_evidence_only");
+    assert_eq!(evidence["legal_b_lta_claimed"], false);
+    assert_eq!(evidence["doc_timestamp"]["present"], true);
+    assert_eq!(evidence["doc_timestamp"]["count"], 1);
+    assert_eq!(evidence["doc_timestamp"]["all_imprints_valid"], true);
+    assert_eq!(
+        evidence["doc_timestamp"]["validations"][0]["status"],
+        "valid"
+    );
+    assert_eq!(
+        appended["doc_timestamp"]["token_sha256"],
+        json!([sha256_hex(&doc_timestamp_token)])
+    );
+    let statuses = evidence["long_term_status"]
+        .as_array()
+        .expect("long_term_status array");
+    assert!(
+        statuses
+            .iter()
+            .any(|status| status.as_str() == Some("lta_local_technical_evidence")),
+        "missing local B-LTA technical marker: {evidence}"
+    );
+
+    let (status, after_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sha256_hex(&after_pdf), after_digest);
+    let report = validate_pdf_signature(&after_pdf).expect("archive-timestamped PDF validates");
+    assert!(report.covers_signed_revision_except_contents);
+    assert!(report.has_later_incremental_updates);
+    assert!(report.doc_timestamps.all_imprints_valid());
+    assert_eq!(report.doc_timestamps.count, 1);
+
+    let stored_after = state
+        .signed_documents
+        .read()
+        .await
+        .get(&ActId(Uuid::parse_str(&act_id).unwrap()))
+        .cloned()
+        .expect("signed artifact stored after archive timestamp");
+    assert_eq!(stored_after.signed_pdf_digest, after_digest);
+    assert_eq!(
+        stored_after.signature_family,
+        stored_before.signature_family
+    );
+    assert_eq!(
+        stored_after.evidentiary_level,
+        stored_before.evidentiary_level
+    );
+    assert_eq!(
+        stored_after.timestamp_token_der,
+        stored_before.timestamp_token_der
+    );
+    assert_ne!(
+        stored_after.signed_pdf_bytes,
+        stored_before.signed_pdf_bytes
+    );
+
+    assert_eq!(
+        event_kind_count(&state, &token, &act_id, "document.signed").await,
+        1,
+        "archive timestamp append must not mint document.signed"
+    );
+    assert_eq!(
+        event_kind_count(
+            &state,
+            &token,
+            &act_id,
+            "document.signature.archive_timestamp_appended"
+        )
+        .await,
+        1,
+        "archive timestamp audit event present"
+    );
+}
+
+#[tokio::test]
+async fn archive_timestamp_append_rejects_stale_token_without_digest_change_or_event() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let signature_cert_der = card.signature_cert_der.clone();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let tsa = MockTsaServer::granted();
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.tsa_url = Some(tsa.url().to_owned());
+        settings.signing.tsl_url = None;
+    }
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+    sign_with_cc_timestamp_and_attach_dss(&state, &token, &act_id, &signature_cert_der).await;
+
+    let (status, before_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let before_digest = sha256_hex(&before_pdf);
+    let stale_token = fixture_timestamp_token();
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/archive-timestamp/append"),
+            &token,
+            json!({ "timestamp_token": B64.encode(&stale_token) }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "stale archive timestamp token must be rejected: {err}"
+    );
+
+    let (status, after_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sha256_hex(&after_pdf), before_digest);
+    let stored_after = state
+        .signed_documents
+        .read()
+        .await
+        .get(&ActId(Uuid::parse_str(&act_id).unwrap()))
+        .cloned()
+        .expect("signed artifact still stored");
+    assert_eq!(stored_after.signed_pdf_digest, before_digest);
+    assert_eq!(
+        event_kind_count(
+            &state,
+            &token,
+            &act_id,
+            "document.signature.archive_timestamp_appended"
+        )
+        .await,
+        0,
+        "rejected stale token must not append an event"
+    );
+}
+
+#[tokio::test]
+async fn archive_timestamp_append_requires_existing_signed_pdf_for_sealed_act() {
+    let dir = TempDir::new();
+    let state = state_at(&dir.0, None, true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/archive-timestamp/append"),
+            &token,
+            json!({ "timestamp_token": B64.encode(fixture_timestamp_token()) }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "sealed but unsigned act has no signed PDF to timestamp: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+    assert_eq!(
+        event_kind_count(
+            &state,
+            &token,
+            &act_id,
+            "document.signature.archive_timestamp_appended"
+        )
+        .await,
+        0
+    );
 }
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 # PAdES B-LT / DSS Local Status
 
-Updated 2026-07-09. This records the implemented local DSS slice and the
-remaining production B-LT/B-LTA gaps. It is not a claim of legal long-term
+Updated 2026-07-10. This records the implemented local DSS/archive-timestamp
+slice and the remaining production B-LT/B-LTA gaps. It is not a claim of legal long-term
 validation.
 
 ## Current State
@@ -16,6 +16,12 @@ validation.
   validated revocation path.
 - `chancela-pades` can inspect embedded DSS/VRI evidence and report
   certificate, OCSP, CRL, VRI, `/TU`, and evidence hash counts.
+- `chancela-api` exposes
+  `POST /v1/acts/{id}/signature/archive-timestamp/append` for an explicit
+  caller-supplied RFC 3161 `/DocTimeStamp` token. The API validates the
+  existing signed PDF, appends the timestamp as an incremental update, then
+  requires the appended document timestamp imprint to bind to the PDF
+  ByteRange before persisting updated signed-PDF bytes and digest.
 - `chancela-signing` has technical CRL+OCSP revocation evidence collection:
   URI discovery, bounded/mocked HTTP transport, CRL freshness/issuer/signature
   checks, OCSP request/response/status/freshness/responder checks, and DSS-ready
@@ -38,6 +44,10 @@ The implemented slice is fixture-fed and caller-supplied:
   revision and merges with existing DSS evidence by content hash.
 - The validated revocation provider can collect CRL and OCSP evidence through
   bounded transports and pass validation time through to PAdES `/TU` metadata.
+- The caller can explicitly append a local archive document timestamp token to
+  an existing signed PDF. Chancela validates the resulting `/DocTimeStamp`
+  imprint binding and records `B-LTA-local` / `technical_evidence_only` when the
+  embedded evidence stack is present.
 - Reports distinguish unsigned, B-B, B-T, and B-T plus local DSS evidence.
 - Archive evidence can include embedded DSS/VRI counts and hashes when those
   bytes are present.
@@ -56,6 +66,10 @@ acceptance, legal long-term validation, or B-LT/B-LTA sufficiency.
   dictionaries are merged/deduplicated instead of overwriting evidence.
 - Signing/API/archive evidence paths report embedded DSS/VRI material as local
   technical evidence.
+- API archive-timestamp append: caller-supplied valid `/DocTimeStamp` evidence
+  is persisted as local technical evidence; stale/mismatched tokens are
+  rejected without changing the signed-PDF digest or appending an event; sealed
+  acts without a signed PDF return `409`.
 
 ## Remaining Blockers
 
@@ -65,9 +79,9 @@ Production-grade PAdES B-LT/B-LTA and legal LTV still need:
 - end-to-end QTSP/TSL policy decisions for the signing and timestamping context;
 - multi-signature VRI handling;
 - interoperability validation against external validators;
-- B-LTA archive document timestamps (`/DocTimeStamp`) and timestamp renewal
-  policy.
+- production B-LTA timestamp renewal policy and provider/trust operating
+  controls.
 
 Until those gaps are closed, Chancela must describe the implemented feature as
-local caller-supplied DSS/VRI preservation and reporting, not production B-LT,
-B-LTA, or legal long-term validation.
+local caller-supplied DSS/VRI plus `/DocTimeStamp` preservation and reporting,
+not production B-LT, B-LTA, or legal long-term validation.

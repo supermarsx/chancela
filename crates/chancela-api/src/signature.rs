@@ -53,7 +53,8 @@ use chancela_csc::{
     HttpCscTransport,
 };
 use chancela_pades::{
-    PreparedSignature, SignOptions, add_signature_timestamp, embed_signature, prepare_signature,
+    PreparedSignature, SignOptions, add_doc_timestamp_revision, add_signature_timestamp,
+    embed_signature, prepare_signature,
 };
 use chancela_signing::{
     CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession, RemoteInitiate,
@@ -132,6 +133,7 @@ const DSS_REVOCATION_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
 const DSS_REVOCATION_LOCAL_TECHNICAL_ONLY: &str = "present_local_technical_only";
 const DSS_REVOCATION_PRESENT_WITHOUT_TIMESTAMP: &str = "present_without_signature_timestamp";
 const PRODUCTION_B_LT_NOT_CLAIMED: &str = "not_claimed";
+const PRODUCTION_B_LTA_NOT_CLAIMED: &str = "not_claimed";
 const TECHNICAL_EVIDENCE_ONLY: &str = "technical_evidence_only";
 const DOC_TIMESTAMP_INSPECTION_INSPECTED: &str = "inspected_from_signed_pdf";
 const DOC_TIMESTAMP_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
@@ -166,6 +168,8 @@ pub(crate) const LOCAL_PKCS12_SIGN_ENVELOPE_BYTES: usize =
     LOCAL_PKCS12_SIGN_MAX_BYTES * 4 / 3 + 64 * 1024;
 /// DSS attach bodies carry small DER evidence arrays as base64 strings.
 pub(crate) const DSS_ATTACH_ENVELOPE_BYTES: usize = 4 * 1024 * 1024;
+/// Archive timestamp append bodies carry one RFC 3161 token as base64 DER.
+pub(crate) const ARCHIVE_TIMESTAMP_APPEND_ENVELOPE_BYTES: usize = 4 * 1024 * 1024;
 
 // --- request / response DTOs ------------------------------------------------------------------
 
@@ -1477,6 +1481,19 @@ pub struct DssCollectRevocationRequest {
     pub actor: Option<String>,
 }
 
+/// Body of `POST /v1/acts/{id}/signature/archive-timestamp/append`.
+///
+/// The timestamp token is caller-supplied DER bytes encoded as base64. This endpoint embeds the
+/// token as a `/DocTimeStamp` incremental update and validates only local technical imprint binding.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveTimestampAppendRequest {
+    #[serde(alias = "timestamp_token_base64", alias = "timestamp_token_der_base64")]
+    pub timestamp_token: String,
+    #[serde(default)]
+    pub actor: Option<String>,
+}
+
 /// Response of a successful local DSS/VRI evidence attachment.
 #[derive(Serialize)]
 pub struct DssAttachResponse {
@@ -1504,6 +1521,22 @@ pub struct DssCollectRevocationResponse {
     pub legal_b_lt_claimed: bool,
     pub status_scope: &'static str,
     pub revocation: CollectedRevocationEvidenceStatus,
+}
+
+/// Response of a successful caller-supplied `/DocTimeStamp` append.
+#[derive(Serialize)]
+pub struct ArchiveTimestampAppendResponse {
+    pub document_id: String,
+    pub act_id: String,
+    pub signed_pdf_digest: String,
+    pub timestamp_token: bool,
+    pub archive_timestamp_token: bool,
+    pub evidence: SignatureEvidenceStatus,
+    pub doc_timestamp: DocTimeStampEvidenceStatus,
+    pub evidentiary_level: &'static str,
+    pub production_b_lta_status: &'static str,
+    pub legal_b_lta_claimed: bool,
+    pub status_scope: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1867,6 +1900,105 @@ pub async fn collect_revocation_evidence(
         status_scope: TECHNICAL_EVIDENCE_ONLY,
         evidence: evidence_status,
         revocation: revocation_status,
+    }))
+}
+
+/// `POST /v1/acts/{id}/signature/archive-timestamp/append` — append caller-supplied local
+/// `/DocTimeStamp` evidence to an existing signed PDF.
+///
+/// This is local technical evidence only. It validates the existing signed artifact, appends the
+/// caller-supplied RFC 3161 token on a blocking worker, validates the resulting incremental update,
+/// and requires the embedded document timestamp imprint to bind to the PDF ByteRange before any
+/// bytes are persisted. It never claims production/legal B-LTA status.
+pub async fn append_archive_timestamp(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<ArchiveTimestampAppendRequest>,
+) -> Result<Json<ArchiveTimestampAppendResponse>, ApiError> {
+    let act_id = ActId(id);
+    let scope = scope_of_act(&state, act_id).await;
+    require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
+    let actor = actor.resolve(req.actor.as_deref().unwrap_or("api"));
+
+    let mut stored = load_signed(&state, act_id)
+        .await?
+        .ok_or_else(|| ApiError::Conflict("o ato ainda não tem PDF assinado".to_owned()))?;
+
+    let timestamp_token_der = decode_single_der_base64("timestamp_token", &req.timestamp_token)?;
+    let before_report = validate_signed_pdf_with_incremental_updates(
+        &stored.signed_pdf_bytes,
+        &stored.signer_cert_der,
+    )?;
+    let input_pdf = stored.signed_pdf_bytes.clone();
+    let token_for_append = timestamp_token_der.clone();
+    let updated_pdf = tokio::task::spawn_blocking(move || {
+        add_doc_timestamp_revision(&input_pdf, &token_for_append)
+            .map_err(map_archive_timestamp_append_error)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("archive timestamp append task failed: {e}")))??;
+
+    let report =
+        validate_signed_pdf_with_incremental_updates(&updated_pdf, &stored.signer_cert_der)?;
+    require_appended_doc_timestamp_evidence(
+        &before_report.doc_timestamps,
+        &report.doc_timestamps,
+        &timestamp_token_der,
+    )?;
+
+    let signed_pdf_digest = sha256_hex(&updated_pdf);
+    stored.signed_pdf_digest = signed_pdf_digest.clone();
+    stored.signed_pdf_bytes = updated_pdf;
+
+    let evidence_status = signature_evidence_status(Some(&stored));
+    let doc_timestamp = evidence_status.doc_timestamp.clone();
+    let audit_scope = act_audit_scope(&state, act_id).await?;
+    let event_payload = json!({
+        "act_id": act_id.to_string(),
+        "document_id": stored.document_id.clone(),
+        "signed_pdf_digest": signed_pdf_digest.clone(),
+        "evidentiary_level": evidence_status.current_level,
+        "status_scope": TECHNICAL_EVIDENCE_ONLY,
+        "production_b_lta_status": PRODUCTION_B_LTA_NOT_CLAIMED,
+        "legal_b_lta_claimed": false,
+        "timestamp_token": report.has_signature_timestamp,
+        "archive_timestamp_token": true,
+        "doc_timestamp": &doc_timestamp,
+    });
+    let payload = serde_json::to_vec(&event_payload)?;
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &audit_scope,
+            "document.signature.archive_timestamp_appended",
+            None,
+            &payload,
+        )?;
+        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        state.attest_latest(&attestor, &ledger).await;
+    }
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(act_id, stored.clone());
+
+    Ok(Json(ArchiveTimestampAppendResponse {
+        document_id: stored.document_id,
+        act_id: act_id.to_string(),
+        signed_pdf_digest,
+        timestamp_token: evidence_status.timestamp_evidence_present,
+        archive_timestamp_token: doc_timestamp.present,
+        evidentiary_level: evidence_status.current_level,
+        production_b_lta_status: PRODUCTION_B_LTA_NOT_CLAIMED,
+        legal_b_lta_claimed: false,
+        status_scope: TECHNICAL_EVIDENCE_ONLY,
+        evidence: evidence_status,
+        doc_timestamp,
     }))
 }
 
@@ -4841,6 +4973,58 @@ fn decode_der_base64_list(field: &str, values: Vec<String>) -> Result<Vec<Vec<u8
 
 fn map_dss_attach_error(e: chancela_signing::SigningError) -> ApiError {
     ApiError::Unprocessable(format!("falha ao anexar DSS/VRI local: {e}"))
+}
+
+fn map_archive_timestamp_append_error(e: chancela_pades::PadesError) -> ApiError {
+    ApiError::Unprocessable(format!(
+        "falha ao anexar carimbo temporal de arquivo local: {e}"
+    ))
+}
+
+fn require_appended_doc_timestamp_evidence(
+    before: &chancela_pades::DocTimeStampReport,
+    after: &chancela_pades::DocTimeStampReport,
+    timestamp_token_der: &[u8],
+) -> Result<(), ApiError> {
+    if after.count != before.count + 1 {
+        return Err(ApiError::Unprocessable(
+            "o PDF atualizado não contém exatamente um novo /DocTimeStamp".to_owned(),
+        ));
+    }
+    let expected_token_hash: [u8; 32] = Sha256::digest(timestamp_token_der).into();
+    if !after
+        .token_hashes
+        .iter()
+        .any(|hash| hash == &expected_token_hash)
+    {
+        return Err(ApiError::Unprocessable(
+            "o /DocTimeStamp anexado não contém o token RFC 3161 fornecido".to_owned(),
+        ));
+    }
+    let appended = after
+        .validations
+        .iter()
+        .max_by_key(|validation| validation.object_id)
+        .ok_or_else(|| {
+            ApiError::Unprocessable(
+                "o /DocTimeStamp anexado não tem validação técnica local".to_owned(),
+            )
+        })?;
+    if appended.status != chancela_pades::DocTimeStampSemanticStatus::Valid {
+        let reason = appended
+            .failure_reason
+            .map(doc_timestamp_failure_reason)
+            .unwrap_or("not_imprint_bound");
+        return Err(ApiError::Unprocessable(format!(
+            "o carimbo temporal de arquivo não corresponde ao PDF atualizado ({reason})"
+        )));
+    }
+    if !after.all_imprints_valid() {
+        return Err(ApiError::Unprocessable(
+            "há /DocTimeStamp existente ou anexado sem vínculo de imprint válido".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn map_local_pkcs12_signing_error(e: chancela_signing::SigningError) -> ApiError {
