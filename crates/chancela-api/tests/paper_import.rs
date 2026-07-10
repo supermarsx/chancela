@@ -653,6 +653,9 @@ async fn paper_book_import_ocr_draft_results_are_non_authoritative_and_reviewabl
     assert_eq!(draft["non_canonical"], true);
     assert_eq!(draft["authoritative_text_claimed"], false);
     assert_eq!(draft["canonical_minutes_claimed"], false);
+    assert_eq!(draft["canonical_act_created"], false);
+    assert_eq!(draft["canonical_document_created"], false);
+    assert_eq!(draft["signature_created"], false);
     assert_eq!(draft["legal_validity_claimed"], false);
     assert!(
         draft["draft_notice"]
@@ -667,6 +670,9 @@ async fn paper_book_import_ocr_draft_results_are_non_authoritative_and_reviewabl
     let rows = listed.as_array().expect("draft list");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["draft_id"], draft_id);
+    assert_eq!(rows[0]["canonical_act_created"], false);
+    assert_eq!(rows[0]["canonical_document_created"], false);
+    assert_eq!(rows[0]["signature_created"], false);
 
     let (status, reviewed) = review_ocr_draft(
         &state,
@@ -682,6 +688,9 @@ async fn paper_book_import_ocr_draft_results_are_non_authoritative_and_reviewabl
     assert!(reviewed["reviewed_at"].as_str().is_some());
     assert!(reviewed["reviewed_by"].as_str().is_some());
     assert_eq!(reviewed["authoritative_text_claimed"], false);
+    assert_eq!(reviewed["canonical_act_created"], false);
+    assert_eq!(reviewed["canonical_document_created"], false);
+    assert_eq!(reviewed["signature_created"], false);
     assert_eq!(reviewed["legal_validity_claimed"], false);
 
     let ledger = state.ledger.read().await;
@@ -719,6 +728,137 @@ async fn paper_book_import_ocr_draft_results_are_non_authoritative_and_reviewabl
         .expect("draft row");
     assert_eq!(stored_draft.import_id, import_id);
     assert_eq!(stored_draft.review_status.as_str(), "accepted");
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_draft_superseded_review_requires_successor_without_failed_mutation()
+{
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let (status, created) = preserve(&state, &token, preserve_body(&package_bytes())).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+
+    let (status, first) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "text_digest": "ab".repeat(32),
+            "page_spans": [{ "start_page": 1, "end_page": 1 }],
+            "confidence": 0.70,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "first draft: {first}");
+    let first_id = first["draft_id"].as_str().expect("first draft id");
+
+    let (status, successor) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "text_digest": "cd".repeat(32),
+            "page_spans": [{ "start_page": 1, "end_page": 1 }],
+            "confidence": 0.91,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "successor draft: {successor}");
+    let successor_id = successor["draft_id"].as_str().expect("successor draft id");
+    let before_review = state.ledger.read().await.events().len();
+
+    let (status, body) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        first_id,
+        json!({ "review_status": "superseded" }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing superseded_by refused: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("superseded_by")),
+        "error names superseded_by requirement: {body}"
+    );
+
+    let (status, body) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        first_id,
+        json!({ "review_status": "accepted", "superseded_by": successor_id }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "superseded_by on accepted refused: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("only valid")),
+        "error names superseded_by status constraint: {body}"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        before_review,
+        "invalid review transitions must not append ledger events"
+    );
+    let unchanged = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_draft(first_id)
+        .expect("draft read")
+        .expect("draft row");
+    assert_eq!(unchanged.review_status.as_str(), "unreviewed");
+    assert!(unchanged.superseded_by.is_none());
+
+    let (status, reviewed) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        first_id,
+        json!({
+            "review_status": "superseded",
+            "superseded_by": successor_id,
+            "review_note": "Replaced by a higher-confidence OCR draft."
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "superseded review: {reviewed}");
+    assert_eq!(reviewed["review_status"], "superseded");
+    assert_eq!(reviewed["superseded_by"], successor_id);
+    assert_eq!(reviewed["canonical_act_created"], false);
+    assert_eq!(reviewed["canonical_document_created"], false);
+    assert_eq!(reviewed["signature_created"], false);
+    assert_eq!(reviewed["authoritative_text_claimed"], false);
+
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        before_review + 1,
+        "valid superseded review appends one metadata event"
+    );
+    let stored = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_draft(first_id)
+        .expect("draft read")
+        .expect("draft row");
+    assert_eq!(stored.review_status.as_str(), "superseded");
+    assert_eq!(stored.superseded_by.as_deref(), Some(successor_id));
 }
 
 #[tokio::test]

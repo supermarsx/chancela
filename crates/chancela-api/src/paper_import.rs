@@ -188,6 +188,9 @@ pub struct PaperBookOcrDraftView {
     pub non_canonical: bool,
     pub authoritative_text_claimed: bool,
     pub canonical_minutes_claimed: bool,
+    pub canonical_act_created: bool,
+    pub canonical_document_created: bool,
+    pub signature_created: bool,
     pub legal_validity_claimed: bool,
     pub legal_notice: &'static str,
 }
@@ -1209,6 +1212,9 @@ fn paper_book_ocr_draft_event_payload(
         "non_canonical": true,
         "authoritative_text_claimed": false,
         "canonical_minutes_claimed": false,
+        "canonical_act_created": false,
+        "canonical_document_created": false,
+        "signature_created": false,
         "legal_validity_claimed": false,
     })
 }
@@ -1227,10 +1233,14 @@ fn paper_book_ocr_draft_review_event_payload(
         "reviewed_by": reviewed_by,
         "superseded_by": superseded_by,
         "extracted_text_in_payload": false,
+        "review_note_in_payload": false,
         "draft_notice": PAPER_BOOK_OCR_DRAFT_NOTICE,
         "non_canonical": true,
         "authoritative_text_claimed": false,
         "canonical_minutes_claimed": false,
+        "canonical_act_created": false,
+        "canonical_document_created": false,
+        "signature_created": false,
         "legal_validity_claimed": false,
     })
 }
@@ -1324,6 +1334,9 @@ fn paper_book_ocr_draft_view(draft: &StoredPaperBookOcrDraft) -> PaperBookOcrDra
         non_canonical: true,
         authoritative_text_claimed: false,
         canonical_minutes_claimed: false,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        signature_created: false,
         legal_validity_claimed: false,
         legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
     }
@@ -1573,6 +1586,31 @@ mod tests {
         }
     }
 
+    fn sample_ocr_draft() -> StoredPaperBookOcrDraft {
+        StoredPaperBookOcrDraft {
+            draft_id: "11111111-1111-4111-8111-111111111111".to_owned(),
+            import_id: "22222222-2222-4222-8222-222222222222".to_owned(),
+            extracted_text: Some(
+                "Actual OCR text that must stay out of audit payloads.".to_owned(),
+            ),
+            text_digest: Some("ab".repeat(32)),
+            page_spans: vec![StoredPaperBookOcrPageSpan {
+                start_page: 1,
+                end_page: 2,
+            }],
+            confidence: Some(0.87),
+            engine_name: "fixture-ocr".to_owned(),
+            engine_version: Some("0.1.0".to_owned()),
+            created_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+            created_by: "rui.secretario".to_owned(),
+            review_status: StoredPaperBookOcrReviewStatus::Unreviewed,
+            reviewed_at: None,
+            reviewed_by: None,
+            review_note: None,
+            superseded_by: None,
+        }
+    }
+
     #[test]
     fn validation_normalizes_digest_and_stays_non_canonical() {
         let report = validate_candidate(base_request()).expect("valid report");
@@ -1621,5 +1659,34 @@ mod tests {
         let mut bad = base_request();
         bad.notes = Some("access code 1234-5678-9012".to_owned());
         assert!(validate_candidate(bad).is_err());
+    }
+
+    #[test]
+    fn ocr_draft_audit_payloads_are_non_canonical_and_metadata_only() {
+        let draft = sample_ocr_draft();
+        let created = paper_book_ocr_draft_event_payload(&draft, "created");
+        assert_eq!(created["extracted_text_stored"], true);
+        assert_eq!(created["extracted_text_in_payload"], false);
+        assert_eq!(created["authoritative_text_claimed"], false);
+        assert_eq!(created["canonical_minutes_claimed"], false);
+        assert_eq!(created["canonical_act_created"], false);
+        assert_eq!(created["canonical_document_created"], false);
+        assert_eq!(created["signature_created"], false);
+        assert_eq!(created["legal_validity_claimed"], false);
+        let created_text = serde_json::to_string(&created).expect("payload serializes");
+        assert!(!created_text.contains("Actual OCR text"));
+
+        let reviewed = paper_book_ocr_draft_review_event_payload(
+            &draft,
+            StoredPaperBookOcrReviewStatus::Superseded,
+            "rui.secretario",
+            Some("33333333-3333-4333-8333-333333333333"),
+        );
+        assert_eq!(reviewed["review_note_in_payload"], false);
+        assert_eq!(reviewed["extracted_text_in_payload"], false);
+        assert_eq!(reviewed["canonical_act_created"], false);
+        assert_eq!(reviewed["canonical_document_created"], false);
+        assert_eq!(reviewed["signature_created"], false);
+        assert_eq!(reviewed["authoritative_text_claimed"], false);
     }
 }
