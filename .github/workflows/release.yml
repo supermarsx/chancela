@@ -171,7 +171,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $sbomPath = Join-Path '${{ steps.collect.outputs.metadata }}' 'chancela-dependency-sbom.cdx.json'
           node scripts/release-supply-chain.mjs sbom --output $sbomPath --package '${{ steps.collect.outputs.package }}'
-          node scripts/release-supply-chain.mjs check --input $sbomPath
+          node scripts/release-supply-chain.mjs check --input $sbomPath --package '${{ steps.collect.outputs.package }}'
 
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Dependency SBOM: ``$sbomPath``"
 

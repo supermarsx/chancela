@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,7 +13,8 @@ const repoRoot = path.resolve(path.dirname(scriptPath), "..");
 function usage() {
   console.error(`Usage:
   node scripts/release-supply-chain.mjs sbom --output <file> [--package <tarball>]
-  node scripts/release-supply-chain.mjs check --input <file>`);
+  node scripts/release-supply-chain.mjs check --input <file> [--package <tarball>]
+  node scripts/release-supply-chain.mjs self-test`);
 }
 
 function fail(message) {
@@ -220,8 +222,7 @@ function loadCargoComponents() {
   return { components, dependencies };
 }
 
-function releasePackageProperties(packagePath) {
-  if (!packagePath) return [];
+function releasePackageMetadata(packagePath) {
   const absolutePath = path.resolve(repoRoot, packagePath);
   if (!fs.existsSync(absolutePath))
     fail(`Release package not found: ${packagePath}`);
@@ -229,15 +230,25 @@ function releasePackageProperties(packagePath) {
     .relative(repoRoot, absolutePath)
     .split(path.sep)
     .join("/");
+  return {
+    path: relativePath,
+    sizeBytes: String(fs.statSync(absolutePath).size),
+    sha256: sha256File(absolutePath),
+  };
+}
+
+function releasePackageProperties(packagePath) {
+  if (!packagePath) return [];
+  const metadata = releasePackageMetadata(packagePath);
   return [
-    { name: "chancela:release-package:path", value: relativePath },
+    { name: "chancela:release-package:path", value: metadata.path },
     {
       name: "chancela:release-package:sizeBytes",
-      value: String(fs.statSync(absolutePath).size),
+      value: metadata.sizeBytes,
     },
     {
       name: "chancela:release-package:sha256",
-      value: sha256File(absolutePath),
+      value: metadata.sha256,
     },
   ];
 }
@@ -294,18 +305,27 @@ function generateSbom(outputPath, packagePath) {
   );
 }
 
-function checkSbom(inputPath) {
-  const bom = JSON.parse(fs.readFileSync(inputPath, "utf8"));
+function releasePropertyValue(bom, propertyName) {
+  const properties = bom.metadata?.properties;
+  if (!Array.isArray(properties)) return { count: 0, value: undefined };
+  const matches = properties.filter(
+    (property) => property?.name === propertyName,
+  );
+  return { count: matches.length, value: matches[0]?.value };
+}
+
+function collectSbomErrors(bom, packagePath) {
   const errors = [];
   if (bom.bomFormat !== "CycloneDX") errors.push("bomFormat is not CycloneDX");
   if (!bom.metadata?.component?.name)
     errors.push("metadata.component.name is missing");
+  const components = Array.isArray(bom.components) ? bom.components : [];
   if (!Array.isArray(bom.components) || bom.components.length === 0) {
     errors.push("components array is empty");
   }
 
   const refs = new Set();
-  for (const component of bom.components ?? []) {
+  for (const component of components) {
     if (!component["bom-ref"])
       errors.push(`component ${component.name ?? "<unnamed>"} has no bom-ref`);
     if (component["bom-ref"] && refs.has(component["bom-ref"])) {
@@ -315,7 +335,7 @@ function checkSbom(inputPath) {
   }
 
   if (fs.existsSync(path.join(repoRoot, "package-lock.json"))) {
-    const hasNpm = bom.components.some((component) =>
+    const hasNpm = components.some((component) =>
       component.purl?.startsWith("pkg:npm/"),
     );
     if (!hasNpm)
@@ -324,17 +344,140 @@ function checkSbom(inputPath) {
       );
   }
   if (fs.existsSync(path.join(repoRoot, "Cargo.lock"))) {
-    const hasCargo = bom.components.some((component) =>
+    const hasCargo = components.some((component) =>
       component.purl?.startsWith("pkg:cargo/"),
     );
     if (!hasCargo)
       errors.push("Cargo.lock exists but no cargo components were emitted");
   }
 
+  if (packagePath) {
+    const expected = releasePackageMetadata(packagePath);
+    for (const [propertyName, expectedValue] of [
+      ["chancela:release-package:path", expected.path],
+      ["chancela:release-package:sizeBytes", expected.sizeBytes],
+      ["chancela:release-package:sha256", expected.sha256],
+    ]) {
+      const { count, value } = releasePropertyValue(bom, propertyName);
+      if (count === 0) {
+        errors.push(`metadata.properties is missing ${propertyName}`);
+      } else if (count > 1) {
+        errors.push(`metadata.properties has duplicate ${propertyName}`);
+      } else if (value !== expectedValue) {
+        errors.push(
+          `metadata.properties ${propertyName} does not match ${packagePath}`,
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+function checkSbom(inputPath, packagePath) {
+  const bom = JSON.parse(fs.readFileSync(inputPath, "utf8"));
+  const errors = collectSbomErrors(bom, packagePath);
+
   if (errors.length > 0) fail(`SBOM check failed:\n- ${errors.join("\n- ")}`);
   console.log(
     `[release-supply-chain] SBOM check passed for ${path.relative(repoRoot, inputPath)}`,
   );
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function fixtureBom(packagePath) {
+  return {
+    bomFormat: "CycloneDX",
+    specVersion: "1.5",
+    serialNumber: "urn:uuid:00000000-0000-4000-8000-000000000000",
+    version: 1,
+    metadata: {
+      component: {
+        type: "application",
+        "bom-ref": "application:chancela@0.0.0",
+        name: "chancela",
+        version: "0.0.0",
+      },
+      properties: [
+        { name: "chancela:sbom:source", value: "self-test fixture" },
+        ...releasePackageProperties(packagePath),
+      ],
+    },
+    components: [
+      {
+        type: "library",
+        "bom-ref": "npm:self-test@1.0.0",
+        name: "self-test-npm",
+        version: "1.0.0",
+        purl: "pkg:npm/self-test-npm@1.0.0",
+      },
+      {
+        type: "library",
+        "bom-ref": "cargo:self-test@1.0.0",
+        name: "self-test-cargo",
+        version: "1.0.0",
+        purl: "pkg:cargo/self-test-cargo@1.0.0",
+      },
+    ],
+    dependencies: [],
+  };
+}
+
+function expectSbomPass(bom, packagePath) {
+  const errors = collectSbomErrors(bom, packagePath);
+  if (errors.length > 0) {
+    fail(`Expected SBOM fixture to pass, got:\n- ${errors.join("\n- ")}`);
+  }
+}
+
+function expectSbomFail(bom, packagePath, expectedSubstring) {
+  const errors = collectSbomErrors(bom, packagePath);
+  if (!errors.some((error) => error.includes(expectedSubstring))) {
+    fail(
+      `Expected SBOM fixture failure containing "${expectedSubstring}", got:\n- ${
+        errors.join("\n- ") || "<no errors>"
+      }`,
+    );
+  }
+}
+
+function runSelfTest() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "chancela-sbom-"));
+  try {
+    const packagePath = path.join(tmpDir, "chancela-0.0.0-fixture.tar.gz");
+    fs.writeFileSync(packagePath, "fixture package\n");
+
+    const bom = fixtureBom(packagePath);
+    expectSbomPass(bom, packagePath);
+
+    const missingPackagePath = cloneJson(bom);
+    missingPackagePath.metadata.properties =
+      missingPackagePath.metadata.properties.filter(
+        (property) => property.name !== "chancela:release-package:path",
+      );
+    expectSbomFail(
+      missingPackagePath,
+      packagePath,
+      "metadata.properties is missing chancela:release-package:path",
+    );
+
+    const mismatchedPackageDigest = cloneJson(bom);
+    mismatchedPackageDigest.metadata.properties.find(
+      (property) => property.name === "chancela:release-package:sha256",
+    ).value = "0".repeat(64);
+    expectSbomFail(
+      mismatchedPackageDigest,
+      packagePath,
+      "metadata.properties chancela:release-package:sha256 does not match",
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+
+  console.log("[release-supply-chain] Self-test passed");
 }
 
 const [command, ...rest] = process.argv.slice(2);
@@ -351,7 +494,10 @@ if (command === "sbom") {
 } else if (command === "check") {
   const input = options.get("input");
   if (!input) fail("Missing --input");
-  checkSbom(path.resolve(repoRoot, input));
+  checkSbom(path.resolve(repoRoot, input), options.get("package"));
+} else if (command === "self-test") {
+  if (rest.length > 0) fail("self-test does not accept arguments");
+  runSelfTest();
 } else {
   usage();
   fail(`Unknown command: ${command}`);
