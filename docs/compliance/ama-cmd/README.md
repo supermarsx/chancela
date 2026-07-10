@@ -32,22 +32,44 @@ feedback, and legal review.
 Requires Node.js 20 or newer. No npm install is required.
 
 ```powershell
-node docs/compliance/ama-cmd/generate-evidence-pack.mjs --out docs/compliance/ama-cmd/out/evidence-pack
+node docs/compliance/ama-cmd/generate-evidence-pack.mjs
 ```
 
 If the target pack already exists and you want to refresh the generated files:
 
 ```powershell
-node docs/compliance/ama-cmd/generate-evidence-pack.mjs --out docs/compliance/ama-cmd/out/evidence-pack --force
+node docs/compliance/ama-cmd/generate-evidence-pack.mjs --force
 ```
 
-Generated files go under `docs/compliance/ama-cmd/out/`, which is intentionally
-ignored by Git. The generator overwrites only its known files when `--force` is
-used; it does not delete extra reviewer notes or attached evidence.
+Generated files go under `docs/compliance/generated/ama-cmd-evidence-pack/`.
+The default `generated_at` marker is deterministic so a dry run can be compared
+without timestamp churn. For an authority-facing pack that needs a dated marker,
+pass an explicit value:
+
+```powershell
+node docs/compliance/ama-cmd/generate-evidence-pack.mjs --generated-at 2026-07-10T12:00:00.000Z --force
+```
+
+The generator overwrites only its known files when `--force` is used; it does
+not delete extra reviewer notes or attached evidence.
 
 The generator also validates that every local path in the implementation
 evidence map exists. If a mapped file moves or is deleted, generation fails
 until the map is updated.
+
+## Claim Boundary
+
+The pack must not claim live production CMD validity, production onboarding, or
+AMA approval until all of the following are attached and reviewed:
+
+- signed protocol/application evidence;
+- AMA acceptance or activation correspondence;
+- production `ApplicationId` assignment evidence;
+- production certificate/public-key evidence required for CMD integration;
+- technical test evidence and reviewer sign-off.
+
+Pre-production tests, local source evidence, templates, or generated checklists
+are demonstrability material only.
 
 ## Official Source Metadata
 

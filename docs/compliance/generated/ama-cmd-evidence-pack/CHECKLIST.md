@@ -1,6 +1,6 @@
 # AMA/CMD Authority Review Checklist
 
-Generated at: {{generatedAt}}
+Generated at: not-recorded-deterministic-run
 
 Status legend: `pending`, `attached`, `reviewed`, `accepted`, `rejected`,
 `not applicable`.
@@ -71,4 +71,8 @@ Status legend: `pending`, `attached`, `reviewed`, `accepted`, `rejected`,
 
 ## Official Source Metadata
 
-{{sourceTable}}
+| Source ID | Type | URL | Pack Use |
+| --- | --- | --- | --- |
+| ama-cmd-private-protocol-template | protocol_template_docx | https://github.com/amagovpt/doc-CMD-assinatura/raw/main/protocolos_minutas/AMA_Protocolo_CMD_Autentica%C3%A7%C3%A3o_Assinatura_Privados_.docx | Reference and track the signed protocol/application document evidence. Access to the template is not production approval. |
+| ama-autenticacao-docs | github_repository | https://github.com/amagovpt/doc-AUTENTICACAO | Reference Autenticacao.gov authentication integration materials and forms. |
+| ama-cmd-signature-docs | github_repository | https://github.com/amagovpt/doc-CMD-assinatura | Reference CMD signature integration materials, certification guidance, WSDL/certificate materials, and evidence expectations. |

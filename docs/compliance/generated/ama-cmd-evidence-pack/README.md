@@ -1,6 +1,6 @@
-# {{caseName}}
+# Chancela AMA/CMD authority review evidence pack
 
-Generated at: {{generatedAt}}
+Generated at: not-recorded-deterministic-run
 
 This pack is for AMA/CMD authority-review demonstrability only. It is an
 assembly workspace for evidence, not proof of production approval,
@@ -33,4 +33,6 @@ attached.
 
 ## Official Sources
 
-{{sourceBullets}}
+- ama-cmd-private-protocol-template: https://github.com/amagovpt/doc-CMD-assinatura/raw/main/protocolos_minutas/AMA_Protocolo_CMD_Autentica%C3%A7%C3%A3o_Assinatura_Privados_.docx
+- ama-autenticacao-docs: https://github.com/amagovpt/doc-AUTENTICACAO
+- ama-cmd-signature-docs: https://github.com/amagovpt/doc-CMD-assinatura

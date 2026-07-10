@@ -1,0 +1,35 @@
+{
+  "generated_at": "not-recorded-deterministic-run",
+  "schema": "ama-cmd-source-metadata-v1",
+  "last_verified_at": "2026-07-09",
+  "verification_note": "URLs were checked for reachability and repository context before this generator was added. Re-check before submitting an authority pack.",
+  "sources": [
+    {
+      "id": "ama-cmd-private-protocol-template",
+      "title": "AMA protocol/application template for private entities using CMD authentication/signature",
+      "publisher": "AMA / amagovpt",
+      "source_type": "protocol_template_docx",
+      "url": "https://github.com/amagovpt/doc-CMD-assinatura/raw/main/protocolos_minutas/AMA_Protocolo_CMD_Autentica%C3%A7%C3%A3o_Assinatura_Privados_.docx",
+      "expected_use": "Reference and track the signed protocol/application document evidence. Access to the template is not production approval.",
+      "pack_warning": "Keep filled and signed documents outside public repositories unless the responsible legal/security owner approves redacted publication."
+    },
+    {
+      "id": "ama-autenticacao-docs",
+      "title": "Autenticacao.gov and CMD authentication technical documentation repository",
+      "publisher": "AMA / amagovpt",
+      "source_type": "github_repository",
+      "url": "https://github.com/amagovpt/doc-AUTENTICACAO",
+      "expected_use": "Reference Autenticacao.gov authentication integration materials and forms.",
+      "pack_warning": "Repository documentation is source context only; final authority feedback and signed onboarding records must be attached separately."
+    },
+    {
+      "id": "ama-cmd-signature-docs",
+      "title": "CMD signature service technical documentation repository",
+      "publisher": "AMA / amagovpt",
+      "source_type": "github_repository",
+      "url": "https://github.com/amagovpt/doc-CMD-assinatura",
+      "expected_use": "Reference CMD signature integration materials, certification guidance, WSDL/certificate materials, and evidence expectations.",
+      "pack_warning": "Pre-production test evidence and a demonstrative video support review; they do not establish production approval without AMA acceptance."
+    }
+  ]
+}

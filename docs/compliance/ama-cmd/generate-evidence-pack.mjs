@@ -7,7 +7,14 @@ import { fileURLToPath } from "node:url";
 const generatorDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(generatorDir, "..", "..", "..");
 
-const DEFAULT_OUT_DIR = join(generatorDir, "out", "evidence-pack");
+const DEFAULT_OUT_DIR = join(
+  repoRoot,
+  "docs",
+  "compliance",
+  "generated",
+  "ama-cmd-evidence-pack",
+);
+const DEFAULT_GENERATED_AT = "not-recorded-deterministic-run";
 const TEMPLATE_ROOT_FILES = new Set(["README.md", "CHECKLIST.md"]);
 
 const IMPLEMENTATION_EVIDENCE_MAP = [
@@ -22,7 +29,7 @@ const IMPLEMENTATION_EVIDENCE_MAP = [
       "docs/compliance/ama-cmd/templates/no-approval-claim.md",
     ],
     verificationCommands: [
-      "node docs/compliance/ama-cmd/generate-evidence-pack.mjs --out docs/compliance/ama-cmd/out/evidence-pack --force",
+      "node docs/compliance/ama-cmd/generate-evidence-pack.mjs --force",
     ],
     externalEvidenceBlocker:
       "Signed protocol/application, AMA acceptance or activation record, and approved redactions are still required.",
@@ -70,7 +77,7 @@ const IMPLEMENTATION_EVIDENCE_MAP = [
       "docs/compliance/ama-cmd/templates/CHECKLIST.md",
     ],
     verificationCommands: [
-      "node docs/compliance/ama-cmd/generate-evidence-pack.mjs --out docs/compliance/ama-cmd/out/evidence-pack --force",
+      "node docs/compliance/ama-cmd/generate-evidence-pack.mjs --force",
     ],
     externalEvidenceBlocker:
       "Legal/security reviewer sign-off and authority feedback must be attached before stronger wording is used.",
@@ -139,6 +146,9 @@ function parseArgs(argv) {
     out: DEFAULT_OUT_DIR,
     force: false,
     caseName: "Chancela AMA/CMD authority review evidence pack",
+    generatedAt: process.env.SOURCE_DATE_EPOCH
+      ? new Date(Number(process.env.SOURCE_DATE_EPOCH) * 1000).toISOString()
+      : DEFAULT_GENERATED_AT,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -159,6 +169,12 @@ function parseArgs(argv) {
         throw new Error("--case-name requires a value");
       }
       parsed.caseName = argv[index];
+    } else if (arg === "--generated-at") {
+      index += 1;
+      if (!argv[index]) {
+        throw new Error("--generated-at requires a value");
+      }
+      parsed.generatedAt = argv[index];
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -170,10 +186,11 @@ function parseArgs(argv) {
 function usage() {
   return [
     "Usage:",
-    "  node docs/compliance/ama-cmd/generate-evidence-pack.mjs [--out <dir>] [--case-name <name>] [--force]",
+    "  node docs/compliance/ama-cmd/generate-evidence-pack.mjs [--out <dir>] [--case-name <name>] [--generated-at <value>] [--force]",
     "",
     "Creates an AMA/CMD authority-review evidence pack using only Node built-ins.",
-    "By default, output is written to docs/compliance/ama-cmd/out/evidence-pack.",
+    "By default, output is written to docs/compliance/generated/ama-cmd-evidence-pack.",
+    "The default generated-at marker is deterministic. Pass --generated-at or SOURCE_DATE_EPOCH for a dated authority pack.",
   ].join("\n");
 }
 
@@ -383,7 +400,7 @@ async function main() {
   }
 
   const outDir = resolve(process.cwd(), args.out);
-  const generatedAt = new Date().toISOString();
+  const generatedAt = args.generatedAt;
   const sourceMetadataPath = join(generatorDir, "source-metadata.json");
   const metadata = JSON.parse(await readFile(sourceMetadataPath, "utf8"));
   const implementationMap = implementationEvidenceMap();
