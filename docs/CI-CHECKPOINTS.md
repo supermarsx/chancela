@@ -15,16 +15,21 @@ legal completeness, external-provider readiness, or spec completion.
 ## Recent Landed Areas
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
-recently landed work that crosses Rust API tests, web fixtures, validator
-fixtures, and the standalone desktop Cargo workspace.
+recently landed work that crosses Rust API tests, trust parsing, web fixtures,
+validator fixtures, and the standalone desktop Cargo workspace.
 
 It intentionally reuses existing test surfaces:
 
 - API paper import: `cargo test -p chancela-api --test paper_import --locked`
 - API archive package and `/DocTimeStamp` evidence:
   `cargo test -p chancela-api --test archive_package --locked`
-- Web contract/dashboard/i18n matrix:
-  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/i18n/i18n.test.ts`
+- API local PKCS#12 signing:
+  `cargo test -p chancela-api --test local_pkcs12_signing --locked`
+- API bounded retention execution:
+  `cargo test -p chancela-api --test privacy --locked retention_`
+- TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
+- Web contract/dashboard/signing/i18n matrix:
+  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`
 - Validator corpus manifest:
   `npm run test:validator-corpus`
 - Desktop lockfile resolution:
