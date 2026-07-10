@@ -6,7 +6,8 @@
 //! is no way to serve a disabled server — "off" is genuinely zero surface, not a soft flag.
 //!
 //! Dispatch handles the MCP subset needed for a tool server: `initialize`, `notifications/*`,
-//! `ping`, `tools/list`, `tools/call`, and a read-only `chancela://mcp/status` resource.
+//! `ping`, `tools/list`, `tools/call`, bounded prompt discovery, and a read-only
+//! `chancela://mcp/status` resource.
 //! `tools/call` resolves the tool to an `/api/v1` request via [`crate::registry::resolve_call`] and
 //! forwards it through the [`ApiBridge`] with the configured key. Authorization is entirely
 //! server-side (the key's principal); this layer never re-checks it.
@@ -28,12 +29,29 @@ pub const SERVER_NAME: &str = "chancela-mcp";
 /// Read-only MCP resource URI for local server operability state.
 pub const MCP_STATUS_RESOURCE_URI: &str = "chancela://mcp/status";
 
+const DRAFT_MINUTES_REVIEW_PROMPT_NAME: &str = "draft_minutes_human_review_checklist";
+const DRAFT_MINUTES_REVIEW_PROMPT_TITLE: &str = "Draft Minutes Human Review Checklist";
+const DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review checklist for draft minutes. Guidance only; no legal validity, signing, or hidden provider call.";
+
 const HUMAN_VERIFICATION_PENDING: &str = "pending_human_verification";
 const HUMAN_VERIFICATION_ACCEPTED: &str = "accepted_by_human";
 const HUMAN_VERIFICATION_REJECTED: &str = "rejected_by_human";
 const HUMAN_VERIFICATION_AUTHORITY: &str = "human_review_workflow_only";
 const HUMAN_VERIFICATION_ACCEPTANCE_CLAIM: &str = "human_review_only_not_legal_certification";
 const AI_DRAFT_LEGAL_EFFECT: &str = "none_until_human_verification_and_seal";
+
+#[derive(Debug, Clone, Copy)]
+struct McpPrompt {
+    name: &'static str,
+    title: &'static str,
+    description: &'static str,
+}
+
+const PROMPT_CATALOG: &[McpPrompt] = &[McpPrompt {
+    name: DRAFT_MINUTES_REVIEW_PROMPT_NAME,
+    title: DRAFT_MINUTES_REVIEW_PROMPT_TITLE,
+    description: DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION,
+}];
 
 /// The running MCP server: the enabled tool subset + the api-key bridge.
 pub struct McpServer<T: HttpTransport> {
@@ -94,6 +112,8 @@ impl<T: HttpTransport> McpServer<T> {
         let resp = match req.method.as_str() {
             "initialize" => JsonRpcResponse::success(id, self.initialize_result()),
             "ping" => JsonRpcResponse::success(id, json!({})),
+            "prompts/list" => self.prompts_list(id, req.params.as_ref()),
+            "prompts/get" => self.prompts_get(id, req.params.as_ref()),
             "resources/list" => JsonRpcResponse::success(id, self.resources_list_result()),
             "resources/read" => self.resources_read(id, req.params.as_ref()),
             "tools/list" => JsonRpcResponse::success(id, self.tools_list_result()),
@@ -111,12 +131,101 @@ impl<T: HttpTransport> McpServer<T> {
         json!({
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {
+                "prompts": { "listChanged": false },
                 "tools": { "listChanged": false },
                 "resources": { "listChanged": false },
             },
             "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "Chancela platform operations as permission-gated MCP tools. Every tool call is authorized server-side by the configured API key's RBAC principal.",
+            "instructions": "Chancela platform operations as permission-gated MCP tools. Every tool call is authorized server-side by the configured API key's RBAC principal. Prompts are static guidance only; they do not create legal validity, sign documents, or call hidden providers.",
         })
+    }
+
+    fn prompts_list(&self, id: Value, params: Option<&Value>) -> JsonRpcResponse {
+        if !params_are_absent_or_object(params) {
+            return JsonRpcResponse::error(
+                id,
+                codes::INVALID_PARAMS,
+                "prompts/list requires object params when params are provided",
+            );
+        }
+
+        let prompts: Vec<Value> = PROMPT_CATALOG
+            .iter()
+            .map(|p| {
+                json!({
+                    "name": p.name,
+                    "title": p.title,
+                    "description": p.description,
+                    "arguments": [],
+                })
+            })
+            .collect();
+        JsonRpcResponse::success(id, json!({ "prompts": prompts }))
+    }
+
+    fn prompts_get(&self, id: Value, params: Option<&Value>) -> JsonRpcResponse {
+        let params = match params.and_then(Value::as_object) {
+            Some(params) => params,
+            None => {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "prompts/get requires object params",
+                );
+            }
+        };
+        let name = match params.get("name").and_then(Value::as_str) {
+            Some(name) => name,
+            None => {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "prompts/get requires a string name",
+                );
+            }
+        };
+        if name != DRAFT_MINUTES_REVIEW_PROMPT_NAME {
+            return JsonRpcResponse::error(
+                id,
+                codes::INVALID_PARAMS,
+                format!("invalid prompt name: {name}"),
+            );
+        }
+        if let Some(arguments) = params.get("arguments") {
+            match arguments.as_object() {
+                Some(arguments) if arguments.is_empty() => {}
+                Some(_) => {
+                    return JsonRpcResponse::error(
+                        id,
+                        codes::INVALID_PARAMS,
+                        "draft_minutes_human_review_checklist does not accept arguments",
+                    );
+                }
+                None => {
+                    return JsonRpcResponse::error(
+                        id,
+                        codes::INVALID_PARAMS,
+                        "prompts/get arguments must be an object when provided",
+                    );
+                }
+            }
+        }
+
+        JsonRpcResponse::success(
+            id,
+            json!({
+                "description": DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {
+                            "type": "text",
+                            "text": draft_minutes_review_prompt_text(),
+                        },
+                    }
+                ],
+            }),
+        )
     }
 
     fn tools_list_result(&self) -> Value {
@@ -405,6 +514,31 @@ fn transport_name(transport: McpTransport) -> &'static str {
         McpTransport::Stdio => "stdio",
         McpTransport::HttpSse => "http-sse",
     }
+}
+
+fn params_are_absent_or_object(params: Option<&Value>) -> bool {
+    matches!(params, None | Some(Value::Null) | Some(Value::Object(_)))
+}
+
+fn draft_minutes_review_prompt_text() -> &'static str {
+    r#"You are helping a human reviewer check draft minutes in Chancela.
+
+Use this checklist as guidance only. It has no legal validity, does not sign or seal anything, and does not call any hidden AI, signature, trust, registry, or legal provider. Do not claim that a draft is legally valid, final, signed, sealed, or ready for signature. The human reviewer must verify every fact against source documents and the platform record.
+
+Review checklist:
+1. Identify the entity, book, meeting or written-resolution type, date, place or channel, chair, secretary, attendees, quorum, agenda, and voting requirements.
+2. Compare every statement in the draft against the source materials available to the reviewer. Mark missing sources, uncertain facts, and assumptions.
+3. Check whether the draft distinguishes factual minutes from suggestions, commentary, or AI-proposed wording.
+4. Flag any decision that appears outside the stated agenda, quorum, authority, or represented capacity.
+5. Confirm that names, capacities, shareholdings or voting rights, document references, dates, and numbers are internally consistent.
+6. List open questions for the responsible human reviewer before any lifecycle advance, document generation, signature, or sealing workflow.
+
+Return a concise review with these sections:
+- Missing or uncertain source facts
+- Consistency issues
+- Authority or agenda concerns
+- Suggested wording changes, clearly labelled as suggestions only
+- Final human-review reminder: guidance only, no legal validity, no signing, no hidden provider call"#
 }
 
 fn tool_text_result(text: &str, is_error: bool) -> Value {
@@ -957,6 +1091,97 @@ mod tests {
         // schema + annotations present
         assert!(tools[0]["inputSchema"].is_object());
         assert!(tools[0]["annotations"]["readOnlyHint"].is_boolean());
+    }
+
+    #[test]
+    fn prompts_list_exposes_static_guidance_without_http_or_secret() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req("prompts/list", 23, Value::Null))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let prompts = result["prompts"].as_array().unwrap();
+        assert_eq!(prompts.len(), PROMPT_CATALOG.len());
+        assert_eq!(prompts[0]["name"], json!(DRAFT_MINUTES_REVIEW_PROMPT_NAME));
+        assert_eq!(
+            prompts[0]["title"],
+            json!(DRAFT_MINUTES_REVIEW_PROMPT_TITLE)
+        );
+        assert_eq!(
+            prompts[0]["description"],
+            json!(DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION)
+        );
+        assert_eq!(prompts[0]["arguments"], json!([]));
+        let encoded = serde_json::to_string(&result).unwrap();
+        assert!(!encoded.contains("chk_ab12cd_secretsecret"));
+        assert!(!encoded.contains("secretsecret"));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn prompts_get_returns_human_review_checklist_without_http_or_secret() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "prompts/get",
+                24,
+                json!({ "name": DRAFT_MINUTES_REVIEW_PROMPT_NAME }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        assert_eq!(
+            result["description"],
+            json!(DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION)
+        );
+        let messages = result["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], json!("user"));
+        assert_eq!(messages[0]["content"]["type"], json!("text"));
+        let text = messages[0]["content"]["text"].as_str().unwrap();
+        for needle in [
+            "guidance only",
+            "no legal validity",
+            "does not sign or seal",
+            "does not call any hidden",
+            "suggestions only",
+        ] {
+            assert!(
+                text.contains(needle),
+                "prompt should contain {needle:?}: {text}"
+            );
+        }
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn prompts_get_rejects_invalid_prompt_params_without_http() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+
+        let missing_params = server.handle(&req("prompts/get", 25, Value::Null)).unwrap();
+        assert_eq!(missing_params.error.unwrap().code, codes::INVALID_PARAMS);
+
+        let unknown = server
+            .handle(&req("prompts/get", 26, json!({ "name": "unknown_prompt" })))
+            .unwrap();
+        assert_eq!(unknown.error.unwrap().code, codes::INVALID_PARAMS);
+
+        let arguments = server
+            .handle(&req(
+                "prompts/get",
+                27,
+                json!({
+                    "name": DRAFT_MINUTES_REVIEW_PROMPT_NAME,
+                    "arguments": { "draft_text": "caller supplied text" }
+                }),
+            ))
+            .unwrap();
+        let error = arguments.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("does not accept arguments"));
+
+        assert!(server.bridge_recorded().is_empty());
     }
 
     #[test]
@@ -1847,6 +2072,11 @@ mod tests {
         let result = resp.result.unwrap();
         assert_eq!(result["protocolVersion"], json!(PROTOCOL_VERSION));
         assert_eq!(result["serverInfo"]["name"], json!(SERVER_NAME));
+        assert!(result["capabilities"]["prompts"].is_object());
+        assert_eq!(
+            result["capabilities"]["prompts"]["listChanged"],
+            json!(false)
+        );
         assert!(result["capabilities"]["tools"].is_object());
         assert!(result["capabilities"]["resources"].is_object());
     }
@@ -1864,7 +2094,7 @@ mod tests {
     #[test]
     fn unknown_method_is_method_not_found() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
-        let resp = server.handle(&req("prompts/list", 8, json!({}))).unwrap();
+        let resp = server.handle(&req("unknown/method", 8, json!({}))).unwrap();
         assert_eq!(resp.error.unwrap().code, codes::METHOD_NOT_FOUND);
     }
 
