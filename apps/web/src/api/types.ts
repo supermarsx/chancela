@@ -2807,8 +2807,11 @@ export type LongTermEvidenceStatus =
   | 'not_configured'
   | 'timestamped'
   | 'lt_local_technical_evidence'
+  | 'lt_local_technical_evidence_partial'
   | 'lt_production_not_claimed'
   | 'lt_not_implemented'
+  | 'lta_local_technical_evidence'
+  | 'lta_local_technical_evidence_partial'
   | 'lta_not_implemented';
 
 export interface DssEvidenceStatus {

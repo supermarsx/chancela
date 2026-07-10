@@ -118,12 +118,22 @@ function evidenceLevelLabel(level: string, t: TFunction): string {
   if (level === 'Unsigned') return t('signing.evidence.level.unsigned');
   if (level === 'B-B') return 'PAdES B-B';
   if (level === 'B-T') return 'PAdES B-T';
+  if (level === 'B-LT-local') return 'PAdES B-LT local';
+  if (level === 'B-LTA-local') return 'PAdES B-LTA local';
   return level;
 }
 
 function longTermEvidenceLabel(status: string, t: TFunction): string {
   if (status === 'timestamped') return t('signing.evidence.longTerm.timestamped');
   if (status === 'not_configured') return t('signing.evidence.longTerm.notConfigured');
+  if (status === 'lt_local_technical_evidence')
+    return t('signing.evidence.longTerm.ltLocalTechnical');
+  if (status === 'lt_local_technical_evidence_partial')
+    return t('signing.evidence.longTerm.ltLocalTechnicalPartial');
+  if (status === 'lta_local_technical_evidence')
+    return t('signing.evidence.longTerm.ltaLocalTechnical');
+  if (status === 'lta_local_technical_evidence_partial')
+    return t('signing.evidence.longTerm.ltaLocalTechnicalPartial');
   if (status === 'lt_not_implemented') return t('signing.evidence.longTerm.ltNotImplemented');
   if (status === 'lta_not_implemented') return t('signing.evidence.longTerm.ltaNotImplemented');
   return status;
@@ -150,6 +160,7 @@ function trustedListTone(status: string): 'ok' | 'warn' {
 }
 
 function evidenceLevelTone(level: string): 'neutral' | 'accent' | 'ok' {
+  if (level === 'B-LT-local' || level === 'B-LTA-local') return 'ok';
   if (level === 'B-T') return 'ok';
   if (level === 'B-B') return 'accent';
   return 'neutral';

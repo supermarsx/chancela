@@ -105,6 +105,7 @@ const EVIDENCE_LEVEL_UNSIGNED: &str = "Unsigned";
 const EVIDENCE_LEVEL_B_B: &str = "B-B";
 const EVIDENCE_LEVEL_B_T: &str = "B-T";
 const EVIDENCE_LEVEL_B_LT_LOCAL: &str = "B-LT-local";
+const EVIDENCE_LEVEL_B_LTA_LOCAL: &str = "B-LTA-local";
 const DSS_INSPECTION_NOT_APPLICABLE: &str = "not_applicable";
 const DSS_INSPECTION_INSPECTED: &str = "inspected_from_signed_pdf";
 const DSS_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
@@ -250,8 +251,8 @@ pub struct PendingInfo {
 /// Technical evidence profile observed for the signed act.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SignatureEvidenceStatus {
-    /// `"Unsigned"`, `"B-B"`, `"B-T"`, or `"B-LT-local"`. The local marker means Chancela observed
-    /// a B-T timestamp plus embedded DSS revocation bytes; it is not a production/legal B-LT claim.
+    /// `"Unsigned"`, `"B-B"`, `"B-T"`, `"B-LT-local"`, or `"B-LTA-local"`. The local markers mean
+    /// Chancela observed embedded technical evidence; they are not production/legal LTV claims.
     pub current_level: &'static str,
     /// Whether an RFC 3161 signature timestamp token is present.
     pub timestamp_evidence_present: bool,
@@ -275,8 +276,8 @@ pub struct SignatureEvidenceStatus {
     pub legal_b_lta_claimed: bool,
     /// Archive timestamp renewal policy. No automatic renewal is configured in this API surface.
     pub renewal_policy: RenewalPolicyEvidenceStatus,
-    /// Explicit long-term evidence milestones and gaps. B-LT/B-LTA are reported as not implemented
-    /// rather than silently implied.
+    /// Explicit long-term evidence milestones and gaps. Local B-LT/B-LTA markers are technical
+    /// evidence only; production/legal LTV remains not claimed.
     pub long_term_status: Vec<LongTermEvidenceStatus>,
     /// Technical timestamp-trust diagnostics from the RFC 3161 token and authenticated QTST
     /// evidence, when the full validator inputs were persisted for this signed artifact.
@@ -367,8 +368,11 @@ pub enum LongTermEvidenceStatus {
     NotConfigured,
     Timestamped,
     LtLocalTechnicalEvidence,
+    LtLocalTechnicalEvidencePartial,
     LtProductionNotClaimed,
     LtNotImplemented,
+    LtaLocalTechnicalEvidence,
+    LtaLocalTechnicalEvidencePartial,
     LtaNotImplemented,
 }
 
@@ -2879,16 +2883,25 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
     let doc_timestamp = signed
         .map(|doc| doc_timestamp_evidence_status(&doc.signed_pdf_bytes))
         .unwrap_or_else(DocTimeStampEvidenceStatus::not_applicable);
+    let dss_evidence_present = dss.present || dss.vri_count > 0 || dss.revocation_evidence_present;
     let local_b_lt_style_evidence_present = timestamped && dss.revocation_evidence_present;
+    let local_b_lt_style_evidence_partial =
+        !local_b_lt_style_evidence_present && dss_evidence_present;
+    let local_b_lta_technical_evidence_present =
+        local_b_lt_style_evidence_present && doc_timestamp.all_imprints_valid;
+    let local_b_lta_technical_evidence_partial =
+        !local_b_lta_technical_evidence_present && doc_timestamp.present;
     let current_level = match (
         signed.is_some(),
         timestamped,
         local_b_lt_style_evidence_present,
+        local_b_lta_technical_evidence_present,
     ) {
-        (false, _, _) => EVIDENCE_LEVEL_UNSIGNED,
-        (true, _, true) => EVIDENCE_LEVEL_B_LT_LOCAL,
-        (true, true, false) => EVIDENCE_LEVEL_B_T,
-        (true, false, false) => EVIDENCE_LEVEL_B_B,
+        (false, _, _, _) => EVIDENCE_LEVEL_UNSIGNED,
+        (true, _, _, true) => EVIDENCE_LEVEL_B_LTA_LOCAL,
+        (true, _, true, false) => EVIDENCE_LEVEL_B_LT_LOCAL,
+        (true, true, false, false) => EVIDENCE_LEVEL_B_T,
+        (true, false, false, false) => EVIDENCE_LEVEL_B_B,
     };
     let dss_revocation_evidence_status = match (signed.is_some(), dss.inspection_status) {
         (false, _) => DSS_REVOCATION_NOT_APPLICABLE,
@@ -2897,7 +2910,7 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
         (true, _) if timestamped => DSS_REVOCATION_LOCAL_TECHNICAL_ONLY,
         (true, _) => DSS_REVOCATION_PRESENT_WITHOUT_TIMESTAMP,
     };
-    let mut long_term_status = Vec::with_capacity(3);
+    let mut long_term_status = Vec::with_capacity(5);
     if timestamped {
         long_term_status.push(LongTermEvidenceStatus::Timestamped);
     } else {
@@ -2905,11 +2918,19 @@ fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> Signature
     }
     if local_b_lt_style_evidence_present {
         long_term_status.push(LongTermEvidenceStatus::LtLocalTechnicalEvidence);
+    } else if local_b_lt_style_evidence_partial {
+        long_term_status.push(LongTermEvidenceStatus::LtLocalTechnicalEvidencePartial);
     } else {
         long_term_status.push(LongTermEvidenceStatus::LtNotImplemented);
     }
     long_term_status.push(LongTermEvidenceStatus::LtProductionNotClaimed);
-    long_term_status.push(LongTermEvidenceStatus::LtaNotImplemented);
+    if local_b_lta_technical_evidence_present {
+        long_term_status.push(LongTermEvidenceStatus::LtaLocalTechnicalEvidence);
+    } else if local_b_lta_technical_evidence_partial {
+        long_term_status.push(LongTermEvidenceStatus::LtaLocalTechnicalEvidencePartial);
+    } else {
+        long_term_status.push(LongTermEvidenceStatus::LtaNotImplemented);
+    }
 
     SignatureEvidenceStatus {
         current_level,
@@ -4192,6 +4213,12 @@ mod tests {
         }
     }
 
+    fn stored_signed_fixture(pdf_bytes: &[u8]) -> StoredSignedDocument {
+        let mut doc = stored_signed_document(None);
+        doc.signed_pdf_bytes = pdf_bytes.to_vec();
+        doc
+    }
+
     #[test]
     fn signature_evidence_status_classifies_unsigned_b_b_and_b_t() {
         let unsigned = signature_evidence_status(None);
@@ -4260,7 +4287,76 @@ mod tests {
     }
 
     #[test]
-    fn doc_timestamp_status_reports_absent_and_valid_fixture_without_b_lta_claim() {
+    fn signature_evidence_status_keeps_timestamp_without_dss_as_lt_not_implemented() {
+        let pdf = include_bytes!(
+            "../../../docs/fixtures/validator-corpus/cases/bt-timestamped/input/bt-timestamped.pdf"
+        );
+        let doc = stored_signed_fixture(pdf);
+
+        let status = signature_evidence_status(Some(&doc));
+
+        assert_eq!(status.current_level, EVIDENCE_LEVEL_B_T);
+        assert!(status.timestamp_evidence_present);
+        assert!(!status.dss.present);
+        assert_eq!(status.dss.inspection_status, DSS_INSPECTION_INSPECTED);
+        assert_eq!(
+            status.dss_revocation_evidence_status,
+            DSS_REVOCATION_NOT_PRESENT
+        );
+        assert!(!status.dss_revocation_evidence_present);
+        assert!(!status.local_b_lt_style_evidence_present);
+        assert_eq!(
+            status.long_term_status,
+            vec![
+                LongTermEvidenceStatus::Timestamped,
+                LongTermEvidenceStatus::LtNotImplemented,
+                LongTermEvidenceStatus::LtProductionNotClaimed,
+                LongTermEvidenceStatus::LtaNotImplemented,
+            ]
+        );
+        assert!(!status.legal_b_lt_claimed);
+        assert!(!status.legal_b_lta_claimed);
+    }
+
+    #[test]
+    fn signature_evidence_status_reports_local_b_lt_for_dss_vri_evidence() {
+        let pdf = include_bytes!(
+            "../../../docs/fixtures/validator-corpus/cases/bt-dss-local/input/bt-dss-local.pdf"
+        );
+        let doc = stored_signed_fixture(pdf);
+
+        let status = signature_evidence_status(Some(&doc));
+
+        assert_eq!(status.current_level, EVIDENCE_LEVEL_B_LT_LOCAL);
+        assert!(status.timestamp_evidence_present);
+        assert!(status.dss.present);
+        assert!(status.dss.vri_count > 0);
+        assert!(status.dss.ocsp_count > 0);
+        assert!(status.dss.crl_count > 0);
+        assert!(status.dss.revocation_evidence_present);
+        assert_eq!(status.dss.inspection_status, DSS_INSPECTION_INSPECTED);
+        assert_eq!(
+            status.dss_revocation_evidence_status,
+            DSS_REVOCATION_LOCAL_TECHNICAL_ONLY
+        );
+        assert!(status.local_b_lt_style_evidence_present);
+        assert_eq!(
+            status.long_term_status,
+            vec![
+                LongTermEvidenceStatus::Timestamped,
+                LongTermEvidenceStatus::LtLocalTechnicalEvidence,
+                LongTermEvidenceStatus::LtProductionNotClaimed,
+                LongTermEvidenceStatus::LtaNotImplemented,
+            ]
+        );
+        assert_eq!(status.production_b_lt_status, PRODUCTION_B_LT_NOT_CLAIMED);
+        assert_eq!(status.status_scope, TECHNICAL_EVIDENCE_ONLY);
+        assert!(!status.legal_b_lt_claimed);
+        assert!(!status.legal_b_lta_claimed);
+    }
+
+    #[test]
+    fn doc_timestamp_status_reports_absent_and_valid_fixture_without_legal_b_lta_claim() {
         let no_dts_pdf = include_bytes!(
             "../../../docs/fixtures/validator-corpus/cases/bt-dss-local/input/bt-dss-local.pdf"
         );
@@ -4277,6 +4373,7 @@ mod tests {
         let mut doc = stored_signed_document(Some(b"timestamp-token".to_vec()));
         doc.signed_pdf_bytes = dts_pdf.to_vec();
         let status = signature_evidence_status(Some(&doc));
+        assert_eq!(status.current_level, EVIDENCE_LEVEL_B_LTA_LOCAL);
         assert_ne!(status.current_level, "B-LTA");
         assert!(!status.legal_b_lta_claimed);
         assert_eq!(status.renewal_policy.status, "not_configured");
@@ -4292,6 +4389,17 @@ mod tests {
         assert_eq!(status.doc_timestamp.validations[0].status, "valid");
         assert_eq!(status.doc_timestamp.validations[0].failure_reason, None);
         assert!(status.doc_timestamp.all_imprints_valid);
+        assert_eq!(
+            status.long_term_status,
+            vec![
+                LongTermEvidenceStatus::Timestamped,
+                LongTermEvidenceStatus::LtLocalTechnicalEvidence,
+                LongTermEvidenceStatus::LtProductionNotClaimed,
+                LongTermEvidenceStatus::LtaLocalTechnicalEvidence,
+            ]
+        );
+        assert!(!status.legal_b_lt_claimed);
+        assert!(!status.legal_b_lta_claimed);
     }
 
     #[test]
