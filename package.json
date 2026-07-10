@@ -28,6 +28,7 @@
     "test:checkpoint:recent-landed:static": "node scripts/checkpoint-recent-landed.mjs --static",
     "test:e2e": "cargo test -p chancela-server --features e2e --locked",
     "test:browser": "npm run test:browser --workspace apps/web",
+    "test:browser:matrix": "npm run test:browser:matrix --workspace apps/web",
     "test:desktop:rust": "npm run test:rust --prefix apps/desktop",
     "test:desktop:smoke": "npm run test:smoke --prefix apps/desktop",
     "build": "npm run build:rust && npm run build:web",

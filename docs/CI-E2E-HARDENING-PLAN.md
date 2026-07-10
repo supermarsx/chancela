@@ -1,6 +1,6 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-09 from the current working tree. This plan is the build and
+Updated 2026-07-10 from the current working tree. This plan is the build and
 test operating checklist for driving Chancela toward release confidence.
 
 ## Goals
@@ -32,15 +32,34 @@ test operating checklist for driving Chancela toward release confidence.
   installs Chromium, and runs the stable smoke/session/first-launch/journey
   Playwright specs on every push and PR.
 - Browser full e2e remains a heavier Chromium gate for pushes to `main`, manual
-  dispatches, or PRs labeled `run-browser-tests`.
+  dispatches, or PRs labeled `run-browser-tests`; the explicit
+  `test:browser:matrix` gate runs the same Playwright suite across Chromium,
+  Firefox, WebKit, and mobile Chromium when CI/release wants full browser
+  coverage.
+- Browser e2e is useful smoke/edge coverage, not exhaustive product coverage,
+  and the repository does not currently enforce coverage thresholds.
 - Docker server image build plus runtime smoke runs on pushes to `main` and
   manual dispatches; the smoke starts the container with `CHANCELA_DATA_DIR`,
   polls `/health`, and asserts durable persistence from the JSON body.
 - The Docker lane applies OCI image labels and uploads image inspect metadata,
   report-only Syft/Trivy artifacts, and an explicit JSON status saying the local
-  CI image was not pushed, signed, attested, or notarized.
+  CI image was not pushed, signed, or attested.
+- Package/release artifacts carry manifests and checksums where configured, but
+  current release packages are not signed or notarized.
 - Windows desktop smoke runs on pushes to `main` or PRs labeled
   `run-desktop-tests`.
+
+## 2026-07-10 Audit Note
+
+- Current browser e2e coverage is smoke/edge oriented rather than exhaustive,
+  and there are no enforced line, branch, or function coverage thresholds.
+- Live signature/provider seams are compile-only checks; they do not exercise
+  live CMD, CSC/QTSP, CC hardware, production TSL, or production TSA paths.
+- Release packages are unsigned/not notarized, and Docker images are not
+  signed/attested.
+- The current Data Management slice adds `settings.manage`-gated cleanup for
+  crash reports and retained exports plus SQLite logical usage estimates. Treat
+  it as storage maintenance coverage, not legal data-lifecycle certification.
 
 ## Current Local Verification Snapshot
 
@@ -132,7 +151,8 @@ Run these before declaring a release candidate:
 
 ```powershell
 npm run test:browser --workspace apps/web -- e2e/smoke.spec.ts e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts e2e/journey.spec.ts
-npm run test:browser
+npx playwright install --with-deps chromium firefox webkit
+npm run test:browser:matrix
 npm run build:docker
 cd apps/desktop
 npm run test:rust
@@ -140,8 +160,10 @@ npm run build:no-bundle
 npm run test:smoke -- -DataDir <temp-data-dir>
 ```
 
-The root scripts `test:browser`, `build:docker`, `test:desktop:rust`, and
-`test:desktop:smoke` are thin aliases for those heavier release-candidate gates.
+The root scripts `test:browser`, `test:browser:matrix`, `build:docker`,
+`test:desktop:rust`, and `test:desktop:smoke` are thin aliases for those
+heavier release-candidate gates. `test:browser` stays Chromium-only for the
+bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 
 ## E2E Edge-Case Matrix
 
@@ -236,6 +258,8 @@ The root scripts `test:browser`, `build:docker`, `test:desktop:rust`, and
 - All fast PR checks pass locally and in CI.
 - Chromium core browser e2e passes as a normal PR/push gate.
 - Full browser e2e passes at least once on the release branch.
+- Coverage thresholds are enforced, or an explicit release waiver records why
+  they are not yet enforced.
 - Docker image builds and passes the runtime `/health` persistence smoke from a
   clean checkout.
 - Release metadata artifacts include a validated dependency SBOM, package
@@ -250,7 +274,8 @@ The root scripts `test:browser`, `build:docker`, `test:desktop:rust`, and
 
 ## Current Focused Gate Snapshot
 
-Latest focused checks from the active director loop:
+Historical focused checks from the active director loop. This is not an
+exhaustive current green-run claim; the 2026-07-10 audit gaps above still apply.
 
 - `actionlint .github/workflows/ci.yml`, `npx prettier --check
 .github/workflows/ci.yml`, and `git diff --check -- .github/workflows/ci.yml

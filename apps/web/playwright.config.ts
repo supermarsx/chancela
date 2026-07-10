@@ -7,11 +7,12 @@
  * UI-render/route regressions. It is deliberately small and headless (no display
  * needed), runnable both locally and on ubuntu CI.
  *
- * `webServer` spawns the pre-built release binary (built by the `test:browser` npm
- * script) pointed at the built dist and a fresh, throwaway `CHANCELA_DATA_DIR`, so every
- * run starts from clean, hermetic state; `globalTeardown` removes that temp dir. The
- * binary and dist are built by `npm run test:browser` before Playwright starts — if the
- * binary is missing (someone ran `playwright test` directly), we fail fast with a hint.
+ * `webServer` spawns the pre-built release binary (built by the browser npm scripts)
+ * pointed at the built dist and a fresh, throwaway `CHANCELA_DATA_DIR`, so every run
+ * starts from clean, hermetic state; `globalTeardown` removes that temp dir. The binary
+ * and dist are built by `npm run test:browser` / `npm run test:browser:matrix` before
+ * Playwright starts — if the binary is missing (someone ran `playwright test` directly),
+ * we fail fast with a hint.
  */
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
@@ -256,10 +257,10 @@ process.once('exit', () => {
 });
 
 if (!fs.existsSync(serverBin)) {
-  // Direct `playwright test` without the build step. `npm run test:browser` builds both.
+  // Direct `playwright test` without the build step. The browser npm scripts build both.
   throw new Error(
     `chancela-server release binary not found at ${serverBin}.\n` +
-      `Run \`npm run test:browser\` (builds server + dist first), or build it with\n` +
+      `Run \`npm run test:browser\` or \`npm run test:browser:matrix\` (builds server + dist first), or build it with\n` +
       `\`cargo build --release -p chancela-server\` and \`npm run build\` before \`playwright test\`.`,
   );
 }
@@ -287,7 +288,12 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'mobile-chromium', use: { ...devices['Pixel 5'] } },
+  ],
   webServer: {
     command: `"${serverBin}"`,
     url: `${baseURL}/health`,
