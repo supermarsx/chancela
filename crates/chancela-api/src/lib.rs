@@ -1258,6 +1258,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/data/reset", post(data::reset_data))
         .route("/v1/data/status", get(data_status::get_data_status))
         .route("/v1/data/cleanup", post(data_status::cleanup_data))
+        .route(
+            "/v1/data/key-rotation/preflight",
+            post(data_status::preflight_data_key_rotation),
+        )
         .route("/v1/data/start-over", post(data::start_over_instance))
         .route("/v1/dashboard", get(dashboard::dashboard))
         .route(
@@ -1476,9 +1480,10 @@ async fn reject_mixed_credentials(
 ///
 /// Reads (`GET`/`HEAD`/`OPTIONS`) are always allowed. Among mutations, only the **recovery** plane
 /// stays reachable in a broken-chain instance — a restore / re-anchor / factory reset is the
-/// legitimate last-resort repair, an export lets the operator archive first, a quarantine-import is
-/// isolated and never merged into a live chain, and the session endpoints must work so the operator
-/// can authenticate to run any of these. Every other mutation is blocked with `503` while degraded.
+/// legitimate last-resort repair, an export lets the operator archive first, key-rotation preflight
+/// is read-only evidence gathering, a quarantine-import is isolated and never merged into a live
+/// chain, and the session endpoints must work so the operator can authenticate to run any of these.
+/// Every other mutation is blocked with `503` while degraded.
 fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
     use axum::http::Method;
     if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
@@ -1488,6 +1493,7 @@ fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
         || path == "/v1/ledger/recovery/restore"
         || path == "/v1/data/reset"
         || path == "/v1/data/start-over"
+        || path == "/v1/data/key-rotation/preflight"
         || path == "/v1/books/import"
         || path == "/v1/books/paper-import/validate"
         || path.starts_with("/v1/session")

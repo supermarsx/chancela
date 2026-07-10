@@ -5,6 +5,7 @@
 //! worker so directory traversal and permission probes do not occupy the async runtime.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -13,6 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use axum::Json;
 use axum::extract::State;
 use chancela_authz::{Permission, Scope};
+use chancela_store::{Store, StoreError, StoreKeyRotationPreflight, StoreOpenOptions};
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
 use tokio::task;
@@ -113,6 +115,23 @@ pub struct DataCleanupResponse {
     pub deleted_directories: u64,
     pub skipped: Vec<String>,
     pub data_dir: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DataKeyRotationPreflightRequest {
+    #[serde(default)]
+    current_key: Option<String>,
+    #[serde(default, alias = "replacement_key")]
+    new_key: Option<String>,
+}
+
+impl fmt::Debug for DataKeyRotationPreflightRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DataKeyRotationPreflightRequest")
+            .field("current_key", &key_log_status(self.current_key.as_deref()))
+            .field("new_key", &key_log_status(self.new_key.as_deref()))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -287,6 +306,47 @@ pub async fn cleanup_data(
         .map_err(|e| ApiError::Internal(format!("data cleanup worker failed: {e}")))??;
     response.data_dir = Some(data_dir_display);
     Ok(Json(response))
+}
+
+/// `POST /v1/data/key-rotation/preflight` - read-only SQLCipher rekey readiness check.
+pub async fn preflight_data_key_rotation(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(req): Json<DataKeyRotationPreflightRequest>,
+) -> Result<Json<StoreKeyRotationPreflight>, ApiError> {
+    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+
+    let Some(data_dir) = state.data_dir() else {
+        return Err(ApiError::Unprocessable(
+            "data key-rotation preflight requires on-disk persistence; set CHANCELA_DATA_DIR"
+                .to_owned(),
+        ));
+    };
+
+    let DataKeyRotationPreflightRequest {
+        current_key,
+        new_key,
+    } = req;
+    let current_options = match current_key {
+        Some(key) => StoreOpenOptions::new().with_encryption_key(key),
+        None => StoreOpenOptions::default(),
+    };
+    let new_key = new_key.unwrap_or_default();
+
+    let preflight = task::spawn_blocking(move || {
+        Store::key_rotation_preflight(&data_dir, &current_options, &new_key)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("data key-rotation preflight worker failed: {e}")))?
+    .map_err(map_key_rotation_preflight_error)?;
+
+    Ok(Json(preflight))
+}
+
+fn map_key_rotation_preflight_error(_e: StoreError) -> ApiError {
+    ApiError::Unprocessable(
+        "data key-rotation preflight could not inspect the durable database".to_owned(),
+    )
 }
 
 fn parse_cleanup_target(raw: &str) -> Result<CleanupTarget, ApiError> {
@@ -1335,6 +1395,14 @@ fn unchecked(message: impl Into<String>) -> PermissionCheck {
     }
 }
 
+fn key_log_status(key: Option<&str>) -> &'static str {
+    match key {
+        None => "missing",
+        Some(raw) if raw.trim().is_empty() => "empty",
+        Some(_) => "configured",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1409,5 +1477,19 @@ mod tests {
         let outside_error =
             validate_cleanup_target(&base, &outside_file).expect_err("outside refused");
         assert!(outside_error.contains("outside the data directory"));
+    }
+
+    #[test]
+    fn key_rotation_preflight_request_debug_redacts_key_material() {
+        let req = DataKeyRotationPreflightRequest {
+            current_key: Some("current-secret".to_owned()),
+            new_key: Some("new-secret".to_owned()),
+        };
+
+        let debug = format!("{req:?}");
+
+        assert!(debug.contains("configured"));
+        assert!(!debug.contains("current-secret"));
+        assert!(!debug.contains("new-secret"));
     }
 }
