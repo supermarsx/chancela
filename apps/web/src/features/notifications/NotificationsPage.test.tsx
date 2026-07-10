@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { Dashboard, DashboardAlert } from '../../api/types';
-import { renderWithProviders } from '../../test/utils';
+import { fetchTable, renderWithProviders } from '../../test/utils';
 import { NotificationsPage } from './NotificationsPage';
 
 const targetLinks = {
@@ -203,5 +203,34 @@ describe('NotificationsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Todas' }));
     expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
+  });
+
+  it('renders active notification page actions as icon-only controls with tooltip labels', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        { match: '/v1/dashboard', body: dashboard({ alerts: [actionableActAlert()] }) },
+        {
+          match: '/v1/notifications/triage',
+          body: {
+            durable: true,
+            max_entries_per_owner: 500,
+            entries: [],
+          },
+        },
+      ]),
+    );
+
+    renderWithProviders(<NotificationsPage />, ['/notificacoes']);
+
+    expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
+
+    expectIconOnlyControl(screen.getByRole('link', { name: 'Rever ata' }), 'Rever ata');
+    expectIconOnlyControl(
+      screen.getByRole('button', { name: 'Marcar como lida' }),
+      'Marcar como lida',
+    );
+    expectIconOnlyControl(screen.getByRole('button', { name: 'Reconhecer' }), 'Reconhecer');
+    expectIconOnlyControl(screen.getByRole('button', { name: 'Dispensar' }), 'Dispensar');
   });
 });

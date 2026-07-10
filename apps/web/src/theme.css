@@ -4585,7 +4585,7 @@ a.btn--primary {
   white-space: nowrap;
 }
 
-.notifications-list__action {
+.notifications-list__action:not(.btn--iconOnly) {
   margin-top: 0.65rem;
   padding: 0.28rem 0.65rem;
   font-size: 0.76rem;
@@ -4600,7 +4600,7 @@ a.btn--primary {
   gap: 0.25rem;
 }
 
-.notifications-list--compact .notifications-list__action,
+.notifications-list--compact .notifications-list__action:not(.btn--iconOnly),
 .notifications-list--compact .notifications-list__triage {
   padding: 0.22rem 0.5rem;
   font-size: 0.72rem;

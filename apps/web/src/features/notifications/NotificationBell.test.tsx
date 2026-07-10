@@ -148,9 +148,13 @@ describe('NotificationBell', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
     const action = within(dialog).getByRole('link', { name: 'Rever ata' });
     const read = within(dialog).getByRole('button', { name: 'Marcar como lida' });
+    const acknowledge = within(dialog).getByRole('button', { name: 'Reconhecer' });
+    const dismiss = within(dialog).getByRole('button', { name: 'Dispensar' });
 
     expectIconOnlyControl(action, 'Rever ata');
     expectIconOnlyControl(read, 'Marcar como lida');
+    expectIconOnlyControl(acknowledge, 'Reconhecer');
+    expectIconOnlyControl(dismiss, 'Dispensar');
   });
 
   it('closes the popup when clicking outside the bell and popup', async () => {
