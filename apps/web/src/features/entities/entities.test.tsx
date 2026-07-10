@@ -186,6 +186,18 @@ describe('EntitiesPage', () => {
     const css = await themeCss();
     const filterRule = css.match(/\.entities-filters\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
     const filterbarRule = css.match(/\.entities-filterbar\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const primaryRule =
+      css.match(/\.entities-filterbar__primary\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const primaryFieldRule =
+      css.match(/\.entities-filterbar__primary \.field\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const advancedRule =
+      css.match(/\.entities-advanced-filters\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const advancedBodyRule =
+      css.match(/\.entities-advanced-filters__body\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const mobilePrimaryRule =
+      css.match(
+        /@media\s*\(max-width:\s*720px\)\s*{\s*\.entities-filterbar__primary\s*{(?<body>[^}]*)}/s,
+      )?.groups?.body ?? '';
     const filterButtonRule =
       css.match(/\.entities-filterbar__primary \.btn\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
     const tableWrapRule =
@@ -203,6 +215,14 @@ describe('EntitiesPage', () => {
     expect(filterRule).toContain('max-width: 100%;');
     expect(filterRule).toContain('overflow-x: clip;');
     expect(filterbarRule).toContain('overflow-x: clip;');
+    expect(primaryRule).toContain('flex-wrap: nowrap;');
+    expect(primaryFieldRule).toContain('min-width: 0;');
+    expect(mobilePrimaryRule).toContain('flex-wrap: wrap;');
+    expect(advancedRule).toContain('overflow-x: clip;');
+    expect(advancedBodyRule).toContain(
+      'grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));',
+    );
+    expect(advancedBodyRule).toContain('min-width: 0;');
     expect(filterButtonRule).toContain('max-width: 100%;');
     expect(filterButtonRule).toContain('overflow: hidden;');
     expect(tableWrapRule).toContain('overflow-x: hidden;');

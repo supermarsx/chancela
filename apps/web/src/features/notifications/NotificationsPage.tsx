@@ -98,6 +98,7 @@ export function NotificationsPage() {
           <ErrorNote error={error ?? triage.error} />
         ) : (
           <NotificationList
+            compact
             items={visible}
             emptyTitle={emptyTitle(filter, t)}
             onTriage={triage.setStatus}

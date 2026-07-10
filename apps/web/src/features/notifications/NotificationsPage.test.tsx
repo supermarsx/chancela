@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { Dashboard, DashboardAlert } from '../../api/types';
 import { fetchTable, renderWithProviders } from '../../test/utils';
 import { NotificationsPage } from './NotificationsPage';
@@ -180,7 +180,22 @@ describe('NotificationsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resolvidas' }));
 
     expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
-    expect(screen.getByText('Dispensada')).toBeTruthy();
+    const resolvedItem = screen
+      .getByText('Rever conformidade da ata')
+      .closest('.notifications-list__item') as HTMLElement;
+    expect(screen.getByRole('list', { name: 'Notificações' }).className).toContain(
+      'notifications-list--compact',
+    );
+    expect(
+      within(resolvedItem).getByText('Alerta', { selector: '.notifications-list__title-tag' }),
+    ).toBeTruthy();
+    expect(
+      within(resolvedItem).getByText('Dispensada', {
+        selector: '.notifications-list__title-tag',
+      }),
+    ).toBeTruthy();
+    expect(within(resolvedItem).queryByText('Alerta', { selector: '.badge' })).toBeNull();
+    expect(within(resolvedItem).queryByText('Dispensada', { selector: '.badge' })).toBeNull();
     const action = screen.getByRole('link', { name: 'Rever ata' });
     const restore = screen.getByRole('button', { name: 'Reabrir' });
     expect(action.getAttribute('href')).toBe('/atas/act-1');
@@ -224,6 +239,17 @@ describe('NotificationsPage', () => {
     renderWithProviders(<NotificationsPage />, ['/notificacoes']);
 
     expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
+    const item = screen
+      .getByText('Rever conformidade da ata')
+      .closest('.notifications-list__item') as HTMLElement;
+
+    expect(screen.getByRole('list', { name: 'Notificações' }).className).toContain(
+      'notifications-list--compact',
+    );
+    expect(
+      within(item).getByText('Alerta', { selector: '.notifications-list__title-tag' }),
+    ).toBeTruthy();
+    expect(within(item).queryByText('Alerta', { selector: '.badge' })).toBeNull();
 
     expectIconOnlyControl(screen.getByRole('link', { name: 'Rever ata' }), 'Rever ata');
     expectIconOnlyControl(

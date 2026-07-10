@@ -1594,7 +1594,7 @@ a.btn.btn--iconOnly {
 
 .entities-filterbar__primary {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: flex-end;
   gap: 0.75rem;
   min-width: 0;
@@ -1603,14 +1603,14 @@ a.btn.btn--iconOnly {
 }
 
 .entities-filterbar__primary .field {
-  flex: 1 1 10rem;
-  min-width: min(100%, 10rem);
+  flex: 1 1 9rem;
+  min-width: 0;
   max-width: 100%;
 }
 
 .entities-filterbar__primary .field:first-child {
-  flex: 1.8 1 16rem;
-  min-width: min(100%, 16rem);
+  flex: 2 1 15rem;
+  min-width: 0;
   max-width: 100%;
 }
 
@@ -1657,6 +1657,17 @@ a.btn.btn--iconOnly {
 
 .entities-advanced-filters__body .field {
   min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .entities-filterbar__primary {
+    flex-wrap: wrap;
+  }
+
+  .entities-filterbar__primary .field,
+  .entities-filterbar__primary .field:first-child {
+    flex-basis: min(100%, 13rem);
+  }
 }
 
 .entities-table {
@@ -4776,7 +4787,7 @@ a.btn--primary {
   position: absolute;
   top: -0.55rem;
   right: -0.65rem;
-  z-index: 1;
+  z-index: 2;
   min-width: 1rem;
   height: 1rem;
   padding: 0 0.22rem;
@@ -4788,6 +4799,7 @@ a.btn--primary {
   font-size: 0.62rem;
   font-weight: 700;
   line-height: 0.95rem;
+  pointer-events: none;
   text-align: center;
 }
 

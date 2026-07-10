@@ -114,6 +114,28 @@ function expectIconOnlyControl(control: HTMLElement, label: string) {
   expect(tooltip?.className).not.toContain('is-open');
 }
 
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8');
+}
+
+function cssRule(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'm').exec(css);
+  expect(match, `expected ${selector} in theme.css`).toBeTruthy();
+  return match?.[1] ?? '';
+}
+
+function cssNumber(css: string, selector: string, property: string): number {
+  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`${escaped}\\s*:\\s*(-?\\d+)`).exec(cssRule(css, selector));
+  expect(match, `expected ${property} on ${selector}`).toBeTruthy();
+  return Number(match?.[1] ?? 0);
+}
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -257,6 +279,19 @@ describe('NotificationBell', () => {
     expect(titleRow).toBeTruthy();
     expect(titleRow.contains(badge)).toBe(true);
     expect(badge.className).toContain('badge--accent');
+  });
+
+  it('keeps the bell bubble and popup on explicit shell-safe layers', async () => {
+    const css = await themeCss();
+    const countRule = cssRule(css, '.notification-bell__count');
+    const topbarZ = cssNumber(css, '.topbar', 'z-index');
+    const backdropZ = cssNumber(css, '.notification-center__backdrop', 'z-index');
+    const popupZ = cssNumber(css, '.notification-center__popup', 'z-index');
+
+    expect(cssNumber(css, '.notification-bell__count', 'z-index')).toBeGreaterThan(1);
+    expect(countRule).toMatch(/pointer-events:\s*none;/);
+    expect(backdropZ).toBeGreaterThan(topbarZ);
+    expect(popupZ).toBeGreaterThan(backdropZ);
   });
 
   it('marks an alert read through persisted triage and removes it from the bell count', async () => {
