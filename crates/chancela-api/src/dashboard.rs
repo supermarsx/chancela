@@ -28,6 +28,7 @@ use crate::error::ApiError;
 
 const DASHBOARD_REMINDER_LIMIT: usize = 5;
 const REGISTRY_EXPIRY_WARNING_DAYS: i32 = 30;
+const ACT_WORK_QUEUE_LOOKAHEAD_DAYS: i32 = 45;
 
 /// `GET /v1/dashboard` — aggregate counts and the last ten ledger events.
 pub async fn dashboard(
@@ -1046,6 +1047,7 @@ fn dashboard_reminders_with_follow_ups(
     today: Date,
 ) -> Vec<DashboardReminder> {
     let mut reminders = follow_up_reminders(entities, books, acts, follow_ups, today);
+    reminders.extend(open_act_attendance_reminders(entities, books, acts, today));
     reminders.extend(
         entities
             .values()
@@ -1093,6 +1095,140 @@ fn follow_up_reminders(
             ))
         })
         .collect()
+}
+
+fn open_act_attendance_reminders(
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    today: Date,
+) -> Vec<DashboardReminder> {
+    acts.values()
+        .filter_map(|act| {
+            let book = books.get(&act.book_id)?;
+            if book.state != BookState::Open || !is_pre_signing_work_queue_state(act.state) {
+                return None;
+            }
+            let entity = entities.get(&book.entity_id)?;
+            if !entity.is_consistent() {
+                return None;
+            }
+            act_attendance_reminder(entity, book, act, today)
+        })
+        .collect()
+}
+
+fn act_attendance_reminder(
+    entity: &Entity,
+    book: &Book,
+    act: &Act,
+    today: Date,
+) -> Option<DashboardReminder> {
+    let due_date = act.meeting_date?;
+    let days_until = due_date.to_julian_day() - today.to_julian_day();
+    if days_until > ACT_WORK_QUEUE_LOOKAHEAD_DAYS {
+        return None;
+    }
+
+    let missing_fields = missing_attendance_fields(act);
+    if missing_fields.is_empty() {
+        return None;
+    }
+
+    let due_date_text = format_date(due_date);
+    let status = reminder_status(today, due_date).to_owned();
+    let severity = if status == "Overdue" {
+        "Warning"
+    } else {
+        "Info"
+    }
+    .to_owned();
+    let missing_fields_text = missing_fields.join(",");
+    let profile = profile_for(entity.kind);
+
+    Some(DashboardReminder {
+        due_date: due_date_text.clone(),
+        severity,
+        status,
+        reason: format!(
+            "Act \"{}\" is dated for {} but is missing attendance capture ({}). \
+             Record the attendance reference and either presence counts or structured attendees before advancing it.",
+            act.title, due_date_text, missing_fields_text
+        ),
+        entity_id: entity.id.to_string(),
+        entity_name: entity.name.clone(),
+        source_rule: "act-attendance-missing".to_owned(),
+        source_profile: profile.template_family.to_owned(),
+        params: dashboard_alert_params([
+            ("act_id", act.id.to_string()),
+            ("act_title", act.title.clone()),
+            ("book_id", book.id.to_string()),
+            ("entity_id", entity.id.to_string()),
+            ("entity_name", entity.name.clone()),
+            ("meeting_date", due_date_text),
+            ("act_state", format!("{:?}", act.state)),
+            ("missing_fields", missing_fields_text),
+            (
+                "days_until",
+                (due_date.to_julian_day() - today.to_julian_day()).to_string(),
+            ),
+        ]),
+        law_refs: act_attendance_law_refs(entity.family),
+        action: Some(dashboard_action(
+            "open_act_attendance",
+            "notifications.reminder.act.attendance.action",
+            Some(format!("/v1/acts/{}", act.id)),
+            Some(format!("/atas/{}", act.id)),
+        )),
+        recommended_next_steps: vec![
+            "Open the act.".to_owned(),
+            "Record the attendance reference and presence counts or structured attendee rows."
+                .to_owned(),
+        ],
+        i18n: Some(alert_i18n(
+            "notifications.reminder.act.attendance.title",
+            "notifications.reminder.act.attendance.body",
+            Some("notifications.reminder.act.attendance.action"),
+        )),
+    })
+}
+
+fn is_pre_signing_work_queue_state(state: ActState) -> bool {
+    matches!(
+        state,
+        ActState::Draft
+            | ActState::Review
+            | ActState::Convened
+            | ActState::Deliberated
+            | ActState::TextApproved
+    )
+}
+
+fn missing_attendance_fields(act: &Act) -> Vec<&'static str> {
+    let mut missing = Vec::new();
+    if act
+        .attendance_reference
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .is_empty()
+    {
+        missing.push("attendance_reference");
+    }
+    if act.members_present.is_none()
+        && act.members_represented.is_none()
+        && act.attendees.is_empty()
+    {
+        missing.push("presence_counts_or_attendees");
+    }
+    missing
+}
+
+fn act_attendance_law_refs(family: EntityFamily) -> Vec<DashboardLawReference> {
+    match family {
+        EntityFamily::CommercialCompany => law_refs(&[("csc", "63")]),
+        _ => Vec::new(),
+    }
 }
 
 fn follow_up_reminder(
@@ -2102,6 +2238,105 @@ mod tests {
             reminder
                 .reason
                 .contains("default Dec 31 fiscal-year end because no fiscal_year_end is recorded")
+        );
+    }
+
+    #[test]
+    fn open_draft_act_missing_attendance_surfaces_work_queue_reminder() {
+        let entity = entity_of(EntityKind::SociedadeEmNomeColetivo);
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Open;
+
+        let mut missing = Act::draft(
+            book.id,
+            "Ata com presencas por completar",
+            MeetingChannel::Physical,
+        );
+        missing.state = ActState::Review;
+        missing.meeting_date = Some(date!(2026 - 07 - 20));
+        let missing_id = missing.id;
+        let missing_id_text = missing_id.to_string();
+
+        let mut complete = Act::draft(
+            book.id,
+            "Ata com presencas registadas",
+            MeetingChannel::Physical,
+        );
+        complete.state = ActState::Review;
+        complete.meeting_date = Some(date!(2026 - 07 - 20));
+        complete.attendance_reference = Some("Lista de presencas".to_owned());
+        complete.members_present = Some(3);
+
+        let mut signing = Act::draft(book.id, "Ata ja em assinatura", MeetingChannel::Physical);
+        signing.state = ActState::Signing;
+        signing.meeting_date = Some(date!(2026 - 07 - 20));
+
+        let mut later = Act::draft(book.id, "Ata fora da janela", MeetingChannel::Physical);
+        later.meeting_date = Some(date!(2026 - 09 - 30));
+
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+        let books = HashMap::from([(book.id, book.clone())]);
+        let acts = HashMap::from([
+            (missing.id, missing),
+            (complete.id, complete),
+            (signing.id, signing),
+            (later.id, later),
+        ]);
+
+        let reminders = dashboard_reminders(
+            &entities,
+            &books,
+            &acts,
+            &HashMap::new(),
+            date!(2026 - 07 - 09),
+        );
+
+        let attendance_reminders = reminders
+            .iter()
+            .filter(|reminder| reminder.source_rule == "act-attendance-missing")
+            .collect::<Vec<_>>();
+        assert_eq!(attendance_reminders.len(), 1);
+
+        let reminder = attendance_reminders[0];
+        assert_eq!(reminder.due_date, "2026-07-20");
+        assert_eq!(reminder.status, "DueSoon");
+        assert_eq!(reminder.severity, "Info");
+        assert_eq!(reminder.entity_id, entity.id.to_string());
+        assert_eq!(reminder.entity_name, entity.name);
+        assert_eq!(reminder.source_profile, "csc-commercial");
+        assert_eq!(
+            reminder.params.get("act_id").map(String::as_str),
+            Some(missing_id_text.as_str())
+        );
+        assert_eq!(
+            reminder.params.get("missing_fields").map(String::as_str),
+            Some("attendance_reference,presence_counts_or_attendees")
+        );
+        assert_eq!(
+            reminder.params.get("days_until").map(String::as_str),
+            Some("11")
+        );
+        assert_eq!(reminder.law_refs[0].diploma_id, "csc");
+        assert_eq!(reminder.law_refs[0].article, "63");
+
+        let expected_route = format!("/atas/{missing_id}");
+        assert_eq!(
+            reminder
+                .action
+                .as_ref()
+                .map(|action| (action.kind.as_str(), action.route.as_deref())),
+            Some(("open_act_attendance", Some(expected_route.as_str())))
+        );
+        assert_eq!(
+            reminder.i18n.as_ref().map(|i18n| i18n.title_key.as_str()),
+            Some("notifications.reminder.act.attendance.title")
+        );
+        assert_eq!(
+            reminder
+                .i18n
+                .as_ref()
+                .and_then(|i18n| i18n.action_key.as_deref()),
+            Some("notifications.reminder.act.attendance.action")
         );
     }
 
