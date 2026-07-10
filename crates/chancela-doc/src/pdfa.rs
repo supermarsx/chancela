@@ -18,7 +18,9 @@ use crate::{DocError, accessibility, layout, selfcheck, xmp};
 
 pub use crate::accessibility::{
     AccessibilityInput, AccessibilityMetadata, AccessibilityReport, AltTextModel,
-    DecorativeArtifact, MetadataValue, PdfUaBlocker, TextAlternative,
+    ArtifactMarkingReport, DecorativeArtifact, HeadingHierarchyReport, MetadataValue,
+    NonTextContentReport, PdfUaBlocker, RoleMapCoverageReport, TableSemanticsReport,
+    TextAlternative,
 };
 
 /// The bundled sRGB OutputIntent profile (CC0; see `assets/icc/PROVENANCE.md`).
@@ -370,17 +372,9 @@ fn structure_role_name(role: layout::StructureRole) -> &'static str {
 
 fn role_map() -> Dictionary {
     let mut roles = Dictionary::new();
-    roles.set("ChancelaDocument", name("Document"));
-    roles.set("ChancelaDocumentTitle", name("H1"));
-    roles.set("ChancelaHeaderMetadata", name("P"));
-    roles.set("ChancelaHeading1", name("H1"));
-    roles.set("ChancelaHeading2", name("H2"));
-    roles.set("ChancelaHeading3", name("H3"));
-    roles.set("ChancelaHeading", name("H"));
-    roles.set("ChancelaParagraph", name("P"));
-    roles.set("ChancelaKeyValue", name("Div"));
-    roles.set("ChancelaVoteTable", name("Div"));
-    roles.set("ChancelaSignatureBlock", name("Div"));
+    for &(custom, standard) in accessibility::role_map_entries() {
+        roles.set(custom, name(standard));
+    }
     roles
 }
 
