@@ -116,6 +116,8 @@ import type {
   PatchRetentionPolicyBody,
   RetentionDryRunBody,
   RetentionDryRunReport,
+  RetentionExecutionRecord,
+  RetentionExecutionStatus,
   RetentionPolicyView,
   SignatureStatusView,
   CmdInitiateBody,
@@ -758,6 +760,8 @@ export const api = {
     patch<RetentionPolicyView>(`/v1/privacy/retention-policies/${id}`, body),
   dryRunRetentionPolicy: (body: RetentionDryRunBody) =>
     post<RetentionDryRunReport>('/v1/privacy/retention-policies/dry-run', body),
+  listRetentionExecutions: (status?: RetentionExecutionStatus) =>
+    get<RetentionExecutionRecord[]>(`/v1/privacy/retention-executions${query({ status })}`),
   // Sign-in secret + attestation-key management (t29 §4). All echo the updated UserView.
   // The `current_password` (when a secret already exists) rides in the body; a DELETE
   // carries it too (the `del` helper JSON-encodes an optional body).

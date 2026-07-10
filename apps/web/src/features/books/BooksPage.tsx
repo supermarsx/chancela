@@ -61,6 +61,24 @@ function dateRank(value: string | null): number {
   return Number.isNaN(time) ? 0 : time;
 }
 
+function bookSignatorySearchParts(book: BookView): string[] {
+  const records = [
+    ...(book.required_signatory_records_abertura ?? []),
+    ...(book.required_signatory_records_encerramento ?? []),
+  ];
+  if (records.length > 0) {
+    return records.flatMap((signatory) => [
+      signatory.name,
+      signatory.capacity ?? '',
+      signatory.email ?? '',
+    ]);
+  }
+  return [
+    ...(book.required_signatories_abertura ?? []),
+    ...(book.required_signatories_encerramento ?? []),
+  ];
+}
+
 function bookSearchText(book: BookView): string {
   return normalizeSearch(
     [
@@ -73,8 +91,7 @@ function bookSearchText(book: BookView): string {
       book.closing_date ?? '',
       book.predecessor ?? '',
       String(book.last_ata_number || ''),
-      ...(book.required_signatories_abertura ?? []),
-      ...(book.required_signatories_encerramento ?? []),
+      ...bookSignatorySearchParts(book),
     ].join(' '),
   );
 }

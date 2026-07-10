@@ -6125,6 +6125,7 @@ mod tests {
             closing_date: time::Date::from_calendar_date(2026, time::Month::December, 31)
                 .expect("valid date"),
             required_signatories: vec!["Administrador do condomínio".to_string()],
+            required_signatory_records: Vec::new(),
         };
         let generated = generate_for_encerramento(&termo, &book, &entity)
             .expect("generation ok")

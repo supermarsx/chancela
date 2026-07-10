@@ -1,9 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
-use chancela_api::{AppState, User, UserId, router};
+use chancela_api::{
+    AppState, DB_KEY_ENV, DB_KEY_FILE_ENV, DB_KEY_SOURCE_ENV, DatabaseEncryptionConfig,
+    DatabaseEncryptionConfigError, DatabaseEncryptionKeySource, User, UserId, router,
+};
 use chancela_authz::{LEITOR_ROLE_ID, OWNER_ROLE_ID, RoleAssignment, RoleCatalog, RoleId, Scope};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -14,6 +18,9 @@ use uuid::Uuid;
 
 const PREFLIGHT_PATH: &str = "/v1/data/key-rotation/preflight";
 const EXECUTE_PATH: &str = "/v1/data/key-rotation";
+const STATUS_PATH: &str = "/v1/data/status";
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 async fn send(state: AppState, req: Request<Body>) -> (StatusCode, Value) {
     let response = router(state).oneshot(req).await.expect("router responds");
@@ -35,6 +42,14 @@ fn post_json(uri: &str, body: Value) -> Request<Body> {
         .uri(uri)
         .header("content-type", "application/json")
         .body(Body::from(body.to_string()))
+        .expect("request builds")
+}
+
+fn get(uri: &str) -> Request<Body> {
+    Request::builder()
+        .method("GET")
+        .uri(uri)
+        .body(Body::empty())
         .expect("request builds")
 }
 
@@ -100,6 +115,16 @@ fn state_for_header_only_data_dir(dir: PathBuf) -> AppState {
     }
 }
 
+fn state_for_header_only_data_dir_with_key_source(
+    dir: PathBuf,
+    source: DatabaseEncryptionKeySource,
+) -> AppState {
+    AppState {
+        database_encryption_key_source: Some(source),
+        ..state_for_header_only_data_dir(dir)
+    }
+}
+
 struct TempDir {
     dir: PathBuf,
 }
@@ -116,6 +141,31 @@ impl TempDir {
 impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+struct EnvRestore(Vec<(&'static str, Option<String>)>);
+
+impl EnvRestore {
+    fn capture(keys: &[&'static str]) -> Self {
+        Self(
+            keys.iter()
+                .map(|key| (*key, std::env::var(key).ok()))
+                .collect(),
+        )
+    }
+}
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        for (key, value) in self.0.drain(..) {
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
     }
 }
 
@@ -254,6 +304,91 @@ async fn preflight_reports_plaintext_store_not_rotatable_without_leaking_keys() 
     assert_eq!(body["evidence"]["current_key_config"], "configured");
     assert_eq!(body["evidence"]["requested_key_config"], "configured");
     assert_secret_free(&body, &[current_key, new_key]);
+}
+
+#[test]
+fn hardware_derived_fallback_source_request_fails_closed_without_static_key() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let _restore = EnvRestore::capture(&[DB_KEY_SOURCE_ENV, DB_KEY_ENV, DB_KEY_FILE_ENV]);
+    let operator_secret = "operator secret should not be used as hardware fallback";
+    unsafe {
+        std::env::set_var(DB_KEY_SOURCE_ENV, "hardware_derived_fallback");
+        std::env::set_var(DB_KEY_ENV, operator_secret);
+        std::env::remove_var(DB_KEY_FILE_ENV);
+    }
+
+    let err = DatabaseEncryptionConfig::from_env()
+        .expect_err("hardware fallback must fail closed until a real provider exists");
+
+    assert!(matches!(
+        err,
+        DatabaseEncryptionConfigError::HardwareDerivedFallbackUnavailable
+    ));
+    let message = err.to_string();
+    assert!(message.contains(DB_KEY_SOURCE_ENV));
+    assert!(message.contains("fails closed"));
+    assert!(!message.contains(operator_secret));
+}
+
+#[tokio::test]
+async fn data_status_exposes_plaintext_database_encryption_gap() {
+    let tmp = TempDir::new("status-plaintext-gap");
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let token = owner_session(&state).await;
+
+    let (status, body) = send(state, with_session(get(STATUS_PATH), &token)).await;
+
+    assert_eq!(status, StatusCode::OK, "data status: {body}");
+    let encryption = &body["persistence"]["database_encryption"];
+    assert_eq!(body["persistence"]["database_encryption_configured"], false);
+    assert_eq!(encryption["configured"], false);
+    assert_eq!(encryption["sqlcipher_backed"], false);
+    assert_eq!(encryption["key_source"], "none");
+    assert_eq!(
+        encryption["hardware_derived_fallback"]["status"],
+        "unavailable"
+    );
+    assert_eq!(
+        encryption["hardware_derived_fallback"]["fail_closed_if_requested"],
+        true
+    );
+    assert_eq!(encryption["database_format"], "plaintext_sqlite");
+    assert_eq!(encryption["key_ops_plan"], "open_plaintext_store");
+    assert_eq!(encryption["plaintext_migration_pending"], true);
+    assert_eq!(encryption["plaintext_migration_blocked"], false);
+    assert_eq!(encryption["key_ops"]["key_config"], "unconfigured");
+}
+
+#[tokio::test]
+async fn data_status_reports_operator_key_source_and_blocked_plaintext_migration() {
+    let tmp = TempDir::new("status-blocked-migration");
+    chancela_store::Store::open(&tmp.dir).expect("create plaintext store");
+    let state = state_for_header_only_data_dir_with_key_source(
+        tmp.dir.clone(),
+        DatabaseEncryptionKeySource::Env,
+    );
+    let token = owner_session(&state).await;
+
+    let (status, body) = send(state, with_session(get(STATUS_PATH), &token)).await;
+
+    assert_eq!(status, StatusCode::OK, "data status: {body}");
+    let encryption = &body["persistence"]["database_encryption"];
+    assert_eq!(encryption["configured"], false);
+    assert_eq!(encryption["sqlcipher_backed"], false);
+    assert_eq!(encryption["key_source"], "operator_env");
+    assert_eq!(encryption["database_format"], "plaintext_sqlite");
+    assert_eq!(
+        encryption["key_ops_plan"],
+        "refuse_plaintext_to_encrypted_migration"
+    );
+    assert_eq!(encryption["plaintext_migration_pending"], true);
+    assert_eq!(encryption["plaintext_migration_blocked"], true);
+    assert_eq!(encryption["key_ops"]["key_config"], "configured");
+    assert_eq!(
+        encryption["key_ops"]["migration_plan"]["status"],
+        "refuse_direct_plaintext_to_encrypted_migration"
+    );
+    assert_secret_free(&body, &["<configured>"]);
 }
 
 #[cfg(not(feature = "sqlcipher"))]

@@ -89,6 +89,7 @@ import type {
   PatchRetentionPolicyBody,
   ProcessorRecordView,
   RetentionDryRunBody,
+  RetentionExecutionStatus,
   RetentionPolicyView,
   TransferControlView,
   CreateTransferControlBody,
@@ -187,6 +188,8 @@ export const keys = {
   privacyBreachPlaybooks: ['privacy', 'breach-playbooks'] as const,
   privacyTransferControls: ['privacy', 'transfer-controls'] as const,
   privacyRetentionPolicies: ['privacy', 'retention-policies'] as const,
+  privacyRetentionExecutions: (status: RetentionExecutionStatus | 'all' = 'all') =>
+    ['privacy', 'retention-executions', status] as const,
 };
 
 // --- Entities -------------------------------------------------------------------
@@ -2149,6 +2152,17 @@ export function usePrivacyRetentionPolicies(enabled = true) {
   return useQuery({
     queryKey: keys.privacyRetentionPolicies,
     queryFn: () => api.listRetentionPolicies(),
+    enabled,
+  });
+}
+
+export function usePrivacyRetentionExecutions(
+  status: RetentionExecutionStatus | 'all' = 'all',
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: keys.privacyRetentionExecutions(status),
+    queryFn: () => api.listRetentionExecutions(status === 'all' ? undefined : status),
     enabled,
   });
 }

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, RoleId, Scope};
 use serde::{Deserialize, Serialize};
@@ -1369,6 +1369,12 @@ struct ValidatedRetentionExecutionRequest {
     operator_notes: Option<String>,
     evidence: Vec<RetentionOperatorEvidence>,
     approval: Option<RetentionExecutionApproval>,
+}
+
+#[derive(Default, Deserialize)]
+pub(crate) struct RetentionExecutionListQuery {
+    #[serde(default)]
+    status: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -2731,14 +2737,22 @@ pub async fn list_retention_policies(
     ))
 }
 
-/// `GET /v1/privacy/retention-policies/dry-run` — list recorded retention execution requests.
+/// `GET /v1/privacy/retention-executions` — list recorded retention execution requests.
 pub async fn list_retention_execution_records(
     State(state): State<AppState>,
     actor: CurrentActor,
+    Query(query): Query<RetentionExecutionListQuery>,
 ) -> Result<Json<Vec<RetentionExecutionRecord>>, ApiError> {
     require_privacy_record_manage(&state, &actor).await?;
+    let status_filter = parse_retention_execution_status_filter(query.status)?;
     let records = state.retention_execution_records.read().await;
-    let mut list: Vec<&RetentionExecutionRecord> = records.values().collect();
+    let mut list: Vec<&RetentionExecutionRecord> = records
+        .values()
+        .filter(|record| match status_filter {
+            Some(status) => record.execution_status == status,
+            None => true,
+        })
+        .collect();
     list.sort_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)));
     Ok(Json(list.into_iter().cloned().collect()))
 }
@@ -4035,6 +4049,24 @@ fn retention_execution_status(outcome: RetentionExecutionOutcome) -> RetentionEx
         | RetentionExecutionOutcome::BlockedDestructiveAction
         | RetentionExecutionOutcome::BlockedApprovalMismatch
         | RetentionExecutionOutcome::BlockedMissingTarget => RetentionExecutionStatus::Blocked,
+    }
+}
+
+fn parse_retention_execution_status_filter(
+    raw: Option<String>,
+) -> Result<Option<RetentionExecutionStatus>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    match normalize_enum(&raw).as_str() {
+        "" | "all" => Ok(None),
+        "awaiting" | "awaiting_review" => Ok(Some(RetentionExecutionStatus::AwaitingReview)),
+        "blocked" => Ok(Some(RetentionExecutionStatus::Blocked)),
+        "executed" => Ok(Some(RetentionExecutionStatus::Executed)),
+        _ => Err(ApiError::Unprocessable(
+            "invalid retention execution status filter; expected blocked, awaiting_review, executed, or all"
+                .to_owned(),
+        )),
     }
 }
 

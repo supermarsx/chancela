@@ -11,5 +11,13 @@
   "last_ata_number": 0,
   "predecessor": null,
   "required_signatories_abertura": ["Administrador"],
-  "required_signatories_encerramento": null
+  "required_signatories_encerramento": null,
+  "required_signatory_records_abertura": [
+    {
+      "name": "Administrador",
+      "capacity": null,
+      "email": null
+    }
+  ],
+  "required_signatory_records_encerramento": null
 }

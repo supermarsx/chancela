@@ -9,8 +9,12 @@ import { useCloseBook } from '../../api/hooks';
 import { closingReasonLabels, optionsFrom } from '../../api/labels';
 import { useT } from '../../i18n';
 import { CLOSING_REASONS, type ClosingReason } from '../../api/types';
-import { Button, ErrorNote, Field, Icon, Input, Select, TextArea, useToast } from '../../ui';
-import { parseLines } from './OpenBookForm';
+import { Button, ErrorNote, Field, Icon, Input, Select, useToast } from '../../ui';
+import {
+  TermoSignatoryFields,
+  parseTermoSignatories,
+  type TermoSignatoryDraft,
+} from './OpenBookForm';
 
 export function CloseBookForm({ bookId, onClosed }: { bookId: string; onClosed?: () => void }) {
   const t = useT();
@@ -18,7 +22,9 @@ export function CloseBookForm({ bookId, onClosed }: { bookId: string; onClosed?:
   const close = useCloseBook(bookId);
   const [reason, setReason] = useState<ClosingReason>('BookFull');
   const [closingDate, setClosingDate] = useState('');
-  const [signatories, setSignatories] = useState('');
+  const [signatories, setSignatories] = useState<TermoSignatoryDraft[]>([
+    { name: '', capacity: '', email: '' },
+  ]);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,7 +32,7 @@ export function CloseBookForm({ bookId, onClosed }: { bookId: string; onClosed?:
       {
         reason,
         closing_date: closingDate,
-        required_signatories: parseLines(signatories),
+        required_signatories: parseTermoSignatories(signatories),
       },
       {
         onSuccess: () => {
@@ -57,16 +63,11 @@ export function CloseBookForm({ bookId, onClosed }: { bookId: string; onClosed?:
           onChange={(e) => setClosingDate(e.target.value)}
         />
       </Field>
-      <Field
-        label={t('books.close.signatories')}
-        htmlFor="close-signatories"
-        hint={t('books.oneNamePerLine')}
-      >
-        <TextArea
-          id="close-signatories"
-          rows={3}
-          value={signatories}
-          onChange={(e) => setSignatories(e.target.value)}
+      <Field label={t('books.close.signatories')}>
+        <TermoSignatoryFields
+          idPrefix="close-signatories"
+          rows={signatories}
+          onChange={setSignatories}
         />
       </Field>
       {close.error ? <ErrorNote error={close.error} /> : null}

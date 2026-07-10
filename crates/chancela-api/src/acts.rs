@@ -863,6 +863,7 @@ mod tests {
             opening_date: time::Date::from_calendar_date(2026, time::Month::January, 15)
                 .expect("valid opening date"),
             required_signatories: vec!["Administrador".to_owned()],
+            required_signatory_records: Vec::new(),
         })
         .expect("test book opens");
         book

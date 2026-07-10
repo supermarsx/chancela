@@ -188,6 +188,253 @@ const RETENTION_POLICY_ONE = {
   updated_by: 'amelia.marques',
 };
 
+type RetentionExecutionMetadata = {
+  id: string;
+  execution_status: 'awaiting_review' | 'blocked' | 'executed';
+  [key: string]: unknown;
+};
+
+const RETENTION_EXECUTION_BLOCKED: RetentionExecutionMetadata = {
+  id: 'retention-exec-blocked',
+  requested_at: '2026-07-09T13:30:00Z',
+  actor: 'amelia.marques',
+  execution_intent: 'execute_supported',
+  execution_status: 'blocked',
+  operator_review_decision: 'blocked',
+  requested_policy: {
+    id: 'retention-1',
+    found: true,
+    name: 'Mensagens de suporte',
+    scope: 'support',
+    category: 'messages',
+    schedule_id: 'support-messages-v1',
+    retention_period: 'P2Y',
+    disposal_action: 'delete',
+    status: 'active',
+    active: true,
+    stale: false,
+    matches_candidate: true,
+    destructive_action: true,
+  },
+  candidate: { scope: 'support', category: 'messages', record_id: 'ticket-123' },
+  matched_records_summary: {
+    scope: 'support',
+    category: 'messages',
+    record_id: 'ticket-123',
+    record_count: 1,
+    policy_match_count: 1,
+    destructive_policy_count: 1,
+    policy_ids: ['retention-1'],
+  },
+  legal_hold_blockers: [],
+  operator_notes: 'Operator reviewed ticket retention.',
+  audit_evidence: [{ label: 'case', value: 'ticket export hash verified' }],
+  outcome: 'blocked_destructive_action',
+  block_reason: 'delete/anonymize execution is not enabled in this guarded slice',
+  workflow: {
+    status: 'blocked',
+    blockers: [
+      {
+        code: 'destructive_action_disabled',
+        message: 'delete/anonymize execution is not enabled in this guarded slice',
+        policy_id: 'retention-1',
+      },
+    ],
+    required_approvals: [
+      {
+        code: 'retention_manual_review',
+        required_from: 'privacy_or_settings_manager',
+        reason: 'approve the retained evidence before any separate operational action',
+      },
+      {
+        code: 'destructive_disposal_governance',
+        required_from: 'external_governance_process',
+        reason: 'destructive disposal is outside this API and requires separate approval',
+      },
+    ],
+    next_step:
+      'Record separate governance approval before any external destructive process; this API will not execute it.',
+  },
+  execution_result: {
+    bounded_executor: true,
+    targets_considered: [
+      {
+        target_type: 'retention_candidate_record',
+        target_id: 'ticket-123',
+        action: 'bounded_delete_evidence',
+        reason_code: 'target_considered',
+        detail: 'candidate evaluated against retention-1; bounded evidence only',
+      },
+    ],
+    targets_acted: [],
+    targets_skipped: [
+      {
+        target_type: 'retention_candidate_record',
+        target_id: 'ticket-123',
+        action: 'bounded_delete_evidence',
+        reason_code: 'destructive_action_disabled',
+        detail: 'delete/anonymize execution is not enabled in this guarded slice',
+      },
+    ],
+    reason_codes: ['destructive_action_disabled', 'destructive_disposal_approval_required'],
+    next_step:
+      'Record separate governance approval before any external destructive process; this API will not execute it.',
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    blocker_metadata: [
+      {
+        code: 'destructive_action_disabled',
+        detail: 'delete/anonymize execution is not enabled in this guarded slice',
+        policy_id: 'retention-1',
+      },
+    ],
+  },
+  would_execute: false,
+};
+
+const RETENTION_EXECUTION_AWAITING: RetentionExecutionMetadata = {
+  ...RETENTION_EXECUTION_BLOCKED,
+  id: 'retention-exec-awaiting',
+  requested_at: '2026-07-09T13:40:00Z',
+  execution_intent: 'review_only',
+  execution_status: 'awaiting_review',
+  operator_review_decision: 'review_required',
+  requested_policy: {
+    ...((RETENTION_EXECUTION_BLOCKED.requested_policy as Record<string, unknown>) ?? {}),
+    disposal_action: 'review',
+    destructive_action: false,
+  },
+  candidate: { scope: 'support', category: 'messages', record_id: 'ticket-456' },
+  matched_records_summary: {
+    scope: 'support',
+    category: 'messages',
+    record_id: 'ticket-456',
+    record_count: 1,
+    policy_match_count: 1,
+    destructive_policy_count: 0,
+    policy_ids: ['retention-1'],
+  },
+  operator_notes: 'Manual review evidence captured.',
+  outcome: 'manual_review_required',
+  block_reason: 'retention execution request is recorded for manual review only',
+  workflow: {
+    status: 'awaiting_manual_review',
+    blockers: [],
+    required_approvals: [
+      {
+        code: 'retention_manual_review',
+        required_from: 'privacy_or_settings_manager',
+        reason: 'approve the retained evidence before any separate operational action',
+      },
+    ],
+    next_step: 'Review the retained evidence for manual approval; no disposal has been executed.',
+  },
+  execution_result: {
+    bounded_executor: true,
+    targets_considered: [
+      {
+        target_type: 'retention_candidate_record',
+        target_id: 'ticket-456',
+        action: 'bounded_review_evidence',
+        reason_code: 'target_considered',
+        detail: 'candidate evaluated against retention-1; bounded evidence only',
+      },
+    ],
+    targets_acted: [],
+    targets_skipped: [
+      {
+        target_type: 'retention_candidate_record',
+        target_id: 'ticket-456',
+        action: 'bounded_review_evidence',
+        reason_code: 'retention_manual_review',
+        detail: 'manual review only',
+      },
+    ],
+    reason_codes: ['retention_manual_review', 'review_only_intent'],
+    next_step: 'Review the retained evidence for manual approval; no disposal has been executed.',
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    blocker_metadata: [],
+  },
+  would_execute: false,
+};
+
+const RETENTION_EXECUTION_EXECUTED: RetentionExecutionMetadata = {
+  ...RETENTION_EXECUTION_BLOCKED,
+  id: 'retention-exec-executed',
+  requested_at: '2026-07-09T13:50:00Z',
+  execution_status: 'executed',
+  operator_review_decision: 'execution_recorded',
+  requested_policy: {
+    ...((RETENTION_EXECUTION_BLOCKED.requested_policy as Record<string, unknown>) ?? {}),
+    disposal_action: 'archive',
+    destructive_action: false,
+  },
+  candidate: { scope: 'support', category: 'messages', record_id: 'ticket-789' },
+  matched_records_summary: {
+    scope: 'support',
+    category: 'messages',
+    record_id: 'ticket-789',
+    record_count: 1,
+    policy_match_count: 1,
+    destructive_policy_count: 0,
+    policy_ids: ['retention-1'],
+  },
+  approval: {
+    approval_reference: 'privacy-board-42',
+    policy_id: 'retention-1',
+    disposal_action: 'archive',
+    approved_by: 'privacy-board',
+    approved_at: '2026-07-09T13:45:00Z',
+  },
+  outcome: 'bounded_archive_recorded',
+  block_reason: 'bounded archive evidence recorded for the retention target',
+  workflow: {
+    status: 'awaiting_manual_review',
+    blockers: [],
+    required_approvals: [
+      {
+        code: 'retention_manual_review',
+        required_from: 'privacy_or_settings_manager',
+        reason: 'approve the retained evidence before any separate operational action',
+      },
+    ],
+    next_step:
+      'Bounded archive evidence was recorded for this target; no source document deletion or GDPR erasure was performed.',
+  },
+  execution_result: {
+    bounded_executor: true,
+    executed_at: '2026-07-09T13:50:00Z',
+    executed_by: 'amelia.marques',
+    targets_considered: [
+      {
+        target_type: 'retention_candidate_record',
+        target_id: 'ticket-789',
+        action: 'bounded_archive_evidence',
+        reason_code: 'target_considered',
+        detail: 'candidate evaluated against retention-1; bounded evidence only',
+      },
+    ],
+    targets_acted: [
+      {
+        target_type: 'retention_candidate_record',
+        target_id: 'ticket-789',
+        action: 'bounded_archive_evidence',
+        reason_code: 'bounded_archive_recorded',
+        detail: 'bounded archive evidence recorded',
+      },
+    ],
+    targets_skipped: [],
+    reason_codes: ['bounded_archive_recorded'],
+    next_step:
+      'Bounded archive evidence was recorded for this target; no source document deletion or GDPR erasure was performed.',
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    blocker_metadata: [],
+  },
+  would_execute: true,
+};
+
 type ProcessorRecordMetadata = typeof PROCESSOR_ONE;
 type DpiaRecordMetadata = typeof DPIA_ONE;
 type BreachPlaybookMetadata = typeof BREACH_PLAYBOOK_ONE;
@@ -730,6 +977,11 @@ function privacyFetch(
   initialBreachPlaybooks: BreachPlaybookMetadata[] = [BREACH_PLAYBOOK_ONE],
   initialTransferControls: TransferControlMetadata[] = [TRANSFER_CONTROL_ONE],
   initialRetentionPolicies: RetentionPolicyMetadata[] = [RETENTION_POLICY_ONE],
+  initialRetentionExecutions: RetentionExecutionMetadata[] = [
+    RETENTION_EXECUTION_BLOCKED,
+    RETENTION_EXECUTION_AWAITING,
+    RETENTION_EXECUTION_EXECUTED,
+  ],
 ): {
   fn: typeof fetch;
   calls: Recorded[];
@@ -759,6 +1011,7 @@ function privacyFetch(
     evidence_receipts: [...record.evidence_receipts],
   }));
   let retentionPolicies = initialRetentionPolicies.map((record) => ({ ...record }));
+  const retentionExecutions = initialRetentionExecutions.map((record) => cloneJson(record));
 
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -910,6 +1163,15 @@ function privacyFetch(
           matches,
         }),
       );
+    }
+    if (url.includes('/v1/privacy/retention-executions')) {
+      const parsed = new URL(url, 'http://test.local');
+      const status = parsed.searchParams.get('status');
+      const filtered =
+        status && status !== 'all'
+          ? retentionExecutions.filter((record) => record.execution_status === status)
+          : retentionExecutions;
+      return Promise.resolve(jsonResponse(filtered));
     }
     if (url.includes('/v1/privacy/processors')) {
       if (method === 'POST') {
@@ -1885,6 +2147,31 @@ describe('SettingsPage', () => {
     expect(
       within(retentionPanel!).getByText('destructive_execution_supported: false'),
     ).toBeTruthy();
+
+    const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
+      'section',
+    );
+    expect(executionQueue).toBeTruthy();
+    expect(await within(executionQueue!).findByText('ticket-123')).toBeTruthy();
+    expect(within(executionQueue!).getByText('destructive_action_disabled')).toBeTruthy();
+    expect(within(executionQueue!).getAllByText('retention_manual_review').length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      within(executionQueue!).getAllByText(/destructive_disposal_completed:\s*false/).length,
+    ).toBeGreaterThan(0);
+    fireEvent.change(within(executionQueue!).getByLabelText('Estado da execução'), {
+      target: { value: 'executed' },
+    });
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.endsWith('/v1/privacy/retention-executions?status=executed')),
+      ).toBe(true),
+    );
+    expect(await within(executionQueue!).findByText('ticket-789')).toBeTruthy();
+    expect(within(executionQueue!).getByText('privacy-board-42')).toBeTruthy();
+    await waitFor(() => expect(within(executionQueue!).queryByText('ticket-123')).toBeNull());
+
     fireEvent.click(within(retentionPanel!).getByRole('button', { name: 'Novo registo' }));
 
     let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
@@ -2003,7 +2290,10 @@ describe('SettingsPage', () => {
     ).toBe(true);
     expect(
       calls.some(
-        (call) => /execute|delete|anonymize/.test(call.url) && !call.url.includes('dry-run'),
+        (call) =>
+          /execute|delete|anonymize/.test(call.url) &&
+          !call.url.includes('dry-run') &&
+          !call.url.includes('/v1/privacy/retention-executions'),
       ),
     ).toBe(false);
     expect(

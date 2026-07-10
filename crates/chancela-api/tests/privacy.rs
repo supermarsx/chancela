@@ -2330,6 +2330,57 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
     assert_eq!(history[0]["outcome"], json!("blocked_destructive_action"));
     assert_eq!(history[0]["workflow"]["status"], json!("blocked"));
 
+    let (status, blocked_history) = send(
+        state.clone(),
+        with_session(
+            get("/v1/privacy/retention-executions?status=blocked"),
+            &settings_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "blocked execution history filters: {blocked_history}"
+    );
+    let blocked_history = blocked_history.as_array().expect("blocked history");
+    assert_eq!(blocked_history.len(), 1);
+    assert_eq!(blocked_history[0]["id"], json!(execution_id));
+
+    let (status, awaiting_history) = send(
+        state.clone(),
+        with_session(
+            get("/v1/privacy/retention-executions?status=awaiting"),
+            &settings_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "awaiting execution history filters: {awaiting_history}"
+    );
+    assert!(
+        awaiting_history
+            .as_array()
+            .expect("awaiting history")
+            .is_empty()
+    );
+
+    let (status, invalid_history) = send(
+        state.clone(),
+        with_session(
+            get("/v1/privacy/retention-executions?status=destroy"),
+            &settings_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid execution history filter is rejected: {invalid_history}"
+    );
+
     let (status, updated) = send(
         state.clone(),
         with_session(
@@ -2625,7 +2676,7 @@ async fn retention_execution_records_bounded_archive_and_idempotent_repeat() {
     );
 
     let (status, history) = send(
-        state,
+        state.clone(),
         with_session(get("/v1/privacy/retention-executions"), &owner_token),
     )
     .await;
@@ -2642,6 +2693,27 @@ async fn retention_execution_records_bounded_archive_and_idempotent_repeat() {
                 == 1)
             .count(),
         1
+    );
+
+    let (status, executed_history) = send(
+        state,
+        with_session(
+            get("/v1/privacy/retention-executions?status=executed"),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "executed history filters: {executed_history}"
+    );
+    let executed_history = executed_history.as_array().expect("executed history");
+    assert_eq!(executed_history.len(), 2);
+    assert!(
+        executed_history
+            .iter()
+            .all(|record| record["execution_status"] == json!("executed"))
     );
 }
 
@@ -3368,6 +3440,25 @@ async fn retention_policy_records_persist_across_restart() {
             .is_empty()
     );
     assert_eq!(executions[0]["would_execute"], json!(false));
+
+    let (status, awaiting_executions) = send(
+        restarted.clone(),
+        with_session(
+            get("/v1/privacy/retention-executions?status=awaiting_review"),
+            &restarted_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "awaiting review execution filter after restart: {awaiting_executions}"
+    );
+    let awaiting_executions = awaiting_executions
+        .as_array()
+        .expect("awaiting execution list");
+    assert_eq!(awaiting_executions.len(), 1);
+    assert_eq!(awaiting_executions[0]["id"], json!(execution_id));
 
     let (status, dry_run) = send(
         restarted,

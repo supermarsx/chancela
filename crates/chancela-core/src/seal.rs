@@ -251,6 +251,7 @@ mod tests {
             numbering_scheme: NumberingScheme::Sequential,
             opening_date: date!(2026 - 01 - 15),
             required_signatories: vec!["Administrador".into()],
+            required_signatory_records: Vec::new(),
         }
     }
 

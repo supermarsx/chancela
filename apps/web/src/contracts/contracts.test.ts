@@ -43,6 +43,7 @@ import {
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
   RETENTION_DISPOSAL_ACTIONS,
+  RETENTION_EXECUTION_STATUSES,
   RETENTION_POLICY_STATUSES,
   SIGNATURE_FAMILIES,
   THEME_MODES,
@@ -159,6 +160,18 @@ import {
   type SessionView,
   type Settings,
   type RetentionPolicyView,
+  type RetentionExecutionApproval,
+  type RetentionExecutionBlockerMetadata,
+  type RetentionExecutionRecord,
+  type RetentionExecutionRequestedPolicy,
+  type RetentionExecutionResult,
+  type RetentionExecutionTargetEvidence,
+  type RetentionLegalHoldBlocker,
+  type RetentionMatchedRecordsSummary,
+  type RetentionOperatorEvidence,
+  type RetentionOperatorWorkflow,
+  type RetentionRequiredApproval,
+  type RetentionWorkflowBlocker,
   type TransferControlEvidenceReceipt,
   type TransferControlView,
   type SigningCmdSettings,
@@ -750,6 +763,343 @@ function assertRetentionPolicy(obj: unknown, label: string): RetentionPolicyView
   assertTimestamp(record.updated_at, `${label}.updated_at`);
   expect(record.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
   expect(record.updated_by.length, `${label}.updated_by should be non-empty`).toBeGreaterThan(0);
+  return record;
+}
+
+function assertRetentionExecutionRequestedPolicy(
+  obj: unknown,
+  label: string,
+): RetentionExecutionRequestedPolicy {
+  const policy = assertExactKeys<RetentionExecutionRequestedPolicy>(
+    obj,
+    {
+      found: true,
+      stale: true,
+      matches_candidate: true,
+      destructive_action: true,
+    },
+    label,
+    [
+      'id',
+      'name',
+      'scope',
+      'category',
+      'schedule_id',
+      'retention_period',
+      'disposal_action',
+      'status',
+      'active',
+    ],
+  );
+  expect(typeof policy.found, `${label}.found should be boolean`).toBe('boolean');
+  expect(typeof policy.stale, `${label}.stale should be boolean`).toBe('boolean');
+  expect(typeof policy.matches_candidate, `${label}.matches_candidate should be boolean`).toBe(
+    'boolean',
+  );
+  expect(typeof policy.destructive_action, `${label}.destructive_action should be boolean`).toBe(
+    'boolean',
+  );
+  if (policy.disposal_action !== undefined) {
+    inEnum(RETENTION_DISPOSAL_ACTIONS, policy.disposal_action, `${label}.disposal_action`);
+  }
+  if (policy.status !== undefined) {
+    inEnum(RETENTION_POLICY_STATUSES, policy.status, `${label}.status`);
+  }
+  return policy;
+}
+
+function assertRetentionMatchedRecordsSummary(
+  obj: unknown,
+  label: string,
+): RetentionMatchedRecordsSummary {
+  const summary = assertExactKeys<RetentionMatchedRecordsSummary>(
+    obj,
+    {
+      scope: true,
+      category: true,
+      record_count: true,
+      policy_match_count: true,
+      destructive_policy_count: true,
+      policy_ids: true,
+    },
+    label,
+    ['record_id'],
+  );
+  expect(summary.scope.length, `${label}.scope should be non-empty`).toBeGreaterThan(0);
+  expect(summary.category.length, `${label}.category should be non-empty`).toBeGreaterThan(0);
+  expect(
+    summary.record_count,
+    `${label}.record_count should be non-negative`,
+  ).toBeGreaterThanOrEqual(0);
+  expect(
+    summary.policy_match_count,
+    `${label}.policy_match_count should be non-negative`,
+  ).toBeGreaterThanOrEqual(0);
+  expect(Array.isArray(summary.policy_ids), `${label}.policy_ids should be an array`).toBe(true);
+  return summary;
+}
+
+function assertRetentionWorkflowBlocker(obj: unknown, label: string): RetentionWorkflowBlocker {
+  const blocker = assertExactKeys<RetentionWorkflowBlocker>(
+    obj,
+    { code: true, message: true },
+    label,
+    ['policy_id'],
+  );
+  expect(blocker.code.length, `${label}.code should be non-empty`).toBeGreaterThan(0);
+  expect(blocker.message.length, `${label}.message should be non-empty`).toBeGreaterThan(0);
+  return blocker;
+}
+
+function assertRetentionRequiredApproval(obj: unknown, label: string): RetentionRequiredApproval {
+  const approval = assertExactKeys<RetentionRequiredApproval>(
+    obj,
+    { code: true, required_from: true, reason: true },
+    label,
+  );
+  expect(approval.code.length, `${label}.code should be non-empty`).toBeGreaterThan(0);
+  expect(
+    approval.required_from.length,
+    `${label}.required_from should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(approval.reason.length, `${label}.reason should be non-empty`).toBeGreaterThan(0);
+  return approval;
+}
+
+function assertRetentionOperatorWorkflow(obj: unknown, label: string): RetentionOperatorWorkflow {
+  const workflow = assertExactKeys<RetentionOperatorWorkflow>(
+    obj,
+    { status: true, blockers: true, required_approvals: true, next_step: true },
+    label,
+  );
+  inEnum(['blocked', 'awaiting_manual_review'], workflow.status, `${label}.status`);
+  expect(Array.isArray(workflow.blockers), `${label}.blockers should be an array`).toBe(true);
+  workflow.blockers.forEach((blocker, i) =>
+    assertRetentionWorkflowBlocker(blocker, `${label}.blockers[${i}]`),
+  );
+  expect(
+    Array.isArray(workflow.required_approvals),
+    `${label}.required_approvals should be an array`,
+  ).toBe(true);
+  workflow.required_approvals.forEach((approval, i) =>
+    assertRetentionRequiredApproval(approval, `${label}.required_approvals[${i}]`),
+  );
+  expect(workflow.next_step.length, `${label}.next_step should be non-empty`).toBeGreaterThan(0);
+  return workflow;
+}
+
+function assertRetentionOperatorEvidence(obj: unknown, label: string): RetentionOperatorEvidence {
+  const evidence = assertExactKeys<RetentionOperatorEvidence>(
+    obj,
+    { label: true, value: true },
+    label,
+  );
+  expect(evidence.label.length, `${label}.label should be non-empty`).toBeGreaterThan(0);
+  expect(evidence.value.length, `${label}.value should be non-empty`).toBeGreaterThan(0);
+  return evidence;
+}
+
+function assertRetentionExecutionApproval(obj: unknown, label: string): RetentionExecutionApproval {
+  const approval = assertExactKeys<RetentionExecutionApproval>(
+    obj,
+    {
+      approval_reference: true,
+      policy_id: true,
+      disposal_action: true,
+      approved_by: true,
+    },
+    label,
+    ['approved_at'],
+  );
+  expect(
+    approval.approval_reference.length,
+    `${label}.approval_reference should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(approval.policy_id.length, `${label}.policy_id should be non-empty`).toBeGreaterThan(0);
+  inEnum(RETENTION_DISPOSAL_ACTIONS, approval.disposal_action, `${label}.disposal_action`);
+  expect(approval.approved_by.length, `${label}.approved_by should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  if (approval.approved_at !== undefined)
+    assertTimestamp(approval.approved_at, `${label}.approved_at`);
+  return approval;
+}
+
+function assertRetentionExecutionTargetEvidence(
+  obj: unknown,
+  label: string,
+): RetentionExecutionTargetEvidence {
+  const target = assertExactKeys<RetentionExecutionTargetEvidence>(
+    obj,
+    { target_type: true, target_id: true, action: true, reason_code: true, detail: true },
+    label,
+  );
+  expect(target.target_type.length, `${label}.target_type should be non-empty`).toBeGreaterThan(0);
+  expect(target.target_id.length, `${label}.target_id should be non-empty`).toBeGreaterThan(0);
+  expect(target.action.length, `${label}.action should be non-empty`).toBeGreaterThan(0);
+  expect(target.reason_code.length, `${label}.reason_code should be non-empty`).toBeGreaterThan(0);
+  expect(target.detail.length, `${label}.detail should be non-empty`).toBeGreaterThan(0);
+  return target;
+}
+
+function assertRetentionExecutionBlockerMetadata(
+  obj: unknown,
+  label: string,
+): RetentionExecutionBlockerMetadata {
+  const blocker = assertExactKeys<RetentionExecutionBlockerMetadata>(
+    obj,
+    { code: true, detail: true },
+    label,
+    ['policy_id'],
+  );
+  expect(blocker.code.length, `${label}.code should be non-empty`).toBeGreaterThan(0);
+  expect(blocker.detail.length, `${label}.detail should be non-empty`).toBeGreaterThan(0);
+  return blocker;
+}
+
+function assertRetentionExecutionResult(obj: unknown, label: string): RetentionExecutionResult {
+  const result = assertExactKeys<RetentionExecutionResult>(
+    obj,
+    {
+      bounded_executor: true,
+      targets_considered: true,
+      targets_acted: true,
+      targets_skipped: true,
+      reason_codes: true,
+      next_step: true,
+      destructive_disposal_completed: true,
+      full_erasure_completed: true,
+      blocker_metadata: true,
+    },
+    label,
+    ['executed_at', 'executed_by'],
+  );
+  expect(typeof result.bounded_executor, `${label}.bounded_executor should be boolean`).toBe(
+    'boolean',
+  );
+  expect(Array.isArray(result.targets_considered), `${label}.targets_considered`).toBe(true);
+  result.targets_considered.forEach((target, i) =>
+    assertRetentionExecutionTargetEvidence(target, `${label}.targets_considered[${i}]`),
+  );
+  expect(Array.isArray(result.targets_acted), `${label}.targets_acted`).toBe(true);
+  result.targets_acted.forEach((target, i) =>
+    assertRetentionExecutionTargetEvidence(target, `${label}.targets_acted[${i}]`),
+  );
+  expect(Array.isArray(result.targets_skipped), `${label}.targets_skipped`).toBe(true);
+  result.targets_skipped.forEach((target, i) =>
+    assertRetentionExecutionTargetEvidence(target, `${label}.targets_skipped[${i}]`),
+  );
+  expect(Array.isArray(result.reason_codes), `${label}.reason_codes`).toBe(true);
+  expect(result.next_step.length, `${label}.next_step should be non-empty`).toBeGreaterThan(0);
+  expect(
+    typeof result.destructive_disposal_completed,
+    `${label}.destructive_disposal_completed should be boolean`,
+  ).toBe('boolean');
+  expect(
+    typeof result.full_erasure_completed,
+    `${label}.full_erasure_completed should be boolean`,
+  ).toBe('boolean');
+  result.blocker_metadata.forEach((blocker, i) =>
+    assertRetentionExecutionBlockerMetadata(blocker, `${label}.blocker_metadata[${i}]`),
+  );
+  if (result.executed_at !== undefined) assertTimestamp(result.executed_at, `${label}.executed_at`);
+  return result;
+}
+
+function assertRetentionLegalHoldBlocker(obj: unknown, label: string): RetentionLegalHoldBlocker {
+  const blocker = assertExactKeys<RetentionLegalHoldBlocker>(
+    obj,
+    { policy_id: true, name: true, schedule_id: true, retention_period: true, reason: true },
+    label,
+  );
+  expect(blocker.policy_id.length, `${label}.policy_id should be non-empty`).toBeGreaterThan(0);
+  expect(blocker.name.length, `${label}.name should be non-empty`).toBeGreaterThan(0);
+  expect(blocker.reason.length, `${label}.reason should be non-empty`).toBeGreaterThan(0);
+  return blocker;
+}
+
+function assertRetentionExecutionRecord(obj: unknown, label: string): RetentionExecutionRecord {
+  const record = assertExactKeys<RetentionExecutionRecord>(
+    obj,
+    {
+      id: true,
+      requested_at: true,
+      actor: true,
+      execution_intent: true,
+      execution_status: true,
+      operator_review_decision: true,
+      requested_policy: true,
+      candidate: true,
+      matched_records_summary: true,
+      legal_hold_blockers: true,
+      audit_evidence: true,
+      outcome: true,
+      block_reason: true,
+      workflow: true,
+      execution_result: true,
+      would_execute: true,
+    },
+    label,
+    ['operator_notes', 'approval'],
+  );
+  expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  assertTimestamp(record.requested_at, `${label}.requested_at`);
+  expect(record.actor.length, `${label}.actor should be non-empty`).toBeGreaterThan(0);
+  inEnum(
+    ['review_only', 'execute_supported'],
+    record.execution_intent,
+    `${label}.execution_intent`,
+  );
+  inEnum(RETENTION_EXECUTION_STATUSES, record.execution_status, `${label}.execution_status`);
+  inEnum(
+    ['review_required', 'blocked', 'execution_recorded'],
+    record.operator_review_decision,
+    `${label}.operator_review_decision`,
+  );
+  assertRetentionExecutionRequestedPolicy(record.requested_policy, `${label}.requested_policy`);
+  expect(
+    record.candidate.scope.length,
+    `${label}.candidate.scope should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(
+    record.candidate.category.length,
+    `${label}.candidate.category should be non-empty`,
+  ).toBeGreaterThan(0);
+  assertRetentionMatchedRecordsSummary(
+    record.matched_records_summary,
+    `${label}.matched_records_summary`,
+  );
+  record.legal_hold_blockers.forEach((blocker, i) =>
+    assertRetentionLegalHoldBlocker(blocker, `${label}.legal_hold_blockers[${i}]`),
+  );
+  record.audit_evidence.forEach((evidence, i) =>
+    assertRetentionOperatorEvidence(evidence, `${label}.audit_evidence[${i}]`),
+  );
+  if (record.approval !== undefined)
+    assertRetentionExecutionApproval(record.approval, `${label}.approval`);
+  inEnum(
+    [
+      'blocked_missing_policy',
+      'blocked_stale_policy',
+      'blocked_policy_mismatch',
+      'blocked_legal_hold',
+      'blocked_destructive_action',
+      'blocked_approval_mismatch',
+      'blocked_missing_target',
+      'manual_review_required',
+      'bounded_archive_recorded',
+      'bounded_no_action_recorded',
+      'already_executed',
+    ],
+    record.outcome,
+    `${label}.outcome`,
+  );
+  expect(record.block_reason.length, `${label}.block_reason should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  assertRetentionOperatorWorkflow(record.workflow, `${label}.workflow`);
+  assertRetentionExecutionResult(record.execution_result, `${label}.execution_result`);
+  expect(typeof record.would_execute, `${label}.would_execute should be boolean`).toBe('boolean');
   return record;
 }
 
@@ -1412,6 +1762,7 @@ describe('contract fixtures parse through the real client', () => {
         required_signatories_encerramento: true,
       },
       'BookView',
+      ['required_signatory_records_abertura', 'required_signatory_records_encerramento'],
     );
     inEnum(BOOK_KINDS, book.kind, 'BookView.kind');
     inEnum(['Created', 'Open', 'Closed'], book.state, 'BookView.state');
@@ -1419,6 +1770,12 @@ describe('contract fixtures parse through the real client', () => {
     if (book.opening_date) assertIsoDate(book.opening_date, 'BookView.opening_date');
     expect(typeof book.last_ata_number).toBe('number');
     expect(Array.isArray(book.required_signatories_abertura)).toBe(true);
+    expect(Array.isArray(book.required_signatory_records_abertura)).toBe(true);
+    expect(book.required_signatory_records_abertura?.[0]).toMatchObject({
+      name: expect.any(String),
+      capacity: null,
+      email: null,
+    });
   });
 
   it('act.sealed.json → ActView (GET /v1/acts/{id})', async () => {
@@ -3650,6 +4007,21 @@ describe('contract fixtures parse through the real client', () => {
     expect(policy.active).toBe(true);
   });
 
+  it('retention.executions.json → RetentionExecutionRecord[] (GET /v1/privacy/retention-executions)', async () => {
+    stubFetch(fixture('retention.executions.json'));
+    const executions: RetentionExecutionRecord[] = await api.listRetentionExecutions();
+    expect(Array.isArray(executions)).toBe(true);
+    expect(executions.length).toBeGreaterThan(0);
+    const blocked = assertRetentionExecutionRecord(executions[0], 'RetentionExecutionRecord');
+    expect(blocked.execution_status).toBe('blocked');
+    expect(blocked.workflow.blockers.length).toBeGreaterThan(0);
+    expect(blocked.execution_result.destructive_disposal_completed).toBe(false);
+    expect(blocked.execution_result.full_erasure_completed).toBe(false);
+    const executed = assertRetentionExecutionRecord(executions[1], 'RetentionExecutionRecord[1]');
+    expect(executed.execution_status).toBe('executed');
+    expect(executed.approval?.approval_reference).toBe('privacy-board-42');
+  });
+
   it('session.json → SessionView (GET /v1/session, populated)', async () => {
     stubFetch(fixture('session.json'));
     const session: SessionView = await api.getSession();
@@ -3850,6 +4222,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'privacy.breach-playbooks.json',
       'privacy.transfer-controls.json',
       'retention.policies.json',
+      'retention.executions.json',
       'paper-book.import.json',
       'paper-book.ocr-draft.json',
       'paper-book.ocr-run.json',

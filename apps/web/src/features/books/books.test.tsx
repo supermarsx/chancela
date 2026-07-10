@@ -15,6 +15,7 @@ vi.mock('../../desktop/saveFile', () => saveFileMock);
 
 import { BookDetailPage } from './BookDetailPage';
 import { BooksPage } from './BooksPage';
+import { CloseBookForm } from './CloseBookForm';
 import { NewBookPage } from './NewBookPage';
 import { OpenBookForm } from './OpenBookForm';
 import {
@@ -435,6 +436,44 @@ describe('BookDetailPage — preservation package download', () => {
 
     expect(await screen.findByText('sem documentos preservados para empacotar')).toBeTruthy();
     expect(saveFileMock.saveBlobAs).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookDetailPage — termo signatories', () => {
+  it('displays structured opening and closing signatories with capacity and email', async () => {
+    const closedBook: BookView = {
+      ...BOOK,
+      state: 'Closed',
+      closing_date: '2026-12-31',
+      closing_reason: 'BookFull',
+      required_signatories_abertura: ['Legacy opening'],
+      required_signatories_encerramento: ['Legacy closing'],
+      required_signatory_records_abertura: [
+        { name: 'Amélia Marques', capacity: 'Chair', email: 'amelia@example.pt' },
+      ],
+      required_signatory_records_encerramento: [
+        { name: 'Rui Nunes', capacity: 'Administrator', email: 'rui@example.pt' },
+      ],
+    };
+    const { fn } = bookDetailFetch((url) => {
+      if (url === '/v1/books/book-1') return jsonResponse(closedBook);
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/livros/:id" element={<BookDetailPage />} />
+      </Routes>,
+      ['/livros/book-1'],
+    );
+
+    expect(await screen.findByText(/Amélia Marques/)).toBeTruthy();
+    expect(screen.getByText(/amelia@example.pt/)).toBeTruthy();
+    expect(screen.getByText(/Rui Nunes/)).toBeTruthy();
+    expect(screen.getByText(/rui@example.pt/)).toBeTruthy();
+    expect(screen.queryByText('Legacy opening')).toBeNull();
+    expect(screen.queryByText('Legacy closing')).toBeNull();
   });
 });
 
@@ -1312,5 +1351,91 @@ describe('OpenBookForm — toast on success', () => {
     expect(await screen.findByText('DETALHE DO LIVRO')).toBeTruthy();
     // R6: the toast fired in onSuccess renders even though we navigated to the book.
     expect(await screen.findByText('Livro aberto.')).toBeTruthy();
+  });
+});
+
+describe('OpenBookForm — structured termo signatories', () => {
+  it('submits signatory name, capacity and normalized email fields in required_signatories', async () => {
+    const calls: RecordedCall[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null;
+      calls.push({ url, method, body });
+      if (url === '/v1/settings') return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
+      if (url === '/v1/books') {
+        return Promise.resolve(jsonResponse({ ...BOOK, id: 'book-structured' }, 201));
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/entidades/ent-1" element={<OpenBookForm entityId="ent-1" />} />
+        <Route path="/livros/:id" element={<div>DETALHE DO LIVRO</div>} />
+      </Routes>,
+      ['/entidades/ent-1'],
+    );
+
+    fireEvent.change(await screen.findByLabelText('Finalidade'), {
+      target: { value: 'Atas AG' },
+    });
+    fireEvent.change(screen.getByLabelText('Data de abertura'), {
+      target: { value: '2026-01-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Nome do signatário'), {
+      target: { value: 'Amélia Marques' },
+    });
+    fireEvent.change(screen.getByLabelText('Qualidade'), { target: { value: 'Chair' } });
+    fireEvent.change(screen.getByLabelText('E-mail (opcional)'), {
+      target: { value: 'amelia@example.pt' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /abrir livro/i }));
+
+    await screen.findByText('DETALHE DO LIVRO');
+    const post = calls.find((call) => call.url === '/v1/books' && call.method === 'POST');
+    expect(post?.body?.required_signatories).toEqual([
+      { name: 'Amélia Marques', capacity: 'Chair', email: 'amelia@example.pt' },
+    ]);
+  });
+});
+
+describe('CloseBookForm — structured termo signatories', () => {
+  it('submits structured closing signatories', async () => {
+    const calls: RecordedCall[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null;
+      calls.push({ url, method, body });
+      if (url === '/v1/books/book-1/close') return Promise.resolve(jsonResponse(BOOK));
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<CloseBookForm bookId="book-1" />, ['/livros/book-1/encerrar']);
+
+    fireEvent.change(screen.getByLabelText('Data de encerramento'), {
+      target: { value: '2026-12-31' },
+    });
+    fireEvent.change(screen.getByLabelText('Nome do signatário'), {
+      target: { value: 'Rui Nunes' },
+    });
+    fireEvent.change(screen.getByLabelText('Qualidade'), { target: { value: 'Administrator' } });
+    fireEvent.change(screen.getByLabelText('E-mail (opcional)'), {
+      target: { value: 'rui@example.pt' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Encerrar livro' }));
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.url === '/v1/books/book-1/close')).toBe(true),
+    );
+    const post = calls.find((call) => call.url === '/v1/books/book-1/close');
+    expect(post?.body).toMatchObject({
+      reason: 'BookFull',
+      closing_date: '2026-12-31',
+      required_signatories: [
+        { name: 'Rui Nunes', capacity: 'Administrator', email: 'rui@example.pt' },
+      ],
+    });
   });
 });

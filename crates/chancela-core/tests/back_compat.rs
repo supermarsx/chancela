@@ -57,6 +57,17 @@ const OLD_SHAPE_BOOK_JSON: &str = r#"{
     "predecessor": null
 }"#;
 
+/// A string-only termo de abertura JSON: no structured `required_signatory_records` key.
+const OLD_SHAPE_TERMO_ABERTURA_JSON: &str = r#"{
+    "entity_name": "Sociedade X, S.A.",
+    "entity_nipc": "503004642",
+    "entity_seat": "Lisboa",
+    "purpose": "livro de atas",
+    "numbering_scheme": "Sequential",
+    "opening_date": [2026, 15],
+    "required_signatories": ["Administrador"]
+}"#;
+
 #[test]
 fn old_shape_act_json_deserializes_with_defaults() {
     let act: Act = serde_json::from_str(OLD_SHAPE_ACT_JSON).expect("old-shape act deserializes");
@@ -97,6 +108,14 @@ fn old_shape_book_json_deserializes_with_no_legal_hold() {
     let book: Book =
         serde_json::from_str(OLD_SHAPE_BOOK_JSON).expect("old-shape book deserializes");
     assert!(book.legal_hold.is_none());
+}
+
+#[test]
+fn old_shape_termo_abertura_deserializes_with_no_structured_signatories() {
+    let termo: TermoDeAbertura =
+        serde_json::from_str(OLD_SHAPE_TERMO_ABERTURA_JSON).expect("old-shape termo deserializes");
+    assert_eq!(termo.required_signatories, vec!["Administrador"]);
+    assert!(termo.required_signatory_records.is_empty());
 }
 
 #[test]
@@ -184,6 +203,7 @@ fn free_text_only_act_still_seals_under_csc_v2() {
             numbering_scheme: chancela_core::NumberingScheme::Sequential,
             opening_date: date!(2026 - 01 - 15),
             required_signatories: vec!["Administrador".into()],
+            required_signatory_records: Vec::new(),
         },
         "sec@encosto",
         &mut ledger,

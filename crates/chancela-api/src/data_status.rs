@@ -15,7 +15,8 @@ use axum::Json;
 use axum::extract::State;
 use chancela_authz::{Permission, Scope};
 use chancela_store::{
-    Store, StoreError, StoreKeyRotationExecution, StoreKeyRotationPreflight, StoreOpenOptions,
+    Store, StoreDatabaseFormat, StoreError, StoreKeyOpsPlan, StoreKeyOpsStatus,
+    StoreKeyRotationExecution, StoreKeyRotationPreflight, StoreOpenOptions,
 };
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
@@ -24,6 +25,7 @@ use tokio::task;
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::{authorizer, require_permission};
+use crate::database::DatabaseEncryptionKeySource;
 use crate::error::ApiError;
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,10 +51,71 @@ pub struct PersistenceStatus {
     pub data_dir_configured: bool,
     pub durable_store_open: bool,
     pub database_encryption_configured: bool,
+    pub database_encryption: DatabaseEncryptionStatus,
     pub store_schema_version: Option<i64>,
     pub ledger_length: u64,
     pub ledger_verified: Option<bool>,
     pub degraded: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DatabaseEncryptionStatus {
+    /// Whether this running store opened with a configured database encryption key.
+    pub configured: bool,
+    /// Whether this binary was compiled with SQLCipher support.
+    pub sqlcipher_available: bool,
+    /// True only when the running durable store is configured and SQLCipher-capable.
+    pub sqlcipher_backed: bool,
+    /// Non-secret classification of the source that supplied the configured key.
+    pub key_source: DatabaseEncryptionKeySourceStatus,
+    /// Status of the future hardware-derived default/fallback key source.
+    pub hardware_derived_fallback: HardwareDerivedFallbackStatus,
+    /// Header-level database format from the store key-ops preflight, when a data dir exists.
+    pub database_format: Option<StoreDatabaseFormat>,
+    /// Store key-ops plan from the same preflight, when available.
+    pub key_ops_plan: Option<StoreKeyOpsPlan>,
+    /// True when a plaintext SQLite database is present and the running store is not SQLCipher-backed.
+    pub plaintext_migration_pending: bool,
+    /// True when direct keyed open would be refused because a plaintext store must be migrated by
+    /// backup/export/restore instead of in-place rewrite.
+    pub plaintext_migration_blocked: bool,
+    /// Full secret-free store key-ops report for audit/operator surfaces.
+    pub key_ops: Option<StoreKeyOpsStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_ops_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DatabaseEncryptionKeySourceStatus {
+    None,
+    OperatorEnv,
+    OperatorKeyFile,
+    Programmatic,
+    HardwareDerivedFallback,
+}
+
+impl From<Option<DatabaseEncryptionKeySource>> for DatabaseEncryptionKeySourceStatus {
+    fn from(source: Option<DatabaseEncryptionKeySource>) -> Self {
+        match source {
+            None => Self::None,
+            Some(DatabaseEncryptionKeySource::Env) => Self::OperatorEnv,
+            Some(DatabaseEncryptionKeySource::File) => Self::OperatorKeyFile,
+            Some(DatabaseEncryptionKeySource::Programmatic) => Self::Programmatic,
+            Some(DatabaseEncryptionKeySource::HardwareDerivedFallback) => {
+                Self::HardwareDerivedFallback
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HardwareDerivedFallbackStatus {
+    pub available: bool,
+    pub selected: bool,
+    pub fail_closed_if_requested: bool,
+    pub status: &'static str,
+    pub message: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -271,12 +334,28 @@ pub async fn get_data_status(
     let ledger_length = state.ledger.read().await.len() as u64;
     let ledger_verified = state.chain_status.as_ref().map(|status| status.is_ok());
     let degraded = *state.degraded.read().await;
+    let database_encryption_configured = state.database_encryption_configured;
+    let database_encryption_key_source = state.database_encryption_key_source;
 
-    let fs = match data_dir {
-        Some(dir) => task::spawn_blocking(move || inspect_data_dir(dir, store))
-            .await
-            .map_err(|e| ApiError::Internal(format!("data status worker failed: {e}")))?,
-        None => inspect_unconfigured_data_dir(durable_store_open),
+    let (fs, database_encryption) = match data_dir {
+        Some(dir) => task::spawn_blocking(move || {
+            let database_encryption = inspect_database_encryption(
+                Some(&dir),
+                database_encryption_configured,
+                database_encryption_key_source,
+            );
+            (inspect_data_dir(dir, store), database_encryption)
+        })
+        .await
+        .map_err(|e| ApiError::Internal(format!("data status worker failed: {e}")))?,
+        None => (
+            inspect_unconfigured_data_dir(durable_store_open),
+            inspect_database_encryption(
+                None,
+                database_encryption_configured,
+                database_encryption_key_source,
+            ),
+        ),
     };
 
     Ok(Json(DataStatusResponse {
@@ -285,7 +364,8 @@ pub async fn get_data_status(
             mode,
             data_dir_configured,
             durable_store_open,
-            database_encryption_configured: state.database_encryption_configured,
+            database_encryption_configured,
+            database_encryption,
             store_schema_version: durable_store_open
                 .then_some(chancela_store::schema::SCHEMA_VERSION),
             ledger_length,
@@ -807,6 +887,61 @@ fn inspect_data_dir(dir: PathBuf, store: Option<chancela_store::Store>) -> FsIns
         },
         permissions,
         usage,
+    }
+}
+
+fn inspect_database_encryption(
+    data_dir: Option<&Path>,
+    configured: bool,
+    key_source: Option<DatabaseEncryptionKeySource>,
+) -> DatabaseEncryptionStatus {
+    let sqlcipher_available = cfg!(feature = "sqlcipher");
+    let key_ops_result = data_dir.map(|dir| {
+        let options = if configured || key_source.is_some() {
+            StoreOpenOptions::new().with_encryption_key("<configured>")
+        } else {
+            StoreOpenOptions::default()
+        };
+        Store::key_ops_status(dir, &options)
+    });
+    let (key_ops, key_ops_error) = match key_ops_result {
+        Some(Ok(status)) => (Some(status), None),
+        Some(Err(err)) => (
+            None,
+            Some(format!(
+                "database encryption status could not inspect store key-ops: {err}"
+            )),
+        ),
+        None => (None, None),
+    };
+    let database_format = key_ops.as_ref().map(|status| status.database_format);
+    let key_ops_plan = key_ops.as_ref().map(|status| status.plan);
+    let sqlcipher_backed = configured && sqlcipher_available;
+    let plaintext_migration_pending =
+        database_format == Some(StoreDatabaseFormat::PlaintextSqlite) && !sqlcipher_backed;
+    let plaintext_migration_blocked =
+        key_ops_plan == Some(StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration);
+    let selected_hardware_fallback =
+        key_source == Some(DatabaseEncryptionKeySource::HardwareDerivedFallback);
+
+    DatabaseEncryptionStatus {
+        configured,
+        sqlcipher_available,
+        sqlcipher_backed,
+        key_source: key_source.into(),
+        hardware_derived_fallback: HardwareDerivedFallbackStatus {
+            available: false,
+            selected: selected_hardware_fallback,
+            fail_closed_if_requested: true,
+            status: "unavailable",
+            message: "No hardware-bound database key derivation provider is wired; requests for it fail closed instead of using a static fallback key.",
+        },
+        database_format,
+        key_ops_plan,
+        plaintext_migration_pending,
+        plaintext_migration_blocked,
+        key_ops,
+        key_ops_error,
     }
 }
 

@@ -30,6 +30,7 @@ import {
 import { PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES } from '../../api/types';
 import type {
   BookView,
+  BookTermoSignatory,
   PaperBookImportPreservationReport,
   PaperBookImportReport,
   PaperBookImportView,
@@ -45,6 +46,7 @@ import {
   closingReasonLabels,
   meetingChannelLabels,
   numberingSchemeLabels,
+  signatoryCapacityLabels,
 } from '../../api/labels';
 import { useT } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
@@ -87,6 +89,24 @@ function formatBytes(value: number): string {
   }
   const decimals = amount >= 10 || Number.isInteger(amount) ? 0 : 1;
   return `${amount.toFixed(decimals)} ${unit}`;
+}
+
+function formatBookTermoSignatory(signatory: BookTermoSignatory): string {
+  return [
+    signatory.name,
+    signatory.capacity ? signatoryCapacityLabels[signatory.capacity] : '',
+    signatory.email ?? '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function formatBookSignatories(
+  records: BookTermoSignatory[] | null | undefined,
+  legacy: string[] | null,
+): string {
+  if (records?.length) return records.map(formatBookTermoSignatory).join(', ');
+  return legacy?.join(', ') || '—';
 }
 
 function paperBookImportFilename(row: PaperBookImportView): string {
@@ -1303,7 +1323,12 @@ export function BookDetailPage() {
           </div>
           <div>
             <dt>{t('books.signatories')}</dt>
-            <dd>{b.required_signatories_abertura?.join(', ') || '—'}</dd>
+            <dd>
+              {formatBookSignatories(
+                b.required_signatory_records_abertura,
+                b.required_signatories_abertura,
+              )}
+            </dd>
           </div>
           {b.predecessor ? (
             <div>
@@ -1322,6 +1347,15 @@ export function BookDetailPage() {
               <div>
                 <dt>{t('books.closingDate')}</dt>
                 <dd>{b.closing_date ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>{t('books.close.signatories')}</dt>
+                <dd>
+                  {formatBookSignatories(
+                    b.required_signatory_records_encerramento,
+                    b.required_signatories_encerramento,
+                  )}
+                </dd>
               </div>
             </>
           ) : null}

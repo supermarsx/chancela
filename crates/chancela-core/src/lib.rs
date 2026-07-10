@@ -44,7 +44,7 @@ pub use act::{
 };
 pub use book::{
     Book, BookId, BookKind, BookState, LegalHold, NumberingScheme, TermoDeAbertura,
-    TermoDeEncerramento,
+    TermoDeEncerramento, TermoSignatory,
 };
 pub use document_model::{
     Block, DocumentModel, KvRow, LifecycleStage, Run, SignatureSlot, VoteRow,

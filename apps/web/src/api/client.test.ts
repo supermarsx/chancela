@@ -375,6 +375,9 @@ describe('api client', () => {
         data_transfer_executed: false,
       },
     });
+
+    await api.listRetentionExecutions('blocked');
+    expect(fetchMock.mock.calls[12][0]).toBe('/v1/privacy/retention-executions?status=blocked');
   });
 
   it('downloads the read-only book preservation package from the archive endpoint', async () => {

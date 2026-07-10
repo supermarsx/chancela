@@ -284,6 +284,14 @@ export interface BookView {
   predecessor: string | null;
   required_signatories_abertura: string[] | null;
   required_signatories_encerramento: string[] | null;
+  required_signatory_records_abertura?: BookTermoSignatory[] | null;
+  required_signatory_records_encerramento?: BookTermoSignatory[] | null;
+}
+
+export interface BookTermoSignatory {
+  name: string;
+  capacity: SignatoryCapacity | null;
+  email: string | null;
 }
 
 /** `GET /v1/books/{id}/legal-hold` — retention-disposal override for a book. */
@@ -770,6 +778,7 @@ export interface DssTechnicalReport {
   present: boolean;
   vri_count: number;
   vri_tu_count: number;
+  vri_tu_keys: string[];
   vri_has_tu: boolean;
   certificate_count: number;
   ocsp_count: number;
@@ -802,6 +811,47 @@ export interface DocTimeStampTechnicalReport {
   status_scope: string;
 }
 
+export interface LocalTechnicalRenewalPlanReport {
+  status: 'available' | 'not_applicable' | 'unavailable' | string;
+  scope: string;
+  notice: string;
+  signature_timestamp_present: boolean;
+  dss_revocation_evidence_present: boolean;
+  dss_validation_time_present: boolean;
+  doc_timestamp_present: boolean;
+  doc_timestamp_imprints_valid: boolean;
+  missing_inputs: string[];
+  next_action: string;
+  has_local_evidence_gap: boolean;
+  all_local_planning_inputs_present: boolean;
+  production_long_term_profile_claimed: boolean;
+  legal_ltv_claimed: boolean;
+}
+
+export interface SignatureLocalRenewalPlanReport {
+  index: number;
+  object_id: string;
+  signed_revision_len: number;
+  vri_key_sha256: string;
+  dss_vri_present: boolean;
+  dss_vri_validation_time_present: boolean;
+  local_technical_renewal_plan: LocalTechnicalRenewalPlanReport;
+}
+
+export interface MultiSignatureLocalRenewalPlanReport {
+  status: 'available' | 'not_applicable' | 'unavailable' | string;
+  scope: string;
+  notice: string;
+  signature_count: number;
+  signatures: SignatureLocalRenewalPlanReport[];
+  signatures_with_local_evidence_gaps: number[];
+  next_action: string;
+  has_local_evidence_gap: boolean;
+  all_local_planning_inputs_present: boolean;
+  production_long_term_profile_claimed: boolean;
+  legal_ltv_claimed: boolean;
+}
+
 export interface PdfSignatureTechnicalReport {
   status: PdfValidationStatus;
   validation_performed: boolean;
@@ -816,6 +866,8 @@ export interface PdfSignatureTechnicalReport {
   timestamp: SignatureTimestampReport;
   dss: DssTechnicalReport;
   doc_timestamp: DocTimeStampTechnicalReport;
+  local_technical_renewal_plan: LocalTechnicalRenewalPlanReport;
+  multi_signature_local_renewal_plan: MultiSignatureLocalRenewalPlanReport;
 }
 
 export interface TrustValidationReport {
@@ -2469,6 +2521,9 @@ export type PrivacyRecordStatus = (typeof PRIVACY_RECORD_STATUSES)[number];
 export const RETENTION_POLICY_STATUSES = ['draft', 'active', 'suspended', 'retired'] as const;
 export type RetentionPolicyStatus = (typeof RETENTION_POLICY_STATUSES)[number];
 
+export const RETENTION_EXECUTION_STATUSES = ['awaiting_review', 'blocked', 'executed'] as const;
+export type RetentionExecutionStatus = (typeof RETENTION_EXECUTION_STATUSES)[number];
+
 export const RETENTION_DISPOSAL_ACTIONS = [
   'review',
   'archive',
@@ -2644,13 +2699,148 @@ export interface RetentionDryRunMatch {
   reason: string;
 }
 
+export type RetentionExecutionIntent = 'review_only' | 'execute_supported';
+
+export type RetentionOperatorReviewDecision = 'review_required' | 'blocked' | 'execution_recorded';
+
+export type RetentionExecutionOutcome =
+  | 'blocked_missing_policy'
+  | 'blocked_stale_policy'
+  | 'blocked_policy_mismatch'
+  | 'blocked_legal_hold'
+  | 'blocked_destructive_action'
+  | 'blocked_approval_mismatch'
+  | 'blocked_missing_target'
+  | 'manual_review_required'
+  | 'bounded_archive_recorded'
+  | 'bounded_no_action_recorded'
+  | 'already_executed';
+
+export type RetentionOperatorWorkflowStatus = 'blocked' | 'awaiting_manual_review';
+
+export interface RetentionExecutionRequestedPolicy {
+  id?: string;
+  found: boolean;
+  name?: string;
+  scope?: string;
+  category?: string;
+  schedule_id?: string;
+  retention_period?: string;
+  disposal_action?: RetentionDisposalAction;
+  status?: RetentionPolicyStatus;
+  active?: boolean;
+  stale: boolean;
+  matches_candidate: boolean;
+  destructive_action: boolean;
+}
+
+export interface RetentionMatchedRecordsSummary {
+  scope: string;
+  category: string;
+  record_id?: string;
+  record_count: number;
+  policy_match_count: number;
+  destructive_policy_count: number;
+  policy_ids: string[];
+}
+
+export interface RetentionLegalHoldBlocker {
+  policy_id: string;
+  name: string;
+  schedule_id: string;
+  retention_period: string;
+  reason: string;
+}
+
+export interface RetentionWorkflowBlocker {
+  code: string;
+  message: string;
+  policy_id?: string;
+}
+
+export interface RetentionRequiredApproval {
+  code: string;
+  required_from: string;
+  reason: string;
+}
+
+export interface RetentionOperatorWorkflow {
+  status: RetentionOperatorWorkflowStatus;
+  blockers: RetentionWorkflowBlocker[];
+  required_approvals: RetentionRequiredApproval[];
+  next_step: string;
+}
+
+export interface RetentionOperatorEvidence {
+  label: string;
+  value: string;
+}
+
+export interface RetentionExecutionApproval {
+  approval_reference: string;
+  policy_id: string;
+  disposal_action: RetentionDisposalAction;
+  approved_by: string;
+  approved_at?: string;
+}
+
+export interface RetentionExecutionTargetEvidence {
+  target_type: string;
+  target_id: string;
+  action: string;
+  reason_code: string;
+  detail: string;
+}
+
+export interface RetentionExecutionBlockerMetadata {
+  code: string;
+  detail: string;
+  policy_id?: string;
+}
+
+export interface RetentionExecutionResult {
+  bounded_executor: boolean;
+  executed_at?: string;
+  executed_by?: string;
+  targets_considered: RetentionExecutionTargetEvidence[];
+  targets_acted: RetentionExecutionTargetEvidence[];
+  targets_skipped: RetentionExecutionTargetEvidence[];
+  reason_codes: string[];
+  next_step: string;
+  destructive_disposal_completed: boolean;
+  full_erasure_completed: boolean;
+  blocker_metadata: RetentionExecutionBlockerMetadata[];
+}
+
+export interface RetentionExecutionRecord {
+  id: string;
+  requested_at: string;
+  actor: string;
+  execution_intent: RetentionExecutionIntent;
+  execution_status: RetentionExecutionStatus;
+  operator_review_decision: RetentionOperatorReviewDecision;
+  requested_policy: RetentionExecutionRequestedPolicy;
+  candidate: RetentionDryRunCandidate;
+  matched_records_summary: RetentionMatchedRecordsSummary;
+  legal_hold_blockers: RetentionLegalHoldBlocker[];
+  operator_notes?: string;
+  audit_evidence: RetentionOperatorEvidence[];
+  approval?: RetentionExecutionApproval;
+  outcome: RetentionExecutionOutcome;
+  block_reason: string;
+  workflow: RetentionOperatorWorkflow;
+  execution_result: RetentionExecutionResult;
+  would_execute: boolean;
+}
+
 export interface RetentionDryRunReport {
-  mode: 'dry_run';
+  mode: 'dry_run' | 'execution_request';
   execution_supported: boolean;
   destructive_execution_supported: boolean;
   candidate: RetentionDryRunCandidate;
   matched_count: number;
   matches: RetentionDryRunMatch[];
+  execution_record?: RetentionExecutionRecord;
 }
 
 /** Body of `POST /v1/privacy/processors`. */
@@ -2848,7 +3038,7 @@ export interface OpenBookBody {
   purpose: string;
   numbering_scheme?: NumberingScheme;
   opening_date: string;
-  required_signatories: string[];
+  required_signatories: BookTermoSignatoryInput[];
   predecessor?: string;
   actor?: string;
 }
@@ -2856,9 +3046,11 @@ export interface OpenBookBody {
 export interface CloseBookBody {
   reason: ClosingReason;
   closing_date: string;
-  required_signatories: string[];
+  required_signatories: BookTermoSignatoryInput[];
   actor?: string;
 }
+
+export type BookTermoSignatoryInput = string | BookTermoSignatory;
 
 export interface DraftActBody {
   book_id: string;
@@ -4546,7 +4738,7 @@ export interface StartOverBookBody {
   reason: string;
   purpose: string;
   opening_date: string;
-  required_signatories: string[];
+  required_signatories: BookTermoSignatoryInput[];
   numbering_scheme?: NumberingScheme;
   actor?: string;
 }

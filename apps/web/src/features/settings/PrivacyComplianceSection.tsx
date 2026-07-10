@@ -14,6 +14,7 @@ import {
   usePrivacyBreachPlaybooks,
   usePrivacyDpias,
   usePrivacyProcessors,
+  usePrivacyRetentionExecutions,
   usePrivacyRetentionPolicies,
   usePrivacyTransferControls,
 } from '../../api/hooks';
@@ -24,6 +25,7 @@ import {
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
   RETENTION_DISPOSAL_ACTIONS,
+  RETENTION_EXECUTION_STATUSES,
   RETENTION_POLICY_STATUSES,
   type CreateDpiaRecordBody,
   type CreateProcessorRecordBody,
@@ -40,6 +42,8 @@ import {
   type ProcessorRecordView,
   type RetentionDisposalAction,
   type RetentionDryRunReport,
+  type RetentionExecutionRecord,
+  type RetentionExecutionStatus,
   type RetentionPolicyStatus,
   type RetentionPolicyView,
   type TransferControlView,
@@ -216,6 +220,12 @@ const RETENTION_DISPOSAL_LABEL_KEYS: Record<RetentionDisposalAction, MessageKey>
   no_action: 'settings.privacy.retention.disposal.no_action',
 };
 
+const RETENTION_EXECUTION_STATUS_LABELS: Record<RetentionExecutionStatus, string> = {
+  awaiting_review: 'A aguardar revisão',
+  blocked: 'Bloqueado',
+  executed: 'Executado',
+};
+
 const statusOptions = [
   { value: 'all', label: 'Todos os estados' },
   ...PRIVACY_RECORD_STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status] })),
@@ -247,6 +257,10 @@ function retentionStatusLabel(t: TFunction, status: RetentionPolicyStatus): stri
 
 function retentionDisposalLabel(t: TFunction, action: RetentionDisposalAction): string {
   return t(RETENTION_DISPOSAL_LABEL_KEYS[action]);
+}
+
+function retentionExecutionStatusLabel(status: RetentionExecutionStatus): string {
+  return RETENTION_EXECUTION_STATUS_LABELS[status];
 }
 
 function primaryValue(kind: RegisterKind, record: RegisterRecord): string {
@@ -471,6 +485,60 @@ function retentionSearchText(record: RetentionPolicyView): string {
   );
 }
 
+function retentionExecutionSearchText(record: RetentionExecutionRecord): string {
+  return normalizeSearch(
+    [
+      record.id,
+      record.actor,
+      record.execution_intent,
+      record.execution_status,
+      record.operator_review_decision,
+      record.outcome,
+      record.block_reason,
+      record.candidate.scope,
+      record.candidate.category,
+      record.candidate.record_id ?? '',
+      record.requested_policy.id ?? '',
+      record.requested_policy.name ?? '',
+      record.requested_policy.scope ?? '',
+      record.requested_policy.category ?? '',
+      record.requested_policy.schedule_id ?? '',
+      record.requested_policy.retention_period ?? '',
+      record.requested_policy.disposal_action ?? '',
+      record.workflow.status,
+      record.workflow.next_step,
+      ...record.workflow.blockers.flatMap((blocker) => [
+        blocker.code,
+        blocker.message,
+        blocker.policy_id ?? '',
+      ]),
+      ...record.workflow.required_approvals.flatMap((approval) => [
+        approval.code,
+        approval.required_from,
+        approval.reason,
+      ]),
+      ...record.legal_hold_blockers.flatMap((blocker) => [
+        blocker.policy_id,
+        blocker.name,
+        blocker.schedule_id,
+        blocker.retention_period,
+        blocker.reason,
+      ]),
+      ...record.audit_evidence.flatMap((evidence) => [evidence.label, evidence.value]),
+      record.approval?.approval_reference ?? '',
+      record.approval?.approved_by ?? '',
+      record.operator_notes ?? '',
+      ...record.execution_result.reason_codes,
+      record.execution_result.next_step,
+      ...record.execution_result.blocker_metadata.flatMap((blocker) => [
+        blocker.code,
+        blocker.detail,
+        blocker.policy_id ?? '',
+      ]),
+    ].join(' '),
+  );
+}
+
 function recordSearchText(kind: RegisterKind, record: RegisterRecord): string {
   return normalizeSearch(
     [
@@ -502,6 +570,14 @@ function retentionStatusTone(status: RetentionPolicyStatus): 'neutral' | 'warn' 
   if (status === 'active') return 'ok';
   if (status === 'suspended') return 'warn';
   return 'neutral';
+}
+
+function retentionExecutionStatusTone(
+  status: RetentionExecutionStatus,
+): 'neutral' | 'warn' | 'error' | 'ok' {
+  if (status === 'executed') return 'ok';
+  if (status === 'blocked') return 'error';
+  return 'warn';
 }
 
 function formatDateTime(value: string): string {
@@ -1887,6 +1963,178 @@ function RetentionDryRunPanel({
   );
 }
 
+function RetentionExecutionReviewQueue({
+  records,
+  loading,
+  error,
+  statusFilter,
+  onStatusFilterChange,
+}: {
+  records: RetentionExecutionRecord[];
+  loading: boolean;
+  error: unknown;
+  statusFilter: RetentionExecutionStatus | 'all';
+  onStatusFilterChange: (status: RetentionExecutionStatus | 'all') => void;
+}) {
+  const t = useT();
+  const [search, setSearch] = useState('');
+  const filtered = useMemo(() => {
+    const q = normalizeSearch(search.trim());
+    return records.filter((record) => {
+      if (statusFilter !== 'all' && record.execution_status !== statusFilter) return false;
+      return q.length === 0 || retentionExecutionSearchText(record).includes(q);
+    });
+  }, [records, search, statusFilter]);
+  const statusOptions = RETENTION_EXECUTION_STATUSES.map((status) => ({
+    value: status,
+    label: retentionExecutionStatusLabel(status),
+  }));
+
+  return (
+    <Card title="Fila de revisão de execução">
+      <div className="stack">
+        <p className="field__hint">
+          Registos persistidos de execução de retenção para revisão operacional.
+        </p>
+        <div className="filter">
+          <Field
+            label={t('settings.privacy.filter.search')}
+            htmlFor="privacy-retention-execution-search"
+          >
+            <Input
+              id="privacy-retention-execution-search"
+              value={search}
+              placeholder="Política, alvo, responsável, bloqueio ou próximo passo"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </Field>
+          <Field label="Estado da execução" htmlFor="privacy-retention-execution-status">
+            <Select
+              id="privacy-retention-execution-status"
+              value={statusFilter}
+              onChange={(e) =>
+                onStatusFilterChange(e.target.value as RetentionExecutionStatus | 'all')
+              }
+              options={[{ value: 'all', label: 'Todos os estados' }, ...statusOptions]}
+            />
+          </Field>
+        </div>
+        {loading ? (
+          <SkeletonTable cols={5} />
+        ) : error ? (
+          <ErrorNote error={error} />
+        ) : records.length === 0 ? (
+          <EmptyState title="Sem registos de execução">
+            <p>A fila de revisão ainda não tem pedidos persistidos.</p>
+          </EmptyState>
+        ) : filtered.length === 0 ? (
+          <EmptyState title={t('settings.privacy.emptyResults.title')}>
+            <p>{t('settings.privacy.emptyResults.body')}</p>
+          </EmptyState>
+        ) : (
+          <Table
+            head={
+              <tr>
+                <th>Pedido</th>
+                <th>Estado</th>
+                <th>Política</th>
+                <th>Bloqueios e aprovações</th>
+                <th>Próximo passo</th>
+              </tr>
+            }
+          >
+            {filtered.map((record) => (
+              <tr key={record.id}>
+                <td>
+                  <div className="stack--tight">
+                    <span className="mono">{record.candidate.record_id ?? record.id}</span>
+                    <span>
+                      {record.candidate.scope} / {record.candidate.category}
+                    </span>
+                    <span className="muted">
+                      {formatDateTime(record.requested_at)} · {record.actor}
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <div className="stack--tight">
+                    <Badge tone={retentionExecutionStatusTone(record.execution_status)}>
+                      {retentionExecutionStatusLabel(record.execution_status)}
+                    </Badge>
+                    <span className="muted">{record.outcome}</span>
+                    <span className="muted">{record.operator_review_decision}</span>
+                  </div>
+                </td>
+                <td>
+                  <div className="stack--tight">
+                    <span>{record.requested_policy.name ?? 'Política não encontrada'}</span>
+                    <span className="muted">{record.requested_policy.id ?? 'Sem política'}</span>
+                    <span className="muted">
+                      {record.requested_policy.schedule_id ?? 'Sem calendário'}
+                      {record.requested_policy.retention_period
+                        ? ` · ${record.requested_policy.retention_period}`
+                        : ''}
+                    </span>
+                    {record.requested_policy.disposal_action ? (
+                      <span>
+                        {retentionDisposalLabel(t, record.requested_policy.disposal_action)}
+                      </span>
+                    ) : null}
+                  </div>
+                </td>
+                <td>
+                  <div className="stack--tight">
+                    {record.workflow.blockers.length > 0 ? (
+                      record.workflow.blockers.map((blocker) => (
+                        <span key={`${record.id}-${blocker.code}-${blocker.policy_id ?? ''}`}>
+                          <strong>{blocker.code}</strong>: {blocker.message}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="muted">Sem bloqueios</span>
+                    )}
+                    {record.legal_hold_blockers.map((blocker) => (
+                      <span key={`${record.id}-hold-${blocker.policy_id}`}>
+                        <strong>{blocker.name}</strong>: {blocker.reason}
+                      </span>
+                    ))}
+                    {record.workflow.required_approvals.map((approval) => (
+                      <span key={`${record.id}-${approval.code}-${approval.required_from}`}>
+                        <strong>{approval.code}</strong>: {approval.required_from}
+                      </span>
+                    ))}
+                    {record.approval ? (
+                      <span>
+                        <strong>{record.approval.approval_reference}</strong> ·{' '}
+                        {record.approval.approved_by}
+                      </span>
+                    ) : null}
+                  </div>
+                </td>
+                <td>
+                  <div className="stack--tight">
+                    <span>{record.workflow.next_step}</span>
+                    {record.operator_notes ? (
+                      <span className="muted">{record.operator_notes}</span>
+                    ) : null}
+                    <span className="muted">
+                      targets_acted: {record.execution_result.targets_acted.length} ·
+                      destructive_disposal_completed:{' '}
+                      {String(record.execution_result.destructive_disposal_completed)} ·
+                      full_erasure_completed:{' '}
+                      {String(record.execution_result.full_erasure_completed)}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function RetentionPolicyPanel({
   records,
   loading,
@@ -1894,9 +2142,14 @@ function RetentionPolicyPanel({
   saving,
   runningDryRun,
   dryRunReport,
+  executionRecords,
+  executionLoading,
+  executionError,
+  executionStatusFilter,
   onCreate,
   onPatch,
   onDryRun,
+  onExecutionStatusFilterChange,
 }: {
   records: RetentionPolicyView[];
   loading: boolean;
@@ -1904,9 +2157,14 @@ function RetentionPolicyPanel({
   saving: boolean;
   runningDryRun: boolean;
   dryRunReport: RetentionDryRunReport | null;
+  executionRecords: RetentionExecutionRecord[];
+  executionLoading: boolean;
+  executionError: unknown;
+  executionStatusFilter: RetentionExecutionStatus | 'all';
   onCreate: (body: CreateRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onPatch: (id: string, body: PatchRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onDryRun: (form: RetentionDryRunFormState) => Promise<void>;
+  onExecutionStatusFilterChange: (status: RetentionExecutionStatus | 'all') => void;
 }) {
   const t = useT();
   const toast = useToast();
@@ -2076,6 +2334,13 @@ function RetentionPolicyPanel({
         </div>
       </Card>
       <RetentionDryRunPanel running={runningDryRun} report={dryRunReport} onDryRun={onDryRun} />
+      <RetentionExecutionReviewQueue
+        records={executionRecords}
+        loading={executionLoading}
+        error={executionError}
+        statusFilter={executionStatusFilter}
+        onStatusFilterChange={onExecutionStatusFilterChange}
+      />
     </div>
   );
 }
@@ -2084,11 +2349,18 @@ export function PrivacyComplianceSection() {
   const t = useT();
   const can = useCan();
   const canManage = can('user.manage') || can('settings.manage');
+  const [retentionExecutionStatusFilter, setRetentionExecutionStatusFilter] = useState<
+    RetentionExecutionStatus | 'all'
+  >('all');
   const processors = usePrivacyProcessors(canManage);
   const dpias = usePrivacyDpias(canManage);
   const breachPlaybooks = usePrivacyBreachPlaybooks(canManage);
   const transferControls = usePrivacyTransferControls(canManage);
   const retentionPolicies = usePrivacyRetentionPolicies(canManage);
+  const retentionExecutions = usePrivacyRetentionExecutions(
+    retentionExecutionStatusFilter,
+    canManage,
+  );
   const createProcessor = useCreatePrivacyProcessor();
   const patchProcessor = usePatchPrivacyProcessor();
   const createDpia = useCreatePrivacyDpia();
@@ -2179,9 +2451,14 @@ export function PrivacyComplianceSection() {
         saving={createRetentionPolicy.isPending || patchRetentionPolicy.isPending}
         runningDryRun={dryRunRetentionPolicy.isPending}
         dryRunReport={dryRunRetentionPolicy.data ?? null}
+        executionRecords={retentionExecutions.data ?? []}
+        executionLoading={retentionExecutions.isLoading}
+        executionError={retentionExecutions.error}
+        executionStatusFilter={retentionExecutionStatusFilter}
         onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
         onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
         onDryRun={dryRunRetention}
+        onExecutionStatusFilterChange={setRetentionExecutionStatusFilter}
       />
     </div>
   );

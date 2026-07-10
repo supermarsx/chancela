@@ -629,6 +629,7 @@ mod tests {
                 numbering_scheme: NumberingScheme::Sequential,
                 opening_date: date!(2026 - 01 - 10),
                 required_signatories: vec!["Administrador".to_owned()],
+                required_signatory_records: Vec::new(),
             })
             .expect("open book");
         for _ in 0..4 {
@@ -646,6 +647,7 @@ mod tests {
                 numbering_scheme: NumberingScheme::Sequential,
                 opening_date: date!(2026 - 02 - 01),
                 required_signatories: vec!["Presidente".to_owned()],
+                required_signatory_records: Vec::new(),
             })
             .expect("open successor");
         for _ in 0..8 {
@@ -657,6 +659,7 @@ mod tests {
                 reason: ClosingReason::BookFull,
                 closing_date: date!(2026 - 06 - 30),
                 required_signatories: vec!["Presidente".to_owned()],
+                required_signatory_records: Vec::new(),
             })
             .expect("close successor");
 

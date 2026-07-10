@@ -23,7 +23,10 @@ use chancela_authz::Permission;
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_book, scope_of_entity};
-use crate::dto::{ActView, BookView, BooksQuery, CloseBook, CreateBook, read_redaction_for_actor};
+use crate::dto::{
+    ActView, BookView, BooksQuery, CloseBook, CreateBook, normalize_termo_signatories,
+    read_redaction_for_actor,
+};
 use crate::error::ApiError;
 
 #[derive(Debug, Deserialize)]
@@ -54,9 +57,25 @@ pub async fn create_book(
     attestor: CurrentAttestor,
     Json(req): Json<CreateBook>,
 ) -> Result<(StatusCode, Json<BookView>), ApiError> {
+    let CreateBook {
+        entity_id,
+        kind,
+        purpose,
+        numbering_scheme,
+        opening_date,
+        required_signatories,
+        predecessor,
+        actor: req_actor,
+    } = req;
     // Fail fast on a bad date before taking any lock or minting a book.
-    let opening_date = crate::dto::parse_date(&req.opening_date)?;
-    let entity_id = EntityId(req.entity_id);
+    let opening_date = crate::dto::parse_date(&opening_date)?;
+    let required_signatory_records =
+        normalize_termo_signatories(required_signatories, "required_signatories")?;
+    let required_signatories = required_signatory_records
+        .iter()
+        .map(chancela_core::book::TermoSignatory::legacy_label)
+        .collect();
+    let entity_id = EntityId(entity_id);
     // RBAC (t64-E3): opening a book is scoped to the owning entity (resolved from the body).
     require_permission(
         &state,
@@ -65,7 +84,7 @@ pub async fn create_book(
         scope_of_entity(entity_id),
     )
     .await?;
-    let actor = actor.resolve(&req.actor);
+    let actor = actor.resolve(&req_actor);
 
     // entities → books → ledger.
     let entities = state.entities.read().await;
@@ -78,14 +97,15 @@ pub async fn create_book(
         entity_name: entity.name.clone(),
         entity_nipc: entity.nipc.to_string(),
         entity_seat: entity.seat.clone(),
-        purpose: req.purpose,
-        numbering_scheme: req.numbering_scheme,
+        purpose,
+        numbering_scheme,
         opening_date,
-        required_signatories: req.required_signatories,
+        required_signatories,
+        required_signatory_records,
     };
-    let mut book = match req.predecessor {
-        Some(p) => Book::new_successor(entity_id, req.kind, BookId(p)),
-        None => Book::new(entity_id, req.kind),
+    let mut book = match predecessor {
+        Some(p) => Book::new_successor(entity_id, kind, BookId(p)),
+        None => Book::new(entity_id, kind),
     };
     // Appends the `book.opened` genesis event; a fresh book always opens cleanly.
     open_and_seal_book(&mut book, entity, termo, &actor, &mut ledger)?;
@@ -196,6 +216,12 @@ pub async fn close_book(
     attestor: CurrentAttestor,
     Json(req): Json<CloseBook>,
 ) -> Result<Json<BookView>, ApiError> {
+    let CloseBook {
+        reason,
+        closing_date,
+        required_signatories,
+        actor: req_actor,
+    } = req;
     // RBAC (t64-E3): closing a book is scoped to the book.
     require_permission(
         &state,
@@ -204,8 +230,14 @@ pub async fn close_book(
         scope_of_book(BookId(id)),
     )
     .await?;
-    let closing_date = crate::dto::parse_date(&req.closing_date)?;
-    let actor = actor.resolve(&req.actor);
+    let closing_date = crate::dto::parse_date(&closing_date)?;
+    let required_signatory_records =
+        normalize_termo_signatories(required_signatories, "required_signatories")?;
+    let required_signatories = required_signatory_records
+        .iter()
+        .map(chancela_core::book::TermoSignatory::legacy_label)
+        .collect();
+    let actor = actor.resolve(&req_actor);
 
     // entities → books → ledger (entities read so the family selects the encerramento template).
     let entities = state.entities.read().await;
@@ -218,9 +250,10 @@ pub async fn close_book(
     let mut next = book.clone();
     let termo = TermoDeEncerramento {
         ata_count: 0,
-        reason: req.reason,
+        reason,
         closing_date,
-        required_signatories: req.required_signatories,
+        required_signatories,
+        required_signatory_records,
     };
     next.close(termo)?; // BookError::NotClosable → 409
 

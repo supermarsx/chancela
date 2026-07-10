@@ -4215,7 +4215,9 @@ a.btn--primary {
 }
 
 .pdf-validator-findings,
-.pdf-validator-timestamps {
+.pdf-validator-timestamps,
+.pdf-validator-signatures,
+.pdf-validator-digests {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
@@ -4225,8 +4227,10 @@ a.btn--primary {
 }
 
 .pdf-validator-findings > li,
-.pdf-validator-timestamps > li {
+.pdf-validator-timestamps > li,
+.pdf-validator-signatures > li {
   display: flex;
+  flex-direction: column;
   gap: 0.7rem;
   min-width: 0;
   padding: 0.75rem 0;
@@ -4234,7 +4238,8 @@ a.btn--primary {
 }
 
 .pdf-validator-findings > li:first-child,
-.pdf-validator-timestamps > li:first-child {
+.pdf-validator-timestamps > li:first-child,
+.pdf-validator-signatures > li:first-child {
   border-top: 0;
 }
 
@@ -4242,16 +4247,49 @@ a.btn--primary {
   margin: 0.2rem 0 0;
 }
 
-.pdf-validator-timestamps > li,
-.pdf-validator-timestamps > li > span {
+.pdf-validator-evidence-head,
+.pdf-validator-evidence-head > span {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.pdf-validator-timestamps > li > span {
-  display: inline-flex;
-  gap: 0.5rem;
+.pdf-validator-evidence-head > span {
+  justify-content: flex-start;
+}
+
+.pdf-validator-chipline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.pdf-validator-chip {
+  max-width: 100%;
+  padding: 0.12rem 0.34rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.pdf-validator-digests {
+  gap: 0.35rem;
+}
+
+.pdf-validator-digests .digest {
+  max-width: 100%;
+}
+
+.pdf-validator-signatures {
+  margin-top: 0.75rem;
+}
+
+.pdf-validator-signatures .pdf-validator-kv {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
 }
 
 /* ==========================================================================

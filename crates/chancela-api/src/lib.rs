@@ -142,7 +142,7 @@ pub use authz::{
     scope_of_book, scope_of_entity,
 };
 pub use database::{
-    AppStateInitError, DB_KEY_ENV, DB_KEY_FILE_ENV, DatabaseEncryptionConfig,
+    AppStateInitError, DB_KEY_ENV, DB_KEY_FILE_ENV, DB_KEY_SOURCE_ENV, DatabaseEncryptionConfig,
     DatabaseEncryptionConfigError, DatabaseEncryptionKeySource,
 };
 pub use delegations::{DelegationId, StoredDelegation};
@@ -457,6 +457,9 @@ pub struct AppState {
     /// Whether the durable SQLite store was opened with a configured SQLCipher key. False for
     /// plaintext store mode and for pure in-memory state. The key itself is never stored here.
     pub database_encryption_configured: bool,
+    /// Non-secret source classification for the configured database encryption key. `None` means no
+    /// database key was configured; this never contains key material.
+    pub database_encryption_key_source: Option<DatabaseEncryptionKeySource>,
 }
 
 impl AppState {
@@ -626,6 +629,7 @@ impl AppState {
         // allowed to block startup (plan §D-boot); a broken but readable chain still boots and is
         // surfaced via `chain_status` (banner + `/health`).
         let encrypted_store = database_encryption.is_configured();
+        let encryption_key_source = database_encryption.key_source();
         match Store::open_with_options(&dir, database_encryption.store_open_options()) {
             Ok(store) => match store.load() {
                 Ok(loaded) => {
@@ -660,6 +664,7 @@ impl AppState {
                         state.pending_signatures = Arc::new(RwLock::new(pending));
                     }
                     state.database_encryption_configured = encrypted_store;
+                    state.database_encryption_key_source = encryption_key_source;
                     state.store = Some(store);
                 }
                 Err(e) if encrypted_store => {

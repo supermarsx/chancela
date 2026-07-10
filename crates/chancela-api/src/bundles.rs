@@ -31,7 +31,7 @@ use chancela_authz::{Permission, Scope};
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_book};
-use crate::dto::{BookView, parse_date};
+use crate::dto::{BookView, TermoSignatoryInput, normalize_termo_signatories, parse_date};
 use crate::error::ApiError;
 use crate::recovery::{ChainBreakView, map_store_error};
 
@@ -230,7 +230,7 @@ pub struct StartOverBookRequest {
     #[serde(default = "default_numbering")]
     pub numbering_scheme: chancela_core::NumberingScheme,
     pub opening_date: String,
-    pub required_signatories: Vec<String>,
+    pub required_signatories: Vec<TermoSignatoryInput>,
     #[serde(default = "default_actor")]
     pub actor: String,
 }
@@ -272,9 +272,23 @@ pub async fn start_over_book(
         scope_of_book(BookId(id)),
     )
     .await?;
+    let StartOverBookRequest {
+        reason,
+        purpose,
+        numbering_scheme,
+        opening_date,
+        required_signatories,
+        actor: req_actor,
+    } = req;
     // Fail fast on a bad date before any lock or archive.
-    let opening_date = parse_date(&req.opening_date)?;
-    let actor = actor.resolve(&req.actor);
+    let opening_date = parse_date(&opening_date)?;
+    let required_signatory_records =
+        normalize_termo_signatories(required_signatories, "required_signatories")?;
+    let required_signatories = required_signatory_records
+        .iter()
+        .map(chancela_core::book::TermoSignatory::legacy_label)
+        .collect();
+    let actor = actor.resolve(&req_actor);
     let old_book_id = BookId(id);
 
     let Some(store) = state.store.clone() else {
@@ -300,7 +314,7 @@ pub async fn start_over_book(
     // 1. Archive-then-fresh: export (retained + ledger.exported) + ledger.reinitialized + a fresh
     //    successor SHELL (Created state, new id) persisted by the store.
     let reinit = store
-        .start_over_book(&mut ledger, old_book_id, &req.reason, &actor, at, &data_dir)
+        .start_over_book(&mut ledger, old_book_id, &reason, &actor, at, &data_dir)
         .map_err(map_store_error)?;
     let new_book_id = reinit
         .new_book_id
@@ -323,10 +337,11 @@ pub async fn start_over_book(
         entity_name: entity.name.clone(),
         entity_nipc: entity.nipc.to_string(),
         entity_seat: entity.seat.clone(),
-        purpose: req.purpose,
-        numbering_scheme: req.numbering_scheme,
+        purpose,
+        numbering_scheme,
         opening_date,
-        required_signatories: req.required_signatories,
+        required_signatories,
+        required_signatory_records,
     };
     // Appends the `book.opened` genesis of the successor chain (fresh chain, always opens cleanly).
     open_and_seal_book(&mut new_book, entity, termo, &actor, &mut ledger)?;

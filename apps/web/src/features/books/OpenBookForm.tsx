@@ -1,8 +1,8 @@
 /**
  * Open-and-create a book (WFL-10/11, `POST /v1/books`). Used both on the Livros page
  * (with an entity picker) and on an entity's detail page (entity fixed). Required
- * signatories are entered one-per-line and trimmed into the `string[]` the contract
- * expects. The opening date is an ISO `YYYY-MM-DD` string straight from `<input
+ * signatories are captured as structured records in the legacy `required_signatories`
+ * field. The opening date is an ISO `YYYY-MM-DD` string straight from `<input
  * type="date">`, matching §2.1.
  *
  * The audit actor is NOT entered here: the current user (the topbar picker) is the
@@ -13,14 +13,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOpenBook, useSettings } from '../../api/hooks';
-import { bookKindLabels, numberingSchemeLabels, optionsFrom } from '../../api/labels';
+import {
+  bookKindLabels,
+  numberingSchemeLabels,
+  optionsFrom,
+  signatoryCapacityLabels,
+} from '../../api/labels';
 import { useT } from '../../i18n';
 import {
   BOOK_KINDS,
   NUMBERING_SCHEMES,
+  SIGNATORY_CAPACITIES,
+  type BookTermoSignatoryInput,
   type BookKind,
   type Entity,
   type NumberingScheme,
+  type SignatoryCapacity,
 } from '../../api/types';
 import {
   Button,
@@ -31,7 +39,6 @@ import {
   InlineWarning,
   Input,
   Select,
-  TextArea,
   useToast,
 } from '../../ui';
 
@@ -40,6 +47,99 @@ export function parseLines(text: string): string[] {
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
+}
+
+export interface TermoSignatoryDraft {
+  name: string;
+  capacity: SignatoryCapacity | '';
+  email: string;
+}
+
+const emptySignatory = (): TermoSignatoryDraft => ({ name: '', capacity: '', email: '' });
+
+export function parseTermoSignatories(rows: TermoSignatoryDraft[]): BookTermoSignatoryInput[] {
+  return rows
+    .map((row) => ({
+      name: row.name.trim(),
+      capacity: row.capacity || null,
+      email: row.email.trim() || null,
+    }))
+    .filter((row) => row.name.length > 0 || row.capacity || row.email);
+}
+
+export function TermoSignatoryFields({
+  idPrefix,
+  rows,
+  onChange,
+}: {
+  idPrefix: string;
+  rows: TermoSignatoryDraft[];
+  onChange: (rows: TermoSignatoryDraft[]) => void;
+}) {
+  const t = useT();
+  const update = (index: number, patch: Partial<TermoSignatoryDraft>) =>
+    onChange(rows.map((row, idx) => (idx === index ? { ...row, ...patch } : row)));
+  const capacityOptions = [
+    { value: '', label: '—' },
+    ...optionsFrom(SIGNATORY_CAPACITIES, signatoryCapacityLabels),
+  ];
+
+  return (
+    <div className="stack--tight">
+      {rows.map((row, index) => {
+        const rowHasDetails = row.capacity !== '' || row.email.trim().length > 0;
+        return (
+          <div className="rowline" key={index}>
+            <Field label={t('acts.signatoryNameAria')} htmlFor={`${idPrefix}-name-${index}`}>
+              <Input
+                id={`${idPrefix}-name-${index}`}
+                value={row.name}
+                required={rowHasDetails}
+                onChange={(e) => update(index, { name: e.target.value })}
+                placeholder={t('acts.namePlaceholder')}
+              />
+            </Field>
+            <Field label={t('acts.capacityAria')} htmlFor={`${idPrefix}-capacity-${index}`}>
+              <Select
+                id={`${idPrefix}-capacity-${index}`}
+                value={row.capacity}
+                onChange={(e) =>
+                  update(index, { capacity: e.target.value as SignatoryCapacity | '' })
+                }
+                options={capacityOptions}
+              />
+            </Field>
+            <Field label={t('registry.email.label')} htmlFor={`${idPrefix}-email-${index}`}>
+              <Input
+                id={`${idPrefix}-email-${index}`}
+                type="email"
+                value={row.email}
+                autoComplete="email"
+                onChange={(e) => update(index, { email: e.target.value })}
+                placeholder={t('registry.email.placeholder')}
+              />
+            </Field>
+            <Button
+              type="button"
+              variant="ghost"
+              icon={<Icon.Trash />}
+              onClick={() => onChange(rows.filter((_, idx) => idx !== index))}
+            >
+              {t('common.remove')}
+            </Button>
+          </div>
+        );
+      })}
+      <Button
+        type="button"
+        variant="secondary"
+        icon={<Icon.Plus />}
+        onClick={() => onChange([...rows, emptySignatory()])}
+      >
+        {t('acts.addSignatory')}
+      </Button>
+    </div>
+  );
 }
 
 interface Props {
@@ -61,7 +161,7 @@ export function OpenBookForm({ entityId, entities }: Props) {
   const [purpose, setPurpose] = useState('');
   const [scheme, setScheme] = useState<NumberingScheme>('Sequential');
   const [openingDate, setOpeningDate] = useState('');
-  const [signatories, setSignatories] = useState('');
+  const [signatories, setSignatories] = useState<TermoSignatoryDraft[]>([emptySignatory()]);
   const [predecessor, setPredecessor] = useState('');
 
   // Seed the numbering scheme from the configured default once the settings document
@@ -86,7 +186,7 @@ export function OpenBookForm({ entityId, entities }: Props) {
         purpose,
         numbering_scheme: scheme,
         opening_date: openingDate,
-        required_signatories: parseLines(signatories),
+        required_signatories: parseTermoSignatories(signatories),
         predecessor: predecessor.trim() || undefined,
       },
       {
@@ -156,17 +256,11 @@ export function OpenBookForm({ entityId, entities }: Props) {
             onChange={(e) => setOpeningDate(e.target.value)}
           />
         </Field>
-        <Field
-          label={t('books.open.signatories')}
-          htmlFor="book-signatories"
-          hint={t('books.oneNamePerLine')}
-        >
-          <TextArea
-            id="book-signatories"
-            rows={3}
-            value={signatories}
-            onChange={(e) => setSignatories(e.target.value)}
-            placeholder={t('books.open.signatoriesPlaceholder')}
+        <Field label={t('books.open.signatories')}>
+          <TermoSignatoryFields
+            idPrefix="book-signatories"
+            rows={signatories}
+            onChange={setSignatories}
           />
         </Field>
         <Field

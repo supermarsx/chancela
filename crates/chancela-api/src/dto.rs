@@ -19,9 +19,9 @@ use uuid::Uuid;
 use chancela_authz::{Permission, ScopedPermissionSet};
 use chancela_cae::CaeCatalog;
 use chancela_core::act::{AiHumanVerification, AiHumanVerificationStatus, AiProvenance};
-use chancela_core::book::ClosingReason;
 #[cfg(test)]
 use chancela_core::book::{BookId, TermoDeAbertura};
+use chancela_core::book::{ClosingReason, TermoSignatory};
 #[cfg(test)]
 use chancela_core::entity::EntityId;
 use chancela_core::{
@@ -469,6 +469,8 @@ pub struct BookView {
     pub predecessor: Option<String>,
     pub required_signatories_abertura: Option<Vec<String>>,
     pub required_signatories_encerramento: Option<Vec<String>>,
+    pub required_signatory_records_abertura: Option<Vec<TermoSignatoryView>>,
+    pub required_signatory_records_encerramento: Option<Vec<TermoSignatoryView>>,
 }
 
 impl From<&Book> for BookView {
@@ -489,6 +491,12 @@ impl From<&Book> for BookView {
             predecessor: b.predecessor.map(|p| p.to_string()),
             required_signatories_abertura: ab.map(|t| t.required_signatories.clone()),
             required_signatories_encerramento: en.map(|t| t.required_signatories.clone()),
+            required_signatory_records_abertura: ab.map(|t| {
+                termo_signatory_records(&t.required_signatory_records, &t.required_signatories)
+            }),
+            required_signatory_records_encerramento: en.map(|t| {
+                termo_signatory_records(&t.required_signatory_records, &t.required_signatories)
+            }),
         }
     }
 }
@@ -515,7 +523,95 @@ impl BookView {
             .required_signatories_encerramento
             .as_ref()
             .map(|items| vec![redacted(); items.len()]);
+        self.required_signatory_records_abertura = self
+            .required_signatory_records_abertura
+            .as_ref()
+            .map(|items| vec![TermoSignatoryView::redacted(); items.len()]);
+        self.required_signatory_records_encerramento = self
+            .required_signatory_records_encerramento
+            .as_ref()
+            .map(|items| vec![TermoSignatoryView::redacted(); items.len()]);
     }
+}
+
+/// Wire view of a structured opening/closing termo signatory.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TermoSignatoryView {
+    pub name: String,
+    #[serde(default, alias = "role")]
+    pub capacity: Option<SignatoryCapacity>,
+    #[serde(default)]
+    pub email: Option<String>,
+}
+
+impl From<&TermoSignatory> for TermoSignatoryView {
+    fn from(s: &TermoSignatory) -> Self {
+        TermoSignatoryView {
+            name: s.name.clone(),
+            capacity: s.capacity,
+            email: s.email.clone(),
+        }
+    }
+}
+
+impl TermoSignatoryView {
+    fn redacted() -> Self {
+        TermoSignatoryView {
+            name: redacted(),
+            capacity: None,
+            email: None,
+        }
+    }
+}
+
+fn termo_signatory_records(
+    structured: &[TermoSignatory],
+    legacy: &[String],
+) -> Vec<TermoSignatoryView> {
+    if structured.is_empty() {
+        legacy
+            .iter()
+            .map(|value| TermoSignatoryView::from(&TermoSignatory::from_legacy(value.clone())))
+            .collect()
+    } else {
+        structured.iter().map(TermoSignatoryView::from).collect()
+    }
+}
+
+/// Request item accepted in the legacy `required_signatories` array.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum TermoSignatoryInput {
+    Legacy(String),
+    Structured(TermoSignatoryView),
+}
+
+pub(crate) fn normalize_termo_signatories(
+    items: Vec<TermoSignatoryInput>,
+    field: &'static str,
+) -> Result<Vec<TermoSignatory>, ApiError> {
+    let mut out = Vec::with_capacity(items.len());
+    for (idx, item) in items.into_iter().enumerate() {
+        let mut record = match item {
+            TermoSignatoryInput::Legacy(value) => TermoSignatory::from_legacy(value.trim()),
+            TermoSignatoryInput::Structured(value) => TermoSignatory {
+                name: value.name.trim().to_owned(),
+                capacity: value.capacity,
+                email: crate::email::normalize_optional_email(
+                    value.email,
+                    "required_signatories.email",
+                )?,
+            },
+        };
+        if record.name.trim().is_empty() {
+            return Err(ApiError::Unprocessable(format!(
+                "{field}[{idx}].name must not be empty"
+            )));
+        }
+        record.name = record.name.trim().to_owned();
+        out.push(record);
+    }
+    Ok(out)
 }
 
 /// Body of `POST /v1/books` (create + open in one step, WFL-10/11).
@@ -527,7 +623,7 @@ pub struct CreateBook {
     #[serde(default = "default_numbering")]
     pub numbering_scheme: NumberingScheme,
     pub opening_date: String,
-    pub required_signatories: Vec<String>,
+    pub required_signatories: Vec<TermoSignatoryInput>,
     pub predecessor: Option<Uuid>,
     #[serde(default = "default_actor")]
     pub actor: String,
@@ -538,7 +634,7 @@ pub struct CreateBook {
 pub struct CloseBook {
     pub reason: ClosingReason,
     pub closing_date: String,
-    pub required_signatories: Vec<String>,
+    pub required_signatories: Vec<TermoSignatoryInput>,
     #[serde(default = "default_actor")]
     pub actor: String,
 }
@@ -2771,6 +2867,18 @@ mod tests {
             numbering_scheme: NumberingScheme::Sequential,
             opening_date: parse_date("2026-07-10").expect("valid date"),
             required_signatories: vec!["Amélia Marques".to_owned(), "Rui Nunes".to_owned()],
+            required_signatory_records: vec![
+                TermoSignatory {
+                    name: "Amélia Marques".to_owned(),
+                    capacity: Some(SignatoryCapacity::Administrator),
+                    email: Some("amelia@example.pt".to_owned()),
+                },
+                TermoSignatory {
+                    name: "Rui Nunes".to_owned(),
+                    capacity: None,
+                    email: None,
+                },
+            ],
         })
         .expect("book opens");
 
@@ -2780,10 +2888,102 @@ mod tests {
             view.required_signatories_abertura,
             Some(vec![REDACTED.to_owned(), REDACTED.to_owned()])
         );
+        assert_eq!(
+            view.required_signatory_records_abertura,
+            Some(vec![
+                TermoSignatoryView::redacted(),
+                TermoSignatoryView::redacted()
+            ])
+        );
         let raw = serde_json::to_string(&view).expect("book view JSON");
         assert!(!raw.contains("Ata com assunto reservado"));
         assert!(!raw.contains("Amélia Marques"));
         assert!(!raw.contains("Rui Nunes"));
+        assert!(!raw.contains("amelia@example.pt"));
+    }
+
+    #[test]
+    fn book_view_falls_back_to_structured_records_for_legacy_signatory_strings() {
+        let mut book = Book::new(EntityId(Uuid::from_u128(1)), BookKind::AssembleiaGeral);
+        book.open(TermoDeAbertura {
+            entity_name: "Encosto Estratégico Lda".to_owned(),
+            entity_nipc: "503004642".to_owned(),
+            entity_seat: "Rua da Liberdade".to_owned(),
+            purpose: "Livro".to_owned(),
+            numbering_scheme: NumberingScheme::Sequential,
+            opening_date: parse_date("2026-07-10").expect("valid date"),
+            required_signatories: vec!["Administrador".to_owned()],
+            required_signatory_records: Vec::new(),
+        })
+        .expect("book opens");
+
+        let view = BookView::from(&book);
+        assert_eq!(
+            view.required_signatory_records_abertura,
+            Some(vec![TermoSignatoryView {
+                name: "Administrador".to_owned(),
+                capacity: None,
+                email: None,
+            }])
+        );
+    }
+
+    #[test]
+    fn create_book_required_signatories_accept_legacy_strings_and_structured_records() {
+        let req: CreateBook = serde_json::from_value(serde_json::json!({
+            "entity_id": "00000000-0000-0000-0000-000000000001",
+            "kind": "AssembleiaGeral",
+            "purpose": "livro",
+            "opening_date": "2026-07-10",
+            "required_signatories": [
+                "Administrador",
+                {
+                    "name": " Amélia Marques ",
+                    "capacity": "Chair",
+                    "email": " AMELIA@EXAMPLE.PT "
+                }
+            ]
+        }))
+        .expect("compatible required_signatories request deserializes");
+
+        let records = normalize_termo_signatories(req.required_signatories, "required_signatories")
+            .expect("signatories normalize");
+        assert_eq!(records[0], TermoSignatory::from_legacy("Administrador"));
+        assert_eq!(
+            records[1],
+            TermoSignatory {
+                name: "Amélia Marques".to_owned(),
+                capacity: Some(SignatoryCapacity::Chair),
+                email: Some("amelia@example.pt".to_owned()),
+            }
+        );
+        let legacy: Vec<_> = records.iter().map(TermoSignatory::legacy_label).collect();
+        assert_eq!(legacy, vec!["Administrador", "Amélia Marques (Chair)"]);
+    }
+
+    #[test]
+    fn structured_termo_signatory_rejects_blank_name_and_invalid_email() {
+        let blank = normalize_termo_signatories(
+            vec![TermoSignatoryInput::Structured(TermoSignatoryView {
+                name: " ".to_owned(),
+                capacity: Some(SignatoryCapacity::Chair),
+                email: None,
+            })],
+            "required_signatories",
+        );
+        assert!(matches!(blank, Err(ApiError::Unprocessable(msg)) if msg.contains("name")));
+
+        let invalid_email = normalize_termo_signatories(
+            vec![TermoSignatoryInput::Structured(TermoSignatoryView {
+                name: "Amélia Marques".to_owned(),
+                capacity: None,
+                email: Some("not-an-email".to_owned()),
+            })],
+            "required_signatories",
+        );
+        assert!(
+            matches!(invalid_email, Err(ApiError::Unprocessable(msg)) if msg.contains("email"))
+        );
     }
 
     #[test]

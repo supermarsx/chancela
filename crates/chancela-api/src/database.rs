@@ -3,21 +3,36 @@ use std::fmt;
 use std::path::PathBuf;
 
 use chancela_store::{StoreError, StoreOpenOptions};
+use serde::Serialize;
 
 /// Environment variable carrying a SQLCipher database passphrase directly.
 pub const DB_KEY_ENV: &str = "CHANCELA_DB_KEY";
 /// Environment variable pointing at a file containing the SQLCipher database passphrase.
 pub const DB_KEY_FILE_ENV: &str = "CHANCELA_DB_KEY_FILE";
+/// Environment variable selecting the database-key source class.
+///
+/// `operator` preserves the existing [`DB_KEY_ENV`] / [`DB_KEY_FILE_ENV`] behavior. A
+/// `hardware_derived_fallback` request currently fails closed because this crate does not yet have
+/// a hardware-bound key derivation provider.
+pub const DB_KEY_SOURCE_ENV: &str = "CHANCELA_DB_KEY_SOURCE";
 
 /// Where a database encryption key came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DatabaseEncryptionKeySource {
     /// The key was read directly from [`DB_KEY_ENV`].
+    #[serde(rename = "operator_env")]
     Env,
     /// The key was read from the file named by [`DB_KEY_FILE_ENV`].
+    #[serde(rename = "operator_key_file")]
     File,
     /// The key was supplied by an embedding caller instead of the process environment.
     Programmatic,
+    /// A future hardware-derived default/fallback key source.
+    ///
+    /// This is a status/config value only today: requesting it fails closed instead of deriving from
+    /// a static application secret or another weak fallback.
+    HardwareDerivedFallback,
 }
 
 impl DatabaseEncryptionKeySource {
@@ -26,13 +41,31 @@ impl DatabaseEncryptionKeySource {
             Self::Env => DB_KEY_ENV,
             Self::File => DB_KEY_FILE_ENV,
             Self::Programmatic => "programmatic database encryption key",
+            Self::HardwareDerivedFallback => "hardware-derived database encryption key fallback",
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabaseEncryptionKeySourceRequest {
+    Operator,
+    HardwareDerivedFallback,
+}
+
+type ConfigResult<T> = Result<T, DatabaseEncryptionConfigError>;
+
 /// Invalid database encryption configuration.
 #[derive(Debug)]
 pub enum DatabaseEncryptionConfigError {
+    /// The key-source selector contained non-Unicode data.
+    NonUnicodeKeySource,
+    /// The key-source selector named a source class this build does not understand.
+    UnsupportedKeySource {
+        /// The operator-supplied selector value.
+        value: String,
+    },
+    /// Hardware-bound default/fallback key derivation was requested, but no provider is wired.
+    HardwareDerivedFallbackUnavailable,
     /// Both supported key sources were configured. Only one may be used.
     AmbiguousSources,
     /// The direct key env var contained non-Unicode data.
@@ -56,6 +89,22 @@ pub enum DatabaseEncryptionConfigError {
 impl fmt::Display for DatabaseEncryptionConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NonUnicodeKeySource => write!(
+                f,
+                "{DB_KEY_SOURCE_ENV} contains non-Unicode data; database key-source selectors must \
+                 be UTF-8"
+            ),
+            Self::UnsupportedKeySource { value } => write!(
+                f,
+                "{DB_KEY_SOURCE_ENV}={value:?} is not supported; use operator or \
+                 hardware_derived_fallback"
+            ),
+            Self::HardwareDerivedFallbackUnavailable => write!(
+                f,
+                "hardware-derived database key fallback was requested via {DB_KEY_SOURCE_ENV}, but \
+                 no hardware-bound key derivation provider is implemented; startup fails closed \
+                 instead of using a static or weak database key"
+            ),
             Self::AmbiguousSources => write!(
                 f,
                 "{DB_KEY_ENV} and {DB_KEY_FILE_ENV} are both set; configure only one database \
@@ -98,12 +147,14 @@ impl std::error::Error for DatabaseEncryptionConfigError {
 #[derive(Clone, Default)]
 pub struct DatabaseEncryptionConfig {
     key: Option<String>,
+    source: Option<DatabaseEncryptionKeySource>,
 }
 
 impl fmt::Debug for DatabaseEncryptionConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DatabaseEncryptionConfig")
             .field("key", &self.key.as_ref().map(|_| "<redacted>"))
+            .field("source", &self.source)
             .finish()
     }
 }
@@ -115,13 +166,22 @@ impl DatabaseEncryptionConfig {
     }
 
     /// Build a database encryption config from a caller-supplied key.
-    pub fn with_key(key: impl Into<String>) -> Result<Self, DatabaseEncryptionConfigError> {
+    pub fn with_key(key: impl Into<String>) -> ConfigResult<Self> {
         let key = normalize_key(key.into(), DatabaseEncryptionKeySource::Programmatic)?;
-        Ok(Self { key: Some(key) })
+        Ok(Self {
+            key: Some(key),
+            source: Some(DatabaseEncryptionKeySource::Programmatic),
+        })
     }
 
-    /// Resolve database encryption settings from [`DB_KEY_ENV`] / [`DB_KEY_FILE_ENV`].
-    pub fn from_env() -> Result<Self, DatabaseEncryptionConfigError> {
+    /// Resolve database encryption settings from [`DB_KEY_SOURCE_ENV`], [`DB_KEY_ENV`], and
+    /// [`DB_KEY_FILE_ENV`].
+    pub fn from_env() -> ConfigResult<Self> {
+        let key_source_request = key_source_request_from_env()?;
+        if key_source_request == DatabaseEncryptionKeySourceRequest::HardwareDerivedFallback {
+            return Self::from_sources_for_request(None, None, key_source_request);
+        }
+
         let key = match std::env::var_os(DB_KEY_ENV) {
             Some(raw) => Some(os_secret_to_string(raw)?),
             None => None,
@@ -135,6 +195,11 @@ impl DatabaseEncryptionConfig {
         self.key.is_some()
     }
 
+    /// Non-secret key-source classification for startup/status reporting.
+    pub fn key_source(&self) -> Option<DatabaseEncryptionKeySource> {
+        self.source
+    }
+
     /// Convert this resolved encryption config into durable-store open options.
     ///
     /// The returned options redact key material in `Debug`; callers must still avoid logging the
@@ -146,15 +211,25 @@ impl DatabaseEncryptionConfig {
         }
     }
 
-    fn from_sources(
+    fn from_sources(key: Option<String>, key_file: Option<PathBuf>) -> ConfigResult<Self> {
+        Self::from_sources_for_request(key, key_file, DatabaseEncryptionKeySourceRequest::Operator)
+    }
+
+    fn from_sources_for_request(
         key: Option<String>,
         key_file: Option<PathBuf>,
-    ) -> Result<Self, DatabaseEncryptionConfigError> {
+        key_source_request: DatabaseEncryptionKeySourceRequest,
+    ) -> ConfigResult<Self> {
+        if key_source_request == DatabaseEncryptionKeySourceRequest::HardwareDerivedFallback {
+            return Err(DatabaseEncryptionConfigError::HardwareDerivedFallbackUnavailable);
+        }
+
         match (key, key_file) {
             (None, None) => Ok(Self::plaintext()),
             (Some(_), Some(_)) => Err(DatabaseEncryptionConfigError::AmbiguousSources),
             (Some(raw), None) => Ok(Self {
                 key: Some(normalize_key(raw, DatabaseEncryptionKeySource::Env)?),
+                source: Some(DatabaseEncryptionKeySource::Env),
             }),
             (None, Some(path)) => {
                 if path.as_os_str().is_empty() {
@@ -168,6 +243,7 @@ impl DatabaseEncryptionConfig {
                 })?;
                 Ok(Self {
                     key: Some(normalize_key(raw, DatabaseEncryptionKeySource::File)?),
+                    source: Some(DatabaseEncryptionKeySource::File),
                 })
             }
         }
@@ -244,15 +320,36 @@ impl From<DatabaseEncryptionConfigError> for AppStateInitError {
     }
 }
 
-fn os_secret_to_string(raw: OsString) -> Result<String, DatabaseEncryptionConfigError> {
+fn os_secret_to_string(raw: OsString) -> ConfigResult<String> {
     raw.into_string()
         .map_err(|_| DatabaseEncryptionConfigError::NonUnicodeKey)
 }
 
-fn normalize_key(
-    raw: String,
-    source: DatabaseEncryptionKeySource,
-) -> Result<String, DatabaseEncryptionConfigError> {
+fn key_source_request_from_env() -> ConfigResult<DatabaseEncryptionKeySourceRequest> {
+    let Some(raw) = std::env::var_os(DB_KEY_SOURCE_ENV) else {
+        return Ok(DatabaseEncryptionKeySourceRequest::Operator);
+    };
+    let value = raw
+        .into_string()
+        .map_err(|_| DatabaseEncryptionConfigError::NonUnicodeKeySource)?;
+    parse_key_source_request(&value)
+}
+
+fn parse_key_source_request(value: &str) -> ConfigResult<DatabaseEncryptionKeySourceRequest> {
+    let normalized = value.trim().to_ascii_lowercase().replace('-', "_");
+    match normalized.as_str() {
+        "" | "operator" | "operator_env" | "operator_key" | "operator_key_file" | "env"
+        | "file" => Ok(DatabaseEncryptionKeySourceRequest::Operator),
+        "hardware" | "hardware_bound" | "hardware_derived" | "hardware_derived_fallback" => {
+            Ok(DatabaseEncryptionKeySourceRequest::HardwareDerivedFallback)
+        }
+        _ => Err(DatabaseEncryptionConfigError::UnsupportedKeySource {
+            value: value.to_owned(),
+        }),
+    }
+}
+
+fn normalize_key(raw: String, source: DatabaseEncryptionKeySource) -> ConfigResult<String> {
     if raw.trim().is_empty() {
         return Err(DatabaseEncryptionConfigError::EmptyKey { source });
     }
@@ -304,6 +401,7 @@ mod tests {
         let config =
             DatabaseEncryptionConfig::from_sources(None, None).expect("default config parses");
         assert!(!config.is_configured());
+        assert_eq!(config.key_source(), None);
 
         let dir = TempDir::new();
         let state = match crate::AppState::try_with_data_dir(dir.path().to_path_buf(), config) {
@@ -382,9 +480,66 @@ mod tests {
             DatabaseEncryptionConfig::from_sources(None, Some(key_file)).expect("read key file");
 
         assert!(config.is_configured());
+        assert_eq!(config.key_source(), Some(DatabaseEncryptionKeySource::File));
         let debug = format!("{config:?}");
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("correct horse battery staple"));
+    }
+
+    #[test]
+    fn direct_key_records_operator_env_source_without_leaking_key() {
+        let config = DatabaseEncryptionConfig::from_sources(Some("env secret".to_owned()), None)
+            .expect("env key config");
+
+        assert!(config.is_configured());
+        assert_eq!(config.key_source(), Some(DatabaseEncryptionKeySource::Env));
+        let debug = format!("{config:?}");
+        assert!(debug.contains("Env"));
+        assert!(!debug.contains("env secret"));
+    }
+
+    #[test]
+    fn programmatic_key_records_programmatic_source_without_leaking_key() {
+        let config = DatabaseEncryptionConfig::with_key("programmatic secret").expect("valid key");
+
+        assert_eq!(
+            config.key_source(),
+            Some(DatabaseEncryptionKeySource::Programmatic)
+        );
+        let debug = format!("{config:?}");
+        assert!(debug.contains("Programmatic"));
+        assert!(!debug.contains("programmatic secret"));
+    }
+
+    #[test]
+    fn hardware_derived_fallback_request_fails_closed_without_static_key() {
+        let err = DatabaseEncryptionConfig::from_sources_for_request(
+            Some("operator secret should not matter".to_owned()),
+            None,
+            DatabaseEncryptionKeySourceRequest::HardwareDerivedFallback,
+        )
+        .expect_err("hardware fallback is not silently substituted");
+
+        assert!(matches!(
+            err,
+            DatabaseEncryptionConfigError::HardwareDerivedFallbackUnavailable
+        ));
+        let message = err.to_string();
+        assert!(message.contains(DB_KEY_SOURCE_ENV));
+        assert!(message.contains("fails closed"));
+        assert!(!message.contains("operator secret"));
+    }
+
+    #[test]
+    fn unsupported_key_source_selector_is_rejected() {
+        let err = parse_key_source_request("static-test-key")
+            .expect_err("unsupported key-source selectors fail closed");
+
+        assert!(matches!(
+            err,
+            DatabaseEncryptionConfigError::UnsupportedKeySource { .. }
+        ));
+        assert!(err.to_string().contains(DB_KEY_SOURCE_ENV));
     }
 
     #[cfg(not(feature = "sqlcipher"))]

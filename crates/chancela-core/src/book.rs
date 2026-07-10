@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
+use crate::act::SignatoryCapacity;
 use crate::entity::EntityId;
 use crate::error::BookError;
 
@@ -71,6 +72,40 @@ pub enum NumberingScheme {
     LooseLeaf,
 }
 
+/// A structured signatory expected on a book opening/closing termo.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TermoSignatory {
+    /// Signatory name.
+    pub name: String,
+    /// Capacity in which the person signs, when it maps to the modeled capacity enum.
+    #[serde(default)]
+    pub capacity: Option<SignatoryCapacity>,
+    /// Optional contact email for coordinating this signatory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+}
+
+impl TermoSignatory {
+    /// Build a structured record from the legacy string-only field.
+    #[must_use]
+    pub fn from_legacy(value: impl Into<String>) -> Self {
+        TermoSignatory {
+            name: value.into(),
+            capacity: None,
+            email: None,
+        }
+    }
+
+    /// Render a backward-compatible string for existing readers.
+    #[must_use]
+    pub fn legacy_label(&self) -> String {
+        match self.capacity {
+            Some(capacity) => format!("{} ({capacity:?})", self.name),
+            None => self.name.clone(),
+        }
+    }
+}
+
 /// The **termo de abertura**: the formal instrument that opens a book (WFL-11).
 ///
 /// For digital books its sealed form is the genesis event of the book's hash chain
@@ -93,6 +128,9 @@ pub struct TermoDeAbertura {
     /// Names/capacities of the signatories required by the entity profile
     /// (management / administrator) — the signatures that give the termo its force.
     pub required_signatories: Vec<String>,
+    /// Structured signatory records, additive over the legacy string list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_signatory_records: Vec<TermoSignatory>,
 }
 
 /// Why a book was closed (WFL-13).
@@ -117,6 +155,9 @@ pub struct TermoDeEncerramento {
     pub closing_date: Date,
     /// Names/capacities of the required signatories.
     pub required_signatories: Vec<String>,
+    /// Structured signatory records, additive over the legacy string list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_signatory_records: Vec<TermoSignatory>,
 }
 
 /// Active legal-hold metadata attached to a book.
@@ -239,6 +280,11 @@ mod tests {
             numbering_scheme: NumberingScheme::Sequential,
             opening_date: date!(2026 - 01 - 15),
             required_signatories: vec!["Presidente do Conselho de Administração".into()],
+            required_signatory_records: vec![TermoSignatory {
+                name: "Amélia Marques".into(),
+                capacity: Some(SignatoryCapacity::Chair),
+                email: Some("amelia@example.pt".into()),
+            }],
         }
     }
 
@@ -248,6 +294,11 @@ mod tests {
             reason: ClosingReason::BookFull,
             closing_date: date!(2026 - 12 - 31),
             required_signatories: vec!["Administrador".into()],
+            required_signatory_records: vec![TermoSignatory {
+                name: "Rui Nunes".into(),
+                capacity: Some(SignatoryCapacity::Administrator),
+                email: None,
+            }],
         }
     }
 
@@ -320,5 +371,24 @@ mod tests {
         let first = Book::new(entity, BookKind::AssembleiaGeral);
         let second = Book::new_successor(entity, BookKind::AssembleiaGeral, first.id);
         assert_eq!(second.predecessor, Some(first.id));
+    }
+
+    #[test]
+    fn termo_signatory_keeps_legacy_label() {
+        let record = TermoSignatory {
+            name: "Amélia Marques".into(),
+            capacity: Some(SignatoryCapacity::Administrator),
+            email: Some("amelia@example.pt".into()),
+        };
+
+        assert_eq!(record.legacy_label(), "Amélia Marques (Administrator)");
+        assert_eq!(
+            TermoSignatory::from_legacy("Administrador"),
+            TermoSignatory {
+                name: "Administrador".into(),
+                capacity: None,
+                email: None,
+            }
+        );
     }
 }

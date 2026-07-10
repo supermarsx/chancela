@@ -2,9 +2,11 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type {
   DocTimeStampValidationReport,
+  LocalTechnicalRenewalPlanReport,
   PdfSignatureValidationFinding,
   PdfSignatureValidationResponse,
   PdfValidationStatus,
+  SignatureLocalRenewalPlanReport,
 } from '../../api/types';
 import { useValidatePdfSignature } from '../../api/hooks';
 import { saveBlobAs, saveBlobResultMessage } from '../../desktop/saveFile';
@@ -94,6 +96,15 @@ function statusLabel(status: PdfValidationStatus, t: TFunction): string {
 function findingTone(severity: string): 'neutral' | 'warn' | 'error' {
   if (severity === 'error') return 'error';
   if (severity === 'warning') return 'warn';
+  return 'neutral';
+}
+
+function evidenceTone(status: string): 'neutral' | 'ok' | 'warn' | 'error' {
+  const normalized = status.toLowerCase();
+  if (normalized === 'valid' || normalized === 'available') return 'ok';
+  if (normalized.includes('invalid') || normalized.includes('failed')) return 'error';
+  if (normalized.includes('indeterminate') || normalized.includes('unavailable')) return 'warn';
+  if (normalized.includes('unsupported') || normalized.includes('gap')) return 'warn';
   return 'neutral';
 }
 
@@ -206,6 +217,154 @@ function KeyValueGrid({ rows }: { rows: { label: string; value: ReactNode }[] })
   );
 }
 
+function TextList({ values, emptyLabel }: { values: string[]; emptyLabel: string }) {
+  if (!values.length) return <span className="muted">{emptyLabel}</span>;
+  return (
+    <span className="pdf-validator-chipline">
+      {values.map((value, index) => (
+        <code className="mono pdf-validator-chip" key={`${value}-${index}`}>
+          {value}
+        </code>
+      ))}
+    </span>
+  );
+}
+
+function DigestList({ values, emptyLabel }: { values: string[]; emptyLabel: string }) {
+  if (!values.length) return <span className="muted">{emptyLabel}</span>;
+  return (
+    <ul className="pdf-validator-digests">
+      {values.map((value, index) => (
+        <li key={`${value}-${index}`}>
+          <Digest value={value} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RenewalPlanGrid({ plan }: { plan: LocalTechnicalRenewalPlanReport }) {
+  const t = useT();
+  return (
+    <>
+      <KeyValueGrid
+        rows={[
+          {
+            label: t('pdfValidator.field.renewalPlan'),
+            value: <Badge tone={evidenceTone(plan.status)}>{plan.status}</Badge>,
+          },
+          { label: t('pdfValidator.field.statusScope'), value: plan.scope },
+          {
+            label: t('pdfValidator.field.signatureTimestamp'),
+            value: boolText(plan.signature_timestamp_present, t),
+          },
+          {
+            label: t('pdfValidator.field.revocationEvidence'),
+            value: boolText(plan.dss_revocation_evidence_present, t),
+          },
+          {
+            label: t('pdfValidator.field.dssValidationTime'),
+            value: boolText(plan.dss_validation_time_present, t),
+          },
+          {
+            label: t('pdfValidator.section.docTimestamp'),
+            value: boolText(plan.doc_timestamp_present, t),
+          },
+          {
+            label: t('pdfValidator.field.docTimestampImprints'),
+            value: boolText(plan.doc_timestamp_imprints_valid, t),
+          },
+          {
+            label: t('pdfValidator.field.missingInputs'),
+            value: (
+              <TextList values={plan.missing_inputs} emptyLabel={t('pdfValidator.value.none')} />
+            ),
+          },
+          { label: t('pdfValidator.field.nextAction'), value: plan.next_action },
+          {
+            label: t('pdfValidator.field.evidenceGaps'),
+            value: boolText(plan.has_local_evidence_gap, t),
+          },
+          {
+            label: t('pdfValidator.field.allPlanningInputs'),
+            value: boolText(plan.all_local_planning_inputs_present, t),
+          },
+          {
+            label: t('pdfValidator.field.productionProfileClaimed'),
+            value: boolText(plan.production_long_term_profile_claimed, t),
+          },
+          {
+            label: t('pdfValidator.field.legalLtvClaimed'),
+            value: boolText(plan.legal_ltv_claimed, t),
+          },
+        ]}
+      />
+      <p className="muted">{plan.notice}</p>
+    </>
+  );
+}
+
+function SignatureRenewalList({ signatures }: { signatures: SignatureLocalRenewalPlanReport[] }) {
+  const t = useT();
+  if (!signatures.length) {
+    return <p className="muted">{t('pdfValidator.signatures.none')}</p>;
+  }
+  return (
+    <ul className="pdf-validator-signatures">
+      {signatures.map((signature) => {
+        const plan = signature.local_technical_renewal_plan;
+        return (
+          <li key={`${signature.index}-${signature.object_id}`}>
+            <div className="pdf-validator-evidence-head">
+              <span>
+                <Badge tone={evidenceTone(plan.status)}>
+                  {t('pdfValidator.signature.item', { index: signature.index })}
+                </Badge>
+                <code className="mono">{signature.object_id}</code>
+              </span>
+              <span className="muted">{plan.status}</span>
+            </div>
+            <KeyValueGrid
+              rows={[
+                {
+                  label: t('pdfValidator.field.signedRevision'),
+                  value: signature.signed_revision_len,
+                },
+                {
+                  label: t('pdfValidator.field.vriKey'),
+                  value: <Digest value={signature.vri_key_sha256} />,
+                },
+                {
+                  label: t('pdfValidator.field.dssVri'),
+                  value: boolText(signature.dss_vri_present, t),
+                },
+                {
+                  label: t('pdfValidator.field.dssVriValidationTime'),
+                  value: boolText(signature.dss_vri_validation_time_present, t),
+                },
+                {
+                  label: t('pdfValidator.field.missingInputs'),
+                  value: (
+                    <TextList
+                      values={plan.missing_inputs}
+                      emptyLabel={t('pdfValidator.value.none')}
+                    />
+                  ),
+                },
+                { label: t('pdfValidator.field.nextAction'), value: plan.next_action },
+                {
+                  label: t('pdfValidator.field.legalLtvClaimed'),
+                  value: boolText(plan.legal_ltv_claimed, t),
+                },
+              ]}
+            />
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function EvidenceDetails({ report }: { report: PdfSignatureValidationResponse }) {
   const t = useT();
   const sig = report.signature;
@@ -213,6 +372,8 @@ function EvidenceDetails({ report }: { report: PdfSignatureValidationResponse })
   const cades = sig.cades;
   const dss = sig.dss;
   const docTs = sig.doc_timestamp;
+  const renewalPlan = sig.local_technical_renewal_plan;
+  const multiRenewalPlan = sig.multi_signature_local_renewal_plan;
 
   return (
     <div className="pdf-validator-details">
@@ -285,6 +446,22 @@ function EvidenceDetails({ report }: { report: PdfSignatureValidationResponse })
                 value: boolText(byteRange.has_later_incremental_updates, t),
               },
               {
+                label: t('pdfValidator.field.signedRevision'),
+                value: byteRange.signed_revision_len,
+              },
+              {
+                label: t('pdfValidator.field.excludedBytes'),
+                value: byteRange.excluded_len ?? '—',
+              },
+              {
+                label: t('pdfValidator.field.coversWholeFile'),
+                value: boolText(byteRange.covers_whole_file_except_contents, t),
+              },
+              {
+                label: t('pdfValidator.field.coversSignedRevision'),
+                value: boolText(byteRange.covers_signed_revision_except_contents, t),
+              },
+              {
                 label: t('pdfValidator.field.signedRevisionDigest'),
                 value: byteRange.digest_sha256 ? <Digest value={byteRange.digest_sha256} /> : '—',
               },
@@ -320,12 +497,40 @@ function EvidenceDetails({ report }: { report: PdfSignatureValidationResponse })
             { label: t('pdfValidator.field.dssPresent'), value: boolText(dss.present, t) },
             { label: t('pdfValidator.field.vri'), value: dss.vri_count },
             { label: t('pdfValidator.field.vriTu'), value: dss.vri_tu_count },
+            {
+              label: t('pdfValidator.field.vriTuKeys'),
+              value: (
+                <TextList values={dss.vri_tu_keys} emptyLabel={t('pdfValidator.value.none')} />
+              ),
+            },
             { label: t('pdfValidator.field.certificates'), value: dss.certificate_count },
             { label: t('pdfValidator.field.ocsp'), value: dss.ocsp_count },
             { label: t('pdfValidator.field.crl'), value: dss.crl_count },
             {
               label: t('pdfValidator.field.revocationEvidence'),
               value: boolText(dss.revocation_evidence_present, t),
+            },
+            { label: t('pdfValidator.field.statusScope'), value: dss.status_scope },
+            {
+              label: t('pdfValidator.field.certificateHashes'),
+              value: (
+                <DigestList
+                  values={dss.certificate_sha256}
+                  emptyLabel={t('pdfValidator.value.none')}
+                />
+              ),
+            },
+            {
+              label: t('pdfValidator.field.ocspHashes'),
+              value: (
+                <DigestList values={dss.ocsp_sha256} emptyLabel={t('pdfValidator.value.none')} />
+              ),
+            },
+            {
+              label: t('pdfValidator.field.crlHashes'),
+              value: (
+                <DigestList values={dss.crl_sha256} emptyLabel={t('pdfValidator.value.none')} />
+              ),
             },
           ]}
         />
@@ -342,21 +547,66 @@ function EvidenceDetails({ report }: { report: PdfSignatureValidationResponse })
               label: t('pdfValidator.field.imprints'),
               value: boolText(docTs.all_imprints_valid, t),
             },
+            { label: t('pdfValidator.field.statusScope'), value: docTs.status_scope },
+            {
+              label: t('pdfValidator.field.tokenHashes'),
+              value: (
+                <DigestList values={docTs.token_sha256} emptyLabel={t('pdfValidator.value.none')} />
+              ),
+            },
           ]}
         />
         {docTs.validations.length ? (
           <ul className="pdf-validator-timestamps">
             {docTs.validations.map((validation: DocTimeStampValidationReport) => (
               <li key={`${validation.index}-${validation.object_id}`}>
-                <span>
-                  <Badge tone={validation.status === 'valid' ? 'ok' : 'warn'}>
-                    {validation.status}
-                  </Badge>
-                  <code className="mono">{validation.object_id}</code>
-                </span>
-                <span className="muted">
-                  {validation.failure_reason ?? validation.token_hash_algorithm ?? '—'}
-                </span>
+                <div className="pdf-validator-evidence-head">
+                  <span>
+                    <Badge tone={validation.status === 'valid' ? 'ok' : 'warn'}>
+                      {validation.status}
+                    </Badge>
+                    <code className="mono">{validation.object_id}</code>
+                  </span>
+                  <span className="muted">
+                    {validation.failure_reason ?? validation.token_hash_algorithm ?? '—'}
+                  </span>
+                </div>
+                <KeyValueGrid
+                  rows={[
+                    {
+                      label: t('pdfValidator.field.byteRange'),
+                      value: validation.byte_range ? (
+                        <code className="mono">{validation.byte_range.join(', ')}</code>
+                      ) : (
+                        '—'
+                      ),
+                    },
+                    {
+                      label: t('pdfValidator.field.documentDigest'),
+                      value: validation.document_digest_sha256 ? (
+                        <Digest value={validation.document_digest_sha256} />
+                      ) : (
+                        '—'
+                      ),
+                    },
+                    {
+                      label: t('pdfValidator.field.tokenImprint'),
+                      value: validation.token_imprint_sha256 ? (
+                        <Digest value={validation.token_imprint_sha256} />
+                      ) : (
+                        '—'
+                      ),
+                    },
+                    {
+                      label: t('pdfValidator.field.hashAlgorithm'),
+                      value: validation.token_hash_algorithm ?? '—',
+                    },
+                    {
+                      label: t('pdfValidator.field.failureReason'),
+                      value: validation.failure_reason ?? '—',
+                    },
+                  ]}
+                />
               </li>
             ))}
           </ul>
@@ -364,10 +614,71 @@ function EvidenceDetails({ report }: { report: PdfSignatureValidationResponse })
       </details>
 
       <details open>
+        <summary>{t('pdfValidator.section.signatures')}</summary>
+        <KeyValueGrid
+          rows={[
+            {
+              label: t('pdfValidator.field.renewalPlan'),
+              value: <Badge tone={evidenceTone(renewalPlan.status)}>{renewalPlan.status}</Badge>,
+            },
+            {
+              label: t('pdfValidator.field.multiSignaturePlan'),
+              value: (
+                <Badge tone={evidenceTone(multiRenewalPlan.status)}>
+                  {multiRenewalPlan.status}
+                </Badge>
+              ),
+            },
+            {
+              label: t('pdfValidator.field.signatureCount'),
+              value: multiRenewalPlan.signature_count,
+            },
+            {
+              label: t('pdfValidator.field.signaturesWithGaps'),
+              value: (
+                <TextList
+                  values={multiRenewalPlan.signatures_with_local_evidence_gaps.map(String)}
+                  emptyLabel={t('pdfValidator.value.none')}
+                />
+              ),
+            },
+            { label: t('pdfValidator.field.nextAction'), value: multiRenewalPlan.next_action },
+            {
+              label: t('pdfValidator.field.evidenceGaps'),
+              value: boolText(multiRenewalPlan.has_local_evidence_gap, t),
+            },
+            {
+              label: t('pdfValidator.field.allPlanningInputs'),
+              value: boolText(multiRenewalPlan.all_local_planning_inputs_present, t),
+            },
+            { label: t('pdfValidator.field.statusScope'), value: multiRenewalPlan.scope },
+            {
+              label: t('pdfValidator.field.productionProfileClaimed'),
+              value: boolText(multiRenewalPlan.production_long_term_profile_claimed, t),
+            },
+            {
+              label: t('pdfValidator.field.legalLtvClaimed'),
+              value: boolText(multiRenewalPlan.legal_ltv_claimed, t),
+            },
+          ]}
+        />
+        <p className="muted">{multiRenewalPlan.notice}</p>
+        <details>
+          <summary>{t('pdfValidator.section.renewalPlan')}</summary>
+          <RenewalPlanGrid plan={renewalPlan} />
+        </details>
+        <SignatureRenewalList signatures={multiRenewalPlan.signatures} />
+      </details>
+
+      <details open>
         <summary>{t('pdfValidator.section.trust')}</summary>
         <KeyValueGrid
           rows={[
             { label: t('pdfValidator.field.trust'), value: report.trust.status },
+            {
+              label: t('pdfValidator.field.trustPerformed'),
+              value: boolText(report.trust.performed, t),
+            },
             {
               label: t('pdfValidator.field.liveTsl'),
               value: boolText(report.trust.live_trusted_list_validation_performed, t),
@@ -382,13 +693,25 @@ function EvidenceDetails({ report }: { report: PdfSignatureValidationResponse })
               value: boolText(report.revocation.live_fetch_performed, t),
             },
             {
+              label: t('pdfValidator.field.revocationFreshness'),
+              value: boolText(report.revocation.freshness_validation_performed, t),
+            },
+            {
               label: t('pdfValidator.field.embeddedRevocation'),
               value: boolText(report.revocation.embedded_revocation_evidence_present, t),
             },
             { label: t('pdfValidator.field.qualification'), value: report.qualification.status },
             {
+              label: t('pdfValidator.field.qualifiedStatusClaimed'),
+              value: boolText(report.qualification.qualified_status_claimed, t),
+            },
+            {
               label: t('pdfValidator.field.legalValidity'),
               value: boolText(report.qualification.legal_validity_claimed, t),
+            },
+            {
+              label: t('pdfValidator.field.legalEffectAssessed'),
+              value: boolText(report.qualification.legal_effect_assessed, t),
             },
           ]}
         />
