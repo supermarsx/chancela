@@ -152,6 +152,20 @@ function permissionLabel(check: DataPermissionCheck, t: TFunction): string {
   return check.ok ? t('data.status.permission.ok') : t('data.status.permission.warn');
 }
 
+function permissionSummary(
+  permissions: DataPermissionStatus,
+  t: TFunction,
+): { label: string; tone: 'ok' | 'warn' | 'neutral' } {
+  const checks = PERMISSION_ROWS.map((row) => permissions[row.key]);
+  if (checks.some((check) => check.checked && !check.ok)) {
+    return { label: t('data.status.permission.warn'), tone: 'warn' };
+  }
+  if (checks.some((check) => !check.checked)) {
+    return { label: t('data.status.permission.unchecked'), tone: 'neutral' };
+  }
+  return { label: t('data.status.permission.ok'), tone: 'ok' };
+}
+
 function concernMetaItems(concern: DataUsageConcern, t: TFunction, locale: string): string[] {
   const parts = [
     t(BASIS_LABEL[concern.basis]),
@@ -394,9 +408,7 @@ function DataKeyRotationExecutionReport({
             <div>
               <dt>Integridade pós-rekey</dt>
               <dd>
-                {execution.evidence.post_rekey_integrity_checked
-                  ? t('common.yes')
-                  : t('common.no')}
+                {execution.evidence.post_rekey_integrity_checked ? t('common.yes') : t('common.no')}
               </dd>
             </div>
           </dl>
@@ -458,6 +470,7 @@ function DataStatusPanel() {
   const [lastPreflight, setLastPreflight] = useState<DataKeyRotationPreflight | null>(null);
   const [lastExecution, setLastExecution] = useState<DataKeyRotationExecution | null>(null);
   const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
+  const permissions = data ? permissionSummary(data.permissions, t) : null;
   const canClean = Boolean(
     dataPath &&
     data?.data_dir.exists &&
@@ -546,6 +559,16 @@ function DataStatusPanel() {
               <dd>{formatTimestamp(data.generated_at, locale)}</dd>
             </div>
             <div>
+              <dt>{t('data.status.usage.title')}</dt>
+              <dd className="mono">{formatBytes(data.usage.total_bytes, locale)}</dd>
+            </div>
+            <div>
+              <dt>{t('data.status.permissions.title')}</dt>
+              <dd>
+                {permissions ? <Badge tone={permissions.tone}>{permissions.label}</Badge> : '—'}
+              </dd>
+            </div>
+            <div>
               <dt>{t('data.status.durable')}</dt>
               <dd>
                 <Badge tone={data.persistence.durable_store_open ? 'ok' : 'warn'}>
@@ -620,6 +643,60 @@ function DataStatusPanel() {
             <p className="field__hint">{t('data.status.openUnavailable')}</p>
           </section>
 
+          <section className="data-status-section" aria-labelledby="data-status-permissions">
+            <div className="data-status-section__head">
+              <h4 id="data-status-permissions">{t('data.status.permissions.title')}</h4>
+            </div>
+            <ul className="data-status-permissions">
+              {PERMISSION_ROWS.map((row) => {
+                const check = data.permissions[row.key];
+                return (
+                  <li
+                    key={row.key}
+                    className={`data-status-probe data-status-probe--${permissionTone(check)}`}
+                  >
+                    <span className="data-status-probe__label">{t(row.label)}</span>
+                    <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
+                    {check.message ? (
+                      <span className="data-status-probe__message">{check.message}</span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+
+          <section className="data-status-section" aria-labelledby="data-status-usage">
+            <div className="data-status-section__head">
+              <h4 id="data-status-usage">{t('data.status.usage.title')}</h4>
+              <p className="data-status-total">
+                {t('data.status.usage.total')}:{' '}
+                <span className="mono">{formatBytes(data.usage.total_bytes, locale)}</span>
+              </p>
+            </div>
+
+            <div className="data-status-usage-groups data-status-usage-groups--breakdown">
+              <div className="data-status-usage-group">
+                <h5>{t('data.status.usage.filesystem')}</h5>
+                <UsageList concerns={data.usage.filesystem} locale={locale} t={t} />
+              </div>
+              <div className="data-status-usage-group">
+                <h5>{t('data.status.usage.sqliteLogical')}</h5>
+                <UsageList concerns={data.usage.sqlite_logical} locale={locale} t={t} />
+              </div>
+            </div>
+
+            {data.usage.scan_errors.length > 0 ? (
+              <InlineWarning tone="warn" title={t('data.status.scanErrors.title')}>
+                <ul className="plain-list">
+                  {data.usage.scan_errors.map((error) => (
+                    <li key={error}>{error}</li>
+                  ))}
+                </ul>
+              </InlineWarning>
+            ) : null}
+          </section>
+
           <section className="data-status-section" aria-labelledby="data-status-maintenance">
             <div className="data-status-section__head">
               <div>
@@ -635,18 +712,18 @@ function DataStatusPanel() {
                     <div className="data-status-cleanup__body">
                       <h5>{t(target.title)}</h5>
                       <p>{t(target.body)}</p>
-                      <p className="data-status-cleanup__metric">
-                        <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>{' '}
-                        <span>
-                          {t('data.status.cleanup.items', {
-                            files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),
-                            directories: new Intl.NumberFormat(locale).format(
-                              usage?.directory_count ?? 0,
-                            ),
-                          })}
-                        </span>
-                      </p>
                     </div>
+                    <p className="data-status-cleanup__metric">
+                      <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
+                      <span>
+                        {t('data.status.cleanup.items', {
+                          files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),
+                          directories: new Intl.NumberFormat(locale).format(
+                            usage?.directory_count ?? 0,
+                          ),
+                        })}
+                      </span>
+                    </p>
                     <GateButton
                       perm="settings.manage"
                       type="button"
@@ -771,7 +848,9 @@ function DataStatusPanel() {
                   Executa apenas o rekey SQLCipher na base de dados durável já aberta; não converte
                   lojas SQLite em plaintext.
                 </p>
-                {keyRotationExecution.error ? <ErrorNote error={keyRotationExecution.error} /> : null}
+                {keyRotationExecution.error ? (
+                  <ErrorNote error={keyRotationExecution.error} />
+                ) : null}
                 <div className="form__actions">
                   <GateButton
                     perm="settings.manage"
@@ -789,58 +868,6 @@ function DataStatusPanel() {
             ) : null}
             {lastExecution ? (
               <DataKeyRotationExecutionReport execution={lastExecution} t={t} locale={locale} />
-            ) : null}
-          </section>
-
-          <section className="data-status-section" aria-labelledby="data-status-permissions">
-            <h4 id="data-status-permissions">{t('data.status.permissions.title')}</h4>
-            <ul className="data-status-permissions">
-              {PERMISSION_ROWS.map((row) => {
-                const check = data.permissions[row.key];
-                return (
-                  <li
-                    key={row.key}
-                    className={`data-status-probe data-status-probe--${permissionTone(check)}`}
-                  >
-                    <div className="data-status-probe__head">
-                      <span>{t(row.label)}</span>
-                      <Badge tone={permissionTone(check)}>{permissionLabel(check, t)}</Badge>
-                    </div>
-                    {check.message ? <p>{check.message}</p> : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-
-          <section className="data-status-section" aria-labelledby="data-status-usage">
-            <div className="data-status-section__head">
-              <h4 id="data-status-usage">{t('data.status.usage.title')}</h4>
-              <p className="data-status-total">
-                {t('data.status.usage.total')}:{' '}
-                <span className="mono">{formatBytes(data.usage.total_bytes, locale)}</span>
-              </p>
-            </div>
-
-            <div className="data-status-usage-groups data-status-usage-groups--breakdown">
-              <div className="data-status-usage-group">
-                <h5>{t('data.status.usage.filesystem')}</h5>
-                <UsageList concerns={data.usage.filesystem} locale={locale} t={t} />
-              </div>
-              <div className="data-status-usage-group">
-                <h5>{t('data.status.usage.sqliteLogical')}</h5>
-                <UsageList concerns={data.usage.sqlite_logical} locale={locale} t={t} />
-              </div>
-            </div>
-
-            {data.usage.scan_errors.length > 0 ? (
-              <InlineWarning tone="warn" title={t('data.status.scanErrors.title')}>
-                <ul className="plain-list">
-                  {data.usage.scan_errors.map((error) => (
-                    <li key={error}>{error}</li>
-                  ))}
-                </ul>
-              </InlineWarning>
             ) : null}
           </section>
         </div>

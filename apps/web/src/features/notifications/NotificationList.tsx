@@ -1,9 +1,14 @@
 import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { useLocale, useT } from '../../i18n';
+import { useLocale, useT, type TFunction } from '../../i18n';
 import { Badge, EmptyState, Icon, Tooltip } from '../../ui';
 import type { NotificationTriageStatus } from '../../api/types';
 import type { TriagedNotificationItem } from './triage';
+
+function compactKindLabel(item: TriagedNotificationItem, t: TFunction): string {
+  if (item.kind === 'reminder') return t('notifications.filter.reminders');
+  return item.badge;
+}
 
 function formatTimestamp(value: string | undefined, locale: string): string | null {
   if (!value) return null;
@@ -110,6 +115,14 @@ export function NotificationList({
                 ? t('notifications.status.acknowledged')
                 : null;
         const resolved = item.triageStatus === 'dismissed' || item.triageStatus === 'acknowledged';
+        const compactTitleTags: string[] = [];
+        if (compact) {
+          const kindLabel = compactKindLabel(item, t);
+          compactTitleTags.push(kindLabel);
+          if (item.kind === 'reminder' && item.badge !== kindLabel)
+            compactTitleTags.push(item.badge);
+          if (statusLabel) compactTitleTags.push(statusLabel);
+        }
         return (
           <li
             className={`notifications-list__item notifications-list__item--${item.tone}${
@@ -120,9 +133,16 @@ export function NotificationList({
             key={item.id}
           >
             <div className="notifications-list__head">
-              <Badge tone={item.tone}>{item.badge}</Badge>
-              {statusLabel ? <Badge>{statusLabel}</Badge> : null}
-              <span className="notifications-list__title">{item.title}</span>
+              {compact ? null : <Badge tone={item.tone}>{item.badge}</Badge>}
+              {!compact && statusLabel ? <Badge>{statusLabel}</Badge> : null}
+              <span className="notifications-list__title" title={item.title}>
+                {compactTitleTags.map((tag) => (
+                  <span className="notifications-list__title-tag" key={tag}>
+                    {tag}
+                  </span>
+                ))}
+                <span className="notifications-list__title-text">{item.title}</span>
+              </span>
             </div>
             <p className="notifications-list__detail muted">{item.detail}</p>
             {item.meta.length > 0 || timestamp ? (

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { Dashboard, DashboardAlert } from '../../api/types';
+import type { Dashboard, DashboardAlert, DashboardReminder } from '../../api/types';
 import { fetchTable, renderWithProviders } from '../../test/utils';
 import { NotificationBell } from './NotificationBell';
 
@@ -57,6 +57,20 @@ function actionableActAlert(overrides: Partial<DashboardAlert> = {}): DashboardA
       links: { ...targetLinks, act: '/v1/acts/act-1' },
     },
     source: 'acts.compliance',
+    ...overrides,
+  };
+}
+
+function actionableReminder(overrides: Partial<DashboardReminder> = {}): DashboardReminder {
+  return {
+    due_date: '2026-07-20',
+    severity: 'Info',
+    status: 'DueSoon',
+    reason: 'Assembleia anual pendente',
+    entity_id: 'entity-1',
+    entity_name: 'Acme, S.A.',
+    source_rule: 'csc-art376-annual',
+    source_profile: 'commercial_company',
     ...overrides,
   };
 }
@@ -155,6 +169,55 @@ describe('NotificationBell', () => {
     expectIconOnlyControl(read, 'Marcar como lida');
     expectIconOnlyControl(acknowledge, 'Reconhecer');
     expectIconOnlyControl(dismiss, 'Dispensar');
+  });
+
+  it('folds compact popup item tags into the title without separate row badges', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        {
+          match: '/v1/dashboard',
+          body: dashboard({ alerts: [actionableActAlert()], reminders: [actionableReminder()] }),
+        },
+      ]),
+    );
+
+    renderWithProviders(<NotificationBell />, ['/']);
+
+    fireEvent.click(await screen.findByRole('button', { name: '2 notificações pendentes' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const items = Array.from(dialog.querySelectorAll('.notifications-list__item'));
+    const alertItem = items.find((item) => item.textContent?.includes('Rever conformidade da ata'));
+    const reminderItem = items.find((item) =>
+      item.textContent?.includes('Assembleia geral anual pendente'),
+    );
+
+    expect(alertItem).toBeTruthy();
+    expect(reminderItem).toBeTruthy();
+
+    expect(
+      within(alertItem as HTMLElement).getByText('Alerta', {
+        selector: '.notifications-list__title-tag',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(alertItem as HTMLElement).queryByText('Alerta', { selector: '.badge' }),
+    ).toBeNull();
+
+    expect(
+      within(reminderItem as HTMLElement).getByText('Lembretes', {
+        selector: '.notifications-list__title-tag',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(reminderItem as HTMLElement).getByText('Próximo', {
+        selector: '.notifications-list__title-tag',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(reminderItem as HTMLElement).queryByText('Próximo', { selector: '.badge' }),
+    ).toBeNull();
   });
 
   it('closes the popup when clicking outside the bell and popup', async () => {
