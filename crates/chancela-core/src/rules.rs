@@ -125,6 +125,12 @@ fn legal_basis_for_rule(rule_id: &str) -> Vec<LegalBasis> {
             Some("63"),
             Some("Artigo 63.º"),
         )],
+        "CSC-54" => vec![LegalBasis::pending_law(
+            "csc",
+            "Código das Sociedades Comerciais",
+            Some("54"),
+            Some("Artigo 54.º"),
+        )],
         "CSC-377" => vec![LegalBasis::pending_law(
             "csc",
             "Código das Sociedades Comerciais",
@@ -282,6 +288,27 @@ fn channel_warning(act: &Act, entity: &Entity, prefix: &str) -> Option<Complianc
             ),
         ))
     }
+}
+
+/// Written resolutions need a captured written-evidence surface. This check does not try to
+/// prove the legal threshold or participant set; it only warns when the channel is selected but
+/// the act has neither signatory slots nor a digested attachment bound into the seal payload.
+fn written_resolution_evidence_warning(act: &Act, prefix: &str) -> Option<ComplianceIssue> {
+    if act.channel != MeetingChannel::WrittenResolution {
+        return None;
+    }
+
+    let has_bound_evidence =
+        !act.signatories.is_empty() || act.attachments.iter().any(|a| a.digest.is_some());
+    if has_bound_evidence {
+        return None;
+    }
+
+    Some(ComplianceIssue::warning(
+        &format!("{prefix}/written-resolution-evidence"),
+        "written-resolution channel has no signatory slots or digested attachment; retain the \
+         written approvals/evidence and bind them into the sealed record",
+    ))
 }
 
 /// The weighted-voting unit a family can validate from today's attendance model.
@@ -632,6 +659,7 @@ impl RulePack for CscArt63RulePack {
         // Per-resolution voting results (only checkable on the structured path).
         issues.extend(missing_vote_warnings(act, "CSC-63"));
         issues.extend(weighted_vote_warnings(act, entity, "CSC-63"));
+        issues.extend(written_resolution_evidence_warning(act, "CSC-54"));
 
         // Detached-document beginning-of-proof advisory (ENT-C6 / R7).
         if act.attachments.iter().any(|a| a.beginning_of_proof) {
@@ -745,6 +773,7 @@ impl RulePack for AssociacaoRulePack {
                 "no agenda (ordem de trabalhos) recorded on the ata",
             ));
         }
+        issues.extend(written_resolution_evidence_warning(act, "CC"));
         issues
     }
 }
@@ -799,6 +828,7 @@ impl RulePack for CooperativaRulePack {
                  (Código Cooperativo art. 41.º), not capital",
             ));
         }
+        issues.extend(written_resolution_evidence_warning(act, "CCoop"));
         issues
     }
 }
@@ -1139,6 +1169,42 @@ mod tests {
             .find(|i| i.rule_id == "CSC-63/detached-document")
             .expect("beginning-of-proof attachment should be flagged");
         assert_eq!(issue.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn written_resolution_without_bound_evidence_warns_as_pending_advisory() {
+        use crate::act::SignatorySlot;
+
+        let mut act = complete_act();
+        act.channel = MeetingChannel::WrittenResolution;
+
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CSC-54/written-resolution-evidence")
+            .expect("written resolution without evidence should warn");
+        assert_eq!(issue.severity, Severity::Warning);
+        let basis = issue.legal_basis.first().expect("CSC art. 54 basis");
+        assert_eq!(basis.source_id, "csc");
+        assert_eq!(basis.article.as_deref(), Some("54"));
+        assert_eq!(basis.article_label.as_deref(), Some("Artigo 54.º"));
+        assert_eq!(basis.verification, LegalBasisVerification::Pending);
+        assert!(!basis.source_complete);
+
+        act.signatories.push(SignatorySlot {
+            name: "Sócia A".into(),
+            email: None,
+            capacity: SignatoryCapacity::Member,
+            signed: true,
+            permilage: None,
+        });
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id == "CSC-54/written-resolution-evidence"),
+            "captured signatory slots should clear the evidence advisory: {issues:?}"
+        );
     }
 
     #[test]
@@ -1529,6 +1595,44 @@ mod tests {
         }];
         let issues = AssociacaoRulePack.check_act(&act, &e);
         assert!(issues.is_empty(), "assoc pack should be clean: {issues:?}");
+    }
+
+    #[test]
+    fn assoc_written_resolution_evidence_can_be_a_digested_attachment() {
+        use crate::act::{Attachment, AttachmentKind};
+
+        let e = family_entity(EntityKind::Associacao, "Associação Cultural");
+        let mut act = condo_act();
+        act.channel = MeetingChannel::WrittenResolution;
+        act.agenda = vec![AgendaItem {
+            number: 1,
+            text: "Ponto único".into(),
+        }];
+
+        let issues = AssociacaoRulePack.check_act(&act, &e);
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CC/written-resolution-evidence")
+            .expect("missing bound written evidence should warn");
+        assert_eq!(issue.severity, Severity::Warning);
+        assert_eq!(
+            issue.legal_basis.first().map(|b| b.verification),
+            Some(LegalBasisVerification::Pending)
+        );
+
+        act.attachments.push(Attachment {
+            label: "Deliberação escrita assinada".into(),
+            kind: AttachmentKind::Exhibit,
+            digest: Some([7; 32]),
+            beginning_of_proof: false,
+        });
+        let issues = AssociacaoRulePack.check_act(&act, &e);
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id == "CC/written-resolution-evidence"),
+            "a digested attachment bound into the seal should clear the advisory: {issues:?}"
+        );
     }
 
     #[test]
