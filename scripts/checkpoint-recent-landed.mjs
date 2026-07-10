@@ -68,6 +68,21 @@ const checks = [
     ],
   },
   {
+    name: "API official signature import guardrail acknowledgement test",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "official_signature_import",
+        "--locked",
+        "official_import_requires_guardrail_acknowledgement_without_artifact_or_event",
+      ],
+    ],
+  },
+  {
     name: "TSL XML-DSig hardening tests",
     command: ["cargo", ["test", "-p", "chancela-tsl", "--locked"]],
   },
@@ -85,6 +100,10 @@ const checks = [
       "--",
       "src/contracts/contracts.test.ts",
       "src/features/dashboard/DashboardPage.test.tsx",
+      "src/features/documents/ActDocumentPanel.test.tsx",
+      "src/features/notifications/NotificationBell.test.tsx",
+      "src/features/notifications/NotificationsPage.test.tsx",
+      "src/features/recovery/GestaoDadosSection.test.tsx",
       "src/features/signing/SigningPanel.test.tsx",
       "src/features/templates/TemplatesCatalogPage.test.tsx",
       "src/i18n/i18n.test.ts",
@@ -196,6 +215,11 @@ function assertCheckpointMap() {
     "data key rotation preflight request validation coverage",
   );
   assertFileContains(
+    "crates/chancela-api/tests/official_signature_import.rs",
+    "official_import_requires_guardrail_acknowledgement_without_artifact_or_event",
+    "official signature import guardrail acknowledgement regression coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/src/data_status.rs",
     "key_rotation_preflight_request_debug_redacts_key_material",
     "data key rotation preflight secret-redaction coverage",
@@ -224,6 +248,36 @@ function assertCheckpointMap() {
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
     "DashboardPage",
     "dashboard unit coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "Secções do painel",
+    "dashboard subtab unit coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "keeps terminal imported-document review disabled until guardrails are acknowledged",
+    "imported-document guardrail acknowledgement UI coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.test.tsx",
+    "renders popup notification controls as icon-only actions with tooltip labels",
+    "notification bell icon-only action coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationsPage.test.tsx",
+    "expectIconOnlyControl",
+    "notifications page icon-only action coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "runs a secret-clearing data key rotation preflight and renders only returned evidence",
+    "web data key rotation preflight coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "clears key rotation secrets after a failed preflight request",
+    "web data key rotation failed-request secret clearing coverage",
   );
   assertFileContains(
     "apps/web/src/features/signing/SigningPanel.test.tsx",
