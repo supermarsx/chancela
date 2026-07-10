@@ -266,6 +266,13 @@ fn key_ops_status_requires_sqlcipher_without_creating_plaintext_db() {
     assert_eq!(status.database_format, StoreDatabaseFormat::Missing);
     assert_eq!(status.plan, StoreKeyOpsPlan::SqlcipherBuildRequired);
     assert!(!status.rotation_ready());
+    assert!(!status.migration_plan.required);
+    assert_eq!(status.migration_plan.status, "not_required");
+    assert!(status.migration_plan.steps.is_empty());
+    assert_eq!(
+        status.migration_plan.evidence.plan,
+        "sqlcipher_build_required"
+    );
     assert!(
         status.operator_action().contains("lacks SQLCipher"),
         "operator action should be actionable: {}",
@@ -299,10 +306,62 @@ fn key_ops_status_refuses_plaintext_to_encrypted_migration_without_sqlcipher() {
     );
     assert!(!status.rotation_ready());
     assert!(
-        status.operator_action().contains("backup/export-restore"),
+        status
+            .operator_action()
+            .contains("backup/export-restore migration plan"),
         "operator action should describe the supported migration path: {}",
         status.operator_action()
     );
+    assert!(status.migration_plan.required);
+    assert_eq!(
+        status.migration_plan.status,
+        "refuse_direct_plaintext_to_encrypted_migration"
+    );
+    assert!(
+        status
+            .migration_plan
+            .summary
+            .contains("backup/export-restore")
+    );
+    assert_eq!(status.migration_plan.steps.len(), 4);
+    assert!(
+        status
+            .migration_plan
+            .steps
+            .iter()
+            .all(|step| !step.source_destructive),
+        "migration plan must not rewrite/delete the source plaintext database: {:?}",
+        status.migration_plan.steps
+    );
+    assert_eq!(
+        status.migration_plan.steps[0].title,
+        "backup_export_plaintext"
+    );
+    assert_eq!(status.migration_plan.steps[2].title, "restore_and_verify");
+    assert_eq!(
+        status.migration_plan.evidence.plan,
+        "refuse_plaintext_to_encrypted_migration"
+    );
+    assert_eq!(
+        status.migration_plan.evidence.database_format,
+        "plaintext_sqlite"
+    );
+    assert_eq!(status.migration_plan.evidence.key_config, "configured");
+    assert!(
+        status
+            .migration_plan
+            .evidence
+            .database_file
+            .ends_with(chancela_store::DB_FILE)
+    );
+    let plan_json = serde_json::to_string(&status.migration_plan).expect("serialize plan");
+    assert!(plan_json.contains("backup/export-restore"));
+    assert!(plan_json.contains("restore_and_verify"));
+    assert!(!plan_json.contains("correct horse battery staple"));
+    let status_json = serde_json::to_string(&status).expect("serialize status");
+    assert!(status_json.contains("\"plan\":\"refuse_plaintext_to_encrypted_migration\""));
+    assert!(status_json.contains("\"database_format\":\"plaintext_sqlite\""));
+    assert!(!status_json.contains("correct horse battery staple"));
 
     let err = Store::open_with_options(dir.path(), options)
         .expect_err("direct keyed open must not convert plaintext in place");
@@ -317,6 +376,7 @@ fn key_ops_status_refuses_plaintext_to_encrypted_migration_without_sqlcipher() {
     assert!(!message.contains("correct horse battery staple"));
     assert!(message.contains("refusing to rewrite plaintext SQLite database"));
     assert!(message.contains("backup/export-restore"));
+    assert!(message.contains("verify the restored ledger"));
 
     let reopened = Store::open(dir.path()).expect("plaintext store remains openable");
     assert_eq!(reopened.load().expect("load plaintext").chain_status, Ok(0));

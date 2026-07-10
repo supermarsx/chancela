@@ -143,9 +143,10 @@ pub enum StoreError {
     /// default build never pretends to encrypt an existing plaintext database in place.
     #[error(
         "plaintext-to-encrypted store migration is not supported by direct keyed open; refusing to \
-         rewrite plaintext SQLite database at {db_file}. Use a supported backup/export-restore \
-         migration into a fresh SQLCipher-enabled store, or remove the configured database key to \
-         keep plaintext"
+         rewrite plaintext SQLite database at {db_file}. Use the supported backup/export-restore \
+         migration plan: back up/export the plaintext instance, restore into a fresh \
+         SQLCipher-enabled store, verify the restored ledger, then retire the plaintext copy; or \
+         remove the configured database key to keep plaintext"
     )]
     PlaintextEncryptionMigrationUnsupported {
         /// The plaintext database file that triggered the migration guard.
@@ -225,7 +226,8 @@ impl StoreOpenOptions {
 }
 
 /// Secret-free classification of the configured database key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StoreKeyConfigStatus {
     /// No database encryption key was configured.
     Unconfigured,
@@ -236,7 +238,8 @@ pub enum StoreKeyConfigStatus {
 }
 
 /// What the store can infer from the database file header without opening it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StoreDatabaseFormat {
     /// No `<data_dir>/chancela.db` file exists yet.
     Missing,
@@ -248,7 +251,8 @@ pub enum StoreDatabaseFormat {
 }
 
 /// Operator-facing key operations plan for the current build, key config, and database file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StoreKeyOpsPlan {
     /// No key is configured and no database exists; startup would create a plaintext SQLite store.
     CreatePlaintextStore,
@@ -268,8 +272,53 @@ pub enum StoreKeyOpsPlan {
     RefusePlaintextToEncryptedMigration,
 }
 
+/// One operator-safe step in a plaintext-to-encrypted store migration plan.
+///
+/// These steps are descriptive only. They never perform a migration and never carry key material.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StoreKeyOpsMigrationStep {
+    /// Stable 1-based step order for operator displays.
+    pub order: u8,
+    /// Short operator-facing step title.
+    pub title: &'static str,
+    /// Concrete action text. This must stay secret-free.
+    pub detail: &'static str,
+    /// Whether the step rewrites or deletes the source plaintext database.
+    pub source_destructive: bool,
+}
+
+/// Non-secret evidence used to explain why a migration plan is or is not required.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StoreKeyOpsMigrationEvidence {
+    /// The key-ops plan that produced this migration status.
+    pub plan: &'static str,
+    /// Header-level database format observed without opening the database.
+    pub database_format: &'static str,
+    /// Secret-free classification of key configuration.
+    pub key_config: &'static str,
+    /// Whether this build can open SQLCipher databases.
+    pub sqlcipher_available: bool,
+    /// The database path inspected by preflight.
+    pub database_file: String,
+}
+
+/// Structured, secret-free migration guidance attached to key-ops status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StoreKeyOpsMigrationPlan {
+    /// Whether plaintext-to-encrypted migration is required for the current status.
+    pub required: bool,
+    /// Stable status code for API/CLI displays.
+    pub status: &'static str,
+    /// Operator-facing summary. This must stay secret-free.
+    pub summary: &'static str,
+    /// Ordered operator actions. Empty when `required` is false.
+    pub steps: Vec<StoreKeyOpsMigrationStep>,
+    /// Non-secret evidence for the status decision.
+    pub evidence: StoreKeyOpsMigrationEvidence,
+}
+
 /// Secret-free key operations status for startup banners, CLIs, and focused preflight tests.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StoreKeyOpsStatus {
     /// Whether this `chancela-store` build was compiled with the `sqlcipher` feature.
     pub sqlcipher_available: bool,
@@ -281,6 +330,8 @@ pub struct StoreKeyOpsStatus {
     pub database_format: StoreDatabaseFormat,
     /// The bounded operation plan implied by the other fields.
     pub plan: StoreKeyOpsPlan,
+    /// Structured migration guidance for plaintext-to-encrypted store transitions.
+    pub migration_plan: StoreKeyOpsMigrationPlan,
 }
 
 impl StoreKeyOpsStatus {
@@ -325,9 +376,101 @@ impl StoreKeyOpsStatus {
             }
             StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration => {
                 "plaintext SQLite database already exists; direct keyed open will not convert it in \
-                 place. Use a supported backup/export-restore migration into a fresh SQLCipher \
-                 store, or remove the key to keep plaintext"
+                 place. Use the supported backup/export-restore migration plan into a fresh \
+                 SQLCipher store, verify the restored ledger, or remove the key to keep plaintext"
             }
+        }
+    }
+}
+
+impl StoreKeyOpsMigrationPlan {
+    fn for_status(
+        plan: StoreKeyOpsPlan,
+        database_format: StoreDatabaseFormat,
+        key_config: StoreKeyConfigStatus,
+        sqlcipher_available: bool,
+        database_file: &Path,
+    ) -> Self {
+        let evidence = StoreKeyOpsMigrationEvidence {
+            plan: store_key_ops_plan_code(plan),
+            database_format: store_database_format_code(database_format),
+            key_config: store_key_config_status_code(key_config),
+            sqlcipher_available,
+            database_file: database_file.display().to_string(),
+        };
+
+        if plan != StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration {
+            return Self {
+                required: false,
+                status: "not_required",
+                summary: "no plaintext-to-encrypted export/restore migration is required for this key-ops status",
+                steps: Vec::new(),
+                evidence,
+            };
+        }
+
+        Self {
+            required: true,
+            status: "refuse_direct_plaintext_to_encrypted_migration",
+            summary: "direct keyed open is refused; use backup/export-restore into a fresh SQLCipher-enabled store",
+            steps: vec![
+                StoreKeyOpsMigrationStep {
+                    order: 1,
+                    title: "backup_export_plaintext",
+                    detail: "start the existing plaintext instance without a database key and create a verified backup/export before changing encryption settings",
+                    source_destructive: false,
+                },
+                StoreKeyOpsMigrationStep {
+                    order: 2,
+                    title: "create_fresh_encrypted_store",
+                    detail: "provision a fresh data directory with a SQLCipher-enabled build and the configured database key",
+                    source_destructive: false,
+                },
+                StoreKeyOpsMigrationStep {
+                    order: 3,
+                    title: "restore_and_verify",
+                    detail: "restore/import the verified backup/export into the fresh encrypted store and verify the ledger before promoting it",
+                    source_destructive: false,
+                },
+                StoreKeyOpsMigrationStep {
+                    order: 4,
+                    title: "retain_plaintext_until_cutover",
+                    detail: "keep the original plaintext database untouched until the encrypted restore is verified and operational",
+                    source_destructive: false,
+                },
+            ],
+            evidence,
+        }
+    }
+}
+
+fn store_key_config_status_code(status: StoreKeyConfigStatus) -> &'static str {
+    match status {
+        StoreKeyConfigStatus::Unconfigured => "unconfigured",
+        StoreKeyConfigStatus::Empty => "empty",
+        StoreKeyConfigStatus::Configured => "configured",
+    }
+}
+
+fn store_database_format_code(format: StoreDatabaseFormat) -> &'static str {
+    match format {
+        StoreDatabaseFormat::Missing => "missing",
+        StoreDatabaseFormat::PlaintextSqlite => "plaintext_sqlite",
+        StoreDatabaseFormat::NonPlaintextOrEncrypted => "non_plaintext_or_encrypted",
+    }
+}
+
+fn store_key_ops_plan_code(plan: StoreKeyOpsPlan) -> &'static str {
+    match plan {
+        StoreKeyOpsPlan::CreatePlaintextStore => "create_plaintext_store",
+        StoreKeyOpsPlan::OpenPlaintextStore => "open_plaintext_store",
+        StoreKeyOpsPlan::KeyRequiredForNonPlaintextStore => "key_required_for_non_plaintext_store",
+        StoreKeyOpsPlan::RejectEmptyKey => "reject_empty_key",
+        StoreKeyOpsPlan::SqlcipherBuildRequired => "sqlcipher_build_required",
+        StoreKeyOpsPlan::CreateEncryptedStore => "create_encrypted_store",
+        StoreKeyOpsPlan::OpenEncryptedStore => "open_encrypted_store",
+        StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration => {
+            "refuse_plaintext_to_encrypted_migration"
         }
     }
 }
@@ -913,6 +1056,13 @@ impl Store {
                 }
             },
         };
+        let migration_plan = StoreKeyOpsMigrationPlan::for_status(
+            plan,
+            database_format,
+            key_config,
+            sqlcipher_available,
+            &database_file,
+        );
 
         Ok(StoreKeyOpsStatus {
             sqlcipher_available,
@@ -920,6 +1070,7 @@ impl Store {
             database_file,
             database_format,
             plan,
+            migration_plan,
         })
     }
 

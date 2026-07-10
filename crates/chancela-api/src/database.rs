@@ -436,5 +436,6 @@ mod tests {
         assert!(!message.contains("correct horse battery staple"));
         assert!(message.contains("refusing to rewrite plaintext SQLite database"));
         assert!(message.contains("backup/export-restore"));
+        assert!(message.contains("verify the restored ledger"));
     }
 }
