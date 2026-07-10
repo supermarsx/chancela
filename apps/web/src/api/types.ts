@@ -3362,6 +3362,42 @@ export interface CcSignBody {
 /** The CC sign response — the produced qualified signature's metadata (same shape as CMD). */
 export type CcSignResult = CmdConfirmResult;
 
+// --- Local PKCS#12/PFX software-certificate signing -----------------------------
+
+/**
+ * `POST /v1/acts/{id}/signature/local/pkcs12/sign` — advanced local software-certificate
+ * signing. The encrypted PFX bytes and passphrase are transient request inputs only; the
+ * web app must never persist them in storage or query cache.
+ */
+export interface LocalPkcs12SignBody {
+  pkcs12_base64: string;
+  passphrase: string;
+  friendly_name?: string;
+  capacity?: string;
+  actor?: string;
+}
+
+/** The produced local signature metadata. This is technical evidence, not a qualified claim. */
+export interface LocalPkcs12SignResult {
+  document_id: string;
+  act_id: string;
+  family: string;
+  evidentiary_level: string;
+  trusted_list_status: string | null;
+  signing_time: string;
+  signed_at: string;
+  signed_pdf_digest: string;
+  signer_cert_subject: string | null;
+  signer_cert_sha256: string;
+  certificate_chain_count: number;
+  timestamp_token: boolean;
+  finalization: FinalizationStatus;
+  qualification_claimed: boolean;
+  legal_status_claimed: boolean;
+  status_scope: string;
+  notice: string;
+}
+
 /**
  * `POST /v1/acts/{id}/signature/dss/attach` — append caller-supplied DER evidence to an
  * existing signed PDF. Base64 fields are technical/local evidence only; no production/legal LTV

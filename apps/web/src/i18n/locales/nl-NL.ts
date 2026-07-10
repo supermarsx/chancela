@@ -2042,6 +2042,9 @@ export const nlNL: Catalog = {
     'Ondertekenen met de Burgerkaart is alleen beschikbaar in de desktoptoepassing, waarop de kaartlezer is aangesloten.',
   'signing.signed.qualifiedLabelCsc':
     'Gekwalificeerde elektronische handtekening (gekwalificeerd certificaat van een vertrouwensdienstverlener).',
+  'signing.signed.localPkcs12Title': 'Notulen ondertekend met lokaal softwarecertificaat',
+  'signing.signed.localPkcs12Label':
+    'Lokale handtekening met PKCS#12/PFX-softwarecertificaat: alleen geavanceerd technisch bewijs; geen gekwalificeerde handtekening, CMD of verklaring van rechtsgeldigheid.',
   'signing.recommended': 'Aanbevolen',
   'signing.csc.start': 'Ondertekenen met {provider}',
   'signing.csc.notConfigured': 'niet geconfigureerd',
@@ -2060,6 +2063,7 @@ export const nlNL: Catalog = {
   'signing.status.kicker': 'Estado da assinatura',
   'signing.status.signed': 'Assinada',
   'signing.status.localCard': 'Cartão local',
+  'signing.status.localPkcs12': 'Lokale PKCS#12',
   'signing.status.required': 'Obrigatória',
   'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
@@ -2109,6 +2113,26 @@ export const nlNL: Catalog = {
   'signing.provider.cc.title': 'Cartão de Cidadão',
   'signing.provider.cc.description':
     'Assinatura local com leitor ligado à aplicação de secretária. O PIN nunca é pedido no browser.',
+  'signing.provider.pkcs12.title': 'Lokaal PKCS#12/PFX-certificaat',
+  'signing.provider.pkcs12.description':
+    'Geavanceerde flow met een PFX-bestand en wachtwoord die alleen voor dit verzoek worden gebruikt. Produceert lokaal technisch bewijs, geen gekwalificeerde handtekening of CMD.',
+  'signing.provider.pkcs12.badge': 'Lokaal technisch bewijs',
+  'signing.pkcs12.start': 'Ondertekenen met lokale PKCS#12',
+  'signing.pkcs12.title': 'Lokale ondertekening met softwarecertificaat',
+  'signing.pkcs12.notice':
+    'Gebruik dit alleen wanneer lokaal technisch bewijs nodig is. Het PFX-bestand en wachtwoord worden alleen voor dit verzoek verzonden en niet door de interface opgeslagen; het resultaat is geen gekwalificeerde handtekening, CMD of verklaring van rechtsgeldigheid.',
+  'signing.pkcs12.file.label': 'PKCS#12/PFX-bestand',
+  'signing.pkcs12.file.hint': 'Selecteer een .p12- of .pfx-bestand op deze computer.',
+  'signing.pkcs12.passphrase.label': 'Certificaatwachtwoord',
+  'signing.pkcs12.passphrase.hint': 'Alleen gebruikt voor dit verzoek; nooit opgeslagen.',
+  'signing.pkcs12.friendlyName.label': 'Beschrijvende naam',
+  'signing.pkcs12.friendlyName.hint':
+    'Optioneel. Gebruik dit wanneer de PFX meer dan één identiteit bevat.',
+  'signing.pkcs12.capacity.label': 'Hoedanigheid/capaciteit',
+  'signing.pkcs12.capacity.hint':
+    'Optioneel. Registreert de hoedanigheid waarin de ondertekenaar handelt.',
+  'signing.pkcs12.sign': 'Lokaal ondertekenen',
+  'signing.pkcs12.signing': 'Lokaal ondertekenen…',
   'signing.provider.loading': 'A carregar prestadores remotos configurados…',
   'signing.provider.unavailable.title': 'Prestadores remotos indisponíveis',
   'signing.provider.unavailable.body':

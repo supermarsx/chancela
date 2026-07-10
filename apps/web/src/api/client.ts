@@ -114,6 +114,8 @@ import type {
   CmdConfirmResult,
   CcSignBody,
   CcSignResult,
+  LocalPkcs12SignBody,
+  LocalPkcs12SignResult,
   CreateExternalSignerInviteBody,
   CreateExternalSignerInviteResult,
   ExternalSignerInviteDecision,
@@ -573,6 +575,10 @@ export const api = {
   // PIN / not activated / no reader) is an honest 422 whose PT message is surfaced verbatim.
   ccSignSignature: (id: string, body: CcSignBody = {}) =>
     post<CcSignResult>(`/v1/acts/${id}/signature/cc/sign`, body),
+  // Advanced local PKCS#12/PFX software-certificate signing. The PFX bytes and passphrase
+  // ride only in this request body; the response is local technical evidence, not qualified/CMD.
+  localPkcs12SignSignature: (id: string, body: LocalPkcs12SignBody) =>
+    post<LocalPkcs12SignResult>(`/v1/acts/${id}/signature/local/pkcs12/sign`, body),
   fetchSignedActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document/signed`),
 
   // Generic remote qualified signing (§ t59) — the provider picker + the provider-agnostic

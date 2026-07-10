@@ -2053,6 +2053,9 @@ export const deDE: Catalog = {
     'Die Signatur mit der Bürgerkarte ist nur in der Desktop-Anwendung verfügbar, an die das Kartenlesegerät angeschlossen ist.',
   'signing.signed.qualifiedLabelCsc':
     'Qualifizierte elektronische Signatur (qualifiziertes Zertifikat eines Vertrauensdiensteanbieters).',
+  'signing.signed.localPkcs12Title': 'Protokoll mit lokalem Softwarezertifikat signiert',
+  'signing.signed.localPkcs12Label':
+    'Lokale Signatur mit PKCS#12/PFX-Softwarezertifikat: nur fortgeschrittene technische Evidenz; keine qualifizierte Signatur, keine CMD und keine Erklärung zur rechtlichen Gültigkeit.',
   'signing.recommended': 'Empfohlen',
   'signing.csc.start': 'Mit {provider} signieren',
   'signing.csc.notConfigured': 'nicht konfiguriert',
@@ -2071,6 +2074,7 @@ export const deDE: Catalog = {
   'signing.status.kicker': 'Estado da assinatura',
   'signing.status.signed': 'Assinada',
   'signing.status.localCard': 'Cartão local',
+  'signing.status.localPkcs12': 'Lokales PKCS#12',
   'signing.status.required': 'Obrigatória',
   'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
@@ -2120,6 +2124,26 @@ export const deDE: Catalog = {
   'signing.provider.cc.title': 'Cartão de Cidadão',
   'signing.provider.cc.description':
     'Assinatura local com leitor ligado à aplicação de secretária. O PIN nunca é pedido no browser.',
+  'signing.provider.pkcs12.title': 'Lokales PKCS#12/PFX-Zertifikat',
+  'signing.provider.pkcs12.description':
+    'Fortgeschrittener Ablauf mit PFX-Datei und Passwort, die nur für diese Anfrage verwendet werden. Erzeugt lokale technische Evidenz, keine qualifizierte Signatur und keine CMD.',
+  'signing.provider.pkcs12.badge': 'Lokale technische Evidenz',
+  'signing.pkcs12.start': 'Mit lokalem PKCS#12 signieren',
+  'signing.pkcs12.title': 'Lokale Signatur mit Softwarezertifikat',
+  'signing.pkcs12.notice':
+    'Nur verwenden, wenn lokale technische Evidenz benötigt wird. Die PFX-Datei und das Passwort werden nur für diese Anfrage gesendet und nicht in der Oberfläche gespeichert; das Ergebnis ist keine qualifizierte Signatur, keine CMD und keine Erklärung zur rechtlichen Gültigkeit.',
+  'signing.pkcs12.file.label': 'PKCS#12/PFX-Datei',
+  'signing.pkcs12.file.hint': 'Wählen Sie eine .p12- oder .pfx-Datei von diesem Computer.',
+  'signing.pkcs12.passphrase.label': 'Zertifikatspasswort',
+  'signing.pkcs12.passphrase.hint': 'Wird nur für diese Anfrage verwendet; niemals gespeichert.',
+  'signing.pkcs12.friendlyName.label': 'Anzeigename',
+  'signing.pkcs12.friendlyName.hint':
+    'Optional. Verwenden, wenn die PFX-Datei mehr als eine Identität enthält.',
+  'signing.pkcs12.capacity.label': 'Funktion/Kapazität',
+  'signing.pkcs12.capacity.hint':
+    'Optional. Erfasst die Funktion, in der die signierende Person handelt.',
+  'signing.pkcs12.sign': 'Lokal signieren',
+  'signing.pkcs12.signing': 'Wird lokal signiert…',
   'signing.provider.loading': 'A carregar prestadores remotos configurados…',
   'signing.provider.unavailable.title': 'Prestadores remotos indisponíveis',
   'signing.provider.unavailable.body':

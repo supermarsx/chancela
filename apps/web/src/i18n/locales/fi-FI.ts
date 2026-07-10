@@ -2037,6 +2037,10 @@ export const fiFI: Catalog = {
     'Allekirjoitus Kansalaiskortilla on käytettävissä vain työpöytäsovelluksessa, johon kortinlukija on liitetty.',
   'signing.signed.qualifiedLabelCsc':
     'Hyväksytty sähköinen allekirjoitus (luottamuspalvelun tarjoajan hyväksytty varmenne).',
+  'signing.signed.localPkcs12Title':
+    'Pöytäkirja allekirjoitettu paikallisella ohjelmistovarmenteella',
+  'signing.signed.localPkcs12Label':
+    'Paikallinen allekirjoitus PKCS#12/PFX-ohjelmistovarmenteella: vain kehittynyttä teknistä näyttöä; ei hyväksytty allekirjoitus, CMD eikä oikeudellisen pätevyyden lausuma.',
   'signing.recommended': 'Suositeltu',
   'signing.csc.start': 'Allekirjoita palvelulla {provider}',
   'signing.csc.notConfigured': 'ei määritetty',
@@ -2056,6 +2060,7 @@ export const fiFI: Catalog = {
   'signing.status.kicker': 'Estado da assinatura',
   'signing.status.signed': 'Assinada',
   'signing.status.localCard': 'Cartão local',
+  'signing.status.localPkcs12': 'Paikallinen PKCS#12',
   'signing.status.required': 'Obrigatória',
   'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
@@ -2105,6 +2110,25 @@ export const fiFI: Catalog = {
   'signing.provider.cc.title': 'Cartão de Cidadão',
   'signing.provider.cc.description':
     'Assinatura local com leitor ligado à aplicação de secretária. O PIN nunca é pedido no browser.',
+  'signing.provider.pkcs12.title': 'Paikallinen PKCS#12/PFX-varmenne',
+  'signing.provider.pkcs12.description':
+    'Edistynyt työnkulku, jossa PFX-tiedostoa ja salasanaa käytetään vain tähän pyyntöön. Tuottaa paikallista teknistä näyttöä, ei hyväksyttyä allekirjoitusta eikä CMD:tä.',
+  'signing.provider.pkcs12.badge': 'Paikallinen tekninen näyttö',
+  'signing.pkcs12.start': 'Allekirjoita paikallisella PKCS#12:lla',
+  'signing.pkcs12.title': 'Paikallinen allekirjoitus ohjelmistovarmenteella',
+  'signing.pkcs12.notice':
+    'Käytä vain, kun tarvitset paikallista teknistä näyttöä. PFX-tiedosto ja salasana lähetetään vain tätä pyyntöä varten eikä käyttöliittymä tallenna niitä; tulos ei ole hyväksytty allekirjoitus, CMD eikä oikeudellisen pätevyyden lausuma.',
+  'signing.pkcs12.file.label': 'PKCS#12/PFX-tiedosto',
+  'signing.pkcs12.file.hint': 'Valitse .p12- tai .pfx-tiedosto tältä tietokoneelta.',
+  'signing.pkcs12.passphrase.label': 'Varmenteen salasana',
+  'signing.pkcs12.passphrase.hint': 'Käytetään vain tähän pyyntöön; ei koskaan tallenneta.',
+  'signing.pkcs12.friendlyName.label': 'Ystävällinen nimi',
+  'signing.pkcs12.friendlyName.hint':
+    'Valinnainen. Käytä, kun PFX sisältää useamman kuin yhden identiteetin.',
+  'signing.pkcs12.capacity.label': 'Rooli/kelpoisuus',
+  'signing.pkcs12.capacity.hint': 'Valinnainen. Tallentaa roolin, jossa allekirjoittaja toimii.',
+  'signing.pkcs12.sign': 'Allekirjoita paikallisesti',
+  'signing.pkcs12.signing': 'Allekirjoitetaan paikallisesti…',
   'signing.provider.loading': 'A carregar prestadores remotos configurados…',
   'signing.provider.unavailable.title': 'Prestadores remotos indisponíveis',
   'signing.provider.unavailable.body':

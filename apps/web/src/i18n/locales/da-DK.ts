@@ -2038,6 +2038,9 @@ export const daDK: Catalog = {
     'Signering med Borgerkort er kun tilgængelig i skrivebordsprogrammet, hvor kortlæseren er tilsluttet denne computer.',
   'signing.signed.qualifiedLabelCsc':
     'Kvalificeret elektronisk signatur (kvalificeret certifikat fra en tillidstjenesteudbyder).',
+  'signing.signed.localPkcs12Title': 'Referat signeret med lokalt softwarecertifikat',
+  'signing.signed.localPkcs12Label':
+    'Lokal signatur med PKCS#12/PFX-softwarecertifikat: kun avanceret teknisk evidens; ikke en kvalificeret signatur, CMD eller en erklæring om juridisk gyldighed.',
   'signing.recommended': 'Anbefalet',
   'signing.csc.start': 'Underskriv med {provider}',
   'signing.csc.notConfigured': 'ikke konfigureret',
@@ -2055,6 +2058,7 @@ export const daDK: Catalog = {
   'signing.status.kicker': 'Estado da assinatura',
   'signing.status.signed': 'Assinada',
   'signing.status.localCard': 'Cartão local',
+  'signing.status.localPkcs12': 'Lokal PKCS#12',
   'signing.status.required': 'Obrigatória',
   'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
@@ -2104,6 +2108,25 @@ export const daDK: Catalog = {
   'signing.provider.cc.title': 'Cartão de Cidadão',
   'signing.provider.cc.description':
     'Assinatura local com leitor ligado à aplicação de secretária. O PIN nunca é pedido no browser.',
+  'signing.provider.pkcs12.title': 'Lokalt PKCS#12/PFX-certifikat',
+  'signing.provider.pkcs12.description':
+    'Avanceret forløb med en PFX-fil og adgangskode, der kun bruges til denne anmodning. Producerer lokal teknisk evidens, ikke en kvalificeret signatur eller CMD.',
+  'signing.provider.pkcs12.badge': 'Lokal teknisk evidens',
+  'signing.pkcs12.start': 'Signer med lokal PKCS#12',
+  'signing.pkcs12.title': 'Lokal signering med softwarecertifikat',
+  'signing.pkcs12.notice':
+    'Brug kun dette, når du har brug for lokal teknisk evidens. PFX-filen og adgangskoden sendes kun til denne anmodning og gemmes ikke i grænsefladen; resultatet er ikke en kvalificeret signatur, CMD eller en erklæring om juridisk gyldighed.',
+  'signing.pkcs12.file.label': 'PKCS#12/PFX-fil',
+  'signing.pkcs12.file.hint': 'Vælg en .p12- eller .pfx-fil fra denne computer.',
+  'signing.pkcs12.passphrase.label': 'Certifikatadgangskode',
+  'signing.pkcs12.passphrase.hint': 'Bruges kun til denne anmodning; gemmes aldrig.',
+  'signing.pkcs12.friendlyName.label': 'Venligt navn',
+  'signing.pkcs12.friendlyName.hint':
+    'Valgfrit. Bruges når PFX-filen indeholder mere end én identitet.',
+  'signing.pkcs12.capacity.label': 'Rolle/kapacitet',
+  'signing.pkcs12.capacity.hint': 'Valgfrit. Registrerer den rolle, som underskriveren handler i.',
+  'signing.pkcs12.sign': 'Signer lokalt',
+  'signing.pkcs12.signing': 'Signerer lokalt…',
   'signing.provider.loading': 'A carregar prestadores remotos configurados…',
   'signing.provider.unavailable.title': 'Prestadores remotos indisponíveis',
   'signing.provider.unavailable.body':

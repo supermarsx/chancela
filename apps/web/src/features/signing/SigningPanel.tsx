@@ -59,6 +59,7 @@ import {
   useCreateExternalSignerInvite,
   useDownloadSignedDocument,
   useExternalSignerInvites,
+  useLocalPkcs12SignSignature,
   useRemoteConfirmSignature,
   useRemoteInitiateSignature,
   useRevokeExternalSignerInvite,
@@ -89,6 +90,8 @@ import {
 const FAMILY_CC = 'CartaoDeCidadao';
 /** The serialized signing family a CSC QTSP signature reports (t59-S3). */
 const FAMILY_CSC = 'QualifiedCertificate';
+/** The serialized signing family for local PKCS#12/PFX software-certificate signatures. */
+const FAMILY_LOCAL_PKCS12 = 'LocalPkcs12SoftwareCertificate';
 /** The built-in Chave Móvel Digital provider id (its `{provider}` path segment). */
 const CMD_PROVIDER_ID = 'cmd';
 
@@ -195,6 +198,16 @@ function externalInviteLink(token: string): string {
   return new URL(path, window.location.origin).toString();
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 /**
  * The chosen two-phase provider: `cmd` drives the dedicated `/signature/cmd/*` path; `csc`
  * drives the generic `/signature/remote/{id}/*` path. `label` names it in the prompts.
@@ -212,7 +225,8 @@ type Step =
   | { kind: 'view' }
   | { kind: 'credentials'; provider: SigningProvider }
   | { kind: 'otp'; provider: SigningProvider; sessionId: string; hint: string }
-  | { kind: 'cc' };
+  | { kind: 'cc' }
+  | { kind: 'pkcs12' };
 
 function SignatureEvidenceSummary({ evidence }: { evidence: SignatureEvidenceStatus }) {
   const t = useT();
@@ -697,6 +711,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const remoteInitiate = useRemoteInitiateSignature(act.id);
   const remoteConfirm = useRemoteConfirmSignature(act.id);
   const ccSign = useCcSignSignature(act.id);
+  const localPkcs12Sign = useLocalPkcs12SignSignature(act.id);
   const download = useDownloadSignedDocument(act.id);
   // The sign actions are gated at the act's book scope (disable-with-explanation, t64-E5).
   const bookScope = scopeBook(act.book_id);
@@ -709,6 +724,11 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const [identifier, setIdentifier] = useState('');
   const [secret, setSecret] = useState('');
   const [activation, setActivation] = useState('');
+  const [pkcs12File, setPkcs12File] = useState<File | null>(null);
+  const [pkcs12Passphrase, setPkcs12Passphrase] = useState('');
+  const [pkcs12FriendlyName, setPkcs12FriendlyName] = useState('');
+  const [pkcs12Capacity, setPkcs12Capacity] = useState('');
+  const [pkcs12Error, setPkcs12Error] = useState<unknown>(null);
   const [expired, setExpired] = useState(false);
   // Set once a CC sign attempt 409s: the API is not co-located with a card reader (browser /
   // remote server). We then swap the CC affordance for an honest note rather than fake it.
@@ -834,6 +854,37 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
     );
   }
 
+  function resetPkcs12Form() {
+    setPkcs12File(null);
+    setPkcs12Passphrase('');
+    setPkcs12FriendlyName('');
+    setPkcs12Capacity('');
+    setPkcs12Error(null);
+  }
+
+  async function onLocalPkcs12Sign(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pkcs12File || pkcs12Passphrase.length === 0 || localPkcs12Sign.isPending) return;
+    setPkcs12Error(null);
+    try {
+      const pkcs12Base64 = await fileToBase64(pkcs12File);
+      await localPkcs12Sign.mutateAsync({
+        pkcs12_base64: pkcs12Base64,
+        passphrase: pkcs12Passphrase,
+        friendly_name: pkcs12FriendlyName.trim() || undefined,
+        capacity: pkcs12Capacity.trim() || undefined,
+      });
+      resetPkcs12Form();
+      setStep({ kind: 'view' });
+      toast.success(t('toast.signing.signed'));
+    } catch (err) {
+      setPkcs12Error(err);
+      toast.error(err);
+    } finally {
+      localPkcs12Sign.reset();
+    }
+  }
+
   function showSaveResult(result: SaveBlobResult) {
     if (result.kind === 'cancelled') {
       toast.info(saveBlobResultMessage(result));
@@ -869,9 +920,15 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
 
   /** The honest, method-accurate qualified-signature label for a signed record. */
   function qualifiedLabel(family: string): string {
+    if (family === FAMILY_LOCAL_PKCS12) return t('signing.signed.localPkcs12Label');
     if (family === FAMILY_CC) return t('signing.signed.qualifiedLabelCc');
     if (family === FAMILY_CSC) return t('signing.signed.qualifiedLabelCsc');
     return t('signing.signed.qualifiedLabel');
+  }
+
+  function signedTitle(family: string): string {
+    if (family === FAMILY_LOCAL_PKCS12) return t('signing.signed.localPkcs12Title');
+    return t('signing.signed.title');
   }
 
   return (
@@ -887,7 +944,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
             <StatusSummary
               tone="ok"
               badge={t('signing.status.signed')}
-              title={t('signing.signed.title')}
+              title={signedTitle(data.signed.family)}
             >
               <p>{qualifiedLabel(data.signed.family)}</p>
               <p>{t('signing.signed.validityNote')}</p>
@@ -949,6 +1006,94 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
               {download.isPending ? t('documents.download.pending') : t('signing.download')}
             </Button>
           </div>
+        ) : step.kind === 'pkcs12' ? (
+          // --- Local PKCS#12/PFX: advanced software-certificate signing, technical evidence only.
+          <form className="form" onSubmit={onLocalPkcs12Sign}>
+            <StatusSummary
+              tone="warn"
+              badge={t('signing.status.localPkcs12')}
+              title={t('signing.pkcs12.title')}
+            >
+              <p>{t('signing.pkcs12.notice')}</p>
+            </StatusSummary>
+            <div className="form__grid">
+              <Field
+                label={t('signing.pkcs12.file.label')}
+                htmlFor="sign-pkcs12-file"
+                hint={t('signing.pkcs12.file.hint')}
+              >
+                <Input
+                  id="sign-pkcs12-file"
+                  type="file"
+                  accept=".p12,.pfx,application/x-pkcs12"
+                  autoComplete="off"
+                  onChange={(event) => setPkcs12File(event.target.files?.[0] ?? null)}
+                />
+              </Field>
+              <Field
+                label={t('signing.pkcs12.passphrase.label')}
+                htmlFor="sign-pkcs12-passphrase"
+                hint={t('signing.pkcs12.passphrase.hint')}
+              >
+                <Input
+                  id="sign-pkcs12-passphrase"
+                  type="password"
+                  autoComplete="off"
+                  value={pkcs12Passphrase}
+                  onChange={(event) => setPkcs12Passphrase(event.target.value)}
+                />
+              </Field>
+              <Field
+                label={t('signing.pkcs12.friendlyName.label')}
+                htmlFor="sign-pkcs12-friendly-name"
+                hint={t('signing.pkcs12.friendlyName.hint')}
+              >
+                <Input
+                  id="sign-pkcs12-friendly-name"
+                  type="text"
+                  autoComplete="off"
+                  value={pkcs12FriendlyName}
+                  onChange={(event) => setPkcs12FriendlyName(event.target.value)}
+                />
+              </Field>
+              <Field
+                label={t('signing.pkcs12.capacity.label')}
+                htmlFor="sign-pkcs12-capacity"
+                hint={t('signing.pkcs12.capacity.hint')}
+              >
+                <Input
+                  id="sign-pkcs12-capacity"
+                  type="text"
+                  autoComplete="off"
+                  value={pkcs12Capacity}
+                  onChange={(event) => setPkcs12Capacity(event.target.value)}
+                />
+              </Field>
+            </div>
+            {pkcs12Error ? <ErrorNote error={pkcs12Error} /> : null}
+            <div className="rowline">
+              <Button
+                type="submit"
+                variant="primary"
+                icon={<Icon.PenNib />}
+                disabled={!pkcs12File || pkcs12Passphrase.length === 0 || localPkcs12Sign.isPending}
+              >
+                {localPkcs12Sign.isPending ? t('signing.pkcs12.signing') : t('signing.pkcs12.sign')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                icon={<Icon.Refresh />}
+                disabled={localPkcs12Sign.isPending}
+                onClick={() => {
+                  resetPkcs12Form();
+                  setStep({ kind: 'view' });
+                }}
+              >
+                {t('signing.cc.cancel')}
+              </Button>
+            </div>
+          </form>
         ) : step.kind === 'credentials' ? (
           // --- PHASE 1: collect the identifier + credential (CMD phone/PIN; CSC user_ref/credential)
           (() => {
@@ -1177,6 +1322,25 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                   </GateButton>
                 </ProviderChoice>
               )}
+              <ProviderChoice
+                title={t('signing.provider.pkcs12.title')}
+                description={t('signing.provider.pkcs12.description')}
+                badges={<Badge tone="warn">{t('signing.provider.pkcs12.badge')}</Badge>}
+              >
+                <GateButton
+                  perm="signing.perform"
+                  scope={bookScope}
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.FileText />}
+                  onClick={() => {
+                    resetPkcs12Form();
+                    setStep({ kind: 'pkcs12' });
+                  }}
+                >
+                  {t('signing.pkcs12.start')}
+                </GateButton>
+              </ProviderChoice>
               {providers.isLoading ? (
                 <p className="field__hint signing-provider-list__note">
                   {t('signing.provider.loading')}

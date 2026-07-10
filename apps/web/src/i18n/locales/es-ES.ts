@@ -2044,6 +2044,9 @@ export const esES: Catalog = {
     'La firma con Tarjeta de Ciudadano solo está disponible en la aplicación de escritorio, donde el lector de tarjetas está conectado a este ordenador.',
   'signing.signed.qualifiedLabelCsc':
     'Firma electrónica cualificada (certificado cualificado de un prestador de servicios de confianza).',
+  'signing.signed.localPkcs12Title': 'Acta firmada con certificado de software local',
+  'signing.signed.localPkcs12Label':
+    'Firma local con certificado de software PKCS#12/PFX: solo evidencia técnica avanzada; no es una firma cualificada, CMD ni una declaración de validez legal.',
   'signing.recommended': 'Recomendada',
   'signing.csc.start': 'Firmar con {provider}',
   'signing.csc.notConfigured': 'no configurado',
@@ -2062,6 +2065,7 @@ export const esES: Catalog = {
   'signing.status.kicker': 'Estado da assinatura',
   'signing.status.signed': 'Assinada',
   'signing.status.localCard': 'Cartão local',
+  'signing.status.localPkcs12': 'PKCS#12 local',
   'signing.status.required': 'Obrigatória',
   'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
@@ -2111,6 +2115,25 @@ export const esES: Catalog = {
   'signing.provider.cc.title': 'Cartão de Cidadão',
   'signing.provider.cc.description':
     'Assinatura local com leitor ligado à aplicação de secretária. O PIN nunca é pedido no browser.',
+  'signing.provider.pkcs12.title': 'Certificado local PKCS#12/PFX',
+  'signing.provider.pkcs12.description':
+    'Flujo avanzado con un archivo PFX y una contraseña usados solo para esta solicitud. Produce evidencia técnica local, no una firma cualificada ni CMD.',
+  'signing.provider.pkcs12.badge': 'Evidencia técnica local',
+  'signing.pkcs12.start': 'Firmar con PKCS#12 local',
+  'signing.pkcs12.title': 'Firma local con certificado de software',
+  'signing.pkcs12.notice':
+    'Úselo solo cuando necesite evidencia técnica local. El archivo PFX y la contraseña se envían solo para esta solicitud y la interfaz no los guarda; el resultado no es una firma cualificada, CMD ni una declaración de validez legal.',
+  'signing.pkcs12.file.label': 'Archivo PKCS#12/PFX',
+  'signing.pkcs12.file.hint': 'Seleccione un archivo .p12 o .pfx de este ordenador.',
+  'signing.pkcs12.passphrase.label': 'Contraseña del certificado',
+  'signing.pkcs12.passphrase.hint': 'Usada solo para esta solicitud; nunca se guarda.',
+  'signing.pkcs12.friendlyName.label': 'Nombre descriptivo',
+  'signing.pkcs12.friendlyName.hint':
+    'Opcional. Úselo cuando el PFX contenga más de una identidad.',
+  'signing.pkcs12.capacity.label': 'Cargo/capacidad',
+  'signing.pkcs12.capacity.hint': 'Opcional. Registra la condición en la que actúa el firmante.',
+  'signing.pkcs12.sign': 'Firmar localmente',
+  'signing.pkcs12.signing': 'Firmando localmente…',
   'signing.provider.loading': 'A carregar prestadores remotos configurados…',
   'signing.provider.unavailable.title': 'Prestadores remotos indisponíveis',
   'signing.provider.unavailable.body':

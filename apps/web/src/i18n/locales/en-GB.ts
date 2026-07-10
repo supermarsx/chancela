@@ -2016,6 +2016,9 @@ export const enGB: Catalog = {
     'Citizen Card signing is only available in the desktop application, where the card reader is connected to this computer.',
   'signing.signed.qualifiedLabelCsc':
     'Qualified electronic signature (qualified certificate from a trust service provider).',
+  'signing.signed.localPkcs12Title': 'Minutes signed with a local software certificate',
+  'signing.signed.localPkcs12Label':
+    'Local PKCS#12/PFX software-certificate signature: advanced technical evidence only; not qualified, CMD, or a legal-validity statement.',
   'signing.recommended': 'Recommended',
   'signing.csc.start': 'Sign with {provider}',
   'signing.csc.notConfigured': 'not configured',
@@ -2033,6 +2036,7 @@ export const enGB: Catalog = {
   'signing.status.kicker': 'Signature status',
   'signing.status.signed': 'Signed',
   'signing.status.localCard': 'Local card',
+  'signing.status.localPkcs12': 'Local PKCS#12',
   'signing.status.required': 'Required',
   'signing.status.unsigned': 'Unsigned',
   'signing.signed.validityNote':
@@ -2081,6 +2085,25 @@ export const enGB: Catalog = {
   'signing.provider.cc.title': 'Citizen Card',
   'signing.provider.cc.description':
     'Local signature with a reader connected to the desktop app. The PIN is never requested in the browser.',
+  'signing.provider.pkcs12.title': 'Local PKCS#12/PFX certificate',
+  'signing.provider.pkcs12.description':
+    'Advanced flow with a PFX file and passphrase used only for this request. Produces local technical evidence, not a qualified signature or CMD.',
+  'signing.provider.pkcs12.badge': 'Local technical evidence',
+  'signing.pkcs12.start': 'Sign with local PKCS#12',
+  'signing.pkcs12.title': 'Local software-certificate signing',
+  'signing.pkcs12.notice':
+    'Use only when you need local technical evidence. The PFX file and passphrase are sent only for this request and are not stored by the interface; the result is not qualified, CMD, or a legal-validity statement.',
+  'signing.pkcs12.file.label': 'PKCS#12/PFX file',
+  'signing.pkcs12.file.hint': 'Choose a .p12 or .pfx file from this computer.',
+  'signing.pkcs12.passphrase.label': 'Certificate passphrase',
+  'signing.pkcs12.passphrase.hint': 'Used only for this request; never stored.',
+  'signing.pkcs12.friendlyName.label': 'Friendly name',
+  'signing.pkcs12.friendlyName.hint':
+    'Optional. Use it when the PFX contains more than one identity.',
+  'signing.pkcs12.capacity.label': 'Capacity',
+  'signing.pkcs12.capacity.hint': 'Optional. Records the capacity in which the signer acts.',
+  'signing.pkcs12.sign': 'Sign locally',
+  'signing.pkcs12.signing': 'Signing locally…',
   'signing.provider.loading': 'Loading configured remote providers…',
   'signing.provider.unavailable.title': 'Remote providers unavailable',
   'signing.provider.unavailable.body':

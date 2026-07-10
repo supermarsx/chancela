@@ -2035,6 +2035,9 @@ export const plPL: Catalog = {
     'Podpis Kartą obywatela jest dostępny tylko w aplikacji komputerowej, do której podłączony jest czytnik kart.',
   'signing.signed.qualifiedLabelCsc':
     'Kwalifikowany podpis elektroniczny (certyfikat kwalifikowany dostawcy usług zaufania).',
+  'signing.signed.localPkcs12Title': 'Protokół podpisany lokalnym certyfikatem programowym',
+  'signing.signed.localPkcs12Label':
+    'Lokalny podpis certyfikatem programowym PKCS#12/PFX: wyłącznie zaawansowany dowód techniczny; nie jest to podpis kwalifikowany, CMD ani deklaracja ważności prawnej.',
   'signing.recommended': 'Zalecane',
   'signing.csc.start': 'Podpisz przez {provider}',
   'signing.csc.notConfigured': 'nie skonfigurowano',
@@ -2053,6 +2056,7 @@ export const plPL: Catalog = {
   'signing.status.kicker': 'Estado da assinatura',
   'signing.status.signed': 'Assinada',
   'signing.status.localCard': 'Cartão local',
+  'signing.status.localPkcs12': 'Lokalny PKCS#12',
   'signing.status.required': 'Obrigatória',
   'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
@@ -2102,6 +2106,25 @@ export const plPL: Catalog = {
   'signing.provider.cc.title': 'Cartão de Cidadão',
   'signing.provider.cc.description':
     'Assinatura local com leitor ligado à aplicação de secretária. O PIN nunca é pedido no browser.',
+  'signing.provider.pkcs12.title': 'Lokalny certyfikat PKCS#12/PFX',
+  'signing.provider.pkcs12.description':
+    'Zaawansowany przepływ z plikiem PFX i hasłem używanymi tylko dla tego żądania. Tworzy lokalny dowód techniczny, nie podpis kwalifikowany ani CMD.',
+  'signing.provider.pkcs12.badge': 'Lokalny dowód techniczny',
+  'signing.pkcs12.start': 'Podpisz lokalnym PKCS#12',
+  'signing.pkcs12.title': 'Lokalne podpisywanie certyfikatem programowym',
+  'signing.pkcs12.notice':
+    'Używaj tylko wtedy, gdy potrzebujesz lokalnego dowodu technicznego. Plik PFX i hasło są wysyłane wyłącznie dla tego żądania i nie są zapisywane przez interfejs; wynik nie jest podpisem kwalifikowanym, CMD ani deklaracją ważności prawnej.',
+  'signing.pkcs12.file.label': 'Plik PKCS#12/PFX',
+  'signing.pkcs12.file.hint': 'Wybierz plik .p12 lub .pfx z tego komputera.',
+  'signing.pkcs12.passphrase.label': 'Hasło certyfikatu',
+  'signing.pkcs12.passphrase.hint': 'Używane tylko dla tego żądania; nigdy nie jest zapisywane.',
+  'signing.pkcs12.friendlyName.label': 'Przyjazna nazwa',
+  'signing.pkcs12.friendlyName.hint':
+    'Opcjonalnie. Użyj, gdy PFX zawiera więcej niż jedną tożsamość.',
+  'signing.pkcs12.capacity.label': 'Funkcja/umocowanie',
+  'signing.pkcs12.capacity.hint': 'Opcjonalnie. Rejestruje funkcję, w której działa podpisujący.',
+  'signing.pkcs12.sign': 'Podpisz lokalnie',
+  'signing.pkcs12.signing': 'Podpisywanie lokalne…',
   'signing.provider.loading': 'A carregar prestadores remotos configurados…',
   'signing.provider.unavailable.title': 'Prestadores remotos indisponíveis',
   'signing.provider.unavailable.body':

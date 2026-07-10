@@ -26,6 +26,7 @@ import type {
   CmdInitiateBody,
   CmdConfirmBody,
   CcSignBody,
+  LocalPkcs12SignBody,
   RemoteInitiateBody,
   RemoteConfirmBody,
   CompleteFollowUpBody,
@@ -756,6 +757,24 @@ export function useCcSignSignature(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CcSignBody = {}) => api.ccSignSignature(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
+      void qc.invalidateQueries({ queryKey: keys.act(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+      void qc.invalidateQueries({ queryKey: keys.dashboard });
+    },
+  });
+}
+
+/**
+ * Advanced local PKCS#12/PFX software-certificate signing. The encrypted PFX and passphrase are
+ * transient mutation variables only; on success the same signed-document surfaces refetch as the
+ * other signing flows. The server labels the result local technical evidence, not qualified/CMD.
+ */
+export function useLocalPkcs12SignSignature(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: LocalPkcs12SignBody) => api.localPkcs12SignSignature(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.actSignature(id) });
       void qc.invalidateQueries({ queryKey: keys.act(id) });

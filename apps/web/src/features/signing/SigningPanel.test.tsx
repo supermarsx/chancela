@@ -561,10 +561,105 @@ const cscSignedStatus: SignatureStatusView = {
   evidence: evidence('B-B', false, ['not_configured', 'lt_not_implemented', 'lta_not_implemented']),
 };
 
+const localPkcs12SignedStatus: SignatureStatusView = {
+  status: 'signed',
+  finalization: 'finalizado',
+  require_qualified_for_seal: false,
+  signed: {
+    family: 'LocalPkcs12SoftwareCertificate',
+    evidentiary_level: 'AdvancedLocalTechnicalEvidence',
+    trusted_list_status: null,
+    signer_cert_subject: 'CN=Amélia Marques,O=Encosto Estratégico Lda',
+    signing_time: '2026-07-06T10:00:00Z',
+    signed_at: '2026-07-06T10:00:05Z',
+    signed_pdf_digest: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
+    timestamp_token: false,
+    download: '/v1/acts/act-1/document/signed',
+  },
+  evidence: evidence('B-B', false, ['not_configured', 'lt_not_implemented', 'lta_not_implemented']),
+};
+
 /** A provider-list row builder (matches `SignatureProviderView`). */
 function provider(id: string, label: string, family: string, configured: boolean) {
   return { id, family, label, evidentiary_level: 'Qualified', configured };
 }
+
+describe('SigningPanel — local PKCS#12 software certificate', () => {
+  it('submits a transient PFX/passphrase request and refreshes to local technical evidence', async () => {
+    let signed = false;
+    let requestBody: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.includes('/signature/local/pkcs12/sign')) {
+        requestBody = JSON.parse(String(init?.body));
+        signed = true;
+        return json({
+          document_id: 'doc-1',
+          act_id: 'act-1',
+          family: 'LocalPkcs12SoftwareCertificate',
+          evidentiary_level: 'AdvancedLocalTechnicalEvidence',
+          trusted_list_status: null,
+          signing_time: '2026-07-06T10:00:00Z',
+          signed_at: '2026-07-06T10:00:05Z',
+          signed_pdf_digest: localPkcs12SignedStatus.signed!.signed_pdf_digest,
+          signer_cert_subject: 'CN=Amélia Marques,O=Encosto Estratégico Lda',
+          signer_cert_sha256: 'b1'.repeat(32),
+          certificate_chain_count: 1,
+          timestamp_token: false,
+          finalization: 'finalizado',
+          qualification_claimed: false,
+          legal_status_claimed: false,
+          status_scope: 'local_technical_evidence_only',
+          notice: 'technical evidence only',
+        });
+      }
+      if (url.endsWith('/signature') && method === 'GET') {
+        return json(signed ? localPkcs12SignedStatus : unsignedStatus);
+      }
+      return emptyInviteList(url, method) ?? Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} entityName="Encosto Estratégico Lda" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar com PKCS#12 local' }));
+    expect(await screen.findByText('Assinatura local com certificado de software')).toBeTruthy();
+    expect(screen.getByText(/não é assinatura qualificada, CMD ou declaração/)).toBeTruthy();
+
+    const file = new File(['pfx-bytes'], 'signer.pfx', { type: 'application/x-pkcs12' });
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: () => Promise.resolve(new TextEncoder().encode('pfx-bytes').buffer),
+    });
+    fireEvent.change(screen.getByLabelText('Ficheiro PKCS#12/PFX'), {
+      target: { files: [file] },
+    });
+    fireEvent.change(screen.getByLabelText('Palavra-passe do certificado'), {
+      target: { value: 'pfx-passphrase' },
+    });
+    fireEvent.change(screen.getByLabelText('Nome amigável'), {
+      target: { value: 'signing identity' },
+    });
+    fireEvent.change(screen.getByLabelText('Qualidade/capacidade'), {
+      target: { value: 'Presidente da mesa' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Assinar localmente' }));
+
+    await waitFor(() =>
+      expect(requestBody).toMatchObject({
+        pkcs12_base64: btoa('pfx-bytes'),
+        passphrase: 'pfx-passphrase',
+        friendly_name: 'signing identity',
+        capacity: 'Presidente da mesa',
+      }),
+    );
+    expect(await screen.findByText('Ata assinada com certificado de software local')).toBeTruthy();
+    expect(
+      screen.getByText(/evidência técnica avançada apenas; não é assinatura qualificada/),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('Palavra-passe do certificado')).toBeNull();
+  });
+});
 
 describe('SigningPanel — CSC QTSP providers', () => {
   it('lists a configured CSC QTSP and shows an unconfigured one disabled with an honest note', async () => {

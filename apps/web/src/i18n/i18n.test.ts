@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { ptPT } from './locales/pt-PT';
 import { enUS } from './locales/en-US';
 import { deDE } from './locales/de-DE';
+import { svFI } from './locales/sv-FI';
 import { svSE } from './locales/sv-SE';
 import { interpolate } from './interpolate';
 import { i18nStore } from './store';
@@ -61,6 +62,22 @@ describe('catalog completeness matrix', () => {
     for (const catalog of [deDE, svSE]) {
       expect(catalog['documents.import.guardrails.title']).not.toBe('Limites de preservação');
       expect(catalog['documents.import.guardrails.canonical.label']).not.toBe('Registo canónico');
+    }
+  });
+
+  it('keeps local PKCS#12 signing copy localized outside source Portuguese', () => {
+    expect(enUS['signing.provider.pkcs12.title']).toBe('Local PKCS#12/PFX certificate');
+    expect(enUS['signing.pkcs12.file.label']).toBe('PKCS#12/PFX file');
+    expect(enUS['signing.pkcs12.notice']).not.toContain('ficheiro PFX');
+    for (const catalog of [deDE, svFI, svSE]) {
+      expect(catalog['signing.signed.localPkcs12Title']).not.toBe(
+        ptPT['signing.signed.localPkcs12Title'],
+      );
+      expect(catalog['signing.provider.pkcs12.title']).not.toBe(
+        ptPT['signing.provider.pkcs12.title'],
+      );
+      expect(catalog['signing.pkcs12.file.label']).not.toBe(ptPT['signing.pkcs12.file.label']);
+      expect(catalog['signing.pkcs12.notice']).not.toContain('ficheiro PFX');
     }
   });
 

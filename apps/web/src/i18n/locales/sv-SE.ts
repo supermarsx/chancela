@@ -2035,6 +2035,9 @@ export const svSE: Catalog = {
     'Signering med Medborgarkort är endast tillgänglig i skrivbordsappen, som kortläsaren är ansluten till.',
   'signing.signed.qualifiedLabelCsc':
     'Kvalificerad elektronisk underskrift (kvalificerat certifikat från en betrodd tjänsteleverantör).',
+  'signing.signed.localPkcs12Title': 'Protokoll signerat med lokalt programvarucertifikat',
+  'signing.signed.localPkcs12Label':
+    'Lokal underskrift med PKCS#12/PFX-programvarucertifikat: endast avancerad teknisk evidens; ingen kvalificerad underskrift, CMD eller förklaring om rättslig giltighet.',
   'signing.recommended': 'Rekommenderas',
   'signing.csc.start': 'Underteckna med {provider}',
   'signing.csc.notConfigured': 'inte konfigurerad',
@@ -2053,6 +2056,7 @@ export const svSE: Catalog = {
   'signing.status.kicker': 'Estado da assinatura',
   'signing.status.signed': 'Assinada',
   'signing.status.localCard': 'Cartão local',
+  'signing.status.localPkcs12': 'Lokal PKCS#12',
   'signing.status.required': 'Obrigatória',
   'signing.status.unsigned': 'Por assinar',
   'signing.signed.validityNote':
@@ -2102,6 +2106,25 @@ export const svSE: Catalog = {
   'signing.provider.cc.title': 'Cartão de Cidadão',
   'signing.provider.cc.description':
     'Assinatura local com leitor ligado à aplicação de secretária. O PIN nunca é pedido no browser.',
+  'signing.provider.pkcs12.title': 'Lokalt PKCS#12/PFX-certifikat',
+  'signing.provider.pkcs12.description':
+    'Avancerat flöde med PFX-fil och lösenord som används endast för denna begäran. Skapar lokal teknisk evidens, inte en kvalificerad underskrift eller CMD.',
+  'signing.provider.pkcs12.badge': 'Lokal teknisk evidens',
+  'signing.pkcs12.start': 'Signera med lokal PKCS#12',
+  'signing.pkcs12.title': 'Lokal underskrift med programvarucertifikat',
+  'signing.pkcs12.notice':
+    'Använd endast när du behöver lokal teknisk evidens. PFX-filen och lösenordet skickas endast för denna begäran och sparas inte av gränssnittet; resultatet är inte en kvalificerad underskrift, CMD eller en förklaring om rättslig giltighet.',
+  'signing.pkcs12.file.label': 'PKCS#12/PFX-fil',
+  'signing.pkcs12.file.hint': 'Välj en .p12- eller .pfx-fil från den här datorn.',
+  'signing.pkcs12.passphrase.label': 'Certifikatlösenord',
+  'signing.pkcs12.passphrase.hint': 'Används endast för denna begäran; sparas aldrig.',
+  'signing.pkcs12.friendlyName.label': 'Visningsnamn',
+  'signing.pkcs12.friendlyName.hint':
+    'Valfritt. Använd när PFX-filen innehåller fler än en identitet.',
+  'signing.pkcs12.capacity.label': 'Roll/kapacitet',
+  'signing.pkcs12.capacity.hint': 'Valfritt. Registrerar rollen som undertecknaren agerar i.',
+  'signing.pkcs12.sign': 'Signera lokalt',
+  'signing.pkcs12.signing': 'Signerar lokalt…',
   'signing.provider.loading': 'A carregar prestadores remotos configurados…',
   'signing.provider.unavailable.title': 'Prestadores remotos indisponíveis',
   'signing.provider.unavailable.body':
