@@ -90,6 +90,23 @@ const EDGE_CATALOG: TemplateSummary[] = [
   },
 ];
 
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8');
+}
+
+function expectCssRule(css: string, selector: RegExp, declarations: string[]) {
+  const match = css.match(selector);
+  expect(match?.[1]).toBeTruthy();
+  const body = match?.[1] ?? '';
+  for (const declaration of declarations) {
+    expect(body).toContain(declaration);
+  }
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -102,17 +119,26 @@ describe('TemplatesCatalogPage', () => {
     const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
 
     const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar' });
+    expect(filters.classList.contains('templates-filters')).toBe(true);
+    const primary = filters.querySelector('.templates-filterbar__primary') as HTMLElement;
+    expect(primary).toBeTruthy();
+    expect(primary.querySelectorAll('.field')).toHaveLength(3);
+    expect(within(primary).getByLabelText('Pesquisa')).toBeTruthy();
+    expect(within(primary).getByLabelText('Família da entidade')).toBeTruthy();
+    expect(within(primary).getByLabelText('Fase da minuta')).toBeTruthy();
     const advanced = container.querySelector(
-      'details.templates-controls__advanced',
+      'details.templates-advanced-filters.filter-advanced',
     ) as HTMLDetailsElement;
     expect(advanced).toBeTruthy();
     expect(advanced.open).toBe(false);
+    const advancedBody = advanced.querySelector(
+      '.templates-advanced-filters__body.filter-advanced__body',
+    );
+    expect(advancedBody).toBeTruthy();
+    expect(advancedBody?.querySelectorAll('.field')).toHaveLength(4);
     const clearFilters = within(filters).getByRole('button', {
       name: 'Limpar pesquisa e filtros',
     }) as HTMLButtonElement;
-    expect(within(filters).getByLabelText('Pesquisa')).toBeTruthy();
-    expect(within(filters).getByLabelText('Família da entidade')).toBeTruthy();
-    expect(within(filters).getByLabelText('Fase da minuta')).toBeTruthy();
     expect(clearFilters.disabled).toBe(true);
 
     fireEvent.click(within(advanced).getByText('Filtros avançados'));
@@ -187,7 +213,7 @@ describe('TemplatesCatalogPage', () => {
 
     const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
     const advanced = container.querySelector(
-      'details.templates-controls__advanced',
+      'details.templates-advanced-filters',
     ) as HTMLDetailsElement;
 
     expect(await screen.findByText('assoc-convocatoria-ga/pt')).toBeTruthy();
@@ -223,6 +249,48 @@ describe('TemplatesCatalogPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Limpar pesquisa e filtros' }));
     expect(await screen.findByText('fundacao-reuniao/v1')).toBeTruthy();
     expect(screen.getByText('3 de 3 modelos')).toBeTruthy();
+  });
+
+  it('keeps templates filters compact, collapsible, and overflow-safe in CSS', async () => {
+    const css = await themeCss();
+
+    expectCssRule(css, /\.templates-filters\s*\{([^}]*)\}/, [
+      'min-width: 0;',
+      'max-width: 100%;',
+      'overflow-x: clip;',
+    ]);
+    expectCssRule(css, /\.templates-filterbar\s*\{([^}]*)\}/, [
+      'max-width: 100%;',
+      'overflow-x: clip;',
+    ]);
+    expectCssRule(css, /\.templates-controls__primary\s*\{([^}]*)\}/, [
+      'display: flex;',
+      'flex-wrap: wrap;',
+      'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.templates-controls__search\s*\{([^}]*)\}/, [
+      'min-width: min(100%, 16rem);',
+      'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.templates-controls__primary > \.field\s*\{([^}]*)\}/, [
+      'min-width: min(100%, 11rem);',
+      'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.templates-controls__advanced\s*\{([^}]*)\}/, [
+      'max-width: 100%;',
+      'overflow-x: clip;',
+    ]);
+    expectCssRule(css, /\.templates-controls__filters\s*\{([^}]*)\}/, [
+      'display: grid;',
+      'grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));',
+      'min-width: 0;',
+      'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.templates-controls__actions \.btn\s*\{([^}]*)\}/, [
+      'max-width: 100%;',
+      'overflow: hidden;',
+      'white-space: nowrap;',
+    ]);
   });
 
   it('renders pending law references and searches by citation or article text', async () => {
