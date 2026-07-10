@@ -938,6 +938,7 @@ export interface DocumentImportValidationReport {
   fixity: DocumentImportFixityReport;
   content_type: DocumentImportContentTypeReport;
   classification: DocumentEvidenceClassificationReport;
+  preservation_policy?: DocumentPreservationPolicyReport;
   pdf: DocumentImportPdfRecognitionReport;
   legacy_word: LegacyWordDocRecognitionReport;
   image: ImageRecognitionReport;
@@ -967,6 +968,17 @@ export type ImportedDocumentReviewStatus =
 export type ImportedDocumentReviewPatchStatus =
   'reviewed_non_canonical_original_only' | 'rejected_non_canonical_evidence';
 
+export type ImportedDocumentCanonicalRecordStatus = 'not_canonical_record' | string;
+
+export type ImportedDocumentSignedArtifactStatus = 'not_signed_artifact' | string;
+
+export type ImportedDocumentReviewGuardrail =
+  | 'preserved_original_bytes_remain_non_canonical_evidence'
+  | 'canonical_pdfa_record_is_not_replaced'
+  | 'signed_pdf_artifact_is_not_created_or_validated'
+  | 'ocr_or_conversion_output_is_not_promoted_to_canonical_records'
+  | string;
+
 /** Body for `PATCH /v1/documents/imported/{id}/review`: metadata-only review transition. */
 export interface ImportedDocumentReviewBody {
   review_status: ImportedDocumentReviewPatchStatus;
@@ -977,6 +989,9 @@ export interface DocumentPreservationPolicyReport {
   review_state: string;
   requires_operator_review: boolean;
   requires_ocr_review: boolean;
+  canonical_record_status?: ImportedDocumentCanonicalRecordStatus;
+  signed_artifact_status?: ImportedDocumentSignedArtifactStatus;
+  review_guardrail_checklist?: ImportedDocumentReviewGuardrail[];
   canonical_conversion_status: string;
   original_bytes_preservation_status: string;
   preservation_action: string;
@@ -1006,6 +1021,9 @@ export interface ImportedDocumentView {
   operator_review_notice?: string | null;
   non_canonical: boolean;
   requires_ocr_review?: boolean;
+  canonical_record_status?: ImportedDocumentCanonicalRecordStatus;
+  signed_artifact_status?: ImportedDocumentSignedArtifactStatus;
+  review_guardrail_checklist?: ImportedDocumentReviewGuardrail[];
   canonical_conversion_status?: string;
   canonical_conversion_performed?: boolean;
   legal_acceptance_claimed?: boolean;

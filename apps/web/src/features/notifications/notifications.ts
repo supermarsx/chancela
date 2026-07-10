@@ -117,6 +117,11 @@ const REMINDER_COPY: Record<string, ReminderCopy> = {
     body: 'notifications.reminder.annual.body',
     action: 'notifications.reminder.annual.action',
   },
+  'act-attendance-missing': {
+    title: 'notifications.reminder.act.attendance.title',
+    body: 'notifications.reminder.act.attendance.body',
+    action: 'notifications.reminder.act.attendance.action',
+  },
 };
 
 function parseDate(value: string): number | null {
@@ -228,8 +233,13 @@ function routeFromTargetId(prefix: string, id: string | null | undefined): strin
   return trimmed ? `${prefix}/${trimmed}` : undefined;
 }
 
-function routeAction(href: string, label: MessageKey, t: TFunction): NotificationAction {
-  return { href, label: t(label) };
+function routeAction(
+  href: string,
+  label: MessageKey,
+  t: TFunction,
+  params?: TParams,
+): NotificationAction {
+  return { href, label: t(label, params) };
 }
 
 function messageKey(value: string | null | undefined): MessageKey | undefined {
@@ -239,18 +249,20 @@ function messageKey(value: string | null | undefined): MessageKey | undefined {
 function actionFromMetadata(
   action: DashboardAlert['action'] | DashboardReminder['action'] | null | undefined,
   t: TFunction,
+  params?: TParams,
 ): NotificationAction | undefined {
   if (!action) return undefined;
   const href = frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href);
   const labelKey = messageKey(action.label_key);
   if (!href || !labelKey) return undefined;
-  return { href, label: t(labelKey) };
+  return { href, label: t(labelKey, params) };
 }
 
 function actionFromTarget(
   alert: DashboardAlert,
   t: TFunction,
   preferredLabel?: MessageKey,
+  params?: TParams,
 ): NotificationAction | undefined {
   const links = alert.target.links;
   const ordered = [
@@ -274,23 +286,25 @@ function actionFromTarget(
     },
   ];
   const hit = ordered.find((item) => item.href);
-  return hit?.href ? { href: hit.href, label: t(hit.label) } : undefined;
+  return hit?.href ? { href: hit.href, label: t(hit.label, params) } : undefined;
 }
 
 function fallbackAlertAction(
   alert: DashboardAlert,
   t: TFunction,
   preferredLabel?: MessageKey,
+  params?: TParams,
 ): NotificationAction {
   const code = alert.code.trim();
   if (code === 'ledger.integrity.review_required') {
-    return routeAction('/arquivo', preferredLabel ?? 'notifications.action.openLedger', t);
+    return routeAction('/arquivo', preferredLabel ?? 'notifications.action.openLedger', t, params);
   }
   if (alert.target.act_id?.trim()) {
     return routeAction(
       `/atas/${alert.target.act_id.trim()}`,
       preferredLabel ?? 'notifications.action.openAct',
       t,
+      params,
     );
   }
   if (alert.target.book_id?.trim()) {
@@ -298,6 +312,7 @@ function fallbackAlertAction(
       `/livros/${alert.target.book_id.trim()}`,
       preferredLabel ?? 'notifications.action.openBook',
       t,
+      params,
     );
   }
   if (alert.target.entity_id?.trim()) {
@@ -305,21 +320,70 @@ function fallbackAlertAction(
       `/entidades/${alert.target.entity_id.trim()}`,
       preferredLabel ?? 'notifications.action.openEntity',
       t,
+      params,
     );
   }
-  return routeAction(SETTINGS_ROUTE, 'notifications.action.openSettings', t);
+  return routeAction(SETTINGS_ROUTE, 'notifications.action.openSettings', t, params);
 }
 
 function alertAction(
   alert: DashboardAlert,
   t: TFunction,
   preferredLabel?: MessageKey,
+  params?: TParams,
 ): NotificationAction {
   return (
-    actionFromMetadata(alert.action, t) ??
-    actionFromTarget(alert, t, preferredLabel) ??
-    fallbackAlertAction(alert, t, preferredLabel)
+    actionFromMetadata(alert.action, t, params) ??
+    actionFromTarget(alert, t, preferredLabel, params) ??
+    fallbackAlertAction(alert, t, preferredLabel, params)
   );
+}
+
+function paramId(
+  params: Record<string, string> | undefined,
+  key: 'act_id' | 'book_id' | 'entity_id',
+): string | undefined {
+  const value = params?.[key]?.trim();
+  return value || undefined;
+}
+
+function actionFromReminderTarget(
+  reminder: DashboardReminder,
+  t: TFunction,
+  preferredLabel?: MessageKey,
+  params?: TParams,
+): NotificationAction | undefined {
+  const actId = paramId(reminder.params, 'act_id');
+  if (actId) {
+    return routeAction(
+      `/atas/${actId}`,
+      preferredLabel ?? 'notifications.action.openAct',
+      t,
+      params,
+    );
+  }
+
+  const bookId = paramId(reminder.params, 'book_id');
+  if (bookId) {
+    return routeAction(
+      `/livros/${bookId}`,
+      preferredLabel ?? 'notifications.action.openBook',
+      t,
+      params,
+    );
+  }
+
+  const entityId = reminder.entity_id.trim() || paramId(reminder.params, 'entity_id');
+  if (entityId) {
+    return routeAction(
+      `/entidades/${entityId}`,
+      preferredLabel ?? 'notifications.action.openEntity',
+      t,
+      params,
+    );
+  }
+
+  return undefined;
 }
 
 function alertId(alert: DashboardAlert, index: number): string {
@@ -368,7 +432,7 @@ function buildAlertNotification(
         ? t(copy.body, params)
         : t('notifications.alert.unknown.body', unknownParams),
     meta: source ? [t('notifications.alert.source', { source })] : [],
-    action: alertAction(alert, t, i18nAction ?? copy?.action),
+    action: alertAction(alert, t, i18nAction ?? copy?.action, params),
   };
 }
 
@@ -481,13 +545,11 @@ export function buildDashboardNotifications(
         reminderDateMeta(reminder.due_date, t),
         t('dashboard.workQueue.source', { rule: sourceRule, profile: sourceProfile }),
       ],
-      action:
-        actionFromMetadata(reminder.action, t) ??
-        (entityId && copy
-          ? { href: `/entidades/${entityId}`, label: t(i18nAction ?? copy.action) }
-          : entityId
-            ? { href: `/entidades/${entityId}`, label: t('notifications.action.openEntity') }
-            : { href: SETTINGS_ROUTE, label: t('notifications.action.openSettings') }),
+      action: actionFromMetadata(reminder.action, t, params) ??
+        actionFromReminderTarget(reminder, t, i18nAction ?? copy?.action, params) ?? {
+          href: SETTINGS_ROUTE,
+          label: t('notifications.action.openSettings'),
+        },
     });
   }
 

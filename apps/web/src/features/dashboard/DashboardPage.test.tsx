@@ -345,6 +345,64 @@ describe('DashboardPage', () => {
     expect(within(item).getByText('Fonte act-follow-up / follow-up:fu-1')).toBeTruthy();
   });
 
+  it('renders missing-attendance act reminders with localized params and act routing', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      reminders: [
+        {
+          due_date: '2026-07-20',
+          severity: 'Info',
+          status: 'DueSoon',
+          reason: 'Raw backend attendance fallback.',
+          entity_id: 'entity-1',
+          entity_name: 'Acme, S.A.',
+          source_rule: 'act-attendance-missing',
+          source_profile: 'csc-commercial',
+          params: {
+            act_id: 'act-1',
+            act_title: 'Ata de aprovação de contas',
+            book_id: 'book-1',
+            entity_id: 'entity-1',
+            entity_name: 'Acme, S.A.',
+            meeting_date: '2026-07-20',
+            missing_fields: 'attendance_reference,presence_counts_or_attendees',
+            days_until: '11',
+          },
+          action: {
+            kind: 'open_act_attendance',
+            label_key: 'notifications.reminder.act.attendance.action',
+            api_href: '/v1/acts/act-1',
+            route: '/atas/act-1',
+          },
+          i18n: {
+            title_key: 'notifications.reminder.act.attendance.title',
+            body_key: 'notifications.reminder.act.attendance.body',
+            action_key: 'notifications.reminder.act.attendance.action',
+          },
+        },
+      ],
+      recent_events: [1].map((seq) => eventFor(seq)),
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    const item = within(queue).getByRole('listitem');
+    const link = within(item).getByRole('link', {
+      name: 'Registar presenças: Ata de aprovação de contas',
+    });
+    expect(link.getAttribute('href')).toBe('/atas/act-1');
+    expect(
+      within(item).getByText(
+        'Ata de aprovação de contas de Acme, S.A. está marcada para 2026-07-20 e ainda não tem registo de presenças suficiente. Registe a referência de presenças e os totais ou participantes estruturados antes de a avançar.',
+      ),
+    ).toBeTruthy();
+    expect(within(item).queryByText('Raw backend attendance fallback.')).toBeNull();
+    expect(within(item).getByText('Data 2026-07-20')).toBeTruthy();
+    expect(within(item).getByText('Fonte act-attendance-missing / csc-commercial')).toBeTruthy();
+  });
+
   it('shows an empty work-queue state when dashboard data exposes no operator work', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
     renderWithProviders(<DashboardPage />);

@@ -389,6 +389,53 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.detail).not.toContain('Raw backend');
   });
 
+  it('renders missing-attendance reminders with source-rule copy and act action metadata', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        reminders: [
+          reminder({
+            due_date: '2026-07-20',
+            status: 'DueSoon',
+            severity: 'Info',
+            reason: 'Raw backend attendance fallback.',
+            source_rule: 'act-attendance-missing',
+            source_profile: 'csc-commercial',
+            params: {
+              act_id: 'act-1',
+              act_title: 'Ata de aprovação de contas',
+              book_id: 'book-1',
+              entity_id: 'entity-1',
+              entity_name: 'Acme, S.A.',
+              meeting_date: '2026-07-20',
+              missing_fields: 'attendance_reference,presence_counts_or_attendees',
+              days_until: '11',
+            },
+            action: {
+              kind: 'open_act_attendance',
+              label_key: 'notifications.reminder.act.attendance.action',
+              api_href: '/v1/acts/act-1',
+              route: null,
+            },
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'reminder',
+      tone: 'accent',
+      badge: 'Próximo',
+      title: 'Registar presenças: Ata de aprovação de contas',
+      detail:
+        'Ata de aprovação de contas de Acme, S.A. está marcada para 2026-07-20 e ainda não tem registo de presenças suficiente. Registe a referência de presenças e os totais ou participantes estruturados antes de a avançar.',
+      action: { href: '/atas/act-1', label: 'Registar presenças' },
+    });
+    expect(items[0]?.detail).not.toContain('Raw backend');
+    expect(items[0]?.detail).not.toContain('attendance_reference');
+  });
+
   it('prioritizes actionable alerts and reminders in the popup over recent operations', () => {
     const items = buildDashboardNotifications(
       dashboard({

@@ -238,6 +238,10 @@ export const ptBR: Catalog = {
   'notifications.reminder.annual.body':
     'Não há ato anual selado ou arquivado para {entity_name} em {due_date}. O lembrete é consultivo e deriva de {source_rule}.',
   'notifications.reminder.annual.action': 'Abrir entidade',
+  'notifications.reminder.act.attendance.title': 'Registrar presenças: {act_title}',
+  'notifications.reminder.act.attendance.body':
+    '{act_title} de {entity_name} está marcada para {meeting_date} e ainda não tem registro de presença suficiente. Registre a referência de presença e os totais ou participantes estruturados antes de avançá-la.',
+  'notifications.reminder.act.attendance.action': 'Registrar presenças',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -2503,6 +2507,21 @@ export const ptBR: Catalog = {
   'documents.import.importedBy': 'Importado por',
   'documents.import.sha256': 'SHA-256',
   'documents.import.warning': 'Aviso',
+  'documents.import.guardrails.title': 'Limites de preservação',
+  'documents.import.guardrails.canonical.label': 'Registro canônico',
+  'documents.import.guardrails.canonical.notCanonical':
+    'Não substitui o PDF/A canônico preservado.',
+  'documents.import.guardrails.signed.label': 'Artefato assinado',
+  'documents.import.guardrails.signed.notSigned': 'Não cria nem valida PDF assinado.',
+  'documents.import.guardrails.checklist.originalBytes':
+    'Bytes originais permanecem preservados apenas como evidência não canônica.',
+  'documents.import.guardrails.checklist.canonicalPdfa':
+    'O PDF/A canônico preservado não é substituído.',
+  'documents.import.guardrails.checklist.signedArtifact':
+    'Nenhum artefato assinado é criado ou validado por esta importação.',
+  'documents.import.guardrails.checklist.noPromotion':
+    'OCR ou conversão não são promovidos a registros canônicos.',
+  'documents.import.guardrails.checklist.unknown': 'Limite técnico: {code}',
   'documents.import.validationAria': 'Relatório de validação do documento importado',
   'documents.import.validationTitle': 'Validação técnica da importação',
   'documents.import.validationRejectedTitle': 'Importação recusada pela validação',

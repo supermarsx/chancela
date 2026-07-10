@@ -144,6 +144,28 @@ const importedDocument: ImportedDocumentView = {
 const importedDocumentReviewNotice =
   'Operator review records a preservation workflow decision only; it does not run OCR, convert bytes, replace the canonical PDF/A, or claim legal acceptance.';
 
+const importedDocumentReviewGuardrailChecklist = [
+  'preserved_original_bytes_remain_non_canonical_evidence',
+  'canonical_pdfa_record_is_not_replaced',
+  'signed_pdf_artifact_is_not_created_or_validated',
+  'ocr_or_conversion_output_is_not_promoted_to_canonical_records',
+];
+
+const importedDocumentPreservationPolicy = {
+  review_state: 'operator_review_required',
+  requires_operator_review: true,
+  requires_ocr_review: false,
+  canonical_record_status: 'not_canonical_record',
+  signed_artifact_status: 'not_signed_artifact',
+  review_guardrail_checklist: importedDocumentReviewGuardrailChecklist,
+  canonical_conversion_status: 'not_performed_non_canonical_original_only',
+  original_bytes_preservation_status: 'preserved_original_bytes',
+  preservation_action: 'preserve_original_bytes_as_non_canonical_evidence_if_needed',
+  canonical_conversion_performed: false,
+  canonical_pdfa_generated: false,
+  legal_acceptance_claimed: false,
+};
+
 const importedDocumentPendingReview: ImportedDocumentView = {
   ...importedDocument,
   operator_review_status: 'operator_review_required',
@@ -152,9 +174,13 @@ const importedDocumentPendingReview: ImportedDocumentView = {
   operator_review_note: null,
   operator_review_notice: importedDocumentReviewNotice,
   requires_ocr_review: false,
+  canonical_record_status: 'not_canonical_record',
+  signed_artifact_status: 'not_signed_artifact',
+  review_guardrail_checklist: importedDocumentReviewGuardrailChecklist,
   canonical_conversion_status: 'not_performed_non_canonical_original_only',
   canonical_conversion_performed: false,
   legal_acceptance_claimed: false,
+  preservation_policy: importedDocumentPreservationPolicy,
 };
 
 const unsignedImportSignature = {
@@ -1019,6 +1045,21 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     });
     expect(within(metadata).getByText('Revisão do operador necessária')).toBeTruthy();
     expect(within(metadata).getByText(importedDocumentReviewNotice)).toBeTruthy();
+    expect(within(metadata).getByText('Limites de preservação')).toBeTruthy();
+    expect(within(metadata).getByText('Registo canónico')).toBeTruthy();
+    expect(within(metadata).getByText('Não substitui o PDF/A canónico preservado.')).toBeTruthy();
+    expect(within(metadata).getByText('Artefacto assinado')).toBeTruthy();
+    expect(within(metadata).getByText('Não cria nem valida PDF assinado.')).toBeTruthy();
+    expect(
+      within(metadata).getByText(
+        'Bytes originais permanecem preservados apenas como evidência não canónica.',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(metadata).getByText(
+        'Nenhum artefacto assinado é criado ou validado por esta importação.',
+      ),
+    ).toBeTruthy();
     expect(within(metadata).getAllByText('Não indicado').length).toBeGreaterThanOrEqual(2);
 
     const status = screen.getByLabelText('Estado de revisão') as HTMLSelectElement;

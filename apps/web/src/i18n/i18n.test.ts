@@ -25,6 +25,16 @@ describe('catalog completeness matrix', () => {
     expect(ptPT['entities.filters.registry.all']).not.toBe('Todo o registo');
   });
 
+  it('keeps missing-attendance reminder copy in European Portuguese', () => {
+    expect(ptPT['notifications.reminder.act.attendance.title']).toBe(
+      'Registar presenças: {act_title}',
+    );
+    expect(ptPT['notifications.reminder.act.attendance.body']).toContain('Registe');
+    expect(ptPT['notifications.reminder.act.attendance.action']).toBe('Registar presenças');
+    expect(ptPT['notifications.reminder.act.attendance.title']).not.toContain('Registrar');
+    expect(ptPT['notifications.reminder.act.attendance.body']).not.toContain('Registre');
+  });
+
   it('keeps PDF validator copy localized in the English catalog', () => {
     expect(enUS['tools.section.pdfValidator']).toBe('PDF validator');
     expect(enUS['pdfValidator.file.label']).toBe('Signed PDF');
@@ -36,6 +46,21 @@ describe('catalog completeness matrix', () => {
     for (const catalog of [deDE, svSE]) {
       expect(catalog['pdfValidator.notice.title']).not.toBe('Validação técnica local');
       expect(catalog['pdfValidator.file.label']).not.toBe('PDF assinado');
+    }
+  });
+
+  it('keeps imported-document guardrail copy localized in the English catalog', () => {
+    expect(enUS['documents.import.guardrails.title']).toBe('Preservation limits');
+    expect(enUS['documents.import.guardrails.canonical.label']).toBe('Canonical record');
+    expect(enUS['documents.import.guardrails.signed.label']).toBe('Signed artifact');
+    expect(enUS['documents.import.guardrails.title']).not.toBe('Limites de preservação');
+    expect(enUS['documents.import.guardrails.canonical.label']).not.toBe('Registo canónico');
+  });
+
+  it('keeps representative non-English guardrail copy out of stale Portuguese', () => {
+    for (const catalog of [deDE, svSE]) {
+      expect(catalog['documents.import.guardrails.title']).not.toBe('Limites de preservação');
+      expect(catalog['documents.import.guardrails.canonical.label']).not.toBe('Registo canónico');
     }
   });
 

@@ -238,6 +238,10 @@ export const svSE: Catalog = {
   'notifications.reminder.annual.body':
     'There is no sealed or archived annual act for {entity_name} by {due_date}. This reminder is advisory and comes from {source_rule}.',
   'notifications.reminder.annual.action': 'Open entity',
+  'notifications.reminder.act.attendance.title': 'Registrera närvaro: {act_title}',
+  'notifications.reminder.act.attendance.body':
+    '{act_title} för {entity_name} är daterat {meeting_date} och saknar fortfarande tillräcklig närvaroregistrering. Registrera närvaroreferensen och antingen närvarotal eller strukturerade deltagare innan du går vidare.',
+  'notifications.reminder.act.attendance.action': 'Registrera närvaro',
   'notifications.reminder.followUp.title': '{follow_up_title}',
   'notifications.reminder.followUp.body': '{entity_name} - {act_title}: {follow_up_detail}',
   'notifications.reminder.followUp.bodyNoDetail': '{entity_name} - {act_title}',
@@ -2498,6 +2502,21 @@ export const svSE: Catalog = {
   'documents.import.importedBy': 'Importado por',
   'documents.import.sha256': 'SHA-256',
   'documents.import.warning': 'Aviso',
+  'documents.import.guardrails.title': 'Preservation limits',
+  'documents.import.guardrails.canonical.label': 'Canonical record',
+  'documents.import.guardrails.canonical.notCanonical':
+    'Does not replace the preserved canonical PDF/A.',
+  'documents.import.guardrails.signed.label': 'Signed artifact',
+  'documents.import.guardrails.signed.notSigned': 'Does not create or validate a signed PDF.',
+  'documents.import.guardrails.checklist.originalBytes':
+    'Original bytes remain preserved only as non-canonical evidence.',
+  'documents.import.guardrails.checklist.canonicalPdfa':
+    'The preserved canonical PDF/A is not replaced.',
+  'documents.import.guardrails.checklist.signedArtifact':
+    'No signed artifact is created or validated by this import.',
+  'documents.import.guardrails.checklist.noPromotion':
+    'OCR or conversion output is not promoted to canonical records.',
+  'documents.import.guardrails.checklist.unknown': 'Technical limit: {code}',
   'documents.import.validationAria': 'Valideringsrapport for importerat dokument',
   'documents.import.validationTitle': 'Teknisk importvalidering',
   'documents.import.validationRejectedTitle': 'Import avvisad av valideringen',

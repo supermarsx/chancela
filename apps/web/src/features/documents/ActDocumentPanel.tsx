@@ -213,6 +213,51 @@ function importedReviewStatusTone(status: unknown): 'neutral' | 'warn' | 'error'
   }
 }
 
+function importedCanonicalRecordStatusLabel(status: unknown, t: TFunction): string | null {
+  switch (metadataText(status)) {
+    case 'not_canonical_record':
+      return t('documents.import.guardrails.canonical.notCanonical');
+    case null:
+      return null;
+    default:
+      return metadataText(status);
+  }
+}
+
+function importedSignedArtifactStatusLabel(status: unknown, t: TFunction): string | null {
+  switch (metadataText(status)) {
+    case 'not_signed_artifact':
+      return t('documents.import.guardrails.signed.notSigned');
+    case null:
+      return null;
+    default:
+      return metadataText(status);
+  }
+}
+
+function importedGuardrailChecklist(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const text = metadataText(item);
+    return text ? [text] : [];
+  });
+}
+
+function importedGuardrailLabel(guardrail: string, t: TFunction): string {
+  switch (guardrail) {
+    case 'preserved_original_bytes_remain_non_canonical_evidence':
+      return t('documents.import.guardrails.checklist.originalBytes');
+    case 'canonical_pdfa_record_is_not_replaced':
+      return t('documents.import.guardrails.checklist.canonicalPdfa');
+    case 'signed_pdf_artifact_is_not_created_or_validated':
+      return t('documents.import.guardrails.checklist.signedArtifact');
+    case 'ocr_or_conversion_output_is_not_promoted_to_canonical_records':
+      return t('documents.import.guardrails.checklist.noPromotion');
+    default:
+      return t('documents.import.guardrails.checklist.unknown', { code: guardrail });
+  }
+}
+
 function reviewPatchStatusFromDocument(
   status: ImportedDocumentView['operator_review_status'] | undefined,
 ): ImportedDocumentReviewPatchStatus {
@@ -518,6 +563,7 @@ function ImportedDocumentDetails({
             {reviewNote ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
           </dd>
         </div>
+        <ImportedDocumentGuardrails document={document} t={t} />
         <div>
           <dt>{t('documents.import.sha256')}</dt>
           <dd>
@@ -529,6 +575,56 @@ function ImportedDocumentDetails({
           <dd>{legalNotice}</dd>
         </div>
       </dl>
+    </div>
+  );
+}
+
+function ImportedDocumentGuardrails({
+  document,
+  t,
+}: {
+  document: ImportedDocumentView;
+  t: TFunction;
+}) {
+  const policy = document.preservation_policy;
+  const canonicalRecordStatus =
+    metadataText(document.canonical_record_status) ?? metadataText(policy?.canonical_record_status);
+  const signedArtifactStatus =
+    metadataText(document.signed_artifact_status) ?? metadataText(policy?.signed_artifact_status);
+  const checklist = importedGuardrailChecklist(document.review_guardrail_checklist);
+  const policyChecklist = importedGuardrailChecklist(policy?.review_guardrail_checklist);
+  const guardrails = checklist.length > 0 ? checklist : policyChecklist;
+  const canonicalLabel = importedCanonicalRecordStatusLabel(canonicalRecordStatus, t);
+  const signedLabel = importedSignedArtifactStatusLabel(signedArtifactStatus, t);
+
+  if (!canonicalLabel && !signedLabel && guardrails.length === 0) return null;
+
+  return (
+    <div>
+      <dt>{t('documents.import.guardrails.title')}</dt>
+      <dd>
+        <div className="stack--tight">
+          {canonicalLabel ? (
+            <p className="row-wrap">
+              <Badge tone="warn">{t('documents.import.guardrails.canonical.label')}</Badge>
+              <span>{canonicalLabel}</span>
+            </p>
+          ) : null}
+          {signedLabel ? (
+            <p className="row-wrap">
+              <Badge tone="neutral">{t('documents.import.guardrails.signed.label')}</Badge>
+              <span>{signedLabel}</span>
+            </p>
+          ) : null}
+          {guardrails.length > 0 ? (
+            <ul className="plain-list">
+              {guardrails.map((guardrail) => (
+                <li key={guardrail}>{importedGuardrailLabel(guardrail, t)}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </dd>
     </div>
   );
 }
