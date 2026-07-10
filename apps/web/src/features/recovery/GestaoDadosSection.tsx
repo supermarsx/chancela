@@ -149,7 +149,7 @@ function permissionLabel(check: DataPermissionCheck, t: TFunction): string {
   return check.ok ? t('data.status.permission.ok') : t('data.status.permission.warn');
 }
 
-function concernMeta(concern: DataUsageConcern, t: TFunction, locale: string): string {
+function concernMetaItems(concern: DataUsageConcern, t: TFunction, locale: string): string[] {
   const parts = [
     t(BASIS_LABEL[concern.basis]),
     t(concern.exact ? 'data.status.exact' : 'data.status.estimated'),
@@ -170,7 +170,7 @@ function concernMeta(concern: DataUsageConcern, t: TFunction, locale: string): s
   if (concern.relative_roots.length > 0) {
     parts.push(t('data.status.roots', { roots: concern.relative_roots.join(', ') }));
   }
-  return parts.join(' · ');
+  return parts;
 }
 
 function usageForTarget(
@@ -327,15 +327,22 @@ function UsageList({
   }
   return (
     <ul className="data-status-usage-list">
-      {concerns.map((concern) => (
-        <li key={`${concern.id}:${concern.basis}`} className="data-status-usage-row">
-          <div className="data-status-usage-row__head">
-            <span className="data-status-usage-row__label">{concern.label}</span>
-            <span className="mono">{formatBytes(concern.bytes, locale)}</span>
-          </div>
-          <p className="data-status-usage-row__meta">{concernMeta(concern, t, locale)}</p>
-        </li>
-      ))}
+      {concerns.map((concern) => {
+        const meta = concernMetaItems(concern, t, locale);
+        return (
+          <li key={`${concern.id}:${concern.basis}`} className="data-status-usage-row">
+            <div className="data-status-usage-row__head">
+              <span className="data-status-usage-row__label">{concern.label}</span>
+              <span className="mono">{formatBytes(concern.bytes, locale)}</span>
+            </div>
+            <div className="data-status-usage-row__meta" aria-label={meta.join(' · ')}>
+              {meta.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -507,11 +514,11 @@ function DataStatusPanel() {
                 <p className="data-status-section__hint">{t('data.status.cleanup.body')}</p>
               </div>
             </div>
-            <div className="data-status-cleanups">
+            <ul className="data-status-cleanups">
               {CLEANUP_TARGETS.map((target) => {
                 const usage = usageForTarget(data.usage.filesystem, target.target);
                 return (
-                  <article key={target.target} className="data-status-cleanup">
+                  <li key={target.target} className="data-status-cleanup">
                     <div className="data-status-cleanup__body">
                       <h5>{t(target.title)}</h5>
                       <p>{t(target.body)}</p>
@@ -540,10 +547,10 @@ function DataStatusPanel() {
                         ? t('data.status.cleanup.pending')
                         : t(target.button)}
                     </GateButton>
-                  </article>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
             {lastCleanup ? (
               <InlineWarning tone="info" title={t('data.status.cleanup.doneTitle')}>
                 <p>{cleanupSummary(lastCleanup, t, locale)}</p>
@@ -656,12 +663,12 @@ function DataStatusPanel() {
               </p>
             </div>
 
-            <div className="data-status-usage-groups">
-              <div>
+            <div className="data-status-usage-groups data-status-usage-groups--breakdown">
+              <div className="data-status-usage-group">
                 <h5>{t('data.status.usage.filesystem')}</h5>
                 <UsageList concerns={data.usage.filesystem} locale={locale} t={t} />
               </div>
-              <div>
+              <div className="data-status-usage-group">
                 <h5>{t('data.status.usage.sqliteLogical')}</h5>
                 <UsageList concerns={data.usage.sqlite_logical} locale={locale} t={t} />
               </div>
