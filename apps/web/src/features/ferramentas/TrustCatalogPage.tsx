@@ -259,6 +259,27 @@ function TrustControlPanel({ title, children }: { title: string; children: React
   );
 }
 
+function TrustResultGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="trust-result-group" role="group" aria-label={title}>
+      <p className="trust-result-group__title">{title}</p>
+      {children}
+    </section>
+  );
+}
+
+function TsaAcceptedHash({ digest }: { digest: string }) {
+  return (
+    <span
+      className="trust-accepted-hash"
+      role="group"
+      aria-label={`Hash aceite completo: ${digest}`}
+    >
+      <Digest value={digest} />
+    </span>
+  );
+}
+
 function tsaRecordMatches(record: TsaRecordView, term: string): boolean {
   return includesTerm(
     [
@@ -530,13 +551,7 @@ function TsaToolingPanel() {
                 <div>
                   <dt>Hash aceite</dt>
                   <dd className="trust-digest-cell">
-                    <span
-                      className="trust-digest-cell__value"
-                      role="group"
-                      aria-label={`Hash aceite completo: ${tsa.data.summary.accepted_hash.digest}`}
-                    >
-                      <Digest value={tsa.data.summary.accepted_hash.digest} />
-                    </span>
+                    <TsaAcceptedHash digest={tsa.data.summary.accepted_hash.digest} />
                   </dd>
                 </div>
               </TrustKeyValueGrid>
@@ -686,28 +701,34 @@ function TsaToolingPanel() {
                     {records.length} de {tsa.data.records.length} registos TSA
                   </p>
                   {records.length ? (
-                    <ul className="trust-picklist" aria-label="Registos TSA">
-                      {records.map((record) => (
-                        <li key={record.id}>
-                          <button
-                            type="button"
-                            className={
-                              selected?.id === record.id
-                                ? 'trust-pick trust-pick--service is-current'
-                                : 'trust-pick trust-pick--service'
-                            }
-                            onClick={() => setParam('tsaRecord', record.id, false)}
-                          >
-                            <span className="trust-pick__head">
-                              <code className="mono trust-pick__code">{record.provider_name}</code>
-                              <span className="trust-pick__meta muted">{record.service_type}</span>
-                            </span>
-                            <span className="trust-pick__name">{record.name}</span>
-                            <TsaRecordFlags record={record} />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                    <TrustResultGroup title="Registos TSA">
+                      <ul className="trust-picklist" aria-label="Registos TSA">
+                        {records.map((record) => (
+                          <li key={record.id}>
+                            <button
+                              type="button"
+                              className={
+                                selected?.id === record.id
+                                  ? 'trust-pick trust-pick--service is-current'
+                                  : 'trust-pick trust-pick--service'
+                              }
+                              onClick={() => setParam('tsaRecord', record.id, false)}
+                            >
+                              <span className="trust-pick__head">
+                                <code className="mono trust-pick__code">
+                                  {record.provider_name}
+                                </code>
+                                <span className="trust-pick__meta muted">
+                                  {record.service_type}
+                                </span>
+                              </span>
+                              <span className="trust-pick__name">{record.name}</span>
+                              <TsaRecordFlags record={record} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </TrustResultGroup>
                   ) : (
                     <EmptyState title={t('trust.tsa.empty.title')}>
                       <p>{t('trust.tsa.empty.body', { term: identifier.trim() || term.trim() })}</p>
@@ -1505,30 +1526,34 @@ function TrustCatalogExplorer() {
                 })}
               </p>
               {results.providers.length ? (
-                <ul className="trust-picklist" aria-label={t('trust.results.providers')}>
-                  {results.providers.map((provider) => (
-                    <li key={provider.id}>
-                      <ProviderPick
-                        provider={provider}
-                        selected={provider.id === selectedProvider}
-                        onSelect={() => selectProvider(provider.id)}
-                      />
-                    </li>
-                  ))}
-                </ul>
+                <TrustResultGroup title={t('trust.results.providers')}>
+                  <ul className="trust-picklist" aria-label={t('trust.results.providers')}>
+                    {results.providers.map((provider) => (
+                      <li key={provider.id}>
+                        <ProviderPick
+                          provider={provider}
+                          selected={provider.id === selectedProvider}
+                          onSelect={() => selectProvider(provider.id)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </TrustResultGroup>
               ) : null}
               {results.services.length ? (
-                <ul className="trust-picklist" aria-label={t('trust.results.services')}>
-                  {results.services.map((service) => (
-                    <li key={service.id}>
-                      <ServicePick
-                        service={service}
-                        selected={service.id === selectedService}
-                        onSelect={() => selectService(service.id)}
-                      />
-                    </li>
-                  ))}
-                </ul>
+                <TrustResultGroup title={t('trust.results.services')}>
+                  <ul className="trust-picklist" aria-label={t('trust.results.services')}>
+                    {results.services.map((service) => (
+                      <li key={service.id}>
+                        <ServicePick
+                          service={service}
+                          selected={service.id === selectedService}
+                          onSelect={() => selectService(service.id)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </TrustResultGroup>
               ) : null}
             </div>
           )}

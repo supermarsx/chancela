@@ -541,10 +541,16 @@ describe('Ferramentas — TSL trust catalog', () => {
     const acceptedHashValue = within(acceptedHashGroup).getByTitle(acceptedHash);
     expect(acceptedHashValue.textContent).toBe('ba7816bf…f20015ad');
     expect(acceptedHashValue.textContent).not.toBe(acceptedHash);
+    expect(acceptedHashGroup.classList.contains('trust-accepted-hash')).toBe(true);
+    expect(acceptedHashValue.classList.contains('digest__value')).toBe(true);
+    expect(acceptedHashValue.getAttribute('title')).toBe(acceptedHash);
     expect(acceptedHashGroup.closest('.trust-digest-cell')).toBeTruthy();
     fireEvent.click(within(acceptedHashGroup).getByRole('button', { name: /copiar/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(acceptedHash));
     expect(screen.getByText('1.2.3.4.1 / 04')).toBeTruthy();
+    const tsaRecordsGroup = screen.getByRole('group', { name: 'Registos TSA' });
+    expect(tsaRecordsGroup.classList.contains('trust-result-group')).toBe(true);
+    expect(within(tsaRecordsGroup).getByRole('list', { name: 'Registos TSA' })).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Procurar registos TSA'), {
       target: { value: 'qtst' },
@@ -580,6 +586,12 @@ describe('Ferramentas — TSL trust catalog', () => {
     renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
 
     expect(await screen.findByRole('group', { name: 'Filtros TSL' })).toBeTruthy();
+    const providersGroup = await screen.findByRole('group', { name: 'Prestadores' });
+    const servicesGroup = screen.getByRole('group', { name: 'Serviços' });
+    expect(providersGroup.classList.contains('trust-result-group')).toBe(true);
+    expect(servicesGroup.classList.contains('trust-result-group')).toBe(true);
+    expect(within(providersGroup).getByRole('list', { name: 'Prestadores' })).toBeTruthy();
+    expect(within(servicesGroup).getByRole('list', { name: 'Serviços' })).toBeTruthy();
     fireEvent.change(await screen.findByLabelText('Procurar na lista de confiança TSL'), {
       target: { value: 'qualified' },
     });
@@ -639,7 +651,9 @@ describe('Ferramentas — TSL trust catalog', () => {
     );
     expect(await screen.findByText('Sem registos TSA')).toBeTruthy();
     expect(
-      screen.getByText(/Nenhum serviço de selo temporal corresponde a “no-such-technical-identifier”/),
+      screen.getByText(
+        /Nenhum serviço de selo temporal corresponde a “no-such-technical-identifier”/,
+      ),
     ).toBeTruthy();
   });
 
