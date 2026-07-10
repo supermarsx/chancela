@@ -39,6 +39,9 @@ jobs:
       - name: Check release versions
         run: npm run check:versions
 
+      - name: Check spec coverage tracker
+        run: npm run check:spec-coverage
+
       - name: Check release trust validator fixtures
         run: node scripts/check-release-trust.mjs self-test
 
@@ -277,8 +280,9 @@ jobs:
   # ---------------------------------------------------------------------------
   # Recent landed checkpoint: focused regression lane for areas that landed in
   # parallel and are easy to miss in broad jobs: API paper import,
-  # archive-package evidence including /DocTimeStamp, web contract/dashboard/i18n
-  # pins, validator corpus manifest integrity, and desktop Cargo.lock resolution.
+  # archive-package evidence including /DocTimeStamp, local PKCS#12 signing,
+  # bounded retention, TSL hardening, web contract/dashboard/signing/i18n pins,
+  # validator corpus manifest integrity, and desktop Cargo.lock resolution.
   # ---------------------------------------------------------------------------
   recent-landed:
     name: Recent landed checkpoint
