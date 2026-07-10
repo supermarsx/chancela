@@ -18,13 +18,12 @@ use chancela_core::{
 };
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
-#[cfg(feature = "sqlcipher")]
-use chancela_store::StoreOpenOptions;
 use chancela_store::{
-    Store, StoreError, StoredDocument, StoredFollowUp, StoredFollowUpStatus,
-    StoredImportedDocument, StoredImportedDocumentMeta, StoredPaperBookImport,
-    StoredPaperBookImportMeta, StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan,
-    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
+    Store, StoreDatabaseFormat, StoreError, StoreKeyConfigStatus, StoreKeyOpsPlan,
+    StoreOpenOptions, StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredImportedDocument,
+    StoredImportedDocumentMeta, StoredPaperBookImport, StoredPaperBookImportMeta,
+    StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
+    StoredPaperBookOcrStatus,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -252,6 +251,75 @@ fn open_creates_db_and_reopen_is_idempotent() {
     assert!(dir.path().join("chancela.db").exists());
     let reopened = Store::open(dir.path()).expect("reopen");
     assert_eq!(reopened.load().expect("reload").chain_status, Ok(0));
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+#[test]
+fn key_ops_status_requires_sqlcipher_without_creating_plaintext_db() {
+    let dir = TempDir::new();
+    let options = StoreOpenOptions::new().with_encryption_key("correct horse battery staple");
+
+    let status = Store::key_ops_status(dir.path(), &options).expect("key ops status");
+
+    assert!(!status.sqlcipher_available);
+    assert_eq!(status.key_config, StoreKeyConfigStatus::Configured);
+    assert_eq!(status.database_format, StoreDatabaseFormat::Missing);
+    assert_eq!(status.plan, StoreKeyOpsPlan::SqlcipherBuildRequired);
+    assert!(!status.rotation_ready());
+    assert!(
+        status.operator_action().contains("lacks SQLCipher"),
+        "operator action should be actionable: {}",
+        status.operator_action()
+    );
+
+    let err = Store::open_with_options(dir.path(), options)
+        .expect_err("keyed open must fail without sqlcipher");
+    assert!(matches!(err, StoreError::EncryptionUnavailable));
+    assert!(
+        !dir.path().join("chancela.db").exists(),
+        "failed keyed open must not create a plaintext database"
+    );
+}
+
+#[cfg(not(feature = "sqlcipher"))]
+#[test]
+fn key_ops_status_refuses_plaintext_to_encrypted_migration_without_sqlcipher() {
+    let dir = TempDir::new();
+    Store::open(dir.path()).expect("create plaintext store");
+    let options = StoreOpenOptions::new().with_encryption_key("correct horse battery staple");
+
+    let status = Store::key_ops_status(dir.path(), &options).expect("key ops status");
+
+    assert!(!status.sqlcipher_available);
+    assert_eq!(status.key_config, StoreKeyConfigStatus::Configured);
+    assert_eq!(status.database_format, StoreDatabaseFormat::PlaintextSqlite);
+    assert_eq!(
+        status.plan,
+        StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration
+    );
+    assert!(!status.rotation_ready());
+    assert!(
+        status.operator_action().contains("backup/export-restore"),
+        "operator action should describe the supported migration path: {}",
+        status.operator_action()
+    );
+
+    let err = Store::open_with_options(dir.path(), options)
+        .expect_err("direct keyed open must not convert plaintext in place");
+    let message = err.to_string();
+    assert!(
+        matches!(
+            err,
+            StoreError::PlaintextEncryptionMigrationUnsupported { .. }
+        ),
+        "got {message}"
+    );
+    assert!(!message.contains("correct horse battery staple"));
+    assert!(message.contains("refusing to rewrite plaintext SQLite database"));
+    assert!(message.contains("backup/export-restore"));
+
+    let reopened = Store::open(dir.path()).expect("plaintext store remains openable");
+    assert_eq!(reopened.load().expect("load plaintext").chain_status, Ok(0));
 }
 
 #[cfg(feature = "sqlcipher")]

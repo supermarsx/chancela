@@ -122,7 +122,8 @@ use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryTransport};
 use chancela_signing::{SignerProvider, SigningError, TrustPolicy};
 use chancela_store::{
-    PendingCmdSession, Store, StoreError, StoredDocument, StoredFollowUp, StoredSignedDocument, Tx,
+    PendingCmdSession, Store, StoreError, StoreKeyOpsPlan, StoredDocument, StoredFollowUp,
+    StoredSignedDocument, Tx,
 };
 use serde::Serialize;
 use tokio::sync::RwLock;
@@ -460,6 +461,19 @@ impl AppState {
         database_encryption: DatabaseEncryptionConfig,
     ) -> Result<Self, AppStateInitError> {
         if database_encryption.is_configured() {
+            let key_ops = Store::key_ops_status(&dir, &database_encryption.store_open_options())
+                .map_err(|source| AppStateInitError::StoreOpen {
+                    data_dir: dir.clone(),
+                    source,
+                })?;
+            if key_ops.plan == StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration {
+                return Err(AppStateInitError::StoreOpen {
+                    data_dir: dir.clone(),
+                    source: StoreError::PlaintextEncryptionMigrationUnsupported {
+                        db_file: key_ops.database_file.display().to_string(),
+                    },
+                });
+            }
             ensure_sqlcipher_feature_available()?;
         }
         let settings_path = dir.join(settings::SETTINGS_FILE);

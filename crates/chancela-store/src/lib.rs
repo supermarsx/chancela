@@ -34,7 +34,7 @@ pub mod recovery;
 pub mod schema;
 
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -58,6 +58,7 @@ pub const DB_FILE: &str = "chancela.db";
 
 /// Prefix identifying an encrypted whole-instance backup envelope.
 pub const BACKUP_ENVELOPE_MAGIC: &[u8] = b"chancela-backup-envelope/v1\n";
+const SQLITE_PLAINTEXT_HEADER: &[u8; 16] = b"SQLite format 3\0";
 const BACKUP_ENVELOPE_FORMAT: &str = "chancela-backup-envelope/v1";
 const BACKUP_KDF: &str = "argon2id-default";
 const BACKUP_AEAD: &str = "XChaCha20-Poly1305";
@@ -130,9 +131,26 @@ pub enum StoreError {
     NotFound(String),
     /// A store encryption key was supplied to a build that was not compiled with SQLCipher support.
     #[error(
-        "store encryption key supplied but this build was not compiled with the sqlcipher feature"
+        "store encryption key supplied but this build was not compiled with the sqlcipher feature; \
+         rebuild with sqlcipher before enabling database encryption or remove the configured key to \
+         keep the plaintext store"
     )]
     EncryptionUnavailable,
+    /// A caller tried to convert an existing plaintext SQLite store by simply supplying a key.
+    ///
+    /// Direct keyed open is only safe for a fresh SQLCipher store or an already-encrypted store.
+    /// Plaintext-to-encrypted migration must be an explicit backup/export-restore workflow so a
+    /// default build never pretends to encrypt an existing plaintext database in place.
+    #[error(
+        "plaintext-to-encrypted store migration is not supported by direct keyed open; refusing to \
+         rewrite plaintext SQLite database at {db_file}. Use a supported backup/export-restore \
+         migration into a fresh SQLCipher-enabled store, or remove the configured database key to \
+         keep plaintext"
+    )]
+    PlaintextEncryptionMigrationUnsupported {
+        /// The plaintext database file that triggered the migration guard.
+        db_file: String,
+    },
     /// SQLCipher keying/rekeying was asked to use an empty key. Empty keys are rejected before
     /// touching the database so a caller cannot accidentally decrypt or weaken an encrypted store.
     #[error("store encryption key must not be empty")]
@@ -195,6 +213,122 @@ impl StoreOpenOptions {
 
     fn encryption_key(&self) -> Option<&str> {
         self.encryption_key.as_deref()
+    }
+
+    fn key_config_status(&self) -> StoreKeyConfigStatus {
+        match self.encryption_key() {
+            None => StoreKeyConfigStatus::Unconfigured,
+            Some(key) if key.trim().is_empty() => StoreKeyConfigStatus::Empty,
+            Some(_) => StoreKeyConfigStatus::Configured,
+        }
+    }
+}
+
+/// Secret-free classification of the configured database key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreKeyConfigStatus {
+    /// No database encryption key was configured.
+    Unconfigured,
+    /// A key source was configured, but it resolved to an empty or whitespace-only value.
+    Empty,
+    /// A non-empty key was configured. The key material is never exposed by status reporting.
+    Configured,
+}
+
+/// What the store can infer from the database file header without opening it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreDatabaseFormat {
+    /// No `<data_dir>/chancela.db` file exists yet.
+    Missing,
+    /// The file has SQLite's plaintext header.
+    PlaintextSqlite,
+    /// The file is not plaintext SQLite. It may be SQLCipher-encrypted, corrupt, or otherwise not
+    /// a Chancela SQLite store; the status surface deliberately does not claim live encryption.
+    NonPlaintextOrEncrypted,
+}
+
+/// Operator-facing key operations plan for the current build, key config, and database file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreKeyOpsPlan {
+    /// No key is configured and no database exists; startup would create a plaintext SQLite store.
+    CreatePlaintextStore,
+    /// No key is configured and the database is plaintext SQLite.
+    OpenPlaintextStore,
+    /// No key is configured but the database is not plaintext SQLite.
+    KeyRequiredForNonPlaintextStore,
+    /// A key source was configured but resolved to an empty value.
+    RejectEmptyKey,
+    /// A key is configured but this build cannot operate SQLCipher stores.
+    SqlcipherBuildRequired,
+    /// SQLCipher support is available and a configured key can create a fresh encrypted store.
+    CreateEncryptedStore,
+    /// SQLCipher support is available and a configured key can attempt an encrypted-store open.
+    OpenEncryptedStore,
+    /// An existing plaintext SQLite database must not be converted by direct keyed open.
+    RefusePlaintextToEncryptedMigration,
+}
+
+/// Secret-free key operations status for startup banners, CLIs, and focused preflight tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreKeyOpsStatus {
+    /// Whether this `chancela-store` build was compiled with the `sqlcipher` feature.
+    pub sqlcipher_available: bool,
+    /// Whether the configured key source is absent, empty, or non-empty.
+    pub key_config: StoreKeyConfigStatus,
+    /// The database file inspected for this report.
+    pub database_file: PathBuf,
+    /// Header-level database format, without claiming the store is actually decryptable.
+    pub database_format: StoreDatabaseFormat,
+    /// The bounded operation plan implied by the other fields.
+    pub plan: StoreKeyOpsPlan,
+}
+
+impl StoreKeyOpsStatus {
+    /// Whether a non-empty database key was configured.
+    pub fn key_configured(&self) -> bool {
+        self.key_config == StoreKeyConfigStatus::Configured
+    }
+
+    /// Whether an already-encrypted store can be opened and then rekeyed by this build, assuming the
+    /// supplied key authenticates successfully. This never reports true for a plaintext database.
+    pub fn rotation_ready(&self) -> bool {
+        self.plan == StoreKeyOpsPlan::OpenEncryptedStore
+    }
+
+    /// Secret-free next action suitable for logs, CLIs, or startup diagnostics.
+    pub fn operator_action(&self) -> &'static str {
+        match self.plan {
+            StoreKeyOpsPlan::CreatePlaintextStore => {
+                "no database key is configured; startup will create a plaintext SQLite store"
+            }
+            StoreKeyOpsPlan::OpenPlaintextStore => {
+                "no database key is configured; startup will open the plaintext SQLite store"
+            }
+            StoreKeyOpsPlan::KeyRequiredForNonPlaintextStore => {
+                "database is not plaintext SQLite; configure the correct SQLCipher key if this is \
+                 an encrypted store"
+            }
+            StoreKeyOpsPlan::RejectEmptyKey => {
+                "configure a non-empty database key, or remove the key setting to keep plaintext"
+            }
+            StoreKeyOpsPlan::SqlcipherBuildRequired => {
+                "database key is configured, but this build lacks SQLCipher; rebuild with the \
+                 sqlcipher feature before enabling encryption, or remove the key to keep plaintext"
+            }
+            StoreKeyOpsPlan::CreateEncryptedStore => {
+                "SQLCipher is available and no database exists; a configured key can create a fresh \
+                 encrypted store"
+            }
+            StoreKeyOpsPlan::OpenEncryptedStore => {
+                "SQLCipher is available; open the existing non-plaintext store with the configured \
+                 key before attempting rotation"
+            }
+            StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration => {
+                "plaintext SQLite database already exists; direct keyed open will not convert it in \
+                 place. Use a supported backup/export-restore migration into a fresh SQLCipher \
+                 store, or remove the key to keep plaintext"
+            }
+        }
     }
 }
 
@@ -741,6 +875,51 @@ impl Store {
         let conn = open_connection_with_options(data_dir, &options)?;
         Ok(Store {
             conn: Arc::new(Mutex::new(conn)),
+        })
+    }
+
+    /// Inspect the configured key, current build capabilities, and database header without opening
+    /// or mutating the SQLite file. This is the operator-facing key-ops preflight used to avoid
+    /// accidental plaintext creation and to refuse unsupported plaintext-to-encrypted migration.
+    pub fn key_ops_status(
+        data_dir: &Path,
+        options: &StoreOpenOptions,
+    ) -> Result<StoreKeyOpsStatus, StoreError> {
+        let database_file = data_dir.join(DB_FILE);
+        let database_format = inspect_database_format(&database_file)?;
+        let key_config = options.key_config_status();
+        let sqlcipher_available = cfg!(feature = "sqlcipher");
+        let plan = match key_config {
+            StoreKeyConfigStatus::Unconfigured => match database_format {
+                StoreDatabaseFormat::Missing => StoreKeyOpsPlan::CreatePlaintextStore,
+                StoreDatabaseFormat::PlaintextSqlite => StoreKeyOpsPlan::OpenPlaintextStore,
+                StoreDatabaseFormat::NonPlaintextOrEncrypted => {
+                    StoreKeyOpsPlan::KeyRequiredForNonPlaintextStore
+                }
+            },
+            StoreKeyConfigStatus::Empty => StoreKeyOpsPlan::RejectEmptyKey,
+            StoreKeyConfigStatus::Configured => match database_format {
+                StoreDatabaseFormat::PlaintextSqlite => {
+                    StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration
+                }
+                StoreDatabaseFormat::Missing if sqlcipher_available => {
+                    StoreKeyOpsPlan::CreateEncryptedStore
+                }
+                StoreDatabaseFormat::NonPlaintextOrEncrypted if sqlcipher_available => {
+                    StoreKeyOpsPlan::OpenEncryptedStore
+                }
+                StoreDatabaseFormat::Missing | StoreDatabaseFormat::NonPlaintextOrEncrypted => {
+                    StoreKeyOpsPlan::SqlcipherBuildRequired
+                }
+            },
+        };
+
+        Ok(StoreKeyOpsStatus {
+            sqlcipher_available,
+            key_config,
+            database_file,
+            database_format,
+            plan,
         })
     }
 
@@ -2404,11 +2583,48 @@ pub(crate) fn open_connection_with_options(
     data_dir: &Path,
     options: &StoreOpenOptions,
 ) -> Result<rusqlite::Connection, StoreError> {
+    preflight_key_ops(data_dir, options)?;
     std::fs::create_dir_all(data_dir)?;
     let conn = rusqlite::Connection::open(data_dir.join(DB_FILE))?;
     apply_open_options(&conn, options)?;
     configure_and_migrate(&conn)?;
     Ok(conn)
+}
+
+fn preflight_key_ops(data_dir: &Path, options: &StoreOpenOptions) -> Result<(), StoreError> {
+    let status = Store::key_ops_status(data_dir, options)?;
+    match status.plan {
+        StoreKeyOpsPlan::RejectEmptyKey => Err(StoreError::EmptyEncryptionKey),
+        StoreKeyOpsPlan::SqlcipherBuildRequired => Err(StoreError::EncryptionUnavailable),
+        StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration => {
+            Err(StoreError::PlaintextEncryptionMigrationUnsupported {
+                db_file: status.database_file.display().to_string(),
+            })
+        }
+        StoreKeyOpsPlan::CreatePlaintextStore
+        | StoreKeyOpsPlan::OpenPlaintextStore
+        | StoreKeyOpsPlan::KeyRequiredForNonPlaintextStore
+        | StoreKeyOpsPlan::CreateEncryptedStore
+        | StoreKeyOpsPlan::OpenEncryptedStore => Ok(()),
+    }
+}
+
+fn inspect_database_format(db_file: &Path) -> Result<StoreDatabaseFormat, StoreError> {
+    let mut file = match std::fs::File::open(db_file) {
+        Ok(file) => file,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(StoreDatabaseFormat::Missing);
+        }
+        Err(err) => return Err(StoreError::Io(err)),
+    };
+
+    let mut header = [0u8; SQLITE_PLAINTEXT_HEADER.len()];
+    let read = file.read(&mut header)?;
+    if read == SQLITE_PLAINTEXT_HEADER.len() && &header == SQLITE_PLAINTEXT_HEADER {
+        Ok(StoreDatabaseFormat::PlaintextSqlite)
+    } else {
+        Ok(StoreDatabaseFormat::NonPlaintextOrEncrypted)
+    }
 }
 
 #[cfg(feature = "sqlcipher")]
@@ -2419,7 +2635,7 @@ fn apply_open_options(
     let Some(key) = options.encryption_key() else {
         return Ok(());
     };
-    if key.is_empty() {
+    if key.trim().is_empty() {
         return Err(StoreError::EmptyEncryptionKey);
     }
 

@@ -406,4 +406,35 @@ mod tests {
             "no-feature encrypted startup must not create a plaintext database"
         );
     }
+
+    #[cfg(not(feature = "sqlcipher"))]
+    #[test]
+    fn configured_key_against_plaintext_store_reports_migration_guard() {
+        let dir = TempDir::new();
+        chancela_store::Store::open(dir.path()).expect("create existing plaintext store");
+        let config =
+            DatabaseEncryptionConfig::with_key("correct horse battery staple").expect("valid key");
+
+        let err = match crate::AppState::try_with_data_dir(dir.path().to_path_buf(), config) {
+            Ok(_) => panic!("configured key must not migrate a plaintext store in place"),
+            Err(err) => err,
+        };
+
+        let message = err.to_string();
+        match err {
+            AppStateInitError::StoreOpen { source, .. } => {
+                assert!(
+                    matches!(
+                        source,
+                        StoreError::PlaintextEncryptionMigrationUnsupported { .. }
+                    ),
+                    "got {source:?}"
+                );
+            }
+            other => panic!("expected store-open migration guard, got {other:?}"),
+        }
+        assert!(!message.contains("correct horse battery staple"));
+        assert!(message.contains("refusing to rewrite plaintext SQLite database"));
+        assert!(message.contains("backup/export-restore"));
+    }
 }
