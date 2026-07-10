@@ -19,14 +19,21 @@ use crate::{
     SigningError, SigningFamily, SigningOrder, TrustedListStatus,
 };
 
-/// The document being signed for one slot: a precomputed content digest (detached CAdES) or the
-/// PDF bytes to sign in place (PAdES).
+/// The document being signed for one slot: a precomputed content digest (detached CAdES), the PDF
+/// bytes to sign in place (PAdES), or one named payload to package in ASiC-S.
 #[derive(Debug, Clone, Copy)]
 pub enum DocumentInput<'a> {
     /// A SHA-256 content digest — for a detached [`SignatureFormat::CAdES`] signature.
     Digest(&'a [u8; 32]),
     /// The PDF bytes — for an in-place [`SignatureFormat::PAdES`] signature.
     Pdf(&'a [u8]),
+    /// One payload file to package in a bounded ASiC-S/CAdES container.
+    AsicContent {
+        /// The payload member name inside the ASiC ZIP container.
+        name: &'a str,
+        /// The payload bytes to hash, sign with detached CAdES-B, and package.
+        bytes: &'a [u8],
+    },
 }
 
 /// Everything needed to sign one envelope slot, beyond the envelope and the slot index.
@@ -168,6 +175,17 @@ pub fn sign_slot(
             };
             (cms, BaselineProfile::B_B, token)
         }
+        (SignatureFormat::ASiC, DocumentInput::AsicContent { name, bytes }) => {
+            let (container, cades) = pipeline::sign_asic_s(provider, name, bytes, signing_time)?;
+            // ASiC-S/CAdES generation is bounded to B-B. As with detached CAdES, a requested
+            // timestamp is captured only as external evidence; it is not embedded in the ASiC ZIP
+            // and does not upgrade the reported baseline profile.
+            let token = match (want_timestamp, tsa) {
+                (true, Some(tsa)) => Some(tsa.timestamp_data(&cades)?.token_der),
+                _ => None,
+            };
+            (container, BaselineProfile::B_B, token)
+        }
         (SignatureFormat::PAdES, _) => {
             return Err(SigningError::FormatInputMismatch {
                 format: SignatureFormat::PAdES,
@@ -176,6 +194,11 @@ pub fn sign_slot(
         (SignatureFormat::CAdES, _) => {
             return Err(SigningError::FormatInputMismatch {
                 format: SignatureFormat::CAdES,
+            });
+        }
+        (SignatureFormat::ASiC, _) => {
+            return Err(SigningError::FormatInputMismatch {
+                format: SignatureFormat::ASiC,
             });
         }
         (other, _) => return Err(SigningError::UnsupportedFormat(other)),

@@ -375,51 +375,91 @@ fn cmd_otp_is_a_confirmation_step_never_the_signature() {
 }
 
 #[test]
-fn xades_and_asic_signing_remain_explicitly_unsupported() {
+fn xades_signing_remains_explicitly_unsupported() {
     let provider = MockProvider::deterministic_rsa(SigningFamily::CartaoDeCidadao);
     let digest = [12u8; 32];
 
-    for format in [SignatureFormat::XAdES, SignatureFormat::ASiC] {
-        let mut env = SignatureEnvelope::new(
-            SigningOrder::Parallel,
-            vec![request(
-                SigningFamily::CartaoDeCidadao,
-                format,
-                BaselineProfile::B_B,
-            )],
-        );
-        assert_eq!(
-            sign_slot(&mut env, 0, cades_job(&provider, None, &digest)).unwrap_err(),
-            SigningError::UnsupportedFormat(format)
-        );
-        assert!(
-            env.artifacts.is_empty(),
-            "{format:?} must not produce an artifact"
-        );
-    }
+    let mut env = SignatureEnvelope::new(
+        SigningOrder::Parallel,
+        vec![request(
+            SigningFamily::CartaoDeCidadao,
+            SignatureFormat::XAdES,
+            BaselineProfile::B_B,
+        )],
+    );
+    assert_eq!(
+        sign_slot(&mut env, 0, cades_job(&provider, None, &digest)).unwrap_err(),
+        SigningError::UnsupportedFormat(SignatureFormat::XAdES)
+    );
+    assert!(
+        env.artifacts.is_empty(),
+        "XAdES must not produce an artifact"
+    );
 }
 
 #[test]
-fn xades_and_asic_validation_remain_explicitly_unsupported() {
-    for format in [SignatureFormat::XAdES, SignatureFormat::ASiC] {
-        let artifact = SignatureArtifact {
-            id: uuid::Uuid::nil(),
-            slot: 0,
-            family: SigningFamily::CartaoDeCidadao,
-            format,
-            profile: BaselineProfile::B_B,
-            evidentiary_level: EvidentiaryLevel::Qualified,
-            signed_at: Some(fixed_time()),
-            signature: b"recognized-but-unavailable".to_vec(),
-            trusted_list_status: None,
-            timestamp_token_der: None,
-        };
+fn asic_signing_requires_payload_bytes() {
+    let provider = MockProvider::deterministic_rsa(SigningFamily::CartaoDeCidadao);
+    let digest = [12u8; 32];
+    let mut env = SignatureEnvelope::new(
+        SigningOrder::Parallel,
+        vec![request(
+            SigningFamily::CartaoDeCidadao,
+            SignatureFormat::ASiC,
+            BaselineProfile::B_B,
+        )],
+    );
 
-        assert_eq!(
-            validate_signature(&artifact, Some(&[0u8; 32])).unwrap_err(),
-            SigningError::UnsupportedFormat(format)
-        );
-    }
+    assert_eq!(
+        sign_slot(&mut env, 0, cades_job(&provider, None, &digest)).unwrap_err(),
+        SigningError::FormatInputMismatch {
+            format: SignatureFormat::ASiC
+        }
+    );
+    assert!(
+        env.artifacts.is_empty(),
+        "ASiC must not package only a bare digest"
+    );
+}
+
+#[test]
+fn xades_validation_remains_explicitly_unsupported() {
+    let artifact = SignatureArtifact {
+        id: uuid::Uuid::nil(),
+        slot: 0,
+        family: SigningFamily::CartaoDeCidadao,
+        format: SignatureFormat::XAdES,
+        profile: BaselineProfile::B_B,
+        evidentiary_level: EvidentiaryLevel::Qualified,
+        signed_at: Some(fixed_time()),
+        signature: b"recognized-but-unavailable".to_vec(),
+        trusted_list_status: None,
+        timestamp_token_der: None,
+    };
+
+    assert_eq!(
+        validate_signature(&artifact, Some(&[0u8; 32])).unwrap_err(),
+        SigningError::UnsupportedFormat(SignatureFormat::XAdES)
+    );
+}
+
+#[test]
+fn asic_validation_reports_container_errors() {
+    let artifact = SignatureArtifact {
+        id: uuid::Uuid::nil(),
+        slot: 0,
+        family: SigningFamily::CartaoDeCidadao,
+        format: SignatureFormat::ASiC,
+        profile: BaselineProfile::B_B,
+        evidentiary_level: EvidentiaryLevel::Qualified,
+        signed_at: Some(fixed_time()),
+        signature: b"not a zip".to_vec(),
+        trusted_list_status: None,
+        timestamp_token_der: None,
+    };
+
+    let err = validate_signature(&artifact, None).unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("ZIP")));
 }
 
 #[test]

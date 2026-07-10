@@ -18,6 +18,7 @@ use chancela_pades::{
 use chancela_tsa::{HttpTsaTransport, Timestamp, TimestampRequest, TsaClient, TsaTransport};
 
 use crate::SigningError;
+use crate::asic::{create_asic_s_container, sha256_content_digest};
 use crate::provider::SignerProvider;
 use crate::revocation::RevocationEvidence;
 
@@ -55,6 +56,23 @@ pub fn sign_detached_cades(
         signed_attributes_digest(content_digest, &cert_der, signing_time).map_err(cades_err)?;
     let raw = provider.sign_signed_attributes(&signed_attrs_digest)?;
     assemble_cades_b(&raw, content_digest, signing_time).map_err(cades_err)
+}
+
+/// Produce a bounded ASiC-S/CAdES container over one payload.
+///
+/// Returns the ASiC ZIP bytes plus the detached CAdES-B CMS bytes stored at
+/// `META-INF/signatures.p7s`, so callers that attach external timestamp evidence can timestamp the
+/// exact CMS signature object without claiming an in-container B-T profile.
+pub fn sign_asic_s(
+    provider: &dyn SignerProvider,
+    content_name: &str,
+    content: &[u8],
+    signing_time: OffsetDateTime,
+) -> Result<(Vec<u8>, Vec<u8>), SigningError> {
+    let content_digest = sha256_content_digest(content);
+    let cades = sign_detached_cades(provider, &content_digest, signing_time)?;
+    let container = create_asic_s_container(content_name, content, &cades)?;
+    Ok((container, cades))
 }
 
 /// Sign an existing PDF, producing a PAdES-B-B signed PDF (SIG-21) using `provider`.

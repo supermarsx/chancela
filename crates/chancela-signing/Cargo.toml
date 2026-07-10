@@ -27,6 +27,7 @@ spki = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
 reqwest = { workspace = true }
+zip = { workspace = true }
 # Software-certificate foundation: parse/decrypt PKCS#12/PFX material and sign locally with
 # supported software private keys. `p12` is pure Rust and stays on the existing der-0.7-era stack
 # instead of pulling OpenSSL/native dependencies or RustCrypto pkcs12's der-0.8 pre-release line.

@@ -7,6 +7,7 @@
 //! this crate's `sign_slot` / pipeline exactly as a real provider would. The B-T timestamp is driven
 //! from the bundled `chancela-tsa` OpenSSL fixture.
 
+use std::io::{Cursor, Write};
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
@@ -20,10 +21,11 @@ use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
 use chancela_signing::{
-    BaselineProfile, DocumentInput, EvidentiaryLevel, MockProvider, SignOptions, SignatureEnvelope,
-    SignatureFormat, SignatureRequest, SignerCapacity, SignerProvider, SigningError, SigningFamily,
-    SigningJob, SigningOrder, StaticTrustPolicy, Timestamp, TimestampProvider, TrustedListStatus,
-    sign_slot, validate_signature,
+    ASICE_MIMETYPE, ASICS_MIMETYPE, BaselineProfile, DocumentInput, EvidentiaryLevel, MockProvider,
+    SignOptions, SignatureArtifact, SignatureEnvelope, SignatureFormat, SignatureRequest,
+    SignerCapacity, SignerProvider, SigningError, SigningFamily, SigningJob, SigningOrder,
+    StaticTrustPolicy, Timestamp, TimestampProvider, TrustedListStatus, create_asic_s_container,
+    extract_asic_s_container, sha256_content_digest, sign_slot, validate_signature,
 };
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
@@ -419,6 +421,174 @@ fn cades_timestamp_is_attached_as_external_evidence() {
     );
     let report = validate_signature(artifact, Some(&CONTENT_DIGEST)).unwrap();
     assert!(report.has_signature_timestamp);
+}
+
+// --- ASiC-S/CAdES round-trips --------------------------------------------------------------------
+
+fn asic_artifact(signature: Vec<u8>) -> SignatureArtifact {
+    SignatureArtifact {
+        id: uuid::Uuid::nil(),
+        slot: 0,
+        family: SigningFamily::CartaoDeCidadao,
+        format: SignatureFormat::ASiC,
+        profile: BaselineProfile::B_B,
+        evidentiary_level: EvidentiaryLevel::Qualified,
+        signed_at: Some(fixed_time()),
+        signature,
+        trusted_list_status: None,
+        timestamp_token_der: None,
+    }
+}
+
+fn zip_container(members: &[(&str, &[u8])]) -> Vec<u8> {
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .last_modified_time(zip::DateTime::default());
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, bytes) in members {
+        zip.start_file(*name, options).expect("start zip member");
+        zip.write_all(bytes).expect("write zip member");
+    }
+    zip.finish().expect("finish zip").into_inner()
+}
+
+#[test]
+fn asic_s_cades_round_trip_rsa() {
+    let provider = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let content = b"approved minutes payload for ASiC-S";
+    let expected_digest = sha256_content_digest(content);
+    let mut env = SignatureEnvelope::new(
+        SigningOrder::Parallel,
+        vec![request(
+            SigningFamily::CartaoDeCidadao,
+            SignatureFormat::ASiC,
+            BaselineProfile::B_B,
+        )],
+    );
+
+    sign_slot(
+        &mut env,
+        0,
+        SigningJob {
+            provider: &provider,
+            policy: None,
+            tsa: None,
+            input: DocumentInput::AsicContent {
+                name: "minutes.txt",
+                bytes: content,
+            },
+            signing_time: fixed_time(),
+            pdf_options: SignOptions::default(),
+        },
+    )
+    .expect("sign ASiC-S");
+
+    let artifact = &env.artifacts[0];
+    assert_eq!(artifact.format, SignatureFormat::ASiC);
+    assert_eq!(artifact.profile, BaselineProfile::B_B);
+    assert!(
+        artifact.signature.starts_with(b"PK"),
+        "ASiC artifact is a ZIP container"
+    );
+
+    let parsed = extract_asic_s_container(&artifact.signature).expect("parse ASiC-S");
+    assert_eq!(parsed.content_name, "minutes.txt");
+    assert_eq!(parsed.content, content);
+    assert!(!parsed.cades_signature_der.is_empty());
+
+    let report =
+        validate_signature(artifact, Some(&expected_digest)).expect("validate ASiC-S/CAdES");
+    assert!(report.cryptographically_valid);
+    assert_eq!(report.evidentiary_level, EvidentiaryLevel::Qualified);
+    assert_eq!(
+        report.signer_cert_der,
+        provider.signing_certificate_der().unwrap()
+    );
+    assert!(!report.has_signature_timestamp);
+    assert_eq!(report.covers_whole_file, None);
+}
+
+#[test]
+fn asic_s_payload_tamper_fails_cades_validation() {
+    let provider = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let content = b"original ASiC-S payload";
+    let mut env = SignatureEnvelope::new(
+        SigningOrder::Parallel,
+        vec![request(
+            SigningFamily::CartaoDeCidadao,
+            SignatureFormat::ASiC,
+            BaselineProfile::B_B,
+        )],
+    );
+    sign_slot(
+        &mut env,
+        0,
+        SigningJob {
+            provider: &provider,
+            policy: None,
+            tsa: None,
+            input: DocumentInput::AsicContent {
+                name: "minutes.txt",
+                bytes: content,
+            },
+            signing_time: fixed_time(),
+            pdf_options: SignOptions::default(),
+        },
+    )
+    .unwrap();
+
+    let parsed = extract_asic_s_container(&env.artifacts[0].signature).unwrap();
+    let tampered = create_asic_s_container(
+        &parsed.content_name,
+        b"tampered ASiC-S payload",
+        &parsed.cades_signature_der,
+    )
+    .unwrap();
+    let mut artifact = env.artifacts[0].clone();
+    artifact.signature = tampered;
+
+    let err = validate_signature(&artifact, None).unwrap_err();
+    assert!(matches!(err, SigningError::Cades(_)), "got {err:?}");
+}
+
+#[test]
+fn asic_unsupported_container_shapes_report_precise_gaps() {
+    let asice = zip_container(&[
+        ("mimetype", ASICE_MIMETYPE.as_bytes()),
+        ("payload.txt", b"payload" as &[u8]),
+        ("META-INF/signatures.p7s", b"cms" as &[u8]),
+    ]);
+    let err = validate_signature(&asic_artifact(asice), None).unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("ASiC-E")));
+
+    let xades = zip_container(&[
+        ("mimetype", ASICS_MIMETYPE.as_bytes()),
+        ("payload.txt", b"payload" as &[u8]),
+        ("META-INF/signatures.xml", b"<Signature/>" as &[u8]),
+    ]);
+    let err = validate_signature(&asic_artifact(xades), None).unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("XAdES")));
+
+    let multi_payload = zip_container(&[
+        ("mimetype", ASICS_MIMETYPE.as_bytes()),
+        ("one.txt", b"one" as &[u8]),
+        ("two.txt", b"two" as &[u8]),
+        ("META-INF/signatures.p7s", b"cms" as &[u8]),
+    ]);
+    let err = validate_signature(&asic_artifact(multi_payload), None).unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("multi-payload")));
+
+    let lowercase_meta_inf = zip_container(&[
+        ("mimetype", ASICS_MIMETYPE.as_bytes()),
+        ("payload.txt", b"payload" as &[u8]),
+        ("meta-inf/extra.bin", b"reserved" as &[u8]),
+        ("META-INF/signatures.p7s", b"cms" as &[u8]),
+    ]);
+    let err = validate_signature(&asic_artifact(lowercase_meta_inf), None).unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("META-INF")));
+
+    let err = create_asic_s_container("meta-inf/payload.txt", b"payload", b"cms").unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("META-INF")));
 }
 
 // --- Full envelope with the trusted-list policy gate ---------------------------------------------

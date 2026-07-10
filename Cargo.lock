@@ -721,6 +721,7 @@ dependencies = [
  "x509-cert",
  "x509-ocsp",
  "zeroize",
+ "zip",
 ]
 
 [[package]]
