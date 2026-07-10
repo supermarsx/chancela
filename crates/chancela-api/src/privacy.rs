@@ -1123,6 +1123,8 @@ pub struct RetentionExecutionRecord {
     pub operator_evidence: Vec<RetentionOperatorEvidence>,
     pub outcome: RetentionExecutionOutcome,
     pub block_reason: String,
+    #[serde(default = "legacy_retention_operator_workflow")]
+    pub workflow: RetentionOperatorWorkflow,
     pub would_execute: bool,
 }
 
@@ -1170,6 +1172,36 @@ pub struct RetentionLegalHoldBlocker {
     pub name: String,
     pub schedule_id: String,
     pub retention_period: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionOperatorWorkflow {
+    pub status: RetentionOperatorWorkflowStatus,
+    pub blockers: Vec<RetentionWorkflowBlocker>,
+    pub required_approvals: Vec<RetentionRequiredApproval>,
+    pub next_step: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionOperatorWorkflowStatus {
+    Blocked,
+    AwaitingManualReview,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionWorkflowBlocker {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_id: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionRequiredApproval {
+    pub code: String,
+    pub required_from: String,
     pub reason: String,
 }
 
@@ -2902,6 +2934,12 @@ fn build_retention_execution_record(
     let legal_hold_blockers = retention_legal_hold_blockers(candidate, records);
     let (outcome, block_reason) =
         retention_execution_decision(&requested_policy, &legal_hold_blockers);
+    let workflow = retention_operator_workflow(
+        &requested_policy,
+        &legal_hold_blockers,
+        outcome,
+        block_reason,
+    );
 
     RetentionExecutionRecord {
         id: Uuid::new_v4().to_string(),
@@ -2915,6 +2953,7 @@ fn build_retention_execution_record(
         operator_evidence: request.evidence,
         outcome,
         block_reason: block_reason.to_owned(),
+        workflow,
         would_execute: false,
     }
 }
@@ -3051,6 +3090,150 @@ fn retention_execution_decision(
         RetentionExecutionOutcome::ManualReviewRequired,
         "retention execution request is recorded for manual review only",
     )
+}
+
+fn retention_operator_workflow(
+    requested_policy: &RetentionExecutionRequestedPolicy,
+    legal_hold_blockers: &[RetentionLegalHoldBlocker],
+    outcome: RetentionExecutionOutcome,
+    block_reason: &str,
+) -> RetentionOperatorWorkflow {
+    let mut blockers = Vec::new();
+    match outcome {
+        RetentionExecutionOutcome::BlockedMissingPolicy => blockers.push(retention_blocker(
+            "requested_policy_required",
+            block_reason,
+            requested_policy.id.clone(),
+        )),
+        RetentionExecutionOutcome::BlockedStalePolicy => blockers.push(retention_blocker(
+            "requested_policy_active",
+            block_reason,
+            requested_policy.id.clone(),
+        )),
+        RetentionExecutionOutcome::BlockedPolicyMismatch => blockers.push(retention_blocker(
+            "requested_policy_scope_match",
+            block_reason,
+            requested_policy.id.clone(),
+        )),
+        RetentionExecutionOutcome::BlockedLegalHold => {
+            blockers.extend(legal_hold_blockers.iter().map(|blocker| {
+                retention_blocker(
+                    "legal_hold_release",
+                    &blocker.reason,
+                    Some(blocker.policy_id.clone()),
+                )
+            }));
+        }
+        RetentionExecutionOutcome::BlockedDestructiveAction => blockers.push(retention_blocker(
+            "destructive_action_disabled",
+            block_reason,
+            requested_policy.id.clone(),
+        )),
+        RetentionExecutionOutcome::ManualReviewRequired => {}
+    }
+
+    let mut required_approvals = Vec::new();
+    if matches!(
+        outcome,
+        RetentionExecutionOutcome::BlockedMissingPolicy
+            | RetentionExecutionOutcome::BlockedStalePolicy
+            | RetentionExecutionOutcome::BlockedPolicyMismatch
+    ) {
+        required_approvals.push(retention_required_approval(
+            "policy_register_review",
+            "privacy_or_settings_manager",
+            "confirm an active matching retention policy before any follow-up review",
+        ));
+    } else {
+        required_approvals.push(retention_required_approval(
+            "retention_manual_review",
+            "privacy_or_settings_manager",
+            "approve the retained evidence before any separate operational action",
+        ));
+    }
+
+    if !legal_hold_blockers.is_empty() {
+        required_approvals.push(retention_required_approval(
+            "legal_hold_owner_release",
+            "legal_hold_owner",
+            "resolve matching legal hold policies before disposal review can continue",
+        ));
+    }
+
+    if requested_policy.destructive_action {
+        required_approvals.push(retention_required_approval(
+            "destructive_disposal_governance",
+            "external_governance_process",
+            "destructive disposal is outside this API and requires separate approval",
+        ));
+    }
+
+    let status = if blockers.is_empty() {
+        RetentionOperatorWorkflowStatus::AwaitingManualReview
+    } else {
+        RetentionOperatorWorkflowStatus::Blocked
+    };
+    let next_step = match outcome {
+        RetentionExecutionOutcome::BlockedMissingPolicy
+        | RetentionExecutionOutcome::BlockedStalePolicy
+        | RetentionExecutionOutcome::BlockedPolicyMismatch => {
+            "Select or update an active matching retention policy; no disposal has been executed."
+        }
+        RetentionExecutionOutcome::BlockedLegalHold => {
+            "Resolve the legal hold approval before continuing; no disposal has been executed."
+        }
+        RetentionExecutionOutcome::BlockedDestructiveAction => {
+            "Record separate governance approval before any external destructive process; this API will not execute it."
+        }
+        RetentionExecutionOutcome::ManualReviewRequired => {
+            "Review the retained evidence for manual approval; no disposal has been executed."
+        }
+    };
+
+    RetentionOperatorWorkflow {
+        status,
+        blockers,
+        required_approvals,
+        next_step: next_step.to_owned(),
+    }
+}
+
+fn retention_blocker(
+    code: impl Into<String>,
+    message: impl Into<String>,
+    policy_id: Option<String>,
+) -> RetentionWorkflowBlocker {
+    RetentionWorkflowBlocker {
+        code: code.into(),
+        message: message.into(),
+        policy_id,
+    }
+}
+
+fn retention_required_approval(
+    code: impl Into<String>,
+    required_from: impl Into<String>,
+    reason: impl Into<String>,
+) -> RetentionRequiredApproval {
+    RetentionRequiredApproval {
+        code: code.into(),
+        required_from: required_from.into(),
+        reason: reason.into(),
+    }
+}
+
+fn legacy_retention_operator_workflow() -> RetentionOperatorWorkflow {
+    RetentionOperatorWorkflow {
+        status: RetentionOperatorWorkflowStatus::AwaitingManualReview,
+        blockers: Vec::new(),
+        required_approvals: vec![retention_required_approval(
+            "retention_manual_review",
+            "privacy_or_settings_manager",
+            "approve the retained evidence before any separate operational action",
+        )],
+        next_step: "Review the retained execution evidence; no disposal has been executed."
+            .to_owned(),
+    }
 }
 
 fn retention_policy_id(raw: Option<String>) -> Result<RetentionPolicyId, ApiError> {

@@ -1770,6 +1770,29 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
         json!("blocked_destructive_action")
     );
     assert_eq!(execution_record["would_execute"], json!(false));
+    assert_eq!(execution_record["workflow"]["status"], json!("blocked"));
+    assert_eq!(
+        execution_record["workflow"]["blockers"][0]["code"],
+        json!("destructive_action_disabled")
+    );
+    assert_eq!(
+        execution_record["workflow"]["blockers"][0]["policy_id"],
+        json!(policy_id)
+    );
+    assert_eq!(
+        execution_record["workflow"]["required_approvals"][0]["code"],
+        json!("retention_manual_review")
+    );
+    assert_eq!(
+        execution_record["workflow"]["required_approvals"][1]["code"],
+        json!("destructive_disposal_governance")
+    );
+    assert!(
+        execution_record["workflow"]["next_step"]
+            .as_str()
+            .expect("next step")
+            .contains("will not execute")
+    );
     assert_eq!(
         execution_record["operator_notes"],
         json!("Operator reviewed the retention candidate.")
@@ -1817,6 +1840,7 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
     assert_eq!(history[0]["id"], json!(execution_id));
     assert_eq!(history[0]["requested_policy"]["id"], json!(policy_id));
     assert_eq!(history[0]["outcome"], json!("blocked_destructive_action"));
+    assert_eq!(history[0]["workflow"]["status"], json!("blocked"));
 
     let (status, updated) = send(
         state.clone(),
@@ -1934,6 +1958,20 @@ async fn retention_execution_request_records_manual_review_for_non_destructive_p
     );
     assert_eq!(execution_record["outcome"], json!("manual_review_required"));
     assert_eq!(execution_record["would_execute"], json!(false));
+    assert_eq!(
+        execution_record["workflow"]["status"],
+        json!("awaiting_manual_review")
+    );
+    assert!(
+        execution_record["workflow"]["blockers"]
+            .as_array()
+            .expect("workflow blockers")
+            .is_empty()
+    );
+    assert_eq!(
+        execution_record["workflow"]["required_approvals"][0]["code"],
+        json!("retention_manual_review")
+    );
     assert!(
         execution_record["legal_hold_blockers"]
             .as_array()
@@ -2031,6 +2069,29 @@ async fn retention_execution_request_blocks_active_legal_hold() {
     let execution_record = &body["execution_record"];
     assert_eq!(execution_record["outcome"], json!("blocked_legal_hold"));
     assert_eq!(execution_record["would_execute"], json!(false));
+    assert_eq!(execution_record["workflow"]["status"], json!("blocked"));
+    assert_eq!(
+        execution_record["workflow"]["blockers"][0]["code"],
+        json!("legal_hold_release")
+    );
+    assert_eq!(
+        execution_record["workflow"]["blockers"][0]["policy_id"],
+        json!(hold_policy_id)
+    );
+    assert!(
+        execution_record["workflow"]["required_approvals"]
+            .as_array()
+            .expect("required approvals")
+            .iter()
+            .any(|approval| approval["code"] == json!("legal_hold_owner_release"))
+    );
+    assert!(
+        execution_record["workflow"]["required_approvals"]
+            .as_array()
+            .expect("required approvals")
+            .iter()
+            .any(|approval| approval["code"] == json!("destructive_disposal_governance"))
+    );
     assert_eq!(
         execution_record["requested_policy"]["destructive_action"],
         json!(true)
@@ -2096,6 +2157,15 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
         json!(missing_policy_id)
     );
     assert_eq!(execution_record["would_execute"], json!(false));
+    assert_eq!(execution_record["workflow"]["status"], json!("blocked"));
+    assert_eq!(
+        execution_record["workflow"]["blockers"][0]["code"],
+        json!("requested_policy_required")
+    );
+    assert_eq!(
+        execution_record["workflow"]["required_approvals"][0]["code"],
+        json!("policy_register_review")
+    );
 
     let (status, created) = send(
         state.clone(),
@@ -2158,6 +2228,14 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
     );
     assert_eq!(execution_record["requested_policy"]["active"], json!(false));
     assert_eq!(execution_record["would_execute"], json!(false));
+    assert_eq!(
+        execution_record["workflow"]["blockers"][0]["code"],
+        json!("requested_policy_active")
+    );
+    assert_eq!(
+        execution_record["workflow"]["required_approvals"][0]["required_from"],
+        json!("privacy_or_settings_manager")
+    );
 
     let (status, events) = send(
         state,
@@ -2549,6 +2627,10 @@ async fn retention_policy_records_persist_across_restart() {
     assert_eq!(executions[0]["id"], json!(execution_id));
     assert_eq!(executions[0]["requested_policy"]["id"], json!(policy_id));
     assert_eq!(executions[0]["outcome"], json!("manual_review_required"));
+    assert_eq!(
+        executions[0]["workflow"]["status"],
+        json!("awaiting_manual_review")
+    );
     assert_eq!(
         executions[0]["operator_notes"],
         json!("Recorded before restart.")
