@@ -17,7 +17,8 @@ use crate::font::Font;
 use crate::{DocError, accessibility, layout, selfcheck, xmp};
 
 pub use crate::accessibility::{
-    AccessibilityMetadata, AccessibilityReport, MetadataValue, PdfUaBlocker,
+    AccessibilityInput, AccessibilityMetadata, AccessibilityReport, AltTextModel,
+    DecorativeArtifact, MetadataValue, PdfUaBlocker, TextAlternative,
 };
 
 /// The bundled sRGB OutputIntent profile (CC0; see `assets/icc/PROVENANCE.md`).
@@ -34,8 +35,8 @@ fn lit(s: &str) -> Object {
 }
 
 /// Report the accessibility features and PDF/UA blockers the current writer can assert.
-pub fn accessibility_report(doc: &DocumentModel) -> AccessibilityReport {
-    accessibility::report(doc)
+pub fn accessibility_report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityReport {
+    accessibility::report(input)
 }
 
 /// Write `doc` as PDF/A-2u bytes and self-verify them before returning.

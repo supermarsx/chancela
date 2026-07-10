@@ -385,6 +385,78 @@ fn long_non_ascii_title_is_preserved_in_report_and_xmp() {
 }
 
 #[test]
+fn accessibility_default_fixture_reports_no_alt_text_model() {
+    let report = pdfa::accessibility_report(&fixture());
+
+    assert!(!report.alt_text_model_present);
+    assert!(!report.pdf_ua_claimed);
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
+    );
+}
+
+#[test]
+fn accessibility_explicit_alt_text_decorative_model_clears_only_alt_text_blocker() {
+    let mut doc = DocumentModel::new(
+        "Ata com metadados de acessibilidade",
+        "Encosto Estratégico Lda",
+        "Modelo explicito",
+    );
+    doc.blocks = vec![
+        Block::Paragraph {
+            runs: vec![Run {
+                text: "Conteudo textual principal.".to_string(),
+                bold: false,
+                italic: false,
+            }],
+        },
+        Block::Rule,
+    ];
+    let alt_text_model = pdfa::AltTextModel {
+        all_non_text_content_accounted_for: true,
+        text_alternatives: vec![pdfa::TextAlternative::new(
+            "asset:company-seal",
+            "Company seal",
+        )],
+        decorative_artifacts: vec![pdfa::DecorativeArtifact::block(1)],
+    };
+
+    let report = pdfa::accessibility_report(
+        pdfa::AccessibilityInput::new(&doc).with_alt_text_model(&alt_text_model),
+    );
+
+    assert!(report.alt_text_model_present);
+    assert!(!report.pdf_ua_claimed);
+    assert!(
+        !report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
+    );
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::MissingStructTreeRoot)
+    );
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::ContentIsNotTagged)
+    );
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::MissingRoleMap)
+    );
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::LayoutArtifactsNotMarked)
+    );
+}
+
+#[test]
 fn accessibility_report_json_is_deterministic() {
     let a = pdfa::accessibility_report(&fixture()).to_json();
     let b = pdfa::accessibility_report(&fixture()).to_json();

@@ -3,10 +3,12 @@
 //! This module is deliberately a report surface, not a certification claim. The writer currently
 //! emits useful text-extraction primitives (document language/title metadata, embedded fonts and
 //! `/ToUnicode` CMaps) but it does not emit a PDF structure tree, tagged content, role maps, or
-//! alternate text. Those missing pieces are material PDF/UA blockers, so `pdf_ua_claimed` remains
-//! false until the writer genuinely produces tagged PDF.
+//! marked artifacts. Those missing pieces are material PDF/UA blockers, so `pdf_ua_claimed`
+//! remains false until the writer genuinely produces tagged PDF.
 
-use chancela_core::DocumentModel;
+use std::collections::BTreeSet;
+
+use chancela_core::{Block, DocumentModel};
 
 /// Deterministic title used only when the source model carries no usable title.
 pub const FALLBACK_TITLE: &str = "Untitled Chancela document";
@@ -31,6 +33,90 @@ pub struct AccessibilityMetadata {
     pub title: MetadataValue,
     /// Catalog `/Lang` and XMP `dc:language` value after fallback/validation.
     pub language: MetadataValue,
+}
+
+/// Explicit alternate-text/decorative-artifact coverage supplied alongside a document.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AltTextModel {
+    /// True when the caller asserts every non-text item is represented here as either alternate
+    /// text or a decorative artifact.
+    pub all_non_text_content_accounted_for: bool,
+    /// Non-decorative non-text items and their human-readable alternatives.
+    pub text_alternatives: Vec<TextAlternative>,
+    /// Decorative or layout-only items that should not be exposed as reading content.
+    pub decorative_artifacts: Vec<DecorativeArtifact>,
+}
+
+/// Alternate text for one non-decorative non-text item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextAlternative {
+    /// Stable caller-defined target identifier.
+    pub target: String,
+    /// Human-readable alternate text.
+    pub text: String,
+}
+
+impl TextAlternative {
+    /// Build alternate text metadata for a caller-defined target.
+    pub fn new(target: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            target: target.into(),
+            text: text.into(),
+        }
+    }
+}
+
+/// A decorative artifact entry for non-reading content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecorativeArtifact {
+    /// Stable caller-defined target identifier.
+    pub target: String,
+}
+
+impl DecorativeArtifact {
+    /// Build decorative artifact metadata for a caller-defined target.
+    pub fn new(target: impl Into<String>) -> Self {
+        Self {
+            target: target.into(),
+        }
+    }
+
+    /// Build decorative artifact metadata for a `DocumentModel.blocks` index.
+    pub fn block(index: usize) -> Self {
+        Self {
+            target: block_target(index),
+        }
+    }
+}
+
+/// Accessibility report input. Plain `&DocumentModel` values are accepted and carry no
+/// alternate-text/decorative metadata.
+#[derive(Debug, Clone, Copy)]
+pub struct AccessibilityInput<'a> {
+    doc: &'a DocumentModel,
+    alt_text_model: Option<&'a AltTextModel>,
+}
+
+impl<'a> AccessibilityInput<'a> {
+    /// Start a report input from a document model.
+    pub fn new(doc: &'a DocumentModel) -> Self {
+        Self {
+            doc,
+            alt_text_model: None,
+        }
+    }
+
+    /// Attach explicit alternate-text/decorative-artifact metadata.
+    pub fn with_alt_text_model(mut self, alt_text_model: &'a AltTextModel) -> Self {
+        self.alt_text_model = Some(alt_text_model);
+        self
+    }
+}
+
+impl<'a> From<&'a DocumentModel> for AccessibilityInput<'a> {
+    fn from(doc: &'a DocumentModel) -> Self {
+        Self::new(doc)
+    }
 }
 
 /// Machine-checkable accessibility report for a document as emitted by this writer.
@@ -138,18 +224,25 @@ impl AccessibilityReport {
     }
 }
 
-/// Build the report for `doc` under the current writer implementation.
-pub fn report(doc: &DocumentModel) -> AccessibilityReport {
-    let blockers = vec![
+/// Build the report for the current writer implementation.
+pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityReport {
+    let input = input.into();
+    let alt_text_model_present = input
+        .alt_text_model
+        .is_some_and(|model| has_meaningful_alt_text_model(input.doc, model));
+
+    let mut blockers = vec![
         PdfUaBlocker::MissingStructTreeRoot,
         PdfUaBlocker::ContentIsNotTagged,
         PdfUaBlocker::MissingRoleMap,
-        PdfUaBlocker::NoAltTextModel,
-        PdfUaBlocker::LayoutArtifactsNotMarked,
     ];
+    if !alt_text_model_present {
+        blockers.push(PdfUaBlocker::NoAltTextModel);
+    }
+    blockers.push(PdfUaBlocker::LayoutArtifactsNotMarked);
 
     AccessibilityReport {
-        metadata: metadata(doc),
+        metadata: metadata(input.doc),
         catalog_lang: true,
         xmp_title: true,
         xmp_language: true,
@@ -159,7 +252,7 @@ pub fn report(doc: &DocumentModel) -> AccessibilityReport {
         structure_tree_present: false,
         tagged_content_present: false,
         layout_artifacts_marked: false,
-        alt_text_model_present: false,
+        alt_text_model_present,
         pdf_ua_claimed: blockers.is_empty(),
         pdf_ua_blockers: blockers,
     }
@@ -212,6 +305,44 @@ fn is_plausible_bcp47(s: &str) -> bool {
         && s.split('-').all(|part| {
             !part.is_empty() && part.len() <= 8 && part.bytes().all(|b| b.is_ascii_alphanumeric())
         })
+}
+
+fn has_meaningful_alt_text_model(doc: &DocumentModel, model: &AltTextModel) -> bool {
+    if !model.all_non_text_content_accounted_for {
+        return false;
+    }
+    if model
+        .text_alternatives
+        .iter()
+        .any(|alt| alt.target.trim().is_empty() || alt.text.trim().is_empty())
+    {
+        return false;
+    }
+    if model
+        .decorative_artifacts
+        .iter()
+        .any(|artifact| artifact.target.trim().is_empty())
+    {
+        return false;
+    }
+
+    let decorative_targets = model
+        .decorative_artifacts
+        .iter()
+        .map(|artifact| artifact.target.trim())
+        .collect::<BTreeSet<_>>();
+    doc.blocks.iter().enumerate().all(|(index, block)| {
+        !is_known_decorative_block(block)
+            || decorative_targets.contains(block_target(index).as_str())
+    })
+}
+
+fn is_known_decorative_block(block: &Block) -> bool {
+    matches!(block, Block::PageBreak | Block::Rule)
+}
+
+fn block_target(index: usize) -> String {
+    format!("block:{index}")
 }
 
 fn json_string(s: &str) -> String {
