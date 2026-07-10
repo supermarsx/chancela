@@ -46,6 +46,19 @@ const checks = [
     ],
   },
   {
+    name: "API multi-signature renewal planning tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "multi_signature_local_renewal_plan",
+        "--locked",
+      ],
+    ],
+  },
+  {
     name: "API bounded retention execution tests",
     command: [
       "cargo",
@@ -213,6 +226,21 @@ function assertCheckpointMap() {
     "crates/chancela-api/tests/local_pkcs12_signing.rs",
     "local_pkcs12_signs_as_advanced_technical_evidence_only",
     "local PKCS#12 signing API regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/pdf_signature_validation.rs",
+    "pdf_signature_validation_reports_multi_signature_local_renewal_plan",
+    "PDF signature validation multi-signature renewal-plan coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "signature_evidence_status_reports_multi_signature_local_renewal_plan",
+    "signature status multi-signature renewal-plan coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "multi_signature_local_renewal_plan",
+    "signature status multi-signature renewal-plan field",
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
