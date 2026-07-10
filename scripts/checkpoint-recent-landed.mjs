@@ -68,6 +68,10 @@ const checks = [
     ],
   },
   {
+    name: "template catalog metadata tests",
+    command: ["cargo", ["test", "-p", "chancela-templates", "--locked"]],
+  },
+  {
     name: "CLI database encryption key-env tests",
     command: ["cargo", ["test", "-p", "chancela-cli", "--locked"]],
   },
@@ -102,7 +106,9 @@ const checks = [
       "--workspace",
       "apps/web",
       "--",
+      "src/api/client.test.ts",
       "src/contracts/contracts.test.ts",
+      "src/features/books/books.test.tsx",
       "src/features/dashboard/DashboardPage.test.tsx",
       "src/features/documents/ActDocumentPanel.test.tsx",
       "src/features/notifications/NotificationBell.test.tsx",
@@ -219,6 +225,11 @@ function assertCheckpointMap() {
     "data key rotation preflight request validation coverage",
   );
   assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    "execution_refuses_plaintext_store_without_leaking_key_or_migrating",
+    "data key rotation execution refusal coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/official_signature_import.rs",
     "official_import_requires_guardrail_acknowledgement_without_artifact_or_event",
     "official signature import guardrail acknowledgement regression coverage",
@@ -227,6 +238,16 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/data_status.rs",
     "key_rotation_preflight_request_debug_redacts_key_material",
     "data key rotation preflight secret-redaction coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "key_rotation_execute_request_debug_redacts_key_material",
+    "data key rotation execution secret-redaction coverage",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/lib.rs",
+    "catalog_metadata_validation_reports_stage_channel_and_authored_metadata_drift",
+    "template stage/channel metadata drift coverage",
   );
   assertFileContains(
     "crates/chancela-tsl/tests/tsl_fixture.rs",
@@ -247,6 +268,21 @@ function assertCheckpointMap() {
     "apps/web/src/contracts/contracts.test.ts",
     "dashboard.json",
     "web dashboard contract fixture coverage",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "paper-book.ocr-draft.json",
+    "paper-book OCR draft contract fixture coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "uses the data key rotation execution endpoint and sends only the replacement key",
+    "web client data key execution endpoint coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "creates and reviews OCR drafts as auxiliary non-canonical metadata only",
+    "paper-book OCR draft UI coverage",
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
@@ -297,6 +333,11 @@ function assertCheckpointMap() {
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "clears key rotation secrets after a failed preflight request",
     "web data key rotation failed-request secret clearing coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "executes a guarded data key rekey only after a ready preflight and clears secrets",
+    "web data key rotation execution coverage",
   );
   assertFileContains(
     "apps/web/src/features/signing/SigningPanel.test.tsx",
