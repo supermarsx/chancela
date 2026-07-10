@@ -47,7 +47,10 @@
 /// - **v10** — adds paper-book non-canonical linking metadata: validated source page ranges,
 ///   original paper-book ata number ranges, and digital-continuation planning inputs. These fields
 ///   remain non-canonical metadata and do not create act, document, or signature rows.
-pub const SCHEMA_VERSION: i64 = 10;
+/// - **v11** — adds operator review metadata to `imported_documents`: a bounded non-canonical
+///   review status plus reviewer/timestamp/note fields. These transitions never run OCR or
+///   conversion and never claim legal acceptance.
+pub const SCHEMA_VERSION: i64 = 11;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -281,6 +284,10 @@ pub const CREATE_PENDING_CMD_SESSIONS_ACT_IDX: &str =
 /// - `detected_content_type` — API structural detector result.
 /// - `sha256` / `size_bytes` — digest and size of `bytes`.
 /// - `imported_at` / `imported_by` — storage metadata.
+/// - `operator_review_status` — bounded operator review transition state for the preserved
+///   non-canonical evidence row.
+/// - `operator_reviewed_at` / `operator_reviewed_by` / `operator_review_note` — optional review
+///   metadata. These fields do not imply OCR, conversion, or legal acceptance.
 /// - `bytes` — the retained uploaded document bytes.
 pub const CREATE_IMPORTED_DOCUMENTS: &str = "\
 CREATE TABLE IF NOT EXISTS imported_documents (
@@ -293,6 +300,10 @@ CREATE TABLE IF NOT EXISTS imported_documents (
     size_bytes            INTEGER NOT NULL,
     imported_at           TEXT NOT NULL,
     imported_by           TEXT NOT NULL,
+    operator_review_status TEXT NOT NULL DEFAULT 'operator_review_required',
+    operator_reviewed_at  TEXT,
+    operator_reviewed_by  TEXT,
+    operator_review_note  TEXT,
     bytes                 BLOB NOT NULL
 ) STRICT;";
 

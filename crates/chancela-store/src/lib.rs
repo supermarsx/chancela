@@ -688,6 +688,50 @@ pub struct StoredDocument {
     pub pdf_bytes: Vec<u8>,
 }
 
+/// Operator review state for a preserved, non-canonical imported document. These states describe
+/// only the preservation/review workflow; they do not imply OCR, conversion, PDF/A conformance, or
+/// legal acceptance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredImportedDocumentReviewStatus {
+    /// The import needs ordinary operator review.
+    OperatorReviewRequired,
+    /// The import is image evidence and needs operator OCR/reading review if required.
+    OcrReviewRequired,
+    /// The import is a legacy office document and needs operator conversion-policy review.
+    CanonicalConversionReviewRequired,
+    /// An operator reviewed the preserved original and kept it as non-canonical evidence only.
+    ReviewedNonCanonicalOriginalOnly,
+    /// An operator rejected the import as usable evidence while still preserving the uploaded bytes.
+    RejectedNonCanonicalEvidence,
+}
+
+impl StoredImportedDocumentReviewStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OperatorReviewRequired => "operator_review_required",
+            Self::OcrReviewRequired => "ocr_review_required",
+            Self::CanonicalConversionReviewRequired => "canonical_conversion_review_required",
+            Self::ReviewedNonCanonicalOriginalOnly => "reviewed_non_canonical_original_only",
+            Self::RejectedNonCanonicalEvidence => "rejected_non_canonical_evidence",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Result<Self, StoreError> {
+        match raw {
+            "operator_review_required" => Ok(Self::OperatorReviewRequired),
+            "ocr_review_required" => Ok(Self::OcrReviewRequired),
+            "canonical_conversion_review_required" => Ok(Self::CanonicalConversionReviewRequired),
+            "reviewed_non_canonical_original_only" => Ok(Self::ReviewedNonCanonicalOriginalOnly),
+            "rejected_non_canonical_evidence" => Ok(Self::RejectedNonCanonicalEvidence),
+            other => Err(StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid stored imported-document review status {other:?}"),
+            ))),
+        }
+    }
+}
+
 /// Metadata for a validated, non-canonical document evidence import (`imported_documents`, schema
 /// v5). This is the list/read JSON surface and the ledger-event payload source: it intentionally
 /// excludes raw bytes.
@@ -711,6 +755,14 @@ pub struct StoredImportedDocumentMeta {
     pub imported_at: OffsetDateTime,
     /// The resolved ledger actor that performed the import.
     pub imported_by: String,
+    /// Operator review transition state. This is a workflow state only.
+    pub operator_review_status: StoredImportedDocumentReviewStatus,
+    /// When an operator last transitioned the review state, if reviewed.
+    pub operator_reviewed_at: Option<OffsetDateTime>,
+    /// The resolved actor that last transitioned the review state, if reviewed.
+    pub operator_reviewed_by: Option<String>,
+    /// Optional operator note for the review decision.
+    pub operator_review_note: Option<String>,
 }
 
 /// A validated, non-canonical document evidence import with retained bytes. These bytes live beside
@@ -1286,7 +1338,9 @@ impl Store {
         if let Some(act_id) = act_id {
             let mut stmt = guard.prepare(
                 "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
-                 sha256, size_bytes, imported_at, imported_by FROM imported_documents \
+                 sha256, size_bytes, imported_at, imported_by, operator_review_status, \
+                 operator_reviewed_at, operator_reviewed_by, operator_review_note \
+                 FROM imported_documents \
                  WHERE act_id = ?1 ORDER BY imported_at DESC, rowid DESC",
             )?;
             let rows =
@@ -1297,7 +1351,9 @@ impl Store {
         } else {
             let mut stmt = guard.prepare(
                 "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
-                 sha256, size_bytes, imported_at, imported_by FROM imported_documents \
+                 sha256, size_bytes, imported_at, imported_by, operator_review_status, \
+                 operator_reviewed_at, operator_reviewed_by, operator_review_note \
+                 FROM imported_documents \
                  ORDER BY imported_at DESC, rowid DESC",
             )?;
             let rows = stmt.query_map([], row_to_imported_document_meta)?;
@@ -1316,7 +1372,9 @@ impl Store {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = guard.prepare(
             "SELECT id, act_id, filename, declared_content_type, detected_content_type, sha256, \
-             size_bytes, imported_at, imported_by, bytes FROM imported_documents WHERE id = ?1",
+             size_bytes, imported_at, imported_by, operator_review_status, operator_reviewed_at, \
+             operator_reviewed_by, operator_review_note, bytes FROM imported_documents \
+             WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_imported_document)
             .optional()?
@@ -1823,8 +1881,9 @@ impl Tx<'_> {
         self.txn.execute(
             "INSERT OR REPLACE INTO imported_documents \
              (id, act_id, filename, declared_content_type, detected_content_type, sha256, \
-              size_bytes, imported_at, imported_by, bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+              size_bytes, imported_at, imported_by, operator_review_status, \
+              operator_reviewed_at, operator_reviewed_by, operator_review_note, bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 doc.meta.id,
                 doc.meta.act_id.as_ref().map(ToString::to_string),
@@ -1835,9 +1894,41 @@ impl Tx<'_> {
                 size_bytes,
                 imported_at,
                 doc.meta.imported_by,
+                doc.meta.operator_review_status.as_str(),
+                doc.meta.operator_reviewed_at.map(|t| t
+                    .format(&Rfc3339)
+                    .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())),
+                doc.meta.operator_reviewed_by,
+                doc.meta.operator_review_note,
                 doc.bytes,
             ],
         )?;
+        Ok(())
+    }
+
+    /// Update the operator review metadata for a preserved imported document. This deliberately
+    /// touches no retained bytes and no canonical document/signed-document rows.
+    pub fn review_imported_document(
+        &self,
+        id: &str,
+        status: StoredImportedDocumentReviewStatus,
+        reviewed_at: Option<OffsetDateTime>,
+        reviewed_by: Option<&str>,
+        review_note: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let reviewed_at = reviewed_at.map(|t| {
+            t.format(&Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+        });
+        let changed = self.txn.execute(
+            "UPDATE imported_documents SET operator_review_status = ?1, \
+             operator_reviewed_at = ?2, operator_reviewed_by = ?3, operator_review_note = ?4 \
+             WHERE id = ?5",
+            params![status.as_str(), reviewed_at, reviewed_by, review_note, id,],
+        )?;
+        if changed == 0 {
+            return Err(StoreError::NotFound(format!("imported document {id}")));
+        }
         Ok(())
     }
 
@@ -2197,6 +2288,10 @@ fn row_to_imported_document_meta(
     let size_raw: i64 = row.get(6)?;
     let imported_at_raw: String = row.get(7)?;
     let imported_by: String = row.get(8)?;
+    let operator_review_status_raw: String = row.get(9)?;
+    let operator_reviewed_at_raw: Option<String> = row.get(10)?;
+    let operator_reviewed_by: Option<String> = row.get(11)?;
+    let operator_review_note: Option<String> = row.get(12)?;
     Ok(imported_document_meta_from_raw(
         id,
         act_id_raw,
@@ -2207,6 +2302,10 @@ fn row_to_imported_document_meta(
         size_raw,
         imported_at_raw,
         imported_by,
+        operator_review_status_raw,
+        operator_reviewed_at_raw,
+        operator_reviewed_by,
+        operator_review_note,
     ))
 }
 
@@ -2224,7 +2323,11 @@ fn row_to_imported_document(
     let size_raw: i64 = row.get(6)?;
     let imported_at_raw: String = row.get(7)?;
     let imported_by: String = row.get(8)?;
-    let bytes: Vec<u8> = row.get(9)?;
+    let operator_review_status_raw: String = row.get(9)?;
+    let operator_reviewed_at_raw: Option<String> = row.get(10)?;
+    let operator_reviewed_by: Option<String> = row.get(11)?;
+    let operator_review_note: Option<String> = row.get(12)?;
+    let bytes: Vec<u8> = row.get(13)?;
     Ok((|| {
         Ok(StoredImportedDocument {
             meta: imported_document_meta_from_raw(
@@ -2237,6 +2340,10 @@ fn row_to_imported_document(
                 size_raw,
                 imported_at_raw,
                 imported_by,
+                operator_review_status_raw,
+                operator_reviewed_at_raw,
+                operator_reviewed_by,
+                operator_review_note,
             )?,
             bytes,
         })
@@ -2254,6 +2361,10 @@ fn imported_document_meta_from_raw(
     size_raw: i64,
     imported_at_raw: String,
     imported_by: String,
+    operator_review_status_raw: String,
+    operator_reviewed_at_raw: Option<String>,
+    operator_reviewed_by: Option<String>,
+    operator_review_note: Option<String>,
 ) -> Result<StoredImportedDocumentMeta, StoreError> {
     let size_bytes = usize::try_from(size_raw).map_err(|_| {
         StoreError::Io(std::io::Error::new(
@@ -2275,6 +2386,15 @@ fn imported_document_meta_from_raw(
         size_bytes,
         imported_at: parse_rfc3339(&imported_at_raw)?,
         imported_by,
+        operator_review_status: StoredImportedDocumentReviewStatus::parse(
+            &operator_review_status_raw,
+        )?,
+        operator_reviewed_at: operator_reviewed_at_raw
+            .as_deref()
+            .map(parse_rfc3339)
+            .transpose()?,
+        operator_reviewed_by,
+        operator_review_note,
     })
 }
 
@@ -2843,6 +2963,29 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
         conn.execute_batch(
             "ALTER TABLE signed_documents ADD COLUMN timestamp_trust_report_json TEXT;",
         )?;
+    }
+
+    if !table_has_column(conn, "imported_documents", "operator_review_status")? {
+        conn.execute_batch(
+            "ALTER TABLE imported_documents ADD COLUMN operator_review_status TEXT NOT NULL \
+             DEFAULT 'operator_review_required';",
+        )?;
+        conn.execute_batch(
+            "UPDATE imported_documents SET operator_review_status = CASE \
+             WHEN detected_content_type IN ('image/png', 'image/jpeg') THEN 'ocr_review_required' \
+             WHEN detected_content_type = 'application/msword' THEN \
+             'canonical_conversion_review_required' \
+             ELSE 'operator_review_required' END;",
+        )?;
+    }
+    if !table_has_column(conn, "imported_documents", "operator_reviewed_at")? {
+        conn.execute_batch("ALTER TABLE imported_documents ADD COLUMN operator_reviewed_at TEXT;")?;
+    }
+    if !table_has_column(conn, "imported_documents", "operator_reviewed_by")? {
+        conn.execute_batch("ALTER TABLE imported_documents ADD COLUMN operator_reviewed_by TEXT;")?;
+    }
+    if !table_has_column(conn, "imported_documents", "operator_review_note")? {
+        conn.execute_batch("ALTER TABLE imported_documents ADD COLUMN operator_review_note TEXT;")?;
     }
 
     if !table_has_column(conn, "paper_book_imports", "page_from")? {

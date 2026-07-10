@@ -21,9 +21,9 @@ use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
     Store, StoreDatabaseFormat, StoreError, StoreKeyConfigStatus, StoreKeyOpsPlan,
     StoreOpenOptions, StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredImportedDocument,
-    StoredImportedDocumentMeta, StoredPaperBookImport, StoredPaperBookImportMeta,
-    StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
-    StoredPaperBookOcrStatus,
+    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
+    StoredPaperBookImportMeta, StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan,
+    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -136,6 +136,10 @@ fn sample_imported_document(
             size_bytes: bytes.len(),
             imported_at: OffsetDateTime::from_unix_timestamp(1_780_000_000).unwrap(),
             imported_by: "amelia.marques".to_string(),
+            operator_review_status: StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+            operator_reviewed_at: None,
+            operator_reviewed_by: None,
+            operator_review_note: None,
         },
         bytes: bytes.to_vec(),
     }
@@ -987,9 +991,10 @@ fn schema_version_is_current() {
     // t57-S3) landed as schema v4; non-canonical imported documents landed as schema v5; act
     // follow-ups landed as schema v6; signed timestamp-trust diagnostics landed as schema v7;
     // preserved paper-book imports landed as schema v8; paper-book OCR drafts landed as schema v9;
-    // paper-book original numbering/linking metadata landed as schema v10.
+    // paper-book original numbering/linking metadata landed as schema v10; imported-document
+    // operator review metadata landed as schema v11.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 10);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 11);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1000,7 +1005,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "10");
+    assert_eq!(stamped, "11");
     let ocr_draft_table: i64 = raw
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",
@@ -1167,7 +1172,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "10", "stamp advanced forward");
+        assert_eq!(stamped, "11", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -1332,6 +1337,48 @@ fn imported_document_round_trips_lists_by_act_and_survives_reopen() {
 }
 
 #[test]
+fn imported_document_review_transition_updates_metadata_without_replacing_bytes() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_imported_document("11111111-1111-4111-8111-111111111112", None, FAKE_PDF);
+    let reviewed_at = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
+
+    store
+        .persist(|tx| tx.upsert_imported_document(&import))
+        .expect("persist imported doc");
+    store
+        .persist(|tx| {
+            tx.review_imported_document(
+                &import.meta.id,
+                StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly,
+                Some(reviewed_at),
+                Some("document.owner"),
+                Some("Kept as non-canonical supporting evidence."),
+            )
+        })
+        .expect("review imported doc");
+
+    let reviewed = store
+        .imported_document(&import.meta.id)
+        .expect("read reviewed import")
+        .expect("import still exists");
+    assert_eq!(reviewed.bytes, import.bytes);
+    assert_eq!(
+        reviewed.meta.operator_review_status,
+        StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly
+    );
+    assert_eq!(reviewed.meta.operator_reviewed_at, Some(reviewed_at));
+    assert_eq!(
+        reviewed.meta.operator_reviewed_by.as_deref(),
+        Some("document.owner")
+    );
+    assert_eq!(
+        reviewed.meta.operator_review_note.as_deref(),
+        Some("Kept as non-canonical supporting evidence.")
+    );
+}
+
+#[test]
 fn paper_book_import_package_round_trips_with_metadata_and_ocr_status() {
     let dir = TempDir::new();
     let store = Store::open(dir.path()).expect("open");
@@ -1447,7 +1494,7 @@ fn older_paper_book_import_rows_gain_full_page_range_on_upgrade() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "10");
+    assert_eq!(stamped, "11");
 }
 
 #[test]

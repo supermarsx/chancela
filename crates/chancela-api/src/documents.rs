@@ -31,7 +31,8 @@ use chancela_core::{
     TermoDeEncerramento,
 };
 use chancela_store::{
-    StoredDocument, StoredImportedDocument, StoredImportedDocumentMeta, StoredSignedDocument,
+    StoredDocument, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocumentReviewStatus, StoredSignedDocument,
 };
 use chancela_templates::{Registry, TemplateLawReference, TemplateSpec};
 use serde::{Deserialize, Serialize};
@@ -82,9 +83,15 @@ const DOCUMENT_IMPORTED_NOTICE: &str = "Imported document preserved as non-canon
 it does not replace the generated PDF/A or signed PDF, and no legal validity, PDF/A conformance, or \
 signature validity is claimed.";
 
+const IMPORTED_DOCUMENT_REVIEW_NOTICE: &str = "Operator review records a preservation workflow \
+decision only; it does not run OCR, convert bytes, replace the canonical PDF/A, or claim legal \
+acceptance.";
+
 const DOCUMENT_BUNDLE_VALIDATION_NOTICE: &str = "Technical bundle evidence report only; it does \
 not certify legal validity, PDF/A conformance, PDF/UA conformance, qualified-signature status, \
 DGLAB certification, or production long-term validation.";
+
+const MAX_IMPORTED_DOCUMENT_REVIEW_NOTE_CHARS: usize = 2_000;
 
 /// The embedded template registry, loaded once. The assets are compile-time-validated by
 /// `chancela-templates` (build.rs embeds them; e1's tests prove the load), so a load failure is
@@ -1072,6 +1079,12 @@ pub struct ImportedDocumentsQuery {
     pub act_id: Option<Uuid>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ImportedDocumentReviewRequest {
+    pub review_status: String,
+    pub review_note: Option<String>,
+}
+
 /// Wire metadata for an imported, non-canonical document. No raw bytes ride in JSON; callers fetch
 /// bytes only from `bytes_download`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1087,9 +1100,16 @@ pub struct ImportedDocumentView {
     pub classification: &'static str,
     pub imported_at: String,
     pub imported_by: String,
+    pub operator_review_status: &'static str,
+    pub operator_reviewed_at: Option<String>,
+    pub operator_reviewed_by: Option<String>,
+    pub operator_review_note: Option<String>,
+    pub operator_review_notice: &'static str,
     pub non_canonical: bool,
     pub requires_ocr_review: bool,
     pub canonical_conversion_status: &'static str,
+    pub canonical_conversion_performed: bool,
+    pub legal_acceptance_claimed: bool,
     pub preservation_policy: DocumentPreservationPolicyReport,
     pub legal_notice: &'static str,
     pub bytes_download: String,
@@ -1154,6 +1174,12 @@ pub async fn import_document(
             size_bytes: report.size_bytes,
             imported_at,
             imported_by: actor_name.clone(),
+            operator_review_status: imported_document_initial_review_status(
+                &report.content_type.detected,
+            ),
+            operator_reviewed_at: None,
+            operator_reviewed_by: None,
+            operator_review_note: None,
         },
         bytes: candidate.bytes,
     };
@@ -1224,6 +1250,76 @@ pub async fn get_imported_document(
     )))
 }
 
+/// `PATCH /v1/documents/imported/{id}/review` — transition the operator review state for a
+/// preserved imported document. This is metadata-only: it never runs OCR/conversion, never mutates
+/// the canonical generated/signed document rows, and never claims legal acceptance.
+pub async fn review_imported_document(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path(id): Path<String>,
+    Json(req): Json<ImportedDocumentReviewRequest>,
+) -> Result<Json<ImportedDocumentView>, ApiError> {
+    let id = validate_import_id(&id)?;
+    let status = parse_imported_document_review_status(&req.review_status)?;
+    let review_note = optional_limited_text(
+        req.review_note,
+        "review_note",
+        MAX_IMPORTED_DOCUMENT_REVIEW_NOTE_CHARS,
+    )?;
+    let Some(store) = &state.store else {
+        require_permission(&state, &actor, Permission::DocumentGenerate, Scope::Global).await?;
+        return Err(ApiError::Unprocessable(
+            "imported document review requires on-disk persistence".to_owned(),
+        ));
+    };
+    let current = store
+        .imported_document(&id)
+        .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+    let scope = match current.meta.act_id {
+        Some(act_id) => scope_of_act(&state, act_id).await,
+        None => Scope::Global,
+    };
+    require_permission(&state, &actor, Permission::DocumentGenerate, scope).await?;
+
+    let reviewed_by = actor.resolve("api");
+    let reviewed_at = OffsetDateTime::now_utc();
+    let event_scope = imported_document_event_scope(&state, current.meta.act_id, &id).await?;
+    let payload = serde_json::to_vec(&imported_document_review_event_payload(
+        &current.meta,
+        status,
+        &reviewed_by,
+    ))?;
+
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &reviewed_by,
+        &event_scope,
+        "document.imported.review_updated",
+        None,
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| {
+        tx.review_imported_document(
+            &id,
+            status,
+            Some(reviewed_at),
+            Some(&reviewed_by),
+            review_note.as_deref(),
+        )
+    })?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    let reviewed = store
+        .imported_document(&id)
+        .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(imported_document_view(&reviewed.meta)))
+}
+
 /// `GET /v1/documents/imported/{id}/bytes` — stream the retained imported bytes. This is explicitly
 /// separate from the metadata JSON route so raw bytes never appear in the list/read response body or
 /// in the `document.imported` event payload.
@@ -1292,7 +1388,7 @@ async fn imported_document_event_scope(
 
 fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocumentView {
     let classification = document_evidence_classification(&meta.detected_content_type);
-    let preservation_policy = document_preservation_policy(&meta.detected_content_type, true, true);
+    let preservation_policy = imported_document_preservation_policy(meta);
     ImportedDocumentView {
         id: meta.id.clone(),
         act_id: meta.act_id.as_ref().map(ToString::to_string),
@@ -1305,9 +1401,18 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
         classification: classification.classification,
         imported_at: meta.imported_at.format(&Rfc3339).unwrap_or_default(),
         imported_by: meta.imported_by.clone(),
+        operator_review_status: meta.operator_review_status.as_str(),
+        operator_reviewed_at: meta
+            .operator_reviewed_at
+            .map(|t| t.format(&Rfc3339).unwrap_or_default()),
+        operator_reviewed_by: meta.operator_reviewed_by.clone(),
+        operator_review_note: meta.operator_review_note.clone(),
+        operator_review_notice: IMPORTED_DOCUMENT_REVIEW_NOTICE,
         non_canonical: true,
         requires_ocr_review: preservation_policy.requires_ocr_review,
         canonical_conversion_status: preservation_policy.canonical_conversion_status,
+        canonical_conversion_performed: false,
+        legal_acceptance_claimed: false,
         preservation_policy,
         legal_notice: DOCUMENT_IMPORTED_NOTICE,
         bytes_download: format!("/v1/documents/imported/{}/bytes", meta.id),
@@ -1323,9 +1428,52 @@ fn imported_document_view_with_redaction(
         view.filename = None;
         view.sha256 = crate::dto::REDACTED.to_owned();
         view.imported_by = crate::dto::REDACTED.to_owned();
+        view.operator_reviewed_by = view
+            .operator_reviewed_by
+            .map(|_| crate::dto::REDACTED.to_owned());
+        view.operator_review_note = view
+            .operator_review_note
+            .map(|_| crate::dto::REDACTED.to_owned());
         view.bytes_download = crate::dto::REDACTED.to_owned();
     }
     view
+}
+
+fn imported_document_initial_review_status(
+    detected_content_type: &str,
+) -> StoredImportedDocumentReviewStatus {
+    match content_type_base(detected_content_type).as_str() {
+        "image/png" | "image/jpeg" => StoredImportedDocumentReviewStatus::OcrReviewRequired,
+        "application/msword" => {
+            StoredImportedDocumentReviewStatus::CanonicalConversionReviewRequired
+        }
+        _ => StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+    }
+}
+
+fn imported_document_preservation_policy(
+    meta: &StoredImportedDocumentMeta,
+) -> DocumentPreservationPolicyReport {
+    let mut policy = document_preservation_policy(&meta.detected_content_type, true, true);
+    policy.review_state = meta.operator_review_status.as_str();
+    match meta.operator_review_status {
+        StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly => {
+            policy.requires_operator_review = false;
+            policy.requires_ocr_review = false;
+            policy.preservation_action =
+                "preserve_original_bytes_after_operator_review_non_canonical_only";
+        }
+        StoredImportedDocumentReviewStatus::RejectedNonCanonicalEvidence => {
+            policy.requires_operator_review = false;
+            policy.requires_ocr_review = false;
+            policy.preservation_action =
+                "preserve_original_bytes_with_rejected_non_canonical_review";
+        }
+        StoredImportedDocumentReviewStatus::OperatorReviewRequired
+        | StoredImportedDocumentReviewStatus::OcrReviewRequired
+        | StoredImportedDocumentReviewStatus::CanonicalConversionReviewRequired => {}
+    }
+    policy
 }
 
 fn imported_document_download_filename(meta: &StoredImportedDocumentMeta) -> String {
@@ -1364,7 +1512,7 @@ fn imported_document_download_extension(detected_content_type: &str) -> &'static
 
 fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
     let classification = document_evidence_classification(&meta.detected_content_type);
-    let preservation_policy = document_preservation_policy(&meta.detected_content_type, true, true);
+    let preservation_policy = imported_document_preservation_policy(meta);
     json!({
         "document_id": meta.id.clone(),
         "act_id": meta.act_id.as_ref().map(ToString::to_string),
@@ -1376,6 +1524,11 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
         "classification": classification.classification,
         "imported_at": meta.imported_at.format(&Rfc3339).unwrap_or_default(),
         "non_canonical": true,
+        "operator_review_status": meta.operator_review_status.as_str(),
+        "operator_reviewed_at": meta.operator_reviewed_at.map(|t| t.format(&Rfc3339).unwrap_or_default()),
+        "operator_reviewed_by": meta.operator_reviewed_by.clone(),
+        "operator_review_note_in_payload": false,
+        "operator_review_notice": IMPORTED_DOCUMENT_REVIEW_NOTICE,
         "requires_ocr_review": preservation_policy.requires_ocr_review,
         "legal_notice": DOCUMENT_IMPORTED_NOTICE,
         "non_canonical_warning": NON_CANONICAL_EVIDENCE_WARNING,
@@ -1386,8 +1539,65 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
         "canonical_pdfa_generated": false,
         "signature_validation_performed": false,
         "preservation_policy": preservation_policy,
+        "legal_acceptance_claimed": false,
         "legal_validity_claimed": false,
     })
+}
+
+fn imported_document_review_event_payload(
+    meta: &StoredImportedDocumentMeta,
+    status: StoredImportedDocumentReviewStatus,
+    reviewed_by: &str,
+) -> Value {
+    json!({
+        "document_id": meta.id.clone(),
+        "act_id": meta.act_id.as_ref().map(ToString::to_string),
+        "previous_operator_review_status": meta.operator_review_status.as_str(),
+        "operator_review_status": status.as_str(),
+        "reviewed_by": reviewed_by,
+        "review_note_in_payload": false,
+        "operator_review_notice": IMPORTED_DOCUMENT_REVIEW_NOTICE,
+        "non_canonical": true,
+        "bytes_in_payload": false,
+        "ocr_performed": false,
+        "canonical_conversion_status": "not_performed_non_canonical_original_only",
+        "canonical_conversion_performed": false,
+        "canonical_pdfa_generated": false,
+        "legal_acceptance_claimed": false,
+        "legal_validity_claimed": false,
+    })
+}
+
+fn parse_imported_document_review_status(
+    raw: &str,
+) -> Result<StoredImportedDocumentReviewStatus, ApiError> {
+    match raw.trim() {
+        "reviewed_non_canonical_original_only" => {
+            Ok(StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly)
+        }
+        "rejected_non_canonical_evidence" => {
+            Ok(StoredImportedDocumentReviewStatus::RejectedNonCanonicalEvidence)
+        }
+        _ => Err(ApiError::Unprocessable(
+            "review_status must be one of reviewed_non_canonical_original_only or rejected_non_canonical_evidence".to_owned(),
+        )),
+    }
+}
+
+fn optional_limited_text(
+    value: Option<String>,
+    field: &'static str,
+    max_chars: usize,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = non_empty(value) else {
+        return Ok(None);
+    };
+    if value.chars().count() > max_chars {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be at most {max_chars} characters"
+        )));
+    }
+    Ok(Some(value))
 }
 
 fn validate_import_id(raw: &str) -> Result<String, ApiError> {
@@ -4477,6 +4687,10 @@ mod tests {
             size_bytes: 42,
             imported_at: time::OffsetDateTime::UNIX_EPOCH,
             imported_by: "document.owner".to_owned(),
+            operator_review_status: StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+            operator_reviewed_at: None,
+            operator_reviewed_by: None,
+            operator_review_note: None,
         };
 
         let payload = imported_document_event_payload(&meta);
@@ -4502,6 +4716,10 @@ mod tests {
             size_bytes: 2048,
             imported_at: time::OffsetDateTime::UNIX_EPOCH,
             imported_by: "amelia.marques".to_owned(),
+            operator_review_status: StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+            operator_reviewed_at: None,
+            operator_reviewed_by: None,
+            operator_review_note: None,
         };
 
         let view = imported_document_view_with_redaction(&meta, ReadRedaction::Guest);
@@ -4955,6 +5173,135 @@ mod tests {
             .await
             .expect("download body");
         assert_eq!(downloaded.as_ref(), stored.bytes.as_slice());
+    }
+
+    #[tokio::test]
+    async fn imported_document_review_transition_is_metadata_only_and_honest() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let doc = legacy_doc_bytes();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            "application/json".parse().expect("content-type"),
+        );
+        let body = json!({
+            "filename": "board-minutes.doc",
+            "content_type": "application/msword",
+            "content_base64": B64.encode(&doc),
+        });
+
+        let (_, Json(imported)) = import_document(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            headers,
+            Bytes::from(body.to_string()),
+        )
+        .await
+        .expect("legacy DOC import succeeds");
+        assert_eq!(
+            imported.operator_review_status,
+            "canonical_conversion_review_required"
+        );
+        assert!(!imported.canonical_conversion_performed);
+        assert!(!imported.legal_acceptance_claimed);
+
+        let before = state
+            .store
+            .as_ref()
+            .expect("store")
+            .imported_document(&imported.id)
+            .expect("store read")
+            .expect("imported doc stored");
+        let review_note = "Reviewed only as preserved non-canonical evidence.".to_owned();
+        let Json(reviewed) = review_imported_document(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(imported.id.clone()),
+            Json(ImportedDocumentReviewRequest {
+                review_status: "reviewed_non_canonical_original_only".to_owned(),
+                review_note: Some(review_note.clone()),
+            }),
+        )
+        .await
+        .expect("review transition succeeds");
+
+        assert_eq!(
+            reviewed.operator_review_status,
+            "reviewed_non_canonical_original_only"
+        );
+        assert_eq!(
+            reviewed.operator_reviewed_by.as_deref(),
+            Some("document.owner")
+        );
+        assert_eq!(
+            reviewed.operator_review_note.as_deref(),
+            Some(review_note.as_str())
+        );
+        assert!(!reviewed.preservation_policy.requires_operator_review);
+        assert_eq!(
+            reviewed.preservation_policy.canonical_conversion_status,
+            "not_performed_non_canonical_original_only"
+        );
+        assert!(!reviewed.canonical_conversion_performed);
+        assert!(!reviewed.preservation_policy.canonical_conversion_performed);
+        assert!(!reviewed.legal_acceptance_claimed);
+        assert!(!reviewed.preservation_policy.legal_acceptance_claimed);
+        assert!(state.documents.read().await.is_empty());
+
+        let after = state
+            .store
+            .as_ref()
+            .expect("store")
+            .imported_document(&imported.id)
+            .expect("store read")
+            .expect("reviewed import stored");
+        assert_eq!(after.bytes, before.bytes);
+        assert_eq!(
+            after.meta.operator_review_status,
+            StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly
+        );
+
+        let event = state
+            .ledger
+            .read()
+            .await
+            .events()
+            .last()
+            .expect("document.imported.review_updated event")
+            .clone();
+        assert_eq!(event.kind, "document.imported.review_updated");
+
+        let payload = imported_document_review_event_payload(
+            &before.meta,
+            StoredImportedDocumentReviewStatus::ReviewedNonCanonicalOriginalOnly,
+            "document.owner",
+        );
+        assert_eq!(
+            payload["previous_operator_review_status"],
+            before.meta.operator_review_status.as_str()
+        );
+        assert_eq!(
+            payload["operator_review_status"],
+            "reviewed_non_canonical_original_only"
+        );
+        assert_eq!(payload["ocr_performed"], false);
+        assert_eq!(payload["canonical_conversion_performed"], false);
+        assert_eq!(payload["canonical_pdfa_generated"], false);
+        assert_eq!(payload["legal_acceptance_claimed"], false);
+        assert_eq!(payload["legal_validity_claimed"], false);
+        assert_eq!(payload["review_note_in_payload"], false);
+        let payload_text = serde_json::to_string(&payload).expect("payload serializes");
+        assert!(!payload_text.contains(&review_note));
+    }
+
+    #[test]
+    fn imported_document_review_status_rejects_legal_acceptance_wording() {
+        assert!(parse_imported_document_review_status("accepted").is_err());
+        assert!(parse_imported_document_review_status("legal_acceptance_claimed").is_err());
     }
 
     #[tokio::test]

@@ -23,8 +23,9 @@
 //!   non-evidentiary text working copies.
 //! - `GET /v1/acts/{id}/document/office` — deterministic non-evidentiary DOCX working copy.
 //! - `POST /v1/documents/import/validate` — read-only structural import validation report.
-//! - `POST|GET /v1/documents/import[ed]`, `GET /v1/documents/imported/{id}[/bytes]` —
-//!   validated non-canonical imported document evidence.
+//! - `POST|GET /v1/documents/import[ed]`, `GET /v1/documents/imported/{id}[/bytes]`,
+//!   `PATCH /v1/documents/imported/{id}/review` — validated non-canonical imported document
+//!   evidence and operator review metadata.
 //! - `POST /v1/signature/pdf/validate` — read-only local technical PDF/PAdES evidence validation.
 //! - `GET /v1/ledger/events`, `GET /v1/ledger/verify` — the audit feed and chain probe (§2.6).
 //! - `GET /v1/ledger/archive/document` — on-demand PDF/A archive export.
@@ -1129,6 +1130,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/documents/imported/{id}",
             get(documents::get_imported_document),
+        )
+        .route(
+            "/v1/documents/imported/{id}/review",
+            patch(documents::review_imported_document),
         )
         .route(
             "/v1/documents/imported/{id}/bytes",
