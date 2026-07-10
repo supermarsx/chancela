@@ -32,6 +32,13 @@ const checks = [
     ],
   },
   {
+    name: "API document bundle evidence tests",
+    command: [
+      "cargo",
+      ["test", "-p", "chancela-api", "--locked", "document_bundle"],
+    ],
+  },
+  {
     name: "API local PKCS#12 signing tests",
     command: [
       "cargo",
@@ -160,6 +167,7 @@ const checks = [
       "src/features/signing/SigningPanel.test.tsx",
       "src/features/templates/TemplatesCatalogPage.test.tsx",
       "src/i18n/i18n.test.ts",
+      "src/ui/SubNav.test.tsx",
     ]),
   },
   {
@@ -251,6 +259,16 @@ function assertCheckpointMap() {
     "crates/chancela-api/tests/archive_package.rs",
     "archive_package_reports_embedded_doc_timestamp_evidence_without_b_lta_claim",
     "archive package DocTimeStamp evidence coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "archive_package_indexes_matching_external_validator_metadata_only",
+    "archive package runtime external-validator metadata coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "document_bundle_indexes_matching_external_validator_metadata",
+    "document bundle runtime external-validator metadata coverage",
   );
   assertFileContains(
     "crates/chancela-api/tests/local_pkcs12_signing.rs",
@@ -403,6 +421,11 @@ function assertCheckpointMap() {
     "subnav icon-only tooltip coverage",
   );
   assertFileContains(
+    "apps/web/src/ui/SubNav.test.tsx",
+    "exposes only usable scroll arrows for the current overflow edge",
+    "subnav overflow-arrow tooltip coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/notifications/NotificationsPage.test.tsx",
     "expectIconOnlyFilter",
     "notifications page icon-only filter coverage",
@@ -436,6 +459,11 @@ function assertCheckpointMap() {
     "apps/web/src/features/signing/SigningPanel.test.tsx",
     "SigningPanel — local PKCS#12 software certificate",
     "web local PKCS#12 signing coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.test.tsx",
+    "shows the available multi-signature local renewal plan as technical evidence only",
+    "web multi-signature renewal-plan evidence coverage",
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplatesCatalogPage.test.tsx",
