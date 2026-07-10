@@ -891,6 +891,265 @@ fn role_label(value: String) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeMap;
+    use std::fmt;
+
+    const REQUIRED_TEMPLATE_METADATA_FIELDS: &[&str] = &[
+        "id",
+        "family",
+        "stage",
+        "channels",
+        "signature_policy",
+        "rule_pack_id",
+        "locale",
+        "blocks",
+    ];
+
+    const REQUIRED_STRING_METADATA_FIELDS: &[&str] = &[
+        "id",
+        "family",
+        "stage",
+        "signature_policy",
+        "rule_pack_id",
+        "locale",
+    ];
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct CatalogMetadataIssue {
+        asset: String,
+        template_id: Option<String>,
+        kind: CatalogMetadataIssueKind,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum CatalogMetadataIssueKind {
+        MissingField(&'static str),
+        BlankStringField(&'static str),
+        DuplicateId {
+            first_asset: String,
+        },
+        InvalidJson(String),
+        InvalidSchema(String),
+        MissingRulePackLawReference {
+            rule_pack_id: String,
+        },
+        MissingTemplateLawReference {
+            rule_pack_id: String,
+        },
+        IncompleteLawReference {
+            citation: String,
+            field: &'static str,
+        },
+    }
+
+    impl fmt::Display for CatalogMetadataIssue {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let template_id = self.template_id.as_deref().unwrap_or("<unknown>");
+            match &self.kind {
+                CatalogMetadataIssueKind::MissingField(field) => write!(
+                    f,
+                    "{}.json ({template_id}): missing required metadata field `{field}`",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::BlankStringField(field) => write!(
+                    f,
+                    "{}.json ({template_id}): blank required metadata field `{field}`",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::DuplicateId { first_asset } => write!(
+                    f,
+                    "{}.json ({template_id}): duplicate template id first seen in {first_asset}.json",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::InvalidJson(error) => {
+                    write!(f, "{}.json: invalid JSON: {error}", self.asset)
+                }
+                CatalogMetadataIssueKind::InvalidSchema(error) => write!(
+                    f,
+                    "{}.json ({template_id}): invalid template schema: {error}",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::MissingRulePackLawReference { rule_pack_id } => write!(
+                    f,
+                    "{}.json ({template_id}): rule_pack_id `{rule_pack_id}` has no local law-reference anchor",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::MissingTemplateLawReference { rule_pack_id } => write!(
+                    f,
+                    "{}.json ({template_id}): template derives no law_references from rule_pack_id `{rule_pack_id}` or thresholds",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::IncompleteLawReference { citation, field } => write!(
+                    f,
+                    "{}.json ({template_id}): law reference `{citation}` has blank `{field}`",
+                    self.asset
+                ),
+            }
+        }
+    }
+
+    fn catalog_metadata_report(issues: &[CatalogMetadataIssue]) -> String {
+        issues
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn metadata_issue(
+        asset: &str,
+        template_id: Option<&str>,
+        kind: CatalogMetadataIssueKind,
+    ) -> CatalogMetadataIssue {
+        CatalogMetadataIssue {
+            asset: asset.to_owned(),
+            template_id: template_id.map(str::to_owned),
+            kind,
+        }
+    }
+
+    fn validate_catalog_metadata(assets: &[(&str, &str)]) -> Vec<CatalogMetadataIssue> {
+        let mut issues = Vec::new();
+        let mut seen_ids = BTreeMap::<String, String>::new();
+
+        for (asset, json) in assets {
+            let raw: Value = match serde_json::from_str(json) {
+                Ok(raw) => raw,
+                Err(error) => {
+                    issues.push(metadata_issue(
+                        asset,
+                        None,
+                        CatalogMetadataIssueKind::InvalidJson(error.to_string()),
+                    ));
+                    continue;
+                }
+            };
+
+            let Some(object) = raw.as_object() else {
+                issues.push(metadata_issue(
+                    asset,
+                    None,
+                    CatalogMetadataIssueKind::InvalidSchema(
+                        "template asset root must be a JSON object".to_string(),
+                    ),
+                ));
+                continue;
+            };
+
+            let template_id = object
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned);
+            let mut missing_required = false;
+
+            for &field in REQUIRED_TEMPLATE_METADATA_FIELDS {
+                if !object.contains_key(field) {
+                    issues.push(metadata_issue(
+                        asset,
+                        template_id.as_deref(),
+                        CatalogMetadataIssueKind::MissingField(field),
+                    ));
+                    missing_required = true;
+                }
+            }
+
+            for &field in REQUIRED_STRING_METADATA_FIELDS {
+                if let Some(value) = object.get(field).and_then(Value::as_str)
+                    && value.trim().is_empty()
+                {
+                    issues.push(metadata_issue(
+                        asset,
+                        template_id.as_deref(),
+                        CatalogMetadataIssueKind::BlankStringField(field),
+                    ));
+                }
+            }
+
+            if let Some(id) = &template_id {
+                if let Some(first_asset) = seen_ids.insert(id.clone(), (*asset).to_string()) {
+                    issues.push(metadata_issue(
+                        asset,
+                        Some(id),
+                        CatalogMetadataIssueKind::DuplicateId { first_asset },
+                    ));
+                }
+            }
+
+            if missing_required {
+                continue;
+            }
+
+            let dto: TemplateSpecDto = match serde_json::from_value(raw) {
+                Ok(dto) => dto,
+                Err(error) => {
+                    issues.push(metadata_issue(
+                        asset,
+                        template_id.as_deref(),
+                        CatalogMetadataIssueKind::InvalidSchema(error.to_string()),
+                    ));
+                    continue;
+                }
+            };
+            let spec = TemplateSpec::from(dto);
+
+            // These are structured discovery anchors for the API/template picker only; they do not
+            // certify that the cited law text or legal analysis is complete or authoritative.
+            if rule_pack_law_references(&spec.rule_pack_id).is_empty() {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::MissingRulePackLawReference {
+                        rule_pack_id: spec.rule_pack_id.clone(),
+                    },
+                ));
+            }
+            if spec.law_references.is_empty() {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::MissingTemplateLawReference {
+                        rule_pack_id: spec.rule_pack_id.clone(),
+                    },
+                ));
+            }
+            for reference in &spec.law_references {
+                if reference.source_id.trim().is_empty() {
+                    issues.push(metadata_issue(
+                        asset,
+                        Some(&spec.id),
+                        CatalogMetadataIssueKind::IncompleteLawReference {
+                            citation: reference.citation.clone(),
+                            field: "source_id",
+                        },
+                    ));
+                }
+                if reference.source_label.trim().is_empty() {
+                    issues.push(metadata_issue(
+                        asset,
+                        Some(&spec.id),
+                        CatalogMetadataIssueKind::IncompleteLawReference {
+                            citation: reference.citation.clone(),
+                            field: "source_label",
+                        },
+                    ));
+                }
+                if reference.citation.trim().is_empty() {
+                    issues.push(metadata_issue(
+                        asset,
+                        Some(&spec.id),
+                        CatalogMetadataIssueKind::IncompleteLawReference {
+                            citation: "<blank>".to_string(),
+                            field: "citation",
+                        },
+                    ));
+                }
+            }
+        }
+
+        issues
+    }
 
     /// An `Act`-shaped render context for `csc-ata-ag/v1`. This is the exact shape
     /// `chancela-api` (e5) produces: `serde_json::to_value(&act)` fields + an `entity` object +
@@ -1039,6 +1298,90 @@ mod tests {
             "signature_policy":"ManualAttested","rule_pack_id":"x","locale":"pt-PT","blocks":[]}"#;
         let err = registry_from(&[("a", one), ("b", one)]).unwrap_err();
         assert!(matches!(err, RegistryError::DuplicateId(id) if id == "dup/v1"));
+    }
+
+    #[test]
+    fn authored_catalog_has_required_metadata_and_law_reference_anchors() {
+        let issues = validate_catalog_metadata(ASSET_FILES);
+        assert!(
+            issues.is_empty(),
+            "catalog metadata validation failed:\n{}",
+            catalog_metadata_report(&issues)
+        );
+    }
+
+    #[test]
+    fn catalog_metadata_validation_reports_required_fields_duplicates_and_law_refs() {
+        let missing_metadata = r#"{"id":"metadata-gap/v1","locale":"pt-PT","blocks":[]}"#;
+        let duplicate_a = r#"{"id":"dup/v1","family":"Association","stage":"Ata","channels":[],
+            "signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1","locale":"pt-PT","blocks":[]}"#;
+        let duplicate_b = r#"{"id":"dup/v1","family":"Association","stage":"Certidao","channels":[],
+            "signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1","locale":"pt-PT","blocks":[]}"#;
+        let unknown_rule_pack = r#"{"id":"unknown-law/v1","family":"Association","stage":"Ata",
+            "channels":[],"signature_policy":"ManualAttested","rule_pack_id":"unknown/v1",
+            "locale":"pt-PT","blocks":[{"kind":"Paragraph","template":"Sem citação estruturada."}]}"#;
+
+        let issues = validate_catalog_metadata(&[
+            ("metadata-gap", missing_metadata),
+            ("dup-a", duplicate_a),
+            ("dup-b", duplicate_b),
+            ("unknown-law", unknown_rule_pack),
+        ]);
+        let report = catalog_metadata_report(&issues);
+
+        for field in [
+            "family",
+            "stage",
+            "channels",
+            "signature_policy",
+            "rule_pack_id",
+        ] {
+            assert!(
+                issues.iter().any(|issue| {
+                    issue.asset == "metadata-gap"
+                        && matches!(
+                            &issue.kind,
+                            CatalogMetadataIssueKind::MissingField(missing)
+                                if *missing == field
+                        )
+                }),
+                "expected missing `{field}` issue:\n{report}"
+            );
+        }
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "dup-b"
+                    && issue.template_id.as_deref() == Some("dup/v1")
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::DuplicateId { first_asset }
+                            if first_asset == "dup-a"
+                    )
+            }),
+            "expected duplicate-id issue:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "unknown-law"
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::MissingRulePackLawReference { rule_pack_id }
+                            if rule_pack_id == "unknown/v1"
+                    )
+            }),
+            "expected missing rule-pack law-reference anchor:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "unknown-law"
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::MissingTemplateLawReference { rule_pack_id }
+                            if rule_pack_id == "unknown/v1"
+                    )
+            }),
+            "expected missing derived template law_references issue:\n{report}"
+        );
     }
 
     #[test]
