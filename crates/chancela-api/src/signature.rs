@@ -98,6 +98,10 @@ const EVIDENTIARY_QUALIFIED: &str = "Qualified";
 const FAMILY_OFFICIAL_HANDOFF: &str = "AutenticacaoGovOfficialHandoff";
 /// Imported official handoff evidence is cryptographically screened but not TSL/qualified-validated.
 const EVIDENTIARY_IMPORTED_OFFICIAL: &str = "ImportedOfficialHandoffTechnicalEvidence";
+/// External signer invite uploads are stored as technical evidence only, never as legal validation.
+const FAMILY_EXTERNAL_SIGNER_HANDOFF: &str = "ExternalSignerHandoff";
+const EVIDENTIARY_EXTERNAL_SIGNED_PDF: &str = "ExternalSignedPdfTechnicalEvidence";
+const EXTERNAL_SIGNED_PDF_NOTICE: &str = "Uploaded signed PDF technical evidence only; no legal validity, qualified-signature, or trust-list status is claimed.";
 /// The signed-PDF profile strings bound into the `document.signed` event.
 const PADES_PROFILE_B_B: &str = "application/pdf; profile=PAdES-B-B";
 const PADES_PROFILE_B_T: &str = "application/pdf; profile=PAdES-B-T";
@@ -483,8 +487,8 @@ pub enum ExternalSignerInviteStatus {
     Revoked,
 }
 
-/// External signer's envelope response. This is acknowledgement/tracking state only: it is not a
-/// qualified-signature completion and never changes the act's signature evidence.
+/// External signer's envelope response. This is acknowledgement/tracking state; an accept can carry
+/// a signed PDF artifact as technical evidence, but it is not a qualified-signature completion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExternalSignerInviteDecision {
@@ -596,6 +600,18 @@ pub struct ExternalSignerInviteTokenRequest {
 pub struct ExternalSignerInviteRespondRequest {
     pub token: String,
     pub decision: ExternalSignerInviteDecision,
+    #[serde(
+        default,
+        alias = "signed_pdf",
+        alias = "signed_pdf_base64",
+        alias = "pdf_base64",
+        alias = "bytes_base64",
+        alias = "data_base64",
+        alias = "base64"
+    )]
+    pub signed_pdf_base64: Option<String>,
+    #[serde(default)]
+    pub filename: Option<String>,
 }
 
 /// Safe act metadata for a token holder. No document bytes or canonical PDF URL are exposed here.
@@ -670,6 +686,21 @@ pub struct ExternalSignerInvitePublicView {
     pub expires_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub responded_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signed_artifact: Option<ExternalSignerInviteSignedArtifactPublicView>,
+    pub notice: &'static str,
+}
+
+/// Signed artifact status surfaced to a token holder. This is technical evidence only.
+#[derive(Serialize)]
+pub struct ExternalSignerInviteSignedArtifactPublicView {
+    pub family: String,
+    pub evidentiary_level: String,
+    pub signed_pdf_digest: String,
+    pub timestamp_token: bool,
+    pub status_scope: &'static str,
+    pub qualification_claimed: bool,
+    pub legal_status_claimed: bool,
     pub notice: &'static str,
 }
 
@@ -861,13 +892,15 @@ pub async fn download_external_signer_invite_working_copy(
 }
 
 /// `POST /v1/signature/external-invites/respond` — unauthenticated accept/decline acknowledgement
-/// for a valid external invite token. This updates invite tracking and audit only; it does not sign
-/// a document and does not complete qualified signing.
+/// for a valid external invite token. An accept may also upload a signed PDF artifact, which is
+/// stored as technical evidence only; it does not complete qualified signing or claim legal status.
 pub async fn respond_external_signer_invite(
     State(state): State<AppState>,
     attestor: CurrentAttestor,
     Json(req): Json<ExternalSignerInviteRespondRequest>,
 ) -> Result<Json<ExternalSignerInvitePublicView>, ApiError> {
+    let upload =
+        signed_pdf_upload_from_invite_response(req.decision, req.signed_pdf_base64, req.filename)?;
     let mut record = find_live_external_invite_by_token(&state, req.token).await?;
     let _ = external_invite_safe_context(&state, &record).await?;
     if let Some(existing) = record.response {
@@ -876,10 +909,21 @@ pub async fn respond_external_signer_invite(
                 "este convite externo já foi respondido com outra decisão".to_owned(),
             ));
         }
+        if let Some(upload) = upload {
+            store_external_invite_signed_pdf_evidence(&state, &attestor, &record, upload).await?;
+        }
         return Ok(Json(public_external_invite_view(&state, &record).await?));
     }
 
     let now = OffsetDateTime::now_utc();
+    if let Some(upload) = &upload {
+        prepare_external_signed_pdf_evidence(
+            &state,
+            record.act_id,
+            upload.signed_pdf_bytes.clone(),
+        )
+        .await?;
+    }
     record.response = Some(req.decision);
     record.responded_at = Some(now);
     let audit_scope = act_audit_scope(&state, record.act_id).await?;
@@ -896,6 +940,10 @@ pub async fn respond_external_signer_invite(
         .write()
         .await
         .insert(record.id, record.clone());
+
+    if let Some(upload) = upload {
+        store_external_invite_signed_pdf_evidence(&state, &attestor, &record, upload).await?;
+    }
 
     Ok(Json(public_external_invite_view(&state, &record).await?))
 }
@@ -3245,12 +3293,224 @@ async fn find_live_external_invite_by_token(
     Ok(record)
 }
 
+#[derive(Debug)]
+struct ExternalSignedPdfUpload {
+    signed_pdf_bytes: Vec<u8>,
+    filename: Option<String>,
+}
+
+struct PreparedExternalSignedPdfEvidence {
+    stored: StoredSignedDocument,
+    signed_pdf_digest: String,
+    timestamp_token: bool,
+}
+
+fn signed_pdf_upload_from_invite_response(
+    decision: ExternalSignerInviteDecision,
+    signed_pdf_base64: Option<String>,
+    filename: Option<String>,
+) -> Result<Option<ExternalSignedPdfUpload>, ApiError> {
+    let Some(signed_pdf_base64) = signed_pdf_base64 else {
+        return Ok(None);
+    };
+    if decision != ExternalSignerInviteDecision::Accept {
+        return Err(ApiError::Unprocessable(
+            "signed PDF uploads are accepted only with decision=accept".to_owned(),
+        ));
+    }
+    Ok(Some(ExternalSignedPdfUpload {
+        signed_pdf_bytes: decode_uploaded_signed_pdf_base64(&signed_pdf_base64)?,
+        filename: optional_trimmed(filename),
+    }))
+}
+
+fn decode_uploaded_signed_pdf_base64(value: &str) -> Result<Vec<u8>, ApiError> {
+    B64.decode(value.trim())
+        .map_err(|e| ApiError::Unprocessable(format!("invalid base64 signed PDF content: {e}")))
+}
+
+async fn prepare_external_signed_pdf_evidence(
+    state: &AppState,
+    act_id: ActId,
+    signed_pdf: Vec<u8>,
+) -> Result<PreparedExternalSignedPdfEvidence, ApiError> {
+    if signed_pdf.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "signed PDF upload is empty".to_owned(),
+        ));
+    }
+    if signed_pdf.len() > OFFICIAL_SIGNATURE_IMPORT_MAX_BYTES {
+        return Err(ApiError::Unprocessable(format!(
+            "signed PDF upload is {} bytes; import accepts at most {} bytes",
+            signed_pdf.len(),
+            OFFICIAL_SIGNATURE_IMPORT_MAX_BYTES
+        )));
+    }
+
+    let sealed = {
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        act.ata_number.is_some()
+    };
+    if !sealed {
+        return Err(ApiError::Conflict(
+            "o ato ainda não foi selado; o upload de PDF assinado externo é posterior ao selo"
+                .to_owned(),
+        ));
+    }
+
+    let unsigned = crate::documents::load_document(state, act_id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict("o ato selado não tem documento para assinar".to_owned())
+        })?;
+
+    if load_signed(state, act_id).await?.is_some() {
+        return Err(ApiError::Conflict(
+            "o ato já tem um artefacto de assinatura".to_owned(),
+        ));
+    }
+
+    let report = validate_imported_signed_pdf(&signed_pdf)?;
+    if !signed_pdf.starts_with(&unsigned.pdf_bytes) {
+        return Err(ApiError::Conflict(
+            "o PDF assinado não corresponde ao PDF selado deste ato".to_owned(),
+        ));
+    }
+
+    let signed_pdf_digest = sha256_hex(&signed_pdf);
+    let signed_at = OffsetDateTime::now_utc();
+    let signing_time = report.cades.signing_time.unwrap_or(signed_at);
+    let signer_cert_der = report.cades.signer_cert_der.clone();
+    let timestamp_token = report.has_signature_timestamp;
+    let stored = StoredSignedDocument {
+        act_id,
+        document_id: unsigned.id,
+        signed_pdf_digest: signed_pdf_digest.clone(),
+        signature_family: FAMILY_EXTERNAL_SIGNER_HANDOFF.to_owned(),
+        evidentiary_level: EVIDENTIARY_EXTERNAL_SIGNED_PDF.to_owned(),
+        trusted_list_status: None,
+        signer_cert_subject: subject_dn(&signer_cert_der),
+        signing_time,
+        signed_at,
+        signer_cert_der,
+        timestamp_token_der: None,
+        timestamp_trust_report_json: None,
+        signed_pdf_bytes: signed_pdf,
+    };
+
+    Ok(PreparedExternalSignedPdfEvidence {
+        stored,
+        signed_pdf_digest,
+        timestamp_token,
+    })
+}
+
+async fn store_external_invite_signed_pdf_evidence(
+    state: &AppState,
+    attestor: &CurrentAttestor,
+    record: &ExternalSignerInviteRecord,
+    upload: ExternalSignedPdfUpload,
+) -> Result<(), ApiError> {
+    let signed_pdf_digest = sha256_hex(&upload.signed_pdf_bytes);
+    if let Some(existing) = load_signed(state, record.act_id).await? {
+        if existing.signature_family == FAMILY_EXTERNAL_SIGNER_HANDOFF
+            && existing.signed_pdf_digest == signed_pdf_digest
+        {
+            return Ok(());
+        }
+        return Err(ApiError::Conflict(
+            "o ato já tem um artefacto de assinatura".to_owned(),
+        ));
+    }
+
+    let prepared =
+        prepare_external_signed_pdf_evidence(state, record.act_id, upload.signed_pdf_bytes).await?;
+    let document_id = prepared.stored.document_id.clone();
+    let signed_pdf_digest = prepared.signed_pdf_digest.clone();
+    let audit_scope = act_audit_scope(state, record.act_id).await?;
+    let actor_name = format!("external-signer:{}", record.id);
+    let filename = upload.filename;
+    let legal_validation = official_import_legal_validation();
+    let event_payload = json!({
+        "act_id": record.act_id.to_string(),
+        "document_id": document_id,
+        "signed_pdf_digest": signed_pdf_digest,
+        "family": FAMILY_EXTERNAL_SIGNER_HANDOFF,
+        "evidentiary_level": EVIDENTIARY_EXTERNAL_SIGNED_PDF,
+        "trusted_list_status": null,
+        "profile": pades_profile(prepared.timestamp_token),
+        "legal_validation": legal_validation,
+        "validation": {
+            "pades_cryptographic_validation": "valid",
+            "byte_range_covers_whole_file_except_contents": true,
+            "sealed_pdf_prefix_match": true,
+            "trust_validation": "not_performed",
+            "qualified_status_claimed": false
+        },
+        "source": {
+            "kind": "external_signer_invite_response",
+            "invite_id": record.id.to_string(),
+            "filename": filename,
+            "client_declared_metadata_authoritative": false
+        },
+        "status_scope": TECHNICAL_EVIDENCE_ONLY
+    });
+    let payload = serde_json::to_vec(&event_payload)?;
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            &actor_name,
+            &audit_scope,
+            "document.signed",
+            None,
+            &payload,
+        )?;
+        state.persist_write_through(&mut ledger, 1, |tx| {
+            tx.upsert_signed_document(&prepared.stored)
+        })?;
+        state.attest_latest(attestor, &ledger).await;
+    }
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(record.act_id, prepared.stored);
+
+    Ok(())
+}
+
+async fn external_invite_signed_artifact_status(
+    state: &AppState,
+    act_id: ActId,
+) -> Result<Option<ExternalSignerInviteSignedArtifactPublicView>, ApiError> {
+    let Some(signed) = load_signed(state, act_id).await? else {
+        return Ok(None);
+    };
+    if signed.signature_family != FAMILY_EXTERNAL_SIGNER_HANDOFF {
+        return Ok(None);
+    }
+    let timestamp_token = signed_pdf_timestamp_present(&signed);
+    Ok(Some(ExternalSignerInviteSignedArtifactPublicView {
+        family: signed.signature_family,
+        evidentiary_level: signed.evidentiary_level,
+        signed_pdf_digest: signed.signed_pdf_digest,
+        timestamp_token,
+        status_scope: TECHNICAL_EVIDENCE_ONLY,
+        qualification_claimed: false,
+        legal_status_claimed: false,
+        notice: EXTERNAL_SIGNED_PDF_NOTICE,
+    }))
+}
+
 async fn public_external_invite_view(
     state: &AppState,
     record: &ExternalSignerInviteRecord,
 ) -> Result<ExternalSignerInvitePublicView, ApiError> {
     let now = OffsetDateTime::now_utc();
     let context = external_invite_safe_context(state, record).await?;
+    let signed_artifact = external_invite_signed_artifact_status(state, record.act_id).await?;
 
     Ok(ExternalSignerInvitePublicView {
         invite_id: record.id.to_string(),
@@ -3264,6 +3524,7 @@ async fn public_external_invite_view(
         created_at: rfc3339(record.created_at),
         expires_at: rfc3339(record.expires_at),
         responded_at: record.responded_at.map(rfc3339),
+        signed_artifact,
         notice: EXTERNAL_INVITE_NOTICE,
     })
 }

@@ -152,6 +152,23 @@ fn import_req(act_id: &str, token: &str, signed_pdf: &[u8]) -> Request<Body> {
     )
 }
 
+fn external_invite_response_with_signed_pdf_req(token: &str, signed_pdf: &[u8]) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/v1/signature/external-invites/respond")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "token": token,
+                "decision": "accept",
+                "signed_pdf_base64": B64.encode(signed_pdf),
+                "filename": "external-signer-upload.pdf"
+            })
+            .to_string(),
+        ))
+        .expect("request builds")
+}
+
 fn import_req_with_metadata(
     act_id: &str,
     token: &str,
@@ -238,6 +255,30 @@ async fn seed_book(state: &AppState, token: &str) -> String {
     .await;
     assert_eq!(status, StatusCode::CREATED, "book: {book}");
     book["id"].as_str().unwrap().to_owned()
+}
+
+async fn create_external_invite(state: &AppState, token: &str, act_id: &str) -> String {
+    let expires_at = (time::OffsetDateTime::now_utc() + time::Duration::days(1))
+        .format(&Rfc3339)
+        .expect("expires_at");
+    let (status, invite) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/external-invites"),
+            token,
+            json!({
+                "recipient_name": "External Signer",
+                "recipient_email": "external.signer@example.test",
+                "provider_hint": "manual-provider",
+                "expires_at": expires_at,
+                "purpose": "Assinar a ata por fluxo externo"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create invite: {invite}");
+    invite["token"].as_str().expect("invite token").to_owned()
 }
 
 async fn create_signing_act(state: &AppState, token: &str, book_id: &str, title: &str) -> String {
@@ -501,6 +542,88 @@ async fn official_import_stores_exact_signed_pdf_as_non_qualified_evidence() {
     assert_ne!(view["signed"]["evidentiary_level"], "Qualified");
     assert_eq!(view["evidence"]["current_level"], "B-B");
     assert_eq!(view["evidence"]["legal_b_lt_claimed"], false);
+    assert_eq!(view["evidence"]["status_scope"], "technical_evidence_only");
+    assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+}
+
+#[tokio::test]
+async fn external_invite_response_upload_stores_signed_pdf_as_technical_evidence() {
+    let state = AppState::default();
+    let (token, _) = bootstrap(&state).await;
+    state
+        .settings
+        .write()
+        .await
+        .signing
+        .require_qualified_for_seal = true;
+    let book_id = seed_book(&state, &token).await;
+    let act_id = create_signing_act(&state, &token, &book_id, "Ata convite externo").await;
+    seal_act(&state, &token, &act_id).await;
+    let invite_token = create_external_invite(&state, &token, &act_id).await;
+
+    let sealed_pdf = sealed_pdf_bytes(&state, &act_id).await;
+    let signed_pdf = signed_pdf_for_import(&sealed_pdf, 7);
+    validate_pdf_signature(&signed_pdf).expect("test signed PDF validates");
+
+    let (status, response) = send(
+        &state,
+        external_invite_response_with_signed_pdf_req(&invite_token, &signed_pdf),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "external invite response: {response}"
+    );
+    assert_eq!(response["status"], "accepted");
+    assert_eq!(
+        response["signed_artifact"]["family"],
+        "ExternalSignerHandoff"
+    );
+    assert_eq!(
+        response["signed_artifact"]["evidentiary_level"],
+        "ExternalSignedPdfTechnicalEvidence"
+    );
+    assert_eq!(
+        response["signed_artifact"]["signed_pdf_digest"],
+        sha256_hex(&signed_pdf)
+    );
+    assert_eq!(
+        response["signed_artifact"]["status_scope"],
+        "technical_evidence_only"
+    );
+    assert_eq!(response["signed_artifact"]["qualification_claimed"], false);
+    assert_eq!(response["signed_artifact"]["legal_status_claimed"], false);
+
+    let (status, downloaded) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        downloaded, signed_pdf,
+        "uploaded signed bytes are preserved"
+    );
+
+    let (status, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["status"], "signed");
+    assert_eq!(view["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(view["signed"]["family"], "ExternalSignerHandoff");
+    assert_eq!(
+        view["signed"]["evidentiary_level"],
+        "ExternalSignedPdfTechnicalEvidence"
+    );
+    assert_ne!(view["signed"]["evidentiary_level"], "Qualified");
+    assert_eq!(view["signed"]["trusted_list_status"], Value::Null);
+    assert_eq!(view["evidence"]["current_level"], "B-B");
+    assert_eq!(view["evidence"]["legal_b_lt_claimed"], false);
+    assert_eq!(view["evidence"]["legal_b_lta_claimed"], false);
     assert_eq!(view["evidence"]["status_scope"], "technical_evidence_only");
     assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
 }
