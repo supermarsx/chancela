@@ -922,6 +922,17 @@ impl RetentionDisposalAction {
     fn is_destructive(self) -> bool {
         matches!(self, Self::Delete | Self::Anonymize)
     }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Review => "review",
+            Self::Archive => "archive",
+            Self::Anonymize => "anonymize",
+            Self::Delete => "delete",
+            Self::LegalHold => "legal_hold",
+            Self::NoAction => "no_action",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1053,9 +1064,27 @@ pub struct RetentionExecutionRequest {
     #[serde(default)]
     pub requested_policy_id: Option<String>,
     #[serde(default)]
+    pub execution_mode: Option<String>,
+    #[serde(default)]
     pub operator_notes: Option<String>,
     #[serde(default)]
     pub evidence: Option<Vec<RetentionExecutionEvidenceInput>>,
+    #[serde(default)]
+    pub approval: Option<RetentionExecutionApprovalInput>,
+}
+
+#[derive(Deserialize)]
+pub struct RetentionExecutionApprovalInput {
+    #[serde(default)]
+    pub approval_reference: Option<String>,
+    #[serde(default)]
+    pub policy_id: Option<String>,
+    #[serde(default)]
+    pub disposal_action: Option<String>,
+    #[serde(default)]
+    pub approved_by: Option<String>,
+    #[serde(default)]
+    pub approved_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1105,8 +1134,10 @@ pub struct RetentionDryRunMatch {
 #[derive(Debug)]
 struct ValidatedRetentionExecutionRequest {
     requested_policy_id: Option<RetentionPolicyId>,
+    execution_intent: RetentionExecutionIntent,
     operator_notes: Option<String>,
     evidence: Vec<RetentionOperatorEvidence>,
+    approval: Option<RetentionExecutionApproval>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1129,10 +1160,14 @@ pub struct RetentionExecutionRecord {
     #[serde(default)]
     #[serde(rename = "audit_evidence", alias = "operator_evidence")]
     pub audit_evidence: Vec<RetentionOperatorEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<RetentionExecutionApproval>,
     pub outcome: RetentionExecutionOutcome,
     pub block_reason: String,
     #[serde(default = "legacy_retention_operator_workflow")]
     pub workflow: RetentionOperatorWorkflow,
+    #[serde(default = "legacy_retention_execution_result")]
+    pub execution_result: RetentionExecutionResult,
     pub would_execute: bool,
 }
 
@@ -1140,6 +1175,20 @@ pub struct RetentionExecutionRecord {
 #[serde(rename_all = "snake_case")]
 pub enum RetentionExecutionIntent {
     ReviewOnly,
+    ExecuteSupported,
+}
+
+impl RetentionExecutionIntent {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "review_only" => Ok(Self::ReviewOnly),
+            "execute_supported" | "execute" => Ok(Self::ExecuteSupported),
+            _ => Err(ApiError::Unprocessable(
+                "invalid execution_request.execution_mode; expected review_only or execute_supported"
+                    .to_owned(),
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1147,6 +1196,7 @@ pub enum RetentionExecutionIntent {
 pub enum RetentionExecutionStatus {
     AwaitingReview,
     Blocked,
+    Executed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1154,6 +1204,7 @@ pub enum RetentionExecutionStatus {
 pub enum RetentionOperatorReviewDecision {
     ReviewRequired,
     Blocked,
+    ExecutionRecorded,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1239,6 +1290,51 @@ pub struct RetentionOperatorEvidence {
     pub value: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RetentionExecutionApproval {
+    pub approval_reference: String,
+    pub policy_id: String,
+    pub disposal_action: RetentionDisposalAction,
+    pub approved_by: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approved_at: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionExecutionResult {
+    pub bounded_executor: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executed_by: Option<String>,
+    pub targets_considered: Vec<RetentionExecutionTargetEvidence>,
+    pub targets_acted: Vec<RetentionExecutionTargetEvidence>,
+    pub targets_skipped: Vec<RetentionExecutionTargetEvidence>,
+    pub reason_codes: Vec<String>,
+    pub next_step: String,
+    pub destructive_disposal_completed: bool,
+    pub full_erasure_completed: bool,
+    #[serde(default)]
+    pub blocker_metadata: Vec<RetentionExecutionBlockerMetadata>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionExecutionTargetEvidence {
+    pub target_type: String,
+    pub target_id: String,
+    pub action: String,
+    pub reason_code: String,
+    pub detail: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RetentionExecutionBlockerMetadata {
+    pub code: String,
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RetentionExecutionOutcome {
@@ -1247,7 +1343,12 @@ pub enum RetentionExecutionOutcome {
     BlockedPolicyMismatch,
     BlockedLegalHold,
     BlockedDestructiveAction,
+    BlockedApprovalMismatch,
+    BlockedMissingTarget,
     ManualReviewRequired,
+    BoundedArchiveRecorded,
+    BoundedNoActionRecorded,
+    AlreadyExecuted,
 }
 
 pub(crate) fn load_dsr_requests(path: &FsPath) -> Option<HashMap<DsrRequestId, DsrRequest>> {
@@ -2462,7 +2563,7 @@ pub async fn retention_policy_dry_run(
         .filter(|record| retention_policy_applies(record, &candidate.scope, &candidate.category))
         .collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
-    let matches: Vec<RetentionDryRunMatch> = list
+    let mut matches: Vec<RetentionDryRunMatch> = list
         .into_iter()
         .map(|record| RetentionDryRunMatch {
             policy_id: record.id.to_string(),
@@ -2480,16 +2581,22 @@ pub async fn retention_policy_dry_run(
         })
         .collect();
     let matched_count = matches.len();
+    let prior_execution_records = state.retention_execution_records.read().await;
     let execution_record = execution_request.map(|execution_request| {
         build_retention_execution_record(
             &actor_name,
             &candidate,
             &records,
             &matches,
+            &prior_execution_records,
             execution_request,
         )
     });
+    drop(prior_execution_records);
     drop(records);
+    if let Some(record) = &execution_record {
+        apply_execution_result_to_matches(record, &mut matches);
+    }
 
     if let Some(record) = &execution_record {
         state
@@ -2518,7 +2625,7 @@ pub async fn retention_policy_dry_run(
 
     Ok(Json(RetentionDryRunReport {
         mode,
-        execution_supported: false,
+        execution_supported: true,
         destructive_execution_supported: false,
         candidate,
         matched_count,
@@ -2911,16 +3018,69 @@ fn validate_retention_execution_request(
         .requested_policy_id
         .map(|value| parse_retention_policy_id(value, "execution_request.requested_policy_id"))
         .transpose()?;
+    let execution_intent = raw
+        .execution_mode
+        .as_deref()
+        .map(RetentionExecutionIntent::parse)
+        .transpose()?
+        .unwrap_or(RetentionExecutionIntent::ReviewOnly);
     let operator_notes = optional_sensitive_checked_text(
         raw.operator_notes,
         "execution_request.operator_notes",
         MAX_RETENTION_TEXT_CHARS,
     )?;
     let evidence = sanitize_retention_execution_evidence(raw.evidence)?;
+    let approval = validate_retention_execution_approval(raw.approval)?;
     Ok(Some(ValidatedRetentionExecutionRequest {
         requested_policy_id,
+        execution_intent,
         operator_notes,
         evidence,
+        approval,
+    }))
+}
+
+fn validate_retention_execution_approval(
+    raw: Option<RetentionExecutionApprovalInput>,
+) -> Result<Option<RetentionExecutionApproval>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let approved_at = optional_rfc3339_string(
+        raw.approved_at,
+        "execution_request.approval.approved_at",
+        MAX_RETENTION_FIELD_CHARS,
+    )?;
+    Ok(Some(RetentionExecutionApproval {
+        approval_reference: required_retention_segment(
+            raw.approval_reference,
+            "execution_request.approval.approval_reference",
+            MAX_RETENTION_FIELD_CHARS,
+        )?,
+        policy_id: parse_retention_policy_id(
+            required_retention_segment(
+                raw.policy_id,
+                "execution_request.approval.policy_id",
+                MAX_RETENTION_FIELD_CHARS,
+            )?,
+            "execution_request.approval.policy_id",
+        )?
+        .to_string(),
+        disposal_action: raw
+            .disposal_action
+            .as_deref()
+            .ok_or_else(|| {
+                ApiError::Unprocessable(
+                    "execution_request.approval.disposal_action is required".to_owned(),
+                )
+            })
+            .and_then(RetentionDisposalAction::parse)?,
+        approved_by: required_retention_segment(
+            raw.approved_by,
+            "execution_request.approval.approved_by",
+            MAX_RETENTION_FIELD_CHARS,
+        )?,
+        approved_at,
     }))
 }
 
@@ -2958,25 +3118,44 @@ fn build_retention_execution_record(
     candidate: &RetentionDryRunCandidate,
     records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
     matches: &[RetentionDryRunMatch],
+    prior_execution_records: &HashMap<String, RetentionExecutionRecord>,
     request: ValidatedRetentionExecutionRequest,
 ) -> RetentionExecutionRecord {
     let requested_policy =
         retention_requested_policy(candidate, records, request.requested_policy_id);
     let legal_hold_blockers = retention_legal_hold_blockers(candidate, records);
-    let (outcome, block_reason) =
-        retention_execution_decision(&requested_policy, &legal_hold_blockers);
+    let prior_execution =
+        retention_prior_bounded_execution(candidate, &requested_policy, prior_execution_records);
+    let (outcome, block_reason) = retention_execution_decision(
+        candidate,
+        &requested_policy,
+        &legal_hold_blockers,
+        request.execution_intent,
+        request.approval.as_ref(),
+        prior_execution.as_ref(),
+    );
     let workflow = retention_operator_workflow(
         &requested_policy,
         &legal_hold_blockers,
         outcome,
         block_reason,
     );
+    let execution_result = retention_execution_result(RetentionExecutionResultContext {
+        actor_name,
+        candidate,
+        requested_policy: &requested_policy,
+        outcome,
+        workflow: &workflow,
+        execution_intent: request.execution_intent,
+        approval: request.approval.as_ref(),
+        prior_execution_id: prior_execution.as_ref(),
+    });
 
     RetentionExecutionRecord {
         id: Uuid::new_v4().to_string(),
         requested_at: now_rfc3339(),
         actor: actor_name.to_owned(),
-        execution_intent: RetentionExecutionIntent::ReviewOnly,
+        execution_intent: request.execution_intent,
         execution_status: retention_execution_status(outcome),
         operator_review_decision: retention_operator_review_decision(outcome),
         requested_policy,
@@ -2985,10 +3164,16 @@ fn build_retention_execution_record(
         legal_hold_blockers,
         operator_notes: request.operator_notes,
         audit_evidence: request.evidence,
+        approval: request.approval,
         outcome,
         block_reason: block_reason.to_owned(),
         workflow,
-        would_execute: false,
+        would_execute: matches!(
+            outcome,
+            RetentionExecutionOutcome::BoundedArchiveRecorded
+                | RetentionExecutionOutcome::BoundedNoActionRecorded
+        ),
+        execution_result,
     }
 }
 
@@ -3086,9 +3271,37 @@ fn retention_matched_records_summary(
     }
 }
 
+fn retention_prior_bounded_execution(
+    candidate: &RetentionDryRunCandidate,
+    requested_policy: &RetentionExecutionRequestedPolicy,
+    prior_execution_records: &HashMap<String, RetentionExecutionRecord>,
+) -> Option<String> {
+    let requested_policy_id = requested_policy.id.as_deref()?;
+    prior_execution_records
+        .values()
+        .filter(|record| {
+            record.candidate.scope == candidate.scope
+                && record.candidate.category == candidate.category
+                && record.candidate.record_id == candidate.record_id
+                && record.requested_policy.id.as_deref() == Some(requested_policy_id)
+                && matches!(
+                    record.outcome,
+                    RetentionExecutionOutcome::BoundedArchiveRecorded
+                        | RetentionExecutionOutcome::BoundedNoActionRecorded
+                )
+                && !record.execution_result.targets_acted.is_empty()
+        })
+        .min_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)))
+        .map(|record| record.id.clone())
+}
+
 fn retention_execution_decision(
+    candidate: &RetentionDryRunCandidate,
     requested_policy: &RetentionExecutionRequestedPolicy,
     legal_hold_blockers: &[RetentionLegalHoldBlocker],
+    execution_intent: RetentionExecutionIntent,
+    approval: Option<&RetentionExecutionApproval>,
+    prior_execution_id: Option<&String>,
 ) -> (RetentionExecutionOutcome, &'static str) {
     if !requested_policy.found {
         return (
@@ -3114,16 +3327,75 @@ fn retention_execution_decision(
             "active legal hold blocks retention execution",
         );
     }
+    if approval
+        .is_some_and(|approval| !retention_execution_approval_matches(requested_policy, approval))
+    {
+        return (
+            RetentionExecutionOutcome::BlockedApprovalMismatch,
+            "provided approval metadata does not match the requested policy/action",
+        );
+    }
+    if execution_intent == RetentionExecutionIntent::ExecuteSupported
+        && candidate.record_id.is_none()
+    {
+        return (
+            RetentionExecutionOutcome::BlockedMissingTarget,
+            "bounded execution requires a concrete record_id target",
+        );
+    }
     if requested_policy.destructive_action {
         return (
             RetentionExecutionOutcome::BlockedDestructiveAction,
-            "delete/anonymize execution is not enabled in this guarded slice",
+            if execution_intent == RetentionExecutionIntent::ExecuteSupported && approval.is_none()
+            {
+                "destructive disposal requires matching approval and is not executed by this API"
+            } else {
+                "delete/anonymize execution is not enabled in this guarded slice"
+            },
         );
+    }
+    if let Some(action) = requested_policy.disposal_action {
+        if execution_intent == RetentionExecutionIntent::ExecuteSupported {
+            if prior_execution_id.is_some() {
+                return (
+                    RetentionExecutionOutcome::AlreadyExecuted,
+                    "bounded retention action was already recorded for this target and policy",
+                );
+            }
+            return match action {
+                RetentionDisposalAction::Archive => (
+                    RetentionExecutionOutcome::BoundedArchiveRecorded,
+                    "bounded archive evidence recorded for the retention target",
+                ),
+                RetentionDisposalAction::NoAction => (
+                    RetentionExecutionOutcome::BoundedNoActionRecorded,
+                    "bounded no-action evidence recorded for the retention target",
+                ),
+                RetentionDisposalAction::Review => (
+                    RetentionExecutionOutcome::ManualReviewRequired,
+                    "retention policy requires manual review before any separate operational action",
+                ),
+                RetentionDisposalAction::LegalHold
+                | RetentionDisposalAction::Delete
+                | RetentionDisposalAction::Anonymize => (
+                    RetentionExecutionOutcome::BlockedDestructiveAction,
+                    "retention action is not executable in this guarded slice",
+                ),
+            };
+        }
     }
     (
         RetentionExecutionOutcome::ManualReviewRequired,
         "retention execution request is recorded for manual review only",
     )
+}
+
+fn retention_execution_approval_matches(
+    requested_policy: &RetentionExecutionRequestedPolicy,
+    approval: &RetentionExecutionApproval,
+) -> bool {
+    requested_policy.id.as_deref() == Some(approval.policy_id.as_str())
+        && requested_policy.disposal_action == Some(approval.disposal_action)
 }
 
 fn retention_operator_workflow(
@@ -3163,7 +3435,20 @@ fn retention_operator_workflow(
             block_reason,
             requested_policy.id.clone(),
         )),
-        RetentionExecutionOutcome::ManualReviewRequired => {}
+        RetentionExecutionOutcome::BlockedApprovalMismatch => blockers.push(retention_blocker(
+            "execution_approval_match",
+            block_reason,
+            requested_policy.id.clone(),
+        )),
+        RetentionExecutionOutcome::BlockedMissingTarget => blockers.push(retention_blocker(
+            "candidate_record_required",
+            block_reason,
+            requested_policy.id.clone(),
+        )),
+        RetentionExecutionOutcome::ManualReviewRequired
+        | RetentionExecutionOutcome::BoundedArchiveRecorded
+        | RetentionExecutionOutcome::BoundedNoActionRecorded
+        | RetentionExecutionOutcome::AlreadyExecuted => {}
     }
 
     let mut required_approvals = Vec::new();
@@ -3172,6 +3457,7 @@ fn retention_operator_workflow(
         RetentionExecutionOutcome::BlockedMissingPolicy
             | RetentionExecutionOutcome::BlockedStalePolicy
             | RetentionExecutionOutcome::BlockedPolicyMismatch
+            | RetentionExecutionOutcome::BlockedApprovalMismatch
     ) {
         required_approvals.push(retention_required_approval(
             "policy_register_review",
@@ -3219,8 +3505,23 @@ fn retention_operator_workflow(
         RetentionExecutionOutcome::BlockedDestructiveAction => {
             "Record separate governance approval before any external destructive process; this API will not execute it."
         }
+        RetentionExecutionOutcome::BlockedApprovalMismatch => {
+            "Correct the approval metadata so it matches the requested policy/action; no disposal has been executed."
+        }
+        RetentionExecutionOutcome::BlockedMissingTarget => {
+            "Provide a concrete record_id before bounded execution; no disposal has been executed."
+        }
         RetentionExecutionOutcome::ManualReviewRequired => {
             "Review the retained evidence for manual approval; no disposal has been executed."
+        }
+        RetentionExecutionOutcome::BoundedArchiveRecorded => {
+            "Bounded archive evidence was recorded for this target; no source document deletion or GDPR erasure was performed."
+        }
+        RetentionExecutionOutcome::BoundedNoActionRecorded => {
+            "Bounded no-action evidence was recorded for this target; no source document deletion or GDPR erasure was performed."
+        }
+        RetentionExecutionOutcome::AlreadyExecuted => {
+            "A prior bounded execution already recorded this target/policy action; no duplicate action was recorded."
         }
     };
 
@@ -3256,14 +3557,181 @@ fn retention_required_approval(
     }
 }
 
+struct RetentionExecutionResultContext<'a> {
+    actor_name: &'a str,
+    candidate: &'a RetentionDryRunCandidate,
+    requested_policy: &'a RetentionExecutionRequestedPolicy,
+    outcome: RetentionExecutionOutcome,
+    workflow: &'a RetentionOperatorWorkflow,
+    execution_intent: RetentionExecutionIntent,
+    approval: Option<&'a RetentionExecutionApproval>,
+    prior_execution_id: Option<&'a String>,
+}
+
+fn retention_execution_result(
+    ctx: RetentionExecutionResultContext<'_>,
+) -> RetentionExecutionResult {
+    let target = retention_execution_target(
+        ctx.candidate,
+        ctx.requested_policy,
+        outcome_reason_code(ctx.outcome),
+    );
+    let mut targets_acted = Vec::new();
+    let mut targets_skipped = Vec::new();
+    let mut reason_codes = vec![outcome_reason_code(ctx.outcome).to_owned()];
+    let mut blocker_metadata: Vec<RetentionExecutionBlockerMetadata> = ctx
+        .workflow
+        .blockers
+        .iter()
+        .map(|blocker| RetentionExecutionBlockerMetadata {
+            code: blocker.code.clone(),
+            detail: blocker.message.clone(),
+            policy_id: blocker.policy_id.clone(),
+        })
+        .collect();
+
+    let executed = matches!(
+        ctx.outcome,
+        RetentionExecutionOutcome::BoundedArchiveRecorded
+            | RetentionExecutionOutcome::BoundedNoActionRecorded
+    );
+    if executed {
+        targets_acted.push(target.clone());
+    } else {
+        targets_skipped.push(target);
+    }
+
+    if matches!(ctx.outcome, RetentionExecutionOutcome::AlreadyExecuted) {
+        if let Some(prior_execution_id) = ctx.prior_execution_id {
+            reason_codes.push("prior_bounded_execution_found".to_owned());
+            blocker_metadata.push(RetentionExecutionBlockerMetadata {
+                code: "prior_bounded_execution".to_owned(),
+                detail: format!("prior execution record {prior_execution_id} already acted"),
+                policy_id: ctx.requested_policy.id.clone(),
+            });
+        }
+    }
+
+    if ctx.requested_policy.destructive_action && ctx.approval.is_none() {
+        reason_codes.push("destructive_disposal_approval_required".to_owned());
+        blocker_metadata.push(RetentionExecutionBlockerMetadata {
+            code: "destructive_disposal_approval_required".to_owned(),
+            detail:
+                "matching approval metadata is required before any external destructive process"
+                    .to_owned(),
+            policy_id: ctx.requested_policy.id.clone(),
+        });
+    } else if ctx.requested_policy.destructive_action {
+        reason_codes.push("destructive_disposal_not_supported_by_api".to_owned());
+    }
+
+    if ctx.execution_intent == RetentionExecutionIntent::ReviewOnly {
+        reason_codes.push("review_only_intent".to_owned());
+    }
+
+    RetentionExecutionResult {
+        bounded_executor: true,
+        executed_at: executed.then(now_rfc3339),
+        executed_by: executed.then(|| ctx.actor_name.to_owned()),
+        targets_considered: vec![retention_execution_target(
+            ctx.candidate,
+            ctx.requested_policy,
+            "target_considered",
+        )],
+        targets_acted,
+        targets_skipped,
+        reason_codes,
+        next_step: ctx.workflow.next_step.clone(),
+        destructive_disposal_completed: false,
+        full_erasure_completed: false,
+        blocker_metadata,
+    }
+}
+
+fn retention_execution_target(
+    candidate: &RetentionDryRunCandidate,
+    requested_policy: &RetentionExecutionRequestedPolicy,
+    reason_code: &str,
+) -> RetentionExecutionTargetEvidence {
+    let policy_action = requested_policy
+        .disposal_action
+        .map(RetentionDisposalAction::as_str)
+        .unwrap_or("unknown_policy_action");
+    RetentionExecutionTargetEvidence {
+        target_type: "retention_candidate_record".to_owned(),
+        target_id: candidate.record_id.clone().unwrap_or_else(|| {
+            format!(
+                "scope:{};category:{}",
+                candidate.scope.as_str(),
+                candidate.category.as_str()
+            )
+        }),
+        action: format!("bounded_{policy_action}_evidence"),
+        reason_code: reason_code.to_owned(),
+        detail: match requested_policy.id.as_deref() {
+            Some(policy_id) => format!(
+                "candidate scope={} category={} evaluated against policy {}; bounded evidence only",
+                candidate.scope, candidate.category, policy_id
+            ),
+            None => format!(
+                "candidate scope={} category={} evaluated without a registered policy; no disposal executed",
+                candidate.scope, candidate.category
+            ),
+        },
+    }
+}
+
+fn outcome_reason_code(outcome: RetentionExecutionOutcome) -> &'static str {
+    match outcome {
+        RetentionExecutionOutcome::BlockedMissingPolicy => "requested_policy_required",
+        RetentionExecutionOutcome::BlockedStalePolicy => "requested_policy_active",
+        RetentionExecutionOutcome::BlockedPolicyMismatch => "requested_policy_scope_match",
+        RetentionExecutionOutcome::BlockedLegalHold => "legal_hold_release",
+        RetentionExecutionOutcome::BlockedDestructiveAction => "destructive_action_disabled",
+        RetentionExecutionOutcome::BlockedApprovalMismatch => "execution_approval_match",
+        RetentionExecutionOutcome::BlockedMissingTarget => "candidate_record_required",
+        RetentionExecutionOutcome::ManualReviewRequired => "retention_manual_review",
+        RetentionExecutionOutcome::BoundedArchiveRecorded => "bounded_archive_recorded",
+        RetentionExecutionOutcome::BoundedNoActionRecorded => "bounded_no_action_recorded",
+        RetentionExecutionOutcome::AlreadyExecuted => "already_executed",
+    }
+}
+
+fn apply_execution_result_to_matches(
+    record: &RetentionExecutionRecord,
+    matches: &mut [RetentionDryRunMatch],
+) {
+    if !matches!(
+        record.outcome,
+        RetentionExecutionOutcome::BoundedArchiveRecorded
+            | RetentionExecutionOutcome::BoundedNoActionRecorded
+    ) {
+        return;
+    }
+    let Some(policy_id) = record.requested_policy.id.as_deref() else {
+        return;
+    };
+    for matched in matches {
+        if matched.policy_id == policy_id {
+            matched.would_execute = true;
+            matched.reason = "bounded retention execution evidence recorded";
+        }
+    }
+}
+
 fn retention_execution_status(outcome: RetentionExecutionOutcome) -> RetentionExecutionStatus {
     match outcome {
         RetentionExecutionOutcome::ManualReviewRequired => RetentionExecutionStatus::AwaitingReview,
+        RetentionExecutionOutcome::BoundedArchiveRecorded
+        | RetentionExecutionOutcome::BoundedNoActionRecorded
+        | RetentionExecutionOutcome::AlreadyExecuted => RetentionExecutionStatus::Executed,
         RetentionExecutionOutcome::BlockedMissingPolicy
         | RetentionExecutionOutcome::BlockedStalePolicy
         | RetentionExecutionOutcome::BlockedPolicyMismatch
         | RetentionExecutionOutcome::BlockedLegalHold
-        | RetentionExecutionOutcome::BlockedDestructiveAction => RetentionExecutionStatus::Blocked,
+        | RetentionExecutionOutcome::BlockedDestructiveAction
+        | RetentionExecutionOutcome::BlockedApprovalMismatch
+        | RetentionExecutionOutcome::BlockedMissingTarget => RetentionExecutionStatus::Blocked,
     }
 }
 
@@ -3274,18 +3742,24 @@ fn retention_operator_review_decision(
         RetentionExecutionOutcome::ManualReviewRequired => {
             RetentionOperatorReviewDecision::ReviewRequired
         }
+        RetentionExecutionOutcome::BoundedArchiveRecorded
+        | RetentionExecutionOutcome::BoundedNoActionRecorded
+        | RetentionExecutionOutcome::AlreadyExecuted => {
+            RetentionOperatorReviewDecision::ExecutionRecorded
+        }
         RetentionExecutionOutcome::BlockedMissingPolicy
         | RetentionExecutionOutcome::BlockedStalePolicy
         | RetentionExecutionOutcome::BlockedPolicyMismatch
         | RetentionExecutionOutcome::BlockedLegalHold
-        | RetentionExecutionOutcome::BlockedDestructiveAction => {
+        | RetentionExecutionOutcome::BlockedDestructiveAction
+        | RetentionExecutionOutcome::BlockedApprovalMismatch
+        | RetentionExecutionOutcome::BlockedMissingTarget => {
             RetentionOperatorReviewDecision::Blocked
         }
     }
 }
 
 fn normalize_retention_execution_record(record: &mut RetentionExecutionRecord) {
-    record.execution_intent = RetentionExecutionIntent::ReviewOnly;
     record.execution_status = retention_execution_status(record.outcome);
     record.operator_review_decision = retention_operator_review_decision(record.outcome);
 }
@@ -3313,6 +3787,23 @@ fn legacy_retention_operator_workflow() -> RetentionOperatorWorkflow {
         )],
         next_step: "Review the retained execution evidence; no disposal has been executed."
             .to_owned(),
+    }
+}
+
+fn legacy_retention_execution_result() -> RetentionExecutionResult {
+    RetentionExecutionResult {
+        bounded_executor: true,
+        executed_at: None,
+        executed_by: None,
+        targets_considered: Vec::new(),
+        targets_acted: Vec::new(),
+        targets_skipped: Vec::new(),
+        reason_codes: vec!["legacy_review_only_record".to_owned()],
+        next_step: "Review the retained execution evidence; no disposal has been executed."
+            .to_owned(),
+        destructive_disposal_completed: false,
+        full_erasure_completed: false,
+        blocker_metadata: Vec::new(),
     }
 }
 
@@ -3371,6 +3862,19 @@ fn required_sensitive_checked_text(
     }
     reject_sensitive_evidence_markers(&value, field)?;
     Ok(value)
+}
+
+fn optional_rfc3339_string(
+    raw: Option<String>,
+    field: &str,
+    max_chars: usize,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = clean_optional_bounded(raw, field, max_chars)? else {
+        return Ok(None);
+    };
+    OffsetDateTime::parse(&value, &Rfc3339)
+        .map_err(|_| ApiError::Unprocessable(format!("{field} must be an RFC 3339 timestamp")))?;
+    Ok(Some(value))
 }
 
 fn optional_sensitive_checked_text(

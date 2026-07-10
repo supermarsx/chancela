@@ -1718,7 +1718,7 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
     .await;
     assert_eq!(status, StatusCode::OK, "dry-run succeeds: {dry_run}");
     assert_eq!(dry_run["mode"], json!("dry_run"));
-    assert_eq!(dry_run["execution_supported"], json!(false));
+    assert_eq!(dry_run["execution_supported"], json!(true));
     assert_eq!(dry_run["destructive_execution_supported"], json!(false));
     assert_eq!(dry_run["matched_count"], json!(1));
     assert_eq!(dry_run["matches"][0]["policy_id"], json!(policy_id));
@@ -1736,6 +1736,7 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
                     "record_id": "doc-123",
                     "execution_request": {
                         "requested_policy_id": policy_id,
+                        "execution_mode": "execute_supported",
                         "operator_notes": "  Operator reviewed the retention candidate.  ",
                         "evidence": [
                             {
@@ -1769,7 +1770,10 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
         execution_record["outcome"],
         json!("blocked_destructive_action")
     );
-    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(
+        execution_record["execution_intent"],
+        json!("execute_supported")
+    );
     assert_eq!(execution_record["execution_status"], json!("blocked"));
     assert_eq!(
         execution_record["operator_review_decision"],
@@ -1780,6 +1784,27 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
     assert_eq!(
         execution_record["workflow"]["blockers"][0]["code"],
         json!("destructive_action_disabled")
+    );
+    assert!(
+        execution_record["execution_result"]["reason_codes"]
+            .as_array()
+            .expect("reason codes")
+            .iter()
+            .any(|code| code == &json!("destructive_disposal_approval_required"))
+    );
+    assert!(
+        execution_record["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("acted targets")
+            .is_empty()
+    );
+    assert_eq!(
+        execution_record["execution_result"]["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        execution_record["execution_result"]["full_erasure_completed"],
+        json!(false)
     );
     assert_eq!(
         execution_record["workflow"]["blockers"][0]["policy_id"],
@@ -2019,6 +2044,151 @@ async fn retention_execution_request_records_manual_review_for_non_destructive_p
 }
 
 #[tokio::test]
+async fn retention_execution_records_bounded_archive_and_idempotent_repeat() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                retention_policy_payload("archive", "active"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "policy create: {created}");
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let request = json!({
+        "scope": "document",
+        "category": "signed_pdf",
+        "record_id": "doc-bounded-archive",
+        "execution_request": {
+            "requested_policy_id": policy_id,
+            "execution_mode": "execute_supported",
+            "operator_notes": "Bounded archive marker only.",
+            "approval": {
+                "approval_reference": "privacy-board-42",
+                "policy_id": policy_id,
+                "disposal_action": "archive",
+                "approved_by": "privacy-board",
+                "approved_at": "2026-07-10T12:00:00Z"
+            }
+        }
+    });
+
+    let (status, executed) = send(
+        state.clone(),
+        with_session(
+            post_json("/v1/privacy/retention-policies/dry-run", request.clone()),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bounded execution: {executed}");
+    assert_eq!(executed["execution_supported"], json!(true));
+    assert_eq!(executed["destructive_execution_supported"], json!(false));
+    assert_eq!(executed["matches"][0]["would_execute"], json!(true));
+    let record = &executed["execution_record"];
+    assert_eq!(record["outcome"], json!("bounded_archive_recorded"));
+    assert_eq!(record["execution_intent"], json!("execute_supported"));
+    assert_eq!(record["execution_status"], json!("executed"));
+    assert_eq!(
+        record["operator_review_decision"],
+        json!("execution_recorded")
+    );
+    assert_eq!(record["would_execute"], json!(true));
+    assert_eq!(
+        record["approval"]["approval_reference"],
+        json!("privacy-board-42")
+    );
+    assert_eq!(record["execution_result"]["executed_by"], json!("owner"));
+    assert!(record["execution_result"]["executed_at"].as_str().is_some());
+    assert_eq!(
+        record["execution_result"]["targets_considered"]
+            .as_array()
+            .expect("considered")
+            .len(),
+        1
+    );
+    assert_eq!(
+        record["execution_result"]["targets_acted"][0]["target_id"],
+        json!("doc-bounded-archive")
+    );
+    assert_eq!(
+        record["execution_result"]["targets_acted"][0]["reason_code"],
+        json!("bounded_archive_recorded")
+    );
+    assert!(
+        record["execution_result"]["targets_skipped"]
+            .as_array()
+            .expect("skipped")
+            .is_empty()
+    );
+    assert_eq!(
+        record["execution_result"]["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        record["execution_result"]["full_erasure_completed"],
+        json!(false)
+    );
+
+    let (status, repeat) = send(
+        state.clone(),
+        with_session(
+            post_json("/v1/privacy/retention-policies/dry-run", request),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "repeat execution: {repeat}");
+    let repeat_record = &repeat["execution_record"];
+    assert_eq!(repeat_record["outcome"], json!("already_executed"));
+    assert_eq!(repeat_record["execution_status"], json!("executed"));
+    assert_eq!(repeat_record["would_execute"], json!(false));
+    assert!(
+        repeat_record["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("repeat acted")
+            .is_empty()
+    );
+    assert_eq!(
+        repeat_record["execution_result"]["targets_skipped"][0]["reason_code"],
+        json!("already_executed")
+    );
+    assert!(
+        repeat_record["execution_result"]["reason_codes"]
+            .as_array()
+            .expect("repeat reason codes")
+            .iter()
+            .any(|code| code == &json!("prior_bounded_execution_found"))
+    );
+
+    let (status, history) = send(
+        state,
+        with_session(get("/v1/privacy/retention-executions"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "history: {history}");
+    let history = history.as_array().expect("history");
+    assert_eq!(history.len(), 2);
+    assert_eq!(
+        history
+            .iter()
+            .filter(|record| record["execution_result"]["targets_acted"]
+                .as_array()
+                .expect("acted")
+                .len()
+                == 1)
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn retention_execution_request_blocks_active_legal_hold() {
     let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
 
@@ -2077,6 +2247,7 @@ async fn retention_execution_request_blocks_active_legal_hold() {
                     "record_id": "doc-on-hold",
                     "execution_request": {
                         "requested_policy_id": delete_policy_id,
+                        "execution_mode": "execute_supported",
                         "operator_notes": "Legal hold checked before disposal."
                     }
                 }),
@@ -2089,7 +2260,10 @@ async fn retention_execution_request_blocks_active_legal_hold() {
     assert_eq!(body["matched_count"], json!(2));
     let execution_record = &body["execution_record"];
     assert_eq!(execution_record["outcome"], json!("blocked_legal_hold"));
-    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(
+        execution_record["execution_intent"],
+        json!("execute_supported")
+    );
     assert_eq!(execution_record["execution_status"], json!("blocked"));
     assert_eq!(
         execution_record["operator_review_decision"],
@@ -2135,6 +2309,16 @@ async fn retention_execution_request_blocks_active_legal_hold() {
         execution_record["legal_hold_blockers"][0]["policy_id"],
         json!(hold_policy_id)
     );
+    assert!(
+        execution_record["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("acted targets")
+            .is_empty()
+    );
+    assert_eq!(
+        execution_record["execution_result"]["targets_skipped"][0]["reason_code"],
+        json!("legal_hold_release")
+    );
 
     let (status, events) = send(
         state,
@@ -2166,6 +2350,7 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
                     "record_id": "doc-missing-policy",
                     "execution_request": {
                         "requested_policy_id": missing_policy_id,
+                        "execution_mode": "execute_supported",
                         "operator_notes": "No register policy found for this request."
                     }
                 }),
@@ -2183,7 +2368,10 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
         execution_record["requested_policy"]["id"],
         json!(missing_policy_id)
     );
-    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(
+        execution_record["execution_intent"],
+        json!("execute_supported")
+    );
     assert_eq!(execution_record["execution_status"], json!("blocked"));
     assert_eq!(
         execution_record["operator_review_decision"],
@@ -2198,6 +2386,16 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
     assert_eq!(
         execution_record["workflow"]["required_approvals"][0]["code"],
         json!("policy_register_review")
+    );
+    assert!(
+        execution_record["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("acted targets")
+            .is_empty()
+    );
+    assert_eq!(
+        execution_record["execution_result"]["targets_skipped"][0]["reason_code"],
+        json!("requested_policy_required")
     );
 
     let (status, created) = send(
@@ -2241,6 +2439,7 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
                     "record_id": "doc-stale-policy",
                     "execution_request": {
                         "requested_policy_id": stale_policy_id,
+                        "execution_mode": "execute_supported",
                         "operator_notes": "Policy status checked before action."
                     }
                 }),
@@ -2260,7 +2459,10 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
         json!("suspended")
     );
     assert_eq!(execution_record["requested_policy"]["active"], json!(false));
-    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(
+        execution_record["execution_intent"],
+        json!("execute_supported")
+    );
     assert_eq!(execution_record["execution_status"], json!("blocked"));
     assert_eq!(
         execution_record["operator_review_decision"],
@@ -2274,6 +2476,16 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
     assert_eq!(
         execution_record["workflow"]["required_approvals"][0]["required_from"],
         json!("privacy_or_settings_manager")
+    );
+    assert!(
+        execution_record["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("acted targets")
+            .is_empty()
+    );
+    assert_eq!(
+        execution_record["execution_result"]["targets_skipped"][0]["reason_code"],
+        json!("requested_policy_active")
     );
 
     let (status, events) = send(
