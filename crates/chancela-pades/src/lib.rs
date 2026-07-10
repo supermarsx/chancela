@@ -39,6 +39,7 @@
 pub mod archive_timestamp;
 pub mod dss;
 pub mod error;
+pub mod renewal;
 pub mod sign;
 pub mod validate;
 
@@ -55,6 +56,10 @@ pub use dss::{
     DssEvidence, DssReport, add_dss_revision, add_dss_revision_with_validation_time, inspect_dss,
 };
 pub use error::PadesError;
+pub use renewal::{
+    LtvRenewalPlan, LtvRenewalPlanAction, LtvRenewalPlanInput, LtvRenewalPlanScope,
+    plan_ltv_renewal,
+};
 pub use sign::{
     MAX_CONTENTS_BYTES, PreparedSignature, SignOptions, add_signature_timestamp, embed_signature,
     prepare_signature, sign_pdf,

@@ -14,6 +14,7 @@ use crate::archive_timestamp::{self, DocTimeStampReport};
 use crate::dss::{self, DssReport};
 use crate::error::PadesError;
 use crate::pdf;
+use crate::renewal::{self, LtvRenewalPlan};
 
 /// OID `id-aa-signatureTimeStampToken` — presence of this unsigned attribute marks a B-T signature.
 const ID_AA_SIGNATURE_TIME_STAMP_TOKEN: ObjectIdentifier =
@@ -48,6 +49,8 @@ pub struct PdfSignatureReport {
     pub dss: DssReport,
     /// Embedded document timestamp report. Presence is a technical fact, not a B-LTA claim.
     pub doc_timestamps: DocTimeStampReport,
+    /// Local technical LTV renewal planning summary. This is not a B-LT/B-LTA/legal LTV claim.
+    pub ltv_renewal_plan: LtvRenewalPlan,
 }
 
 /// Validate the (first) PAdES signature in `pdf` (SIG-24).
@@ -118,6 +121,8 @@ pub fn validate_pdf_signature(pdf: &[u8]) -> Result<PdfSignatureReport, PadesErr
     let has_signature_timestamp = detect_signature_timestamp(cms_der).unwrap_or(false);
     let dss = dss::inspect_dss_document(&doc)?;
     let doc_timestamps = archive_timestamp::inspect_doc_timestamps_document(&doc, pdf)?;
+    let ltv_renewal_plan =
+        renewal::plan_ltv_renewal(has_signature_timestamp, &dss, &doc_timestamps);
 
     Ok(PdfSignatureReport {
         byte_range,
@@ -131,6 +136,7 @@ pub fn validate_pdf_signature(pdf: &[u8]) -> Result<PdfSignatureReport, PadesErr
         has_signature_timestamp,
         dss,
         doc_timestamps,
+        ltv_renewal_plan,
     })
 }
 

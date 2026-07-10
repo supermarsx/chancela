@@ -24,9 +24,10 @@ use chancela_cades::{
 use crate::error::PadesError;
 use crate::sign::MAX_CONTENTS_BYTES;
 use crate::{
-    DocTimeStampFailureReason, DocTimeStampSemanticStatus, DssEvidence, SignOptions,
-    add_doc_timestamp_revision, add_dss_revision, add_dss_revision_with_validation_time,
-    add_signature_timestamp, inspect_doc_timestamps, inspect_dss, sign_pdf, validate_pdf_signature,
+    DocTimeStampFailureReason, DocTimeStampSemanticStatus, DssEvidence, LtvRenewalPlanAction,
+    LtvRenewalPlanInput, LtvRenewalPlanScope, SignOptions, add_doc_timestamp_revision,
+    add_dss_revision, add_dss_revision_with_validation_time, add_signature_timestamp,
+    inspect_doc_timestamps, inspect_dss, sign_pdf, validate_pdf_signature,
 };
 
 // --- OIDs used only for the in-test self-signed certificates -------------------------------------
@@ -310,6 +311,24 @@ fn rsa_sign_validates() {
     assert!(!report.has_signature_timestamp);
     assert!(!report.doc_timestamps.present);
     assert_eq!(
+        report.ltv_renewal_plan.scope,
+        LtvRenewalPlanScope::LocalTechnicalEvidenceOnly
+    );
+    assert_eq!(
+        report.ltv_renewal_plan.missing_inputs,
+        vec![
+            LtvRenewalPlanInput::SignatureTimestamp,
+            LtvRenewalPlanInput::DssRevocationEvidence,
+            LtvRenewalPlanInput::DssValidationTime,
+            LtvRenewalPlanInput::DocumentTimestamp,
+        ]
+    );
+    assert_eq!(
+        report.ltv_renewal_plan.next_action,
+        LtvRenewalPlanAction::AddSignatureTimestamp
+    );
+    assert!(report.ltv_renewal_plan.has_local_evidence_gap());
+    assert_eq!(
         report.cades.signing_time.map(|t| t.unix_timestamp()),
         Some(1_750_000_000)
     );
@@ -408,6 +427,18 @@ fn b_t_signature_timestamp_embeds_and_validates() {
         report.has_signature_timestamp,
         "signature timestamp present"
     );
+    assert_eq!(
+        report.ltv_renewal_plan.missing_inputs,
+        vec![
+            LtvRenewalPlanInput::DssRevocationEvidence,
+            LtvRenewalPlanInput::DssValidationTime,
+            LtvRenewalPlanInput::DocumentTimestamp,
+        ]
+    );
+    assert_eq!(
+        report.ltv_renewal_plan.next_action,
+        LtvRenewalPlanAction::EmbedDssRevocationEvidence
+    );
     // Adding the unsigned attribute must not disturb the ByteRange / B-B signature.
     assert!(report.covers_whole_file_except_contents);
     assert_eq!(report.cades.signer_cert_der, signer.cert_der());
@@ -445,6 +476,17 @@ fn dss_revision_appends_to_b_t_and_reports_counts_hashes() {
     assert_eq!(report.dss.crl_count(), 1);
     assert_eq!(report.dss.ocsp_hashes, vec![sha256(OCSP_DER_FIXTURE)]);
     assert_eq!(report.dss.crl_hashes, vec![sha256(CRL_DER_FIXTURE)]);
+    assert_eq!(
+        report.ltv_renewal_plan.missing_inputs,
+        vec![
+            LtvRenewalPlanInput::DssValidationTime,
+            LtvRenewalPlanInput::DocumentTimestamp,
+        ]
+    );
+    assert_eq!(
+        report.ltv_renewal_plan.next_action,
+        LtvRenewalPlanAction::RecordDssValidationTime
+    );
 
     let direct_dss = inspect_dss(&with_dss).expect("inspect DSS");
     assert_eq!(direct_dss, report.dss);
@@ -493,6 +535,16 @@ fn doc_timestamp_revision_appends_and_reports_without_lta_claim() {
         Some(DocTimeStampFailureReason::MalformedToken)
     );
     assert!(!report.doc_timestamps.all_imprints_valid());
+    assert_eq!(
+        report.ltv_renewal_plan.next_action,
+        LtvRenewalPlanAction::ReviewDocumentTimestamp
+    );
+    assert!(
+        report
+            .ltv_renewal_plan
+            .missing_inputs
+            .contains(&LtvRenewalPlanInput::DocumentTimestampImprintBinding)
+    );
 
     let direct = inspect_doc_timestamps(&with_doc_ts).expect("inspect DTS");
     assert_eq!(direct, report.doc_timestamps);
@@ -619,17 +671,57 @@ fn existing_dss_is_merged_and_deduped() {
 fn dss_validation_time_is_written_as_vri_tu_and_reported() {
     let signer = TestSigner::new_rsa("PAdES DSS TU", 12);
     let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let with_ts = add_fixture_timestamp(&signed);
     let evidence = fixture_dss_evidence(&signer);
 
-    let with_dss = add_dss_revision_with_validation_time(&signed, &evidence, "D:20260709120000Z")
+    let with_dss = add_dss_revision_with_validation_time(&with_ts, &evidence, "D:20260709120000Z")
         .expect("DSS append with TU");
     let report = validate_pdf_signature(&with_dss).expect("validate DSS TU");
 
+    assert!(report.has_signature_timestamp);
     assert!(report.dss.present);
     assert_eq!(report.dss.vri_count, 1);
     assert_eq!(report.dss.vri_tu_count, 1);
     assert!(report.dss.has_vri_tu());
     assert!(crate_find(&with_dss, b"/TU (D:20260709120000Z)").is_some());
+    assert_eq!(
+        report.ltv_renewal_plan.missing_inputs,
+        vec![LtvRenewalPlanInput::DocumentTimestamp]
+    );
+    assert_eq!(
+        report.ltv_renewal_plan.next_action,
+        LtvRenewalPlanAction::AddDocumentTimestamp
+    );
+}
+
+#[test]
+fn ltv_renewal_plan_monitors_when_local_evidence_inputs_are_present() {
+    let signer = TestSigner::new_rsa("PAdES Renewal Plan", 17);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let with_ts = add_fixture_timestamp(&signed);
+    let evidence = fixture_dss_evidence(&signer);
+    let with_dss = add_dss_revision_with_validation_time(&with_ts, &evidence, "D:20260709120000Z")
+        .expect("DSS append with TU");
+    let token = doc_timestamp_token_for_revision(&with_dss);
+
+    let with_doc_ts = add_doc_timestamp_revision(&with_dss, &token).expect("DTS append");
+    let report = validate_pdf_signature(&with_doc_ts).expect("validate renewal plan PDF");
+
+    assert!(report.has_signature_timestamp);
+    assert!(report.dss.has_revocation_evidence());
+    assert!(report.dss.has_vri_tu());
+    assert!(report.doc_timestamps.all_imprints_valid());
+    assert_eq!(
+        report.ltv_renewal_plan.scope,
+        LtvRenewalPlanScope::LocalTechnicalEvidenceOnly
+    );
+    assert!(report.ltv_renewal_plan.missing_inputs.is_empty());
+    assert!(!report.ltv_renewal_plan.has_local_evidence_gap());
+    assert!(report.ltv_renewal_plan.has_all_local_planning_inputs());
+    assert_eq!(
+        report.ltv_renewal_plan.next_action,
+        LtvRenewalPlanAction::MonitorTimestampRenewal
+    );
 }
 
 #[test]
