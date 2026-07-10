@@ -74,6 +74,10 @@ function isSha256(value) {
   return typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value);
 }
 
+function isGitSha(value) {
+  return typeof value === "string" && /^[a-fA-F0-9]{40}$/.test(value);
+}
+
 function requireReason(claim, label) {
   requireNonEmptyString(claim.reason, `${label}.reason`);
 }
@@ -215,6 +219,23 @@ function validatePublication(claim, { label, mode }) {
 
 function validateManifestTrust(manifest, mode) {
   requireRecord(manifest, "manifest");
+  const sourceProvenance = requireRecord(
+    manifest.sourceProvenance,
+    "manifest.sourceProvenance",
+  );
+  if (!isGitSha(sourceProvenance.commitSha)) {
+    fail("manifest.sourceProvenance.commitSha must be a 40-character Git commit SHA");
+  }
+  if (manifest.gitCommit !== sourceProvenance.commitSha) {
+    fail("manifest.gitCommit must mirror manifest.sourceProvenance.commitSha");
+  }
+  requireEnum(
+    sourceProvenance.sourceTreeState,
+    ["clean", "dirty", "unknown"],
+    "manifest.sourceProvenance.sourceTreeState",
+  );
+  requireEnum(sourceProvenance.buildMode, ["release"], "manifest.sourceProvenance.buildMode");
+
   const platform = requireNonEmptyString(manifest.platform, "manifest.platform");
   const integrity = requireRecord(manifest.releaseIntegrity, "manifest.releaseIntegrity");
   validateCodeSigning(integrity.codeSigning, {
@@ -245,6 +266,14 @@ function compareManifestSummary(manifest, summary) {
     manifestIntegrity.notarization.status !== summaryTrust.notarization.status
   ) {
     fail("release artifact trust status does not match manifest.releaseIntegrity");
+  }
+
+  const source = requireRecord(summary.source, "release artifact.source");
+  if (!isGitSha(source.sha)) {
+    fail("release artifact.source.sha must be a 40-character Git commit SHA");
+  }
+  if (source.sha !== manifest.sourceProvenance.commitSha) {
+    fail("release artifact source SHA does not match manifest.sourceProvenance.commitSha");
   }
 }
 
@@ -375,6 +404,11 @@ function devPackageFixture() {
       version: "0.1.0",
       platform: "linux",
       arch: "x64",
+      source: {
+        ref: "refs/heads/main",
+        sha: "b".repeat(40),
+        runId: "123",
+      },
       releaseTrust: {
         mode: "unsigned-dev",
         codeSigning: {
@@ -395,6 +429,12 @@ function devPackageFixture() {
       version: "0.1.0",
       platform: "linux",
       arch: "x64",
+      gitCommit: "b".repeat(40),
+      sourceProvenance: {
+        commitSha: "b".repeat(40),
+        sourceTreeState: "clean",
+        buildMode: "release",
+      },
       releaseIntegrity: {
         codeSigning: {
           status: "unsigned",
@@ -485,6 +525,13 @@ function runSelfTest() {
   expectFail(
     () => validateDockerStatus(dockerOverclaim, { expectedMode: "production" }),
     "must be pushed in production mode",
+  );
+
+  const sourceMismatch = structuredClone(summary);
+  sourceMismatch.source.sha = "c".repeat(40);
+  expectFail(
+    () => validatePackageSummary(sourceMismatch, { manifest, expectedMode: "unsigned-dev" }),
+    "source SHA does not match",
   );
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "chancela-release-trust-"));

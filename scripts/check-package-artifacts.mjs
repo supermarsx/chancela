@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const gitShaPattern = /^[a-fA-F0-9]{40}$/;
 
 function fail(message) {
   throw new Error(message);
@@ -88,6 +89,33 @@ function readJson(filePath) {
   }
 }
 
+function runGit(args) {
+  const result = spawnSync("git", ["-C", repoRoot, ...args], { encoding: "utf8" });
+  if (result.status !== 0) return null;
+  return result.stdout.trim();
+}
+
+function currentHeadCommit() {
+  const commit = runGit(["rev-parse", "HEAD"]);
+  return gitShaPattern.test(commit ?? "") ? commit.toLowerCase() : null;
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function expectFail(fn, expectedSubstring) {
+  try {
+    fn();
+  } catch (error) {
+    if (!error.message.includes(expectedSubstring)) {
+      fail(`Expected failure containing "${expectedSubstring}", got "${error.message}"`);
+    }
+    return;
+  }
+  fail(`Expected failure containing "${expectedSubstring}"`);
+}
+
 function walkFiles(root) {
   if (!fs.existsSync(root)) return [];
 
@@ -138,12 +166,40 @@ function assertExplicitReleaseIntegrity(manifest, label) {
   }
 }
 
+function assertSourceProvenance(manifest, label) {
+  if (!isRecord(manifest.sourceProvenance)) {
+    fail(`${label}: manifest.sourceProvenance is required`);
+  }
+
+  const provenance = manifest.sourceProvenance;
+  if (!gitShaPattern.test(provenance.commitSha ?? "")) {
+    fail(`${label}: manifest.sourceProvenance.commitSha must be a 40-character Git commit SHA`);
+  }
+  if (manifest.gitCommit !== provenance.commitSha) {
+    fail(`${label}: manifest.gitCommit must mirror manifest.sourceProvenance.commitSha`);
+  }
+  if (!["clean", "dirty", "unknown"].includes(provenance.sourceTreeState)) {
+    fail(`${label}: manifest.sourceProvenance.sourceTreeState must be clean, dirty, or unknown`);
+  }
+  if (provenance.buildMode !== "release") {
+    fail(`${label}: manifest.sourceProvenance.buildMode must be release`);
+  }
+
+  const headCommit = currentHeadCommit();
+  if (headCommit && provenance.commitSha.toLowerCase() !== headCommit) {
+    fail(
+      `${label}: manifest.sourceProvenance.commitSha ${provenance.commitSha} does not match current HEAD ${headCommit}`,
+    );
+  }
+}
+
 function assertManifest(packageRoot, label) {
   const manifestPath = path.join(packageRoot, "manifest.json");
   if (!fs.existsSync(manifestPath)) fail(`${label}: missing manifest.json`);
 
   const manifest = readJson(manifestPath);
   assertExplicitReleaseIntegrity(manifest, label);
+  assertSourceProvenance(manifest, label);
 
   if (!Array.isArray(manifest.included) || manifest.included.length === 0) {
     fail(`${label}: manifest.included must be a non-empty array`);
@@ -366,12 +422,18 @@ function writeFixturePackage(distDir) {
       sha256: sha256(filePath),
     }));
 
+  const commitSha = currentHeadCommit() ?? "0".repeat(40);
   const manifest = {
     version: "0.0.0",
     platform: "fixture",
     arch: "x64",
-    gitCommit: null,
+    gitCommit: commitSha,
     generatedAt: "2026-01-01T00:00:00.000Z",
+    sourceProvenance: {
+      commitSha,
+      sourceTreeState: "dirty",
+      buildMode: "release",
+    },
     releaseIntegrity: {
       codeSigning: {
         status: "unsigned",
@@ -400,6 +462,7 @@ function writeFixturePackage(distDir) {
   fs.writeFileSync(path.join(packageRoot, "SHA256SUMS"), `${sums}\n`);
 
   runTar(["-czf", `${stem}.tar.gz`, stem], `fixture:${stem}`);
+  return packageRoot;
 }
 
 function validateFixture() {
@@ -410,11 +473,26 @@ function validateFixture() {
     const previousCwd = process.cwd();
     process.chdir(distDir);
     try {
-      writeFixturePackage(distDir);
+      const packageRoot = writeFixturePackage(distDir);
+      validateDist(distDir, { allowEmptyDist: false });
+
+      const headCommit = currentHeadCommit();
+      if (headCommit) {
+        const manifestPath = path.join(packageRoot, "manifest.json");
+        const manifest = readJson(manifestPath);
+        const mismatchedCommit =
+          headCommit === "f".repeat(40) ? "e".repeat(40) : "f".repeat(40);
+        manifest.gitCommit = mismatchedCommit;
+        manifest.sourceProvenance.commitSha = mismatchedCommit;
+        fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+        expectFail(
+          () => assertPackageDirectory(packageRoot, "fixture:mismatched-head"),
+          "does not match current HEAD",
+        );
+      }
     } finally {
       process.chdir(previousCwd);
     }
-    validateDist(distDir, { allowEmptyDist: false });
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

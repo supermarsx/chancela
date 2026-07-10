@@ -102,12 +102,21 @@ if git_commit_candidate="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null)"; the
     git_commit="$git_commit_candidate"
 fi
 
-node - "$stage_dir" "$version" "$platform" "$arch" "$git_commit" <<'NODE'
+source_tree_state='unknown'
+if git_status="$(git -C "$repo_root" status --porcelain --untracked-files=all 2>/dev/null)"; then
+    if [ -n "$git_status" ]; then
+        source_tree_state='dirty'
+    else
+        source_tree_state='clean'
+    fi
+fi
+
+node - "$stage_dir" "$version" "$platform" "$arch" "$git_commit" "$source_tree_state" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const [stageDir, version, platform, arch, gitCommit] = process.argv.slice(2);
+const [stageDir, version, platform, arch, gitCommit, sourceTreeState] = process.argv.slice(2);
 
 function walk(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -152,6 +161,11 @@ const manifest = {
   arch,
   gitCommit: gitCommit || null,
   generatedAt: new Date().toISOString(),
+  sourceProvenance: {
+    commitSha: gitCommit || null,
+    sourceTreeState,
+    buildMode: 'release',
+  },
   releaseIntegrity: {
     codeSigning: {
       status: 'unsigned',

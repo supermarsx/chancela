@@ -13,6 +13,9 @@ publication unless those steps actually happened.
 - `metadata` runs `node scripts/check-release-trust.mjs self-test`, which proves
   the release-trust validator accepts explicit unsigned/local modes and rejects
   production claims without evidence.
+- `metadata` runs `node scripts/check-package-artifacts.mjs --fixture
+  --skip-dist`, which proves package manifests must carry source provenance and
+  rejects a fixture manifest whose commit SHA does not match the current HEAD.
 - `supply-chain` generates `dist/supply-chain/chancela-dependency-sbom.cdx.json`
   from `package-lock.json` and `cargo metadata --locked`, then validates that
   the CycloneDX SBOM includes the expected npm and Cargo ecosystems.
@@ -22,7 +25,13 @@ publication unless those steps actually happened.
   `*-release-artifact.json` metadata file, then runs
   `node scripts/check-release-trust.mjs package --expect-mode unsigned-dev`
   against the package summary and copied package manifest. This intentionally
-  passes only explicit unsigned package metadata today.
+  passes only explicit unsigned package metadata today. The same check also
+  confirms the release summary source SHA matches
+  `manifest.sourceProvenance.commitSha`.
+- The release workflow runs `npm run test:package-integrity` against the staged
+  package and tarball before upload. The package manifest must include
+  `sourceProvenance.commitSha`, `sourceProvenance.sourceTreeState`, and
+  `sourceProvenance.buildMode=release`, with the commit matching current HEAD.
 - The Docker lane, on `main` pushes and manual runs, still builds the server
   image locally, applies OCI labels, boots it, and checks `/health` for durable
   persistence.
@@ -47,8 +56,9 @@ publication unless those steps actually happened.
 
 ## Not Yet Enforced or Claimed
 
-- Release packages are uploaded with manifests and SHA-256 checksums, but there
-  is no package code signing or notarization step configured.
+- Release packages are uploaded with source provenance, manifests, and SHA-256
+  checksums, but there is no package code signing or notarization step
+  configured.
 - The Docker image is local-only in CI. It is not pushed to a registry, signed,
   attested, or notarized.
 - The Docker security artifact includes

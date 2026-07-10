@@ -63,6 +63,9 @@ jobs:
       - name: Build and stage package
         run: npm run package
 
+      - name: Check package artifact integrity
+        run: npm run test:package-integrity
+
       - name: Collect manifest and checksum metadata
         id: collect
         shell: pwsh
@@ -106,6 +109,7 @@ jobs:
           Set-Content -LiteralPath $tarballSumsOut -Encoding ASCII -Value "$tarballHash  *$($tarball.Name)"
 
           $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $sourceSha = (& git rev-parse HEAD).Trim()
           $codeSigning = $manifest.releaseIntegrity.codeSigning
           $notarization = $manifest.releaseIntegrity.notarization
           $summary = [ordered]@{
@@ -116,7 +120,7 @@ jobs:
               arch = $manifest.arch
               source = [ordered]@{
                   ref = $env:GITHUB_REF
-                  sha = $env:GITHUB_SHA
+                  sha = $sourceSha
                   runId = $env:GITHUB_RUN_ID
                   runAttempt = $env:GITHUB_RUN_ATTEMPT
               }

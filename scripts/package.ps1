@@ -143,6 +143,20 @@ try {
     $gitCommit = $null
 }
 
+$sourceTreeState = 'unknown'
+try {
+    $gitStatus = (& git -C $repoRoot status --porcelain --untracked-files=all 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+        if ($gitStatus) {
+            $sourceTreeState = 'dirty'
+        } else {
+            $sourceTreeState = 'clean'
+        }
+    }
+} catch {
+    $sourceTreeState = 'unknown'
+}
+
 $includedFiles = Get-ChildItem -Path $stageDir -Recurse -File |
     Where-Object { $_.Name -notin @('manifest.json', 'SHA256SUMS') } |
     Sort-Object FullName |
@@ -169,6 +183,11 @@ $manifest = [pscustomobject][ordered]@{
     arch = $arch
     gitCommit = $gitCommit
     generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+    sourceProvenance = [pscustomobject][ordered]@{
+        commitSha = $gitCommit
+        sourceTreeState = $sourceTreeState
+        buildMode = 'release'
+    }
     releaseIntegrity = [pscustomobject][ordered]@{
         codeSigning = [pscustomobject][ordered]@{
             status = 'unsigned'

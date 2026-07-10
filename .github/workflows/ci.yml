@@ -42,6 +42,9 @@ jobs:
       - name: Check release trust validator fixtures
         run: node scripts/check-release-trust.mjs self-test
 
+      - name: Check package provenance fixtures
+        run: node scripts/check-package-artifacts.mjs --fixture --skip-dist
+
   # ---------------------------------------------------------------------------
   # Supply chain: deterministic lockfile SBOM plus advisory reports. SBOM
   # generation/check is enforced; vulnerability reports are report-only by
