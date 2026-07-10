@@ -259,6 +259,155 @@ pub struct DocumentReference {
     pub reference: Option<String>,
 }
 
+/// Boundary marker for the written-resolution evidence status derivation. The status is a
+/// workflow/evidence-presence signal only; it is not a legal-sufficiency conclusion.
+pub const WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY: &str = "workflow_evidence_status_only";
+
+/// Optional written-resolution checklist metadata captured on an act. The stored data is
+/// evidence-oriented: operators can record references and digests, while status is derived from
+/// this metadata plus signed signatory slots and digested attachments.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct WrittenResolutionEvidence {
+    /// Operator checklist items for the written approvals/evidence retained for this act.
+    #[serde(default)]
+    pub checklist: Vec<WrittenResolutionEvidenceItem>,
+    /// Operator note about the evidence capture. This is context only, not a validity claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One written-resolution evidence checklist item.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WrittenResolutionEvidenceItem {
+    /// Human label for the evidence item.
+    pub label: String,
+    /// External reference / locator when the item is referenced but not itself digest-bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// Optional sha-256 digest of the retained evidence bytes. Presence means this checklist item
+    /// is bound into the sealed act payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<[u8; 32]>,
+    /// Operator note about this item. This is evidence context only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Derived technical status for written-resolution evidence capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WrittenResolutionEvidenceStatus {
+    /// The act is not a written-resolution act.
+    NotApplicable,
+    /// Written-resolution channel selected, but no bound evidence and no reference-only evidence.
+    Missing,
+    /// Written-resolution evidence is referenced, but no digest/signed slot binds it.
+    ReferencedOnly,
+    /// At least one signed signatory slot, digested attachment, or digested checklist item exists.
+    BoundPresent,
+}
+
+impl WrittenResolutionEvidenceStatus {
+    /// Stable wire/status string.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            WrittenResolutionEvidenceStatus::NotApplicable => "not_applicable",
+            WrittenResolutionEvidenceStatus::Missing => "missing",
+            WrittenResolutionEvidenceStatus::ReferencedOnly => "referenced_only",
+            WrittenResolutionEvidenceStatus::BoundPresent => "bound_present",
+        }
+    }
+}
+
+/// Aggregate counts behind a written-resolution evidence status. These are technical
+/// evidence-presence counts only; they do not establish unanimity, signature qualification,
+/// timestamp sufficiency, legal sufficiency, or enforceability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WrittenResolutionEvidenceSummary {
+    /// Derived technical status.
+    pub status: WrittenResolutionEvidenceStatus,
+    /// Signed signatory slots on the act.
+    pub signed_signatory_slots: usize,
+    /// Attachments carrying a digest.
+    pub digested_attachments: usize,
+    /// Checklist items recorded in the optional metadata block.
+    pub checklist_items: usize,
+    /// Checklist items carrying a digest.
+    pub digested_checklist_items: usize,
+    /// Checklist items with a reference but no digest.
+    pub referenced_checklist_items: usize,
+}
+
+impl WrittenResolutionEvidenceSummary {
+    /// Count of evidence surfaces bound into the sealed payload or signed slot set.
+    #[must_use]
+    pub const fn bound_count(self) -> usize {
+        self.signed_signatory_slots + self.digested_attachments + self.digested_checklist_items
+    }
+
+    /// Count of reference-only evidence surfaces.
+    #[must_use]
+    pub const fn referenced_only_count(self) -> usize {
+        self.referenced_checklist_items
+    }
+}
+
+/// Derive the written-resolution evidence status for an act. This is a workflow/evidence
+/// availability signal only and intentionally makes no legal sufficiency claim.
+#[must_use]
+pub fn written_resolution_evidence_summary(act: &Act) -> WrittenResolutionEvidenceSummary {
+    let mut summary = WrittenResolutionEvidenceSummary {
+        status: WrittenResolutionEvidenceStatus::NotApplicable,
+        signed_signatory_slots: 0,
+        digested_attachments: 0,
+        checklist_items: 0,
+        digested_checklist_items: 0,
+        referenced_checklist_items: 0,
+    };
+
+    if act.channel != MeetingChannel::WrittenResolution {
+        return summary;
+    }
+
+    summary.signed_signatory_slots = act.signatories.iter().filter(|slot| slot.signed).count();
+    summary.digested_attachments = act
+        .attachments
+        .iter()
+        .filter(|attachment| attachment.digest.is_some())
+        .count();
+
+    if let Some(evidence) = &act.written_resolution_evidence {
+        summary.checklist_items = evidence.checklist.len();
+        summary.digested_checklist_items = evidence
+            .checklist
+            .iter()
+            .filter(|item| item.digest.is_some())
+            .count();
+        summary.referenced_checklist_items = evidence
+            .checklist
+            .iter()
+            .filter(|item| {
+                item.digest.is_none()
+                    && item
+                        .reference
+                        .as_deref()
+                        .is_some_and(|reference| !reference.trim().is_empty())
+            })
+            .count();
+    }
+
+    summary.status = if summary.bound_count() > 0 {
+        WrittenResolutionEvidenceStatus::BoundPresent
+    } else if summary.referenced_only_count() > 0 {
+        WrittenResolutionEvidenceStatus::ReferencedOnly
+    } else {
+        WrittenResolutionEvidenceStatus::Missing
+    };
+
+    summary
+}
+
 /// A structured voting result for one resolution (CSC art. 63.º "voting results").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VoteResult {
@@ -501,6 +650,10 @@ pub struct Act {
     /// Documents submitted to or referenced by the meeting (CSC art. 63.º). Additive; empty.
     #[serde(default)]
     pub referenced_documents: Vec<DocumentReference>,
+    /// Optional written-resolution evidence checklist metadata. Evidence-oriented only: derived
+    /// status is computed from this metadata, signed signatory slots, and digested attachments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub written_resolution_evidence: Option<WrittenResolutionEvidence>,
     /// The deliberations text — the substance of the ata.
     pub deliberations: String,
     /// Structured deliberations, additive to the free-text `deliberations` (R3). Empty on the
@@ -559,6 +712,7 @@ impl Act {
             members_present: None,
             members_represented: None,
             referenced_documents: Vec::new(),
+            written_resolution_evidence: None,
             deliberations: String::new(),
             deliberation_items: Vec::new(),
             telematic_evidence: None,
@@ -843,14 +997,17 @@ mod tests {
         obj.remove("convening");
         obj.remove("attendees");
         obj.remove("ai_provenance");
+        obj.remove("written_resolution_evidence");
         assert!(!obj.contains_key("convening"));
         assert!(!obj.contains_key("attendees"));
         assert!(!obj.contains_key("ai_provenance"));
+        assert!(!obj.contains_key("written_resolution_evidence"));
 
         let restored: Act = serde_json::from_value(value).unwrap();
         assert_eq!(restored.convening, None);
         assert!(restored.attendees.is_empty());
         assert_eq!(restored.ai_provenance, None);
+        assert_eq!(restored.written_resolution_evidence, None);
         // Everything round-trips: the defaulted act equals the original, and re-serializes
         // identically.
         assert_eq!(restored, act);
@@ -904,6 +1061,76 @@ mod tests {
         let json = serde_json::to_string(&act).unwrap();
         let restored: Act = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, act);
+    }
+
+    #[test]
+    fn written_resolution_evidence_round_trips_and_status_is_derived() {
+        let mut act = Act::draft(
+            BookId::new(),
+            "Written resolution",
+            MeetingChannel::WrittenResolution,
+        );
+        assert_eq!(
+            written_resolution_evidence_summary(&act).status,
+            WrittenResolutionEvidenceStatus::Missing
+        );
+
+        act.written_resolution_evidence = Some(WrittenResolutionEvidence {
+            checklist: vec![
+                WrittenResolutionEvidenceItem {
+                    label: "Circular approval email".to_owned(),
+                    reference: Some("mailbox:thread-123".to_owned()),
+                    digest: None,
+                    note: Some("reference only".to_owned()),
+                },
+                WrittenResolutionEvidenceItem {
+                    label: "Signed written approval pack".to_owned(),
+                    reference: Some("doc:approval-pack".to_owned()),
+                    digest: Some([3; 32]),
+                    note: Some("digest retained".to_owned()),
+                },
+            ],
+            note: Some("operator capture note".to_owned()),
+        });
+
+        let json = serde_json::to_string(&act).unwrap();
+        let restored: Act = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, act);
+
+        let summary = written_resolution_evidence_summary(&restored);
+        assert_eq!(
+            summary.status,
+            WrittenResolutionEvidenceStatus::BoundPresent
+        );
+        assert_eq!(summary.checklist_items, 2);
+        assert_eq!(summary.digested_checklist_items, 1);
+        assert_eq!(summary.referenced_checklist_items, 1);
+        assert_eq!(summary.bound_count(), 1);
+
+        let mut referenced = Act::draft(
+            BookId::new(),
+            "Referenced only",
+            MeetingChannel::WrittenResolution,
+        );
+        referenced.written_resolution_evidence = Some(WrittenResolutionEvidence {
+            checklist: vec![WrittenResolutionEvidenceItem {
+                label: "Approval folder".to_owned(),
+                reference: Some("folder:approvals".to_owned()),
+                digest: None,
+                note: None,
+            }],
+            note: None,
+        });
+        assert_eq!(
+            written_resolution_evidence_summary(&referenced).status,
+            WrittenResolutionEvidenceStatus::ReferencedOnly
+        );
+
+        referenced.channel = MeetingChannel::Physical;
+        assert_eq!(
+            written_resolution_evidence_summary(&referenced).status,
+            WrittenResolutionEvidenceStatus::NotApplicable
+        );
     }
 
     #[test]

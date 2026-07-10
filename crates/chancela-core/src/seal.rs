@@ -17,6 +17,7 @@ use chancela_ledger::Ledger;
 use crate::act::{
     Act, ActState, AgendaItem, Attachment, Attendee, Convening, DeliberationItem,
     DocumentReference, MeetingChannel, Mesa, SealMetadata, SignatorySlot,
+    WrittenResolutionEvidence,
 };
 use crate::book::{Book, TermoDeAbertura};
 use crate::entity::Entity;
@@ -65,6 +66,8 @@ struct ActPayload<'a> {
     mesa: &'a Mesa,
     agenda: &'a [AgendaItem],
     referenced_documents: &'a [DocumentReference],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    written_resolution_evidence: Option<&'a WrittenResolutionEvidence>,
     deliberation_items: &'a [DeliberationItem],
     members_present: Option<u32>,
     members_represented: Option<u32>,
@@ -97,6 +100,7 @@ impl<'a> ActPayload<'a> {
             mesa: &act.mesa,
             agenda: &act.agenda,
             referenced_documents: &act.referenced_documents,
+            written_resolution_evidence: act.written_resolution_evidence.as_ref(),
             deliberation_items: &act.deliberation_items,
             members_present: act.members_present,
             members_represented: act.members_represented,
@@ -221,7 +225,10 @@ mod tests {
     use super::*;
     use time::macros::{date, time};
 
-    use crate::act::{Act, ActState, AgendaItem, MeetingChannel};
+    use crate::act::{
+        Act, ActState, AgendaItem, MeetingChannel, WrittenResolutionEvidence,
+        WrittenResolutionEvidenceItem,
+    };
     use crate::book::{Book, BookKind, NumberingScheme};
     use crate::entity::{Entity, EntityId, EntityKind, Nipc};
     use crate::rules::CscArt63RulePack;
@@ -634,6 +641,33 @@ mod tests {
             weight: Some(crate::act::AttendanceWeight::Permilage(250)),
         }];
         assert_ne!(bytes(&base), bytes(&with_attendees), "attendees must bind");
+    }
+
+    #[test]
+    fn written_resolution_evidence_binds_into_the_seal_digest_when_present() {
+        let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
+        let mut base = ready_act(&book);
+        base.channel = MeetingChannel::WrittenResolution;
+        let bytes = |a: &Act| serde_json::to_vec(&ActPayload::of(a)).unwrap();
+
+        let mut with_evidence = base.clone();
+        with_evidence.written_resolution_evidence = Some(WrittenResolutionEvidence {
+            checklist: vec![WrittenResolutionEvidenceItem {
+                label: "Signed written approvals".to_owned(),
+                reference: Some("doc:written-approvals".to_owned()),
+                digest: Some([11; 32]),
+                note: Some("capture note".to_owned()),
+            }],
+            note: Some("operator note".to_owned()),
+        });
+
+        assert_ne!(
+            bytes(&base),
+            bytes(&with_evidence),
+            "written-resolution evidence must bind"
+        );
+        let json = String::from_utf8(bytes(&with_evidence)).unwrap();
+        assert!(json.contains("written_resolution_evidence"));
     }
 
     #[test]

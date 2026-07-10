@@ -8,6 +8,8 @@
 
 use crate::act::{
     Act, AttendanceWeight, MeetingChannel, PresenceMode, SignatoryCapacity, VoteResult,
+    WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY, WrittenResolutionEvidenceStatus,
+    written_resolution_evidence_summary,
 };
 use crate::entity::{Entity, EntityFamily, EntityKind, StatuteOverrides};
 
@@ -290,25 +292,34 @@ fn channel_warning(act: &Act, entity: &Entity, prefix: &str) -> Option<Complianc
     }
 }
 
-/// Written resolutions need a captured written-evidence surface. This check does not try to
-/// prove the legal threshold or participant set; it only warns when the channel is selected but
-/// the act has neither signatory slots nor a digested attachment bound into the seal payload.
+/// Written resolutions need a captured written-evidence surface. This check only reports the
+/// technical evidence-presence status; it does not prove the legal threshold, participant set,
+/// unanimity, signature qualification, timestamp sufficiency, enforceability, or validity.
 fn written_resolution_evidence_warning(act: &Act, prefix: &str) -> Option<ComplianceIssue> {
-    if act.channel != MeetingChannel::WrittenResolution {
-        return None;
+    let summary = written_resolution_evidence_summary(act);
+    match summary.status {
+        WrittenResolutionEvidenceStatus::NotApplicable
+        | WrittenResolutionEvidenceStatus::BoundPresent => None,
+        WrittenResolutionEvidenceStatus::Missing => Some(ComplianceIssue::warning(
+            &format!("{prefix}/written-resolution-evidence"),
+            format!(
+                "written-resolution channel has no signed signatory slot, digested attachment, \
+                 or digested checklist item; technical evidence status is {} ({})",
+                summary.status.as_str(),
+                WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY
+            ),
+        )),
+        WrittenResolutionEvidenceStatus::ReferencedOnly => Some(ComplianceIssue::warning(
+            &format!("{prefix}/written-resolution-evidence"),
+            format!(
+                "written-resolution evidence is referenced, but no signed signatory slot, \
+                 digested attachment, or digested checklist item is bound into the record; \
+                 technical evidence status is {} ({})",
+                summary.status.as_str(),
+                WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY
+            ),
+        )),
     }
-
-    let has_bound_evidence =
-        !act.signatories.is_empty() || act.attachments.iter().any(|a| a.digest.is_some());
-    if has_bound_evidence {
-        return None;
-    }
-
-    Some(ComplianceIssue::warning(
-        &format!("{prefix}/written-resolution-evidence"),
-        "written-resolution channel has no signatory slots or digested attachment; retain the \
-         written approvals/evidence and bind them into the sealed record",
-    ))
 }
 
 /// The weighted-voting unit a family can validate from today's attendance model.
@@ -1173,17 +1184,28 @@ mod tests {
 
     #[test]
     fn written_resolution_without_bound_evidence_warns_as_pending_advisory() {
-        use crate::act::SignatorySlot;
+        use crate::act::{
+            SignatorySlot, WrittenResolutionEvidence, WrittenResolutionEvidenceItem,
+            written_resolution_evidence_summary,
+        };
 
         let mut act = complete_act();
         act.channel = MeetingChannel::WrittenResolution;
 
+        let summary = written_resolution_evidence_summary(&act);
+        assert_eq!(summary.status, WrittenResolutionEvidenceStatus::Missing);
         let issues = CscArt63RulePack.check_act(&act, &sa_entity());
         let issue = issues
             .iter()
             .find(|i| i.rule_id == "CSC-54/written-resolution-evidence")
             .expect("written resolution without evidence should warn");
         assert_eq!(issue.severity, Severity::Warning);
+        assert!(issue.message.contains("missing"));
+        assert!(
+            issue
+                .message
+                .contains(WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY)
+        );
         let basis = issue.legal_basis.first().expect("CSC art. 54 basis");
         assert_eq!(basis.source_id, "csc");
         assert_eq!(basis.article.as_deref(), Some("54"));
@@ -1191,6 +1213,74 @@ mod tests {
         assert_eq!(basis.verification, LegalBasisVerification::Pending);
         assert!(!basis.source_complete);
 
+        act.written_resolution_evidence = Some(WrittenResolutionEvidence {
+            checklist: vec![WrittenResolutionEvidenceItem {
+                label: "Approval reference".into(),
+                reference: Some("folder:approvals".into()),
+                digest: None,
+                note: Some("operator note".into()),
+            }],
+            note: Some("reference retained elsewhere".into()),
+        });
+        let summary = written_resolution_evidence_summary(&act);
+        assert_eq!(
+            summary.status,
+            WrittenResolutionEvidenceStatus::ReferencedOnly
+        );
+        assert_eq!(summary.referenced_only_count(), 1);
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        let issue = issues
+            .iter()
+            .find(|i| i.rule_id == "CSC-54/written-resolution-evidence")
+            .expect("referenced-only evidence should warn");
+        assert_eq!(issue.severity, Severity::Warning);
+        assert!(issue.message.contains("referenced_only"));
+
+        act.signatories.push(SignatorySlot {
+            name: "Sócia A".into(),
+            email: None,
+            capacity: SignatoryCapacity::Member,
+            signed: false,
+            permilage: None,
+        });
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.rule_id == "CSC-54/written-resolution-evidence"),
+            "unsigned signatory slots must not clear the evidence advisory"
+        );
+
+        act.signatories[0].signed = true;
+        let summary = written_resolution_evidence_summary(&act);
+        assert_eq!(
+            summary.status,
+            WrittenResolutionEvidenceStatus::BoundPresent
+        );
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id == "CSC-54/written-resolution-evidence"),
+            "signed signatory slots should clear the evidence advisory: {issues:?}"
+        );
+
+        act.signatories.clear();
+        act.written_resolution_evidence.as_mut().unwrap().checklist[0].digest = Some([5; 32]);
+        let summary = written_resolution_evidence_summary(&act);
+        assert_eq!(
+            summary.status,
+            WrittenResolutionEvidenceStatus::BoundPresent
+        );
+        let issues = CscArt63RulePack.check_act(&act, &sa_entity());
+        assert!(
+            !issues
+                .iter()
+                .any(|i| i.rule_id == "CSC-54/written-resolution-evidence"),
+            "digested checklist items should clear the evidence advisory: {issues:?}"
+        );
+
+        act.written_resolution_evidence = None;
         act.signatories.push(SignatorySlot {
             name: "Sócia A".into(),
             email: None,

@@ -26,7 +26,7 @@ use crate::authz::{require_permission, scope_of_act, scope_of_book};
 use crate::dto::{
     ActView, AdvanceAct, ArchiveAct, ComplianceResponse, ConveningAdvisory, DispatchConvening,
     DraftAct, HumanVerificationDecision, IssueView, PatchAct, SealAct, SealResponse,
-    VerifyAiHumanReview, read_redaction_for_actor,
+    VerifyAiHumanReview, WrittenResolutionEvidenceStatusView, read_redaction_for_actor,
 };
 use crate::error::ApiError;
 
@@ -155,6 +155,12 @@ pub async fn patch_act(
     }
     if let Some(referenced_documents) = req.referenced_documents {
         next.referenced_documents = referenced_documents.into_iter().map(Into::into).collect();
+    }
+    if let Some(evidence) = req.written_resolution_evidence {
+        next.written_resolution_evidence = match evidence {
+            Some(evidence) => Some(evidence.into_core()?),
+            None => None,
+        };
     }
     if let Some(deliberations) = req.deliberations {
         next.deliberations = deliberations;
@@ -380,6 +386,9 @@ pub async fn get_compliance(
         errors,
         warnings,
         seal_allowed,
+        written_resolution_evidence_status: WrittenResolutionEvidenceStatusView::from_summary(
+            chancela_core::written_resolution_evidence_summary(act),
+        ),
         convening_advisories: convening_advisories_for(entity, act),
     }))
 }
@@ -804,7 +813,9 @@ mod tests {
 
     use axum::extract::State;
     use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
-    use chancela_core::{Book, BookKind, MeetingChannel, Nipc, NumberingScheme, TermoDeAbertura};
+    use chancela_core::{
+        AgendaItem, Book, BookKind, MeetingChannel, Mesa, Nipc, NumberingScheme, TermoDeAbertura,
+    };
     use serde_json::json;
     use time::format_description::well_known::Rfc3339;
 
@@ -928,6 +939,190 @@ mod tests {
         assert_eq!(
             loaded.deliberations,
             "Working text persisted before sealing."
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_act_written_resolution_evidence_round_trips_and_persists() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        let act = Act::draft(
+            book.id,
+            "Written resolution",
+            MeetingChannel::WrittenResolution,
+        );
+        let act_id = act.id;
+
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| {
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)
+            })
+            .expect("seed persisted");
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act);
+
+        let digest = "11".repeat(32);
+        let req: PatchAct = serde_json::from_value(json!({
+            "written_resolution_evidence": {
+                "note": "operator-private evidence note",
+                "checklist": [{
+                    "label": "Signed approvals pack",
+                    "reference": "doc:written-approvals",
+                    "digest": digest,
+                    "note": "retained in document store"
+                }]
+            }
+        }))
+        .expect("patch body");
+        let Json(view) = patch_act(
+            State(state.clone()),
+            Path(act_id.0),
+            actor.clone(),
+            Json(req),
+        )
+        .await
+        .expect("patch succeeds");
+
+        let evidence = view
+            .written_resolution_evidence
+            .expect("evidence metadata returned");
+        assert_eq!(evidence.status.status, "bound_present");
+        assert_eq!(evidence.status.bound_count, 1);
+        assert_eq!(evidence.status.digested_checklist_items, 1);
+        assert_eq!(
+            evidence.checklist[0].digest.as_deref(),
+            Some(digest.as_str())
+        );
+
+        let restarted = AppState::with_data_dir(tmp.path());
+        let acts = restarted.acts.read().await;
+        let loaded = acts.get(&act_id).expect("act reloads");
+        let loaded_evidence = loaded
+            .written_resolution_evidence
+            .as_ref()
+            .expect("evidence persisted");
+        assert_eq!(
+            loaded_evidence.note.as_deref(),
+            Some("operator-private evidence note")
+        );
+        assert_eq!(loaded_evidence.checklist[0].digest, Some([0x11; 32]));
+
+        drop(acts);
+        let clear_req: PatchAct = serde_json::from_value(json!({
+            "written_resolution_evidence": null
+        }))
+        .expect("clear body");
+        let Json(view) = patch_act(State(state), Path(act_id.0), actor, Json(clear_req))
+            .await
+            .expect("clear succeeds");
+        assert!(view.written_resolution_evidence.is_none());
+    }
+
+    #[tokio::test]
+    async fn compliance_reports_written_resolution_evidence_status_only() {
+        let state = AppState::default();
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let book = opened_book(&entity, BookKind::AssembleiaGeral);
+        let mut act = Act::draft(
+            book.id,
+            "Written resolution",
+            MeetingChannel::WrittenResolution,
+        );
+        act.meeting_date =
+            Some(time::Date::from_calendar_date(2026, time::Month::March, 1).expect("valid date"));
+        act.meeting_time = Some(time::Time::from_hms(10, 0, 0).expect("valid time"));
+        act.place = Some("Sede social".to_owned());
+        act.mesa = Mesa {
+            presidente: Some("Presidente".to_owned()),
+            secretarios: vec!["Secretario".to_owned()],
+        };
+        act.agenda = vec![AgendaItem {
+            number: 1,
+            text: "Ponto unico".to_owned(),
+        }];
+        act.attendance_reference = Some("Lista de presencas".to_owned());
+        act.deliberations = "Deliberacao por escrito registada.".to_owned();
+        act.written_resolution_evidence = Some(chancela_core::WrittenResolutionEvidence {
+            checklist: vec![chancela_core::WrittenResolutionEvidenceItem {
+                label: "Approval reference".to_owned(),
+                reference: Some("folder:approvals".to_owned()),
+                digest: None,
+                note: Some("reference only".to_owned()),
+            }],
+            note: None,
+        });
+        let act_id = act.id;
+
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act);
+
+        let Json(report) = get_compliance(State(state.clone()), Path(act_id.0), actor.clone())
+            .await
+            .expect("compliance succeeds");
+        assert_eq!(
+            report.written_resolution_evidence_status.status,
+            "referenced_only"
+        );
+        assert_eq!(
+            report.written_resolution_evidence_status.boundary,
+            chancela_core::WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY
+        );
+        assert_eq!(
+            report
+                .written_resolution_evidence_status
+                .referenced_checklist_items,
+            1
+        );
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.rule_id == "CSC-54/written-resolution-evidence")
+        );
+
+        {
+            let mut acts = state.acts.write().await;
+            let act = acts.get_mut(&act_id).expect("act exists");
+            act.written_resolution_evidence.as_mut().unwrap().checklist[0].digest =
+                Some([0x22; 32]);
+        }
+
+        let Json(report) = get_compliance(State(state.clone()), Path(act_id.0), actor.clone())
+            .await
+            .expect("compliance succeeds");
+        assert_eq!(
+            report.written_resolution_evidence_status.status,
+            "bound_present"
+        );
+        assert_eq!(report.written_resolution_evidence_status.bound_count, 1);
+        assert!(
+            !report
+                .issues
+                .iter()
+                .any(|issue| issue.rule_id == "CSC-54/written-resolution-evidence")
+        );
+
+        {
+            let mut acts = state.acts.write().await;
+            acts.get_mut(&act_id).expect("act exists").channel = MeetingChannel::Physical;
+        }
+        let Json(report) = get_compliance(State(state), Path(act_id.0), actor)
+            .await
+            .expect("compliance succeeds");
+        assert_eq!(
+            report.written_resolution_evidence_status.status,
+            "not_applicable"
         );
     }
 

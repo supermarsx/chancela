@@ -30,7 +30,9 @@ use chancela_core::{
     DispatchChannel, DocumentReference, Entity, EntityFamily, EntityKind, LegalBasis,
     LegalBasisVerification, MeetingChannel, MemberStatement, Mesa, NumberingScheme, PresenceMode,
     SealMetadata, SecondCall, Severity, SignatoryCapacity, SignatorySlot, SignaturePolicyHint,
-    StatuteOverrides, VoteResult, profile_for,
+    StatuteOverrides, VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY,
+    WrittenResolutionEvidence, WrittenResolutionEvidenceItem, WrittenResolutionEvidenceSummary,
+    profile_for, written_resolution_evidence_summary,
 };
 use chancela_ledger::Event;
 use chancela_registry::{
@@ -726,6 +728,99 @@ impl From<DocumentReferenceView> for DocumentReference {
     }
 }
 
+/// Derived written-resolution evidence status exposed by API views. The boundary field makes the
+/// scope explicit: this is a workflow/evidence-presence signal only.
+#[derive(Debug, Serialize, Clone)]
+pub struct WrittenResolutionEvidenceStatusView {
+    pub status: String,
+    pub boundary: String,
+    pub signed_signatory_slots: usize,
+    pub digested_attachments: usize,
+    pub checklist_items: usize,
+    pub digested_checklist_items: usize,
+    pub referenced_checklist_items: usize,
+    pub bound_count: usize,
+    pub referenced_only_count: usize,
+}
+
+impl WrittenResolutionEvidenceStatusView {
+    pub(crate) fn from_summary(summary: WrittenResolutionEvidenceSummary) -> Self {
+        WrittenResolutionEvidenceStatusView {
+            status: summary.status.as_str().to_owned(),
+            boundary: WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY.to_owned(),
+            signed_signatory_slots: summary.signed_signatory_slots,
+            digested_attachments: summary.digested_attachments,
+            checklist_items: summary.checklist_items,
+            digested_checklist_items: summary.digested_checklist_items,
+            referenced_checklist_items: summary.referenced_checklist_items,
+            bound_count: summary.bound_count(),
+            referenced_only_count: summary.referenced_only_count(),
+        }
+    }
+}
+
+/// Wire view of one written-resolution evidence checklist item. Digests are hex on the wire.
+#[derive(Serialize)]
+pub struct WrittenResolutionEvidenceItemView {
+    pub label: String,
+    pub reference: Option<String>,
+    pub digest: Option<String>,
+    pub note: Option<String>,
+}
+
+impl From<&WrittenResolutionEvidenceItem> for WrittenResolutionEvidenceItemView {
+    fn from(item: &WrittenResolutionEvidenceItem) -> Self {
+        WrittenResolutionEvidenceItemView {
+            label: item.label.clone(),
+            reference: item.reference.clone(),
+            digest: item.digest.as_ref().map(hex),
+            note: item.note.clone(),
+        }
+    }
+}
+
+impl WrittenResolutionEvidenceItemView {
+    fn redact_sensitive(&mut self) {
+        self.label = redacted();
+        self.reference = None;
+        self.digest = None;
+        self.note = None;
+    }
+}
+
+/// Wire view of the optional written-resolution evidence metadata block.
+#[derive(Serialize)]
+pub struct WrittenResolutionEvidenceView {
+    pub status: WrittenResolutionEvidenceStatusView,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checklist: Vec<WrittenResolutionEvidenceItemView>,
+    pub note: Option<String>,
+}
+
+impl WrittenResolutionEvidenceView {
+    fn from_core(
+        evidence: &WrittenResolutionEvidence,
+        summary: WrittenResolutionEvidenceSummary,
+    ) -> Self {
+        WrittenResolutionEvidenceView {
+            status: WrittenResolutionEvidenceStatusView::from_summary(summary),
+            checklist: evidence
+                .checklist
+                .iter()
+                .map(WrittenResolutionEvidenceItemView::from)
+                .collect(),
+            note: evidence.note.clone(),
+        }
+    }
+
+    fn redact_sensitive(&mut self) {
+        self.note = None;
+        for item in &mut self.checklist {
+            item.redact_sensitive();
+        }
+    }
+}
+
 /// Wire view + input of a structured voting result. Internally-tagged (`{ "type": … }`),
 /// matching the DTO enum convention (`InscriptionPayloadView`):
 /// `{"type":"Unanimous"}` | `{"type":"Recorded","em_favor":..,"contra":..,"abstencoes":..}`.
@@ -1252,6 +1347,10 @@ pub struct ActView {
     pub members_represented: Option<u32>,
     /// Documents submitted to / referenced by the meeting (art. 63.º). Additive.
     pub referenced_documents: Vec<DocumentReferenceView>,
+    /// Optional written-resolution evidence checklist metadata. The nested status is derived and
+    /// bounded to workflow evidence presence only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub written_resolution_evidence: Option<WrittenResolutionEvidenceView>,
     pub deliberations: String,
     /// Structured deliberations (per-item text + vote + statements), additive to `deliberations`.
     pub deliberation_items: Vec<DeliberationItemView>,
@@ -1301,6 +1400,12 @@ impl From<&Act> for ActView {
                 .iter()
                 .map(DocumentReferenceView::from)
                 .collect(),
+            written_resolution_evidence: a.written_resolution_evidence.as_ref().map(|evidence| {
+                WrittenResolutionEvidenceView::from_core(
+                    evidence,
+                    written_resolution_evidence_summary(a),
+                )
+            }),
             deliberations: a.deliberations.clone(),
             deliberation_items: a
                 .deliberation_items
@@ -1344,6 +1449,9 @@ impl ActView {
         self.attendance_reference = self.attendance_reference.as_ref().map(|_| redacted());
         for document in &mut self.referenced_documents {
             document.redact_sensitive();
+        }
+        if let Some(evidence) = &mut self.written_resolution_evidence {
+            evidence.redact_sensitive();
         }
         self.deliberations = redacted();
         for item in &mut self.deliberation_items {
@@ -1522,6 +1630,60 @@ impl SignatoryInput {
     }
 }
 
+/// Written-resolution evidence metadata as accepted on PATCH. The stored model remains
+/// evidence-oriented; status is derived server-side.
+#[derive(Deserialize)]
+pub struct WrittenResolutionEvidenceInput {
+    #[serde(default)]
+    pub checklist: Vec<WrittenResolutionEvidenceItemInput>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+impl WrittenResolutionEvidenceInput {
+    pub fn into_core(self) -> Result<WrittenResolutionEvidence, ApiError> {
+        let mut checklist = Vec::with_capacity(self.checklist.len());
+        for item in self.checklist {
+            checklist.push(item.into_core()?);
+        }
+        Ok(WrittenResolutionEvidence {
+            checklist,
+            note: self.note,
+        })
+    }
+}
+
+/// One written-resolution evidence checklist item as accepted on PATCH.
+#[derive(Deserialize)]
+pub struct WrittenResolutionEvidenceItemInput {
+    pub label: String,
+    #[serde(default)]
+    pub reference: Option<String>,
+    #[serde(default)]
+    pub digest: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+impl WrittenResolutionEvidenceItemInput {
+    fn into_core(self) -> Result<WrittenResolutionEvidenceItem, ApiError> {
+        let digest = match self.digest {
+            Some(s) => Some(parse_hex32(&s).ok_or_else(|| {
+                ApiError::Unprocessable(format!(
+                    "invalid written_resolution_evidence checklist digest {s:?}"
+                ))
+            })?),
+            None => None,
+        };
+        Ok(WrittenResolutionEvidenceItem {
+            label: self.label,
+            reference: self.reference,
+            digest,
+            note: self.note,
+        })
+    }
+}
+
 /// Body of `PATCH /v1/acts/{id}` (working-content edit; every field optional). Nullable
 /// domain fields use [`double_option`] so a present `null` clears them and an absent key
 /// leaves them untouched. `attachments`/`signatories`/`agenda`/`referenced_documents`/
@@ -1549,6 +1711,10 @@ pub struct PatchAct {
     pub members_represented: Option<Option<u32>>,
     /// Replace the referenced-documents list when present.
     pub referenced_documents: Option<Vec<DocumentReferenceView>>,
+    /// Written-resolution evidence checklist metadata. [`double_option`] semantics: absent ⇒
+    /// leave untouched, explicit `null` ⇒ clear, a value ⇒ replace.
+    #[serde(default, deserialize_with = "double_option")]
+    pub written_resolution_evidence: Option<Option<WrittenResolutionEvidenceInput>>,
     pub deliberations: Option<String>,
     /// Replace the structured deliberations list when present.
     pub deliberation_items: Option<Vec<DeliberationItemView>>,
@@ -1665,6 +1831,9 @@ pub struct ComplianceResponse {
     pub errors: u32,
     pub warnings: u32,
     pub seal_allowed: bool,
+    /// Derived technical status for written-resolution evidence capture. This is a workflow
+    /// evidence-presence status only, not a legal-sufficiency claim.
+    pub written_resolution_evidence_status: WrittenResolutionEvidenceStatusView,
     /// Convening-antecedence advisories — **WARN-only, never blocking** (does not feed
     /// `seal_allowed`). Statute advisories compare `entity.statute.convocation_notice_days` with
     /// the act's actual `convening.antecedence_days` and also warn when the actual notice is
@@ -2636,6 +2805,24 @@ mod tests {
             label: "Relatório médico".to_owned(),
             reference: Some("doc-123".to_owned()),
         });
+        act.channel = MeetingChannel::WrittenResolution;
+        act.written_resolution_evidence = Some(WrittenResolutionEvidence {
+            checklist: vec![
+                WrittenResolutionEvidenceItem {
+                    label: "Approval pack for Ana".to_owned(),
+                    reference: Some("vault:approval-pack-ana".to_owned()),
+                    digest: Some([9; 32]),
+                    note: Some("private digest note".to_owned()),
+                },
+                WrittenResolutionEvidenceItem {
+                    label: "Reference-only approval folder".to_owned(),
+                    reference: Some("folder:referenced-approvals".to_owned()),
+                    digest: None,
+                    note: Some("private reference note".to_owned()),
+                },
+            ],
+            note: Some("private written-resolution evidence note".to_owned()),
+        });
         act.deliberations = "Texto de deliberação com dados pessoais".to_owned();
         act.deliberation_items.push(DeliberationItem {
             agenda_number: Some(1),
@@ -2684,7 +2871,8 @@ mod tests {
         });
 
         let view = ActView::build(&act, ReadRedaction::Guest);
-        let raw = serde_json::to_string(&view).expect("act view JSON");
+        let value = serde_json::to_value(&view).expect("act view JSON");
+        let raw = serde_json::to_string(&value).expect("act view JSON string");
         for leaked in [
             "Deliberação reservada",
             "Sala do Conselho",
@@ -2693,6 +2881,14 @@ mod tests {
             "Avaliar processo disciplinar",
             "Lista nominal assinada",
             "Relatório médico",
+            "Approval pack for Ana",
+            "vault:approval-pack-ana",
+            "0909090909090909090909090909090909090909090909090909090909090909",
+            "private digest note",
+            "Reference-only approval folder",
+            "folder:referenced-approvals",
+            "private reference note",
+            "private written-resolution evidence note",
             "Texto de deliberação",
             "Joana Silva",
             "IP e sessão",
@@ -2709,5 +2905,24 @@ mod tests {
             );
         }
         assert!(raw.contains(REDACTED));
+
+        let evidence = &value["written_resolution_evidence"];
+        assert_eq!(evidence["status"]["status"], "bound_present");
+        assert_eq!(
+            evidence["status"]["boundary"],
+            WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY
+        );
+        assert_eq!(evidence["status"]["checklist_items"], 2);
+        assert_eq!(evidence["status"]["digested_attachments"], 1);
+        assert_eq!(evidence["status"]["digested_checklist_items"], 1);
+        assert_eq!(evidence["status"]["referenced_checklist_items"], 1);
+        assert_eq!(evidence["status"]["bound_count"], 2);
+        assert_eq!(
+            evidence["checklist"][0]["reference"],
+            serde_json::Value::Null
+        );
+        assert_eq!(evidence["checklist"][0]["digest"], serde_json::Value::Null);
+        assert_eq!(evidence["checklist"][0]["note"], serde_json::Value::Null);
+        assert_eq!(evidence["note"], serde_json::Value::Null);
     }
 }

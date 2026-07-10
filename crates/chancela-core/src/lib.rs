@@ -38,7 +38,9 @@ pub use act::{
     Act, ActId, ActState, AgendaItem, Attachment, AttachmentKind, AttendanceWeight, Attendee,
     Convening, ConveningRecipient, DeliberationItem, DispatchChannel, DocumentReference,
     MeetingChannel, MemberStatement, Mesa, PresenceMode, SealMetadata, SecondCall,
-    SignatoryCapacity, SignatorySlot, VoteResult,
+    SignatoryCapacity, SignatorySlot, VoteResult, WRITTEN_RESOLUTION_EVIDENCE_STATUS_BOUNDARY,
+    WrittenResolutionEvidence, WrittenResolutionEvidenceItem, WrittenResolutionEvidenceStatus,
+    WrittenResolutionEvidenceSummary, written_resolution_evidence_summary,
 };
 pub use book::{
     Book, BookId, BookKind, BookState, LegalHold, NumberingScheme, TermoDeAbertura,
