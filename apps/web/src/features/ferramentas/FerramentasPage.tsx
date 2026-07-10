@@ -28,6 +28,7 @@ import { CaeExplorer } from '../cae/CaeExplorer';
 import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
 import { LegislacaoPage } from '../legislacao/LegislacaoPage';
 import { PdfSignatureValidatorPanel } from './PdfSignatureValidatorPanel';
+import { ExternalValidatorReportsPanel } from './ExternalValidatorReportsPanel';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import { ExternalSigningWorkflowsPage } from './ExternalSigningWorkflowsPage';
 
@@ -170,7 +171,10 @@ export function FerramentasPage() {
         {section === 'trust' ? (
           <TrustCatalogPage />
         ) : section === 'pdf' ? (
-          <PdfSignatureValidatorPanel />
+          <div className="stack">
+            <PdfSignatureValidatorPanel />
+            <ExternalValidatorReportsPanel />
+          </div>
         ) : section === 'external-signing' ? (
           <ExternalSigningWorkflowsPage />
         ) : section === 'legislacao' ? (

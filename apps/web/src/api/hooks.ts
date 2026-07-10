@@ -160,6 +160,7 @@ export const keys = {
   tsaCatalog: ['trust', 'tsa'] as const,
   tsaSearch: (params: TsaCatalogSearchParams) => ['trust', 'tsa', 'search', params] as const,
   pdfSignatureValidation: ['signature', 'pdf', 'validate'] as const,
+  externalValidatorReports: ['external-validator-reports'] as const,
   lawManifest: ['law', 'manifest'] as const,
   lawCorpus: ['law', 'corpus'] as const,
   lawDiploma: (diploma: string) => ['law', 'corpus', diploma] as const,
@@ -529,6 +530,24 @@ export function useValidatePdfSignature() {
   return useMutation({
     mutationKey: keys.pdfSignatureValidation,
     mutationFn: (body: PdfSignatureValidationBody) => api.validatePdfSignature(body),
+  });
+}
+
+export function useExternalValidatorReports() {
+  return useQuery({
+    queryKey: keys.externalValidatorReports,
+    queryFn: () => api.listExternalValidatorReports(),
+    retry: false,
+  });
+}
+
+export function useUploadExternalValidatorReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rawJson: string) => api.uploadExternalValidatorReport(rawJson),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.externalValidatorReports });
+    },
   });
 }
 

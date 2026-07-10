@@ -614,4 +614,64 @@ describe('api client', () => {
     expect(accepted.status).toBe('accepted');
     expect(workingCopy.text).toBe('# working copy');
   });
+
+  it('lists external-validator report metadata without raw report bytes', async () => {
+    const report = {
+      case_id: 'CASE-001',
+      validator_family: 'AMA DSS',
+      path: 'evidence/external-validators/CASE-001-ama-dss.json',
+      content_type: 'application/json',
+      sha256: 'a'.repeat(64),
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        storage: 'durable',
+        status: 'ok',
+        count: 1,
+        malformed_count: 0,
+        duplicate_suggested_path_count: 0,
+        reports: [report],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const listed = await api.listExternalValidatorReports();
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/external-validator-reports');
+    expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
+    expect(listed.reports).toEqual([report]);
+    expect(listed.reports[0]).not.toHaveProperty('raw');
+    expect(listed.reports[0]).not.toHaveProperty('bytes');
+  });
+
+  it('uploads external-validator report JSON as raw selected text', async () => {
+    const raw = '{\n  "case_id": "CASE-001",\n  "validator_family": "AMA DSS"\n}\n';
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          storage: 'durable',
+          status: 'stored',
+          report: {
+            case_id: 'CASE-001',
+            validator_family: 'AMA DSS',
+            path: 'evidence/external-validators/CASE-001-ama-dss.json',
+            content_type: 'application/json',
+            sha256: 'b'.repeat(64),
+          },
+        },
+        201,
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const uploaded = await api.uploadExternalValidatorReport(raw);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/v1/external-validator-reports');
+    expect(init.method).toBe('POST');
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
+    expect(init.body).toBe(raw);
+    expect(init.body).not.toBe(JSON.stringify(raw));
+    expect(uploaded.report.case_id).toBe('CASE-001');
+  });
 });

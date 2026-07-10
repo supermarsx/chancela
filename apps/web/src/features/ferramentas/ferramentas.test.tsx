@@ -5,6 +5,8 @@ import type {
   CaeCatalogView,
   CaeEntryView,
   CaeNode,
+  ExternalValidatorReportsResponse,
+  ExternalValidatorReportSummary,
   LawCorpusView,
   PdfSignatureValidationResponse,
 } from '../../api/types';
@@ -249,12 +251,70 @@ const PDF_VALIDATION_RESPONSE: PdfSignatureValidationResponse = {
   ],
 };
 
+const EMPTY_EXTERNAL_VALIDATOR_REPORTS: ExternalValidatorReportsResponse = {
+  storage: 'durable',
+  status: 'ok',
+  count: 0,
+  malformed_count: 0,
+  duplicate_suggested_path_count: 0,
+  reports: [],
+};
+
+const EXTERNAL_VALIDATOR_REPORT: ExternalValidatorReportSummary = {
+  case_id: 'CASE-001',
+  validator_family: 'AMA DSS',
+  path: 'evidence/external-validators/CASE-001-ama-dss.json',
+  content_type: 'application/json',
+  sha256: 'a'.repeat(64),
+  size_bytes: 128,
+};
+
 function pdfValidatorFetch(response: Response): typeof fetch {
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
+    if (url.includes('/v1/external-validator-reports') && method === 'GET') {
+      return Promise.resolve(jsonResponse(EMPTY_EXTERNAL_VALIDATOR_REPORTS));
+    }
     if (url.includes('/v1/signature/pdf/validate') && method === 'POST') {
       return Promise.resolve(response);
+    }
+    return Promise.reject(new Error(`no stub for ${url}`));
+  }) as typeof fetch;
+}
+
+function externalValidatorReportsFetch(
+  options: {
+    list?: ExternalValidatorReportsResponse;
+    afterUpload?: ExternalValidatorReportsResponse;
+    uploadStatus?: number;
+    uploadError?: string;
+  } = {},
+): typeof fetch {
+  let uploaded = false;
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    if (url.includes('/v1/external-validator-reports') && method === 'GET') {
+      return Promise.resolve(
+        jsonResponse(uploaded && options.afterUpload ? options.afterUpload : options.list ?? EMPTY_EXTERNAL_VALIDATOR_REPORTS),
+      );
+    }
+    if (url.includes('/v1/external-validator-reports') && method === 'POST') {
+      uploaded = true;
+      if (options.uploadError) {
+        return Promise.resolve(jsonResponse({ error: options.uploadError }, options.uploadStatus ?? 422));
+      }
+      return Promise.resolve(
+        jsonResponse(
+          {
+            storage: 'durable',
+            status: 'stored',
+            report: EXTERNAL_VALIDATOR_REPORT,
+          },
+          options.uploadStatus ?? 201,
+        ),
+      );
     }
     return Promise.reject(new Error(`no stub for ${url}`));
   }) as typeof fetch;
@@ -279,8 +339,14 @@ describe('Ferramentas — PDF signature validator', () => {
     fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
     fireEvent.click(screen.getByRole('button', { name: /validar pdf/i }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/signature/pdf/validate')),
+      ).toBe(true),
+    );
+    const [url, init] = fetchMock.mock.calls.find(([callUrl]) =>
+      String(callUrl).includes('/v1/signature/pdf/validate'),
+    ) as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as {
       content_base64: string;
       filename: string;
@@ -419,6 +485,147 @@ describe('Ferramentas — PDF signature validator', () => {
     expect(screen.getByText(/SHA-256 digest does not match/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Copiar JSON' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Guardar JSON' })).toBeNull();
+  });
+});
+
+describe('Ferramentas — external-validator reports panel', () => {
+  it('renders under the PDF tools surface', async () => {
+    vi.stubGlobal('fetch', externalValidatorReportsFetch());
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    expect(screen.getByText('Validador técnico de assinaturas PDF')).toBeTruthy();
+    expect(screen.getByText('Relatórios técnicos de validador externo')).toBeTruthy();
+    expect(await screen.findByText('Sem relatórios de validador externo')).toBeTruthy();
+  });
+
+  it('renders empty and list states from the redacted metadata endpoint', async () => {
+    vi.stubGlobal('fetch', externalValidatorReportsFetch());
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    expect(await screen.findByText('Sem relatórios de validador externo')).toBeTruthy();
+    cleanup();
+
+    vi.stubGlobal(
+      'fetch',
+      externalValidatorReportsFetch({
+        list: {
+          ...EMPTY_EXTERNAL_VALIDATOR_REPORTS,
+          count: 1,
+          reports: [EXTERNAL_VALIDATOR_REPORT],
+        },
+      }),
+    );
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    expect(await screen.findByText('CASE-001')).toBeTruthy();
+    expect(screen.getByText('AMA DSS')).toBeTruthy();
+    expect(screen.getByText('evidence/external-validators/CASE-001-ama-dss.json')).toBeTruthy();
+    expect(screen.getByText('application/json')).toBeTruthy();
+    expect(screen.getByText('aaaaaaaa…aaaaaaaa')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Guardar resumo de metadados' })).toBeTruthy();
+  });
+
+  it('rejects invalid JSON in the browser without posting it', async () => {
+    const fetchMock = vi.fn(externalValidatorReportsFetch());
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['{ not json'], 'bad.json', { type: 'application/json' });
+    fireEvent.change(await screen.findByLabelText('JSON do validador externo'), {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByText(/não é JSON válido/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Carregar metadados' }));
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).includes('/v1/external-validator-reports') &&
+          (init?.method ?? 'GET') === 'POST',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('uploads valid JSON as raw text and refreshes only the reports list', async () => {
+    const fetchMock = vi.fn(
+      externalValidatorReportsFetch({
+        afterUpload: {
+          ...EMPTY_EXTERNAL_VALIDATOR_REPORTS,
+          count: 1,
+          reports: [EXTERNAL_VALIDATOR_REPORT],
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const raw = '{\n  "case_id": "CASE-001",\n  "validator_family": "AMA DSS"\n}\n';
+    const file = new File([raw], 'report.json', { type: 'application/json' });
+    fireEvent.change(await screen.findByLabelText('JSON do validador externo'), {
+      target: { files: [file] },
+    });
+    expect(await screen.findByText('Selecionado: report.json (61 bytes)')).toBeTruthy();
+    const uploadButton = await screen.findByRole('button', { name: 'Carregar metadados' });
+    await waitFor(() => expect((uploadButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(uploadButton);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes('/v1/external-validator-reports') &&
+            (init?.method ?? 'GET') === 'POST',
+        ),
+      ).toBe(true),
+    );
+    const [, init] = fetchMock.mock.calls.find(
+      ([url, callInit]) =>
+        String(url).includes('/v1/external-validator-reports') &&
+        (callInit?.method ?? 'GET') === 'POST',
+    ) as [string, RequestInit];
+    expect(init.body).toBe(raw);
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
+    expect(await screen.findByText('CASE-001')).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/cae'))).toBe(false);
+  });
+
+  it('downloads a client-generated metadata summary, not raw report bytes', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-download',
+      filename: 'case-001-external-validator-metadata-summary.json',
+      contentType: 'application/json;charset=utf-8',
+      bytes: 1,
+    });
+    vi.stubGlobal(
+      'fetch',
+      externalValidatorReportsFetch({
+        list: {
+          ...EMPTY_EXTERNAL_VALIDATOR_REPORTS,
+          count: 1,
+          reports: [EXTERNAL_VALIDATOR_REPORT],
+        },
+      }),
+    );
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Guardar resumo de metadados' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+    };
+    expect(saved.filename).toBe('case-001-external-validator-metadata-summary.json');
+    expect(saved.contentType).toBe('application/json;charset=utf-8');
+    const summary = JSON.parse(await blobText(saved.blob)) as {
+      raw_report_included: boolean;
+      report: ExternalValidatorReportSummary;
+    };
+    expect(summary.raw_report_included).toBe(false);
+    expect(summary.report).toEqual(EXTERNAL_VALIDATOR_REPORT);
+    expect(summary).not.toHaveProperty('raw');
+    expect(summary).not.toHaveProperty('bytes');
   });
 });
 

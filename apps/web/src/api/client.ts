@@ -131,6 +131,8 @@ import type {
   ExternalSignerInviteDecision,
   ExternalSignerInvitePublicView,
   ExternalSignerInviteView,
+  ExternalValidatorReportsResponse,
+  ExternalValidatorReportUploadResponse,
   SignatureProviderView,
   RemoteInitiateBody,
   RemoteInitiateResult,
@@ -314,6 +316,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+const postRawJsonText = <T>(path: string, rawJson: string) =>
+  request<T>(path, { method: 'POST', body: rawJson, headers: { 'Content-Type': 'application/json' } });
 const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const put = <T>(path: string, body: unknown) =>
@@ -633,6 +637,13 @@ export const api = {
     postTextDownload('/v1/signature/external-invites/document/working-copy', { token }),
   validatePdfSignature: (body: PdfSignatureValidationBody) =>
     post<PdfSignatureValidationResponse>('/v1/signature/pdf/validate', body),
+  listExternalValidatorReports: () =>
+    get<ExternalValidatorReportsResponse>('/v1/external-validator-reports'),
+  uploadExternalValidatorReport: (rawJson: string) =>
+    postRawJsonText<ExternalValidatorReportUploadResponse>(
+      '/v1/external-validator-reports',
+      rawJson,
+    ),
 
   // Registry — certidão permanente (§2.7). The `code` in each body is a secret; it is
   // sent transiently in the request and never returned (provenance is masked).

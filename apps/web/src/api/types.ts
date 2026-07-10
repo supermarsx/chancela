@@ -867,6 +867,41 @@ export interface PdfSignatureValidationResponse {
   findings: PdfSignatureValidationFinding[];
 }
 
+// --- External validator technical report metadata ------------------------------
+
+/** Redacted metadata summary for a stored external-validator JSON report. */
+export interface ExternalValidatorReportSummary {
+  case_id: string | null;
+  validator_family: string | null;
+  path?: string | null;
+  archive_path?: string | null;
+  suggested_archive_path?: string | null;
+  suggested_path?: string | null;
+  content_type: string | null;
+  sha256?: string | null;
+  digest?: string | null;
+  size_bytes?: number | null;
+  stored_at?: string | null;
+  [key: string]: unknown;
+}
+
+/** `GET /v1/external-validator-reports` response. Raw report bytes are not exposed. */
+export interface ExternalValidatorReportsResponse {
+  storage: string;
+  status: string;
+  count: number;
+  malformed_count: number;
+  duplicate_suggested_path_count: number;
+  reports: ExternalValidatorReportSummary[];
+}
+
+/** `POST /v1/external-validator-reports` response for an accepted raw JSON report. */
+export interface ExternalValidatorReportUploadResponse {
+  storage: string;
+  status: string;
+  report: ExternalValidatorReportSummary;
+}
+
 export interface DocumentImportValidationFinding {
   severity: 'error' | 'warning' | 'info' | string;
   code: string;
