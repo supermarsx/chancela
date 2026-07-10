@@ -376,6 +376,46 @@ function assertCheckpointMap() {
     "archive package DocTimeStamp evidence coverage",
   );
   assertFileContains(
+    "crates/chancela-signing/src/asic.rs",
+    "pub enum AsicProfileShape",
+    "ASiC structural profile-shape diagnostic type",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic.rs",
+    "pub struct AsicManifestDiagnostic",
+    "ASiC manifest diagnostic type",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic.rs",
+    "pub struct AsicSignatureDiagnostic",
+    "ASiC signature diagnostic type",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic.rs",
+    "pub enum AsicDiagnosticBlockerId",
+    "ASiC stable blocker-id type",
+  );
+  assertFileContains(
+    "crates/chancela-signing/src/asic.rs",
+    "legal validity, or production compliance",
+    "ASiC structural diagnostics conservative boundary copy",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/roundtrip.rs",
+    "asic_e_profile_report_exposes_manifest_blocker_ids_without_relaxing_extraction",
+    "ASiC diagnostic blocker coverage without relaxed extraction",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/roundtrip.rs",
+    "asic_e_manifest_references_missing_signature",
+    "ASiC missing referenced signature blocker coverage",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/roundtrip.rs",
+    "asic_e_manifest_digest_mismatch",
+    "ASiC manifest digest mismatch blocker coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/cc_signing.rs",
     "archive_timestamp_append_api_persists_caller_supplied_local_technical_evidence",
     "caller-supplied archive timestamp append API coverage",
@@ -910,6 +950,31 @@ function assertCheckpointMap() {
     "dashboard work-queue icon-only action implementation marker",
   );
   assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "keeps current open books to the five newest and reports hidden items",
+    "dashboard open-books summary cap coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "keeps dated reminders to the five earliest dates after dedupe",
+    "dashboard dated-reminder summary cap coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "dashboard.openItems.more",
+    "dashboard hidden open-books count marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "dashboard.dates.more",
+    "dashboard hidden dated-reminders count marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.css",
+    ".dashboard-workqueue__action.btn--iconOnly",
+    "dashboard compact work-queue action sizing marker",
+  );
+  assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
     "keeps terminal imported-document review disabled until guardrails are acknowledged",
     "imported-document guardrail acknowledgement UI coverage",
@@ -943,6 +1008,36 @@ function assertCheckpointMap() {
     "apps/web/src/features/entities/EntityChronologyPanel.tsx",
     "entities.chronology.boundary",
     "localized entity chronology boundary copy",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "pins entity table and filter CSS to single-line no-overflow rules",
+    "entity table no-overflow CSS coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "renders the default entity table columns as single-line truncating cells",
+    "entity default single-line table coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/EntitiesPage.enrichment.test.tsx",
+    "expect(cells).toHaveLength(REGISTERED_ENTITY_COLUMNS.length)",
+    "entity enriched single-line table coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/EntitiesPage.tsx",
+    "className=\"stack--tight entities-filters\"",
+    "entity filter no-overflow wrapper marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".entities-table__cell--truncate > .truncate",
+    "entity single-line truncation CSS marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".entities-table .table-wrap",
+    "entity table-wrap overflow CSS marker",
   );
   assertFileContains(
     "apps/web/src/features/ferramentas/ferramentas.test.tsx",

@@ -30,11 +30,12 @@ provider validity or authority approval.
 recently landed work that crosses Rust API tests, data key preflight guards,
 guardrail acknowledgements, written-resolution evidence status binding, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
-assurance, MCP resource/prompt coverage, web fixtures, registry chronology graph
-markers, PDF writer spacing and PDF/UA blocker-decomposition markers, archive
-timestamp append markers, paper-book OCR API/UI markers including accepted OCR
-draft to mutable draft-act creation plus focused paper-book OCR review browser
-workflow markers, recovery/document/dashboard/notification
+assurance, MCP resource/prompt coverage, web fixtures, ASiC structural
+diagnostic markers, registry chronology graph markers, PDF writer spacing and
+PDF/UA blocker-decomposition markers, archive timestamp append markers,
+paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
+creation plus focused paper-book OCR review browser workflow markers,
+recovery/document/dashboard/notification
 UI, Ferramentas external-validator metadata UI and compact validator-report
 actions, template provenance UI, validator fixtures, and the standalone desktop
 Cargo workspace.
@@ -79,10 +80,14 @@ evidence markers with `not_checked_by_scap` and
 `declared_capacity_evidence_only`, dashboard subtab markers,
 dashboard/notification icon-only markers, template law-reference UI markers,
 structured registry chronology graph markers, mapped PDF inter-word space and
-PDF/UA blocker-decomposition markers, local paper-book OCR API/UI/contract
-markers, accepted OCR draft to mutable draft-act API/UI/refusal markers,
+PDF/UA blocker-decomposition markers, ASiC structural profile-shape,
+manifest/signature diagnostic, and blocker-ID markers, local paper-book OCR
+API/UI/contract markers, accepted OCR draft to mutable draft-act
+API/UI/refusal markers,
 focused paper-book OCR review browser workflow markers,
-caller-supplied archive timestamp append API markers, external-validator
+caller-supplied archive timestamp append API markers, dashboard current-work
+summary caps/hidden-count markers, registered-entity single-line table and
+filter no-overflow markers, external-validator
 metadata API durability markers, the settings.read raw metadata download
 route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
 locale keys, and non-destructive payload assertions, Ferramentas
@@ -94,10 +99,10 @@ imported-document review notification/export browser E2E marker; Playwright
 execution remains in the browser jobs so this recent-landed lane stays focused.
 Static markers are deletion/rename guards only; they do not certify legal
 validity, legal retention schedules or approvals, retention deletion or
-anonymization execution, GDPR erasure, PDF/UA, production B-LT/B-LTA, SCAP
-verification, representative authority, live provider validity, canonical OCR
-conversion, or legal effect for mutable draft acts created from accepted OCR
-drafts.
+anonymization execution, GDPR erasure, PDF/UA, XAdES validation, ASiC trust/LTV
+or legal validity, production B-LT/B-LTA, SCAP verification, representative
+authority, live provider validity, canonical OCR conversion, or legal effect for
+mutable draft acts created from accepted OCR drafts.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 
