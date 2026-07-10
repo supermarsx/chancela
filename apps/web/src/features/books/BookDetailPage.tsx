@@ -826,6 +826,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
             await saveBlobAs({
               blob,
               filename: paperBookImportFilename(row),
+              contentType: row.content_type || blob.type,
               preferBrowserSavePicker: true,
             }),
           );
@@ -1243,6 +1244,7 @@ export function BookDetailPage() {
             await saveBlobAs({
               blob,
               filename: preservationPackageFilename(b.id),
+              contentType: 'application/zip',
               preferBrowserSavePicker: true,
             }),
           );

@@ -126,6 +126,87 @@ describe('saveBlobAs', () => {
     });
   });
 
+  it('falls back to a browser blob download when a requested save picker is unavailable', async () => {
+    const blob = new Blob(['zipbytes'], { type: 'application/zip' });
+    const createUrl = vi.fn().mockReturnValue('blob:bundle');
+    const revokeUrl = vi.fn();
+    vi.stubGlobal('showSaveFilePicker', undefined);
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
+    const clickedDownloads: string[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clickedDownloads.push(this.download);
+    });
+
+    const result = await saveBlobAs({
+      blob,
+      filename: 'book-1.zip',
+      preferBrowserSavePicker: true,
+    });
+
+    expect(tauriMocks.save).not.toHaveBeenCalled();
+    expect(tauriMocks.writeFile).not.toHaveBeenCalled();
+    expect(createUrl).toHaveBeenCalledWith(blob);
+    expect(clickSpy).toHaveBeenCalled();
+    expect(clickedDownloads).toEqual(['book-1.zip']);
+    expect(revokeUrl).toHaveBeenCalledWith('blob:bundle');
+    expect(result).toEqual({
+      kind: 'browser-download',
+      filename: 'book-1.zip',
+      contentType: 'application/zip',
+      bytes: 8,
+    });
+    expect(saveBlobResultMessage(result)).toBe(
+      'Transferência iniciada pelo navegador: book-1.zip. A pasta é definida pelo browser.',
+    );
+  });
+
+  it('falls back to a browser blob download when the requested save picker write fails', async () => {
+    const blob = new Blob(['%PDF'], { type: 'application/pdf' });
+    const writable = {
+      write: vi.fn().mockRejectedValue(new Error('disk write failed')),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const showSaveFilePicker = vi.fn().mockResolvedValue({
+      name: 'arquivo.pdf',
+      createWritable: vi.fn().mockResolvedValue(writable),
+    });
+    const createUrl = vi.fn().mockReturnValue('blob:pdf');
+    const revokeUrl = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
+    const clickedDownloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clickedDownloads.push(this.download);
+    });
+
+    const result = await saveBlobAs({
+      blob,
+      filename: 'arquivo.pdf',
+      preferBrowserSavePicker: true,
+    });
+
+    expect(showSaveFilePicker).toHaveBeenCalledWith({
+      suggestedName: 'arquivo.pdf',
+      types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+    });
+    expect(writable.write).toHaveBeenCalledWith(blob);
+    expect(writable.close).not.toHaveBeenCalled();
+    expect(createUrl).toHaveBeenCalledWith(blob);
+    expect(clickedDownloads).toEqual(['arquivo.pdf']);
+    expect(revokeUrl).toHaveBeenCalledWith('blob:pdf');
+    expect(result).toEqual({
+      kind: 'browser-download',
+      filename: 'arquivo.pdf',
+      contentType: 'application/pdf',
+      bytes: 4,
+    });
+  });
+
   it('falls back to a browser blob download and describes the browser-managed save location', async () => {
     const blob = new Blob(['zipbytes'], { type: 'application/zip' });
     const createUrl = vi.fn().mockReturnValue('blob:bundle');

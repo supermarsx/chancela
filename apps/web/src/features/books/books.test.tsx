@@ -386,8 +386,15 @@ describe('BookDetailPage — preservation package download', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Pacote de preservação Chancela' }));
 
     await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
-    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as { blob: Blob; filename: string };
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+      preferBrowserSavePicker: boolean;
+    };
     expect(saved.filename).toBe('chancela-preservation-book-book-1.zip');
+    expect(saved.contentType).toBe('application/zip');
+    expect(saved.preferBrowserSavePicker).toBe(true);
     expect(saved.blob).toBeInstanceOf(Blob);
     expect(saved.blob.type).toBe('application/zip');
     expect(await blobText(saved.blob)).toBe('zipbytes');
@@ -532,8 +539,15 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Descarregar pacote' }));
 
     await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
-    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as { blob: Blob; filename: string };
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+      preferBrowserSavePicker: boolean;
+    };
     expect(saved.filename).toBe('ag-1968-1971.pdf');
+    expect(saved.contentType).toBe('application/pdf');
+    expect(saved.preferBrowserSavePicker).toBe(true);
     expect(await blobText(saved.blob)).toBe('pdfbytes');
     expect(calls).toContainEqual({
       url: '/v1/books/paper-import?book_ref=book-1',

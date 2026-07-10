@@ -107,6 +107,7 @@ export function LedgerPage() {
             await saveBlobAs({
               blob,
               filename: archiveFilename(params),
+              contentType: 'application/pdf',
               preferBrowserSavePicker: true,
             }),
           );

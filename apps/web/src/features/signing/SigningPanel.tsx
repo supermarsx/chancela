@@ -1027,6 +1027,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
             await saveBlobAs({
               blob,
               filename: `${base}ata-${n}-assinada.pdf`,
+              contentType: 'application/pdf',
               preferBrowserSavePicker: true,
             }),
           );

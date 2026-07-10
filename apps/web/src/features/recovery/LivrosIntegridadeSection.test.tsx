@@ -1,12 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { LivrosIntegridadeSection } from './LivrosIntegridadeSection';
 import { renderWithProviders } from '../../test/utils';
+
+const saveFileMock = vi.hoisted(() => ({
+  saveBlobAs: vi.fn(),
+  saveBlobResultMessage: vi.fn((result: { filename: string }) => `Guardado: ${result.filename}`),
+}));
+
+vi.mock('../../desktop/saveFile', () => saveFileMock);
+
+import { LivrosIntegridadeSection } from './LivrosIntegridadeSection';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
   });
 }
 
@@ -90,6 +107,8 @@ function sectionFetch(report: unknown, extra?: (url: string, method: string) => 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  saveFileMock.saveBlobAs.mockReset();
+  saveFileMock.saveBlobResultMessage.mockClear();
 });
 
 describe('LivrosIntegridadeSection', () => {
@@ -120,15 +139,17 @@ describe('LivrosIntegridadeSection', () => {
     expect((reanchor as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('exports a book bundle and triggers a download', async () => {
-    const createUrl = vi.fn().mockReturnValue('blob:mock');
-    const revokeUrl = vi.fn();
-    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  it('exports a book bundle through the save prompt helper', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-save',
+      filename: 'book-book-1.zip',
+      contentType: 'application/zip',
+      bytes: 8,
+    });
 
     const { fn } = sectionFetch(HEALTHY_REPORT, (url, method) => {
       if (url.includes('/v1/books/book-1/export') && method === 'POST') {
-        return new Response(new Blob(['zipbytes']), {
+        return new Response('zipbytes', {
           status: 200,
           headers: { 'Content-Type': 'application/zip' },
         });
@@ -139,9 +160,25 @@ describe('LivrosIntegridadeSection', () => {
     renderWithProviders(<LivrosIntegridadeSection />);
 
     fireEvent.click(await screen.findByRole('button', { name: /Exportar/ }));
-    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(1));
-    expect(clickSpy).toHaveBeenCalled();
-    expect(revokeUrl).toHaveBeenCalled();
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+      preferBrowserSavePicker: boolean;
+    };
+    expect(saved.filename).toBe('book-book-1.zip');
+    expect(saved.contentType).toBe('application/zip');
+    expect(saved.preferBrowserSavePicker).toBe(true);
+    expect(saved.blob).toBeInstanceOf(Blob);
+    expect(saved.blob.type).toBe('application/zip');
+    expect(await blobText(saved.blob)).toBe('zipbytes');
+    expect(saveFileMock.saveBlobResultMessage).toHaveBeenCalledWith({
+      kind: 'browser-save',
+      filename: 'book-book-1.zip',
+      contentType: 'application/zip',
+      bytes: 8,
+    });
   });
 
   it('imports a bundle and shows the honest Quarantined verdict', async () => {

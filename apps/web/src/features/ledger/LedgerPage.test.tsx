@@ -1,13 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { LedgerPage } from './LedgerPage';
 import { renderWithProviders } from '../../test/utils';
 import type { LedgerEventView } from '../../api/types';
+
+const saveFileMock = vi.hoisted(() => ({
+  saveBlobAs: vi.fn(),
+  saveBlobResultMessage: vi.fn((result: { filename: string }) => `Guardado: ${result.filename}`),
+}));
+
+vi.mock('../../desktop/saveFile', () => saveFileMock);
+
+import { LedgerPage } from './LedgerPage';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
   });
 }
 
@@ -64,7 +81,7 @@ function stubLedgerFetch() {
 
     if (url.includes('/v1/ledger/archive/document')) {
       return Promise.resolve(
-        new Response(new Blob(['%PDF-archive']), {
+        new Response('%PDF-archive', {
           status: 200,
           headers: { 'Content-Type': 'application/pdf' },
         }),
@@ -84,6 +101,8 @@ function stubLedgerFetch() {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  saveFileMock.saveBlobAs.mockReset();
+  saveFileMock.saveBlobResultMessage.mockClear();
 });
 
 describe('LedgerPage', () => {
@@ -107,11 +126,13 @@ describe('LedgerPage', () => {
     expect(screen.getByText('book:book-123')).toBeTruthy();
   });
 
-  it('exports the current chain and scope filters as a PDF/A download', async () => {
-    const createUrl = vi.fn().mockReturnValue('blob:archive');
-    const revokeUrl = vi.fn();
-    vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl, revokeObjectURL: revokeUrl });
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  it('exports the current chain and scope filters through the save prompt helper', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-save',
+      filename: 'arquivo-book-book-123456789-act-7.pdf',
+      contentType: 'application/pdf',
+      bytes: 12,
+    });
     const calls = stubLedgerFetch();
 
     renderWithProviders(<LedgerPage />);
@@ -125,11 +146,27 @@ describe('LedgerPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Exportar PDF/A' }));
 
-    await waitFor(() => expect(createUrl).toHaveBeenCalledTimes(1));
-    expect(clickSpy).toHaveBeenCalled();
-    expect(revokeUrl).toHaveBeenCalledWith('blob:archive');
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+      preferBrowserSavePicker: boolean;
+    };
+    expect(saved.filename).toBe('arquivo-book-book-123456789-act-7.pdf');
+    expect(saved.contentType).toBe('application/pdf');
+    expect(saved.preferBrowserSavePicker).toBe(true);
+    expect(saved.blob).toBeInstanceOf(Blob);
+    expect(saved.blob.type).toBe('application/pdf');
+    expect(await blobText(saved.blob)).toBe('%PDF-archive');
     expect(calls.find((c) => c.url.includes('/v1/ledger/archive/document'))?.url).toBe(
       '/v1/ledger/archive/document?chain=book%3Abook-123456789&scope=act%3A7',
     );
+    expect(saveFileMock.saveBlobResultMessage).toHaveBeenCalledWith({
+      kind: 'browser-save',
+      filename: 'arquivo-book-book-123456789-act-7.pdf',
+      contentType: 'application/pdf',
+      bytes: 12,
+    });
   });
 });

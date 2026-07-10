@@ -861,7 +861,14 @@ export function ActDocumentPanel({
     download.mutate(undefined, {
       onSuccess: async (blob) => {
         try {
-          showSaveResult(await saveBlobAs({ blob, filename, preferBrowserSavePicker: true }));
+          showSaveResult(
+            await saveBlobAs({
+              blob,
+              filename,
+              contentType: 'application/pdf',
+              preferBrowserSavePicker: true,
+            }),
+          );
         } catch (e) {
           toast.error(e);
         }
@@ -911,7 +918,15 @@ export function ActDocumentPanel({
     officeDownload.mutate(undefined, {
       onSuccess: async (blob) => {
         try {
-          showSaveResult(await saveBlobAs({ blob, filename, preferBrowserSavePicker: true }));
+          showSaveResult(
+            await saveBlobAs({
+              blob,
+              filename,
+              contentType:
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              preferBrowserSavePicker: true,
+            }),
+          );
         } catch (e) {
           toast.error(e);
         }

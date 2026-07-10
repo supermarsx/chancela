@@ -195,6 +195,7 @@ export function LivrosIntegridadeSection() {
         await saveBlobAs({
           blob,
           filename: `book-${book.id}.zip`,
+          contentType: 'application/zip',
           preferBrowserSavePicker: true,
         }),
       );
