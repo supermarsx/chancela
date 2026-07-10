@@ -145,6 +145,10 @@ const checks = [
     command: ["cargo", ["test", "-p", "chancela-tsl", "--locked"]],
   },
   {
+    name: "API trust catalog lookup tests",
+    command: ["cargo", ["test", "-p", "chancela-api", "trust", "--locked"]],
+  },
+  {
     name: "MCP resources and prompts tests",
     command: ["cargo", ["test", "-p", "chancela-mcp", "--locked"]],
   },
@@ -161,6 +165,8 @@ const checks = [
       "src/features/books/books.test.tsx",
       "src/features/dashboard/DashboardPage.test.tsx",
       "src/features/documents/ActDocumentPanel.test.tsx",
+      "src/features/entities/entities.test.tsx",
+      "src/features/ferramentas/ferramentas.test.tsx",
       "src/features/notifications/NotificationBell.test.tsx",
       "src/features/notifications/NotificationsPage.test.tsx",
       "src/features/recovery/GestaoDadosSection.test.tsx",
@@ -356,6 +362,21 @@ function assertCheckpointMap() {
     "TSL XML-DSig tamper regression coverage",
   );
   assertFileContains(
+    "crates/chancela-tsl/src/record.rs",
+    "lookup_matches_complete_certificate_fingerprint_and_ski_only",
+    "TSL record identifier lookup regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-tsl/src/record.rs",
+    "lookup_reports_no_match_without_inferring_and_unknown_for_partial_hex",
+    "TSL record lookup conservative unknown coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/trust.rs",
+    "structured_identifier_filters_match_complete_material_only",
+    "API trust identifier filter regression coverage",
+  );
+  assertFileContains(
     "crates/chancela-mcp/src/server.rs",
     "resources_read_spec_09_coverage_returns_boundaries_without_http_or_secret",
     "MCP spec coverage resource regression coverage",
@@ -409,6 +430,26 @@ function assertCheckpointMap() {
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
     "keeps terminal imported-document review disabled until guardrails are acknowledged",
     "imported-document guardrail acknowledgement UI coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/entities.test.tsx",
+    "surfaces the backend entity chronology and Mermaid graph source",
+    "entity chronology graph UI coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/entities/EntityChronologyPanel.tsx",
+    "entities.chronology.boundary",
+    "localized entity chronology boundary copy",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "copies the technical JSON report after validation returns a report body",
+    "PDF validator report copy coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "saves the technical JSON report as a browser-save/download Blob",
+    "PDF validator report save coverage",
   );
   assertFileContains(
     "apps/web/src/features/notifications/NotificationBell.test.tsx",
