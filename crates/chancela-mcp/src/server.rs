@@ -37,6 +37,9 @@ const DRAFT_MINUTES_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review checklist fo
 const COMPLIANCE_PACK_GAP_REVIEW_PROMPT_NAME: &str = "compliance_pack_gap_review";
 const COMPLIANCE_PACK_GAP_REVIEW_PROMPT_TITLE: &str = "Compliance Pack Gap Review";
 const COMPLIANCE_PACK_GAP_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review prompt for DSR, retention, and archive evidence gaps. Guidance only; no legal-validity or provider claims.";
+const PAPER_BOOK_OCR_REVIEW_PROMPT_NAME: &str = "paper_book_ocr_canonical_review";
+const PAPER_BOOK_OCR_REVIEW_PROMPT_TITLE: &str = "Paper Book OCR Canonical Review";
+const PAPER_BOOK_OCR_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review prompt for paper-book OCR and canonical-conversion evidence. Guidance only; no legal-validity, signing, or provider claims.";
 
 const HUMAN_VERIFICATION_PENDING: &str = "pending_human_verification";
 const HUMAN_VERIFICATION_ACCEPTED: &str = "accepted_by_human";
@@ -65,6 +68,12 @@ const PROMPT_CATALOG: &[McpPrompt] = &[
         title: COMPLIANCE_PACK_GAP_REVIEW_PROMPT_TITLE,
         description: COMPLIANCE_PACK_GAP_REVIEW_PROMPT_DESCRIPTION,
         text: compliance_pack_gap_review_prompt_text,
+    },
+    McpPrompt {
+        name: PAPER_BOOK_OCR_REVIEW_PROMPT_NAME,
+        title: PAPER_BOOK_OCR_REVIEW_PROMPT_TITLE,
+        description: PAPER_BOOK_OCR_REVIEW_PROMPT_DESCRIPTION,
+        text: paper_book_ocr_review_prompt_text,
     },
 ];
 
@@ -682,6 +691,30 @@ Return a concise gap review with these sections:
 - Boundary reminder: guidance only, no legal validity, no hidden provider call"#
 }
 
+fn paper_book_ocr_review_prompt_text() -> &'static str {
+    r#"You are helping a human operator review paper-book OCR and canonical-conversion evidence in Chancela.
+
+Use this as review guidance only. Use only source images, OCR outputs, canonical records, manifests, and ledger evidence the operator supplies or explicitly retrieves through Chancela tools. Do not call hidden OCR, AI, legal, registry, trust, signature, archive, or storage providers. Do not claim legal validity, official certification, signing, sealing, preservation sufficiency, or that the conversion is correct without human verification.
+
+Review checklist:
+1. Identify the review scope: book id, page or folio range, source image or PDF references, OCR artifact ids, canonical record ids, manifest ids, ledger event references, and operator notes.
+2. Check source-to-OCR traceability: page order, folio numbers, image checksum or digest, OCR engine/version when recorded, confidence data when recorded, timestamps, actor, and whether any page is missing, duplicated, rotated, cropped, blurred, or unreadable.
+3. Compare OCR text with the source: names, dates, amounts, article numbers, signatures, stamps, handwritten notes, marginalia, tables, strike-throughs, amendments, abbreviations, and uncertain characters.
+4. Check OCR-to-canonical conversion: normalized headings, sections, page anchors, canonical identifiers, extracted dates and parties, table structure, preserved uncertainty markers, and whether editorial cleanup changed meaning.
+5. Separate recorded facts from reviewer assumptions, suggested corrections, and unresolved evidence gaps. Treat confidence scores as review signals only, not proof.
+6. Flag any missing provenance for source capture, OCR generation, canonical conversion, manual correction, manifest checksums, or ledger anchoring before any later lifecycle, archive, signature, or sealing workflow.
+
+Return a concise review with these sections:
+- Evidence reviewed
+- Source image or page issues
+- OCR transcription issues
+- Canonical-conversion issues
+- Missing provenance, checksum, or ledger evidence
+- Suggested corrections, clearly labelled as suggestions only
+- Follow-up questions for the human reviewer
+- Boundary reminder: guidance only, no legal validity, no signing, no hidden provider call"#
+}
+
 fn tool_text_result(text: &str, is_error: bool) -> Value {
     json!({ "content": [ { "type": "text", "text": text } ], "isError": is_error })
 }
@@ -1273,6 +1306,16 @@ mod tests {
             json!(COMPLIANCE_PACK_GAP_REVIEW_PROMPT_DESCRIPTION)
         );
         assert_eq!(compliance_pack["arguments"], json!([]));
+        let paper_book = by_name(PAPER_BOOK_OCR_REVIEW_PROMPT_NAME);
+        assert_eq!(
+            paper_book["title"],
+            json!(PAPER_BOOK_OCR_REVIEW_PROMPT_TITLE)
+        );
+        assert_eq!(
+            paper_book["description"],
+            json!(PAPER_BOOK_OCR_REVIEW_PROMPT_DESCRIPTION)
+        );
+        assert_eq!(paper_book["arguments"], json!([]));
         let encoded = serde_json::to_string(&result).unwrap();
         assert!(!encoded.contains("chk_ab12cd_secretsecret"));
         assert!(!encoded.contains("secretsecret"));
@@ -1342,6 +1385,46 @@ mod tests {
             "archive",
             "credential secrets",
             "no legal validity",
+            "no hidden provider call",
+        ] {
+            assert!(
+                text.contains(needle),
+                "prompt should contain {needle:?}: {text}"
+            );
+        }
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn prompts_get_returns_paper_book_ocr_canonical_review_without_http_or_secret() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "prompts/get",
+                47,
+                json!({ "name": PAPER_BOOK_OCR_REVIEW_PROMPT_NAME }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        assert_eq!(
+            result["description"],
+            json!(PAPER_BOOK_OCR_REVIEW_PROMPT_DESCRIPTION)
+        );
+        let messages = result["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], json!("user"));
+        assert_eq!(messages[0]["content"]["type"], json!("text"));
+        let text = messages[0]["content"]["text"].as_str().unwrap();
+        for needle in [
+            "paper-book OCR",
+            "canonical-conversion",
+            "source images",
+            "confidence scores",
+            "ledger evidence",
+            "no legal validity",
+            "no signing",
             "no hidden provider call",
         ] {
             assert!(
