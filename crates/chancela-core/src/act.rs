@@ -72,10 +72,11 @@ pub enum ActState {
 
 /// Human-review status for AI-assisted act text. `Accepted` means only that a person reviewed the
 /// AI-assisted draft; it is not a legal-validity assertion.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AiHumanVerificationStatus {
     /// Awaiting human review.
     #[serde(rename = "pending_human_verification")]
+    #[default]
     Pending,
     /// A human reviewed the AI-assisted content.
     #[serde(rename = "accepted_by_human")]
@@ -83,12 +84,6 @@ pub enum AiHumanVerificationStatus {
     /// A human rejected the AI-assisted content.
     #[serde(rename = "rejected_by_human")]
     Rejected,
-}
-
-impl Default for AiHumanVerificationStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 /// Human-review evidence attached to AI provenance.

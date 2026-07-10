@@ -2095,24 +2095,26 @@ mod tests {
         std::fs::write(&disabled_source, b"<not-tsl>").expect("disabled source");
         std::fs::write(&enabled_source, BUNDLED_PT_TSL).expect("enabled source");
 
-        let mut signing = SigningSettings::default();
-        signing.tsl_url = Some("http://legacy.example.test/tsl.xml".to_owned());
-        signing.tsl_sources = vec![
-            TslSourceSettings {
-                id: "disabled-local".to_owned(),
-                name: "Disabled local TSL".to_owned(),
-                enabled: false,
-                path: Some(disabled_source.display().to_string()),
-                ..TslSourceSettings::default()
-            },
-            TslSourceSettings {
-                id: "enabled-local".to_owned(),
-                name: "Enabled local TSL".to_owned(),
-                enabled: true,
-                path: Some(enabled_source.display().to_string()),
-                ..TslSourceSettings::default()
-            },
-        ];
+        let signing = SigningSettings {
+            tsl_url: Some("http://legacy.example.test/tsl.xml".to_owned()),
+            tsl_sources: vec![
+                TslSourceSettings {
+                    id: "disabled-local".to_owned(),
+                    name: "Disabled local TSL".to_owned(),
+                    enabled: false,
+                    path: Some(disabled_source.display().to_string()),
+                    ..TslSourceSettings::default()
+                },
+                TslSourceSettings {
+                    id: "enabled-local".to_owned(),
+                    name: "Enabled local TSL".to_owned(),
+                    enabled: true,
+                    path: Some(enabled_source.display().to_string()),
+                    ..TslSourceSettings::default()
+                },
+            ],
+            ..SigningSettings::default()
+        };
 
         let status = import_tsl_to_cache(
             tmp.0.clone(),
@@ -2391,26 +2393,30 @@ mod tests {
     #[test]
     fn tsa_catalog_selects_enabled_default_provider_before_disabled_and_legacy_entries() {
         let loaded = fixture();
-        let mut signing = SigningSettings::default();
-        signing.tsa_url = Some("http://legacy.example.test/tsa".to_owned());
-        signing.tsa_providers = vec![
-            TsaProviderSettings {
-                id: "disabled-default".to_owned(),
-                name: "Disabled default".to_owned(),
-                enabled: false,
-                r#default: true,
-                url: Some("http://disabled.example.test/tsa".to_owned()),
-                ..TsaProviderSettings::default()
-            },
-            TsaProviderSettings {
-                id: "selected-default".to_owned(),
-                name: "Selected default".to_owned(),
-                enabled: true,
-                r#default: true,
-                url: Some("https://user:secret@selected.example.test/tsa?token=hidden".to_owned()),
-                ..TsaProviderSettings::default()
-            },
-        ];
+        let signing = SigningSettings {
+            tsa_url: Some("http://legacy.example.test/tsa".to_owned()),
+            tsa_providers: vec![
+                TsaProviderSettings {
+                    id: "disabled-default".to_owned(),
+                    name: "Disabled default".to_owned(),
+                    enabled: false,
+                    r#default: true,
+                    url: Some("http://disabled.example.test/tsa".to_owned()),
+                    ..TsaProviderSettings::default()
+                },
+                TsaProviderSettings {
+                    id: "selected-default".to_owned(),
+                    name: "Selected default".to_owned(),
+                    enabled: true,
+                    r#default: true,
+                    url: Some(
+                        "https://user:secret@selected.example.test/tsa?token=hidden".to_owned(),
+                    ),
+                    ..TsaProviderSettings::default()
+                },
+            ],
+            ..SigningSettings::default()
+        };
 
         let selection = signing.runtime_tsa_selection();
         let catalog = tsa_catalog_view(&loaded, NOW, &selection);
@@ -2427,16 +2433,18 @@ mod tests {
     #[test]
     fn tsa_catalog_reports_path_backed_default_provider_as_local_replay_blocker() {
         let loaded = fixture();
-        let mut signing = SigningSettings::default();
-        signing.tsa_url = Some("http://legacy.example.test/tsa".to_owned());
-        signing.tsa_providers = vec![TsaProviderSettings {
-            id: "offline-default".to_owned(),
-            name: "Offline default".to_owned(),
-            enabled: true,
-            r#default: true,
-            path: Some("fixtures/tsa-response.der".to_owned()),
-            ..TsaProviderSettings::default()
-        }];
+        let signing = SigningSettings {
+            tsa_url: Some("http://legacy.example.test/tsa".to_owned()),
+            tsa_providers: vec![TsaProviderSettings {
+                id: "offline-default".to_owned(),
+                name: "Offline default".to_owned(),
+                enabled: true,
+                r#default: true,
+                path: Some("fixtures/tsa-response.der".to_owned()),
+                ..TsaProviderSettings::default()
+            }],
+            ..SigningSettings::default()
+        };
 
         let selection = signing.runtime_tsa_selection();
         let catalog = tsa_catalog_view(&loaded, NOW, &selection);
@@ -2450,16 +2458,18 @@ mod tests {
     #[test]
     fn tsa_catalog_reports_enabled_provider_without_default_as_selection_error() {
         let loaded = fixture();
-        let mut signing = SigningSettings::default();
-        signing.tsa_url = Some("http://legacy.example.test/tsa".to_owned());
-        signing.tsa_providers = vec![TsaProviderSettings {
-            id: "enabled-not-default".to_owned(),
-            name: "Enabled but not default".to_owned(),
-            enabled: true,
-            r#default: false,
-            url: Some("http://enabled.example.test/tsa".to_owned()),
-            ..TsaProviderSettings::default()
-        }];
+        let signing = SigningSettings {
+            tsa_url: Some("http://legacy.example.test/tsa".to_owned()),
+            tsa_providers: vec![TsaProviderSettings {
+                id: "enabled-not-default".to_owned(),
+                name: "Enabled but not default".to_owned(),
+                enabled: true,
+                r#default: false,
+                url: Some("http://enabled.example.test/tsa".to_owned()),
+                ..TsaProviderSettings::default()
+            }],
+            ..SigningSettings::default()
+        };
 
         let selection = signing.runtime_tsa_selection();
         let catalog = tsa_catalog_view(&loaded, NOW, &selection);

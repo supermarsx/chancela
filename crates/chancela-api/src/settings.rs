@@ -1044,18 +1044,17 @@ impl Default for TrustRefreshSettings {
 }
 
 /// Small, scheduler-friendly refresh cadence shape. No cron parser is introduced for this slice.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TrustRefreshCadence {
+    #[default]
     Manual,
-    IntervalHours { hours: u16 },
-    Daily { hour_utc: u8 },
-}
-
-impl Default for TrustRefreshCadence {
-    fn default() -> Self {
-        Self::Manual
-    }
+    IntervalHours {
+        hours: u16,
+    },
+    Daily {
+        hour_utc: u8,
+    },
 }
 
 fn default_tsl_sources() -> Vec<TslSourceSettings> {

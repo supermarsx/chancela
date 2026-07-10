@@ -392,16 +392,16 @@ fn verify_tagged_structure(
     let root_k = struct_root
         .get(b"K")
         .map_err(|_| fail("/StructTreeRoot has no /K entry".into()))?;
-    collect_mcr_entries(
-        doc,
-        root_k,
-        None,
-        &page_index_by_id,
-        &mut mcr_entries,
-        &mut seen_struct_elems,
-        fail,
-        role_map,
-    )?;
+    {
+        let mut collector = McrEntryCollector {
+            page_index_by_id: &page_index_by_id,
+            mcr_entries: &mut mcr_entries,
+            seen_struct_elems: &mut seen_struct_elems,
+            fail,
+            role_map,
+        };
+        collect_mcr_entries(doc, root_k, None, &mut collector)?;
+    }
 
     for (key, parent_element) in &parent_entries {
         match mcr_entries.get(key) {
@@ -736,19 +736,23 @@ fn is_pdf_whitespace(byte: u8) -> bool {
     matches!(byte, b'\0' | b'\t' | b'\n' | b'\x0c' | b'\r' | b' ')
 }
 
+struct McrEntryCollector<'a> {
+    page_index_by_id: &'a BTreeMap<ObjectId, usize>,
+    mcr_entries: &'a mut BTreeMap<(usize, i64), ObjectId>,
+    seen_struct_elems: &'a mut BTreeSet<ObjectId>,
+    fail: &'a dyn Fn(String) -> DocError,
+    role_map: &'a Dictionary,
+}
+
 fn collect_mcr_entries(
     doc: &Document,
     object: &Object,
     current_element: Option<ObjectId>,
-    page_index_by_id: &BTreeMap<ObjectId, usize>,
-    mcr_entries: &mut BTreeMap<(usize, i64), ObjectId>,
-    seen_struct_elems: &mut BTreeSet<ObjectId>,
-    fail: &dyn Fn(String) -> DocError,
-    role_map: &Dictionary,
+    collector: &mut McrEntryCollector<'_>,
 ) -> Result<(), DocError> {
     if let Ok(struct_ref) = object.as_reference() {
-        if !seen_struct_elems.insert(struct_ref) {
-            return Err(fail(format!(
+        if !collector.seen_struct_elems.insert(struct_ref) {
+            return Err((collector.fail)(format!(
                 "structure tree repeats StructElem reference {:?}",
                 struct_ref
             )));
@@ -756,68 +760,56 @@ fn collect_mcr_entries(
         let elem = doc
             .get_object(struct_ref)
             .and_then(Object::as_dict)
-            .map_err(|_| fail(format!("StructElem {:?} is not a dictionary", struct_ref)))?;
+            .map_err(|_| {
+                (collector.fail)(format!("StructElem {:?} is not a dictionary", struct_ref))
+            })?;
         if !elem.has_type(b"StructElem") {
-            return Err(fail(format!(
+            return Err((collector.fail)(format!(
                 "object {:?} is not a /StructElem",
                 struct_ref
             )));
         }
-        verify_structure_role(elem, role_map, fail)?;
+        verify_structure_role(elem, collector.role_map, collector.fail)?;
         if let Ok(kids) = elem.get(b"K") {
-            collect_mcr_entries(
-                doc,
-                kids,
-                Some(struct_ref),
-                page_index_by_id,
-                mcr_entries,
-                seen_struct_elems,
-                fail,
-                role_map,
-            )?;
+            collect_mcr_entries(doc, kids, Some(struct_ref), collector)?;
         }
         return Ok(());
     }
 
     if let Ok(array) = object.as_array() {
         for item in array {
-            collect_mcr_entries(
-                doc,
-                item,
-                current_element,
-                page_index_by_id,
-                mcr_entries,
-                seen_struct_elems,
-                fail,
-                role_map,
-            )?;
+            collect_mcr_entries(doc, item, current_element, collector)?;
         }
         return Ok(());
     }
 
     if let Ok(dict) = object.as_dict() {
         if dict.has_type(b"MCR") {
-            let element_ref = current_element
-                .ok_or_else(|| fail("structure /MCR has no containing /StructElem".into()))?;
+            let element_ref = current_element.ok_or_else(|| {
+                (collector.fail)("structure /MCR has no containing /StructElem".into())
+            })?;
             let page_ref = dict
                 .get(b"Pg")
                 .and_then(Object::as_reference)
-                .map_err(|_| fail("structure /MCR has no /Pg page reference".into()))?;
-            let page_index = page_index_by_id
-                .get(&page_ref)
-                .ok_or_else(|| fail(format!("structure /MCR points to non-page {:?}", page_ref)))?;
+                .map_err(|_| (collector.fail)("structure /MCR has no /Pg page reference".into()))?;
+            let page_index = collector.page_index_by_id.get(&page_ref).ok_or_else(|| {
+                (collector.fail)(format!("structure /MCR points to non-page {:?}", page_ref))
+            })?;
             let mcid = dict
                 .get(b"MCID")
                 .and_then(Object::as_i64)
-                .map_err(|_| fail("structure /MCR has no /MCID integer".into()))?;
+                .map_err(|_| (collector.fail)("structure /MCR has no /MCID integer".into()))?;
             if mcid < 0 {
-                return Err(fail(format!("structure /MCR has negative /MCID {mcid}")));
+                return Err((collector.fail)(format!(
+                    "structure /MCR has negative /MCID {mcid}"
+                )));
             }
-            if mcr_entries
+            if collector
+                .mcr_entries
                 .insert((*page_index, mcid), element_ref)
                 .is_some()
             {
-                return Err(fail(format!(
+                return Err((collector.fail)(format!(
                     "structure tree repeats /MCR for page {} /MCID {mcid}",
                     page_index
                 )));
@@ -825,12 +817,12 @@ fn collect_mcr_entries(
             return Ok(());
         }
 
-        return Err(fail(
+        return Err((collector.fail)(
             "structure /K dictionary is neither an /MCR nor an indirect /StructElem".into(),
         ));
     }
 
-    Err(fail(
+    Err((collector.fail)(
         "structure /K uses a form outside the writer's bounded tagged-PDF shape".into(),
     ))
 }

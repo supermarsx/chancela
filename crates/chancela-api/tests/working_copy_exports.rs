@@ -230,7 +230,7 @@ async fn ledger_events(state: &AppState, token: &str) -> Value {
     events
 }
 
-fn header_value<'a>(headers: &'a HeaderMap, name: header::HeaderName) -> &'a str {
+fn header_value(headers: &HeaderMap, name: header::HeaderName) -> &str {
     headers
         .get(name)
         .and_then(|value| value.to_str().ok())

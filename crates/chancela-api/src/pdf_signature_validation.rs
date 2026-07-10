@@ -630,7 +630,7 @@ fn byte_range_digest_hex(bytes: &[u8], range: [i64; 4]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(&bytes[s1..s1 + l1]);
     hasher.update(&bytes[s2..s2 + l2]);
-    hex(&hasher.finalize())
+    hex(hasher.finalize())
 }
 
 fn cades_report(report: &chancela_pades::PdfSignatureReport) -> CadesTechnicalReport {
@@ -1047,7 +1047,7 @@ fn hashes_hex(hashes: &[[u8; 32]]) -> Vec<String> {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest: [u8; 32] = Sha256::digest(bytes).into();
-    hex(&digest)
+    hex(digest)
 }
 
 fn hex(bytes: impl AsRef<[u8]>) -> String {

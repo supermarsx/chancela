@@ -778,7 +778,7 @@ fn scan_sqlite_logical_usage(
         .ledger
         .events()
         .iter()
-        .map(|event| json_len_estimate(event))
+        .map(json_len_estimate)
         .fold(0_u64, u64::saturating_add);
     usage.push(sqlite_logical_concern(
         "ledger",
@@ -791,17 +791,17 @@ fn scan_sqlite_logical_usage(
     let entity_bytes = loaded
         .entities
         .values()
-        .map(|entity| json_len_estimate(entity))
+        .map(json_len_estimate)
         .fold(0_u64, u64::saturating_add);
     let book_bytes = loaded
         .books
         .values()
-        .map(|book| json_len_estimate(book))
+        .map(json_len_estimate)
         .fold(0_u64, u64::saturating_add);
     let act_bytes = loaded
         .acts
         .values()
-        .map(|act| json_len_estimate(act))
+        .map(json_len_estimate)
         .fold(0_u64, u64::saturating_add);
     usage.push(sqlite_logical_concern(
         "domain",
@@ -816,7 +816,7 @@ fn scan_sqlite_logical_usage(
     let registry_bytes = loaded
         .registry_extracts
         .values()
-        .map(|extract| json_len_estimate(extract))
+        .map(json_len_estimate)
         .fold(0_u64, u64::saturating_add);
     usage.push(sqlite_logical_concern(
         "registry",

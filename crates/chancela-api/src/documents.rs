@@ -1195,7 +1195,7 @@ pub async fn import_document(
             imported_at,
             imported_by: actor_name.clone(),
             operator_review_status: imported_document_initial_review_status(
-                &report.content_type.detected,
+                report.content_type.detected,
             ),
             operator_reviewed_at: None,
             operator_reviewed_by: None,
@@ -2715,10 +2715,11 @@ pub async fn export_working_copy(
         .map_err(|e| ApiError::Internal(format!("failed to build working-copy response: {e}")))
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum WorkingCopyFormat {
     #[serde(alias = "md")]
+    #[default]
     Markdown,
     #[serde(alias = "text")]
     Txt,
@@ -2726,12 +2727,6 @@ enum WorkingCopyFormat {
     Rtf,
     #[serde(alias = "opendocument")]
     Odt,
-}
-
-impl Default for WorkingCopyFormat {
-    fn default() -> Self {
-        Self::Markdown
-    }
 }
 
 #[derive(Deserialize)]

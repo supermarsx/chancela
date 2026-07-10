@@ -1249,10 +1249,12 @@ impl Store {
             append_document_members(
                 &mut members,
                 &mut exported_document_ids,
-                "book",
-                book_id.to_string(),
-                book_id.to_string(),
-                None,
+                DocumentMemberOwner {
+                    owner_kind: "book",
+                    owner_id: book_id.to_string(),
+                    book_id: book_id.to_string(),
+                    act_id: None,
+                },
                 doc,
                 matching_signed,
             )?;
@@ -1263,10 +1265,12 @@ impl Store {
                     Some(doc) => append_document_members(
                         &mut members,
                         &mut exported_document_ids,
-                        "book",
-                        book_id.to_string(),
-                        book_id.to_string(),
-                        None,
+                        DocumentMemberOwner {
+                            owner_kind: "book",
+                            owner_id: book_id.to_string(),
+                            book_id: book_id.to_string(),
+                            act_id: None,
+                        },
                         doc,
                         Some(signed),
                     )?,
@@ -1288,10 +1292,12 @@ impl Store {
                 append_document_members(
                     &mut members,
                     &mut exported_document_ids,
-                    "act",
-                    act.id.to_string(),
-                    book_id.to_string(),
-                    Some(act.id.to_string()),
+                    DocumentMemberOwner {
+                        owner_kind: "act",
+                        owner_id: act.id.to_string(),
+                        book_id: book_id.to_string(),
+                        act_id: Some(act.id.to_string()),
+                    },
                     doc,
                     matching_signed,
                 )?;
@@ -1304,10 +1310,12 @@ impl Store {
                     Some(doc) => append_document_members(
                         &mut members,
                         &mut exported_document_ids,
-                        "act",
-                        act.id.to_string(),
-                        book_id.to_string(),
-                        Some(act.id.to_string()),
+                        DocumentMemberOwner {
+                            owner_kind: "act",
+                            owner_id: act.id.to_string(),
+                            book_id: book_id.to_string(),
+                            act_id: Some(act.id.to_string()),
+                        },
                         doc,
                         Some(signed),
                     )?,
@@ -1435,6 +1443,13 @@ struct BuiltBundle {
     bytes: Vec<u8>,
 }
 
+struct DocumentMemberOwner {
+    owner_kind: &'static str,
+    owner_id: String,
+    book_id: String,
+    act_id: Option<String>,
+}
+
 // =================================================================================================
 // Free helpers
 // =================================================================================================
@@ -1442,10 +1457,7 @@ struct BuiltBundle {
 fn append_document_members(
     members: &mut Vec<(String, Vec<u8>)>,
     exported_document_ids: &mut BTreeSet<String>,
-    owner_kind: &'static str,
-    owner_id: String,
-    book_id: String,
-    act_id: Option<String>,
+    owner: DocumentMemberOwner,
     doc: crate::StoredDocument,
     signed: Option<crate::StoredSignedDocument>,
 ) -> Result<(), StoreError> {
@@ -1453,8 +1465,14 @@ fn append_document_members(
         return Ok(());
     }
 
-    let metadata =
-        document_metadata_bytes(owner_kind, owner_id, book_id, act_id, &doc, signed.as_ref())?;
+    let metadata = document_metadata_bytes(
+        owner.owner_kind,
+        owner.owner_id,
+        owner.book_id,
+        owner.act_id,
+        &doc,
+        signed.as_ref(),
+    )?;
     let doc_id = doc.id.clone();
     members.push((format!("documents/{doc_id}.pdf"), doc.pdf_bytes));
     members.push((format!("documents/{doc_id}.json"), metadata));
