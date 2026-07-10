@@ -214,6 +214,10 @@ export const enGB: Catalog = {
   'notifications.alert.book.noActs.body':
     'The open book has no minutes yet. Draft minutes number {next_ata_number} or import historical minutes when appropriate.',
   'notifications.alert.book.noActs.action': 'Open book',
+  'notifications.alert.book.legalHold.title': 'Active legal hold',
+  'notifications.alert.book.legalHold.body':
+    'Book {book_id} has an active legal hold: {legal_hold_reason}. Review it before archive disposal decisions.',
+  'notifications.alert.book.legalHold.action': 'Open book',
   'notifications.alert.act.advanceAvailable.title': 'Next minutes step available',
   'notifications.alert.act.advanceAvailable.body':
     'The minutes are in {current_state}. Advance to {next_state} when the supporting work is ready.',
@@ -222,6 +226,10 @@ export const enGB: Catalog = {
   'notifications.alert.act.signingReady.body':
     'The minutes are in signing and have no compliance errors under {rule_pack}. Collect or import the required signatures.',
   'notifications.alert.act.signingReady.action': 'Open minutes',
+  'notifications.alert.act.archivePending.title': 'Sealed minutes not archived',
+  'notifications.alert.act.archivePending.body':
+    'Minutes {act_id} are sealed and not archived yet. Archive them when preservation evidence is ready.',
+  'notifications.alert.act.archivePending.action': 'Open minutes',
   'notifications.reminder.annual.csc.title': 'Annual general meeting pending',
   'notifications.reminder.annual.assoc.title': 'Annual general meeting pending',
   'notifications.reminder.annual.fundacao.title': 'Annual review pending',

@@ -329,6 +329,14 @@ const ALERT_COPY: Partial<Record<string, { title: MessageKey; body: MessageKey }
     title: 'notifications.alert.book.noActs.title',
     body: 'notifications.alert.book.noActs.body',
   },
+  'book.legal_hold.active': {
+    title: 'notifications.alert.book.legalHold.title',
+    body: 'notifications.alert.book.legalHold.body',
+  },
+  'act.archive.pending': {
+    title: 'notifications.alert.act.archivePending.title',
+    body: 'notifications.alert.act.archivePending.body',
+  },
 };
 
 function alertWorkQueueItem(alert: DashboardAlert, index: number, t: TFunction): WorkQueueItem {

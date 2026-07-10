@@ -476,6 +476,123 @@ describe('DashboardPage', () => {
     expect(within(queue).getByText('Lei csc:399 · fonte pendente')).toBeTruthy();
   });
 
+  it('renders legal-hold and archive-status alerts as localized routed work', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      alerts: [
+        {
+          code: 'book.legal_hold.active',
+          label: 'ReviewRequired',
+          severity: 'Warning',
+          category: 'ArchiveRetention',
+          message: 'Raw backend legal hold message.',
+          params: {
+            book_id: 'book-held',
+            entity_id: 'entity-1',
+            book_kind: 'AssembleiaGeral',
+            legal_hold_reason: 'litígio pendente',
+            legal_hold_actor: 'operator',
+            legal_hold_set_at: '2026-07-01T12:00:00Z',
+          },
+          target: {
+            entity_id: 'entity-1',
+            book_id: 'book-held',
+            act_id: null,
+            links: {
+              entity: '/v1/entities/entity-1',
+              book: '/v1/books/book-held',
+              act: null,
+              ledger: '/v1/ledger/events?chain=book:book-held',
+            },
+          },
+          source: 'books.legal_hold',
+          law_refs: [],
+          action: {
+            kind: 'open_book_legal_hold',
+            label_key: 'notifications.alert.book.legalHold.action',
+            api_href: '/v1/books/book-held/legal-hold',
+            route: '/livros/book-held',
+          },
+          recommended_next_steps: [
+            'Open the book legal-hold panel.',
+            'Review the hold reason before any archive disposal decision.',
+          ],
+          i18n: {
+            title_key: 'notifications.alert.book.legalHold.title',
+            body_key: 'notifications.alert.book.legalHold.body',
+            action_key: 'notifications.alert.book.legalHold.action',
+          },
+        },
+        {
+          code: 'act.archive.pending',
+          label: 'Advisory',
+          severity: 'Info',
+          category: 'ArchiveStatus',
+          message: 'Raw backend archive message.',
+          params: {
+            act_id: 'act-sealed',
+            book_id: 'book-held',
+            entity_id: 'entity-1',
+            act_title: 'Ata selada',
+            current_state: 'Sealed',
+          },
+          target: {
+            entity_id: 'entity-1',
+            book_id: 'book-held',
+            act_id: 'act-sealed',
+            links: {
+              entity: '/v1/entities/entity-1',
+              book: '/v1/books/book-held',
+              act: '/v1/acts/act-sealed',
+              ledger: '/v1/ledger/events?scope=act:act-sealed',
+            },
+          },
+          source: 'acts.state',
+          law_refs: [],
+          action: {
+            kind: 'archive_act',
+            label_key: 'notifications.alert.act.archivePending.action',
+            api_href: '/v1/acts/act-sealed/archive',
+            route: '/atas/act-sealed',
+          },
+          recommended_next_steps: [
+            'Open the sealed act.',
+            'Archive it when the preservation evidence is ready.',
+          ],
+          i18n: {
+            title_key: 'notifications.alert.act.archivePending.title',
+            body_key: 'notifications.alert.act.archivePending.body',
+            action_key: 'notifications.alert.act.archivePending.action',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const queue = await screen.findByRole('list', { name: 'Fila de trabalho do painel' });
+    expect(
+      within(queue).getByRole('link', { name: 'Retenção legal ativa' }).getAttribute('href'),
+    ).toBe('/livros/book-held');
+    expect(
+      within(queue).getByText(
+        'O livro book-held tem retenção legal ativa: litígio pendente. Reveja a retenção antes de decisões de descarte de arquivo.',
+      ),
+    ).toBeTruthy();
+    expect(within(queue).getByText('Fonte books.legal_hold')).toBeTruthy();
+
+    expect(
+      within(queue).getByRole('link', { name: 'Ata selada por arquivar' }).getAttribute('href'),
+    ).toBe('/atas/act-sealed');
+    expect(
+      within(queue).getByText(
+        'A ata act-sealed está selada e ainda não foi arquivada. Arquive-a quando a evidência de preservação estiver pronta.',
+      ),
+    ).toBeTruthy();
+    expect(within(queue).getByText('Fonte acts.state')).toBeTruthy();
+  });
+
   it('keeps complete verified law references visually normal', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,

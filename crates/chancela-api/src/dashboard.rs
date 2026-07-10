@@ -12,6 +12,7 @@ use chancela_core::{
 use chancela_law::LawCatalog;
 use chancela_registry::RegistryExtract;
 use chancela_store::{StoredFollowUp, StoredFollowUpStatus};
+use time::format_description::well_known::Rfc3339;
 use time::{Date, Month, OffsetDateTime};
 
 use crate::AppState;
@@ -645,6 +646,55 @@ fn push_lifecycle_alerts(
         }
     }
 
+    for book in books.values().filter(|book| book.legal_hold.is_some()) {
+        let hold = book.legal_hold.as_ref().expect("filtered legal hold");
+        alerts.push(DashboardAlert {
+            code: "book.legal_hold.active".to_owned(),
+            label: "ReviewRequired".to_owned(),
+            severity: "Warning".to_owned(),
+            category: "ArchiveRetention".to_owned(),
+            message: format!(
+                "Book {} has an active legal hold set by {}. Review the hold before archive disposal decisions.",
+                book.id, hold.actor
+            ),
+            params: dashboard_alert_params([
+                ("book_id", book.id.to_string()),
+                ("entity_id", book.entity_id.to_string()),
+                ("book_kind", format!("{:?}", book.kind)),
+                ("legal_hold_reason", hold.reason.clone()),
+                ("legal_hold_actor", hold.actor.clone()),
+                ("legal_hold_set_at", rfc3339(hold.set_at)),
+                (
+                    "recommended_actions",
+                    "review_legal_hold,review_archive_disposal".to_owned(),
+                ),
+            ]),
+            target: DashboardAlertTarget {
+                entity_id: Some(book.entity_id.to_string()),
+                book_id: Some(book.id.to_string()),
+                act_id: None,
+                links: target_links(Some(book.entity_id), Some(book.id), None),
+            },
+            source: Some("books.legal_hold".to_owned()),
+            law_refs: Vec::new(),
+            action: Some(dashboard_action(
+                "open_book_legal_hold",
+                "notifications.alert.book.legalHold.action",
+                Some(format!("/v1/books/{}/legal-hold", book.id)),
+                Some(format!("/livros/{}", book.id)),
+            )),
+            recommended_next_steps: vec![
+                "Open the book legal-hold panel.".to_owned(),
+                "Review the hold reason before any archive disposal decision.".to_owned(),
+            ],
+            i18n: Some(alert_i18n(
+                "notifications.alert.book.legalHold.title",
+                "notifications.alert.book.legalHold.body",
+                Some("notifications.alert.book.legalHold.action"),
+            )),
+        });
+    }
+
     for act in acts.values() {
         let Some(next_state) = next_act_state(act.state) else {
             continue;
@@ -691,6 +741,57 @@ fn push_lifecycle_alerts(
                 "notifications.alert.act.advanceAvailable.title",
                 "notifications.alert.act.advanceAvailable.body",
                 Some("notifications.alert.act.advanceAvailable.action"),
+            )),
+        });
+    }
+
+    for act in acts
+        .values()
+        .filter(|act| matches!(act.state, ActState::Sealed))
+    {
+        let Some(book) = books.get(&act.book_id) else {
+            continue;
+        };
+        let entity_id = book.entity_id;
+        alerts.push(DashboardAlert {
+            code: "act.archive.pending".to_owned(),
+            label: "Advisory".to_owned(),
+            severity: "Info".to_owned(),
+            category: "ArchiveStatus".to_owned(),
+            message: format!(
+                "Act {} is sealed but not archived. Archive it when the preservation evidence is ready.",
+                act.id
+            ),
+            params: dashboard_alert_params([
+                ("act_id", act.id.to_string()),
+                ("book_id", book.id.to_string()),
+                ("entity_id", entity_id.to_string()),
+                ("act_title", act.title.clone()),
+                ("current_state", format!("{:?}", act.state)),
+                ("recommended_actions", "archive_act".to_owned()),
+            ]),
+            target: DashboardAlertTarget {
+                entity_id: Some(entity_id.to_string()),
+                book_id: Some(book.id.to_string()),
+                act_id: Some(act.id.to_string()),
+                links: target_links(Some(entity_id), Some(book.id), Some(act.id)),
+            },
+            source: Some("acts.state".to_owned()),
+            law_refs: Vec::new(),
+            action: Some(dashboard_action(
+                "archive_act",
+                "notifications.alert.act.archivePending.action",
+                Some(format!("/v1/acts/{}/archive", act.id)),
+                Some(format!("/atas/{}", act.id)),
+            )),
+            recommended_next_steps: vec![
+                "Open the sealed act.".to_owned(),
+                "Archive it when the preservation evidence is ready.".to_owned(),
+            ],
+            i18n: Some(alert_i18n(
+                "notifications.alert.act.archivePending.title",
+                "notifications.alert.act.archivePending.body",
+                Some("notifications.alert.act.archivePending.action"),
             )),
         });
     }
@@ -885,6 +986,10 @@ fn parse_dashboard_date(value: &str) -> Option<Date> {
     let month = Month::try_from(month.parse::<u8>().ok()?).ok()?;
     let day = day.parse::<u8>().ok()?;
     Date::from_calendar_date(year, month, day).ok()
+}
+
+fn rfc3339(value: OffsetDateTime) -> String {
+    value.format(&Rfc3339).unwrap_or_default()
 }
 
 fn target_links(
@@ -1436,7 +1541,7 @@ fn calendar_signal_book_kinds(family: EntityFamily) -> &'static [BookKind] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chancela_core::{MeetingChannel, Nipc, NumberingScheme, TermoDeAbertura};
+    use chancela_core::{LegalHold, MeetingChannel, Nipc, NumberingScheme, TermoDeAbertura};
     use chancela_registry::{RegistryExtract, RegistryOfficer, RegistryProvenance};
     use time::macros::date;
 
@@ -1856,6 +1961,112 @@ mod tests {
         assert_eq!(
             missing_termo.target.links.ledger.as_deref(),
             Some(expected_book_ledger_link.as_str())
+        );
+    }
+
+    #[test]
+    fn lifecycle_alerts_surface_legal_hold_and_unarchived_sealed_acts() {
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Open;
+        book.termo_abertura = Some(TermoDeAbertura {
+            entity_name: entity.name.clone(),
+            entity_nipc: entity.nipc.as_str().to_owned(),
+            entity_seat: entity.seat.clone(),
+            purpose: "Livro de atas da assembleia geral".to_owned(),
+            numbering_scheme: NumberingScheme::Sequential,
+            opening_date: date!(2026 - 01 - 05),
+            required_signatories: vec!["Administração".to_owned()],
+        });
+        book.legal_hold = Some(LegalHold {
+            reason: "litigation hold".to_owned(),
+            actor: "operator".to_owned(),
+            set_at: OffsetDateTime::UNIX_EPOCH,
+        });
+
+        let mut sealed = Act::draft(book.id, "Ata selada", MeetingChannel::Physical);
+        sealed.state = ActState::Sealed;
+        let mut archived = Act::draft(book.id, "Ata arquivada", MeetingChannel::Physical);
+        archived.state = ActState::Archived;
+        let sealed_id = sealed.id;
+        let archived_id = archived.id;
+        let sealed_id_text = sealed_id.to_string();
+        let archived_id_text = archived_id.to_string();
+        let entities = HashMap::from([(entity.id, entity.clone())]);
+        let books = HashMap::from([(book.id, book.clone())]);
+        let acts = HashMap::from([(sealed.id, sealed), (archived.id, archived)]);
+
+        let alerts = dashboard_alerts(
+            &entities,
+            &books,
+            &acts,
+            &HashMap::new(),
+            true,
+            date!(2026 - 07 - 09),
+        );
+
+        let hold = alerts
+            .iter()
+            .find(|alert| alert.code == "book.legal_hold.active")
+            .expect("legal hold alert");
+        assert_eq!(hold.label, "ReviewRequired");
+        assert_eq!(hold.severity, "Warning");
+        assert_eq!(hold.category, "ArchiveRetention");
+        assert_eq!(
+            hold.params.get("legal_hold_reason").map(String::as_str),
+            Some("litigation hold")
+        );
+        assert_eq!(
+            hold.params.get("legal_hold_actor").map(String::as_str),
+            Some("operator")
+        );
+        assert_eq!(
+            hold.params.get("legal_hold_set_at").map(String::as_str),
+            Some("1970-01-01T00:00:00Z")
+        );
+        let expected_book_route = format!("/livros/{}", book.id);
+        assert_eq!(
+            hold.action
+                .as_ref()
+                .and_then(|action| action.route.as_deref()),
+            Some(expected_book_route.as_str())
+        );
+        assert_eq!(
+            hold.i18n.as_ref().map(|i18n| i18n.title_key.as_str()),
+            Some("notifications.alert.book.legalHold.title")
+        );
+
+        let archive = alerts
+            .iter()
+            .find(|alert| alert.code == "act.archive.pending")
+            .expect("archive-pending alert");
+        assert_eq!(archive.label, "Advisory");
+        assert_eq!(archive.severity, "Info");
+        assert_eq!(archive.category, "ArchiveStatus");
+        assert_eq!(
+            archive.target.act_id.as_deref(),
+            Some(sealed_id_text.as_str())
+        );
+        assert_eq!(
+            archive
+                .params
+                .get("recommended_actions")
+                .map(String::as_str),
+            Some("archive_act")
+        );
+        let expected_act_route = format!("/atas/{sealed_id}");
+        assert_eq!(
+            archive
+                .action
+                .as_ref()
+                .and_then(|action| action.route.as_deref()),
+            Some(expected_act_route.as_str())
+        );
+        assert!(
+            alerts
+                .iter()
+                .filter(|alert| alert.code == "act.archive.pending")
+                .all(|alert| alert.target.act_id.as_deref() != Some(archived_id_text.as_str()))
         );
     }
 

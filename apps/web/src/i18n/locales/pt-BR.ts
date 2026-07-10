@@ -215,6 +215,10 @@ export const ptBR: Catalog = {
   'notifications.alert.book.noActs.body':
     'O livro aberto ainda não tem atas. Crie a ata n.º {next_ata_number} ou importe atas históricas quando aplicável.',
   'notifications.alert.book.noActs.action': 'Abrir livro',
+  'notifications.alert.book.legalHold.title': 'Retenção legal ativa',
+  'notifications.alert.book.legalHold.body':
+    'O livro {book_id} tem retenção legal ativa: {legal_hold_reason}. Revise a retenção antes de decisões de descarte de arquivo.',
+  'notifications.alert.book.legalHold.action': 'Abrir livro',
   'notifications.alert.act.advanceAvailable.title': 'Próximo passo da ata disponível',
   'notifications.alert.act.advanceAvailable.body':
     'A ata está em {current_state}. Avance para {next_state} quando o trabalho de suporte estiver pronto.',
@@ -223,6 +227,10 @@ export const ptBR: Catalog = {
   'notifications.alert.act.signingReady.body':
     'A ata está em assinatura e não tem erros de conformidade em {rule_pack}. Recolha ou importe as assinaturas necessárias.',
   'notifications.alert.act.signingReady.action': 'Abrir ata',
+  'notifications.alert.act.archivePending.title': 'Ata selada por arquivar',
+  'notifications.alert.act.archivePending.body':
+    'A ata {act_id} está selada e ainda não foi arquivada. Arquive-a quando a evidência de preservação estiver pronta.',
+  'notifications.alert.act.archivePending.action': 'Abrir ata',
   'notifications.reminder.annual.csc.title': 'Assembleia geral anual pendente',
   'notifications.reminder.annual.assoc.title': 'Assembleia geral anual pendente',
   'notifications.reminder.annual.fundacao.title': 'Revisão anual pendente',
