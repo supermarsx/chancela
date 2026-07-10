@@ -49,6 +49,7 @@ pub(crate) const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions
 const MAX_DSR_EXECUTION_NOTE_CHARS: usize = 4096;
 const MAX_DSR_REVIEW_CHARS: usize = 2048;
 const MAX_DSR_AFFECTED_RECORDS: usize = 32;
+const MAX_DSR_ERASURE_PLAN_ITEMS: usize = 16;
 const MAX_DSR_AFFECTED_FIELD_CHARS: usize = 128;
 const MAX_DSR_AFFECTED_RECORD_COUNT: u64 = 1_000_000_000;
 const MAX_RETENTION_NAME_CHARS: usize = 160;
@@ -179,6 +180,108 @@ pub struct DsrAffectedRecordSummary {
     pub count: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DsrErasurePreflightStatus {
+    BlockedImmutableLedger,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DsrMutableSidecarAction {
+    Redact,
+    Anonymize,
+    Delete,
+    Retain,
+    Review,
+}
+
+impl DsrMutableSidecarAction {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "redact" => Ok(Self::Redact),
+            "anonymize" | "anonymise" => Ok(Self::Anonymize),
+            "delete" => Ok(Self::Delete),
+            "retain" => Ok(Self::Retain),
+            "review" => Ok(Self::Review),
+            _ => Err(ApiError::Unprocessable(
+                "invalid erasure_plan.action; expected redact, anonymize, delete, retain, or review"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DsrMutableSidecarPlanStatus {
+    Planned,
+    Blocked,
+    ManualReviewRequired,
+    NotApplicable,
+}
+
+impl DsrMutableSidecarPlanStatus {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "planned" | "pending" => Ok(Self::Planned),
+            "blocked" => Ok(Self::Blocked),
+            "manual_review_required" | "review_required" => Ok(Self::ManualReviewRequired),
+            "not_applicable" | "none" => Ok(Self::NotApplicable),
+            "completed" | "executed" => Err(ApiError::Unprocessable(
+                "erasure_plan.status cannot be completed; this API records preflight only and does not execute mutation"
+                    .to_owned(),
+            )),
+            _ => Err(ApiError::Unprocessable(
+                "invalid erasure_plan.status; expected planned, blocked, manual_review_required, or not_applicable"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DsrMutableSidecarPlan {
+    pub collection: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_id: Option<String>,
+    pub action: DsrMutableSidecarAction,
+    pub status: DsrMutableSidecarPlanStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub mutation_completed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DsrErasureBlocker {
+    pub code: String,
+    pub target: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DsrErasureIdempotencyGuard {
+    pub request_id: String,
+    pub state_transition: String,
+    pub duplicate_completion_behavior: String,
+    pub ledger_event_kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DsrErasurePreflight {
+    pub dsr_request_id: String,
+    pub subject_user_id: String,
+    pub assessed_at: String,
+    pub assessed_by: String,
+    pub status: DsrErasurePreflightStatus,
+    pub ledger_event_count_before_completion: usize,
+    pub immutable_ledger_blockers: Vec<DsrErasureBlocker>,
+    pub mutable_sidecar_plan: Vec<DsrMutableSidecarPlan>,
+    pub idempotency_guard: DsrErasureIdempotencyGuard,
+    pub destructive_mutation_completed: bool,
+    pub full_erasure_completed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DsrRequest {
     pub id: DsrRequestId,
@@ -209,6 +312,8 @@ pub struct DsrRequest {
     pub retention_review: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legal_basis_review: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub erasure_preflight: Option<DsrErasurePreflight>,
 }
 
 #[derive(Serialize)]
@@ -240,6 +345,8 @@ pub struct DsrRequestView {
     pub retention_review: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub legal_basis_review: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub erasure_preflight: Option<DsrErasurePreflight>,
 }
 
 impl From<&DsrRequest> for DsrRequestView {
@@ -262,6 +369,7 @@ impl From<&DsrRequest> for DsrRequestView {
             affected_records: req.affected_records.clone(),
             retention_review: req.retention_review.clone(),
             legal_basis_review: req.legal_basis_review.clone(),
+            erasure_preflight: req.erasure_preflight.clone(),
         }
     }
 }
@@ -290,6 +398,8 @@ pub struct PatchDsrRequest {
     pub retention_review: Option<String>,
     #[serde(default)]
     pub legal_basis_review: Option<String>,
+    #[serde(default)]
+    pub erasure_plan: Option<Vec<DsrMutableSidecarPlanInput>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -306,6 +416,8 @@ pub struct CompleteDsrRequest {
     pub retention_review: Option<String>,
     #[serde(default)]
     pub legal_basis_review: Option<String>,
+    #[serde(default)]
+    pub erasure_plan: Option<Vec<DsrMutableSidecarPlanInput>>,
 }
 
 #[derive(Deserialize)]
@@ -318,6 +430,20 @@ pub struct DsrAffectedRecordInput {
     pub count: Option<u64>,
 }
 
+#[derive(Deserialize)]
+pub struct DsrMutableSidecarPlanInput {
+    #[serde(default)]
+    pub collection: Option<String>,
+    #[serde(default)]
+    pub record_id: Option<String>,
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
 struct DsrExecutionInput {
     completion_reason: Option<String>,
     outcome: Option<String>,
@@ -325,6 +451,7 @@ struct DsrExecutionInput {
     affected_records: Option<Vec<DsrAffectedRecordInput>>,
     retention_review: Option<String>,
     legal_basis_review: Option<String>,
+    erasure_plan: Option<Vec<DsrMutableSidecarPlanInput>>,
 }
 
 impl From<CompleteDsrRequest> for DsrExecutionInput {
@@ -336,6 +463,7 @@ impl From<CompleteDsrRequest> for DsrExecutionInput {
             affected_records: req.affected_records,
             retention_review: req.retention_review,
             legal_basis_review: req.legal_basis_review,
+            erasure_plan: req.erasure_plan,
         }
     }
 }
@@ -349,6 +477,7 @@ impl From<PatchDsrRequest> for DsrExecutionInput {
             affected_records: req.affected_records,
             retention_review: req.retention_review,
             legal_basis_review: req.legal_basis_review,
+            erasure_plan: req.erasure_plan,
         }
     }
 }
@@ -360,6 +489,7 @@ struct ValidatedDsrExecution {
     affected_records: Vec<DsrAffectedRecordSummary>,
     retention_review: Option<String>,
     legal_basis_review: Option<String>,
+    erasure_plan: Option<Vec<DsrMutableSidecarPlan>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1802,6 +1932,7 @@ pub async fn create_dsr_request(
         affected_records: Vec::new(),
         retention_review: None,
         legal_basis_review: None,
+        erasure_preflight: None,
     };
     let view = DsrRequestView::from(&request);
     state.dsr_requests.write().await.insert(request.id, request);
@@ -2643,9 +2774,40 @@ async fn complete_dsr_request_inner(
     attestor: &CurrentAttestor,
 ) -> Result<Json<DsrRequestView>, ApiError> {
     require_permission(state, actor, Permission::UserManage, Scope::Global).await?;
-    let execution = validate_dsr_execution(execution)?;
-
     let actor_name = actor.resolve("api");
+    let executed_at = now_rfc3339();
+    let request_snapshot = {
+        let requests = state.dsr_requests.read().await;
+        let request = requests
+            .get(&request_id)
+            .cloned()
+            .ok_or(ApiError::NotFound)?;
+        if expected_subject.is_some_and(|subject| subject != request.subject_user_id) {
+            return Err(ApiError::NotFound);
+        }
+        if request.status != DsrRequestStatus::Pending {
+            return Err(ApiError::Conflict(
+                "DSR request is not pending; it cannot be completed again".to_owned(),
+            ));
+        }
+        request
+    };
+    let execution = validate_dsr_execution(execution, request_snapshot.request_type)?;
+    let erasure_preflight = if request_snapshot.request_type == DsrRequestType::Erasure {
+        Some(
+            build_dsr_erasure_preflight(
+                state,
+                &request_snapshot,
+                &actor_name,
+                &executed_at,
+                execution.erasure_plan.clone().unwrap_or_default(),
+            )
+            .await,
+        )
+    } else {
+        None
+    };
+
     let mut requests = state.dsr_requests.write().await;
     let mut request = requests
         .get(&request_id)
@@ -2660,7 +2822,6 @@ async fn complete_dsr_request_inner(
         ));
     }
 
-    let executed_at = now_rfc3339();
     request.status = DsrRequestStatus::Completed;
     request.completed_at = Some(executed_at.clone());
     request.completed_by = Some(actor_name.clone());
@@ -2672,6 +2833,7 @@ async fn complete_dsr_request_inner(
     request.affected_records = execution.affected_records;
     request.retention_review = execution.retention_review;
     request.legal_basis_review = execution.legal_basis_review;
+    request.erasure_preflight = erasure_preflight;
     let view = DsrRequestView::from(&request);
     requests.insert(request.id, request);
     drop(requests);
@@ -3923,32 +4085,57 @@ fn required_string(raw: Option<String>, field: &str) -> Result<String, ApiError>
         .and_then(|value| clean_required(&value, field))
 }
 
-fn validate_dsr_execution(input: DsrExecutionInput) -> Result<ValidatedDsrExecution, ApiError> {
+fn validate_dsr_execution(
+    input: DsrExecutionInput,
+    request_type: DsrRequestType,
+) -> Result<ValidatedDsrExecution, ApiError> {
     let outcome = input
         .outcome
         .as_deref()
         .map(DsrExecutionOutcome::parse)
         .transpose()?
-        .unwrap_or(DsrExecutionOutcome::Fulfilled);
+        .unwrap_or(match request_type {
+            DsrRequestType::Erasure => DsrExecutionOutcome::PartiallyFulfilled,
+            DsrRequestType::Export
+            | DsrRequestType::Rectification
+            | DsrRequestType::Restriction => DsrExecutionOutcome::Fulfilled,
+        });
+    let execution_notes = clean_optional_bounded(
+        input.execution_notes,
+        "execution_notes",
+        MAX_DSR_EXECUTION_NOTE_CHARS,
+    )?;
+    let affected_records = sanitize_affected_records(input.affected_records)?;
+    let retention_review = clean_optional_bounded(
+        input.retention_review,
+        "retention_review",
+        MAX_DSR_REVIEW_CHARS,
+    )?;
+    let legal_basis_review = clean_optional_bounded(
+        input.legal_basis_review,
+        "legal_basis_review",
+        MAX_DSR_REVIEW_CHARS,
+    )?;
+    let erasure_plan = sanitize_dsr_erasure_plan(input.erasure_plan)?;
+    if request_type != DsrRequestType::Erasure && erasure_plan.is_some() {
+        return Err(ApiError::Unprocessable(
+            "erasure_plan is only allowed for erasure DSR requests".to_owned(),
+        ));
+    }
+    if request_type == DsrRequestType::Erasure && outcome == DsrExecutionOutcome::Fulfilled {
+        return Err(ApiError::Unprocessable(
+            "erasure DSR requests cannot be marked fulfilled because immutable ledger/audit records are retained; use partially_fulfilled, rejected, or no_action_required"
+                .to_owned(),
+        ));
+    }
     Ok(ValidatedDsrExecution {
         completion_reason: clean_optional(input.completion_reason),
         outcome,
-        execution_notes: clean_optional_bounded(
-            input.execution_notes,
-            "execution_notes",
-            MAX_DSR_EXECUTION_NOTE_CHARS,
-        )?,
-        affected_records: sanitize_affected_records(input.affected_records)?,
-        retention_review: clean_optional_bounded(
-            input.retention_review,
-            "retention_review",
-            MAX_DSR_REVIEW_CHARS,
-        )?,
-        legal_basis_review: clean_optional_bounded(
-            input.legal_basis_review,
-            "legal_basis_review",
-            MAX_DSR_REVIEW_CHARS,
-        )?,
+        execution_notes,
+        affected_records,
+        retention_review,
+        legal_basis_review,
+        erasure_plan,
     })
 }
 
@@ -3991,6 +4178,171 @@ fn sanitize_affected_records(
             })
         })
         .collect()
+}
+
+fn sanitize_dsr_erasure_plan(
+    raw: Option<Vec<DsrMutableSidecarPlanInput>>,
+) -> Result<Option<Vec<DsrMutableSidecarPlan>>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    if raw.len() > MAX_DSR_ERASURE_PLAN_ITEMS {
+        return Err(ApiError::Unprocessable(format!(
+            "erasure_plan must include at most {MAX_DSR_ERASURE_PLAN_ITEMS} entries"
+        )));
+    }
+
+    raw.into_iter()
+        .map(|item| {
+            let collection = required_privacy_control_segment(
+                item.collection,
+                "erasure_plan.collection",
+                MAX_DSR_AFFECTED_FIELD_CHARS,
+            )?;
+            let record_id = clean_optional_bounded(
+                item.record_id,
+                "erasure_plan.record_id",
+                MAX_DSR_AFFECTED_FIELD_CHARS,
+            )?;
+            if let Some(record_id) = record_id.as_deref() {
+                reject_path_like_value(record_id, "erasure_plan.record_id")?;
+            }
+            let action = item
+                .action
+                .as_deref()
+                .ok_or_else(|| {
+                    ApiError::Unprocessable("erasure_plan.action is required".to_owned())
+                })
+                .and_then(DsrMutableSidecarAction::parse)?;
+            let status = item
+                .status
+                .as_deref()
+                .map(DsrMutableSidecarPlanStatus::parse)
+                .transpose()?
+                .unwrap_or(DsrMutableSidecarPlanStatus::ManualReviewRequired);
+            let reason = optional_sensitive_checked_text(
+                item.reason,
+                "erasure_plan.reason",
+                MAX_DSR_REVIEW_CHARS,
+            )?;
+            Ok(DsrMutableSidecarPlan {
+                collection,
+                record_id,
+                action,
+                status,
+                reason,
+                mutation_completed: false,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+async fn build_dsr_erasure_preflight(
+    state: &AppState,
+    request: &DsrRequest,
+    actor_name: &str,
+    assessed_at: &str,
+    provided_plan: Vec<DsrMutableSidecarPlan>,
+) -> DsrErasurePreflight {
+    let ledger_event_count = dsr_subject_ledger_event_count(state, request.subject_user_id).await;
+    let mutable_sidecar_plan = dsr_erasure_sidecar_plan(request, provided_plan);
+
+    DsrErasurePreflight {
+        dsr_request_id: request.id.to_string(),
+        subject_user_id: request.subject_user_id.to_string(),
+        assessed_at: assessed_at.to_owned(),
+        assessed_by: actor_name.to_owned(),
+        status: DsrErasurePreflightStatus::BlockedImmutableLedger,
+        ledger_event_count_before_completion: ledger_event_count,
+        immutable_ledger_blockers: vec![
+            DsrErasureBlocker {
+                code: "immutable_ledger_events".to_owned(),
+                target: format!("user:{}", request.subject_user_id),
+                detail: format!(
+                    "{ledger_event_count} existing ledger event reference(s) matched before completion; ledger entries are append-only accountability records and are not erased by this API"
+                ),
+            },
+            DsrErasureBlocker {
+                code: "dsr_audit_chain_retention".to_owned(),
+                target: format!("privacy:dsr-request:{}", request.id),
+                detail:
+                    "DSR create/complete audit events and attestations are retained; completion records preflight evidence only"
+                        .to_owned(),
+            },
+        ],
+        mutable_sidecar_plan,
+        idempotency_guard: DsrErasureIdempotencyGuard {
+            request_id: request.id.to_string(),
+            state_transition: "pending_to_completed_once".to_owned(),
+            duplicate_completion_behavior: "conflict_existing_completed_request".to_owned(),
+            ledger_event_kind: DSR_COMPLETED_KIND.to_owned(),
+        },
+        destructive_mutation_completed: false,
+        full_erasure_completed: false,
+    }
+}
+
+async fn dsr_subject_ledger_event_count(state: &AppState, subject_user_id: UserId) -> usize {
+    let subject_id = subject_user_id.to_string();
+    let user_scope = format!("user:{subject_id}");
+    let username = {
+        let users = state.users.read().await;
+        users
+            .get(&subject_user_id)
+            .map(|user| user.username.clone())
+    };
+    let ledger = state.ledger.read().await;
+    ledger
+        .events()
+        .iter()
+        .filter(|event| {
+            event.scope == user_scope
+                || event.actor == subject_id
+                || username
+                    .as_deref()
+                    .is_some_and(|username| event.actor == username)
+        })
+        .count()
+}
+
+fn dsr_erasure_sidecar_plan(
+    request: &DsrRequest,
+    mut provided_plan: Vec<DsrMutableSidecarPlan>,
+) -> Vec<DsrMutableSidecarPlan> {
+    if provided_plan.is_empty() {
+        provided_plan.push(DsrMutableSidecarPlan {
+            collection: "users".to_owned(),
+            record_id: Some(request.subject_user_id.to_string()),
+            action: DsrMutableSidecarAction::Review,
+            status: DsrMutableSidecarPlanStatus::ManualReviewRequired,
+            reason: Some(
+                "Mutable user sidecar review is required before any separate redaction or anonymization workflow"
+                    .to_owned(),
+            ),
+            mutation_completed: false,
+        });
+    }
+
+    let dsr_record_id = request.id.to_string();
+    let has_dsr_marker = provided_plan.iter().any(|item| {
+        item.collection == DSR_REQUESTS_FILE
+            && item.record_id.as_deref() == Some(dsr_record_id.as_str())
+    });
+    if !has_dsr_marker {
+        provided_plan.push(DsrMutableSidecarPlan {
+            collection: DSR_REQUESTS_FILE.to_owned(),
+            record_id: Some(dsr_record_id),
+            action: DsrMutableSidecarAction::Retain,
+            status: DsrMutableSidecarPlanStatus::NotApplicable,
+            reason: Some(
+                "The DSR request sidecar is retained as accountability evidence; no erasure mutation was executed"
+                    .to_owned(),
+            ),
+            mutation_completed: false,
+        });
+    }
+    provided_plan
 }
 
 fn clean_required(raw: &str, field: &str) -> Result<String, ApiError> {

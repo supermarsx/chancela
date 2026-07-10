@@ -814,6 +814,261 @@ async fn dsr_request_rejects_invalid_execution_evidence_without_audit_or_transit
 }
 
 #[tokio::test]
+async fn dsr_erasure_completion_records_preflight_without_full_erasure_claim() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (owner, owner_token) = bootstrap_owner(&state).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{owner}/dsr-requests"),
+                json!({ "request_type": "erasure" }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create succeeds: {created}");
+    let request_id = created["id"].as_str().expect("request id").to_owned();
+
+    let (status, completed) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/dsr-requests/{request_id}/complete"),
+                json!({
+                    "execution_notes": "Preflight recorded; no erasure mutation executed.",
+                    "erasure_plan": [{
+                        "collection": "users",
+                        "record_id": owner.to_string(),
+                        "action": "anonymize",
+                        "status": "planned",
+                        "reason": "Review mutable profile fields in a separate approved workflow."
+                    }]
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "complete succeeds: {completed}");
+    assert_eq!(completed["status"], json!("completed"));
+    assert_eq!(completed["outcome"], json!("partially_fulfilled"));
+
+    let preflight = &completed["erasure_preflight"];
+    assert_eq!(preflight["dsr_request_id"], json!(request_id));
+    assert_eq!(preflight["subject_user_id"], json!(owner.to_string()));
+    assert_eq!(preflight["status"], json!("blocked_immutable_ledger"));
+    assert_eq!(preflight["assessed_by"], json!("owner"));
+    assert!(
+        preflight["ledger_event_count_before_completion"]
+            .as_u64()
+            .expect("ledger event count")
+            >= 1
+    );
+    assert_eq!(preflight["destructive_mutation_completed"], json!(false));
+    assert_eq!(preflight["full_erasure_completed"], json!(false));
+    assert_eq!(
+        preflight["idempotency_guard"]["duplicate_completion_behavior"],
+        json!("conflict_existing_completed_request")
+    );
+
+    let blockers = preflight["immutable_ledger_blockers"]
+        .as_array()
+        .expect("immutable blockers");
+    assert!(blockers.iter().any(|blocker| {
+        blocker["code"] == json!("immutable_ledger_events")
+            && blocker["detail"]
+                .as_str()
+                .expect("blocker detail")
+                .contains("append-only")
+    }));
+    assert!(blockers.iter().any(|blocker| {
+        blocker["code"] == json!("dsr_audit_chain_retention")
+            && blocker["target"] == json!(format!("privacy:dsr-request:{request_id}"))
+    }));
+
+    let plan = preflight["mutable_sidecar_plan"]
+        .as_array()
+        .expect("sidecar plan");
+    let user_plan = plan
+        .iter()
+        .find(|item| item["collection"] == json!("users"))
+        .expect("user sidecar plan");
+    assert_eq!(user_plan["record_id"], json!(owner.to_string()));
+    assert_eq!(user_plan["action"], json!("anonymize"));
+    assert_eq!(user_plan["status"], json!("planned"));
+    assert_eq!(user_plan["mutation_completed"], json!(false));
+    assert!(plan.iter().any(|item| {
+        item["collection"] == json!(DSR_REQUESTS_FILE)
+            && item["action"] == json!("retain")
+            && item["status"] == json!("not_applicable")
+            && item["mutation_completed"] == json!(false)
+    }));
+    assert!(
+        !serde_json::to_string(&completed)
+            .expect("json string")
+            .contains("\"full_erasure_completed\":true")
+    );
+
+    let persisted: Value = serde_json::from_slice(
+        &std::fs::read(tmp.dir.join(DSR_REQUESTS_FILE)).expect("DSR sidecar"),
+    )
+    .expect("valid DSR sidecar");
+    assert_eq!(
+        persisted[0]["erasure_preflight"]["status"],
+        json!("blocked_immutable_ledger")
+    );
+    assert_eq!(
+        persisted[0]["erasure_preflight"]["full_erasure_completed"],
+        json!(false)
+    );
+
+    let (status, repeat) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/dsr-requests/{request_id}/complete"),
+                json!({ "outcome": "partially_fulfilled" }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "repeat completion is blocked: {repeat}"
+    );
+
+    let restarted = AppState::with_data_dir(tmp.dir.clone());
+    let restarted_token = open_session(&restarted, owner).await;
+    let (status, list) = send(
+        restarted,
+        with_session(
+            get(&format!("/v1/privacy/users/{owner}/dsr-requests")),
+            &restarted_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list after restart: {list}");
+    let list = list.as_array().expect("DSR list");
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["id"], json!(request_id));
+    assert_eq!(
+        list[0]["erasure_preflight"]["full_erasure_completed"],
+        json!(false)
+    );
+}
+
+#[tokio::test]
+async fn dsr_erasure_rejects_full_erasure_and_completed_plan_claims() {
+    let (state, target, owner_token, _reader, _reader_token) = fixture_state().await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{target}/dsr-requests"),
+                json!({ "request_type": "erasure" }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create succeeds: {created}");
+    let request_id = created["id"].as_str().expect("request id").to_owned();
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/dsr-requests/{request_id}/complete"),
+                json!({
+                    "outcome": "fulfilled",
+                    "erasure_plan": [{
+                        "collection": "users",
+                        "record_id": target.to_string(),
+                        "action": "redact",
+                        "status": "planned"
+                    }]
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("cannot be marked fulfilled")
+    );
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/dsr-requests/{request_id}/complete"),
+                json!({
+                    "outcome": "partially_fulfilled",
+                    "erasure_plan": [{
+                        "collection": "users",
+                        "record_id": target.to_string(),
+                        "action": "redact",
+                        "status": "completed"
+                    }]
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("preflight only")
+    );
+
+    let (status, list) = send(
+        state.clone(),
+        with_session(
+            get(&format!("/v1/privacy/users/{target}/dsr-requests")),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list succeeds: {list}");
+    let list = list.as_array().expect("DSR list");
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["status"], json!("pending"));
+    assert!(list[0].get("erasure_preflight").is_none());
+
+    let (status, events) = send(
+        state,
+        with_session(
+            get(&format!("/v1/ledger/events?scope=user:{target}&limit=1000")),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger readable: {events}");
+    let events = events.as_array().expect("events");
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["kind"] == "privacy.dsr.request.completed")
+            .count(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn dsr_requests_persist_across_restart_with_reasons_and_audit_refs() {
     let tmp = TempDir::new();
     let state = AppState::with_data_dir(tmp.dir.clone());
