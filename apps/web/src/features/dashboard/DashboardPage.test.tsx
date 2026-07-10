@@ -131,6 +131,25 @@ afterEach(() => {
 });
 
 describe('DashboardPage', () => {
+  it('renders dashboard subtabs in the requested order', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
+    renderDashboard();
+
+    const tabs = await screen.findByRole('group', { name: 'Secções do painel' });
+    const buttons = within(tabs).getAllByRole('button');
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Estatísticas',
+      'Atividade recente',
+      'Atividades atuais',
+      'Datas',
+      'Fila de trabalho',
+      'Últimos eventos',
+    ]);
+    expect(
+      within(tabs).getByRole('button', { name: 'Estatísticas' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
   it('shows only the 10 most recent dashboard events, newest first', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,
@@ -319,6 +338,7 @@ describe('DashboardPage', () => {
     expect(within(status).getByText('Em revisão')).toBeTruthy();
     expect(within(status).getByText('Em assinatura')).toBeTruthy();
 
+    await openDashboardTab('Datas');
     const dates = screen.getByRole('list', { name: 'Lembretes com data' });
     expect(within(dates).getByText('Vence em 2026-03-31')).toBeTruthy();
     expect(within(dates).getByText('Fonte csc-art376-annual / csc-commercial')).toBeTruthy();
@@ -381,7 +401,7 @@ describe('DashboardPage', () => {
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
     renderDashboard();
-    await openDashboardTab('Atividades atuais');
+    await openDashboardTab('Datas');
 
     const dates = await screen.findByRole('list', { name: 'Lembretes com data' });
     const items = within(dates).getAllByRole('listitem');

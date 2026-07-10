@@ -302,6 +302,7 @@ export const fiFI: Catalog = {
   'dashboard.tabs.stats': 'Tilastot',
   'dashboard.tabs.activity': 'Viimeaikainen toiminta',
   'dashboard.tabs.current': 'Nykyiset tehtävät',
+  'dashboard.tabs.dates': 'Päivämäärät',
   'dashboard.tabs.queue': 'Työjono',
   'dashboard.tabs.events': 'Viimeisimmät tapahtumat',
   'dashboard.recentEvents.title': 'Viimeisimmät lokitapahtumat',

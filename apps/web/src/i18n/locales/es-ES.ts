@@ -302,6 +302,7 @@ export const esES: Catalog = {
   'dashboard.tabs.stats': 'Estadísticas',
   'dashboard.tabs.activity': 'Actividad reciente',
   'dashboard.tabs.current': 'Actividades actuales',
+  'dashboard.tabs.dates': 'Fechas',
   'dashboard.tabs.queue': 'Cola de trabajo',
   'dashboard.tabs.events': 'Últimos eventos',
   'dashboard.recentEvents.title': 'Últimos eventos del registro',

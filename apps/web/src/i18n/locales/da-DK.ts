@@ -301,6 +301,7 @@ export const daDK: Catalog = {
   'dashboard.tabs.stats': 'Statistik',
   'dashboard.tabs.activity': 'Seneste aktivitet',
   'dashboard.tabs.current': 'Aktuelle aktiviteter',
+  'dashboard.tabs.dates': 'Datoer',
   'dashboard.tabs.queue': 'Arbejdskø',
   'dashboard.tabs.events': 'Seneste hændelser',
   'dashboard.recentEvents.title': 'Seneste hændelser i journalen',

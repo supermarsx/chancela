@@ -303,6 +303,7 @@ export const enUS: Catalog = {
   'dashboard.tabs.stats': 'Stats',
   'dashboard.tabs.activity': 'Recent activity',
   'dashboard.tabs.current': 'Current activity',
+  'dashboard.tabs.dates': 'Dates',
   'dashboard.tabs.queue': 'Work queue',
   'dashboard.tabs.events': 'Latest events',
   'dashboard.recentEvents.title': 'Latest ledger events',

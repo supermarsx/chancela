@@ -300,6 +300,7 @@ export const nlNL: Catalog = {
   'dashboard.tabs.stats': 'Statistieken',
   'dashboard.tabs.activity': 'Recente activiteit',
   'dashboard.tabs.current': 'Huidige activiteiten',
+  'dashboard.tabs.dates': 'Datums',
   'dashboard.tabs.queue': 'Werkqueue',
   'dashboard.tabs.events': 'Laatste gebeurtenissen',
   'dashboard.recentEvents.title': 'Laatste grootboekgebeurtenissen',

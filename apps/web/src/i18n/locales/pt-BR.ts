@@ -303,6 +303,7 @@ export const ptBR: Catalog = {
   'dashboard.tabs.stats': 'Estatísticas',
   'dashboard.tabs.activity': 'Atividade recente',
   'dashboard.tabs.current': 'Atividades atuais',
+  'dashboard.tabs.dates': 'Datas',
   'dashboard.tabs.queue': 'Fila de trabalho',
   'dashboard.tabs.events': 'Últimos eventos',
   'dashboard.recentEvents.title': 'Últimos eventos do registro',

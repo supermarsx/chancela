@@ -39,7 +39,7 @@ const DASHBOARD_TAB_PARAM = 'painel';
 
 type QueueTone = 'neutral' | 'accent' | 'warn' | 'error';
 type ActivityKind = 'act' | 'book' | 'entity';
-type DashboardTab = 'stats' | 'activity' | 'current' | 'queue' | 'events';
+type DashboardTab = 'stats' | 'activity' | 'current' | 'dates' | 'queue' | 'events';
 
 interface WorkQueueItem {
   id: string;
@@ -90,7 +90,13 @@ function Metric({ label, value, note }: { label: string; value: number | string;
 }
 
 function dashboardTabFromParam(value: string | null): DashboardTab {
-  if (value === 'activity' || value === 'current' || value === 'queue' || value === 'events') {
+  if (
+    value === 'activity' ||
+    value === 'current' ||
+    value === 'dates' ||
+    value === 'queue' ||
+    value === 'events'
+  ) {
     return value;
   }
   return 'stats';
@@ -767,7 +773,8 @@ function DashboardHeader({
         items={[
           { id: 'stats', label: t('dashboard.tabs.stats'), icon: <Icon.Sliders /> },
           { id: 'activity', label: t('dashboard.tabs.activity'), icon: <Icon.Bell /> },
-          { id: 'current', label: t('dashboard.tabs.current'), icon: <Icon.Calendar /> },
+          { id: 'current', label: t('dashboard.tabs.current'), icon: <Icon.Layers /> },
+          { id: 'dates', label: t('dashboard.tabs.dates'), icon: <Icon.Calendar /> },
           { id: 'queue', label: t('dashboard.tabs.queue'), icon: <Icon.Tray /> },
           { id: 'events', label: t('dashboard.tabs.events'), icon: <Icon.Archive /> },
         ]}
@@ -907,9 +914,10 @@ export function DashboardPage() {
           <div className="dashboard-section-grid">
             <OpenBooksSummary openBooks={data.current_work.open_books} />
             <ActStatusSummary counts={data.current_work.act_counts_by_state} />
-            <ReminderDatesSummary reminders={data.reminders} />
           </div>
         ) : null}
+
+        {tab === 'dates' ? <ReminderDatesSummary reminders={data.reminders} /> : null}
 
         {tab === 'queue' ? <OperatorWorkQueue items={workQueueItems} /> : null}
 

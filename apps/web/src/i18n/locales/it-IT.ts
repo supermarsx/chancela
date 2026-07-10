@@ -303,6 +303,7 @@ export const itIT: Catalog = {
   'dashboard.tabs.stats': 'Statistiche',
   'dashboard.tabs.activity': 'Attività recente',
   'dashboard.tabs.current': 'Attività correnti',
+  'dashboard.tabs.dates': 'Date',
   'dashboard.tabs.queue': 'Coda di lavoro',
   'dashboard.tabs.events': 'Ultimi eventi',
   'dashboard.recentEvents.title': 'Ultimi eventi del registro',

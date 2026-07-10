@@ -303,6 +303,7 @@ export const plPL: Catalog = {
   'dashboard.tabs.stats': 'Statystyki',
   'dashboard.tabs.activity': 'Ostatnia aktywność',
   'dashboard.tabs.current': 'Bieżące aktywności',
+  'dashboard.tabs.dates': 'Daty',
   'dashboard.tabs.queue': 'Kolejka pracy',
   'dashboard.tabs.events': 'Najnowsze zdarzenia',
   'dashboard.recentEvents.title': 'Najnowsze zdarzenia w dzienniku',

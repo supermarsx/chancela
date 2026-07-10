@@ -304,6 +304,7 @@ export const deDE: Catalog = {
   'dashboard.tabs.stats': 'Statistiken',
   'dashboard.tabs.activity': 'Aktuelle Aktivität',
   'dashboard.tabs.current': 'Laufende Aktivitäten',
+  'dashboard.tabs.dates': 'Termine',
   'dashboard.tabs.queue': 'Arbeitswarteschlange',
   'dashboard.tabs.events': 'Neueste Ereignisse',
   'dashboard.recentEvents.title': 'Letzte Ereignisse im Register',

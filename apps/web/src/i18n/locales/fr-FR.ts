@@ -303,6 +303,7 @@ export const frFR: Catalog = {
   'dashboard.tabs.stats': 'Statistiques',
   'dashboard.tabs.activity': 'Activité récente',
   'dashboard.tabs.current': 'Activités en cours',
+  'dashboard.tabs.dates': 'Dates',
   'dashboard.tabs.queue': 'File de travail',
   'dashboard.tabs.events': 'Derniers événements',
   'dashboard.recentEvents.title': 'Derniers événements du registre',

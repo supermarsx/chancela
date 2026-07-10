@@ -305,6 +305,7 @@ export const svFI: Catalog = {
   'dashboard.tabs.stats': 'Statistik',
   'dashboard.tabs.activity': 'Senaste aktivitet',
   'dashboard.tabs.current': 'Aktuella aktiviteter',
+  'dashboard.tabs.dates': 'Datum',
   'dashboard.tabs.queue': 'Arbetskö',
   'dashboard.tabs.events': 'Senaste händelser',
   'dashboard.recentEvents.title': 'Senaste händelser i liggaren',
