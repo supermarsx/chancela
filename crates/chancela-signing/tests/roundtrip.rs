@@ -20,6 +20,7 @@ use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
+use chancela_signing::asic::{AsicDiagnosticBlockerId, AsicProfileShape, AsicSignatureMemberKind};
 use chancela_signing::{
     ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_MIMETYPE,
     AsicBoundedProfile, AsicContainerKind, AsicPayload, AsicSignatureProfile, BaselineProfile,
@@ -463,16 +464,27 @@ fn asic_profile_report_identifies_bounded_cades_shapes() {
     assert_eq!(report.mimetype, ASICS_MIMETYPE);
     assert_eq!(report.signature_profile, AsicSignatureProfile::Cades);
     assert_eq!(
+        report.profile_shape,
+        AsicProfileShape::AsicSCadesSinglePayload
+    );
+    assert_eq!(
         report.bounded_profile,
         Some(AsicBoundedProfile::AsicSCadesSinglePayload)
     );
     assert!(report.is_bounded_supported_candidate());
+    assert!(report.blocker_details.is_empty());
     assert_eq!(report.payload_paths, vec!["minutes.txt".to_string()]);
     assert_eq!(
         report.cades_signature_paths,
         vec!["META-INF/signatures.p7s".to_string()]
     );
     assert!(report.xades_signature_paths.is_empty());
+    assert!(report.manifest_diagnostics.is_empty());
+    assert_eq!(report.signature_diagnostics.len(), 1);
+    assert_eq!(
+        report.signature_diagnostics[0].member_kind,
+        AsicSignatureMemberKind::Cades
+    );
 
     let payloads = [
         AsicPayload {
@@ -492,15 +504,124 @@ fn asic_profile_report_identifies_bounded_cades_shapes() {
     assert_eq!(report.mimetype, ASICE_MIMETYPE);
     assert_eq!(report.signature_profile, AsicSignatureProfile::Cades);
     assert_eq!(
+        report.profile_shape,
+        AsicProfileShape::AsicECadesSingleManifest
+    );
+    assert_eq!(
         report.bounded_profile,
         Some(AsicBoundedProfile::AsicECadesSingleManifest)
     );
     assert!(report.is_bounded_supported_candidate());
+    assert!(report.blocker_details.is_empty());
     assert_eq!(report.manifest_paths, vec![ASICE_MANIFEST_PATH.to_string()]);
     assert_eq!(
         report.cades_signature_paths,
         vec![ASICE_CADES_SIGNATURE_PATH.to_string()]
     );
+    assert_eq!(report.manifest_diagnostics.len(), 1);
+    let manifest = &report.manifest_diagnostics[0];
+    assert_eq!(manifest.path, ASICE_MANIFEST_PATH);
+    assert_eq!(manifest.signature_references.len(), 1);
+    assert_eq!(
+        manifest.signature_references[0].uri,
+        ASICE_CADES_SIGNATURE_PATH
+    );
+    assert!(manifest.signature_references[0].member_present);
+    assert_eq!(
+        manifest.signature_references[0].member_kind,
+        Some(AsicSignatureMemberKind::Cades)
+    );
+    assert_eq!(manifest.data_object_references.len(), 2);
+    assert_eq!(manifest.data_object_references[0].uri, "minutes.txt");
+    assert_eq!(
+        manifest.data_object_references[0].digest_matches,
+        Some(true)
+    );
+    assert_eq!(
+        manifest.data_object_references[1].uri,
+        "attachments/votes.csv"
+    );
+    assert_eq!(
+        manifest.data_object_references[1].digest_matches,
+        Some(true)
+    );
+    assert_eq!(report.signature_diagnostics.len(), 1);
+    assert_eq!(
+        report.signature_diagnostics[0].referenced_by_manifest_paths,
+        vec![ASICE_MANIFEST_PATH.to_string()]
+    );
+}
+
+#[test]
+fn asic_e_profile_report_exposes_manifest_blocker_ids_without_relaxing_extraction() {
+    let payloads = [AsicPayload {
+        name: "payload.txt",
+        bytes: b"payload",
+        mime_type: Some("text/plain"),
+    }];
+
+    let missing_signature_manifest =
+        chancela_signing::build_asic_e_manifest(&payloads, "META-INF/signature999.p7s").unwrap();
+    let missing_signature = zip_container(&[
+        ("mimetype", ASICE_MIMETYPE.as_bytes()),
+        ("payload.txt", b"payload" as &[u8]),
+        (ASICE_MANIFEST_PATH, missing_signature_manifest.as_slice()),
+        (ASICE_CADES_SIGNATURE_PATH, b"cms" as &[u8]),
+    ]);
+    let report =
+        inspect_asic_profile(&missing_signature).expect("inspect missing-signature ASiC-E");
+    assert_eq!(
+        report.profile_shape,
+        AsicProfileShape::AsicECadesSingleManifest
+    );
+    assert_eq!(
+        report.bounded_profile,
+        Some(AsicBoundedProfile::AsicECadesSingleManifest)
+    );
+    assert!(!report.is_bounded_supported_candidate());
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEManifestReferencesMissingSignature
+            && blocker.id.as_str() == "asic_e_manifest_references_missing_signature"
+    }));
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEUnreferencedSignature
+            && blocker.member_path.as_deref() == Some(ASICE_CADES_SIGNATURE_PATH)
+    }));
+    assert_eq!(
+        report.manifest_diagnostics[0].signature_references[0].uri,
+        "META-INF/signature999.p7s"
+    );
+    assert!(!report.manifest_diagnostics[0].signature_references[0].member_present);
+    assert!(
+        report.signature_diagnostics[0]
+            .blockers
+            .iter()
+            .any(|blocker| blocker.id == AsicDiagnosticBlockerId::AsicEUnreferencedSignature)
+    );
+    let err = extract_asic_e_container(&missing_signature).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(msg) if msg.contains("references missing CAdES signature META-INF/signature999.p7s"))
+    );
+
+    let digest_manifest =
+        chancela_signing::build_asic_e_manifest(&payloads, ASICE_CADES_SIGNATURE_PATH).unwrap();
+    let digest_mismatch = zip_container(&[
+        ("mimetype", ASICE_MIMETYPE.as_bytes()),
+        ("payload.txt", b"tampered" as &[u8]),
+        (ASICE_MANIFEST_PATH, digest_manifest.as_slice()),
+        (ASICE_CADES_SIGNATURE_PATH, b"cms" as &[u8]),
+    ]);
+    let report = inspect_asic_profile(&digest_mismatch).expect("inspect digest-mismatch ASiC-E");
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::AsicEManifestDigestMismatch
+            && blocker.id.as_str() == "asic_e_manifest_digest_mismatch"
+    }));
+    assert_eq!(
+        report.manifest_diagnostics[0].data_object_references[0].digest_matches,
+        Some(false)
+    );
+    let err = extract_asic_e_container(&digest_mismatch).unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("digest mismatch")));
 }
 
 #[test]
