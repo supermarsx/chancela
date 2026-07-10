@@ -15,12 +15,14 @@ legal completeness, external-provider readiness, or spec completion.
 ## Recent Landed Areas
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
-recently landed work that crosses Rust API tests, trust parsing, web fixtures,
-validator fixtures, and the standalone desktop Cargo workspace.
+recently landed work that crosses Rust API tests, trust parsing, MCP
+resource/prompt coverage, web fixtures, validator fixtures, and the standalone
+desktop Cargo workspace.
 
 It intentionally reuses existing test surfaces:
 
 - API paper import: `cargo test -p chancela-api --test paper_import --locked`
+  including the non-canonical canonical-conversion preflight evidence guard.
 - API archive package and `/DocTimeStamp` evidence:
   `cargo test -p chancela-api --test archive_package --locked`
 - API local PKCS#12 signing:
@@ -28,6 +30,7 @@ It intentionally reuses existing test surfaces:
 - API bounded retention execution:
   `cargo test -p chancela-api --test privacy --locked retention_`
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
+- MCP resource/prompt coverage: `cargo test -p chancela-mcp --locked`
 - Web contract/dashboard/signing/i18n matrix:
   `npm run test --workspace apps/web -- src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`
 - Validator corpus manifest:
@@ -38,8 +41,11 @@ It intentionally reuses existing test surfaces:
 The script also performs a cheap static map before running commands. That map
 asserts the expected test files, fixture markers, validator manifest, and
 desktop `Cargo.lock` are present, so accidental deletion or rename of the
-checkpoint targets fails with a direct message. Run only that static portion
-with `npm run test:checkpoint:recent-landed:static`.
+checkpoint targets fails with a direct message. It also statically pins the
+imported-document review notification/export browser E2E marker; Playwright
+execution remains in the browser jobs so this recent-landed lane stays focused.
+Run only that static portion with
+`npm run test:checkpoint:recent-landed:static`.
 
 The GitHub Actions job is `recent-landed` in `.github/workflows/ci.yml`. Keep
 this lane focused: add only short-running commands that prove the named landed

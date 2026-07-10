@@ -65,6 +65,10 @@ const checks = [
     command: ["cargo", ["test", "-p", "chancela-tsl", "--locked"]],
   },
   {
+    name: "MCP resources and prompts tests",
+    command: ["cargo", ["test", "-p", "chancela-mcp", "--locked"]],
+  },
+  {
     name: "web contracts/dashboard/signing/i18n matrix",
     command: npmCommand([
       "run",
@@ -159,6 +163,11 @@ function assertCheckpointMap() {
     "paper import test fixture coverage",
   );
   assertFileContains(
+    "crates/chancela-api/tests/paper_import.rs",
+    "paper_book_import_validation_allows_preflight_only_with_explicit_evidence",
+    "paper import canonical preflight regression coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/archive_package.rs",
     "archive_package_reports_embedded_doc_timestamp_evidence_without_b_lta_claim",
     "archive package DocTimeStamp evidence coverage",
@@ -177,6 +186,16 @@ function assertCheckpointMap() {
     "crates/chancela-tsl/tests/tsl_fixture.rs",
     "tsl_signature_validation_rejects_tampered_signature_value",
     "TSL XML-DSig tamper regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_spec_09_coverage_returns_boundaries_without_http_or_secret",
+    "MCP spec coverage resource regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "prompts_get_returns_compliance_pack_gap_review_without_http_or_secret",
+    "MCP compliance prompt regression coverage",
   );
   assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
@@ -207,6 +226,16 @@ function assertCheckpointMap() {
     "apps/web/e2e/notification-popup-hardening.spec.ts",
     "zIndex",
     "notification popup z-index browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/imported-document-review.spec.ts",
+    "dashboard import-review notification routes to review, can be dismissed, and keeps PDF export canonical",
+    "imported document review notification browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/imported-document-review.spec.ts",
+    "downloadedPaths).toEqual([ACT_PDF_PATH])",
+    "imported document review canonical PDF export coverage",
   );
   assertFileExists(
     "docs/fixtures/validator-corpus/manifest.json",
