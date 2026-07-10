@@ -10,12 +10,12 @@ import { BOOK_KINDS, type BookKind, type BookState, type BookView } from '../../
 import { useT, type MessageKey } from '../../i18n';
 import {
   Badge,
-  Button,
   Card,
   EmptyState,
   ErrorNote,
   Field,
   Icon,
+  IconButton,
   Input,
   PageHeader,
   Select,
@@ -183,77 +183,77 @@ export function BooksPage() {
         ) : (
           <div className="stack">
             <div
-              className="row-wrap filter"
+              className="stack--tight books-filters"
               role="search"
               aria-label={t('books.filters.aria')}
-              style={{ alignItems: 'flex-end' }}
             >
-              <Field label={t('books.filters.search.label')} htmlFor="books-search">
-                <Input
-                  id="books-search"
-                  type="search"
-                  value={search}
-                  placeholder={t('books.filters.search.placeholder')}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </Field>
-              <Field label={t('books.filters.state.label')} htmlFor="books-state-filter">
-                <Select
-                  id="books-state-filter"
-                  value={stateFilter}
-                  onChange={(e) => setStateFilter(e.target.value as BookStateFilter)}
-                  options={stateFilterOptions}
-                />
-              </Field>
-              <Field label={t('books.filters.kind.label')} htmlFor="books-kind-filter">
-                <Select
-                  id="books-kind-filter"
-                  value={kindFilter}
-                  onChange={(e) => setKindFilter(e.target.value as BookKindFilter)}
-                  options={kindFilterOptions}
-                />
-              </Field>
-              <Button
-                type="button"
-                variant="ghost"
-                icon={<Icon.Close />}
-                disabled={!hasFilters}
-                aria-label={t('books.filters.clear.aria')}
-                onClick={clearFilters}
-              >
-                {t('books.filters.clear')}
-              </Button>
-            </div>
-
-            <details className="filter-advanced">
-              <summary>{t('books.filters.advanced')}</summary>
-              <div className="row-wrap filter filter-advanced__body">
-                <Field label={t('books.filters.activity.label')} htmlFor="books-activity-filter">
-                  <Select
-                    id="books-activity-filter"
-                    value={advancedFilter}
-                    onChange={(e) => setAdvancedFilter(e.target.value as AdvancedFilter)}
-                    options={advancedFilterOptions}
+              <div className="books-filterbar filter">
+                <div className="books-filterbar__primary">
+                  <Field label={t('books.filters.search.label')} htmlFor="books-search">
+                    <Input
+                      id="books-search"
+                      type="search"
+                      value={search}
+                      placeholder={t('books.filters.search.placeholder')}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('books.filters.state.label')} htmlFor="books-state-filter">
+                    <Select
+                      id="books-state-filter"
+                      value={stateFilter}
+                      onChange={(e) => setStateFilter(e.target.value as BookStateFilter)}
+                      options={stateFilterOptions}
+                    />
+                  </Field>
+                  <Field label={t('books.filters.kind.label')} htmlFor="books-kind-filter">
+                    <Select
+                      id="books-kind-filter"
+                      value={kindFilter}
+                      onChange={(e) => setKindFilter(e.target.value as BookKindFilter)}
+                      options={kindFilterOptions}
+                    />
+                  </Field>
+                  <IconButton
+                    className="books-filterbar__clear"
+                    icon={<Icon.Close />}
+                    label={t('books.filters.clear.aria')}
+                    disabled={!hasFilters}
+                    onClick={clearFilters}
                   />
-                </Field>
-                <Field label={t('books.filters.openedFrom')} htmlFor="books-opened-from-filter">
-                  <Input
-                    id="books-opened-from-filter"
-                    type="date"
-                    value={openedFrom}
-                    onChange={(e) => setOpenedFrom(e.target.value)}
-                  />
-                </Field>
-                <Field label={t('books.filters.openedTo')} htmlFor="books-opened-to-filter">
-                  <Input
-                    id="books-opened-to-filter"
-                    type="date"
-                    value={openedTo}
-                    onChange={(e) => setOpenedTo(e.target.value)}
-                  />
-                </Field>
+                </div>
               </div>
-            </details>
+
+              <details className="books-advanced-filters filter-advanced">
+                <summary>{t('books.filters.advanced')}</summary>
+                <div className="books-advanced-filters__body filter filter-advanced__body">
+                  <Field label={t('books.filters.activity.label')} htmlFor="books-activity-filter">
+                    <Select
+                      id="books-activity-filter"
+                      value={advancedFilter}
+                      onChange={(e) => setAdvancedFilter(e.target.value as AdvancedFilter)}
+                      options={advancedFilterOptions}
+                    />
+                  </Field>
+                  <Field label={t('books.filters.openedFrom')} htmlFor="books-opened-from-filter">
+                    <Input
+                      id="books-opened-from-filter"
+                      type="date"
+                      value={openedFrom}
+                      onChange={(e) => setOpenedFrom(e.target.value)}
+                    />
+                  </Field>
+                  <Field label={t('books.filters.openedTo')} htmlFor="books-opened-to-filter">
+                    <Input
+                      id="books-opened-to-filter"
+                      type="date"
+                      value={openedTo}
+                      onChange={(e) => setOpenedTo(e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </details>
+            </div>
 
             {visibleBooks.length === 0 ? (
               <EmptyState title={t('books.filters.empty.title')}>

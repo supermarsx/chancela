@@ -1,11 +1,14 @@
 /**
  * Shared render of a book list (used on the Livros page and an entity's detail page).
  */
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { BookView } from '../../api/types';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
 import { useT } from '../../i18n';
-import { Badge, EmptyState, Table } from '../../ui';
+import { Badge, EmptyState, Icon, Table, Tooltip, Truncate } from '../../ui';
+
+type BookColumn = 'Kind' | 'Purpose' | 'State' | 'Opening' | 'LastAct' | 'Actions';
 
 function stateTone(state: BookView['state']) {
   if (state === 'Open') return 'ok' as const;
@@ -13,38 +16,91 @@ function stateTone(state: BookView['state']) {
   return 'accent' as const;
 }
 
+function BookTableCell({
+  column,
+  actions = false,
+  children,
+}: {
+  column: BookColumn;
+  actions?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <td
+      className={`books-table__cell ${
+        actions ? 'books-table__cell--actions' : 'books-table__cell--truncate'
+      }`}
+      data-book-column={column}
+    >
+      {children}
+    </td>
+  );
+}
+
+function openBookLabel(book: BookView, openLabel: string): string {
+  return `${openLabel}: ${book.purpose ?? book.id}`;
+}
+
 export function BooksTable({ books }: { books: BookView[] }) {
   const t = useT();
+  const openLabel = t('common.open');
   if (books.length === 0) {
     return <EmptyState title={t('books.empty')} />;
   }
   return (
-    <Table
-      head={
-        <tr>
-          <th>{t('books.th.type')}</th>
-          <th>{t('books.th.purpose')}</th>
-          <th>{t('books.th.state')}</th>
-          <th>{t('books.th.opening')}</th>
-          <th>{t('books.th.lastAct')}</th>
-          <th />
-        </tr>
-      }
-    >
-      {books.map((book) => (
-        <tr key={book.id}>
-          <td>{bookKindLabels[book.kind]}</td>
-          <td>{book.purpose ?? '—'}</td>
-          <td>
-            <Badge tone={stateTone(book.state)}>{bookStateLabels[book.state]}</Badge>
-          </td>
-          <td>{book.opening_date ?? '—'}</td>
-          <td>{book.last_ata_number > 0 ? book.last_ata_number : '—'}</td>
-          <td>
-            <Link to={`/livros/${book.id}`}>{t('common.open')}</Link>
-          </td>
-        </tr>
-      ))}
-    </Table>
+    <div className="books-table">
+      <Table
+        head={
+          <tr>
+            <th data-book-column="Kind">{t('books.th.type')}</th>
+            <th data-book-column="Purpose">{t('books.th.purpose')}</th>
+            <th data-book-column="State">{t('books.th.state')}</th>
+            <th data-book-column="Opening">{t('books.th.opening')}</th>
+            <th data-book-column="LastAct">{t('books.th.lastAct')}</th>
+            <th data-book-column="Actions" />
+          </tr>
+        }
+      >
+        {books.map((book) => {
+          const actionLabel = openBookLabel(book, openLabel);
+          return (
+            <tr key={book.id}>
+              <BookTableCell column="Kind">
+                <Truncate text={bookKindLabels[book.kind]} />
+              </BookTableCell>
+              <BookTableCell column="Purpose">
+                <Truncate text={book.purpose ?? '—'} />
+              </BookTableCell>
+              <BookTableCell column="State">
+                <span className="books-table__state" title={bookStateLabels[book.state]}>
+                  <Badge tone={stateTone(book.state)}>{bookStateLabels[book.state]}</Badge>
+                </span>
+              </BookTableCell>
+              <BookTableCell column="Opening">
+                <Truncate text={book.opening_date ?? '—'} mono />
+              </BookTableCell>
+              <BookTableCell column="LastAct">
+                <Truncate text={book.last_ata_number > 0 ? String(book.last_ata_number) : '—'} />
+              </BookTableCell>
+              <BookTableCell column="Actions" actions>
+                <span className="books-table__actions">
+                  <Tooltip label={actionLabel} placement="left">
+                    <Link
+                      className="btn btn--ghost btn--icon btn--iconOnly books-table__open"
+                      to={`/livros/${book.id}`}
+                      aria-label={actionLabel}
+                    >
+                      <span className="btn__icon" aria-hidden="true">
+                        <Icon.ArrowRight />
+                      </span>
+                    </Link>
+                  </Tooltip>
+                </span>
+              </BookTableCell>
+            </tr>
+          );
+        })}
+      </Table>
+    </div>
   );
 }

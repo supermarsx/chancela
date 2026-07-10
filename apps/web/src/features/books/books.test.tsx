@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders, fetchTable } from '../../test/utils';
@@ -61,6 +62,19 @@ const BOOK: BookView = {
   required_signatories_abertura: null,
   required_signatories_encerramento: null,
 };
+
+function themeCss(): string {
+  return readFileSync('src/theme.css', 'utf8');
+}
+
+function expectCssRule(css: string, selector: RegExp, declarations: string[]) {
+  const match = css.match(selector);
+  expect(match?.[1]).toBeTruthy();
+  const body = match?.[1] ?? '';
+  for (const declaration of declarations) {
+    expect(body).toContain(declaration);
+  }
+}
 
 interface RecordedCall {
   url: string;
@@ -178,6 +192,73 @@ describe('BooksPage', () => {
     expect(screen.getByLabelText('A mostrar 1 de 3 livros')).toBeTruthy();
   });
 
+  it('renders compact filter and table hooks for constrained books-list layout', async () => {
+    const longPurpose =
+      'Atas da Assembleia Geral com uma finalidade extensa que deve truncar sem alargar a tabela';
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([
+        {
+          match: '/v1/books',
+          body: [
+            { ...BOOK, purpose: longPurpose, last_ata_number: 12 },
+            {
+              ...BOOK,
+              id: 'book-closed',
+              kind: 'Condominio',
+              state: 'Closed',
+              purpose: 'Arquivo encerrado',
+              opening_date: '2024-02-03',
+              last_ata_number: 2,
+            },
+          ],
+        },
+      ]),
+    );
+    const { container } = renderWithProviders(<BooksPage />, ['/livros']);
+
+    expect(await screen.findByText(longPurpose)).toBeTruthy();
+    const searchRegion = screen.getByRole('search', { name: 'Pesquisar e filtrar livros' });
+    expect(searchRegion.classList.contains('books-filters')).toBe(true);
+
+    const primaryFilters = container.querySelector('.books-filterbar__primary') as HTMLElement;
+    expect(primaryFilters).toBeTruthy();
+    expect(within(primaryFilters).getByLabelText('Pesquisar')).toBeTruthy();
+    expect(within(primaryFilters).getByLabelText('Estado')).toBeTruthy();
+    expect(within(primaryFilters).getByLabelText('Tipo')).toBeTruthy();
+
+    const clear = within(primaryFilters).getByRole('button', {
+      name: 'Limpar filtros de livros',
+    });
+    expect(clear.classList.contains('books-filterbar__clear')).toBe(true);
+    expect((clear as HTMLButtonElement).disabled).toBe(true);
+
+    const advanced = container.querySelector(
+      'details.books-advanced-filters.filter-advanced',
+    ) as HTMLDetailsElement;
+    expect(advanced).toBeTruthy();
+    expect(advanced.open).toBe(false);
+    expect(
+      advanced.querySelector('.books-advanced-filters__body.filter-advanced__body'),
+    ).toBeTruthy();
+
+    const tableShell = container.querySelector('.books-table') as HTMLElement;
+    expect(tableShell).toBeTruthy();
+    expect(tableShell.querySelector('.table-wrap')).toBeTruthy();
+    expect(tableShell.querySelector("th[data-book-column='Purpose']")?.textContent).toBe(
+      'Finalidade',
+    );
+    const purposeCell = tableShell.querySelector(
+      `td[data-book-column='Purpose'] .truncate[title='${longPurpose}']`,
+    );
+    expect(purposeCell?.textContent).toBe(longPurpose);
+    const actionCell = tableShell.querySelector(
+      "td[data-book-column='Actions'].books-table__cell--actions",
+    ) as HTMLElement;
+    expect(actionCell).toBeTruthy();
+    expect(within(actionCell).getByRole('link', { name: `Abrir: ${longPurpose}` })).toBeTruthy();
+  });
+
   it('keeps advanced book filters collapsed and filters by activity/date when expanded', async () => {
     const books: BookView[] = [
       { ...BOOK, id: 'book-empty', purpose: 'Sem atas ainda', opening_date: '2024-01-01' },
@@ -241,6 +322,34 @@ describe('BooksPage', () => {
 
     fireEvent.click(clear);
     expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
+  });
+
+  it('keeps books filter and table CSS from forcing horizontal scroll or wrapping rows', () => {
+    const css = themeCss();
+
+    expectCssRule(css, /\.books-filterbar__primary\s*\{([^}]*)\}/, [
+      'display: flex;',
+      'flex-wrap: wrap;',
+      'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.books-advanced-filters__body\s*\{([^}]*)\}/, [
+      'display: grid;',
+      'grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));',
+      'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.books-table \.table-wrap\s*\{([^}]*)\}/, [
+      'max-width: 100%;',
+      'overflow-x: hidden;',
+    ]);
+    expectCssRule(css, /\.books-table \.table\s*\{([^}]*)\}/, [
+      'table-layout: fixed;',
+      'min-width: 0;',
+    ]);
+    expectCssRule(css, /\.books-table \.table th,\s*\.books-table \.table td\s*\{([^}]*)\}/, [
+      'overflow: hidden;',
+      'white-space: nowrap;',
+    ]);
+    expect(css).toContain('@media (max-width: 700px)');
   });
 });
 
