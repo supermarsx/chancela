@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join, normalize } from "node:path";
+import { basename, dirname, join, normalize, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -94,6 +94,101 @@ export function validateCorpus({ root = corpusRoot, path = manifestPath } = {}) 
 
 export function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+export function collectValidatorReportEvidenceAttachments({
+  root = corpusRoot,
+  manifest = readJson(join(root, "manifest.json")),
+} = {}) {
+  const attachments = [];
+  for (const fixtureCase of manifest.cases) {
+    for (const family of requiredFamilies) {
+      const sidecarPath = join(root, fixtureCase.sidecars[family]);
+      const sidecar = readJson(sidecarPath);
+      const attachment = buildValidatorReportEvidenceAttachment({
+        fixtureCase,
+        family,
+        sidecar,
+        sidecarPath,
+        corpusRoot: root,
+      });
+      if (attachment) {
+        attachments.push(attachment);
+      }
+    }
+  }
+  return attachments;
+}
+
+export function buildValidatorReportEvidenceAttachment({
+  fixtureCase,
+  family,
+  sidecar,
+  sidecarPath,
+  corpusRoot: evidenceCorpusRoot = corpusRoot,
+}) {
+  assertSidecar({ fixtureCase, family, sidecar, sidecarPath, corpusRoot: evidenceCorpusRoot });
+  if (sidecar.validator.run_status !== "recorded") {
+    return null;
+  }
+
+  const sidecarDir = dirname(sidecarPath);
+  const documentPath = normalize(join(sidecarDir, sidecar.document.path));
+  const reportPath = normalize(join(sidecarDir, sidecar.report.path));
+
+  return {
+    schema: "chancela-external-validator-report-evidence/v1",
+    evidence_kind: "external_validator_report_metadata",
+    legal_validity_claimed: false,
+    evidence_scope: {
+      kind: sidecar.evidence_scope.kind,
+      technical_only: true,
+      legal_validity_assessment: "not_assessed",
+      claim: "technical_validator_evidence_only",
+    },
+    case_id: sidecar.case_id,
+    source_sidecar: {
+      schema: sidecar.schema,
+      path: corpusRelativePath(evidenceCorpusRoot, sidecarPath),
+    },
+    validator: {
+      family: sidecar.validator.family,
+      name: sidecar.validator.name,
+      version: sidecar.validator.version,
+      run_status: sidecar.validator.run_status,
+      run_at: sidecar.validator.run_at,
+      operator: sidecar.validator.operator,
+      environment: sidecar.validator.environment,
+      command: sidecar.validator.command,
+    },
+    document: {
+      path: corpusRelativePath(evidenceCorpusRoot, documentPath),
+      sha256: sidecar.document.sha256,
+      bytes: sidecar.document.bytes,
+    },
+    report: {
+      path: corpusRelativePath(evidenceCorpusRoot, reportPath),
+      sidecar_path: sidecar.report.path,
+      sha256: sidecar.report.sha256,
+      bytes: sidecar.report.bytes,
+      content_type: sidecar.report.content_type,
+      source_filename: sidecar.report.source_filename,
+      captured_at: sidecar.report.captured_at,
+      preserved_at: sidecar.report.preserved_at,
+      preserved_by: sidecar.report.preserved_by,
+      preservation_action: sidecar.report.preservation_action,
+    },
+    transcription: {
+      status: sidecar.observed.transcription_status,
+      summary: sidecar.observed.summary,
+      findings_available: sidecar.observed.findings !== null,
+    },
+    archive_attachment: {
+      role: "technical_external_validator_report_metadata",
+      content_type: "application/json",
+      suggested_path: `evidence/external-validators/${sidecar.case_id}-${family}.json`,
+    },
+  };
 }
 
 export function assertSidecar({ fixtureCase, family, sidecar, sidecarPath, corpusRoot }) {
@@ -480,11 +575,44 @@ function assertNoLegalOverclaimText(value, label) {
   }
 }
 
+function corpusRelativePath(root, path) {
+  return relative(root, path).replaceAll("\\", "/");
+}
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const args = process.argv.slice(2);
+  const evidenceJson = args.includes("--evidence-json");
+  const unknownArg = args.find((arg) => arg !== "--evidence-json");
+  if (unknownArg) {
+    console.error(`unknown argument ${unknownArg}`);
+    console.error("usage: node scripts/validate-validator-corpus.mjs [--evidence-json]");
+    process.exit(1);
+  }
   const manifest = validateCorpus();
+  if (evidenceJson) {
+    console.log(
+      JSON.stringify(
+        {
+          schema: "chancela-external-validator-report-evidence-index/v1",
+          evidence_kind: "external_validator_report_metadata_index",
+          legal_validity_claimed: false,
+          evidence_scope: {
+            kind: "external_validator_report",
+            technical_only: true,
+            legal_validity_assessment: "not_assessed",
+            claim: "technical_validator_evidence_only",
+          },
+          attachments: collectValidatorReportEvidenceAttachments({ root: corpusRoot, manifest }),
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(0);
+  }
   console.log(`validator corpus manifest OK: ${manifest.cases.length} cases`);
 }

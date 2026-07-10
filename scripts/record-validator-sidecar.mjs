@@ -3,7 +3,12 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { basename, dirname, extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { assertSidecar, readJson, validateCorpus } from "./validate-validator-corpus.mjs";
+import {
+  assertSidecar,
+  buildValidatorReportEvidenceAttachment,
+  readJson,
+  validateCorpus,
+} from "./validate-validator-corpus.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const corpusRoot = join(repoRoot, "docs", "fixtures", "validator-corpus");
@@ -118,8 +123,15 @@ export function recordValidatorSidecar({
 
   assertSidecar({ fixtureCase, family, sidecar, sidecarPath, corpusRoot: root });
   writeFileSync(sidecarPath, `${JSON.stringify(sidecar, null, 2)}\n`);
+  const evidenceAttachment = buildValidatorReportEvidenceAttachment({
+    fixtureCase,
+    family,
+    sidecar,
+    sidecarPath,
+    corpusRoot: root,
+  });
   validateCorpus({ root, path: join(root, "manifest.json") });
-  return { sidecarPath, reportPath, sidecar };
+  return { sidecarPath, reportPath, sidecar, evidenceAttachment };
 }
 
 export function evidenceScope() {

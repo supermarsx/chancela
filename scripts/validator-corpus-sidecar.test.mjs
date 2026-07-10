@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
-import { assertSidecar } from "./validate-validator-corpus.mjs";
+import {
+  assertSidecar,
+  buildValidatorReportEvidenceAttachment,
+  collectValidatorReportEvidenceAttachments,
+} from "./validate-validator-corpus.mjs";
 import { recordValidatorSidecar } from "./record-validator-sidecar.mjs";
 
 test("recorded sidecar requires raw report metadata that matches the report file", () => {
@@ -46,6 +50,33 @@ test("recorded sidecar requires raw report metadata that matches the report file
       corpusRoot: root,
     }),
   );
+
+  const attachment = buildValidatorReportEvidenceAttachment({
+    fixtureCase,
+    family: "eu-dss",
+    sidecar,
+    sidecarPath,
+    corpusRoot: root,
+  });
+  assert.equal(attachment.schema, "chancela-external-validator-report-evidence/v1");
+  assert.equal(attachment.evidence_kind, "external_validator_report_metadata");
+  assert.equal(attachment.legal_validity_claimed, false);
+  assert.equal(attachment.evidence_scope.technical_only, true);
+  assert.equal(attachment.evidence_scope.legal_validity_assessment, "not_assessed");
+  assert.equal(attachment.source_sidecar.path, "cases/sample/expected/eu-dss.json");
+  assert.equal(attachment.document.path, "cases/sample/input/sample.pdf");
+  assert.equal(attachment.report.path, "cases/sample/reports/eu-dss-report.txt");
+  assert.equal(attachment.report.sidecar_path, "../reports/eu-dss-report.txt");
+  assert.equal(attachment.report.sha256, sha256(report));
+  assert.equal(attachment.report.content_type, "text/plain");
+  assert.equal(attachment.validator.family, "eu-dss");
+  assert.equal(attachment.validator.operator, "operator@example.test");
+  assert.equal(attachment.transcription.status, "operator_transcribed");
+  assert.equal(attachment.transcription.findings_available, true);
+  assert.equal(
+    attachment.archive_attachment.suggested_path,
+    "evidence/external-validators/sample-eu-dss.json",
+  );
 });
 
 test("pending sidecar remains pending and contains no report evidence", () => {
@@ -78,6 +109,17 @@ test("pending sidecar remains pending and contains no report evidence", () => {
       sidecarPath,
       corpusRoot: root,
     }),
+  );
+
+  assert.equal(
+    buildValidatorReportEvidenceAttachment({
+      fixtureCase,
+      family: "eu-dss",
+      sidecar,
+      sidecarPath,
+      corpusRoot: root,
+    }),
+    null,
   );
 });
 
@@ -367,6 +409,15 @@ test("recorder preserves raw report metadata and pending-to-recorded transition"
   assert.equal(result.sidecar.status_transition.by, "operator@example.test");
   assert.equal(result.sidecar.observed.transcription_status, "raw_report_only");
   assert.equal(result.sidecar.observed.legal_validity_assessment, "not_assessed");
+  assert.equal(result.evidenceAttachment.report.path, "cases/sample/reports/eu-dss-operator-export.xml");
+  assert.equal(result.evidenceAttachment.transcription.findings_available, false);
+  assert.equal(result.evidenceAttachment.legal_validity_claimed, false);
+
+  const attachments = collectValidatorReportEvidenceAttachments({ root });
+  assert.equal(attachments.length, 1);
+  assert.equal(attachments[0].case_id, "sample");
+  assert.equal(attachments[0].validator.family, "eu-dss");
+  assert.equal(attachments[0].report.source_filename, "operator-export.xml");
 });
 
 function makeFixture() {
