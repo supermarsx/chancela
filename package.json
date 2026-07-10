@@ -15,6 +15,7 @@
     "init": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/init.ps1']:['scripts/init.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\"",
     "dev": "node -e \"const c=require('child_process'),w=process.platform==='win32',r=c.spawnSync(w?'powershell':'bash',w?['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/dev.ps1']:['scripts/dev.sh'],{stdio:'inherit'});process.exit(r.status==null?1:r.status)\"",
     "check:versions": "node scripts/check-versions.mjs",
+    "check:spec-coverage": "node scripts/check-spec-coverage.mjs",
     "lint": "npm run lint:rust && npm run lint:web",
     "lint:rust": "cargo clippy --workspace --all-targets --locked -- -D warnings",
     "lint:web": "npm run lint --workspace apps/web",

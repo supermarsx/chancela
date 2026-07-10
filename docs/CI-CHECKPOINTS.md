@@ -1,5 +1,17 @@
 # CI Checkpoints
 
+## Spec Coverage Status
+
+`npm run check:spec-coverage` parses `SPEC-COVERAGE.md` and fails if the
+top-level spec table no longer covers all 11 spec documents, uses an unknown
+status, loses the implementation snapshot marker, or drops the required blocker
+and "Do Not Overstate" boundary sections. Use
+`node scripts/check-spec-coverage.mjs --json` when a machine-readable summary is
+needed for release notes or an operator review packet.
+
+This is an honesty gate for the implementation tracker. It does not certify
+legal completeness, external-provider readiness, or spec completion.
+
 ## Recent Landed Areas
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
