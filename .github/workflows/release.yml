@@ -106,6 +106,8 @@ jobs:
           Set-Content -LiteralPath $tarballSumsOut -Encoding ASCII -Value "$tarballHash  *$($tarball.Name)"
 
           $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $codeSigning = $manifest.releaseIntegrity.codeSigning
+          $notarization = $manifest.releaseIntegrity.notarization
           $summary = [ordered]@{
               package = $tarball.Name
               packageSha256 = $tarballHash
@@ -122,8 +124,23 @@ jobs:
                   configured = $false
                   note = 'No code signing or notarization step is configured in this workflow.'
               }
+              releaseTrust = [ordered]@{
+                  mode = 'unsigned-dev'
+                  codeSigning = [ordered]@{
+                      status = $codeSigning.status
+                      reason = $codeSigning.reason
+                  }
+                  notarization = [ordered]@{
+                      status = $notarization.status
+                      reason = $notarization.reason
+                  }
+                  attestation = [ordered]@{
+                      status = 'not_attested'
+                      reason = 'GitHub artifact attestations are not configured in this workflow.'
+                  }
+              }
           }
-          $summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $releaseSummaryOut -Encoding UTF8
+          $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $releaseSummaryOut -Encoding UTF8
 
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "### Release package"
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ""
@@ -133,6 +150,16 @@ jobs:
 
           "package=dist/$($tarball.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "metadata=$metadataDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "manifest=$manifestOut" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "release_summary=$releaseSummaryOut" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Check release trust declaration
+        shell: pwsh
+        run: |
+          node scripts/check-release-trust.mjs package `
+            --input '${{ steps.collect.outputs.release_summary }}' `
+            --manifest '${{ steps.collect.outputs.manifest }}' `
+            --expect-mode unsigned-dev
 
       - name: Generate dependency SBOM
         shell: pwsh

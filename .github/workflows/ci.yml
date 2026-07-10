@@ -39,6 +39,9 @@ jobs:
       - name: Check release versions
         run: npm run check:versions
 
+      - name: Check release trust validator fixtures
+        run: node scripts/check-release-trust.mjs self-test
+
   # ---------------------------------------------------------------------------
   # Supply chain: deterministic lockfile SBOM plus advisory reports. SBOM
   # generation/check is enforced; vulnerability reports are report-only by
@@ -315,6 +318,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -466,10 +474,33 @@ jobs:
             "imagePushed": false,
             "signingPerformed": false,
             "notarizationPerformed": false,
+            "attestationPerformed": false,
+            "releaseTrust": {
+              "mode": "local-ci",
+              "imagePublication": {
+                "status": "not_pushed",
+                "reason": "This CI job loads the Docker image locally and does not push it to a registry."
+              },
+              "signing": {
+                "status": "unsigned",
+                "reason": "No container signing identity or signing step is configured in this workflow."
+              },
+              "notarization": {
+                "status": "not_applicable",
+                "reason": "This local CI container image is not a notarized desktop artifact."
+              },
+              "attestation": {
+                "status": "not_attested",
+                "reason": "No container image attestation step is configured in this workflow."
+              }
+            },
             "note": "This CI job builds and smokes a local Docker image only. It does not push, sign, attest, or notarize the image. Configure registry publishing and a signing identity before making a signed-image claim."
           }
           JSON
           echo "Docker image signing/notarization: not performed for the local CI image." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check Docker trust declaration
+        run: node scripts/check-release-trust.mjs docker --input dist/docker-security/chancela-server-signing-status.json --expect-mode local-ci
 
       - name: Upload Docker security artifacts
         if: always()

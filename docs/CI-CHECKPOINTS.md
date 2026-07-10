@@ -35,6 +35,14 @@ The CI `supply-chain` job now generates and validates a CycloneDX dependency
 SBOM from the committed npm and Cargo lockfiles. It uploads that SBOM together
 with npm and Cargo vulnerability reports under `chancela-supply-chain-reports-*`.
 
+`node scripts/check-release-trust.mjs self-test` is part of the cheap CI
+metadata lane. Release packaging then validates each generated
+`*-release-artifact.json` plus package manifest in explicit `unsigned-dev`
+mode, and Docker CI validates `chancela-server-signing-status.json` in explicit
+`local-ci` mode. Switch those checks to `production` only when signing,
+notarization, registry publication, and attestation evidence are actually
+generated.
+
 After `npm run package`, run `npm run test:package-integrity` to validate the
 generated `dist/chancela-*.tar.gz` archive and staged package directory. The
 check enforces safe archive member paths, matching manifest entries, valid

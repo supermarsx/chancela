@@ -1,6 +1,6 @@
 # CI Release Hardening
 
-Updated 2026-07-09.
+Updated 2026-07-10.
 
 This page records the current supply-chain and release metadata behavior. It is
 deliberately conservative: CI may upload reports and placeholders, but it must
@@ -10,14 +10,27 @@ publication unless those steps actually happened.
 ## Enforced in CI
 
 - `metadata` runs `npm run check:versions` before heavier jobs.
+- `metadata` runs `node scripts/check-release-trust.mjs self-test`, which proves
+  the release-trust validator accepts explicit unsigned/local modes and rejects
+  production claims without evidence.
 - `supply-chain` generates `dist/supply-chain/chancela-dependency-sbom.cdx.json`
   from `package-lock.json` and `cargo metadata --locked`, then validates that
   the CycloneDX SBOM includes the expected npm and Cargo ecosystems.
 - The release workflow generates and validates the same dependency SBOM for
   each platform package metadata artifact.
+- The release workflow writes a `releaseTrust` block into each
+  `*-release-artifact.json` metadata file, then runs
+  `node scripts/check-release-trust.mjs package --expect-mode unsigned-dev`
+  against the package summary and copied package manifest. This intentionally
+  passes only explicit unsigned package metadata today.
 - The Docker lane, on `main` pushes and manual runs, still builds the server
   image locally, applies OCI labels, boots it, and checks `/health` for durable
   persistence.
+- The Docker lane writes `chancela-server-signing-status.json` with
+  `releaseTrust.mode=local-ci`, then runs
+  `node scripts/check-release-trust.mjs docker --expect-mode local-ci`. The
+  check fails if the local CI image claims push, signing, notarization, or
+  attestation work that did not happen.
 
 ## Report-Only by Default
 
@@ -41,5 +54,10 @@ publication unless those steps actually happened.
 - The Docker security artifact includes
   `chancela-server-signing-status.json`, which records that no signing or
   notarization was performed.
-- Actual signed image publication should be added only after the registry,
-  signing identity, provenance policy, and secret handling are configured.
+- Actual production package or image publication should be added only after the
+  registry, signing identity, notarization flow, provenance policy, and secret
+  handling are configured. At that point, change the relevant
+  `scripts/check-release-trust.mjs` call from `unsigned-dev` or `local-ci` to
+  `production` and include concrete evidence anchors such as certificate
+  fingerprints, attestation digests, workflow run URLs, or notarization ticket
+  references.
