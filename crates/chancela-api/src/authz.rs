@@ -344,6 +344,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/documents/imported/{id}/review", RouteClass::Gated), // PATCH document.generate@import scope
     ("/v1/documents/import/validate", RouteClass::Gated), // POST act.read@Global (read-only validation)
     ("/v1/external-validator-reports", RouteClass::Gated), // GET settings.read@Global · POST settings.manage@Global
+    (
+        "/v1/external-validator-reports/{case_id}/{validator_family}",
+        RouteClass::Gated,
+    ), // GET settings.read@Global
     ("/v1/signature/pdf/validate", RouteClass::Gated), // POST act.read@Global (read-only technical PDF/PAdES validation)
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
@@ -604,6 +608,14 @@ mod tests {
     fn office_document_export_route_is_classified_as_gated() {
         assert_eq!(
             classify("/v1/acts/{id}/document/office"),
+            Some(RouteClass::Gated)
+        );
+    }
+
+    #[test]
+    fn external_validator_report_download_route_is_classified_as_gated() {
+        assert_eq!(
+            classify("/v1/external-validator-reports/{case_id}/{validator_family}"),
             Some(RouteClass::Gated)
         );
     }

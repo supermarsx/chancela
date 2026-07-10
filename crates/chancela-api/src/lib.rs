@@ -1192,6 +1192,10 @@ pub fn router(state: AppState) -> Router {
             ),
         )
         .route(
+            "/v1/external-validator-reports/{case_id}/{validator_family}",
+            get(external_validator_evidence::download_external_validator_report_metadata),
+        )
+        .route(
             "/v1/signature/pdf/validate",
             post(pdf_signature_validation::validate_pdf_signature).layer(DefaultBodyLimit::max(
                 pdf_signature_validation::PDF_SIGNATURE_VALIDATION_ENVELOPE_BYTES,
@@ -2005,6 +2009,15 @@ mod tests {
             "evidence/external-validators/api-durable-eu-dss.json"
         );
 
+        let (status, content_type, downloaded) = send_bytes(
+            restarted.clone(),
+            get("/v1/external-validator-reports/api-durable/eu-dss"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(content_type, "application/json");
+        assert_eq!(downloaded, metadata);
+
         let raw_entries = restarted.external_validator_report_metadata.read().await;
         let attachments = external_validator_evidence::matching_attachments(
             &raw_entries,
@@ -2078,8 +2091,11 @@ mod tests {
             .dir
             .join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR);
         std::fs::create_dir_all(&sidecar_dir).expect("sidecar dir");
-        std::fs::write(sidecar_dir.join("bad.json"), b"{not valid json")
-            .expect("malformed sidecar");
+        std::fs::write(
+            sidecar_dir.join("api-malformed-eu-dss.json"),
+            b"{not valid json",
+        )
+        .expect("malformed sidecar");
 
         let state = AppState::with_data_dir(tmp.dir.clone());
         let (status, listed) = send(state.clone(), get("/v1/external-validator-reports")).await;
@@ -2094,12 +2110,96 @@ mod tests {
             "raw malformed bytes must not be listed"
         );
 
+        let (status, body) = send(
+            state.clone(),
+            get("/v1/external-validator-reports/api-malformed/eu-dss"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("technical metadata sidecar"),
+            "{body}"
+        );
+        assert!(
+            !body.to_string().contains("not valid json"),
+            "malformed raw bytes must not be returned"
+        );
+
         let raw_entries = state.external_validator_report_metadata.read().await;
         let attachments = external_validator_evidence::matching_attachments(
             &raw_entries,
             vec![sha256_hex_test(b"document bytes")],
         );
         assert!(attachments.is_empty());
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_duplicate_identity_is_not_downloadable() {
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let metadata =
+            external_validator_metadata_bytes("api-download-duplicate", "eu-dss", &document_sha256);
+        {
+            let mut raw_entries = state.external_validator_report_metadata.write().await;
+            raw_entries.push(metadata.clone());
+            raw_entries.push(metadata);
+        }
+
+        let (status, listed) = send(state.clone(), get("/v1/external-validator-reports")).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed["count"], 0);
+        assert_eq!(listed["duplicate_suggested_path_count"], 1);
+
+        let (status, body) = send(
+            state,
+            get("/v1/external-validator-reports/api-download-duplicate/eu-dss"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(
+            body["error"].as_str().expect("error").contains("ambiguous"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_download_allows_settings_read() {
+        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let metadata =
+            external_validator_metadata_bytes("api-read-download", "eu-dss", &document_sha256);
+
+        let (status, body) = send(
+            state.clone(),
+            post_external_validator_metadata(metadata.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+
+        let reader_id = seed_user(
+            &state,
+            "reader.external-validator",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let reader_token = seed_session(&state, &reader_id.to_string()).await;
+
+        let (status, content_type, downloaded) = send_bytes(
+            state,
+            with_session(
+                get("/v1/external-validator-reports/api-read-download/eu-dss"),
+                &reader_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(content_type, "application/json");
+        assert_eq!(downloaded, metadata);
     }
 
     #[tokio::test]

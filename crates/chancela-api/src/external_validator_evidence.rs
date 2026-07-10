@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 
 use axum::Json;
 use axum::body::Bytes;
-use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Path as AxumPath, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use chancela_authz::{Permission, Scope};
 use serde::Serialize;
 use serde_json::Value;
@@ -82,6 +83,40 @@ pub async fn list_external_validator_report_metadata(
         &raw_entries,
         storage_mode(state.external_validator_report_metadata_dir.is_some()),
     )))
+}
+
+/// `GET /v1/external-validator-reports/{case_id}/{validator_family}` - download one validated
+/// technical metadata JSON report by its stable redacted-summary identity.
+pub async fn download_external_validator_report_metadata(
+    State(state): State<AppState>,
+    AxumPath((case_id, validator_family)): AxumPath<(String, String)>,
+    actor: CurrentActor,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
+    require_safe_report_identity(&case_id, &validator_family)?;
+
+    let raw_entries = state.external_validator_report_metadata.read().await;
+    let bytes = raw_metadata_for_identity(&raw_entries, &case_id, &validator_family)?;
+    drop(raw_entries);
+
+    if let Some(bytes) = bytes {
+        return Ok(([(header::CONTENT_TYPE, "application/json")], bytes).into_response());
+    }
+
+    if state
+        .external_validator_report_metadata_dir
+        .as_ref()
+        .is_some_and(|dir| {
+            malformed_persisted_sidecar_for_identity(dir, &case_id, &validator_family)
+        })
+    {
+        return Err(ApiError::Unprocessable(
+            "invalid external-validator technical metadata sidecar for requested identity"
+                .to_owned(),
+        ));
+    }
+
+    Err(ApiError::NotFound)
 }
 
 /// `POST /v1/external-validator-reports` - accept operator-supplied technical metadata only.
@@ -345,12 +380,15 @@ fn validate_indexing(indexing: &Value) -> Option<()> {
 }
 
 fn valid_archive_path(path: &str, case_id: &str, validator_family: &str) -> bool {
-    path == format!(
-        "{EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX}{case_id}-{validator_family}.json"
-    ) && !path.contains('\\')
+    path == external_validator_report_archive_path(case_id, validator_family)
+        && !path.contains('\\')
         && !path
             .split('/')
             .any(|part| part == "." || part == ".." || part.is_empty())
+}
+
+fn external_validator_report_archive_path(case_id: &str, validator_family: &str) -> String {
+    format!("{EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX}{case_id}-{validator_family}.json")
 }
 
 fn is_safe_slug(value: &str) -> bool {
@@ -423,6 +461,74 @@ fn metadata_list_response(
     }
 }
 
+fn require_safe_report_identity(case_id: &str, validator_family: &str) -> Result<(), ApiError> {
+    if is_safe_slug(case_id) && is_safe_slug(validator_family) {
+        Ok(())
+    } else {
+        Err(ApiError::Unprocessable(
+            "external-validator report identity must use safe case_id and validator_family slugs"
+                .to_owned(),
+        ))
+    }
+}
+
+fn raw_metadata_for_identity(
+    raw_entries: &[Vec<u8>],
+    case_id: &str,
+    validator_family: &str,
+) -> Result<Option<Vec<u8>>, ApiError> {
+    let mut parsed = Vec::new();
+    let mut identity_counts = BTreeMap::<(String, String), usize>::new();
+    let mut path_counts = BTreeMap::<String, usize>::new();
+
+    for raw in raw_entries {
+        let Ok(attachment) = validate_external_validator_report_metadata(raw) else {
+            continue;
+        };
+        *identity_counts
+            .entry((
+                attachment.case_id.clone(),
+                attachment.validator_family.clone(),
+            ))
+            .or_default() += 1;
+        *path_counts
+            .entry(attachment.archive_path.clone())
+            .or_default() += 1;
+        parsed.push(attachment);
+    }
+
+    let mut matches = parsed
+        .into_iter()
+        .filter(|attachment| {
+            attachment.case_id == case_id && attachment.validator_family == validator_family
+        })
+        .collect::<Vec<_>>();
+
+    if matches.is_empty() {
+        return Ok(None);
+    }
+
+    let identity_count = identity_counts
+        .get(&(case_id.to_owned(), validator_family.to_owned()))
+        .copied()
+        .unwrap_or_default();
+    let duplicate_path = matches.iter().any(|attachment| {
+        path_counts
+            .get(&attachment.archive_path)
+            .copied()
+            .unwrap_or_default()
+            > 1
+    });
+    if identity_count != 1 || duplicate_path || matches.len() != 1 {
+        return Err(ApiError::Conflict(
+            "duplicate external-validator report identity or suggested_path is ambiguous; refusing technical metadata download"
+                .to_owned(),
+        ));
+    }
+
+    Ok(Some(matches.pop().expect("one matching attachment").bytes))
+}
+
 fn require_json_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
     let Some(value) = headers.get(axum::http::header::CONTENT_TYPE) else {
         return Err(ApiError::Unprocessable(
@@ -467,16 +573,45 @@ fn external_validator_report_metadata_path(
     dir: &Path,
     attachment: &ExternalValidatorEvidenceAttachment,
 ) -> std::io::Result<PathBuf> {
-    if !is_safe_slug(&attachment.case_id) || !is_safe_slug(&attachment.validator_family) {
+    let Some(file_name) = external_validator_report_metadata_file_name(
+        &attachment.case_id,
+        &attachment.validator_family,
+    ) else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "external-validator sidecar file name is not safe",
         ));
+    };
+    Ok(dir.join(file_name))
+}
+
+fn external_validator_report_metadata_file_name(
+    case_id: &str,
+    validator_family: &str,
+) -> Option<String> {
+    (is_safe_slug(case_id) && is_safe_slug(validator_family))
+        .then(|| format!("{case_id}-{validator_family}.json"))
+}
+
+fn malformed_persisted_sidecar_for_identity(
+    dir: &Path,
+    case_id: &str,
+    validator_family: &str,
+) -> bool {
+    let Some(file_name) = external_validator_report_metadata_file_name(case_id, validator_family)
+    else {
+        return false;
+    };
+    let path = dir.join(file_name);
+    match read_external_validator_metadata_sidecar(&path) {
+        Ok(bytes) => validate_external_validator_report_metadata(&bytes)
+            .map(|attachment| {
+                attachment.case_id != case_id || attachment.validator_family != validator_family
+            })
+            .unwrap_or(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => true,
     }
-    Ok(dir.join(format!(
-        "{}-{}.json",
-        attachment.case_id, attachment.validator_family
-    )))
 }
 
 fn write_external_validator_report_metadata_atomic(
