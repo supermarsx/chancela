@@ -473,16 +473,10 @@ function PlatformLogTailPanel() {
                       const context = platformLogContextText(entry.context);
                       return (
                         <tr key={entry.id}>
-                          <td
-                            className="mono"
-                            data-label={t('settings.platform.logs.column.seq')}
-                          >
+                          <td className="mono" data-label={t('settings.platform.logs.column.seq')}>
                             {entry.seq}
                           </td>
-                          <td
-                            className="mono"
-                            data-label={t('settings.platform.logs.column.time')}
-                          >
+                          <td className="mono" data-label={t('settings.platform.logs.column.time')}>
                             <time dateTime={entry.timestamp}>{entry.timestamp}</time>
                           </td>
                           <td data-label={t('settings.platform.logs.column.service')}>
@@ -664,10 +658,7 @@ export function SettingsPage() {
 
   return (
     <div className="stack">
-      <PageHeader
-        crumbs={t('settings.breadcrumb')}
-        title={t('settings.page.title')}
-      >
+      <PageHeader crumbs={t('settings.breadcrumb')} title={t('settings.page.title')}>
         <SubNav
           items={SETTINGS_SECTIONS.map((s) => ({
             id: s.id,

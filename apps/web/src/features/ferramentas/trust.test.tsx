@@ -343,7 +343,10 @@ function serviceMatchesFixtureQuery(
   );
 }
 
-function tsaMatchesFixtureQuery(record: TsaCatalogView['records'][number], params: URLSearchParams) {
+function tsaMatchesFixtureQuery(
+  record: TsaCatalogView['records'][number],
+  params: URLSearchParams,
+) {
   return (
     fixtureIncludes(
       [
@@ -391,7 +394,11 @@ function trustFetch(): typeof fetch {
     const parsed = new URL(url, 'http://localhost');
     const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
     if (parsed.pathname === '/v1/trust/refresh' && method === 'POST') {
-      summary = { ...SUMMARY, source: { ...SUMMARY.source, kind: 'Cache' }, last_refresh: REFRESH_STATUS };
+      summary = {
+        ...SUMMARY,
+        source: { ...SUMMARY.source, kind: 'Cache' },
+        last_refresh: REFRESH_STATUS,
+      };
       return Promise.resolve(jsonResponse(REFRESH_STATUS));
     }
     if (parsed.pathname === '/v1/trust/tsa') {
@@ -460,9 +467,9 @@ describe('Ferramentas — TSL trust catalog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar TSL' }));
 
     await waitFor(() =>
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/v1/trust/refresh'))).toBe(
-        true,
-      ),
+      expect(
+        fetchMock.mock.calls.some(([input]) => String(input).includes('/v1/trust/refresh')),
+      ).toBe(true),
     );
     const attempt = await screen.findByRole('group', { name: 'Última tentativa de importação' });
     expect(attempt).toBeTruthy();

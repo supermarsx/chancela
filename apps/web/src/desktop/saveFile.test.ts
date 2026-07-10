@@ -105,7 +105,9 @@ describe('saveBlobAs', () => {
   });
 
   it('reports a cancelled browser save picker without falling back to a download', async () => {
-    const showSaveFilePicker = vi.fn().mockRejectedValue(new DOMException('cancelled', 'AbortError'));
+    const showSaveFilePicker = vi
+      .fn()
+      .mockRejectedValue(new DOMException('cancelled', 'AbortError'));
     const createUrl = vi.fn();
     vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
     vi.stubGlobal('URL', { ...URL, createObjectURL: createUrl });

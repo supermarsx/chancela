@@ -7,10 +7,7 @@ import type {
   RegistryAutoUpdateWeekday,
 } from '../../api/types';
 import { entityKindLabels } from '../../api/labels';
-import {
-  useRegistryAutoUpdateDuePlan,
-  useRequestRegistryAutoUpdate,
-} from '../../api/hooks';
+import { useRegistryAutoUpdateDuePlan, useRequestRegistryAutoUpdate } from '../../api/hooks';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import {
@@ -53,7 +50,9 @@ const statusKeys: Record<RegistryAutoUpdateStatus, MessageKey> = {
   manual_required: 'settings.registryAutoUpdate.status.manualRequired',
 };
 
-function statusTone(status: RegistryAutoUpdateStatus): 'neutral' | 'accent' | 'warn' | 'error' | 'ok' {
+function statusTone(
+  status: RegistryAutoUpdateStatus,
+): 'neutral' | 'accent' | 'warn' | 'error' | 'ok' {
   if (status === 'completed') return 'ok';
   if (status === 'failed' || status === 'manual_required') return 'warn';
   if (status === 'queued' || status === 'running' || status === 'due') return 'accent';
@@ -96,7 +95,8 @@ function outcomeBody(
   nextAllowedAt: string | null,
   t: ReturnType<typeof useT>,
 ) {
-  if (status === 'manual_required') return t('settings.registryAutoUpdate.outcome.manualRequired.body');
+  if (status === 'manual_required')
+    return t('settings.registryAutoUpdate.outcome.manualRequired.body');
   if (status === 'queued' || status === 'running') {
     return t('settings.registryAutoUpdate.outcome.running.body');
   }
@@ -143,7 +143,9 @@ export function RegistryAutoUpdateSection({
 
   const toggleProfile = (profile: EntityKind, checked: boolean) => {
     const base = allProfiles ? [...ENTITY_KINDS] : [...selectedProfiles];
-    const next = checked ? Array.from(new Set([...base, profile])) : base.filter((p) => p !== profile);
+    const next = checked
+      ? Array.from(new Set([...base, profile]))
+      : base.filter((p) => p !== profile);
     setEntityDefaults('enabled_profiles', next.length === ENTITY_KINDS.length ? [] : next);
   };
 
@@ -175,10 +177,7 @@ export function RegistryAutoUpdateSection({
     const cadence = value.cadence;
     if (cadence.kind === 'interval_hours') {
       return (
-        <Field
-          label={t('settings.registryAutoUpdate.cadence.hours')}
-          htmlFor="registry-auto-hours"
-        >
+        <Field label={t('settings.registryAutoUpdate.cadence.hours')} htmlFor="registry-auto-hours">
           <Input
             id="registry-auto-hours"
             type="number"
@@ -509,7 +508,9 @@ export function RegistryAutoUpdateSection({
                       <strong>{item.entity_name}</strong>
                       <p className="field__hint mono">{item.entity_id}</p>
                     </td>
-                    <td>{entityKindLabels[item.entity_profile as EntityKind] ?? item.entity_profile}</td>
+                    <td>
+                      {entityKindLabels[item.entity_profile as EntityKind] ?? item.entity_profile}
+                    </td>
                     <td>
                       <span className="mono">{item.retrieved_at}</span>
                       <p className="field__hint">{dueReason(item, t)}</p>

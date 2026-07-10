@@ -5,12 +5,7 @@ import {
   useCreateActFollowUp,
   usePatchFollowUp,
 } from '../../api/hooks';
-import type {
-  ActView,
-  CreateFollowUpBody,
-  FollowUpView,
-  PatchFollowUpBody,
-} from '../../api/types';
+import type { ActView, CreateFollowUpBody, FollowUpView, PatchFollowUpBody } from '../../api/types';
 import { useT } from '../../i18n';
 import {
   Badge,
@@ -58,7 +53,9 @@ function draftFromFollowUp(row: FollowUpView): FollowUpDraft {
   };
 }
 
-function anchorFields(anchor: AnchorValue): Pick<CreateFollowUpBody, 'agenda_number' | 'deliberation_index'> {
+function anchorFields(
+  anchor: AnchorValue,
+): Pick<CreateFollowUpBody, 'agenda_number' | 'deliberation_index'> {
   if (anchor.startsWith('agenda:')) {
     return { agenda_number: Number(anchor.slice('agenda:'.length)) };
   }
@@ -146,15 +143,7 @@ function FollowUpItem({
       assignee: row.assignee_display ?? row.assignee ?? '',
     });
     setTitleError(null);
-  }, [
-    row.id,
-    row.title,
-    row.detail,
-    row.due_date,
-    row.assignee,
-    row.assignee_display,
-    row.status,
-  ]);
+  }, [row.id, row.title, row.detail, row.due_date, row.assignee, row.assignee_display, row.status]);
 
   function set<K extends keyof FollowUpDraft>(key: K, value: FollowUpDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));

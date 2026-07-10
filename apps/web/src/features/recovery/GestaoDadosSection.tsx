@@ -238,9 +238,9 @@ function DataStatusPanel() {
   const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
   const canClean = Boolean(
     dataPath &&
-      data?.data_dir.exists &&
-      data?.data_dir.is_directory &&
-      data?.permissions.delete_probe_file.ok,
+    data?.data_dir.exists &&
+    data?.data_dir.is_directory &&
+    data?.permissions.delete_probe_file.ok,
   );
 
   async function copyPath() {
@@ -380,9 +380,7 @@ function DataStatusPanel() {
                       <h5>{t(target.title)}</h5>
                       <p>{t(target.body)}</p>
                       <p className="data-status-cleanup__metric">
-                        <span className="mono">
-                          {formatBytes(usage?.bytes ?? 0, locale)}
-                        </span>{' '}
+                        <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>{' '}
                         <span>
                           {t('data.status.cleanup.items', {
                             files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),

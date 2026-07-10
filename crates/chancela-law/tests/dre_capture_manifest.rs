@@ -204,9 +204,7 @@ fn parse_manifest() -> DreCaptureManifest {
     serde_json::from_str(MANIFEST).expect("DRE capture manifest parses")
 }
 
-fn capture_index<'a>(
-    manifest: &'a DreCaptureManifest,
-) -> HashMap<(&'a str, &'a str), &'a DreCapture> {
+fn capture_index(manifest: &DreCaptureManifest) -> HashMap<(&str, &str), &DreCapture> {
     let mut index = HashMap::new();
     for capture in &manifest.captures {
         for article_id in &capture.article_ids {
@@ -216,9 +214,7 @@ fn capture_index<'a>(
     index
 }
 
-fn approved_capture_index<'a>(
-    manifest: &'a DreCaptureManifest,
-) -> HashMap<(&'a str, &'a str), &'a DreCapture> {
+fn approved_capture_index(manifest: &DreCaptureManifest) -> HashMap<(&str, &str), &DreCapture> {
     let mut approved = HashMap::new();
     for capture in &manifest.captures {
         let complete_artifact = capture
