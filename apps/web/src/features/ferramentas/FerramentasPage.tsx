@@ -11,6 +11,8 @@
  *    PDF, backed by `POST /v1/signature/pdf/validate`.
  *  - **Lista de confiança** — the read-only TSL trust catalog/status surface for
  *    checking the parsed scheme, provider and service trust metadata.
+ *  - **Assinatura externa** — operational tracking for redacted external-signer invites
+ *    and token-held public envelopes.
  *
  * Each tool is a deep-linkable sub-tab: the active one lives in the URL (`?tool=...`);
  * its absence means the CAE surface, so `/cae` deep links and the CAE search flow open
@@ -27,14 +29,16 @@ import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
 import { LegislacaoPage } from '../legislacao/LegislacaoPage';
 import { PdfSignatureValidatorPanel } from './PdfSignatureValidatorPanel';
 import { TrustCatalogPage } from './TrustCatalogPage';
+import { ExternalSigningWorkflowsPage } from './ExternalSigningWorkflowsPage';
 
-type FerramentasSection = 'cae' | 'legislacao' | 'pdf' | 'trust';
+type FerramentasSection = 'cae' | 'legislacao' | 'pdf' | 'trust' | 'external-signing';
 
 const SECTIONS: { id: FerramentasSection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'cae', label: 'tools.section.cae', icon: <Icon.Layers /> },
   { id: 'legislacao', label: 'tools.section.legislacao', icon: <Icon.Scale /> },
   { id: 'pdf', label: 'tools.section.pdfValidator', icon: <Icon.FileText /> },
   { id: 'trust', label: 'tools.section.trust', icon: <Icon.Seal /> },
+  { id: 'external-signing', label: 'tools.section.externalSigning', icon: <Icon.PenNib /> },
 ];
 
 export function FerramentasPage() {
@@ -48,7 +52,9 @@ export function FerramentasPage() {
         ? 'pdf'
         : params.get('tool') === 'trust'
           ? 'trust'
-          : 'cae';
+          : params.get('tool') === 'external-signing'
+            ? 'external-signing'
+            : 'cae';
 
   // A gilt indicator that glides to the active sub-tab (consistent with the top bar's
   // active-tab indicator). Measured from the active button so it works with the two
@@ -60,6 +66,7 @@ export function FerramentasPage() {
     legislacao: null,
     pdf: null,
     trust: null,
+    'external-signing': null,
   });
   const [indicator, setIndicator] = useState<{
     left: number;
@@ -164,6 +171,8 @@ export function FerramentasPage() {
           <TrustCatalogPage />
         ) : section === 'pdf' ? (
           <PdfSignatureValidatorPanel />
+        ) : section === 'external-signing' ? (
+          <ExternalSigningWorkflowsPage />
         ) : section === 'legislacao' ? (
           <LegislacaoPage />
         ) : (
