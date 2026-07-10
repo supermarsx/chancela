@@ -17,6 +17,11 @@ describe('catalog completeness matrix', () => {
     expect(sourceKeys.length).toBeGreaterThan(200);
   });
 
+  it('uses natural pt-PT wording for the registry catch-all filter', () => {
+    expect(ptPT['entities.filters.registry.all']).toBe('Qualquer estado');
+    expect(ptPT['entities.filters.registry.all']).not.toBe('Todo o registo');
+  });
+
   it('every shipped locale is registered with a quality tier', () => {
     for (const locale of SHIPPED_LOCALES) {
       expect(LOCALE_QUALITY[locale]).toBeDefined();

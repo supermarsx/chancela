@@ -158,118 +158,126 @@ export function TemplatesCatalogPage() {
       </InlineWarning>
 
       <Card title={t('templates.filters.title')}>
-        <fieldset className="templates-controls">
-          <legend className="sr-only">{t('templates.filters.title')}</legend>
-          <div className="templates-controls__search">
-            <Field label={t('templates.search.label')} htmlFor="templates-search">
-              <div className="templates-search-control">
-                <span className="templates-search-control__icon" aria-hidden="true">
-                  <Icon.Search />
-                </span>
-                <Input
-                  id="templates-search"
-                  value={query}
-                  type="search"
-                  placeholder={t('templates.search.placeholder')}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
+        <div role="search" aria-label={t('templates.filters.title')}>
+          <fieldset className="templates-controls">
+            <legend className="sr-only">{t('templates.filters.title')}</legend>
+            <div className="templates-controls__primary">
+              <div className="templates-controls__search">
+                <Field label={t('templates.search.label')} htmlFor="templates-search">
+                  <div className="templates-search-control">
+                    <span className="templates-search-control__icon" aria-hidden="true">
+                      <Icon.Search />
+                    </span>
+                    <Input
+                      id="templates-search"
+                      value={query}
+                      type="search"
+                      placeholder={t('templates.search.placeholder')}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                  </div>
+                </Field>
               </div>
-            </Field>
-          </div>
-          <div className="templates-controls__filters">
-            <Field label={t('templates.family.label')} htmlFor="templates-family">
-              <Select
-                id="templates-family"
-                value={family}
-                options={[
-                  { value: '', label: t('templates.family.all') },
-                  ...ENTITY_FAMILIES.map((value) => ({
-                    value,
-                    label: entityFamilyLabels[value],
-                  })),
-                ]}
-                onChange={(event) => setFamily(event.target.value as EntityFamily | '')}
-              />
-            </Field>
-            <Field label={t('templates.stage.label')} htmlFor="templates-stage">
-              <Select
-                id="templates-stage"
-                value={stage}
-                options={[
-                  { value: '', label: t('templates.stage.all') },
-                  ...LIFECYCLE_STAGES.map((value) => ({
-                    value,
-                    label: lifecycleStageLabels[value],
-                  })),
-                ]}
-                onChange={(event) => setStage(event.target.value as LifecycleStage | '')}
-              />
-            </Field>
-            <Field label={t('templates.locale.label')} htmlFor="templates-locale">
-              <Select
-                id="templates-locale"
-                value={locale}
-                options={[
-                  { value: '', label: t('templates.locale.all') },
-                  ...locales.map((value) => ({ value, label: value })),
-                ]}
-                onChange={(event) => setLocale(event.target.value)}
-              />
-            </Field>
-            <Field label={t('templates.channel.label')} htmlFor="templates-channel">
-              <Select
-                id="templates-channel"
-                value={channel}
-                options={[
-                  { value: '', label: t('templates.channel.all') },
-                  ...channels.map((value) => ({
-                    value,
-                    label: meetingChannelLabels[value],
-                  })),
-                ]}
-                onChange={(event) => setChannel(event.target.value as MeetingChannel | '')}
-              />
-            </Field>
-            <Field label={t('templates.signature.label')} htmlFor="templates-signature">
-              <Select
-                id="templates-signature"
-                value={signaturePolicy}
-                options={[
-                  { value: '', label: t('templates.signature.all') },
-                  ...signaturePolicies.map((value) => ({
-                    value,
-                    label: signaturePolicyLabels[value],
-                  })),
-                ]}
-                onChange={(event) =>
-                  setSignaturePolicy(event.target.value as SignaturePolicyHint | '')
-                }
-              />
-            </Field>
-            <Field label={t('templates.rulePack.label')} htmlFor="templates-rule-pack">
-              <Select
-                id="templates-rule-pack"
-                value={rulePack}
-                options={[
-                  { value: '', label: t('templates.rulePack.all') },
-                  ...rulePacks.map((value) => ({ value, label: value })),
-                ]}
-                onChange={(event) => setRulePack(event.target.value)}
-              />
-            </Field>
-          </div>
-          <div className="templates-controls__actions">
-            <Button
-              type="button"
-              variant="ghost"
-              icon={<Icon.Close />}
-              disabled={!hasFilters}
-              onClick={clearFilters}
-            >
-              {t('templates.clearFilters')}
-            </Button>
-          </div>
-        </fieldset>
+              <Field label={t('templates.family.label')} htmlFor="templates-family">
+                <Select
+                  id="templates-family"
+                  value={family}
+                  options={[
+                    { value: '', label: t('templates.family.all') },
+                    ...ENTITY_FAMILIES.map((value) => ({
+                      value,
+                      label: entityFamilyLabels[value],
+                    })),
+                  ]}
+                  onChange={(event) => setFamily(event.target.value as EntityFamily | '')}
+                />
+              </Field>
+              <Field label={t('templates.stage.label')} htmlFor="templates-stage">
+                <Select
+                  id="templates-stage"
+                  value={stage}
+                  options={[
+                    { value: '', label: t('templates.stage.all') },
+                    ...LIFECYCLE_STAGES.map((value) => ({
+                      value,
+                      label: lifecycleStageLabels[value],
+                    })),
+                  ]}
+                  onChange={(event) => setStage(event.target.value as LifecycleStage | '')}
+                />
+              </Field>
+              <div className="templates-controls__actions">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.Close />}
+                  disabled={!hasFilters}
+                  onClick={clearFilters}
+                >
+                  {t('templates.clearFilters')}
+                </Button>
+              </div>
+            </div>
+
+            <details className="templates-controls__advanced">
+              <summary>{t('templates.filters.advanced')}</summary>
+              <div className="templates-controls__filters">
+                <Field label={t('templates.locale.label')} htmlFor="templates-locale">
+                  <Select
+                    id="templates-locale"
+                    value={locale}
+                    options={[
+                      { value: '', label: t('templates.locale.all') },
+                      ...locales.map((value) => ({ value, label: value })),
+                    ]}
+                    onChange={(event) => setLocale(event.target.value)}
+                  />
+                </Field>
+                <Field label={t('templates.channel.label')} htmlFor="templates-channel">
+                  <Select
+                    id="templates-channel"
+                    value={channel}
+                    options={[
+                      { value: '', label: t('templates.channel.all') },
+                      ...channels.map((value) => ({
+                        value,
+                        label: meetingChannelLabels[value],
+                      })),
+                    ]}
+                    onChange={(event) => setChannel(event.target.value as MeetingChannel | '')}
+                  />
+                </Field>
+                <Field label={t('templates.signature.label')} htmlFor="templates-signature">
+                  <Select
+                    id="templates-signature"
+                    value={signaturePolicy}
+                    options={[
+                      { value: '', label: t('templates.signature.all') },
+                      ...signaturePolicies.map((value) => ({
+                        value,
+                        label: signaturePolicyLabels[value],
+                      })),
+                    ]}
+                    onChange={(event) =>
+                      setSignaturePolicy(event.target.value as SignaturePolicyHint | '')
+                    }
+                  />
+                </Field>
+                <Field label={t('templates.rulePack.label')} htmlFor="templates-rule-pack">
+                  <Select
+                    id="templates-rule-pack"
+                    value={rulePack}
+                    options={[
+                      { value: '', label: t('templates.rulePack.all') },
+                      ...rulePacks.map((value) => ({ value, label: value })),
+                    ]}
+                    onChange={(event) => setRulePack(event.target.value)}
+                  />
+                </Field>
+              </div>
+            </details>
+          </fieldset>
+        </div>
       </Card>
 
       <section className="stack--tight" aria-labelledby="templates-catalog-title">

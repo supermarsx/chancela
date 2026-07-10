@@ -1657,6 +1657,7 @@ export const enUS: Catalog = {
   'templates.noteTitle': 'Act-scoped generation',
   'templates.noteBody':
     'Generation and preview stay inside each act. Open a book and choose an act to apply a template to the current record.',
+  'templates.filters.advanced': 'Advanced filters',
   'templates.filters.title': 'Search and filter',
   'templates.search.label': 'Search',
   'templates.search.placeholder': 'Template ID, family, stage, rule pack, channel, or language',

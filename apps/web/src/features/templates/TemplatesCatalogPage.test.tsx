@@ -82,14 +82,28 @@ describe('TemplatesCatalogPage', () => {
   it('browses the existing template catalog and points generation back to acts', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: CATALOG }]));
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
 
-    const filters = screen.getByRole('group', { name: 'Pesquisar e filtrar' });
+    const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar' });
+    const advanced = container.querySelector(
+      'details.templates-controls__advanced',
+    ) as HTMLDetailsElement;
+    expect(advanced).toBeTruthy();
+    expect(advanced.open).toBe(false);
     const clearFilters = within(filters).getByRole('button', {
       name: 'Limpar pesquisa e filtros',
     }) as HTMLButtonElement;
     expect(within(filters).getByLabelText('Pesquisa')).toBeTruthy();
+    expect(within(filters).getByLabelText('Família da entidade')).toBeTruthy();
+    expect(within(filters).getByLabelText('Fase da minuta')).toBeTruthy();
     expect(clearFilters.disabled).toBe(true);
+
+    fireEvent.click(within(advanced).getByText('Filtros avançados'));
+    expect(advanced.open).toBe(true);
+    expect(within(advanced).getByLabelText('Idioma do modelo')).toBeTruthy();
+    expect(within(advanced).getByLabelText('Canal do modelo')).toBeTruthy();
+    expect(within(advanced).getByLabelText('Política de assinatura')).toBeTruthy();
+    expect(within(advanced).getByLabelText('Pacote de regras')).toBeTruthy();
 
     const ataId = await screen.findByText('csc-ata-ag/v1');
     const ataCard = ataId.closest('article');
@@ -154,9 +168,15 @@ describe('TemplatesCatalogPage', () => {
   it('combines folded search, locale filters, empty state and clear without stale results', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/templates', body: EDGE_CATALOG }]));
 
-    renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    const { container } = renderWithProviders(<TemplatesCatalogPage />, ['/minutas']);
+    const advanced = container.querySelector(
+      'details.templates-controls__advanced',
+    ) as HTMLDetailsElement;
 
     expect(await screen.findByText('assoc-convocatoria-ga/pt')).toBeTruthy();
+    expect(advanced.open).toBe(false);
+    fireEvent.click(within(advanced).getByText('Filtros avançados'));
+    expect(advanced.open).toBe(true);
 
     fireEvent.change(screen.getByLabelText('Pesquisa'), {
       target: { value: 'CONVOCATÓRIA' },

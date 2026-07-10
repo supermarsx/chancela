@@ -376,7 +376,7 @@ export const daDK: Catalog = {
   'entities.filters.nipc.validated': 'NIPC validado',
   'entities.filters.nipc.unvalidated': 'NIPC por validar',
   'entities.filters.registry.label': 'Registo',
-  'entities.filters.registry.all': 'Todo o registo',
+  'entities.filters.registry.all': 'Qualquer estado',
   'entities.filters.registry.imported': 'Importado',
   'entities.filters.registry.notImported': 'Não importado',
   'entities.filters.clear': 'Limpar',
@@ -1659,6 +1659,7 @@ export const daDK: Catalog = {
   'templates.noteTitle': 'Geração em contexto',
   'templates.noteBody':
     'A geração e a pré-visualização continuam dentro de cada ata. Abra um livro e escolha uma ata para aplicar o modelo ao registo atual.',
+  'templates.filters.advanced': 'Filtros avançados',
   'templates.filters.title': 'Pesquisar e filtrar',
   'templates.search.label': 'Pesquisa',
   'templates.search.placeholder': 'ID do modelo, família, fase, regra, canal ou idioma',
