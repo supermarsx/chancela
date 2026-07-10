@@ -1,16 +1,16 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-10 from committed implementation snapshot `35f54d6`,
-refreshing the stale `fc0d541` snapshot with the post-`fc0d541` commits:
-`5f55141` validator report evidence metadata, `de9302e` imported-document
-review state, `5c15008` external signed-invite evidence E2E, `c54fc0e` MCP
-status resource, `291dfd2` paper OCR review evidence fields, `1a75083` CI
-hardening doc refresh, `fb7d11e` imported-document review UI, and `7267040`
-MCP human-review prompt, and `696913f` archive/document-bundle validator
-evidence indexing, `696a887` imported-document review browser regression, and
-`8a79478` retained-export cleanup guardrails, `9997162` Docker release-trust
-metadata hardening, and `35f54d6` durable AI human-verification gate. Earlier
-coverage text remains prior snapshot context.
+*Updated 2026-07-10 from committed implementation snapshot `4566715`,
+refreshing the `cfcb3d9` baseline with commits through current HEAD:
+`f312669` remote-signing TSA test isolation, `d9a1891` SBOM package linkage,
+`968e4e7` template family metadata drift guards, `6d68052` imported-document
+review guardrails, `2da82c2` AMA/CMD evidence-pack check mode, `0ef8447`
+missing-attendance dashboard reminders, `225f5c6` external signer identity
+evidence requirements, `5021110` AI human-review UI, `21e76a4` web hook lint
+hygiene, `d8ab33a` written-resolution evidence advisory, `ec28083` local PAdES
+LTV renewal planning, `09af410` retention workflow blockers, and `4566715`
+tagged-PDF structural self-checks. Earlier coverage text remains prior snapshot
+context.
 All top-level spec areas remain **PARTIAL**. This is an implementation and test
 coverage snapshot, not a legal certification, not production CMD approval, not
 DRE verification promotion, not full PDF/UA delivery, and not a claim that
@@ -113,6 +113,65 @@ Implementation checkpoints covered here:
   recorded as accepted. The accepted/rejected state is a durable human-review gate
   only; it is not legal validity, an AI quality assessment, or a full provenance UI
   panel.
+- `f312669` keeps Signatures/CI **PARTIAL**: focused remote-signing API tests now
+  clear configured TSA providers while exercising legacy TSA URL failure paths, so
+  trust-provider isolation is deterministic. This is test hygiene only, not live TSA
+  operation or provider certification.
+- `d9a1891` keeps Architecture/Release **PARTIAL**: CycloneDX SBOM checks can be
+  tied to a release package's path, size, and SHA-256, and CI self-tests the
+  package-linkage validator. This is metadata linkage/regression coverage, not a
+  signed, attested, notarized, or reproducible release chain.
+- `968e4e7` keeps Template Catalog **PARTIAL**: catalog metadata tests now catch
+  family drift between template ID prefixes, rule-pack IDs, and signature-policy
+  hints. This guards local catalog consistency only; it does not verify legal
+  wording, thresholds, or law-source authority.
+- `6d68052` keeps Documents **PARTIAL**: imported-document validation, stored views,
+  and ledger/review payloads now expose guardrails that original bytes remain
+  non-canonical evidence, canonical PDF/A records are not replaced, signed artifacts
+  are not created/validated, and OCR/conversion output is not promoted. These are
+  review guardrails only, not OCR, conversion, legal acceptance, or signed-import
+  validation.
+- `2da82c2` keeps Signatures/Compliance **PARTIAL**: the AMA/CMD evidence-pack
+  generator has a read-only `--check` mode validating deterministic generated files,
+  claim-boundary fields, official-source metadata, placeholder evidence slots, and
+  implementation evidence-map file references. The pack remains draft repository
+  evidence only, not AMA/SCMD approval or legal certification.
+- `0ef8447` keeps Workflows/UX **PARTIAL**: dashboard reminders now surface open
+  pre-signing acts dated within the work-queue window that lack an attendance
+  reference and either presence counts or structured attendees. The reminder is
+  advisory workflow hygiene, not legal-calendar completeness or proof of attendance.
+- `225f5c6` keeps Signatures **PARTIAL**: external-signing envelopes can require
+  identity-evidence categories such as contact control, provider identity assertion,
+  government ID check, or representative capacity before a slot is marked signed.
+  These are recorded workflow evidence requirements only; they do not assert legal
+  identity, representative authority, qualified status, or legal effect.
+- `5021110` keeps AI/UX/Workflows **PARTIAL**: the Ata editor renders AI provenance
+  and human-review status, lets authorized operators record accept/reject decisions,
+  and disables the move to Signing while AI-assisted text is pending or rejected.
+  The UI records the existing human-review gate only; it is not AI-quality review,
+  legal certification, or final-minute acceptance.
+- `21e76a4` keeps UX/CI **PARTIAL**: the follow-up and imported-document review
+  panels were adjusted to clear hook dependency lint warnings. This is lint hygiene
+  for existing UI behavior, not new compliance coverage.
+- `d8ab33a` keeps Legal/Workflows **PARTIAL**: written-resolution acts now warn
+  when no signatory slots or digested attachments are bound as evidence, with Pending
+  legal-basis metadata. This is an advisory prompt to retain and bind evidence, not
+  threshold proof, participant validation, or legal acceptance.
+- `ec28083` keeps Signatures/Documents **PARTIAL**: `chancela-pades` reports a
+  local technical LTV renewal plan from already-inspected signature timestamp, DSS
+  revocation evidence, `/TU`, and DocTimeStamp imprint signals. It does not fetch
+  revocation data, validate trust, decide renewal deadlines, or claim B-LT/B-LTA or
+  legal LTV sufficiency.
+- `09af410` keeps Legal/Data Lifecycle **PARTIAL**: retention execution records now
+  include operator workflow status, blockers, required approvals, and next steps for
+  missing/stale/mismatched policies, legal holds, destructive-action requests, and
+  manual review. This remains non-executing audit/review evidence with
+  `would_execute: false`.
+- `4566715` keeps Documents **PARTIAL**: the PDF self-check now validates the
+  bounded tagged-PDF structure more deeply, including `MarkInfo`, `StructTreeRoot`,
+  `RoleMap`, `ParentTree`, page `StructParents`, MCID coverage, and MCR/ParentTree
+  consistency. This is a structural self-check for the local writer shape, not
+  PDF/UA certification or broad accessibility validation.
 
 ---
 
@@ -121,21 +180,80 @@ Implementation checkpoints covered here:
 | Spec area | Status | Current working-tree coverage | Remaining local work | External / legal blockers |
 |---|---|---|---|---|
 | spec/01 Product Scope (SCP) | PARTIAL | One Rust core still drives server, web, Docker, and Tauri desktop. Durable mode exists through `CHANCELA_DATA_DIR`; in-memory mode is explicit on `/health`, and Settings now exposes storage mode/data-folder/usage telemetry from `/v1/data/status` plus bounded crash-report/retained-export cleanup through `/v1/data/cleanup`. | Mobile companion remains deferred; edition packaging still needs signed/notarized publication hardening. | None specific. |
-| spec/02 Legal & Compliance (LEG) | PARTIAL | Compliance gates, rule-pack failures with structured legal-basis references, DRE/EUR-Lex law corpus authenticity gating, legal-threshold placeholders, bounded template law-reference exposure from rule-pack IDs and threshold references, bounded corpus citation resolution that preserves Verified/Pending status, recovery/audit trails, step-up controls, delegation evidence fields, guest/minimal redaction for entity/registry/book/act/imported-document metadata reads, backend DSR user export, tracked DSR request lifecycle with data-dir JSON durability, bounded DSR execution evidence, user-management DSR UI, processor/DPIA compliance registers, privacy breach-playbook and transfer-control registers with settings UI and data-dir JSON durability, a persisted retention-policy register with non-destructive dry-run reports, persisted/listable audit-only retention execution-request evidence, and guarded non-destructive archive disposal execution evidence with ledger audit exist. DRE-sourced law, copied corpus citations, and template law references remain Pending/fail-closed unless authoritative evidence and legal review are present. | Actual physical deletion, destructive/automated GDPR erasure beyond bounded evidence, complete per-family legal packs, privacy/redaction/data lifecycle coverage beyond the current read-redaction and register slices, broader retention/disposal policy automation, exhaustive/verified template/citation law mapping, and legally verified threshold values remain local product work. | Authoritative DRE text/PDF access is needed to mark PT law corpus entries Verified; legal review is needed before replacing threshold placeholders with numbers or treating template/citation references as complete/authoritative. |
+| spec/02 Legal & Compliance (LEG) | PARTIAL | Compliance gates, rule-pack failures with structured legal-basis references, written-resolution evidence advisories with Pending legal-basis metadata, DRE/EUR-Lex law corpus authenticity gating, legal-threshold placeholders, bounded template law-reference exposure from rule-pack IDs and threshold references, bounded corpus citation resolution that preserves Verified/Pending status, recovery/audit trails, step-up controls, delegation evidence fields, guest/minimal redaction for entity/registry/book/act/imported-document metadata reads, backend DSR user export, tracked DSR request lifecycle with data-dir JSON durability, bounded DSR execution evidence, user-management DSR UI, processor/DPIA compliance registers, privacy breach-playbook and transfer-control registers with settings UI and data-dir JSON durability, a persisted retention-policy register with non-destructive dry-run reports, persisted/listable audit-only retention execution-request evidence with workflow blockers/required approvals/next steps, and guarded non-destructive archive disposal execution evidence with ledger audit exist. DRE-sourced law, copied corpus citations, and template law references remain Pending/fail-closed unless authoritative evidence and legal review are present. | Actual physical deletion, destructive/automated GDPR erasure beyond bounded evidence, complete per-family legal packs, privacy/redaction/data lifecycle coverage beyond the current read-redaction and register slices, broader retention/disposal policy automation beyond the current blocker/approval/next-step evidence, written-resolution evidentiary capture beyond warning prompts, exhaustive/verified template/citation law mapping, and legally verified threshold values remain local product work. | Authoritative DRE text/PDF access is needed to mark PT law corpus entries Verified; legal review is needed before replacing threshold placeholders with numbers or treating template/citation references as complete/authoritative. |
 | spec/03 Entity Profiles (ENT) | PARTIAL | Five families are modeled; profile/rule-pack binding exists, statute overlays feed compliance findings, bounded capital/permilage weighted tally and quorum consistency checks exist where complete attendance weights are captured, condominium data-quality warnings catch missing meeting time, contradictory attendance counts, and impossible permilagem values/totals, and template assets now cover commercial companies, condominiums, associations, foundations, and cooperatives across many stages. | Deeper family-specific rule packs, groups, legally exhaustive weighted-voting policies, and broader calendar preset depth remain incomplete. | Legal review of non-CSC packs and thresholds. |
-| spec/04 Signatures & Trust (SIG) | PARTIAL | CMD, CC, generic CSC remote-signing, and local soft-cert/PKCS#12 signing foundations are exposed in the signing/API layers; PAdES/CAdES signing, bounded single-payload ASiC-S/CAdES container creation and validation, bounded ASiC-E/CAdES manifest container creation and validation for payload digest binding, signed-document persistence, provider listing/status metadata, TSL XML-DSig validation/catalog status/search, TSA diagnostics/search, B-T timestamping when configured, local PAdES DSS/VRI append/reporting with existing-DSS merge/dedupe and `/TU` metadata, DocTimeStamp parsing/imprint evidence in signature/archive reports, a gated local arbitrary-PDF/PAdES validation endpoint with Ferramentas UI, additive settings for multiple TSL sources and TSA providers, operational selection of configured TSL/TSA providers in trust refresh/catalog, signing trust-policy selection, and timestamping selection/reporting, external-validator corpus sidecars with strict technical-only status transitions, raw-report preservation metadata, archive-ready evidence attachment metadata projection, and validator-corpus evidence-indexing metadata for archive package `evidence/index.json` plus document-bundle `validation_report.evidence_index`, technical timestamp-trust diagnostics with persistence when validator inputs are available, technical CRL+OCSP revocation evidence collection, API/archive embedded DSS/VRI reporting, precise local B-LT/B-LTA technical evidence status with legal flags kept false, signature evidence status reporting/UI, fail-closed trust checks with CMD/CC/TSA failure-matrix tests, explicit XAdES/unsupported-ASiC-profile tests/wording, external-signer invitation tracking/UI, token lookup/respond safe working-copy access, optional signed-PDF upload on accepted invite responses stored as `ExternalSignerHandoff` / `ExternalSignedPdfTechnicalEvidence`, gated external-signing envelope APIs, a Ferramentas external-signing workflow tool with redacted invite listings, status summaries, same-origin token-link handling, public envelope lookup, browser E2E proving signed-invite tracking does not expose signed PDFs, and a generated AMA/CMD evidence-pack scaffold with no-approval-claim templates are present. | SCAP attributes, XAdES generation/validation, ASiC-XAdES, ASiC-E profiles beyond the bounded single-manifest CAdES digest-binding path, multiple ASiC-E signatures/manifests/extensions, production/legal PAdES or ASiC B-LT/B-LTA completion or claim, embedded LT/LTA evidence, external-signer legal/qualified completion beyond uploaded technical signed-PDF evidence, multi-signature VRI/archive timestamp renewal depth, real operator-recorded external validator reports for the corpus and attachment population into runtime indexes, broader provider-management policy automation, controlled live provider/hardware integration depth, and production AMA/CMD authority approval remain incomplete. API signing, arbitrary-PDF validation, external-signing workflow tracking/uploaded evidence, validator report evidence metadata/indexing, archive package `evidence/index.json`, document-bundle `validation_report.evidence_index`, and AMA/CMD evidence-pack generation are technical/operational evidence flows, not claims that every seal, uploaded PDF, invite response, ASiC container, validator report, evidence index, or CMD integration is qualified/legal-valid, trust-list validated, or authority-approved. | Live CMD requires AMA/SCMD credentials, prod cert, and authority onboarding/approval. Live CSC/QTSP requires provider onboarding and credentials. CC requires card, reader, and Autenticacao.gov middleware. Production TSL/TSA/revocation use requires production network configuration, valid source material, and policy/legal review; path-backed TSA providers and unsupported timestamp digests block deterministically rather than falling back to fake live signing. |
-| spec/05 Data Model / Roles (DAT/ROL) | PARTIAL | SQLite-backed durable store, multi-chain ledger, recovery/degraded mode, data-folder permission/usage telemetry with SQLite logical usage estimates, secret-free database key-ops status/preflight for key config, build capability, database-header format, plaintext-to-encrypted migration refusal, and structured non-destructive export/restore migration-plan guidance, `settings.manage`-gated maintenance cleanup for crash reports and retained exports, users, complete seeded role catalog, scoped RBAC, delegations with `starts_at`/`legal_basis`, sessions, API-key principals, guest/minimal read redaction for entity, registry, book, act, and imported-document metadata, step-up re-auth, password/recovery controls with hardened verifier-storage regression tests, and guarded non-destructive archive disposal execution evidence with ledger audit are implemented. | Tenant/group model, broader privacy/redaction lifecycle beyond read-response redaction, live SQLCipher/at-rest DB encryption proof, actual encryption migration/rotation execution workflow, ZK, sync/connectors, actual physical deletion, broader retention/disposal and incident/transfer control automation, GDPR erasure, and complete data lifecycle policies remain. | None specific beyond legal review for access/redaction policies. |
-| spec/06 Workflows (WFL) | PARTIAL | Book/act lifecycle, sealing with structured rule-pack/profile metadata and explicit UI acknowledgement before sealing non-blocking compliance warnings, retification, document generation, closed-book read-only enforcement for pre-existing act patch/advance/seal/archive/convening-dispatch mutations, convening `evidence_reference` capture in act editing/patching, qualified-signature status, dashboard data including fiscal-year-aware profile-derived annual-calendar reminders with i18n-backed alert copy, actionable open-follow-up reminders, compact activity summaries, and active legal-hold/sealed-not-archived archive lifecycle alerts with advisory next steps, backup/restore, book import/export, historical paper-book validation plus non-canonical preservation/list/download with source page/original-number range metadata and continuation recommendations, start-over/reset workflows, bounded external-signer invite links with token-gated safe working copies, and accepted-invite signed-PDF technical evidence upload are present. | Full legal-calendar preset depth, OCR/reviewed canonical conversion workflows for preserved paper-book packages, external signer legal/qualified completion beyond technical evidence upload, richer dashboard feeds beyond the current reminders/activity/archive lifecycle alert slices, and family-specific workflow depth remain. | Provider credentials for live qualified signing. |
-| spec/07 Architecture (ARC) | PARTIAL | Durable store, hot backup/restore, encrypted backup envelopes, recovery mode, `/api/v1` integration alias with JSON 404 namespace guards, persisted API-key lifecycle with bearer principal resolution, HTTP rate limiting, and attenuation tests for creator downgrade/deactivation/scope loss, MCP stdio server with tools, resources, static prompt discovery, and a secret-free `chancela://mcp/status` operability resource, platform service status/control endpoints with settings-backed API/MCP desired state, strict app/API/MCP log-level policy, audit tail, `/v1/platform/logs?service_id=&level=&tail=` for a bounded API-owned structured platform log tail gated by `settings.read`, data-dir persistence to `platform-logs.json` when `CHANCELA_DATA_DIR` is configured with a 512-entry bound and in-memory fallback otherwise, structured log entries from platform service status/control paths, honest supervisor/restart-required outcomes, data status/cleanup endpoints, Docker build/runtime smoke, persistent container data path, hardened Docker Compose deployment profiles, release version-consistency guard, tag/manual package-artifact workflow, package manifests/checksums with package artifact integrity checking, release-trust metadata validation for package declarations and local/production Docker declarations with stricter production Docker metadata anchors, package `sourceProvenance` manifest validation against current `HEAD`, web unit-test coverage thresholds in CI, CI dependency SBOM generation/checking, report-only npm/Cargo/Docker vulnerability artifacts with an enforced manual mode, Docker OCI metadata/security artifacts, a documented SQLCipher Windows feature lane, feature-gated SQLCipher keyed-open foundation, optional `CHANCELA_DB_KEY` / `CHANCELA_DB_KEY_FILE` startup wiring that fails closed when unsupported/invalid, secret-free key-ops status with operator action text and startup refusal for direct plaintext-to-encrypted keyed open, structured export/restore migration-plan guidance, and Tauri desktop shell are in tree. | Sync, storage connectors, HA profiles, real supervisor-backed API/MCP process lifecycle, supervisor-forwarded MCP process logs, historical stdout/stderr tailing, broader durable/live structured log sinks and reload/process logging beyond the API-owned tail, live SQLCipher encryption verification, executed plaintext-to-encrypted migration/export-restore flow, key rotation/ops workflow, sidecar encryption strategy, repo-level ZK, coverage thresholds beyond web unit tests, broader browser E2E coverage, live provider/hardware integration tests beyond compile-only seams, actual release signing/notarization, actual Docker image signing/attestation and registry-publication verification beyond metadata-anchor checks, production-grade HA/orchestration profiles, and mobile builds remain. | SQLCipher feature verification on this Windows host is blocked by vendored OpenSSL requiring a Windows-compatible Perl rather than the available Cygwin Perl. |
-| spec/08 Documents & Archive (DOC) | PARTIAL | Template rendering, frozen `DocumentModel`, deterministic PDF/A-2u writer with embedded fonts and ToUnicode maps, conservative accessibility/PDF-UA blocker reporting without false PDF/UA identification, report-side alt-text/decorative metadata modeling, minimal tagged PDF structure with MCIDs, `StructTreeRoot`, `RoleMap`, `ParentTree`, page `StructParents`, `MarkInfo` true, and artifact marking, seal/book document generation, render-context exposure for convening `evidence_reference`, document bundle endpoint with structured technical validation reports for consistency/fixity/canonical-PDF/signed-document evidence, `validation_report.evidence_index`, and explicit non-certification flags, signed-document endpoint, external-invite uploaded signed-PDF technical evidence served through the signed-document path, Arquivo PDF/A export from ledger filters, working-copy Markdown/TXT/HTML/RTF/ODT/DOCX exports with API matrix coverage and browser export/save E2E coverage, read-only candidate import validation with fixity, preservation-review policy metadata for imported-document candidates and stored imported documents, persisted imported-document operator review state/notes, web review controls that retain original bytes only, and focused browser regression coverage for conservative imported-document review messaging/PATCH behavior, legacy DOC/OLE-CFB recognition, signed-PDF/PAdES structural status, local arbitrary-PDF signature validation for structure/ByteRange/PAdES/DSS/DocTimeStamp evidence, persisted non-canonical imported-document evidence including legacy DOC bytes with retained bytes/metadata-only ledger events and UI, expanded imported-document evidence families, guest redaction for imported-document filename/digest/importer/download metadata, web pre-persistence import validation evidence/refusal findings for legacy DOC/OLE-CFB candidates, historical paper-book validation plus persisted non-canonical package preservation/list/download with source page/original-number range metadata, paper-book OCR draft review metadata with explicit false canonical/signature creation fields, retained-export maintenance cleanup with export-only dry-run/minimum-age/keep-latest guardrails, deterministic internal preservation ZIPs with archive evidence reports including DocTimeStamp/imprint evidence and a technical archive package `evidence/index.json`, archive package tamper-failure tests, validator corpus raw-report sidecar preservation metadata, evidence attachment metadata projection, and evidence-indexing metadata, inventory preflight/self-validation, DGLAB-aligned internal preservation metadata with explicit non-certification flags, export-time legal-hold marking, persisted book-level legal hold, disposal eligibility/dry-run status, dashboard archive lifecycle alerts for active holds and sealed-not-archived acts, and guarded non-destructive disposal execution evidence are implemented. | Deeper imported-document preservation review workflow beyond the current status/note decisions and focused browser regression, OCR execution, full PDF/UA delivery beyond minimal tagged structure, richer structure trees/tagging/role maps/marked artifacts, canonical conversion/PDF/A generation or legal acceptance for legacy DOC/paper-book evidence, production/legal signed-import validation beyond local structural/PAdES checks and technical uploaded evidence, populated external-validator report attachments in runtime archive/document-bundle indexes beyond the current metadata paths, official DGLAB interchange/certification, retained-export policy depth beyond the current cleanup guardrails, actual physical deletion, broader disposal/retention policy automation, GDPR erasure linkage, and legal acceptance/certification remain incomplete. | Legal review of generated template content/thresholds. |
-| spec/09 AI & MCP (AI) | PARTIAL | MCP server and API bridge exist, with tools mapped to `/api/v1` including Mermaid chronology, working-copy, archive package, ledger archive, trust catalog, law tools, exact AI-11 `prepare_archive_export` and `validate_signature_bundle` tools, `draft_minutes`, and AI-11 compatibility aliases (`list_companies`, `get_company_timeline`, `search_legal_texts`); live API bearer tests cover the bridge. MCP now requires both the local MCP switch and a tenant AI gate (`settings.ai.enabled` / `CHANCELA_AI_ENABLED`), advertises tools/resources/prompts, exposes a secret-free `chancela://mcp/status` resource, and exposes a static `draft_minutes_human_review_checklist` prompt that accepts no arguments and performs no hidden calls. Draft tools return an explicit non-authoritative `ai_draft` provenance envelope with top-level `source_provenance`, statement-source entries, human verification required, allowed pending/accepted/rejected checkpoint vocabulary, and fail closed on sealed/non-draft API shapes. MCP draft-act/draft-minutes calls also inject bounded `ai_provenance` into the act draft request, and the act API persists that provenance with a human-verification record; AI-assisted acts cannot advance from TextApproved to Signing until human review is recorded as accepted. `validate_signature_bundle` wraps the existing signature endpoint as technical evidence only with no legal-validation claim, and the web settings/platform surface can manage the tenant gate and display AI/MCP assurances for gates, API-key RBAC, draft status, and signature-bundle scope without exposing secrets. Law corpus search/browse endpoints and registry import support provenance-adjacent workflows. | AI drafting/extraction/comparison/summarization depth, workflow-level provenance panels beyond MCP output/status resources/static prompts, persisted act provenance, and the settings/platform assurance panel, richer MCP prompt/resource breadth, non-stdio MCP transports, and any assessment of AI quality or legal validity remain. | None specific. |
-| spec/10 UX & Design (UX) | PARTIAL | Web shell, 14-locale i18n runtime and catalog completeness checks, onboarding/auth gate, password-policy checklist, settings, Settings-only users/RBAC/delegation/API-key/recovery/privacy/UI platform-operations UI with AI/MCP assurance copy, settings-managed app/API/MCP logging controls, Data Management storage telemetry and cleanup UI, privacy breach-playbook and transfer-control register panels, Ata editor convening evidence-reference controls, law corpus citation pin/copy shelf preserving Verified/Pending labels, imported-document evidence UI including pre-persistence validation/refusal evidence for non-canonical legacy DOC/OLE-CFB imports and operator review status/note controls, focused browser regression coverage for imported-document review conservative messaging and status/note submission, paper-book import list/download UI, document preview, PDF/Markdown/TXT/HTML/RTF/ODT/DOCX working-copy downloads with browser export/save E2E coverage, signature evidence with local B-LT/B-LTA technical labels, external-invite UI, external-invite landing page, Ferramentas external-signing workflow tool, browser E2E for signed-act external invite boundaries, dashboard reminders/work queue with localized alert keys, active legal-hold and sealed-not-archived alerts, and activity-summary polish, persisted notification triage with read/dismiss/acknowledge/restore controls, explicit seal-warning acknowledgement modal, compliance source/reference rendering, registered-entity primary filters that wrap without horizontal scrolling, collapsed accordion-style advanced filters that expand into wrapped multi-line controls, fixed/clamped registered-entity table cells with up-to-two-line text where needed, concise Type/Last Activity visible summaries with tooltips, improved template primary/advanced filters, Arquivo UI, Trust/TSL/TSA catalog UI with truncated/copyable digests, a PDF signature validator tool UI, bundled PDF fonts, button hover/leather active states, storage-tab spacing polish, and desktop window controls/smoke coverage are present. | Mobile UX, PDF/UA delivery beyond the bounded tagged-structure slice, richer dashboard ergonomics beyond the current reminders/activity/archive lifecycle alert slices, broader table ergonomics beyond the entities/templates/storage slices, broader imported-document browser coverage beyond the focused review regression, and broader legal-source/provenance linking beyond the citation shelf remain. | None specific. |
-| spec/11 Template Catalog (TPL) | PARTIAL | `chancela-templates` loads 83 JSON template assets; API exposes `GET /v1/templates`, previews, on-demand generation, seal/book hooks, catalog summary metadata for channels, signature policy hints, rule-pack IDs, and bounded `law_references` derived from rule-pack IDs plus threshold references, with Pending status and source provenance. Template tests now validate required authored asset metadata, duplicate IDs, rule-pack law-reference anchors, and derived law-reference presence without claiming legal authority. The web catalog can search/filter by those metadata fields, keeps search/family/stage as primary controls, moves locale/channel/signature/rule-pack filters into a collapsed advanced area, and shows metadata in summary/detail views. | Template market parity, legally verified threshold values, broader statute-overlay depth, exhaustive/verified law-reference mapping, and full family/rule-pack semantic validation are not complete. | Legal review before any template wording, law reference, or threshold is treated as authoritative. |
+| spec/04 Signatures & Trust (SIG) | PARTIAL | CMD, CC, generic CSC remote-signing, and local soft-cert/PKCS#12 signing foundations are exposed in the signing/API layers; PAdES/CAdES signing, bounded single-payload ASiC-S/CAdES container creation and validation, bounded ASiC-E/CAdES manifest container creation and validation for payload digest binding, signed-document persistence, provider listing/status metadata, TSL XML-DSig validation/catalog status/search, TSA diagnostics/search, B-T timestamping when configured, local PAdES DSS/VRI append/reporting with existing-DSS merge/dedupe and `/TU` metadata, DocTimeStamp parsing/imprint evidence in signature/archive reports, local PAdES LTV renewal-plan reporting from already inspected technical evidence, a gated local arbitrary-PDF/PAdES validation endpoint with Ferramentas UI, additive settings for multiple TSL sources and TSA providers, operational selection of configured TSL/TSA providers in trust refresh/catalog, signing trust-policy selection, and timestamping selection/reporting, external-validator corpus sidecars with strict technical-only status transitions, raw-report preservation metadata, archive-ready evidence attachment metadata projection, and validator-corpus evidence-indexing metadata for archive package `evidence/index.json` plus document-bundle `validation_report.evidence_index`, technical timestamp-trust diagnostics with persistence when validator inputs are available, technical CRL+OCSP revocation evidence collection, API/archive embedded DSS/VRI reporting, precise local B-LT/B-LTA technical evidence status with legal flags kept false, signature evidence status reporting/UI, fail-closed trust checks with CMD/CC/TSA failure-matrix tests and isolated legacy-TSA provider fixtures, explicit XAdES/unsupported-ASiC-profile tests/wording, external-signer invitation tracking/UI, token lookup/respond safe working-copy access, optional signed-PDF upload on accepted invite responses stored as `ExternalSignerHandoff` / `ExternalSignedPdfTechnicalEvidence`, gated external-signing envelope APIs with required identity-evidence categories, a Ferramentas external-signing workflow tool with redacted invite listings, status summaries, same-origin token-link handling, public envelope lookup, browser E2E proving signed-invite tracking does not expose signed PDFs, and a generated AMA/CMD evidence-pack scaffold plus read-only pack check mode with no-approval-claim templates are present. | SCAP attributes, XAdES generation/validation, ASiC-XAdES, ASiC-E profiles beyond the bounded single-manifest CAdES digest-binding path, multiple ASiC-E signatures/manifests/extensions, production/legal PAdES or ASiC B-LT/B-LTA completion or claim, embedded LT/LTA evidence, policy-driven local LTV renewal execution/deadline decisions, external-signer legal/qualified completion beyond invite/uploaded signed-PDF and workflow identity-evidence records, multi-signature VRI/archive timestamp renewal depth, real operator-recorded external validator reports for the corpus and attachment population into runtime indexes, broader provider-management policy automation, controlled live provider/hardware integration depth, and production AMA/CMD authority approval remain incomplete. API signing, arbitrary-PDF validation, external-signing workflow tracking/uploaded evidence, external signer identity evidence requirements, PAdES LTV renewal plans, validator report evidence metadata/indexing, archive package `evidence/index.json`, document-bundle `validation_report.evidence_index`, and AMA/CMD evidence-pack generation/checking are technical/operational evidence flows, not claims that every seal, uploaded PDF, invite response, ASiC container, validator report, evidence index, identity assertion, renewal plan, or CMD integration is qualified/legal-valid, trust-list validated, or authority-approved. | Live CMD requires AMA/SCMD credentials, prod cert, and authority onboarding/approval. Live CSC/QTSP requires provider onboarding and credentials. CC requires card, reader, and Autenticacao.gov middleware. Production TSL/TSA/revocation use requires production network configuration, valid source material, and policy/legal review; path-backed TSA providers and unsupported timestamp digests block deterministically rather than falling back to fake live signing. |
+| spec/05 Data Model / Roles (DAT/ROL) | PARTIAL | SQLite-backed durable store, multi-chain ledger, recovery/degraded mode, data-folder permission/usage telemetry with SQLite logical usage estimates including privacy retention-execution sidecars, secret-free database key-ops status/preflight for key config, build capability, database-header format, plaintext-to-encrypted migration refusal, and structured non-destructive export/restore migration-plan guidance, `settings.manage`-gated maintenance cleanup for crash reports and retained exports, users, complete seeded role catalog, scoped RBAC, delegations with `starts_at`/`legal_basis`, sessions, API-key principals, guest/minimal read redaction for entity, registry, book, act, and imported-document metadata, step-up re-auth, password/recovery controls with hardened verifier-storage regression tests, retention execution records with workflow status/blockers/required approvals, and guarded non-destructive archive disposal execution evidence with ledger audit are implemented. | Tenant/group model, broader privacy/redaction lifecycle beyond read-response redaction, live SQLCipher/at-rest DB encryption proof, actual encryption migration/rotation execution workflow, ZK, sync/connectors, actual physical deletion, broader retention/disposal and incident/transfer control automation beyond recorded blockers/manual-review evidence, GDPR erasure, and complete data lifecycle policies remain. | None specific beyond legal review for access/redaction policies. |
+| spec/06 Workflows (WFL) | PARTIAL | Book/act lifecycle, sealing with structured rule-pack/profile metadata and explicit UI acknowledgement before sealing non-blocking compliance warnings, written-resolution missing-evidence advisories, retification, document generation, closed-book read-only enforcement for pre-existing act patch/advance/seal/archive/convening-dispatch mutations, convening `evidence_reference` capture in act editing/patching, qualified-signature status, dashboard data including fiscal-year-aware profile-derived annual-calendar reminders with i18n-backed alert copy, actionable open-follow-up reminders, missing-attendance work-queue reminders for open pre-signing acts, compact activity summaries, and active legal-hold/sealed-not-archived archive lifecycle alerts with advisory next steps, backup/restore, book import/export, historical paper-book validation plus non-canonical preservation/list/download with source page/original-number range metadata and continuation recommendations, start-over/reset workflows, bounded external-signer invite links with token-gated safe working copies, external-signing envelope identity-evidence requirements, and accepted-invite signed-PDF technical evidence upload are present. | Full legal-calendar preset depth, OCR/reviewed canonical conversion workflows for preserved paper-book packages, external signer legal/qualified completion beyond technical evidence upload and identity-evidence records, richer dashboard feeds beyond the current reminders/activity/archive lifecycle/attendance alert slices, actual attendance proof beyond advisory reminders, and family-specific workflow depth remain. | Provider credentials for live qualified signing. |
+| spec/07 Architecture (ARC) | PARTIAL | Durable store, hot backup/restore, encrypted backup envelopes, recovery mode, `/api/v1` integration alias with JSON 404 namespace guards, persisted API-key lifecycle with bearer principal resolution, HTTP rate limiting, and attenuation tests for creator downgrade/deactivation/scope loss, MCP stdio server with tools, resources, static prompt discovery, and a secret-free `chancela://mcp/status` operability resource, platform service status/control endpoints with settings-backed API/MCP desired state, strict app/API/MCP log-level policy, audit tail, `/v1/platform/logs?service_id=&level=&tail=` for a bounded API-owned structured platform log tail gated by `settings.read`, data-dir persistence to `platform-logs.json` when `CHANCELA_DATA_DIR` is configured with a 512-entry bound and in-memory fallback otherwise, structured log entries from platform service status/control paths, honest supervisor/restart-required outcomes, data status/cleanup endpoints, Docker build/runtime smoke, persistent container data path, hardened Docker Compose deployment profiles, release version-consistency guard, tag/manual package-artifact workflow, package manifests/checksums with package artifact integrity checking, release-trust metadata validation for package declarations and local/production Docker declarations with stricter production Docker metadata anchors, package `sourceProvenance` manifest validation against current `HEAD`, web unit-test coverage thresholds in CI, web hook-dependency lint hygiene for follow-up/import-review panels, CI dependency SBOM generation/checking with release-package path/size/SHA-256 linkage and self-tests, report-only npm/Cargo/Docker vulnerability artifacts with an enforced manual mode, Docker OCI metadata/security artifacts, a documented SQLCipher Windows feature lane, feature-gated SQLCipher keyed-open foundation, optional `CHANCELA_DB_KEY` / `CHANCELA_DB_KEY_FILE` startup wiring that fails closed when unsupported/invalid, secret-free key-ops status with operator action text and startup refusal for direct plaintext-to-encrypted keyed open, structured export/restore migration-plan guidance, and Tauri desktop shell are in tree. | Sync, storage connectors, HA profiles, real supervisor-backed API/MCP process lifecycle, supervisor-forwarded MCP process logs, historical stdout/stderr tailing, broader durable/live structured log sinks and reload/process logging beyond the API-owned tail, live SQLCipher encryption verification, executed plaintext-to-encrypted migration/export-restore flow, key rotation/ops workflow, sidecar encryption strategy, repo-level ZK, coverage thresholds beyond web unit tests, broader browser E2E coverage, live provider/hardware integration tests beyond compile-only seams, actual release signing/notarization, actual Docker image signing/attestation and registry-publication verification beyond SBOM/package metadata-anchor checks, production-grade HA/orchestration profiles, and mobile builds remain. | SQLCipher feature verification on this Windows host is blocked by vendored OpenSSL requiring a Windows-compatible Perl rather than the available Cygwin Perl. |
+| spec/08 Documents & Archive (DOC) | PARTIAL | Template rendering, frozen `DocumentModel`, deterministic PDF/A-2u writer with embedded fonts and ToUnicode maps, conservative accessibility/PDF-UA blocker reporting without false PDF/UA identification, report-side alt-text/decorative metadata modeling, minimal tagged PDF structure with MCIDs, `StructTreeRoot`, `RoleMap`, `ParentTree`, page `StructParents`, `MarkInfo` true, artifact marking, and deeper structural self-checks for ParentTree/MCID/MCR consistency, seal/book document generation, render-context exposure for convening `evidence_reference`, document bundle endpoint with structured technical validation reports for consistency/fixity/canonical-PDF/signed-document evidence, `validation_report.evidence_index`, and explicit non-certification flags, signed-document endpoint, external-invite uploaded signed-PDF technical evidence served through the signed-document path, Arquivo PDF/A export from ledger filters, working-copy Markdown/TXT/HTML/RTF/ODT/DOCX exports with API matrix coverage and browser export/save E2E coverage, read-only candidate import validation with fixity, preservation-review policy metadata and explicit canonical-record/signed-artifact/OCR-promotion guardrails for imported-document candidates and stored imported documents, persisted imported-document operator review state/notes, web review controls that retain original bytes only, and focused browser regression coverage for conservative imported-document review messaging/PATCH behavior, legacy DOC/OLE-CFB recognition, signed-PDF/PAdES structural status, local arbitrary-PDF signature validation for structure/ByteRange/PAdES/DSS/DocTimeStamp evidence plus local technical LTV renewal-plan reporting, persisted non-canonical imported-document evidence including legacy DOC bytes with retained bytes/metadata-only ledger events and UI, expanded imported-document evidence families, guest redaction for imported-document filename/digest/importer/download metadata, web pre-persistence import validation evidence/refusal findings for legacy DOC/OLE-CFB candidates, historical paper-book validation plus persisted non-canonical package preservation/list/download with source page/original-number range metadata, paper-book OCR draft review metadata with explicit false canonical/signature creation fields, retained-export maintenance cleanup with export-only dry-run/minimum-age/keep-latest guardrails, deterministic internal preservation ZIPs with archive evidence reports including DocTimeStamp/imprint evidence and a technical archive package `evidence/index.json`, archive package tamper-failure tests, validator corpus raw-report sidecar preservation metadata, evidence attachment metadata projection, and evidence-indexing metadata, inventory preflight/self-validation, DGLAB-aligned internal preservation metadata with explicit non-certification flags, export-time legal-hold marking, persisted book-level legal hold, disposal eligibility/dry-run status, dashboard archive lifecycle alerts for active holds and sealed-not-archived acts, and guarded non-destructive disposal execution evidence are implemented. | Deeper imported-document preservation review workflow beyond the current status/note decisions, guardrail checklist, and focused browser regression, OCR execution, full PDF/UA delivery beyond minimal tagged structure and bounded structural self-checks, richer structure trees/tagging/role maps/marked artifacts, canonical conversion/PDF/A generation or legal acceptance for legacy DOC/paper-book evidence, production/legal signed-import validation beyond local structural/PAdES checks and technical uploaded evidence, policy-driven PAdES LTV renewal execution beyond local planning reports, populated external-validator report attachments in runtime archive/document-bundle indexes beyond the current metadata paths, official DGLAB interchange/certification, retained-export policy depth beyond the current cleanup guardrails, actual physical deletion, broader disposal/retention policy automation, GDPR erasure linkage, and legal acceptance/certification remain incomplete. | Legal review of generated template content/thresholds. |
+| spec/09 AI & MCP (AI) | PARTIAL | MCP server and API bridge exist, with tools mapped to `/api/v1` including Mermaid chronology, working-copy, archive package, ledger archive, trust catalog, law tools, exact AI-11 `prepare_archive_export` and `validate_signature_bundle` tools, `draft_minutes`, and AI-11 compatibility aliases (`list_companies`, `get_company_timeline`, `search_legal_texts`); live API bearer tests cover the bridge. MCP now requires both the local MCP switch and a tenant AI gate (`settings.ai.enabled` / `CHANCELA_AI_ENABLED`), advertises tools/resources/prompts, exposes a secret-free `chancela://mcp/status` resource, and exposes a static `draft_minutes_human_review_checklist` prompt that accepts no arguments and performs no hidden calls. Draft tools return an explicit non-authoritative `ai_draft` provenance envelope with top-level `source_provenance`, statement-source entries, human verification required, allowed pending/accepted/rejected checkpoint vocabulary, and fail closed on sealed/non-draft API shapes. MCP draft-act/draft-minutes calls also inject bounded `ai_provenance` into the act draft request, and the act API persists that provenance with a human-verification record; AI-assisted acts cannot advance from TextApproved to Signing until human review is recorded as accepted. The Ata editor now surfaces the AI provenance/human-review status, records accept/reject decisions through the existing review endpoint, and disables the Signing transition while review is pending or rejected. `validate_signature_bundle` wraps the existing signature endpoint as technical evidence only with no legal-validation claim, and the web settings/platform surface can manage the tenant gate and display AI/MCP assurances for gates, API-key RBAC, draft status, and signature-bundle scope without exposing secrets. Law corpus search/browse endpoints and registry import support provenance-adjacent workflows. | AI drafting/extraction/comparison/summarization depth, workflow-level provenance panels beyond MCP output/status resources/static prompts and the act human-review gate panel, richer MCP prompt/resource breadth, non-stdio MCP transports, and any assessment of AI quality or legal validity remain. | None specific. |
+| spec/10 UX & Design (UX) | PARTIAL | Web shell, 14-locale i18n runtime and catalog completeness checks, onboarding/auth gate, password-policy checklist, settings, Settings-only users/RBAC/delegation/API-key/recovery/privacy/UI platform-operations UI with AI/MCP assurance copy, settings-managed app/API/MCP logging controls, Data Management storage telemetry and cleanup UI, privacy breach-playbook and transfer-control register panels, Ata editor convening evidence-reference controls plus AI human-review status/accept/reject controls that block Signing until accepted, law corpus citation pin/copy shelf preserving Verified/Pending labels, imported-document evidence UI including pre-persistence validation/refusal evidence for non-canonical legacy DOC/OLE-CFB imports and operator review status/note controls, focused browser regression coverage for imported-document review conservative messaging and status/note submission, paper-book import list/download UI, document preview, PDF/Markdown/TXT/HTML/RTF/ODT/DOCX working-copy downloads with browser export/save E2E coverage, signature evidence with local B-LT/B-LTA technical labels, external-invite UI, external-invite landing page, Ferramentas external-signing workflow tool, browser E2E for signed-act external invite boundaries, dashboard reminders/work queue with localized alert keys, missing-attendance act reminders, active legal-hold and sealed-not-archived alerts, and activity-summary polish, persisted notification triage with read/dismiss/acknowledge/restore controls, explicit seal-warning acknowledgement modal, compliance source/reference rendering, registered-entity primary filters that wrap without horizontal scrolling, collapsed accordion-style advanced filters that expand into wrapped multi-line controls, fixed/clamped registered-entity table cells with up-to-two-line text where needed, concise Type/Last Activity visible summaries with tooltips, improved template primary/advanced filters, Arquivo UI, Trust/TSL/TSA catalog UI with truncated/copyable digests, a PDF signature validator tool UI, bundled PDF fonts, button hover/leather active states, storage-tab spacing polish, hook-dependency lint hygiene in follow-up/import-review panels, and desktop window controls/smoke coverage are present. | Mobile UX, PDF/UA delivery beyond the bounded tagged-structure slice, richer dashboard ergonomics beyond the current reminders/activity/archive lifecycle/attendance alert slices, broader table ergonomics beyond the entities/templates/storage slices, broader imported-document browser coverage beyond the focused review regression, broader AI provenance experience beyond the human-review gate panel, and broader legal-source/provenance linking beyond the citation shelf remain. | None specific. |
+| spec/11 Template Catalog (TPL) | PARTIAL | `chancela-templates` loads 83 JSON template assets; API exposes `GET /v1/templates`, previews, on-demand generation, seal/book hooks, catalog summary metadata for channels, signature policy hints, rule-pack IDs, and bounded `law_references` derived from rule-pack IDs plus threshold references, with Pending status and source provenance. Template tests now validate required authored asset metadata, duplicate IDs, rule-pack law-reference anchors, derived law-reference presence, and family-binding drift across template ID prefixes, rule-pack IDs, and signature-policy hints without claiming legal authority. The web catalog can search/filter by those metadata fields, keeps search/family/stage as primary controls, moves locale/channel/signature/rule-pack filters into a collapsed advanced area, and shows metadata in summary/detail views. | Template market parity, legally verified threshold values, broader statute-overlay depth, exhaustive/verified law-reference mapping, and full family/rule-pack semantic validation beyond local family-binding drift guards are not complete. | Legal review before any template wording, law reference, or threshold is treated as authoritative. |
 
 ---
 
 ## Recent Coverage Added
 
+- **SBOM package linkage:** `scripts/release-supply-chain.mjs` can now validate a
+  generated CycloneDX SBOM against a specific release package path, byte size, and
+  SHA-256, and CI runs the self-test. This links declared SBOM metadata to a local
+  package artifact only; it is not package signing, notarization, attestation,
+  registry publication, or reproducible-build proof.
+- **Imported-document guardrails:** imported-document validation reports, stored
+  views, ledger payloads, and review events now expose canonical-record,
+  signed-artifact, and OCR/conversion-promotion guardrails. They keep preserved
+  bytes non-canonical and do not replace canonical PDF/A records, create signed
+  artifacts, run OCR, promote conversion output, or claim legal acceptance.
+- **AMA/CMD evidence-pack check:** the AMA/CMD generator now has a read-only
+  `--check` mode that validates deterministic generated files, claim-boundary
+  fields, official-source metadata, placeholder evidence slots, implementation
+  evidence-map references, and unresolved template tokens. The generated pack is
+  still draft repository evidence only, not AMA/SCMD approval or legal compliance.
+- **Dashboard missing-attendance reminder:** `GET /v1/dashboard` now adds advisory
+  work-queue reminders for open pre-signing acts whose meeting date is due soon or
+  overdue and whose attendance reference plus presence counts/structured attendees
+  are missing. This is workflow hygiene only; it does not prove attendance or legal
+  meeting validity.
+- **External signer identity evidence:** external-signing envelope slots can declare
+  required identity evidence categories, and a signed transition must include
+  matching evidence references. These are recorded workflow controls, not legal
+  identity, representative authority, qualified-signature status, or legal effect.
+- **AI human-review UI:** the Ata editor displays AI provenance and human-review
+  status, records accept/reject decisions, and disables the move to Signing until
+  the persisted human-review gate is accepted. This surfaces the existing review
+  control; it does not assess AI quality, certify legal validity, or accept draft
+  text as final minutes by itself.
+- **Web lint hygiene:** the follow-up and imported-document review panels were
+  adjusted to clear hook dependency lint warnings while preserving their existing
+  behavior. This is maintainability/regression hygiene, not new compliance scope.
+- **Written-resolution evidence advisory:** rule packs now warn when a written
+  resolution has no signatory slots or digested attachment bound into the record,
+  with Pending legal-basis metadata. The warning prompts evidence capture; it does
+  not prove thresholds, participant coverage, written consent validity, or legal
+  acceptance.
+- **PAdES local LTV renewal plan:** `chancela-pades` now reports a local technical
+  renewal checklist from already-inspected signature timestamp, DSS revocation
+  evidence, `/TU`, and DocTimeStamp imprint binding signals. It does not fetch
+  revocation evidence, validate trust, decide deadlines, or claim B-LT/B-LTA/legal
+  LTV sufficiency.
+- **Retention workflow blockers:** retention execution records now include workflow
+  status, blockers, required approvals, and next-step text for missing/stale/mismatched
+  policies, legal holds, destructive-action requests, and manual review. They remain
+  audit/review records with `would_execute: false`; no deletion, anonymization,
+  disposal, or GDPR erasure is performed.
+- **Tagged-PDF structural self-check:** the PDF self-check now validates the bounded
+  tagged-PDF structure more deeply, including `MarkInfo`, `StructTreeRoot`,
+  `RoleMap`, `ParentTree`, page `StructParents`, MCID coverage, and MCR/ParentTree
+  consistency. This catches local writer drift but is not PDF/UA certification or
+  general accessibility conformance.
+- **Template family metadata drift guard:** catalog tests now detect family drift
+  between template ID prefixes, rule-pack IDs, and signature-policy hints. This
+  protects local catalog consistency only; it is not legal review of template text,
+  thresholds, or cited law.
+- **Remote-signing TSA provider isolation:** focused remote-signing tests now clear
+  configured TSA provider arrays while exercising legacy TSA URL failure paths. This
+  keeps deterministic test coverage honest; it is not live TSA provider validation.
 - **Bounded ASiC-S signing support:** `chancela-signing` can now create and validate bounded
   single-payload ASiC-S/CAdES containers for the supported local signing envelope path. This is not
   XAdES, arbitrary ASiC profile processing, embedded LT/LTA evidence, or a legal
@@ -543,11 +661,12 @@ Implementation checkpoints covered here:
   instead of presented as drafts. MCP draft calls now inject bounded act-level `ai_provenance`;
   the API persists that provenance, records accepted/rejected human-review decisions through a
   ledgered endpoint, and blocks AI-assisted acts from advancing to Signing until human review is
-  accepted. This is a durable human-review gate and provenance injection path only, not legal
-  validity, AI-quality review, or a complete provenance UI. The signature-bundle tool wraps the
-  existing signature status endpoint as technical evidence only and refuses to claim legal
-  validation. The server is still off by default and now additionally refuses to serve unless the
-  tenant AI gate is enabled; settings UI exposes that default-off tenant gate to managers.
+  accepted. The Ata editor now surfaces that review gate. This is a durable human-review gate and
+  provenance injection path only, not legal validity, AI-quality review, or a complete provenance
+  experience. The signature-bundle tool wraps the existing signature status endpoint as technical
+  evidence only and refuses to claim legal validation. The server is still off by default and now
+  additionally refuses to serve unless the tenant AI gate is enabled; settings UI exposes that
+  default-off tenant gate to managers.
 - **E2E / CI / desktop coverage:** CI now includes multi-OS Rust format/clippy/tests, web
   format/lint/tests/build on Node 20 and 24, web unit tests with enforced Vitest/V8 coverage
   thresholds, composed server E2E, opt-in Playwright browser E2E with artifacts, Docker server image
@@ -596,10 +715,11 @@ Implementation checkpoints covered here:
 - **Release and store hardening foundations:** packaging now stages `manifest.json` and `SHA256SUMS`
   with artifact metadata/checksums, checks generated package artifact integrity, and includes the
   host CLI plus operator scripts when present.
-  CI now generates and validates a CycloneDX dependency SBOM from npm/Cargo lockfiles, uploads
-  npm/Cargo advisory reports, can make scans blocking on manual `enforce_security_scans=true`
-  dispatches, and records Docker image inspect/Syft/Trivy/signing-status artifacts without claiming
-  registry publication, signing, attestation, or notarization.
+  CI now generates and validates a CycloneDX dependency SBOM from npm/Cargo lockfiles, can bind
+  SBOM metadata to a release package path/size/SHA-256 with a self-tested checker, uploads npm/Cargo
+  advisory reports, can make scans blocking on manual `enforce_security_scans=true` dispatches, and
+  records Docker image inspect/Syft/Trivy/signing-status artifacts without claiming registry
+  publication, signing, attestation, or notarization.
   `chancela-store` has a feature-gated SQLCipher keyed-open foundation with typed unavailable and
   rejected-key errors while preserving default plaintext behavior. API/server startup now resolves
   `CHANCELA_DB_KEY` / `CHANCELA_DB_KEY_FILE`, rejects ambiguous/empty/unreadable key config without
@@ -633,43 +753,46 @@ Implementation checkpoints covered here:
   automation, GDPR erasure, export-retention policy controls beyond the current cleanup guardrails,
   incident-response/transfer-control automation beyond registers, executed storage
   migration/export-restore and key rotation tooling beyond the current key-ops guard/plan, and
-  legal-hold/disposal operator workflows beyond the dashboard advisory prompts remain implementable
-  next slices before any data-lifecycle compliance claim.
+  legal-hold/disposal operator workflows beyond the dashboard advisory prompts and current
+  retention blocker/approval records remain implementable next slices before any data-lifecycle
+  compliance claim.
 - Documents/archive: deeper imported-document preservation-review workflow depth beyond the current
-  bounded status/note transition, production/legal signed-import validation beyond the local
-  structural/PAdES checks and technical uploaded evidence, full PDF/UA delivery beyond the bounded
-  tagged-structure slice, richer structure trees/tagging/role maps/marked artifacts, OCR execution
-  and reviewed canonical/legal conversion for preserved legacy DOC and historical paper-book
-  evidence, official DGLAB interchange/certification, actual physical deletion, broader
-  disposal/retention policy automation, GDPR erasure linkage, legal acceptance/certification, and
-  long-term signature evidence packaging beyond the implemented sidecars, archive package
-  `evidence/index.json`, document-bundle `validation_report.evidence_index`, and technical metadata
-  projections.
+  bounded status/note transition and guardrail checklist, production/legal signed-import validation
+  beyond the local structural/PAdES checks and technical uploaded evidence, full PDF/UA delivery
+  beyond the bounded tagged-structure slice and structural self-check, richer structure
+  trees/tagging/role maps/marked artifacts, OCR execution and reviewed canonical/legal conversion
+  for preserved legacy DOC and historical paper-book evidence, official DGLAB
+  interchange/certification, actual physical deletion, broader disposal/retention policy
+  automation, GDPR erasure linkage, legal acceptance/certification, and long-term signature evidence
+  packaging/renewal execution beyond the implemented sidecars, archive package
+  `evidence/index.json`, document-bundle `validation_report.evidence_index`, local PAdES renewal
+  plans, and technical metadata projections.
 - Trust/signing depth: production/legal B-LT/B-LTA, XAdES/ASiC-XAdES, ASiC-E coverage beyond the
   bounded CAdES-signed manifest/digest-binding path, embedded ASiC LT/LTA evidence,
-  PKCS#11/operator certificate workflows, multi-signature/archive timestamp renewal depth,
-  production provider-management flows, actual operator validator report collection for the corpus,
-  populated runtime evidence-index attachments beyond the declared external-validator metadata
-  paths, AMA/CMD production approval beyond generated evidence-pack material, and external signer
-  legal completion beyond invite/envelope tracking plus uploaded technical signed-PDF evidence.
+  PKCS#11/operator certificate workflows, multi-signature/archive timestamp renewal depth and
+  policy-driven LTV renewal timing, production provider-management flows, actual operator validator
+  report collection for the corpus, populated runtime evidence-index attachments beyond the declared
+  external-validator metadata paths, AMA/CMD production approval beyond generated/checkable
+  evidence-pack material, and external signer legal completion beyond invite/envelope tracking,
+  uploaded technical signed-PDF evidence, and identity-evidence records.
 - Workflow breadth: legal-calendar preset depth beyond the advisory dashboard reminder, OCR
   execution, deeper operator review, and canonical-conversion flows for preserved paper-book
-  packages beyond current non-authoritative OCR draft metadata, external signer
-  document-gated/legal completion flows, dashboard depth beyond the current
-  reminders/activity/archive alert slices, groups/tenancy,
+  packages beyond current non-authoritative OCR draft metadata, written-resolution evidence capture
+  beyond the advisory warning, external signer document-gated/legal completion flows, dashboard
+  depth beyond the current reminders/activity/archive/attendance alert slices, groups/tenancy,
   sync/connectors, live SQLCipher/at-rest DB encryption verification plus migration/rotation
   operations, ZK, HA, and mobile builds.
 - AI feature layer: drafting/extraction/compare/summarize, workflow-level provenance panels beyond
-  the MCP envelope/source-provenance object, persisted act provenance, durable human-review gate,
-  status resource, static human-review prompt, and settings/platform assurance panel, broader MCP
-  prompt/resource coverage, additional MCP transports, and any legal-validity or AI-quality
-  assessment.
+  the MCP envelope/source-provenance object, act human-review gate panel, status resource, static
+  human-review prompt, and settings/platform assurance panel, broader MCP prompt/resource coverage,
+  additional MCP transports, and any legal-validity or AI-quality assessment.
 - CI/release assurance: broaden browser E2E for critical workflows beyond the current focused
   signed-invite, export/save, and imported-document review regressions, add or explicitly waive
   coverage thresholds beyond the web unit-test lane, convert
   compile-only live signature seams into controlled integration lanes where credentials/hardware
-  exist, harden package provenance beyond manifest/checksum/source metadata and release-trust
-  metadata-anchor guards, move Docker profiles toward production HA/ops where required,
+  exist, harden package provenance beyond manifest/checksum/source metadata, SBOM package-linkage
+  checks, and release-trust metadata-anchor guards, move Docker profiles toward production HA/ops
+  where required,
   sign/notarize release packages, and sign/attest Docker images with verified publication evidence.
 
 ### External / provider / legal blockers
@@ -714,22 +837,25 @@ Implementation checkpoints covered here:
   does not include AMA/QTSP credentials, physical CC hardware, or live-provider legal onboarding.
 - CMD/CC/CSC flows do not bypass qualified provider/certificate requirements; production legal
   validity still depends on the appropriate qualified trust service and certificate context.
-- The generated AMA/CMD evidence pack is a documentation scaffold for collecting evidence and
-  review inputs; it is not production CMD approval, legal certification, or proof of live AMA/SCMD
-  credentials.
+- The generated AMA/CMD evidence pack and its read-only check mode are documentation/review
+  scaffolding for collecting and validating local pack material; they are not production CMD
+  approval, legal certification, or proof of live AMA/SCMD credentials.
 - The Trust/TSL catalog is a visibility surface, not a purchase workflow and not proof of qualified
   trust production readiness.
-- External signing workflow screens and public envelope lookup are operational tracking surfaces;
-  accepted/declined invite responses and uploaded signed PDFs are not legal signing completion,
-  trust-list validation, or qualified-signature validation.
+- External signing workflow screens, public envelope lookup, and identity-evidence requirements are
+  operational tracking/control surfaces; accepted/declined invite responses, identity evidence
+  references, and uploaded signed PDFs are not legal signing completion, legal identity proof,
+  representative-authority proof, trust-list validation, or qualified-signature validation.
 - MCP draft human-verification states are exposed in output envelopes, and AI-origin act drafts now
   have persisted provenance plus accepted/rejected human-review decisions that gate the Signing
-  transition. That gate records human review only; it is not legal certification, AI output-quality
-  validation, a provider call, hidden signing/trust operation, full provenance UI panel, or
-  acceptance of draft text as final minutes. The MCP status resource is a local operability
-  snapshot, and the MCP human-review prompt is static guidance.
-- Local B-LT/B-LTA labels report technical evidence observed in the file; they are not production
-  or legal long-term-validation claims.
+  transition, with the Ata editor surfacing that gate. That gate records human review only; it is
+  not legal certification, AI output-quality validation, a provider call, hidden signing/trust
+  operation, a complete provenance experience, or acceptance of draft text as final minutes. The MCP
+  status resource is a local operability snapshot, and the MCP human-review prompt is static
+  guidance.
+- Local B-LT/B-LTA labels and local LTV renewal plans report technical evidence observed in the
+  file; they are not production or legal long-term-validation claims, renewal-deadline decisions, or
+  trust-policy determinations.
 - Bounded ASiC-E/CAdES support signs and validates one ASiCManifest/digest-binding container shape;
   it is not XAdES, ASiC-XAdES, embedded LT/LTA evidence, broad ETSI profile completeness, or legal
   validity assessment.
@@ -737,7 +863,8 @@ Implementation checkpoints covered here:
   threshold metadata; they are not exhaustive, legally verified, or a substitute for reviewing the
   generated template wording.
 - Template catalog metadata validation is regression coverage for required fields, duplicate IDs,
-  and law-reference anchors; it is not legal review of template wording, thresholds, or cited law.
+  family-binding drift, and law-reference anchors; it is not legal review of template wording,
+  thresholds, or cited law.
 - The law citation resolver and corpus pin/copy UI preserve corpus verification status; copied
   Pending citations are not DRE-verified law text, legal bases, or legal advice.
 - Guest/minimal redaction hides selected read-response metadata for current entity, registry, book,
@@ -749,10 +876,10 @@ Implementation checkpoints covered here:
   SQLite stores into encrypted stores.
 - The database key migration plan is operator guidance attached to key-ops status; it does not run
   backup/export-restore, verify a live encrypted restore, rotate keys, or retire plaintext data.
-- Imported-document preservation review policy and UI record review requirements, reviewer metadata,
-  and conservative original-byte/canonical-conversion decisions for non-canonical evidence. They do
-  not run OCR, convert documents to PDF/A, create canonical records, certify legal acceptance, or
-  validate legal effect.
+- Imported-document preservation review policy, UI controls, and guardrail fields record review
+  requirements, reviewer metadata, and conservative original-byte/canonical-conversion decisions for
+  non-canonical evidence. They do not run OCR, convert documents to PDF/A, create canonical records,
+  create or validate signed artifacts, certify legal acceptance, or validate legal effect.
 - Paper-book OCR draft review metadata records non-authoritative review status and explicit false
   canonical/signature creation flags. It does not execute OCR, create canonical minutes, create
   documents, sign anything, or accept historical scans as legally converted digital records.
@@ -761,8 +888,9 @@ Implementation checkpoints covered here:
   technical external report context and paths only. They are not live trust-list decisions, legal
   validity conclusions, qualified signature validation, DGLAB certification, or authority
   acceptance.
-- Accessibility metadata and bounded tagged structure are not PDF/UA delivery; the writer still
-  keeps `pdf_ua_claimed: false` and reports limited tagged structure rather than certification.
+- Accessibility metadata, bounded tagged structure, and structural self-checks are not PDF/UA
+  delivery; the writer still keeps `pdf_ua_claimed: false` and reports limited tagged structure
+  rather than certification.
 - Privacy breach-playbook and transfer-control registers are operator tracking/control registers;
   they do not execute incident response, perform authority/data-subject notification, approve
   transfers, or certify GDPR compliance.
@@ -772,10 +900,12 @@ Implementation checkpoints covered here:
   are not GDPR erasure, legal disposal approval, legal retention certification, certification of
   data-lifecycle compliance, or physical deletion guarantees beyond the existing bounded cleanup
   behavior.
-- Retention execution history records requests and outcomes for audit/review; it is not retention
-  execution, anonymization, physical deletion, legal disposal approval, or GDPR erasure.
-- Dashboard legal-hold and sealed-not-archived alerts are advisory operational next steps; they do
-  not certify legal-hold handling, approve disposal, or prove archival completion.
+- Retention execution history and workflow blockers/required approvals record requests, outcomes,
+  and operator next steps for audit/review; they are not retention execution, anonymization,
+  physical deletion, legal disposal approval, or GDPR erasure.
+- Dashboard legal-hold, sealed-not-archived, and missing-attendance alerts are advisory operational
+  next steps; they do not certify legal-hold handling, approve disposal, prove archival completion,
+  prove attendance, or validate meeting legality.
 - The persisted platform log tail covers API-owned structured events only and is bounded to 512
   entries; it is not stdout/stderr capture, MCP child-process logging, complete historical logging,
   or a general observability sink.
@@ -783,8 +913,12 @@ Implementation checkpoints covered here:
   thresholds, but the current browser suite is not exhaustive, the signed-invite/export/save/imported
   review browser slices are focused regressions, and other lanes do not have broad coverage
   thresholds.
-- SBOMs, checksums, package manifests, source provenance metadata, release-trust metadata
-  validation, Docker signing-status metadata-anchor checks, and Docker OCI metadata are not
+- Written-resolution evidence warnings are advisory prompts to bind signatory slots or digested
+  attachments; they are not proof of written consent, quorum, vote threshold, participant identity,
+  or legal acceptance.
+- SBOMs, SBOM package linkage, checksums, package manifests, source provenance metadata,
+  release-trust metadata validation, Docker signing-status metadata-anchor checks, and Docker OCI
+  metadata are not
   substitutes for package signing, notarization, Docker signing, attestation, registry-publication
   verification, or reproducible-build proof; package artifact integrity checks and metadata guards
   are regression checks, not a release trust chain.
