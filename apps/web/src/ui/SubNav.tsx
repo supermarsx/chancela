@@ -227,21 +227,23 @@ export function SubNav<T extends string>({ items, active, onSelect, ariaLabel }:
   const renderScrollButton = (edge: ScrollEdge) => {
     const label = `${ariaLabel}: scroll ${edge === 'start' ? 'left' : 'right'}`;
     return (
-      <button
-        type="button"
-        className={`subnav__scroll subnav__scroll--${edge}`}
-        aria-label={label}
-        onMouseEnter={() => setScrollSource(edge, 'hover', true)}
-        onMouseLeave={() => setScrollSource(edge, 'hover', false)}
-        onFocus={() => setScrollSource(edge, 'focus', true)}
-        onBlur={() => setScrollSource(edge, 'focus', false)}
-        onPointerDown={() => setScrollSource(edge, 'press', true)}
-        onPointerUp={() => setScrollSource(edge, 'press', false)}
-        onPointerLeave={() => setScrollSource(edge, 'press', false)}
-        onPointerCancel={() => setScrollSource(edge, 'press', false)}
-      >
-        <ArrowRight />
-      </button>
+      <Tooltip label={label} placement="bottom">
+        <button
+          type="button"
+          className={`subnav__scroll subnav__scroll--${edge}`}
+          aria-label={label}
+          onMouseEnter={() => setScrollSource(edge, 'hover', true)}
+          onMouseLeave={() => setScrollSource(edge, 'hover', false)}
+          onFocus={() => setScrollSource(edge, 'focus', true)}
+          onBlur={() => setScrollSource(edge, 'focus', false)}
+          onPointerDown={() => setScrollSource(edge, 'press', true)}
+          onPointerUp={() => setScrollSource(edge, 'press', false)}
+          onPointerLeave={() => setScrollSource(edge, 'press', false)}
+          onPointerCancel={() => setScrollSource(edge, 'press', false)}
+        >
+          <ArrowRight />
+        </button>
+      </Tooltip>
     );
   };
   const isScrollable = overflow.start || overflow.end;

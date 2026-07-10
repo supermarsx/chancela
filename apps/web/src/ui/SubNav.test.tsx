@@ -30,6 +30,17 @@ function setScrollMetrics(
   });
 }
 
+function expectTooltip(control: HTMLElement, label: string) {
+  const tooltipIds = (control.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .filter(Boolean);
+  const tooltip = tooltipIds
+    .map((id) => document.getElementById(id))
+    .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === label);
+
+  expect(tooltip?.textContent).toBe(label);
+}
+
 describe('SubNav', () => {
   it('renders one pressed button per item and reports the selection', () => {
     const onSelect = vi.fn();
@@ -112,12 +123,16 @@ describe('SubNav', () => {
     fireEvent.scroll(strip);
 
     expect(screen.queryByRole('button', { name: 'Secções: scroll left' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Secções: scroll right' })).toBeTruthy();
+    const right = screen.getByRole('button', { name: 'Secções: scroll right' });
+    expect(right).toBeTruthy();
+    expectTooltip(right, 'Secções: scroll right');
 
     strip.scrollLeft = 200;
     fireEvent.scroll(strip);
 
-    expect(screen.getByRole('button', { name: 'Secções: scroll left' })).toBeTruthy();
+    const left = screen.getByRole('button', { name: 'Secções: scroll left' });
+    expect(left).toBeTruthy();
+    expectTooltip(left, 'Secções: scroll left');
     expect(screen.queryByRole('button', { name: 'Secções: scroll right' })).toBeNull();
   });
 
