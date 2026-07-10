@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { useLocale, useT } from '../../i18n';
-import { Badge, EmptyState, Icon } from '../../ui';
+import { Badge, EmptyState, Icon, Tooltip } from '../../ui';
 import type { NotificationTriageStatus } from '../../api/types';
 import type { TriagedNotificationItem } from './triage';
 
@@ -9,6 +10,61 @@ function formatTimestamp(value: string | undefined, locale: string): string | nu
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function NotificationActionLink({
+  href,
+  label,
+  icon,
+  onClick,
+}: {
+  href: string;
+  label: string;
+  icon: ReactNode;
+  onClick?: () => void;
+}) {
+  return (
+    <Tooltip label={label}>
+      <Link
+        className="btn btn--ghost btn--icon btn--iconOnly notifications-list__action"
+        to={href}
+        aria-label={label}
+        onClick={onClick}
+      >
+        <span className="btn__icon" aria-hidden="true">
+          {icon}
+        </span>
+      </Link>
+    </Tooltip>
+  );
+}
+
+function NotificationTriageButton({
+  label,
+  icon,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: ReactNode;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip label={label}>
+      <button
+        type="button"
+        className="btn btn--ghost btn--icon btn--iconOnly notifications-list__triage"
+        aria-label={label}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        <span className="btn__icon" aria-hidden="true">
+          {icon}
+        </span>
+      </button>
+    </Tooltip>
+  );
 }
 
 export function NotificationList({
@@ -40,6 +96,10 @@ export function NotificationList({
       aria-label={t('notifications.title')}
     >
       {items.map((item) => {
+        const restoreLabel = t('notifications.triage.restore');
+        const readLabel = t('notifications.triage.read');
+        const acknowledgeLabel = t('notifications.triage.acknowledge');
+        const dismissLabel = t('notifications.triage.dismiss');
         const timestamp = formatTimestamp(item.timestamp, locale);
         const statusLabel =
           item.triageStatus === 'read'
@@ -78,68 +138,44 @@ export function NotificationList({
             {item.action || onTriage ? (
               <div className="notifications-list__actions">
                 {item.action ? (
-                  <Link
-                    className="btn btn--ghost btn--icon notifications-list__action"
-                    to={item.action.href}
+                  <NotificationActionLink
+                    href={item.action.href}
+                    label={item.action.label}
+                    icon={<Icon.ArrowRight />}
                     onClick={onAction}
-                  >
-                    <span className="btn__icon">
-                      <Icon.ArrowRight />
-                    </span>
-                    {item.action.label}
-                  </Link>
+                  />
                 ) : null}
                 {onTriage && resolved ? (
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--icon notifications-list__triage"
+                  <NotificationTriageButton
+                    label={restoreLabel}
+                    icon={<Icon.Refresh />}
                     disabled={triageDisabled}
                     onClick={() => onTriage(item.id, 'unread')}
-                  >
-                    <span className="btn__icon">
-                      <Icon.Refresh />
-                    </span>
-                    {t('notifications.triage.restore')}
-                  </button>
+                  />
                 ) : null}
                 {onTriage && !resolved && item.triageStatus === 'unread' ? (
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--icon notifications-list__triage"
+                  <NotificationTriageButton
+                    label={readLabel}
+                    icon={<Icon.Check />}
                     disabled={triageDisabled}
                     onClick={() => onTriage(item.id, 'read')}
-                  >
-                    <span className="btn__icon">
-                      <Icon.Check />
-                    </span>
-                    {t('notifications.triage.read')}
-                  </button>
+                  />
                 ) : null}
                 {onTriage && !resolved && item.kind !== 'operation' ? (
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--icon notifications-list__triage"
+                  <NotificationTriageButton
+                    label={acknowledgeLabel}
+                    icon={<Icon.Check />}
                     disabled={triageDisabled}
                     onClick={() => onTriage(item.id, 'acknowledged')}
-                  >
-                    <span className="btn__icon">
-                      <Icon.Check />
-                    </span>
-                    {t('notifications.triage.acknowledge')}
-                  </button>
+                  />
                 ) : null}
                 {onTriage && !resolved ? (
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--icon notifications-list__triage"
+                  <NotificationTriageButton
+                    label={dismissLabel}
+                    icon={<Icon.Close />}
                     disabled={triageDisabled}
                     onClick={() => onTriage(item.id, 'dismissed')}
-                  >
-                    <span className="btn__icon">
-                      <Icon.Close />
-                    </span>
-                    {t('notifications.triage.dismiss')}
-                  </button>
+                  />
                 ) : null}
               </div>
             ) : null}

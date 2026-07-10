@@ -76,6 +76,19 @@ function rect(overrides: Partial<DOMRect>): DOMRect {
   } as DOMRect;
 }
 
+function expectIconOnlyControl(control: HTMLElement, label: string) {
+  expect(control.className).toContain('btn--iconOnly');
+  expect(control.getAttribute('aria-label')).toBe(label);
+  expect(control.textContent).not.toContain(label);
+
+  const tooltipIds = (control.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+  const tooltip = tooltipIds
+    .map((id) => document.getElementById(id))
+    .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === label);
+
+  expect(tooltip?.textContent).toBe(label);
+}
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -106,6 +119,27 @@ describe('NotificationBell', () => {
       expect(screen.queryByRole('dialog', { name: 'Notificações' })).toBeNull();
     });
     expect(bell.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('renders popup notification controls as icon-only actions with tooltip labels', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchTable([{ match: '/v1/dashboard', body: dashboard({ alerts: [actionableActAlert()] }) }]),
+    );
+
+    renderWithProviders(<NotificationBell />, ['/']);
+
+    const bell = await screen.findByRole('button', { name: '1 notificações pendentes' });
+    expectIconOnlyControl(bell, '1 notificações pendentes');
+
+    fireEvent.click(bell);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Notificações' });
+    const action = within(dialog).getByRole('link', { name: 'Rever ata' });
+    const read = within(dialog).getByRole('button', { name: 'Marcar como lida' });
+
+    expectIconOnlyControl(action, 'Rever ata');
+    expectIconOnlyControl(read, 'Marcar como lida');
   });
 
   it('closes the popup when clicking outside the bell and popup', async () => {

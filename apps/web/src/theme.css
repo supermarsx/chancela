@@ -4559,7 +4559,18 @@ a.btn--primary {
 .notifications-list__action,
 .notifications-list__triage {
   min-height: 1.85rem;
-  white-space: normal;
+}
+
+.notifications-list__action.btn--iconOnly,
+.notifications-list__triage.btn--iconOnly {
+  width: 1.95rem;
+  min-width: 1.95rem;
+  height: 1.95rem;
+  min-height: 1.95rem;
+  padding: 0.34rem;
+  font-size: 0.84rem;
+  line-height: 0;
+  white-space: nowrap;
 }
 
 .notifications-list__action {
@@ -4581,6 +4592,16 @@ a.btn--primary {
 .notifications-list--compact .notifications-list__triage {
   padding: 0.22rem 0.5rem;
   font-size: 0.72rem;
+}
+
+.notifications-list--compact .notifications-list__action.btn--iconOnly,
+.notifications-list--compact .notifications-list__triage.btn--iconOnly {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0.28rem;
+  font-size: 0.78rem;
 }
 
 .notifications-list__empty {

@@ -61,6 +61,19 @@ function actionableActAlert(overrides: Partial<DashboardAlert> = {}): DashboardA
   };
 }
 
+function expectIconOnlyControl(control: HTMLElement, label: string) {
+  expect(control.className).toContain('btn--iconOnly');
+  expect(control.getAttribute('aria-label')).toBe(label);
+  expect(control.textContent).not.toContain(label);
+
+  const tooltipIds = (control.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+  const tooltip = tooltipIds
+    .map((id) => document.getElementById(id))
+    .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === label);
+
+  expect(tooltip?.textContent).toBe(label);
+}
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -126,11 +139,13 @@ describe('NotificationsPage', () => {
 
     expect(await screen.findByText('Rever conformidade da ata')).toBeTruthy();
     expect(screen.getByText('Dispensada')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Rever ata' }).getAttribute('href')).toBe(
-      '/atas/act-1',
-    );
+    const action = screen.getByRole('link', { name: 'Rever ata' });
+    const restore = screen.getByRole('button', { name: 'Reabrir' });
+    expect(action.getAttribute('href')).toBe('/atas/act-1');
+    expectIconOnlyControl(action, 'Rever ata');
+    expectIconOnlyControl(restore, 'Reabrir');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reabrir' }));
+    fireEvent.click(restore);
 
     await waitFor(() => {
       expect(
