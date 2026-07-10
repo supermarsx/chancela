@@ -74,6 +74,37 @@ pub struct PaperBookImportValidationRequest {
     #[serde(alias = "sha256")]
     digest: Option<String>,
     notes: Option<String>,
+    #[serde(
+        default,
+        alias = "ocr_canonical_preflight",
+        alias = "canonical_preflight"
+    )]
+    canonical_conversion_preflight: Option<PaperBookCanonicalConversionPreflightRequest>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct PaperBookCanonicalConversionPreflightRequest {
+    #[serde(default)]
+    ocr_text_present: bool,
+    #[serde(default, alias = "text_digest")]
+    ocr_text_digest: Option<String>,
+    #[serde(default)]
+    operator_review_recorded: bool,
+    #[serde(
+        default,
+        alias = "package_fixity_verified",
+        alias = "fixity_verified",
+        alias = "candidate_fixity_verified"
+    )]
+    package_fixity_recorded: bool,
+    #[serde(
+        default,
+        alias = "page_range_confirmed",
+        alias = "source_page_range_reviewed"
+    )]
+    page_range_reviewed: bool,
+    #[serde(default)]
+    legal_acceptance_recorded: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +130,7 @@ pub struct PaperBookImportValidationReport {
     pub package: PaperBookPackageReport,
     pub linking_evidence: PaperBookLinkingEvidenceReport,
     pub continuation: PaperBookContinuationRecommendation,
+    pub canonical_conversion_preflight: PaperBookCanonicalConversionPreflightReport,
     pub candidate_classification: PaperBookCandidateClassification,
     pub can_accept_as_import_candidate: bool,
     pub required_operator_actions: Vec<&'static str>,
@@ -116,6 +148,7 @@ pub struct PaperBookImportPreservationReport {
     pub package: PaperBookPackageReport,
     pub linking_evidence: PaperBookLinkingEvidenceReport,
     pub continuation: PaperBookContinuationRecommendation,
+    pub canonical_conversion_preflight: PaperBookCanonicalConversionPreflightReport,
     pub preservation: PaperBookPreservationReport,
     pub candidate_classification: PaperBookCandidateClassification,
     pub can_accept_as_import_candidate: bool,
@@ -301,6 +334,45 @@ pub struct PaperBookContinuationRecommendation {
     pub canonical_document_created: bool,
     pub signature_created: bool,
     pub legal_acceptance_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookCanonicalConversionPreflightReport {
+    pub status: &'static str,
+    pub preflight_requested: bool,
+    pub scope: &'static str,
+    pub evidence_source: &'static str,
+    pub evidence: PaperBookCanonicalConversionEvidenceReport,
+    pub blockers: Vec<PaperBookCanonicalConversionBlocker>,
+    pub allowed_next_action: Option<&'static str>,
+    pub raw_ocr_text_in_report: bool,
+    pub canonical_act_created: bool,
+    pub canonical_document_created: bool,
+    pub signature_created: bool,
+    pub signing_requested: bool,
+    pub signature_validity_claimed: bool,
+    pub qualified_signature_claimed: bool,
+    pub legal_validity_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookCanonicalConversionEvidenceReport {
+    pub ocr_text_present: bool,
+    pub ocr_text_digest: Option<String>,
+    pub operator_review_recorded: bool,
+    pub candidate_digest_present: bool,
+    pub package_fixity_recorded: bool,
+    pub source_page_range_valid: bool,
+    pub source_page_range: PaperBookPageRangeReport,
+    pub page_range_reviewed: bool,
+    pub legal_acceptance_recorded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaperBookCanonicalConversionBlocker {
+    pub code: &'static str,
+    pub field: &'static str,
+    pub message: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -805,6 +877,12 @@ fn validate_candidate(
     if let Some(value) = notes.as_deref() {
         reject_secret_markers("notes", value)?;
     }
+    let canonical_conversion_preflight = paper_book_canonical_conversion_preflight(
+        req.canonical_conversion_preflight,
+        digest.as_deref(),
+        source_page_range,
+        page_count,
+    )?;
 
     Ok(PaperBookImportValidationReport {
         report_kind: "paper_book_import_validation",
@@ -830,6 +908,7 @@ fn validate_candidate(
         },
         linking_evidence,
         continuation,
+        canonical_conversion_preflight,
         candidate_classification: PaperBookCandidateClassification {
             classification: "historical_paper_book_non_canonical_evidence",
             non_canonical: true,
@@ -878,6 +957,7 @@ fn preservation_report(
         },
         linking_evidence: paper_book_linking_evidence_from_meta(meta),
         continuation: paper_book_continuation_recommendation(original_ata_range_from_meta(meta)),
+        canonical_conversion_preflight: validation.canonical_conversion_preflight,
         preservation: PaperBookPreservationReport {
             status: "preserved_non_canonical_package",
             non_canonical: true,
@@ -1047,6 +1127,125 @@ fn paper_book_continuation_recommendation(
         canonical_document_created: false,
         signature_created: false,
         legal_acceptance_claimed: false,
+    }
+}
+
+fn paper_book_canonical_conversion_preflight(
+    req: Option<PaperBookCanonicalConversionPreflightRequest>,
+    candidate_digest: Option<&str>,
+    source_page_range: PaperBookPageRangeReport,
+    page_count: u32,
+) -> Result<PaperBookCanonicalConversionPreflightReport, ApiError> {
+    let preflight_requested = req.is_some();
+    let req = req.unwrap_or_default();
+    let ocr_text_digest = optional_digest(req.ocr_text_digest)?;
+    let ocr_text_present = req.ocr_text_present || ocr_text_digest.is_some();
+    let candidate_digest_present = candidate_digest.is_some();
+    let source_page_range_valid = source_page_range.from > 0
+        && source_page_range.to >= source_page_range.from
+        && source_page_range.to <= page_count;
+
+    let mut blockers = Vec::new();
+    if preflight_requested {
+        if !ocr_text_present {
+            blockers.push(preflight_blocker(
+                "missing_ocr_text",
+                "canonical_conversion_preflight.ocr_text_digest",
+                "canonical conversion preflight requires OCR text evidence or an OCR text digest",
+            ));
+        }
+        if !req.operator_review_recorded {
+            blockers.push(preflight_blocker(
+                "missing_operator_review",
+                "canonical_conversion_preflight.operator_review_recorded",
+                "canonical conversion preflight requires an operator review record",
+            ));
+        }
+        if !candidate_digest_present {
+            blockers.push(preflight_blocker(
+                "missing_candidate_digest",
+                "package.digest",
+                "canonical conversion preflight requires a candidate package sha256 digest",
+            ));
+        }
+        if !req.package_fixity_recorded {
+            blockers.push(preflight_blocker(
+                "package_fixity_not_recorded",
+                "canonical_conversion_preflight.package_fixity_recorded",
+                "canonical conversion preflight requires recorded package fixity verification",
+            ));
+        }
+        if !source_page_range_valid || !req.page_range_reviewed {
+            blockers.push(preflight_blocker(
+                "page_range_not_reviewed",
+                "canonical_conversion_preflight.page_range_reviewed",
+                "canonical conversion preflight requires operator-reviewed source page range evidence",
+            ));
+        }
+        if !req.legal_acceptance_recorded {
+            blockers.push(preflight_blocker(
+                "legal_acceptance_not_recorded",
+                "canonical_conversion_preflight.legal_acceptance_recorded",
+                "canonical conversion preflight requires legal acceptance to be recorded separately",
+            ));
+        }
+    }
+
+    let status = if !preflight_requested {
+        "not_attempted"
+    } else if blockers.is_empty() {
+        "allowed"
+    } else {
+        "blocked"
+    };
+    let allowed_next_action = if status == "allowed" {
+        Some("prepare_canonical_conversion_draft_after_preservation")
+    } else {
+        None
+    };
+
+    Ok(PaperBookCanonicalConversionPreflightReport {
+        status,
+        preflight_requested,
+        scope: "ocr_to_canonical_conversion_preflight",
+        evidence_source: if preflight_requested {
+            "operator_supplied_preflight_evidence"
+        } else {
+            "not_supplied"
+        },
+        evidence: PaperBookCanonicalConversionEvidenceReport {
+            ocr_text_present,
+            ocr_text_digest,
+            operator_review_recorded: req.operator_review_recorded,
+            candidate_digest_present,
+            package_fixity_recorded: req.package_fixity_recorded,
+            source_page_range_valid,
+            source_page_range,
+            page_range_reviewed: req.page_range_reviewed,
+            legal_acceptance_recorded: req.legal_acceptance_recorded,
+        },
+        blockers,
+        allowed_next_action,
+        raw_ocr_text_in_report: false,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        signature_created: false,
+        signing_requested: false,
+        signature_validity_claimed: false,
+        qualified_signature_claimed: false,
+        legal_validity_claimed: false,
+    })
+}
+
+fn preflight_blocker(
+    code: &'static str,
+    field: &'static str,
+    message: &'static str,
+) -> PaperBookCanonicalConversionBlocker {
+    PaperBookCanonicalConversionBlocker {
+        code,
+        field,
+        message,
     }
 }
 
@@ -1583,6 +1782,7 @@ mod tests {
             source_filename: Some("ag-1968-1971.pdf".to_owned()),
             digest: Some("AB".repeat(32)),
             notes: Some("Scanned from bound paper minute book.".to_owned()),
+            canonical_conversion_preflight: None,
         }
     }
 
@@ -1626,6 +1826,109 @@ mod tests {
         assert!(report.candidate_classification.non_canonical);
         assert!(!report.candidate_classification.qualified_signature_claimed);
         assert!(!report.candidate_classification.canonical_minutes_claimed);
+        assert_eq!(
+            report.canonical_conversion_preflight.status,
+            "not_attempted"
+        );
+        assert!(report.canonical_conversion_preflight.blockers.is_empty());
+        assert!(
+            report
+                .canonical_conversion_preflight
+                .evidence
+                .candidate_digest_present
+        );
+        assert!(!report.canonical_conversion_preflight.canonical_act_created);
+        assert!(
+            !report
+                .canonical_conversion_preflight
+                .canonical_document_created
+        );
+        assert!(!report.canonical_conversion_preflight.signature_created);
+        assert!(!report.canonical_conversion_preflight.signing_requested);
+    }
+
+    #[test]
+    fn canonical_conversion_preflight_is_bounded_and_conservative() {
+        let mut blocked = base_request();
+        blocked.digest = None;
+        blocked.canonical_conversion_preflight =
+            Some(PaperBookCanonicalConversionPreflightRequest::default());
+        let report = validate_candidate(blocked).expect("blocked preflight report");
+
+        assert_eq!(report.canonical_conversion_preflight.status, "blocked");
+        assert!(
+            report
+                .canonical_conversion_preflight
+                .blockers
+                .iter()
+                .any(|blocker| blocker.code == "missing_ocr_text")
+        );
+        assert!(
+            report
+                .canonical_conversion_preflight
+                .blockers
+                .iter()
+                .any(|blocker| blocker.code == "missing_candidate_digest")
+        );
+        assert!(
+            report
+                .canonical_conversion_preflight
+                .blockers
+                .iter()
+                .any(|blocker| blocker.code == "legal_acceptance_not_recorded")
+        );
+        assert!(!report.canonical_conversion_preflight.canonical_act_created);
+        assert!(
+            !report
+                .canonical_conversion_preflight
+                .canonical_document_created
+        );
+        assert!(!report.canonical_conversion_preflight.signature_created);
+        assert!(
+            !report
+                .canonical_conversion_preflight
+                .qualified_signature_claimed
+        );
+
+        let mut allowed = base_request();
+        allowed.canonical_conversion_preflight =
+            Some(PaperBookCanonicalConversionPreflightRequest {
+                ocr_text_present: false,
+                ocr_text_digest: Some("CD".repeat(32)),
+                operator_review_recorded: true,
+                package_fixity_recorded: true,
+                page_range_reviewed: true,
+                legal_acceptance_recorded: true,
+            });
+        let report = validate_candidate(allowed).expect("allowed preflight report");
+
+        assert_eq!(report.canonical_conversion_preflight.status, "allowed");
+        assert!(report.canonical_conversion_preflight.blockers.is_empty());
+        assert_eq!(
+            report
+                .canonical_conversion_preflight
+                .evidence
+                .ocr_text_digest
+                .as_deref(),
+            Some("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd")
+        );
+        assert!(!report.canonical_conversion_preflight.canonical_act_created);
+        assert!(
+            !report
+                .canonical_conversion_preflight
+                .canonical_document_created
+        );
+        assert!(!report.canonical_conversion_preflight.signature_created);
+        assert!(
+            !report
+                .canonical_conversion_preflight
+                .signature_validity_claimed
+        );
+        assert!(
+            !report
+                .canonical_conversion_preflight
+                .qualified_signature_claimed
+        );
     }
 
     #[test]

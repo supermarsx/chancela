@@ -54,6 +54,36 @@
     "signature_created": false,
     "legal_acceptance_claimed": false
   },
+  "canonical_conversion_preflight": {
+    "status": "not_attempted",
+    "preflight_requested": false,
+    "scope": "ocr_to_canonical_conversion_preflight",
+    "evidence_source": "not_supplied",
+    "evidence": {
+      "ocr_text_present": false,
+      "ocr_text_digest": null,
+      "operator_review_recorded": false,
+      "candidate_digest_present": true,
+      "package_fixity_recorded": false,
+      "source_page_range_valid": true,
+      "source_page_range": {
+        "from": 1,
+        "to": 48
+      },
+      "page_range_reviewed": false,
+      "legal_acceptance_recorded": false
+    },
+    "blockers": [],
+    "allowed_next_action": null,
+    "raw_ocr_text_in_report": false,
+    "canonical_act_created": false,
+    "canonical_document_created": false,
+    "signature_created": false,
+    "signing_requested": false,
+    "signature_validity_claimed": false,
+    "qualified_signature_claimed": false,
+    "legal_validity_claimed": false
+  },
   "candidate_classification": {
     "classification": "historical_paper_book_non_canonical_evidence",
     "non_canonical": true,

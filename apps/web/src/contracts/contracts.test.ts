@@ -113,6 +113,9 @@ import {
   type OrganizationSettings,
   type PasswordPolicyView,
   type PasswordRuleView,
+  type PaperBookCanonicalConversionPreflight,
+  type PaperBookCanonicalConversionPreflightBlocker,
+  type PaperBookCanonicalConversionPreflightEvidence,
   type PaperBookImportClassification,
   type PaperBookImportDateSpan,
   type PaperBookImportFinding,
@@ -822,6 +825,7 @@ function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImpo
       package: true,
       linking_evidence: true,
       continuation: true,
+      canonical_conversion_preflight: true,
       candidate_classification: true,
       can_accept_as_import_candidate: true,
       required_operator_actions: true,
@@ -925,6 +929,73 @@ function assertPaperBookImportReport(obj: unknown, label: string): PaperBookImpo
   expect(continuation.canonical_document_created).toBe(false);
   expect(continuation.signature_created).toBe(false);
   expect(continuation.legal_acceptance_claimed).toBe(false);
+  const preflight = assertExactKeys<PaperBookCanonicalConversionPreflight>(
+    report.canonical_conversion_preflight,
+    {
+      status: true,
+      preflight_requested: true,
+      scope: true,
+      evidence_source: true,
+      evidence: true,
+      blockers: true,
+      allowed_next_action: true,
+      raw_ocr_text_in_report: true,
+      canonical_act_created: true,
+      canonical_document_created: true,
+      signature_created: true,
+      signing_requested: true,
+      signature_validity_claimed: true,
+      qualified_signature_claimed: true,
+      legal_validity_claimed: true,
+    },
+    `${label}.canonical_conversion_preflight`,
+  );
+  inEnum(
+    ['not_attempted', 'blocked', 'allowed'],
+    preflight.status,
+    `${label}.canonical_conversion_preflight.status`,
+  );
+  expect(preflight.scope).toBe('ocr_to_canonical_conversion_preflight');
+  const preflightEvidence = assertExactKeys<PaperBookCanonicalConversionPreflightEvidence>(
+    preflight.evidence,
+    {
+      ocr_text_present: true,
+      ocr_text_digest: true,
+      operator_review_recorded: true,
+      candidate_digest_present: true,
+      package_fixity_recorded: true,
+      source_page_range_valid: true,
+      source_page_range: true,
+      page_range_reviewed: true,
+      legal_acceptance_recorded: true,
+    },
+    `${label}.canonical_conversion_preflight.evidence`,
+  );
+  if (preflightEvidence.ocr_text_digest) {
+    assertHex64(
+      preflightEvidence.ocr_text_digest,
+      `${label}.canonical_conversion_preflight.evidence.ocr_text_digest`,
+    );
+  }
+  expect(preflightEvidence.source_page_range).toEqual(sourcePageRange);
+  for (const blocker of preflight.blockers) {
+    const item = assertExactKeys<PaperBookCanonicalConversionPreflightBlocker>(
+      blocker,
+      { code: true, field: true, message: true },
+      `${label}.canonical_conversion_preflight.blocker`,
+    );
+    expect(item.code.length).toBeGreaterThan(0);
+    expect(item.field.length).toBeGreaterThan(0);
+    expect(item.message.length).toBeGreaterThan(0);
+  }
+  expect(preflight.raw_ocr_text_in_report).toBe(false);
+  expect(preflight.canonical_act_created).toBe(false);
+  expect(preflight.canonical_document_created).toBe(false);
+  expect(preflight.signature_created).toBe(false);
+  expect(preflight.signing_requested).toBe(false);
+  expect(preflight.signature_validity_claimed).toBe(false);
+  expect(preflight.qualified_signature_claimed).toBe(false);
+  expect(preflight.legal_validity_claimed).toBe(false);
   const classification = assertExactKeys<PaperBookImportClassification>(
     report.candidate_classification,
     {

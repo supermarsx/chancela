@@ -174,6 +174,20 @@ fn preserve_body(bytes: &[u8]) -> Value {
     body
 }
 
+fn preflight_blocker_codes(body: &Value) -> Vec<String> {
+    body["canonical_conversion_preflight"]["blockers"]
+        .as_array()
+        .expect("preflight blockers array")
+        .iter()
+        .map(|blocker| {
+            blocker["code"]
+                .as_str()
+                .expect("preflight blocker code")
+                .to_owned()
+        })
+        .collect()
+}
+
 async fn validate(state: &AppState, token: &str, body: Value) -> (StatusCode, Value) {
     send(
         state,
@@ -316,6 +330,60 @@ async fn valid_paper_book_import_validation_returns_non_canonical_dry_run_report
     assert_eq!(body["continuation"]["signature_created"], false);
     assert_eq!(body["continuation"]["legal_acceptance_claimed"], false);
     assert_eq!(
+        body["canonical_conversion_preflight"]["status"],
+        "not_attempted"
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["scope"],
+        "ocr_to_canonical_conversion_preflight"
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["evidence_source"],
+        "not_supplied"
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["preflight_requested"],
+        false
+    );
+    assert!(
+        body["canonical_conversion_preflight"]["blockers"]
+            .as_array()
+            .expect("default preflight blockers")
+            .is_empty()
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["evidence"]["candidate_digest_present"],
+        true
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["evidence"]["source_page_range_valid"],
+        true
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["canonical_act_created"],
+        false
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["canonical_document_created"],
+        false
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["signature_created"],
+        false
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["signing_requested"],
+        false
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["signature_validity_claimed"],
+        false
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["qualified_signature_claimed"],
+        false
+    );
+    assert_eq!(
         body["candidate_classification"]["classification"],
         "historical_paper_book_non_canonical_evidence"
     );
@@ -333,6 +401,97 @@ async fn valid_paper_book_import_validation_returns_non_canonical_dry_run_report
         false
     );
     assert_eq!(body["can_accept_as_import_candidate"], true);
+}
+
+#[tokio::test]
+async fn paper_book_import_validation_blocks_requested_canonical_conversion_without_evidence() {
+    let state = AppState::default();
+    let token = bootstrap(&state).await;
+    let mut candidate = valid_candidate();
+    candidate["digest"] = Value::Null;
+    candidate["canonical_conversion_preflight"] = json!({});
+
+    let (status, body) = validate(&state, &token, candidate).await;
+
+    assert_eq!(status, StatusCode::OK, "validation report: {body}");
+    let preflight = &body["canonical_conversion_preflight"];
+    assert_eq!(preflight["status"], "blocked");
+    assert_eq!(preflight["preflight_requested"], true);
+    assert_eq!(preflight["evidence"]["ocr_text_present"], false);
+    assert_eq!(preflight["evidence"]["candidate_digest_present"], false);
+    assert_eq!(preflight["evidence"]["operator_review_recorded"], false);
+    assert_eq!(preflight["evidence"]["package_fixity_recorded"], false);
+    assert_eq!(preflight["evidence"]["page_range_reviewed"], false);
+    assert_eq!(preflight["evidence"]["legal_acceptance_recorded"], false);
+    let codes = preflight_blocker_codes(&body);
+    assert!(codes.contains(&"missing_ocr_text".to_owned()));
+    assert!(codes.contains(&"missing_operator_review".to_owned()));
+    assert!(codes.contains(&"missing_candidate_digest".to_owned()));
+    assert!(codes.contains(&"package_fixity_not_recorded".to_owned()));
+    assert!(codes.contains(&"page_range_not_reviewed".to_owned()));
+    assert!(codes.contains(&"legal_acceptance_not_recorded".to_owned()));
+    assert_eq!(preflight["canonical_act_created"], false);
+    assert_eq!(preflight["canonical_document_created"], false);
+    assert_eq!(preflight["signature_created"], false);
+    assert_eq!(preflight["signing_requested"], false);
+    assert_eq!(preflight["signature_validity_claimed"], false);
+    assert_eq!(preflight["qualified_signature_claimed"], false);
+    assert_eq!(preflight["legal_validity_claimed"], false);
+}
+
+#[tokio::test]
+async fn paper_book_import_validation_allows_preflight_only_with_explicit_evidence() {
+    let state = AppState::default();
+    let token = bootstrap(&state).await;
+    let mut candidate = valid_candidate();
+    candidate["canonical_conversion_preflight"] = json!({
+        "ocr_text_digest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "operator_review_recorded": true,
+        "package_fixity_recorded": true,
+        "page_range_reviewed": true,
+        "legal_acceptance_recorded": true
+    });
+
+    let (status, body) = validate(&state, &token, candidate).await;
+
+    assert_eq!(status, StatusCode::OK, "validation report: {body}");
+    let preflight = &body["canonical_conversion_preflight"];
+    assert_eq!(preflight["status"], "allowed");
+    assert_eq!(preflight["preflight_requested"], true);
+    assert_eq!(
+        preflight["evidence_source"],
+        "operator_supplied_preflight_evidence"
+    );
+    assert_eq!(
+        preflight["allowed_next_action"],
+        "prepare_canonical_conversion_draft_after_preservation"
+    );
+    assert_eq!(preflight["evidence"]["ocr_text_present"], true);
+    assert_eq!(
+        preflight["evidence"]["ocr_text_digest"],
+        "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+    );
+    assert_eq!(preflight["evidence"]["operator_review_recorded"], true);
+    assert_eq!(preflight["evidence"]["candidate_digest_present"], true);
+    assert_eq!(preflight["evidence"]["package_fixity_recorded"], true);
+    assert_eq!(preflight["evidence"]["source_page_range"]["from"], 1);
+    assert_eq!(preflight["evidence"]["source_page_range"]["to"], 48);
+    assert_eq!(preflight["evidence"]["page_range_reviewed"], true);
+    assert_eq!(preflight["evidence"]["legal_acceptance_recorded"], true);
+    assert!(
+        preflight["blockers"]
+            .as_array()
+            .expect("blockers")
+            .is_empty()
+    );
+    assert_eq!(preflight["raw_ocr_text_in_report"], false);
+    assert_eq!(preflight["canonical_act_created"], false);
+    assert_eq!(preflight["canonical_document_created"], false);
+    assert_eq!(preflight["signature_created"], false);
+    assert_eq!(preflight["signing_requested"], false);
+    assert_eq!(preflight["signature_validity_claimed"], false);
+    assert_eq!(preflight["qualified_signature_claimed"], false);
+    assert_eq!(preflight["legal_validity_claimed"], false);
 }
 
 #[tokio::test]
@@ -474,6 +633,22 @@ async fn paper_book_import_preserves_package_bytes_and_appends_metadata_only_eve
     assert_eq!(body["continuation"]["canonical_document_created"], false);
     assert_eq!(body["continuation"]["signature_created"], false);
     assert_eq!(body["continuation"]["legal_acceptance_claimed"], false);
+    assert_eq!(
+        body["canonical_conversion_preflight"]["status"],
+        "not_attempted"
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["canonical_act_created"],
+        false
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["canonical_document_created"],
+        false
+    );
+    assert_eq!(
+        body["canonical_conversion_preflight"]["signature_created"],
+        false
+    );
     assert_eq!(body["preservation"]["bytes_in_ledger_event"], false);
     assert_eq!(body["preservation"]["ocr_status"], "not_run");
     let import_id = body["import_id"].as_str().expect("import id");

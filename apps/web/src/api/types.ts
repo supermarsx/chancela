@@ -4025,6 +4025,42 @@ export interface PaperBookContinuationRecommendation {
   legal_acceptance_claimed: boolean;
 }
 
+export interface PaperBookCanonicalConversionPreflightEvidence {
+  ocr_text_present: boolean;
+  ocr_text_digest: string | null;
+  operator_review_recorded: boolean;
+  candidate_digest_present: boolean;
+  package_fixity_recorded: boolean;
+  source_page_range_valid: boolean;
+  source_page_range: PaperBookPageRange;
+  page_range_reviewed: boolean;
+  legal_acceptance_recorded: boolean;
+}
+
+export interface PaperBookCanonicalConversionPreflightBlocker {
+  code: string;
+  field: string;
+  message: string;
+}
+
+export interface PaperBookCanonicalConversionPreflight {
+  status: 'not_attempted' | 'blocked' | 'allowed' | string;
+  preflight_requested: boolean;
+  scope: string;
+  evidence_source: string;
+  evidence: PaperBookCanonicalConversionPreflightEvidence;
+  blockers: PaperBookCanonicalConversionPreflightBlocker[];
+  allowed_next_action: string | null;
+  raw_ocr_text_in_report: boolean;
+  canonical_act_created: boolean;
+  canonical_document_created: boolean;
+  signature_created: boolean;
+  signing_requested: boolean;
+  signature_validity_claimed: boolean;
+  qualified_signature_claimed: boolean;
+  legal_validity_claimed: boolean;
+}
+
 export interface PaperBookImportClassification {
   classification: 'historical_paper_book_non_canonical_evidence';
   non_canonical: boolean;
@@ -4052,6 +4088,7 @@ export interface PaperBookImportReport {
   package: PaperBookImportPackage;
   linking_evidence: PaperBookLinkingEvidence;
   continuation: PaperBookContinuationRecommendation;
+  canonical_conversion_preflight: PaperBookCanonicalConversionPreflight;
   candidate_classification: PaperBookImportClassification;
   can_accept_as_import_candidate: boolean;
   required_operator_actions: string[];
@@ -4073,6 +4110,14 @@ export interface PaperBookImportValidateBody {
   source_filename?: string | null;
   digest?: string | null;
   notes?: string | null;
+  canonical_conversion_preflight?: {
+    ocr_text_present?: boolean;
+    ocr_text_digest?: string | null;
+    operator_review_recorded?: boolean;
+    package_fixity_recorded?: boolean;
+    page_range_reviewed?: boolean;
+    legal_acceptance_recorded?: boolean;
+  } | null;
 }
 
 export interface PaperBookImportPreserveBody extends PaperBookImportValidateBody {
