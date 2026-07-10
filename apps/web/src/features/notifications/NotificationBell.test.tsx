@@ -164,11 +164,13 @@ describe('NotificationBell', () => {
     const read = within(dialog).getByRole('button', { name: 'Marcar como lida' });
     const acknowledge = within(dialog).getByRole('button', { name: 'Reconhecer' });
     const dismiss = within(dialog).getByRole('button', { name: 'Dispensar' });
+    const viewAll = within(dialog).getByRole('link', { name: 'Ver todas' });
 
     expectIconOnlyControl(action, 'Rever ata');
     expectIconOnlyControl(read, 'Marcar como lida');
     expectIconOnlyControl(acknowledge, 'Reconhecer');
     expectIconOnlyControl(dismiss, 'Dispensar');
+    expectIconOnlyControl(viewAll, 'Ver todas');
   });
 
   it('folds compact popup item tags into the title without separate row badges', async () => {

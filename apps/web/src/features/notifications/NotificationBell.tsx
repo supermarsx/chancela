@@ -52,6 +52,7 @@ export function NotificationBell() {
     actionableCount > 0
       ? t('notifications.bell.labelWithCount', { count: actionableCount })
       : t('notifications.bell.label');
+  const viewAllLabel = t('notifications.viewAll');
   const closePopup = useCallback(() => setOpen(false), []);
 
   const repositionPopup = useCallback(() => {
@@ -149,9 +150,18 @@ export function NotificationBell() {
             />
           )}
           <div className="notification-center__footer">
-            <Link to="/notificacoes" onClick={closePopup}>
-              {t('notifications.viewAll')}
-            </Link>
+            <Tooltip label={viewAllLabel}>
+              <Link
+                to="/notificacoes"
+                className="notification-center__view-all btn btn--ghost btn--icon btn--iconOnly"
+                aria-label={viewAllLabel}
+                onClick={closePopup}
+              >
+                <span className="btn__icon" aria-hidden="true">
+                  <Icon.ArrowRight />
+                </span>
+              </Link>
+            </Tooltip>
           </div>
         </Card>
       </div>

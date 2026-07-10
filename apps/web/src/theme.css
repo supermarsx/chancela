@@ -4781,7 +4781,16 @@ a.btn--primary {
   margin-top: 0.55rem;
   padding-top: 0.55rem;
   border-top: 1px solid var(--border);
-  font-size: 0.8rem;
+}
+
+.notification-center__view-all.btn--iconOnly {
+  width: 1.85rem;
+  min-width: 1.85rem;
+  height: 1.85rem;
+  min-height: 1.85rem;
+  padding: 0.3rem;
+  font-size: 0.82rem;
+  line-height: 0;
 }
 
 .notifications-list {
