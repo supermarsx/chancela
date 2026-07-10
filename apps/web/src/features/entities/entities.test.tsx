@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders, fetchTable } from '../../test/utils';
@@ -29,7 +28,11 @@ const ENTITY: Entity = {
   statute: null,
 };
 
-function themeCss(): string {
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
   return readFileSync('src/theme.css', 'utf8');
 }
 
@@ -179,8 +182,8 @@ describe('EntitiesPage', () => {
     expect(within(advanced).getByLabelText('Última alteração')).toBeTruthy();
   });
 
-  it('pins entity table and filter CSS to single-line no-overflow rules', () => {
-    const css = themeCss();
+  it('pins entity table and filter CSS to single-line no-overflow rules', async () => {
+    const css = await themeCss();
     const filterRule = css.match(/\.entities-filters\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
     const filterbarRule = css.match(/\.entities-filterbar\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
     const filterButtonRule =
