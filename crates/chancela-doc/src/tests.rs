@@ -7,7 +7,7 @@
 use chancela_core::{Block, DocumentModel, KvRow, Run, SignatureSlot, VoteRow};
 use lopdf::{Dictionary, Document, Object};
 
-use crate::{pdfa, selfcheck};
+use crate::{font::Font, pdfa, selfcheck};
 
 /// A representative CSC general-meeting ata exercising every block type, with pt-PT diacritics.
 fn fixture() -> DocumentModel {
@@ -135,6 +135,49 @@ fn content_stream_text(parsed: &Document) -> String {
         bytes.extend_from_slice(&content.content);
     }
     String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn content_text_fragments(parsed: &Document) -> Vec<String> {
+    content_stream_text(parsed)
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix('<')
+                .and_then(|line| line.strip_suffix("> Tj"))
+                .map(ToOwned::to_owned)
+        })
+        .collect()
+}
+
+fn glyph_hex(font: &Font, text: &str) -> String {
+    text.chars()
+        .map(|ch| format!("{:04X}", font.glyph_id(ch)))
+        .collect()
+}
+
+fn assert_text_fragment_sequence(parsed: &Document, expected: &[String]) {
+    let fragments = content_text_fragments(parsed);
+    assert!(
+        fragments
+            .windows(expected.len())
+            .any(|window| window == expected),
+        "missing text fragment sequence {expected:?} in {fragments:?}"
+    );
+}
+
+fn assert_tounicode_maps_space(parsed: &Document, font: &Font) {
+    let space_gid = font.glyph_id(' ');
+    let expected = format!("<{space_gid:04X}> <0020>");
+    let cmap = parsed
+        .objects
+        .values()
+        .filter_map(|o| o.as_stream().ok())
+        .find(|s| s.content.windows(11).any(|w| w == b"beginbfchar"))
+        .expect("a /ToUnicode bfchar CMap stream");
+    let text = String::from_utf8_lossy(&cmap.content);
+    assert!(
+        text.contains(&expected),
+        "ToUnicode CMap is missing U+0020 mapping {expected}"
+    );
 }
 
 fn replace_once(bytes: &mut [u8], from: &[u8], to: &[u8]) {
@@ -489,6 +532,65 @@ fn explicit_page_break_starts_a_new_page() {
 }
 
 #[test]
+fn paragraph_flow_emits_real_unicode_spaces() {
+    let mut doc = DocumentModel::new("T", "E", "S");
+    doc.blocks = vec![Block::Paragraph {
+        runs: vec![
+            Run {
+                text: "FlowAlpha ".to_string(),
+                bold: false,
+                italic: false,
+            },
+            Run {
+                text: "FlowBeta FlowGamma".to_string(),
+                bold: true,
+                italic: false,
+            },
+        ],
+    }];
+    let bytes = pdfa::write(&doc).expect("write");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let font = Font::load().expect("load bundled font");
+
+    assert_text_fragment_sequence(
+        &parsed,
+        &[
+            glyph_hex(&font, "FlowAlpha"),
+            glyph_hex(&font, " "),
+            glyph_hex(&font, "FlowBeta"),
+            glyph_hex(&font, " "),
+            glyph_hex(&font, "FlowGamma"),
+        ],
+    );
+    assert_tounicode_maps_space(&parsed, &font);
+}
+
+#[test]
+fn wrapped_key_value_values_emit_real_unicode_spaces() {
+    let mut doc = DocumentModel::new("T", "E", "S");
+    let leading_wrap_word = "WrapForcingPrefix".repeat(10);
+    doc.blocks = vec![Block::KeyValue {
+        rows: vec![KvRow {
+            key: "Campo".to_string(),
+            value: format!("{leading_wrap_word} WrappedSecond WrappedThird"),
+        }],
+    }];
+    let bytes = pdfa::write(&doc).expect("write");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let font = Font::load().expect("load bundled font");
+
+    assert_text_fragment_sequence(
+        &parsed,
+        &[
+            glyph_hex(&font, "WrappedSecond"),
+            glyph_hex(&font, " "),
+            glyph_hex(&font, "WrappedThird"),
+        ],
+    );
+    assert_tounicode_maps_space(&parsed, &font);
+}
+
+#[test]
 fn diacritics_survive_via_tounicode() {
     let mut doc = DocumentModel::new("Diacríticos", "Encosto Estratégico Lda", "ç ã õ á");
     doc.blocks = vec![Block::Paragraph {
@@ -661,6 +763,24 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
 }
 
 #[test]
+fn accessibility_report_records_space_emission_without_pdfua_claim() {
+    let report = pdfa::accessibility_report(&fixture());
+
+    assert!(report.inter_word_spaces_emitted);
+    assert!(!report.pdf_ua_claimed);
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
+    );
+
+    let json = report.to_json();
+    assert!(json.contains("\"version\":3"));
+    assert!(json.contains("\"inter_word_spaces_emitted\":true"));
+    assert!(json.contains("\"pdf_ua_claimed\":false"));
+}
+
+#[test]
 fn accessibility_explicit_alt_text_decorative_model_leaves_only_limited_tagging_blocker() {
     let mut doc = DocumentModel::new(
         "Ata com metadados de acessibilidade",
@@ -730,7 +850,7 @@ fn accessibility_report_json_is_deterministic() {
     assert_eq!(a, b);
     assert_eq!(
         a,
-        "{\"version\":2,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"display_doc_title\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":true,\"tagged_content_present\":true,\"layout_artifacts_marked\":true,\"pages_use_structure_tab_order\":true},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"no_alt_text_model\",\"limited_tagged_structure\"]}"
+        "{\"version\":3,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"display_doc_title\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true,\"inter_word_spaces_emitted\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":true,\"tagged_content_present\":true,\"layout_artifacts_marked\":true,\"pages_use_structure_tab_order\":true},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"no_alt_text_model\",\"limited_tagged_structure\"]}"
     );
 }
 

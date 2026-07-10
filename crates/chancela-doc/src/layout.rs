@@ -279,7 +279,11 @@ impl<'f> Layouter<'f> {
 
     fn flush_line(&mut self, line: &[(f32, &Word)], size: f32, x0: f32) {
         let baseline = self.take_line(size);
-        for (xoff, w) in line {
+        let space = self.space_w(size);
+        for (index, (xoff, w)) in line.iter().enumerate() {
+            if index > 0 {
+                self.frag(x0 + xoff - space, baseline, size, false, false, " ");
+            }
             self.frag(x0 + xoff, baseline, size, w.bold, w.italic, &w.text);
         }
     }
@@ -335,23 +339,27 @@ impl<'f> Layouter<'f> {
         let col_w = val_x1 - val_x;
         let space = self.space_w(BODY);
         let mut cur_base = baseline;
-        let mut xoff = 0.0f32;
-        let mut first_line_started = false;
+        let mut line_w = 0.0f32;
+        let mut line_started = false;
         for w in &vwords {
             let ww = self.text_w(&w.text, BODY);
-            let add = if xoff == 0.0 { ww } else { xoff + space + ww };
-            if first_line_started && add > col_w {
-                cur_base = self.take_line(BODY);
-                xoff = 0.0;
-            }
-            let draw_x = if xoff == 0.0 {
-                val_x
+            let add = if line_started {
+                line_w + space + ww
             } else {
-                val_x + xoff + space
+                ww
             };
-            self.frag(draw_x, cur_base, BODY, false, false, &w.text);
-            xoff = if xoff == 0.0 { ww } else { xoff + space + ww };
-            first_line_started = true;
+            if line_started && add > col_w {
+                cur_base = self.take_line(BODY);
+                line_w = 0.0;
+                line_started = false;
+            }
+            if line_started {
+                self.frag(val_x + line_w, cur_base, BODY, false, false, " ");
+                line_w += space;
+            }
+            self.frag(val_x + line_w, cur_base, BODY, false, false, &w.text);
+            line_w += ww;
+            line_started = true;
         }
     }
 

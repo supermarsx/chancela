@@ -136,6 +136,8 @@ pub struct AccessibilityReport {
     pub embedded_fonts: bool,
     /// Text fonts carry `/ToUnicode` CMaps.
     pub to_unicode_cmaps: bool,
+    /// Inter-word gaps are emitted as real U+0020 text glyphs, not only positioning offsets.
+    pub inter_word_spaces_emitted: bool,
     /// Content streams are emitted in `DocumentModel.blocks` order.
     pub content_streams_follow_model_order: bool,
     /// Whether the PDF catalog has a real structure tree.
@@ -190,7 +192,7 @@ impl AccessibilityReport {
             .join(",");
 
         format!(
-            "{{\"version\":2,\
+            "{{\"version\":3,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
@@ -200,7 +202,7 @@ impl AccessibilityReport {
 \"xmp_title\":{xmp_title},\
 \"xmp_language\":{xmp_language}\
 }},\
-\"text\":{{\"embedded_fonts\":{embedded_fonts},\"to_unicode_cmaps\":{to_unicode_cmaps}}},\
+\"text\":{{\"embedded_fonts\":{embedded_fonts},\"to_unicode_cmaps\":{to_unicode_cmaps},\"inter_word_spaces_emitted\":{spaces_emitted}}},\
 \"reading_order\":{{\
 \"content_streams_follow_model_order\":{content_order},\
 \"structure_tree_present\":{structure_tree},\
@@ -224,6 +226,7 @@ impl AccessibilityReport {
             xmp_language = self.xmp_language,
             embedded_fonts = self.embedded_fonts,
             to_unicode_cmaps = self.to_unicode_cmaps,
+            spaces_emitted = self.inter_word_spaces_emitted,
             content_order = self.content_streams_follow_model_order,
             structure_tree = self.structure_tree_present,
             tagged_content = self.tagged_content_present,
@@ -255,6 +258,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         xmp_language: true,
         embedded_fonts: true,
         to_unicode_cmaps: true,
+        inter_word_spaces_emitted: true,
         content_streams_follow_model_order: true,
         structure_tree_present: true,
         tagged_content_present: true,
