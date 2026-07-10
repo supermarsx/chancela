@@ -709,9 +709,9 @@ function DataStatusPanel() {
                 const usage = usageForTarget(data.usage.filesystem, target.target);
                 return (
                   <li key={target.target} className="data-status-cleanup">
-                    <div className="data-status-cleanup__body">
+                    <div className="data-status-cleanup__main">
                       <h5>{t(target.title)}</h5>
-                      <p>{t(target.body)}</p>
+                      <span className="data-status-cleanup__description">{t(target.body)}</span>
                     </div>
                     <p className="data-status-cleanup__metric">
                       <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>

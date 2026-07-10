@@ -217,6 +217,19 @@ describe('GestaoDadosSection', () => {
     expect(screen.getByText('Relatórios de falha')).toBeTruthy();
     expect(screen.getByText('Exportações retidas')).toBeTruthy();
     expect(screen.getByText(/Total:/).textContent).toContain('4 KB');
+    const maintenanceSection = screen
+      .getByRole('heading', { name: 'Manutenção' })
+      .closest('section')!;
+    const cleanupRows = within(maintenanceSection).getAllByRole('listitem');
+    expect(cleanupRows).toHaveLength(2);
+    const crashCleanup = within(maintenanceSection).getByText('Relatórios de falha').closest('li')!;
+    expect(crashCleanup.querySelector('.data-status-cleanup__main')?.textContent).toContain(
+      'Remove diagnósticos locais de falhas antigas',
+    );
+    expect(crashCleanup.querySelector('.data-status-cleanup__metric')?.textContent).toContain(
+      '512 B',
+    );
+    expect(within(crashCleanup).getByRole('button', { name: 'Limpar falhas' })).toBeTruthy();
     const usageSection = screen.getByRole('heading', { name: 'Utilização' }).closest('section')!;
     const databaseRow = within(usageSection).getByText('Database').closest('li')!;
     expect(within(databaseRow).getByText('ficheiro SQLite')).toBeTruthy();
@@ -477,6 +490,55 @@ describe('GestaoDadosSection', () => {
     await waitFor(() =>
       expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
     );
+  });
+
+  it('cleans retained exports without changing the crash cleanup target', async () => {
+    const cleanedStatus: DataStatusResponse = {
+      ...durableStatus,
+      usage: {
+        ...durableStatus.usage,
+        filesystem: durableStatus.usage.filesystem.filter((concern) => concern.id !== 'exports'),
+      },
+    };
+    const calls = installFetch([durableStatus, cleanedStatus], (url) => {
+      if (url.includes('/v1/data/cleanup')) {
+        return jsonResponse({
+          target: 'exports',
+          data_dir: 'F:\\ChancelaData',
+          deleted_bytes: 512,
+          deleted_files: 2,
+          deleted_directories: 1,
+          skipped: [],
+        });
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+    await screen.findByText('F:\\ChancelaData');
+    const maintenanceSection = screen
+      .getByRole('heading', { name: 'Manutenção' })
+      .closest('section')!;
+    const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
+    expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
+      'Remove pacotes de exportação guardados pelo servidor',
+    );
+    expect(exportsRow.querySelector('.data-status-cleanup__metric')?.textContent).toContain(
+      '2 ficheiros',
+    );
+
+    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Limpar exportações' }));
+    const confirmBtns = screen.getAllByRole('button', { name: 'Limpar exportações' });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/v1/data/cleanup'))).toBe(true));
+    const cleanupCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
+    expect(cleanupCall.method).toBe('POST');
+    expect(JSON.parse(cleanupCall.body as string)).toEqual({ target: 'exports' });
+    expect(await screen.findByText(/Apagados 2 ficheiros e 1 pastas/)).toBeTruthy();
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
+    );
+    expect(screen.getByText('Relatórios de falha')).toBeTruthy();
   });
 
   it('viewing and refreshing the data tab do not PUT settings or call platform logs', async () => {
