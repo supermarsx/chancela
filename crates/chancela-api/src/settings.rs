@@ -708,11 +708,12 @@ pub struct SigningSettings {
     /// Trusted-list (TSL) URL used for qualified-status checks. Defaults to
     /// [`DEFAULT_PT_TSL_URL`]; `null` clears it.
     pub tsl_url: Option<String>,
-    /// Additive multi-source Trusted List configuration. Runtime signing still reads
-    /// [`tsl_url`](Self::tsl_url) in this slice; these entries are validated settings state only.
+    /// Additive multi-source Trusted List configuration. Enabled entries are considered before the
+    /// legacy [`tsl_url`](Self::tsl_url) compatibility field in trust refresh and qualified-signing
+    /// trust-policy selection.
     pub tsl_sources: Vec<TslSourceSettings>,
-    /// Additive RFC 3161 timestamp provider configuration. Runtime timestamping still reads
-    /// [`tsa_url`](Self::tsa_url) in this slice; these entries are validated settings state only.
+    /// Additive RFC 3161 timestamp provider configuration. The enabled default provider is
+    /// considered before the legacy [`tsa_url`](Self::tsa_url) compatibility field in timestamping.
     pub tsa_providers: Vec<TsaProviderSettings>,
     /// When true, an act cannot reach the finalized-**qualified** status until a valid qualified
     /// signature is present (t57 ruling 6 / deliverable D). This gates the STATUS, **not** the seal:
@@ -727,6 +728,195 @@ pub struct SigningSettings {
     /// non-secret config on GET/PUT; missing or stale client values are ignored.
     #[serde(default = "default_signing_provider_metadata")]
     pub providers: Vec<SigningProviderMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RuntimeTrustLocation {
+    Url(String),
+    Path(String),
+}
+
+impl RuntimeTrustLocation {
+    pub(crate) fn url(&self) -> Option<&str> {
+        match self {
+            RuntimeTrustLocation::Url(url) => Some(url),
+            RuntimeTrustLocation::Path(_) => None,
+        }
+    }
+
+    pub(crate) fn path(&self) -> Option<&str> {
+        match self {
+            RuntimeTrustLocation::Url(_) => None,
+            RuntimeTrustLocation::Path(path) => Some(path),
+        }
+    }
+
+    pub(crate) fn kind(&self) -> &'static str {
+        match self {
+            RuntimeTrustLocation::Url(_) => "url",
+            RuntimeTrustLocation::Path(_) => "path",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RuntimeTslSource {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) location: RuntimeTrustLocation,
+    pub(crate) timeout_seconds: u16,
+    pub(crate) max_bytes: u64,
+    pub(crate) configured_index: Option<usize>,
+    pub(crate) legacy: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RuntimeTslSelection {
+    pub(crate) selected: Option<RuntimeTslSource>,
+    pub(crate) configured_count: usize,
+    pub(crate) enabled_count: usize,
+    pub(crate) disabled_count: usize,
+    pub(crate) selection_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RuntimeTsaProvider {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) location: RuntimeTrustLocation,
+    pub(crate) policy: Option<String>,
+    pub(crate) digest: String,
+    pub(crate) timeout_seconds: u16,
+    pub(crate) max_bytes: u64,
+    pub(crate) configured_index: Option<usize>,
+    pub(crate) legacy: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RuntimeTsaSelection {
+    pub(crate) selected: Option<RuntimeTsaProvider>,
+    pub(crate) configured_count: usize,
+    pub(crate) enabled_count: usize,
+    pub(crate) disabled_count: usize,
+    pub(crate) enabled_default_count: usize,
+    pub(crate) selection_error: Option<String>,
+}
+
+impl SigningSettings {
+    pub(crate) fn runtime_tsl_selection(&self) -> RuntimeTslSelection {
+        let mut selected = None;
+        let mut enabled_count = 0usize;
+        let mut disabled_count = 0usize;
+
+        for (index, entry) in self.tsl_sources.iter().enumerate() {
+            if !entry.enabled {
+                disabled_count += 1;
+                continue;
+            }
+            enabled_count += 1;
+            if selected.is_none() {
+                selected = runtime_tsl_location(entry).map(|location| RuntimeTslSource {
+                    id: entry.id.clone(),
+                    name: entry.name.clone(),
+                    location,
+                    timeout_seconds: entry.timeout_seconds,
+                    max_bytes: entry.max_bytes,
+                    configured_index: Some(index),
+                    legacy: false,
+                });
+            }
+        }
+
+        let selection_error = if selected.is_none() && enabled_count > 0 {
+            Some("enabled TSL sources contain no usable URL or path".to_owned())
+        } else {
+            None
+        };
+
+        if selected.is_none() && enabled_count == 0 {
+            selected = trimmed_setting(self.tsl_url.as_deref()).map(|url| RuntimeTslSource {
+                id: "legacy-tsl-url".to_owned(),
+                name: "Legacy signing.tsl_url".to_owned(),
+                location: RuntimeTrustLocation::Url(url),
+                timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
+                max_bytes: DEFAULT_TSL_MAX_BYTES,
+                configured_index: None,
+                legacy: true,
+            });
+        }
+
+        RuntimeTslSelection {
+            selected,
+            configured_count: self.tsl_sources.len(),
+            enabled_count,
+            disabled_count,
+            selection_error,
+        }
+    }
+
+    pub(crate) fn runtime_tsa_selection(&self) -> RuntimeTsaSelection {
+        let mut selected = None;
+        let mut enabled_count = 0usize;
+        let mut disabled_count = 0usize;
+        let mut enabled_default_count = 0usize;
+
+        for (index, entry) in self.tsa_providers.iter().enumerate() {
+            if !entry.enabled {
+                disabled_count += 1;
+                continue;
+            }
+            enabled_count += 1;
+            if entry.r#default {
+                enabled_default_count += 1;
+                if selected.is_none() {
+                    selected = runtime_tsa_location(entry).map(|location| RuntimeTsaProvider {
+                        id: entry.id.clone(),
+                        name: entry.name.clone(),
+                        location,
+                        policy: entry.policy.clone(),
+                        digest: entry.digest.clone(),
+                        timeout_seconds: entry.timeout_seconds,
+                        max_bytes: entry.max_bytes,
+                        configured_index: Some(index),
+                        legacy: false,
+                    });
+                }
+            }
+        }
+
+        let selection_error = if enabled_count > 0 && enabled_default_count != 1 {
+            Some(format!(
+                "enabled TSA providers require exactly one default provider, found {enabled_default_count}"
+            ))
+        } else if selected.is_none() && enabled_count > 0 {
+            Some("enabled default TSA provider contains no usable URL or path".to_owned())
+        } else {
+            None
+        };
+
+        if selected.is_none() && enabled_count == 0 {
+            selected = trimmed_setting(self.tsa_url.as_deref()).map(|url| RuntimeTsaProvider {
+                id: "legacy-tsa-url".to_owned(),
+                name: "Legacy signing.tsa_url".to_owned(),
+                location: RuntimeTrustLocation::Url(url),
+                policy: None,
+                digest: "sha256".to_owned(),
+                timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
+                max_bytes: DEFAULT_TSA_MAX_BYTES,
+                configured_index: None,
+                legacy: true,
+            });
+        }
+
+        RuntimeTsaSelection {
+            selected,
+            configured_count: self.tsa_providers.len(),
+            enabled_count,
+            disabled_count,
+            enabled_default_count,
+            selection_error,
+        }
+    }
 }
 
 impl Default for SigningSettings {
@@ -918,6 +1108,29 @@ fn default_tsa_providers() -> Vec<TsaProviderSettings> {
         timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
         max_bytes: DEFAULT_TSA_MAX_BYTES,
     }]
+}
+
+fn runtime_tsl_location(entry: &TslSourceSettings) -> Option<RuntimeTrustLocation> {
+    // A path-backed TSL is an operator-pinned local copy and should win over a URL if both are
+    // present. This keeps catalog/trust checks deterministic and avoids an avoidable network fetch.
+    trimmed_setting(entry.path.as_deref())
+        .map(RuntimeTrustLocation::Path)
+        .or_else(|| trimmed_setting(entry.url.as_deref()).map(RuntimeTrustLocation::Url))
+}
+
+fn runtime_tsa_location(entry: &TsaProviderSettings) -> Option<RuntimeTrustLocation> {
+    // Live timestamping is implemented for HTTP RFC 3161 providers. A path-only provider remains a
+    // deterministic blocker in the signing flow rather than being silently ignored.
+    trimmed_setting(entry.url.as_deref())
+        .map(RuntimeTrustLocation::Url)
+        .or_else(|| trimmed_setting(entry.path.as_deref()).map(RuntimeTrustLocation::Path))
+}
+
+fn trimmed_setting(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 /// Non-secret provider-mode status surfaced in Settings -> Assinaturas.

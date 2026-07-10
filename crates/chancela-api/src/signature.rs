@@ -64,13 +64,13 @@ use chancela_signing::{
 };
 use chancela_smartcard::Pkcs11Token;
 use chancela_store::{PendingCmdSession, StoredDocument, StoredSignedDocument};
-use chancela_tsl::HttpTslSource;
-use chancela_tsl::TslClient;
+use chancela_tsl::{FileTslSource, TslClient, TslError, TslSource};
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
@@ -84,6 +84,7 @@ use crate::actor::CurrentActor;
 use crate::actor::CurrentAttestor;
 use crate::authz::{require_permission, scope_of_act};
 use crate::error::ApiError;
+use crate::settings::{RuntimeTsaProvider, RuntimeTslSource};
 
 /// The signing family this module produces (v1 is CMD-only; t57 ruling 2).
 const FAMILY_CMD: &str = "ChaveMovelDigital";
@@ -949,7 +950,7 @@ pub async fn initiate_cmd_signature(
     }
 
     let cmd_cfg = resolve_cmd_config(&state).await?;
-    let tsl_url = { state.settings.read().await.signing.tsl_url.clone() };
+    let tsl_source = configured_tsl_source(&state).await?;
 
     // Prepare the PAdES incremental update: compute the ByteRange digest to sign. A fixed signing
     // time (whole seconds) is carried unchanged into confirm (determinism, F5).
@@ -984,7 +985,7 @@ pub async fn initiate_cmd_signature(
     let session = run_cmd_initiate(
         &state,
         &cmd_cfg,
-        tsl_url,
+        tsl_source,
         &phone,
         &pin,
         &doc_name,
@@ -1388,7 +1389,7 @@ pub async fn sign_cc_signature(
         ));
     }
 
-    let tsl_url = { state.settings.read().await.signing.tsl_url.clone() };
+    let tsl_source = configured_tsl_source(&state).await?;
     // A fixed signing time (whole seconds), carried into both the /Sig dict and the signed record.
     let signing_time = OffsetDateTime::now_utc()
         .replace_nanosecond(0)
@@ -1412,7 +1413,7 @@ pub async fn sign_cc_signature(
 
     // Drive the card on `spawn_blocking` — the PKCS#11/PC/SC FFI and the human-paced PIN entry at
     // the reader both block, and must not stall the axum async runtime.
-    let cc = run_cc_sign(&state, tsl_url, unsigned.pdf_bytes, signing_time, opts).await?;
+    let cc = run_cc_sign(&state, tsl_source, unsigned.pdf_bytes, signing_time, opts).await?;
     let final_pdf = finalize_signed_pdf(&state, cc.signed_pdf, &cc.signing_cert_der).await?;
 
     // Resolve the ledger scope from the live act (re-checking presence).
@@ -1689,7 +1690,7 @@ pub async fn collect_revocation_evidence(
 /// crosses a thread boundary.
 async fn run_cc_sign(
     state: &AppState,
-    tsl_url: Option<String>,
+    tsl_source: Option<RuntimeTslSource>,
     pdf: Vec<u8>,
     signing_time: OffsetDateTime,
     opts: SignOptions,
@@ -1697,7 +1698,7 @@ async fn run_cc_sign(
     let policy_factory = state.cmd_trust_policy.clone();
     let provider_factory = state.cc_provider.clone();
     tokio::task::spawn_blocking(move || {
-        let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+        let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
         let provider: Box<dyn SignerProvider> = match provider_factory {
             Some(factory) => factory().map_err(map_cc_signing_error)?,
             None => Box::new(build_pkcs11_cc_provider()?),
@@ -1982,7 +1983,7 @@ pub async fn initiate_remote_signature(
         ));
     }
 
-    let tsl_url = { state.settings.read().await.signing.tsl_url.clone() };
+    let tsl_source = configured_tsl_source(&state).await?;
 
     // Prepare the PAdES incremental update (fixed whole-second signing time, carried into confirm).
     let signing_time = OffsetDateTime::now_utc()
@@ -2029,7 +2030,7 @@ pub async fn initiate_remote_signature(
         doc_name.clone(),
         signing_time,
         prepared.clone(),
-        tsl_url,
+        tsl_source,
     )
     .await?;
 
@@ -2286,7 +2287,7 @@ async fn run_remote_initiate(
     doc_name: String,
     signing_time: OffsetDateTime,
     prepared: PreparedSignature,
-    tsl_url: Option<String>,
+    tsl_source: Option<RuntimeTslSource>,
 ) -> Result<RemoteSignSession, ApiError> {
     let policy_factory = state.cmd_trust_policy.clone();
     match resolved {
@@ -2296,7 +2297,7 @@ async fn run_remote_initiate(
                     ScmdClient::from_config(SharedScmdTransport(transport.clone()), cmd_cfg)
                         .map_err(cmd_config_err)?;
                 let source = CmdRemoteSource::new(client);
-                let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+                let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
                 let init = RemoteInitiate {
                     user_ref: &user_ref,
                     credential: &credential,
@@ -2308,13 +2309,15 @@ async fn run_remote_initiate(
                     .map_err(map_remote_error)
             } else {
                 let cmd_cfg = cmd_cfg.clone();
+                let policy_factory = policy_factory.clone();
+                let tsl_source = tsl_source.clone();
                 tokio::task::spawn_blocking(move || {
                     let transport =
                         HttpScmdTransport::from_config(&cmd_cfg).map_err(cmd_config_err)?;
                     let client =
                         ScmdClient::from_config(transport, &cmd_cfg).map_err(cmd_config_err)?;
                     let source = CmdRemoteSource::new(client);
-                    let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+                    let mut policy = build_trust_policy(policy_factory, tsl_source)?;
                     let init = RemoteInitiate {
                         user_ref: &user_ref,
                         credential: &credential,
@@ -2337,7 +2340,7 @@ async fn run_remote_initiate(
                     di_secrets(),
                 );
                 let source = CscRemoteSource::new(client);
-                let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+                let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
                 let init = RemoteInitiate {
                     user_ref: &user_ref,
                     credential: &credential,
@@ -2351,12 +2354,14 @@ async fn run_remote_initiate(
                 // Production: env secrets (never persisted), real HTTP transport off the runtime.
                 let secrets = CscSecrets::from_env(&config.provider_id).map_err(csc_config_err)?;
                 let config = config.clone();
+                let policy_factory = policy_factory.clone();
+                let tsl_source = tsl_source.clone();
                 tokio::task::spawn_blocking(move || {
                     let transport =
                         HttpCscTransport::new(&config.base_url).map_err(csc_config_err)?;
                     let client = CscClient::new(transport, config, secrets);
                     let source = CscRemoteSource::new(client);
-                    let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+                    let mut policy = build_trust_policy(policy_factory, tsl_source)?;
                     let init = RemoteInitiate {
                         user_ref: &user_ref,
                         credential: &credential,
@@ -3504,13 +3509,65 @@ impl ScmdTransport for SharedScmdTransport {
     }
 }
 
+impl TslSource for RuntimeTslSource {
+    fn fetch(&self) -> Result<Vec<u8>, TslError> {
+        let bytes = if let Some(path) = self.location.path() {
+            FileTslSource::new(path).fetch()?
+        } else {
+            let url = self
+                .location
+                .url()
+                .expect("runtime TSL source has either path or URL");
+            let client = reqwest::blocking::Client::builder()
+                .timeout(StdDuration::from_secs(u64::from(self.timeout_seconds)))
+                .build()?;
+            client
+                .get(url)
+                .send()?
+                .error_for_status()?
+                .bytes()?
+                .to_vec()
+        };
+        if bytes.len() as u64 > self.max_bytes {
+            return Err(TslError::Structure(format!(
+                "configured TSL source '{}' exceeded max_bytes ({} > {})",
+                self.id,
+                bytes.len(),
+                self.max_bytes
+            )));
+        }
+        Ok(bytes)
+    }
+}
+
+struct BoundedTsaTransport {
+    inner: chancela_tsa::HttpTsaTransport,
+    provider_id: String,
+    max_bytes: u64,
+}
+
+impl chancela_tsa::TsaTransport for BoundedTsaTransport {
+    fn send(&self, der_req: &[u8]) -> Result<Vec<u8>, chancela_tsa::TsaError> {
+        let bytes = chancela_tsa::TsaTransport::send(&self.inner, der_req)?;
+        if bytes.len() as u64 > self.max_bytes {
+            return Err(chancela_tsa::TsaError::Transport(format!(
+                "TSA provider '{}' response exceeded max_bytes ({} > {})",
+                self.provider_id,
+                bytes.len(),
+                self.max_bytes
+            )));
+        }
+        Ok(bytes)
+    }
+}
+
 /// Phase-1 driver: run `cmd_initiate` over the injected transport inline (tests, no network), or a
 /// real `HttpScmdTransport` off the async runtime (production).
 #[allow(clippy::too_many_arguments)]
 async fn run_cmd_initiate(
     state: &AppState,
     cmd_cfg: &CmdConfig,
-    tsl_url: Option<String>,
+    tsl_source: Option<RuntimeTslSource>,
     phone: &str,
     pin: &str,
     doc_name: &str,
@@ -3521,7 +3578,7 @@ async fn run_cmd_initiate(
     if let Some(transport) = &state.cmd_transport {
         let client = ScmdClient::from_config(SharedScmdTransport(transport.clone()), cmd_cfg)
             .map_err(cmd_config_err)?;
-        let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+        let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
         let init = CmdInitiate {
             user_id: phone,
             pin,
@@ -3536,10 +3593,12 @@ async fn run_cmd_initiate(
         let phone = phone.to_owned();
         let pin = Zeroizing::new(pin.to_owned());
         let doc_name = doc_name.to_owned();
+        let policy_factory = policy_factory.clone();
+        let tsl_source = tsl_source.clone();
         tokio::task::spawn_blocking(move || {
             let transport = HttpScmdTransport::from_config(&cmd_cfg).map_err(cmd_config_err)?;
             let client = ScmdClient::from_config(transport, &cmd_cfg).map_err(cmd_config_err)?;
-            let mut policy = build_trust_policy(policy_factory, tsl_url)?;
+            let mut policy = build_trust_policy(policy_factory, tsl_source)?;
             let init = CmdInitiate {
                 user_id: &phone,
                 pin: &pin,
@@ -3581,21 +3640,21 @@ async fn run_cmd_confirm(
 }
 
 /// Build the trusted-list policy: the injected factory (tests), else a real `TslTrustPolicy` over
-/// the configured `tsl_url` (production). The qualified path MUST have a policy (ruling 7), so a
-/// missing TSL URL is a client-actionable 422.
+/// the selected configured TSL source (production). The qualified path MUST have a policy (ruling
+/// 7), so no selected source is a client-actionable 422.
 fn build_trust_policy(
     factory: Option<Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync>>,
-    tsl_url: Option<String>,
+    tsl_source: Option<RuntimeTslSource>,
 ) -> Result<Box<dyn TrustPolicy + Send>, ApiError> {
     if let Some(f) = factory {
         return Ok(f());
     }
-    let url = tsl_url.filter(|u| !u.trim().is_empty()).ok_or_else(|| {
+    let source = tsl_source.ok_or_else(|| {
         ApiError::Unprocessable(
             "a assinatura qualificada requer uma Lista de Confiança (TSL) configurada".to_owned(),
         )
     })?;
-    Ok(Box::new(TslTrustPolicy::new(HttpTslSource::new(url))))
+    Ok(Box::new(TslTrustPolicy::new(source)))
 }
 
 /// Resolve the effective [`CmdConfig`]: environment secrets win (ApplicationId + BasicAuth +
@@ -3657,15 +3716,16 @@ async fn finalize_signed_pdf(
         report,
     };
 
-    let Some(tsa_url) = configured_tsa_url(state).await else {
+    let Some(tsa_provider) = configured_tsa_provider(state).await? else {
         return Ok(out);
     };
-    let tsl_url = configured_tsl_url(state).await;
+    let tsl_source = configured_tsl_source(state).await?;
 
     let pdf = std::mem::take(&mut out.bytes);
     let (stamped, timestamp, timestamp_trust_report_json) =
         tokio::task::spawn_blocking(move || {
-            timestamp_pdf_with_trust_report(&pdf, &tsa_url, tsl_url).map_err(map_timestamp_error)
+            timestamp_pdf_with_trust_report(&pdf, tsa_provider, tsl_source)
+                .map_err(map_timestamp_error)
         })
         .await
         .map_err(|e| ApiError::Internal(format!("timestamp task failed: {e}")))??;
@@ -3685,19 +3745,49 @@ async fn finalize_signed_pdf(
 
 fn timestamp_pdf_with_trust_report(
     signed_pdf: &[u8],
-    tsa_url: &str,
-    tsl_url: Option<String>,
+    tsa_provider: RuntimeTsaProvider,
+    tsl_source: Option<RuntimeTslSource>,
 ) -> Result<(Vec<u8>, chancela_tsa::Timestamp, Option<String>), chancela_signing::SigningError> {
-    let transport = chancela_tsa::HttpTsaTransport::new(tsa_url)
-        .map_err(|e| chancela_signing::SigningError::Timestamp(e.to_string()))?;
-    let client = chancela_tsa::TsaClient::new(transport);
+    if tsa_provider.digest.trim() != "sha256" {
+        return Err(chancela_signing::SigningError::Timestamp(format!(
+            "TSA provider '{}' requests digest {:?}; live timestamping currently supports sha256 only",
+            tsa_provider.id, tsa_provider.digest
+        )));
+    }
+    let tsa_url = tsa_provider.location.url().ok_or_else(|| {
+        chancela_signing::SigningError::Timestamp(format!(
+            "TSA provider '{}' is path-backed; live RFC 3161 timestamping requires an HTTP URL. Local TSA replay/signing is not implemented in this slice.",
+            tsa_provider.id
+        ))
+    })?;
+    let transport = chancela_tsa::HttpTsaTransport::with_timeout(
+        tsa_url,
+        StdDuration::from_secs(u64::from(tsa_provider.timeout_seconds)),
+    )
+    .map_err(|e| chancela_signing::SigningError::Timestamp(e.to_string()))?;
+    let client = chancela_tsa::TsaClient::new(BoundedTsaTransport {
+        inner: transport,
+        provider_id: tsa_provider.id.clone(),
+        max_bytes: tsa_provider.max_bytes,
+    });
     let mut captured: Option<chancela_tsa::Timestamp> = None;
-    let request_certificate = tsl_url
-        .as_deref()
-        .map(|url| !url.trim().is_empty())
-        .unwrap_or(false);
+    let request_certificate = tsl_source.is_some();
     let stamped = add_signature_timestamp(signed_pdf, |sig_digest: &[u8; 32]| {
         let mut request = chancela_tsa::TimestampRequest::new(*sig_digest).with_generated_nonce();
+        if let Some(policy) = tsa_provider
+            .policy
+            .as_deref()
+            .map(str::trim)
+            .filter(|policy| !policy.is_empty())
+        {
+            let oid = x509_cert::der::oid::ObjectIdentifier::new(policy).map_err(|e| {
+                chancela_signing::SigningError::Timestamp(format!(
+                    "TSA provider '{}' policy {:?} is not a valid OID: {e}",
+                    tsa_provider.id, policy
+                ))
+            })?;
+            request = request.with_policy(oid);
+        }
         if !request_certificate {
             request = request.without_certificate();
         }
@@ -3711,17 +3801,16 @@ fn timestamp_pdf_with_trust_report(
     let timestamp = captured.ok_or_else(|| {
         chancela_signing::SigningError::Timestamp("timestamp callback did not run".to_owned())
     })?;
-    let report_json = timestamp_trust_report_json(&timestamp, tsl_url);
+    let report_json = timestamp_trust_report_json(&timestamp, tsl_source);
     Ok((stamped, timestamp, report_json))
 }
 
 fn timestamp_trust_report_json(
     timestamp: &chancela_tsa::Timestamp,
-    tsl_url: Option<String>,
+    tsl_source: Option<RuntimeTslSource>,
 ) -> Option<String> {
     let tsa_cert = timestamp.tsa_certificate_der.as_deref()?;
-    let url = tsl_url.filter(|url| !url.trim().is_empty())?;
-    let mut tsl = TslClient::new(HttpTslSource::new(url));
+    let mut tsl = TslClient::new(tsl_source?);
     let qtst = tsl.qtst_match_details(tsa_cert, timestamp.gen_time).ok()?;
     let report =
         timestamp_trust_evidence_status(timestamp, &qtst, &TimestampTrustPolicy::default());
@@ -3771,40 +3860,39 @@ fn validate_signed_pdf_with_incremental_updates(
     Ok(report)
 }
 
-async fn configured_tsa_url(state: &AppState) -> Option<String> {
-    state
-        .settings
-        .read()
-        .await
-        .signing
-        .tsa_url
-        .clone()
-        .and_then(|url| {
-            let trimmed = url.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_owned())
-            }
-        })
+async fn configured_tsa_provider(state: &AppState) -> Result<Option<RuntimeTsaProvider>, ApiError> {
+    let selection = state.settings.read().await.signing.runtime_tsa_selection();
+    if let Some(error) = selection.selection_error {
+        return Err(ApiError::Unprocessable(format!(
+            "configuração TSA inválida: {error}"
+        )));
+    }
+    let Some(provider) = selection.selected else {
+        return Ok(None);
+    };
+    if provider.location.url().is_none() {
+        return Err(ApiError::Unprocessable(format!(
+            "prestador TSA '{}' usa path local; a assinatura com carimbo temporal vivo requer um URL HTTP RFC 3161. Reproducao local de TSA nao esta implementada nesta fatia.",
+            provider.id
+        )));
+    }
+    if provider.digest.trim() != "sha256" {
+        return Err(ApiError::Unprocessable(format!(
+            "prestador TSA '{}' usa digest {:?}; a assinatura com carimbo temporal suporta apenas sha256",
+            provider.id, provider.digest
+        )));
+    }
+    Ok(Some(provider))
 }
 
-async fn configured_tsl_url(state: &AppState) -> Option<String> {
-    state
-        .settings
-        .read()
-        .await
-        .signing
-        .tsl_url
-        .clone()
-        .and_then(|url| {
-            let trimmed = url.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_owned())
-            }
-        })
+async fn configured_tsl_source(state: &AppState) -> Result<Option<RuntimeTslSource>, ApiError> {
+    let selection = state.settings.read().await.signing.runtime_tsl_selection();
+    if let Some(error) = selection.selection_error {
+        return Err(ApiError::Unprocessable(format!(
+            "configuração TSL inválida: {error}"
+        )));
+    }
+    Ok(selection.selected)
 }
 
 fn map_timestamp_error(e: chancela_signing::SigningError) -> ApiError {
@@ -4044,6 +4132,46 @@ fn rfc3339(t: OffsetDateTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::RuntimeTrustLocation;
+    use std::path::PathBuf;
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "chancela-signature-test-{}-{}",
+                std::process::id(),
+                OffsetDateTime::now_utc().unix_timestamp_nanos()
+            ));
+            std::fs::create_dir_all(&path).expect("temp dir");
+            Self(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn runtime_tsa_provider(
+        id: &str,
+        location: RuntimeTrustLocation,
+        digest: &str,
+    ) -> RuntimeTsaProvider {
+        RuntimeTsaProvider {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            location,
+            policy: None,
+            digest: digest.to_owned(),
+            timeout_seconds: 30,
+            max_bytes: 1024 * 1024,
+            configured_index: Some(0),
+            legacy: false,
+        }
+    }
 
     fn stored_signed_document(timestamp_token_der: Option<Vec<u8>>) -> StoredSignedDocument {
         let t = OffsetDateTime::from_unix_timestamp(0).unwrap();
@@ -4270,6 +4398,60 @@ mod tests {
             &"timestamp token did not expose an embedded TSA signing certificate".to_owned()
         ));
         assert_eq!(status.status_scope, TECHNICAL_EVIDENCE_ONLY);
+    }
+
+    #[test]
+    fn timestamp_path_backed_provider_fails_with_local_replay_blocker_before_network() {
+        let provider = runtime_tsa_provider(
+            "offline-default",
+            RuntimeTrustLocation::Path("fixtures/tsa-response.der".to_owned()),
+            "sha256",
+        );
+
+        let err = timestamp_pdf_with_trust_report(b"%PDF-1.7", provider, None)
+            .expect_err("path-backed provider is not live-signing capable");
+
+        assert!(
+            err.to_string()
+                .contains("Local TSA replay/signing is not implemented")
+        );
+    }
+
+    #[test]
+    fn timestamp_unsupported_digest_fails_before_network() {
+        let provider = runtime_tsa_provider(
+            "sha512-provider",
+            RuntimeTrustLocation::Url("http://tsa.example.test".to_owned()),
+            "sha512",
+        );
+
+        let err = timestamp_pdf_with_trust_report(b"%PDF-1.7", provider, None)
+            .expect_err("unsupported digest is rejected locally");
+
+        assert!(err.to_string().contains("supports sha256 only"));
+    }
+
+    #[test]
+    fn trust_policy_file_backed_tsl_source_enforces_configured_max_bytes() {
+        let tmp = TempDir::new();
+        let path = tmp.0.join("oversize-tsl.xml");
+        std::fs::write(&path, b"not actually parsed").expect("oversize TSL");
+        let source = RuntimeTslSource {
+            id: "local-small-bound".to_owned(),
+            name: "Local small bound".to_owned(),
+            location: RuntimeTrustLocation::Path(path.display().to_string()),
+            timeout_seconds: 30,
+            max_bytes: 1,
+            configured_index: Some(0),
+            legacy: false,
+        };
+
+        let mut policy = build_trust_policy(None, Some(source)).expect("policy builds");
+        let err = policy
+            .issuer_status(&[1, 2, 3], OffsetDateTime::from_unix_timestamp(0).unwrap())
+            .expect_err("oversize local TSL fails closed");
+
+        assert!(err.to_string().contains("exceeded max_bytes"));
     }
 
     #[test]

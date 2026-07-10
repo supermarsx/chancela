@@ -6,6 +6,7 @@
 //! operator can see whether the catalog is advisory (`Invalid`) or trustable (`Valid`).
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -15,7 +16,6 @@ use chancela_tsa::mock::{
     FIXTURE_DIGEST, FIXTURE_NONCE, FIXTURE_REQUEST_DER, FIXTURE_RESPONSE_DER,
 };
 use chancela_tsa::{QualifiedTimestampPolicy, TimestampRequest, verify_response};
-use chancela_tsl::source::{DEFAULT_PT_TSL_URL, HttpTslSource, TslSource};
 use chancela_tsl::{
     DigitalIdentity, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
     TrustServiceProvider, TrustedList, parse_tsl, validate_tsl_signature,
@@ -30,6 +30,7 @@ use crate::actor::CurrentActor;
 use crate::authz::require_permission;
 use crate::error::ApiError;
 use crate::hex;
+use crate::settings::{RuntimeTsaProvider, RuntimeTsaSelection, RuntimeTslSelection};
 
 const BUNDLED_PT_TSL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -47,6 +48,8 @@ const CACHE_CANDIDATES: &[&str] = &[
 ];
 const TRUST_CACHE_FILE: &str = "tsl.xml";
 const TRUST_REFRESH_STATUS_FILE: &str = "tsl-refresh-status.json";
+const DEFAULT_TSL_FETCH_TIMEOUT_SECONDS: u16 = 30;
+const DEFAULT_TSL_FETCH_MAX_BYTES: u64 = 25 * 1024 * 1024;
 
 // --- Views -------------------------------------------------------------------------------------
 
@@ -425,9 +428,10 @@ pub async fn trust_status(
     actor: CurrentActor,
 ) -> Result<Json<TslSummaryView>, ApiError> {
     require_reference_read(&state, &actor).await?;
+    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    Ok(Json(summary_view(&loaded, now)))
+    Ok(Json(summary_view(&loaded, now, Some(&tsl_selection))))
 }
 
 /// `POST /v1/trust/refresh` — operator-triggered TSL import from a URL or local XML file.
@@ -448,9 +452,9 @@ pub async fn refresh_trust_tsl(
                 .to_owned(),
         )
     })?;
-    let configured_url = state.settings.read().await.signing.tsl_url.clone();
+    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let attempt = tokio::task::spawn_blocking(move || {
-        import_tsl_to_cache(data_dir, configured_url, request, OffsetDateTime::now_utc())
+        import_tsl_to_cache(data_dir, tsl_selection, request, OffsetDateTime::now_utc())
     })
     .await
     .map_err(|e| ApiError::Internal(format!("TSL import worker failed: {e}")))??;
@@ -465,6 +469,7 @@ pub async fn trust_catalog(
     Query(query): Query<TslCatalogQuery>,
 ) -> Result<Response, ApiError> {
     require_reference_read(&state, &actor).await?;
+    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
     let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
@@ -483,7 +488,7 @@ pub async fn trust_catalog(
         ))
         .into_response())
     } else {
-        Ok(Json(catalog_view(&loaded, now)).into_response())
+        Ok(Json(catalog_view(&loaded, now, Some(&tsl_selection))).into_response())
     }
 }
 
@@ -496,11 +501,12 @@ pub async fn trust_tsa(
     Query(query): Query<TsaCatalogQuery>,
 ) -> Result<Response, ApiError> {
     require_reference_read(&state, &actor).await?;
+    let signing = state.settings.read().await.signing.clone();
+    let tsa_selection = signing.runtime_tsa_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
     let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
-    let configured_url = public_configured_url(state.settings.read().await.signing.tsa_url.clone());
-    let catalog = tsa_catalog_view(&loaded, now, configured_url);
+    let catalog = tsa_catalog_view(&loaded, now, &tsa_selection);
     let filters = ServiceFilters::from_tsa_query(&query);
     if filters.is_active() {
         let limit = query
@@ -527,6 +533,7 @@ pub async fn trust_provider(
     actor: CurrentActor,
 ) -> Result<Json<TslProviderDetailView>, ApiError> {
     require_reference_read(&state, &actor).await?;
+    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
     let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
@@ -540,7 +547,7 @@ pub async fn trust_provider(
         .ok_or(ApiError::NotFound)?;
     Ok(Json(TslProviderDetailView {
         provider,
-        summary: summary_view(&loaded, now),
+        summary: summary_view(&loaded, now, Some(&tsl_selection)),
     }))
 }
 
@@ -551,6 +558,7 @@ pub async fn trust_service(
     actor: CurrentActor,
 ) -> Result<Json<TslServiceDetailView>, ApiError> {
     require_reference_read(&state, &actor).await?;
+    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
     let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
@@ -570,7 +578,7 @@ pub async fn trust_service(
                     digital_identities: digital_identity_views(service),
                     history: service_history_views(service),
                     service: summary,
-                    summary: summary_view(&loaded, now),
+                    summary: summary_view(&loaded, now, Some(&tsl_selection)),
                 }));
             }
         }
@@ -594,7 +602,7 @@ async fn require_reference_refresh(state: &AppState, actor: &CurrentActor) -> Re
 
 fn import_tsl_to_cache(
     data_dir: PathBuf,
-    configured_url: Option<String>,
+    selection: RuntimeTslSelection,
     request: TslRefreshRequest,
     now: OffsetDateTime,
 ) -> Result<TslRefreshStatusView, ApiError> {
@@ -614,27 +622,60 @@ fn import_tsl_to_cache(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned);
-    let source_kind = if source_path.is_some() {
+    let selected_source = if source_path.is_none() && source_url.is_none() {
+        if let Some(error) = selection.selection_error {
+            return Err(ApiError::Unprocessable(format!(
+                "TSL import could not select a configured source: {error}"
+            )));
+        }
+        selection.selected
+    } else {
+        None
+    };
+    let source_kind = if source_path.is_some()
+        || selected_source
+            .as_ref()
+            .and_then(|source| source.location.path())
+            .is_some()
+    {
         TslRefreshSourceKind::File
     } else {
         TslRefreshSourceKind::Url
     };
-    let display_url = source_url
-        .or_else(|| configured_url.filter(|url| !url.trim().is_empty()))
-        .unwrap_or_else(|| DEFAULT_PT_TSL_URL.to_owned());
-    let display_path = source_path.as_ref().map(|path| path.display().to_string());
+    let (display_url, display_path, timeout_seconds, max_bytes) = match selected_source.as_ref() {
+        Some(source) if source_path.is_none() && source_url.is_none() => (
+            source.location.url().map(str::to_owned),
+            source.location.path().map(str::to_owned),
+            source.timeout_seconds,
+            source.max_bytes,
+        ),
+        _ => (
+            source_url,
+            source_path.as_ref().map(|path| path.display().to_string()),
+            DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
+            DEFAULT_TSL_FETCH_MAX_BYTES,
+        ),
+    };
+    if display_url.is_none() && display_path.is_none() {
+        return Err(ApiError::Unprocessable(
+            "TSL import requires an explicit url/path or an enabled signing.tsl_sources entry"
+                .to_owned(),
+        ));
+    }
     let status_source_url = if source_kind == TslRefreshSourceKind::Url {
-        Some(display_url.clone())
+        display_url.clone()
     } else {
         None
     };
 
-    let fetched = if let Some(path) = &source_path {
-        std::fs::read(path).map_err(|e| e.to_string())
+    let fetched = if let Some(path) = display_path.as_deref() {
+        read_bounded_tsl_file(path, max_bytes)
     } else {
-        HttpTslSource::new(display_url.clone())
-            .fetch()
-            .map_err(|e| e.to_string())
+        fetch_bounded_tsl_url(
+            display_url.as_deref().expect("URL source has display_url"),
+            timeout_seconds,
+            max_bytes,
+        )
     };
 
     let mut status = match &fetched {
@@ -669,6 +710,42 @@ fn import_tsl_to_cache(
 
     persist_refresh_status(&status_path, &status)?;
     Ok(status)
+}
+
+fn read_bounded_tsl_file(path: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(format!(
+            "Trusted List file exceeds configured max_bytes ({len} > {max_bytes})",
+            len = bytes.len()
+        ));
+    }
+    Ok(bytes)
+}
+
+fn fetch_bounded_tsl_url(
+    url: &str,
+    timeout_seconds: u16,
+    max_bytes: u64,
+) -> Result<Vec<u8>, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(u64::from(timeout_seconds)))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let bytes = client
+        .get(url)
+        .send()
+        .and_then(|response| response.error_for_status())
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(format!(
+            "Trusted List response exceeds configured max_bytes ({len} > {max_bytes})",
+            len = bytes.len()
+        ));
+    }
+    Ok(bytes.to_vec())
 }
 
 fn status_for_imported_xml(
@@ -816,10 +893,14 @@ fn find_cached_tsl(data_dir: Option<PathBuf>) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-fn catalog_view(loaded: &LoadedTsl, now: OffsetDateTime) -> TslCatalogView {
+fn catalog_view(
+    loaded: &LoadedTsl,
+    now: OffsetDateTime,
+    runtime_selection: Option<&RuntimeTslSelection>,
+) -> TslCatalogView {
     let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
     TslCatalogView {
-        summary: summary_view(loaded, now),
+        summary: summary_view(loaded, now, runtime_selection),
         providers: loaded
             .list
             .providers
@@ -830,7 +911,11 @@ fn catalog_view(loaded: &LoadedTsl, now: OffsetDateTime) -> TslCatalogView {
     }
 }
 
-fn summary_view(loaded: &LoadedTsl, now: OffsetDateTime) -> TslSummaryView {
+fn summary_view(
+    loaded: &LoadedTsl,
+    now: OffsetDateTime,
+    runtime_selection: Option<&RuntimeTslSelection>,
+) -> TslSummaryView {
     let validation_error = validate_tsl_signature(&loaded.xml)
         .err()
         .map(|e| e.to_string());
@@ -842,8 +927,12 @@ fn summary_view(loaded: &LoadedTsl, now: OffsetDateTime) -> TslSummaryView {
         .services()
         .filter(|s| qualifies_for_esignature(s, now))
         .count();
+    let mut source = loaded.source.clone();
+    if let Some(selection) = runtime_selection {
+        source.note = tsl_runtime_note(&source.note, selection);
+    }
     TslSummaryView {
-        source: loaded.source.clone(),
+        source,
         last_refresh: loaded.last_refresh.clone(),
         scheme_operator_name: loaded.list.scheme_operator_name.clone(),
         scheme_name: loaded.list.scheme_name.clone(),
@@ -871,6 +960,31 @@ fn summary_view(loaded: &LoadedTsl, now: OffsetDateTime) -> TslSummaryView {
             0
         },
     }
+}
+
+fn tsl_runtime_note(base: &str, selection: &RuntimeTslSelection) -> String {
+    let detail = if let Some(error) = &selection.selection_error {
+        format!(
+            "runtime TSL selection error: {error}; configured_sources={}, enabled={}, disabled={}",
+            selection.configured_count, selection.enabled_count, selection.disabled_count
+        )
+    } else if let Some(source) = &selection.selected {
+        format!(
+            "runtime TSL source '{}' selected from {} configured source(s), {} enabled, {} disabled; location={}; compatibility_fallback={}",
+            source.id,
+            selection.configured_count,
+            selection.enabled_count,
+            selection.disabled_count,
+            source.location.kind(),
+            source.legacy
+        )
+    } else {
+        format!(
+            "no runtime TSL source selected; configured_sources={}, enabled={}, disabled={}",
+            selection.configured_count, selection.enabled_count, selection.disabled_count
+        )
+    };
+    format!("{base}; {detail}")
 }
 
 fn provider_view(
@@ -988,7 +1102,7 @@ fn filter_services(
 fn tsa_catalog_view(
     loaded: &LoadedTsl,
     now: OffsetDateTime,
-    configured_url: Option<String>,
+    selection: &RuntimeTsaSelection,
 ) -> TsaCatalogView {
     let signature_error = validate_tsl_signature(&loaded.xml)
         .err()
@@ -999,7 +1113,11 @@ fn tsa_catalog_view(
     let trusted_records = records.iter().filter(|r| r.trusted).count();
     let (last_probe, timestamp) = tsa_fixture_probe(now);
     let policy_analysis = tsa_policy_analysis(&records, timestamp.as_ref(), signature_valid);
-    let status = if configured_url.is_none() {
+    let configured_url = selection.selected.as_ref().and_then(public_runtime_tsa_url);
+    let runtime_error = tsa_runtime_error(selection);
+    let status = if runtime_error.is_some() {
+        TsaStatusKind::Error
+    } else if selection.selected.is_none() {
         TsaStatusKind::Unconfigured
     } else if last_probe.status == TsaProbeStatus::Passed {
         TsaStatusKind::Ready
@@ -1007,17 +1125,28 @@ fn tsa_catalog_view(
         TsaStatusKind::Error
     };
     let status_message = match status {
-        TsaStatusKind::Ready => {
-            "TSA URL configured; offline RFC 3161 fixture probe passed. No live TSA request was sent."
-        }
+        TsaStatusKind::Ready => match selection.selected.as_ref() {
+            Some(provider) => format!(
+                "TSA provider '{}' selected from {} configured provider(s), {} enabled, {} disabled; offline RFC 3161 fixture probe passed. No live TSA request was sent.",
+                provider.id,
+                selection.configured_count,
+                selection.enabled_count,
+                selection.disabled_count
+            ),
+            None => {
+                "TSA URL configured; offline RFC 3161 fixture probe passed. No live TSA request was sent."
+                    .to_owned()
+            }
+        },
         TsaStatusKind::Unconfigured => {
-            "TSA URL is not configured; timestamping is unavailable until an operator sets one."
+            "No enabled TSA provider or legacy TSA URL is configured; timestamping is unavailable until an operator sets one."
+                .to_owned()
         }
-        TsaStatusKind::Error => {
+        TsaStatusKind::Error => runtime_error.unwrap_or_else(|| {
             "Offline RFC 3161 fixture probe failed; timestamp parsing or verification needs attention."
-        }
-    }
-    .to_owned();
+                .to_owned()
+        }),
+    };
     TsaCatalogView {
         summary: TsaSummaryView {
             configured_url,
@@ -1030,7 +1159,11 @@ fn tsa_catalog_view(
                 response_content_type: "application/timestamp-reply".to_owned(),
                 nonce_policy: "request nonce must be echoed when present".to_owned(),
                 cert_req_default: true,
-                accepted_policy: "Any".to_owned(),
+                accepted_policy: selection
+                    .selected
+                    .as_ref()
+                    .and_then(|provider| provider.policy.clone())
+                    .unwrap_or_else(|| "Any".to_owned()),
             },
             accepted_hash: TsaAcceptedHashView {
                 algorithm: "SHA-256".to_owned(),
@@ -1752,12 +1885,37 @@ fn format_time(t: OffsetDateTime) -> String {
     t.format(&Rfc3339).unwrap_or_default()
 }
 
+#[cfg(test)]
 fn public_configured_url(configured: Option<String>) -> Option<String> {
     let trimmed = configured?.trim().to_owned();
     if trimmed.is_empty() {
         return None;
     }
     Some(strip_url_secrets(&trimmed))
+}
+
+fn public_runtime_tsa_url(provider: &RuntimeTsaProvider) -> Option<String> {
+    provider.location.url().map(strip_url_secrets)
+}
+
+fn tsa_runtime_error(selection: &RuntimeTsaSelection) -> Option<String> {
+    if let Some(error) = &selection.selection_error {
+        return Some(format!("TSA provider selection error: {error}"));
+    }
+    let provider = selection.selected.as_ref()?;
+    if provider.location.url().is_none() {
+        return Some(format!(
+            "TSA provider '{}' is path-backed; live RFC 3161 timestamping requires an HTTP URL. Local TSA replay/signing is not implemented in this slice.",
+            provider.id
+        ));
+    }
+    if provider.digest.trim() != "sha256" {
+        return Some(format!(
+            "TSA provider '{}' requests digest {:?}; live timestamping currently supports sha256 only.",
+            provider.id, provider.digest
+        ));
+    }
+    None
 }
 
 fn strip_url_secrets(url: &str) -> String {
@@ -1780,6 +1938,7 @@ fn strip_url_secrets(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::{SigningSettings, TsaProviderSettings, TslSourceSettings};
     use time::macros::datetime;
 
     const NOW: OffsetDateTime = datetime!(2026-07-06 12:00:00 UTC);
@@ -1818,10 +1977,23 @@ mod tests {
         }
     }
 
+    fn tsa_selection_for_url(url: &str) -> RuntimeTsaSelection {
+        let mut signing = SigningSettings::default();
+        signing.tsa_providers[0].url = Some(url.to_owned());
+        signing.runtime_tsa_selection()
+    }
+
+    fn unconfigured_tsa_selection() -> RuntimeTsaSelection {
+        let mut signing = SigningSettings::default();
+        signing.tsa_providers.clear();
+        signing.tsa_url = None;
+        signing.runtime_tsa_selection()
+    }
+
     #[test]
     fn summary_reports_fixture_validation_without_trusting_it() {
         let loaded = fixture();
-        let summary = summary_view(&loaded, NOW);
+        let summary = summary_view(&loaded, NOW, None);
         assert_eq!(summary.scheme_territory, "PT");
         assert!(summary.last_refresh.is_none());
         assert_eq!(summary.providers, 4);
@@ -1839,7 +2011,7 @@ mod tests {
 
         let status = import_tsl_to_cache(
             tmp.0.clone(),
-            None,
+            SigningSettings::default().runtime_tsl_selection(),
             TslRefreshRequest {
                 url: None,
                 path: Some(source.display().to_string()),
@@ -1875,7 +2047,7 @@ mod tests {
 
         let status = import_tsl_to_cache(
             tmp.0.clone(),
-            None,
+            SigningSettings::default().runtime_tsl_selection(),
             TslRefreshRequest {
                 url: None,
                 path: Some(source.display().to_string()),
@@ -1913,6 +2085,54 @@ mod tests {
             accent_hits.len() >= loaded.list.services().count(),
             "scheme-operator search should fold Portuguese accents"
         );
+    }
+
+    #[test]
+    fn tsl_refresh_uses_first_enabled_configured_source_and_ignores_disabled_sources() {
+        let tmp = TempDir::new();
+        let disabled_source = tmp.0.join("disabled-tsl.xml");
+        let enabled_source = tmp.0.join("enabled-tsl.xml");
+        std::fs::write(&disabled_source, b"<not-tsl>").expect("disabled source");
+        std::fs::write(&enabled_source, BUNDLED_PT_TSL).expect("enabled source");
+
+        let mut signing = SigningSettings::default();
+        signing.tsl_url = Some("http://legacy.example.test/tsl.xml".to_owned());
+        signing.tsl_sources = vec![
+            TslSourceSettings {
+                id: "disabled-local".to_owned(),
+                name: "Disabled local TSL".to_owned(),
+                enabled: false,
+                path: Some(disabled_source.display().to_string()),
+                ..TslSourceSettings::default()
+            },
+            TslSourceSettings {
+                id: "enabled-local".to_owned(),
+                name: "Enabled local TSL".to_owned(),
+                enabled: true,
+                path: Some(enabled_source.display().to_string()),
+                ..TslSourceSettings::default()
+            },
+        ];
+
+        let status = import_tsl_to_cache(
+            tmp.0.clone(),
+            signing.runtime_tsl_selection(),
+            TslRefreshRequest {
+                url: None,
+                path: None,
+            },
+            NOW,
+        )
+        .expect("configured source import");
+
+        assert_eq!(status.outcome, TslRefreshOutcome::Success);
+        assert_eq!(status.source_kind, TslRefreshSourceKind::File);
+        let enabled_source_display = enabled_source.display().to_string();
+        assert_eq!(
+            status.source_path.as_deref(),
+            Some(enabled_source_display.as_str())
+        );
+        assert_eq!(status.providers, Some(4));
     }
 
     #[test]
@@ -1987,7 +2207,7 @@ mod tests {
     #[test]
     fn provider_analysis_and_detail_views_expose_duplicate_names_and_raw_dates() {
         let loaded = fixture();
-        let catalog = catalog_view(&loaded, NOW);
+        let catalog = catalog_view(&loaded, NOW, None);
         let multicert = catalog
             .providers
             .iter()
@@ -2060,11 +2280,8 @@ mod tests {
     #[test]
     fn tsa_catalog_reports_configured_url_and_fixture_timestamp_metadata() {
         let loaded = fixture();
-        let catalog = tsa_catalog_view(
-            &loaded,
-            NOW,
-            Some("http://ts.cartaodecidadao.pt/tsa/server".to_owned()),
-        );
+        let selection = tsa_selection_for_url("http://ts.cartaodecidadao.pt/tsa/server");
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
         assert_eq!(catalog.summary.status, TsaStatusKind::Ready);
         assert_eq!(
             catalog.summary.accepted_hash.digest,
@@ -2082,7 +2299,8 @@ mod tests {
     #[test]
     fn tsa_catalog_filters_tsl_timestamp_authority_records() {
         let loaded = fixture();
-        let catalog = tsa_catalog_view(&loaded, NOW, Some("http://tsa.example.test".to_owned()));
+        let selection = tsa_selection_for_url("http://tsa.example.test");
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
         assert_eq!(catalog.records.len(), 2);
         assert_eq!(catalog.summary.records, 2);
         assert_eq!(catalog.summary.granted_records, 1);
@@ -2156,7 +2374,8 @@ mod tests {
     #[test]
     fn tsa_catalog_reports_unconfigured_and_redacts_url_credentials() {
         let loaded = fixture();
-        let unconfigured = tsa_catalog_view(&loaded, NOW, None);
+        let selection = unconfigured_tsa_selection();
+        let unconfigured = tsa_catalog_view(&loaded, NOW, &selection);
         assert_eq!(unconfigured.summary.status, TsaStatusKind::Unconfigured);
         assert_eq!(unconfigured.summary.configured_url, None);
 
@@ -2166,6 +2385,91 @@ mod tests {
             ))
             .as_deref(),
             Some("https://tsa.example.pt/tsr")
+        );
+    }
+
+    #[test]
+    fn tsa_catalog_selects_enabled_default_provider_before_disabled_and_legacy_entries() {
+        let loaded = fixture();
+        let mut signing = SigningSettings::default();
+        signing.tsa_url = Some("http://legacy.example.test/tsa".to_owned());
+        signing.tsa_providers = vec![
+            TsaProviderSettings {
+                id: "disabled-default".to_owned(),
+                name: "Disabled default".to_owned(),
+                enabled: false,
+                r#default: true,
+                url: Some("http://disabled.example.test/tsa".to_owned()),
+                ..TsaProviderSettings::default()
+            },
+            TsaProviderSettings {
+                id: "selected-default".to_owned(),
+                name: "Selected default".to_owned(),
+                enabled: true,
+                r#default: true,
+                url: Some("https://user:secret@selected.example.test/tsa?token=hidden".to_owned()),
+                ..TsaProviderSettings::default()
+            },
+        ];
+
+        let selection = signing.runtime_tsa_selection();
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
+
+        assert_eq!(catalog.summary.status, TsaStatusKind::Ready);
+        assert_eq!(
+            catalog.summary.configured_url.as_deref(),
+            Some("https://selected.example.test/tsa")
+        );
+        assert!(catalog.summary.status_message.contains("selected-default"));
+        assert!(catalog.summary.status_message.contains("2 configured"));
+    }
+
+    #[test]
+    fn tsa_catalog_reports_path_backed_default_provider_as_local_replay_blocker() {
+        let loaded = fixture();
+        let mut signing = SigningSettings::default();
+        signing.tsa_url = Some("http://legacy.example.test/tsa".to_owned());
+        signing.tsa_providers = vec![TsaProviderSettings {
+            id: "offline-default".to_owned(),
+            name: "Offline default".to_owned(),
+            enabled: true,
+            r#default: true,
+            path: Some("fixtures/tsa-response.der".to_owned()),
+            ..TsaProviderSettings::default()
+        }];
+
+        let selection = signing.runtime_tsa_selection();
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
+
+        assert_eq!(catalog.summary.status, TsaStatusKind::Error);
+        assert_eq!(catalog.summary.configured_url, None);
+        assert!(catalog.summary.status_message.contains("path-backed"));
+        assert!(catalog.summary.status_message.contains("Local TSA replay"));
+    }
+
+    #[test]
+    fn tsa_catalog_reports_enabled_provider_without_default_as_selection_error() {
+        let loaded = fixture();
+        let mut signing = SigningSettings::default();
+        signing.tsa_url = Some("http://legacy.example.test/tsa".to_owned());
+        signing.tsa_providers = vec![TsaProviderSettings {
+            id: "enabled-not-default".to_owned(),
+            name: "Enabled but not default".to_owned(),
+            enabled: true,
+            r#default: false,
+            url: Some("http://enabled.example.test/tsa".to_owned()),
+            ..TsaProviderSettings::default()
+        }];
+
+        let selection = signing.runtime_tsa_selection();
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
+
+        assert_eq!(catalog.summary.status, TsaStatusKind::Error);
+        assert!(
+            catalog
+                .summary
+                .status_message
+                .contains("exactly one default")
         );
     }
 }
