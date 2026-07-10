@@ -1181,6 +1181,8 @@ describe('contract fixtures parse through the real client', () => {
         sha256: true,
         declared_content_type: true,
         detected_content_type: true,
+        evidence_family: true,
+        classification: true,
         imported_at: true,
         imported_by: true,
         non_canonical: true,
@@ -1191,7 +1193,9 @@ describe('contract fixtures parse through the real client', () => {
     );
     assertHex64(doc.sha256, 'ImportedDocumentView.sha256');
     assertTimestamp(doc.imported_at, 'ImportedDocumentView.imported_at');
-    expect(doc.detected_content_type).toBe('application/pdf');
+    expect(doc.detected_content_type).toBe('image/png');
+    expect(doc.evidence_family).toBe('image');
+    expect(doc.classification).toBe('image_non_canonical_evidence');
     expect(doc.non_canonical).toBe(true);
     expect(doc.bytes_download).toContain(`/v1/documents/imported/${doc.id}/bytes`);
     expect(JSON.stringify(doc)).not.toContain('%PDF');

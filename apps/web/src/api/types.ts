@@ -793,6 +793,16 @@ export interface DocumentImportContentTypeReport {
   declared_matches_detected: boolean | null;
 }
 
+export interface DocumentEvidenceClassificationReport {
+  family: string;
+  classification: string;
+  non_canonical: boolean;
+  warning: string;
+  canonical_conversion_performed: boolean;
+  canonical_pdfa_generated: boolean;
+  legal_validity_claimed: boolean;
+}
+
 export interface DocumentImportPdfARecognitionReport {
   is_pdfa_ish: boolean;
   part: string | null;
@@ -825,6 +835,41 @@ export interface LegacyWordDocRecognitionReport {
   canonical_pdfa_generated: boolean;
 }
 
+export interface ImageRecognitionReport {
+  is_image: boolean;
+  format: string | null;
+  width: number | null;
+  height: number | null;
+  declared_content_type_image: boolean;
+  filename_extension_image: boolean;
+  conversion_performed: boolean;
+  canonical_pdfa_generated: boolean;
+}
+
+export interface TextDocumentRecognitionReport {
+  is_supported_text: boolean;
+  kind: string | null;
+  utf8_valid: boolean;
+  has_nul: boolean;
+  declared_content_type_text: boolean;
+  filename_extension_text: boolean;
+  structure_validation_performed: boolean;
+  conversion_performed: boolean;
+  canonical_pdfa_generated: boolean;
+}
+
+export interface ZipBundleRecognitionReport {
+  is_zip: boolean;
+  readable: boolean;
+  entry_count: number;
+  unsafe_entry_count: number;
+  unsafe_entry_names: string[];
+  total_uncompressed_size: number | null;
+  extraction_performed: boolean;
+  canonical_pdfa_generated: boolean;
+  validation_error: string | null;
+}
+
 /** `POST /v1/documents/import/validate` read-only validation report. */
 export interface DocumentImportValidationReport {
   report_kind: 'document_import_validation' | string;
@@ -835,8 +880,12 @@ export interface DocumentImportValidationReport {
   sha256: string;
   fixity: DocumentImportFixityReport;
   content_type: DocumentImportContentTypeReport;
+  classification: DocumentEvidenceClassificationReport;
   pdf: DocumentImportPdfRecognitionReport;
   legacy_word: LegacyWordDocRecognitionReport;
+  image: ImageRecognitionReport;
+  text: TextDocumentRecognitionReport;
+  zip_bundle: ZipBundleRecognitionReport;
   signature: DocumentBundleSignedPdfSignalReport;
   can_accept_non_canonical_import: boolean;
   findings: DocumentImportValidationFinding[];
@@ -859,6 +908,8 @@ export interface ImportedDocumentView {
   sha256: string;
   declared_content_type: string | null;
   detected_content_type: string;
+  evidence_family: string;
+  classification: string;
   imported_at: string;
   imported_by: string;
   non_canonical: boolean;

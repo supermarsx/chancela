@@ -15,6 +15,7 @@
 //! and does not enter the document bytes.
 
 use std::io::{Cursor, Write};
+use std::path::Component;
 use std::sync::LazyLock;
 
 use axum::Json;
@@ -40,7 +41,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, DateTime, ZipWriter};
+use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
 use chancela_authz::{Permission, Scope};
 
@@ -62,6 +63,17 @@ pub(crate) const DOCUMENT_IMPORT_VALIDATION_ENVELOPE_BYTES: usize =
     DOCUMENT_IMPORT_VALIDATION_MAX_BYTES * 4 / 3 + 64 * 1024;
 
 const OLE_CFB_MAGIC: &[u8; 8] = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
+const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1A\n";
+const JPEG_MAGIC: &[u8; 3] = b"\xFF\xD8\xFF";
+const ZIP_MAGIC: &[u8; 4] = b"PK\x03\x04";
+const ZIP_EMPTY_MAGIC: &[u8; 22] =
+    b"PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+const ZIP_SPANNED_MAGIC: &[u8; 4] = b"PK\x07\x08";
+const ZIP_UNCOMPRESSED_WARNING_BYTES: u64 = 256 * 1024 * 1024;
+
+const NON_CANONICAL_EVIDENCE_WARNING: &str = "Imported bytes are preserved only as \
+non-canonical evidence; no legal conversion, PDF/A conformance, signature validity, or canonical \
+record replacement is claimed.";
 
 const DOCUMENT_IMPORT_VALIDATION_NOTICE: &str = "This report is a structural import screen only; \
 it is not proof of legal validity, PDF/A conformance, or signature validity.";
@@ -476,8 +488,12 @@ pub struct DocumentImportValidationReport {
     pub sha256: String,
     pub fixity: DocumentFixityReport,
     pub content_type: DocumentContentTypeReport,
+    pub classification: DocumentEvidenceClassificationReport,
     pub pdf: PdfRecognitionReport,
     pub legacy_word: LegacyWordDocRecognitionReport,
+    pub image: ImageRecognitionReport,
+    pub text: TextDocumentRecognitionReport,
+    pub zip_bundle: ZipBundleRecognitionReport,
     pub signature: SignedPdfSignalReport,
     pub can_accept_non_canonical_import: bool,
     pub findings: Vec<DocumentValidationFinding>,
@@ -498,6 +514,17 @@ pub struct DocumentContentTypeReport {
     pub declared: Option<String>,
     pub detected: &'static str,
     pub declared_matches_detected: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocumentEvidenceClassificationReport {
+    pub family: &'static str,
+    pub classification: &'static str,
+    pub non_canonical: bool,
+    pub warning: &'static str,
+    pub canonical_conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
+    pub legal_validity_claimed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -533,6 +560,44 @@ pub struct LegacyWordDocRecognitionReport {
     pub macro_execution_performed: bool,
     pub conversion_performed: bool,
     pub canonical_pdfa_generated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ImageRecognitionReport {
+    pub is_image: bool,
+    pub format: Option<&'static str>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub declared_content_type_image: bool,
+    pub filename_extension_image: bool,
+    pub conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TextDocumentRecognitionReport {
+    pub is_supported_text: bool,
+    pub kind: Option<&'static str>,
+    pub utf8_valid: bool,
+    pub has_nul: bool,
+    pub declared_content_type_text: bool,
+    pub filename_extension_text: bool,
+    pub structure_validation_performed: bool,
+    pub conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ZipBundleRecognitionReport {
+    pub is_zip: bool,
+    pub readable: bool,
+    pub entry_count: usize,
+    pub unsafe_entry_count: usize,
+    pub unsafe_entry_names: Vec<String>,
+    pub total_uncompressed_size: Option<u64>,
+    pub extraction_performed: bool,
+    pub canonical_pdfa_generated: bool,
+    pub validation_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -681,7 +746,11 @@ fn validate_document_candidate_with_fixity(
         (!trimmed.is_empty()).then(|| trimmed.to_owned())
     });
     let legacy_word = recognize_legacy_word_doc(bytes, declared.as_deref(), filename.as_deref());
-    let detected_content_type = detect_candidate_content_type(bytes, pdf.is_pdf, &legacy_word);
+    let image = recognize_image(bytes, declared.as_deref(), filename.as_deref());
+    let text = recognize_text_document(bytes, declared.as_deref(), filename.as_deref());
+    let zip_bundle = recognize_zip_bundle(bytes);
+    let detected_content_type =
+        detect_candidate_content_type(bytes, pdf.is_pdf, &legacy_word, &image, &text, &zip_bundle);
     let declared_matches_detected = declared
         .as_deref()
         .map(|value| content_type_base(value) == detected_content_type);
@@ -691,6 +760,7 @@ fn validate_document_candidate_with_fixity(
         detected: detected_content_type,
         declared_matches_detected,
     };
+    let classification = document_evidence_classification(content_type.detected);
     let signature = if pdf.is_pdf && !legacy_word.is_ole_cfb {
         recognize_signed_pdf(bytes)
     } else {
@@ -735,10 +805,15 @@ fn validate_document_candidate_with_fixity(
             "declared SHA-256 digest does not match the received bytes",
         ));
     }
-    if !pdf.is_pdf && !legacy_word.is_ole_cfb && !bytes.is_empty() {
+    let known_supported_family = pdf.is_pdf
+        || legacy_word.is_ole_cfb
+        || image.is_image
+        || text.is_supported_text
+        || zip_bundle.is_zip;
+    if !known_supported_family && !bytes.is_empty() {
         findings.push(DocumentValidationFinding::error(
-            "not_pdf",
-            "candidate bytes do not contain a PDF header in the first 1024 bytes",
+            "unsupported_document_family",
+            "candidate bytes do not match a supported import evidence family",
         ));
     }
     if legacy_word.is_ole_cfb && pdf.is_pdf {
@@ -784,6 +859,76 @@ fn validate_document_candidate_with_fixity(
             "legacy_word_no_pdfa_conversion",
             "no DOC-to-PDF/A conversion was performed; this import does not become the canonical PDF/A record",
         ));
+    }
+    if image.is_image {
+        findings.push(DocumentValidationFinding::warning(
+            "non_canonical_import_only",
+            NON_CANONICAL_EVIDENCE_WARNING,
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "image_evidence_detected",
+            "image evidence detected; bytes can be preserved unchanged as non-canonical supporting evidence",
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "image_no_pdfa_conversion",
+            "no image-to-PDF/A conversion was performed; this import does not become the canonical PDF/A record",
+        ));
+    }
+    if text.is_supported_text {
+        findings.push(DocumentValidationFinding::warning(
+            "non_canonical_import_only",
+            NON_CANONICAL_EVIDENCE_WARNING,
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "text_evidence_detected",
+            "XML/CSV text evidence detected; bytes can be preserved unchanged as non-canonical supporting evidence",
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "text_no_structure_or_pdfa_conversion",
+            "no XML schema validation, CSV semantic validation, or PDF/A conversion was performed",
+        ));
+    }
+    if zip_bundle.is_zip {
+        findings.push(DocumentValidationFinding::warning(
+            "non_canonical_import_only",
+            NON_CANONICAL_EVIDENCE_WARNING,
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "zip_bundle_detected",
+            "ZIP bundle evidence detected; central-directory member names were inspected without extracting files",
+        ));
+        findings.push(DocumentValidationFinding::info(
+            "zip_not_extracted",
+            "ZIP members were not extracted or converted; this import does not become the canonical PDF/A record",
+        ));
+        if !zip_bundle.readable {
+            findings.push(DocumentValidationFinding::error(
+                "zip_unreadable",
+                zip_bundle
+                    .validation_error
+                    .clone()
+                    .unwrap_or_else(|| "ZIP archive could not be read".to_owned()),
+            ));
+        }
+        if zip_bundle.unsafe_entry_count > 0 {
+            findings.push(DocumentValidationFinding::error(
+                "zip_unsafe_entry_name",
+                format!(
+                    "ZIP archive contains {} unsafe member path(s); examples: {}",
+                    zip_bundle.unsafe_entry_count,
+                    zip_bundle.unsafe_entry_names.join(", ")
+                ),
+            ));
+        }
+        if zip_bundle
+            .total_uncompressed_size
+            .is_some_and(|size| size > ZIP_UNCOMPRESSED_WARNING_BYTES)
+        {
+            findings.push(DocumentValidationFinding::warning(
+                "zip_large_uncompressed_size",
+                "ZIP central directory reports a large uncompressed size; bytes are preserved only and not extracted",
+            ));
+        }
     }
     if pdf.is_pdf && !pdf.has_eof_marker {
         findings.push(DocumentValidationFinding::error(
@@ -882,8 +1027,12 @@ fn validate_document_candidate_with_fixity(
         sha256,
         fixity,
         content_type,
+        classification,
         pdf,
         legacy_word,
+        image,
+        text,
+        zip_bundle,
         signature,
         can_accept_non_canonical_import,
         findings,
@@ -906,6 +1055,8 @@ pub struct ImportedDocumentView {
     pub sha256: String,
     pub declared_content_type: Option<String>,
     pub detected_content_type: String,
+    pub evidence_family: &'static str,
+    pub classification: &'static str,
     pub imported_at: String,
     pub imported_by: String,
     pub non_canonical: bool,
@@ -1101,6 +1252,7 @@ async fn imported_document_event_scope(
 }
 
 fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocumentView {
+    let classification = document_evidence_classification(&meta.detected_content_type);
     ImportedDocumentView {
         id: meta.id.clone(),
         act_id: meta.act_id.as_ref().map(ToString::to_string),
@@ -1109,6 +1261,8 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
         sha256: meta.sha256.clone(),
         declared_content_type: meta.declared_content_type.clone(),
         detected_content_type: meta.detected_content_type.clone(),
+        evidence_family: classification.family,
+        classification: classification.classification,
         imported_at: meta.imported_at.format(&Rfc3339).unwrap_or_default(),
         imported_by: meta.imported_by.clone(),
         non_canonical: true,
@@ -1130,6 +1284,10 @@ fn imported_document_download_content_type(detected_content_type: &str) -> &'sta
         "application/pdf" => "application/pdf",
         "application/msword" => "application/msword",
         "application/zip" => "application/zip",
+        "image/png" => "image/png",
+        "image/jpeg" => "image/jpeg",
+        "application/xml" | "text/xml" => "application/xml",
+        "text/csv" => "text/csv",
         _ => "application/octet-stream",
     }
 }
@@ -1139,11 +1297,16 @@ fn imported_document_download_extension(detected_content_type: &str) -> &'static
         "application/pdf" => "pdf",
         "application/msword" => "doc",
         "application/zip" => "zip",
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "application/xml" | "text/xml" => "xml",
+        "text/csv" => "csv",
         _ => "bin",
     }
 }
 
 fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
+    let classification = document_evidence_classification(&meta.detected_content_type);
     json!({
         "document_id": meta.id.clone(),
         "act_id": meta.act_id.as_ref().map(ToString::to_string),
@@ -1151,11 +1314,16 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
         "size_bytes": meta.size_bytes,
         "declared_content_type": meta.declared_content_type.clone(),
         "detected_content_type": meta.detected_content_type.clone(),
+        "evidence_family": classification.family,
+        "classification": classification.classification,
         "imported_at": meta.imported_at.format(&Rfc3339).unwrap_or_default(),
         "non_canonical": true,
         "legal_notice": DOCUMENT_IMPORTED_NOTICE,
+        "non_canonical_warning": NON_CANONICAL_EVIDENCE_WARNING,
         "bytes_in_payload": false,
         "pdfa_conformance_validation_performed": false,
+        "canonical_conversion_performed": false,
+        "canonical_pdfa_generated": false,
         "signature_validation_performed": false,
         "legal_validity_claimed": false,
     })
@@ -1297,6 +1465,255 @@ fn is_generic_ole_cfb_content_type(content_type: &str) -> bool {
             | "application/x-ole-storage"
             | "application/ole"
     )
+}
+
+fn recognize_image(
+    bytes: &[u8],
+    declared_content_type: Option<&str>,
+    filename: Option<&str>,
+) -> ImageRecognitionReport {
+    let png = bytes.starts_with(PNG_MAGIC);
+    let jpeg = bytes.starts_with(JPEG_MAGIC);
+    let (format, dimensions) = if png {
+        ("png", png_dimensions(bytes))
+    } else if jpeg {
+        ("jpeg", jpeg_dimensions(bytes))
+    } else {
+        ("", None)
+    };
+    let declared_content_type_image = declared_content_type
+        .map(content_type_base)
+        .as_deref()
+        .is_some_and(is_supported_image_content_type);
+    let filename_extension_image = filename
+        .and_then(filename_extension)
+        .is_some_and(is_supported_image_extension);
+
+    ImageRecognitionReport {
+        is_image: png || jpeg,
+        format: (!format.is_empty()).then_some(format),
+        width: dimensions.map(|(width, _)| width),
+        height: dimensions.map(|(_, height)| height),
+        declared_content_type_image,
+        filename_extension_image,
+        conversion_performed: false,
+        canonical_pdfa_generated: false,
+    }
+}
+
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 24 || !bytes.starts_with(PNG_MAGIC) || &bytes[12..16] != b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+    let height = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+    Some((width, height))
+}
+
+fn jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if !bytes.starts_with(JPEG_MAGIC) {
+        return None;
+    }
+    let mut index = 2;
+    while index + 4 <= bytes.len() {
+        while index < bytes.len() && bytes[index] == 0xFF {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            return None;
+        }
+        let marker = bytes[index];
+        index += 1;
+        if marker == 0xD9 || marker == 0xDA {
+            return None;
+        }
+        if index + 2 > bytes.len() {
+            return None;
+        }
+        let segment_len = u16::from_be_bytes([bytes[index], bytes[index + 1]]) as usize;
+        if segment_len < 2 || index + segment_len > bytes.len() {
+            return None;
+        }
+        if is_jpeg_sof_marker(marker) && segment_len >= 7 {
+            let height = u16::from_be_bytes([bytes[index + 3], bytes[index + 4]]) as u32;
+            let width = u16::from_be_bytes([bytes[index + 5], bytes[index + 6]]) as u32;
+            return Some((width, height));
+        }
+        index += segment_len;
+    }
+    None
+}
+
+fn is_jpeg_sof_marker(marker: u8) -> bool {
+    matches!(
+        marker,
+        0xC0 | 0xC1 | 0xC2 | 0xC3 | 0xC5 | 0xC6 | 0xC7 | 0xC9 | 0xCA | 0xCB | 0xCD | 0xCE | 0xCF
+    )
+}
+
+fn is_supported_image_content_type(content_type: &str) -> bool {
+    matches!(content_type, "image/png" | "image/jpeg" | "image/jpg")
+}
+
+fn is_supported_image_extension(extension: &str) -> bool {
+    matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg"
+    )
+}
+
+fn recognize_text_document(
+    bytes: &[u8],
+    declared_content_type: Option<&str>,
+    filename: Option<&str>,
+) -> TextDocumentRecognitionReport {
+    let has_nul = bytes.contains(&0);
+    let text = std::str::from_utf8(bytes).ok();
+    let declared_base = declared_content_type.map(content_type_base);
+    let declared_kind = declared_base
+        .as_deref()
+        .and_then(text_kind_from_content_type);
+    let filename_kind = filename
+        .and_then(filename_extension)
+        .and_then(text_kind_from_extension);
+    let sniffed_kind = text.and_then(sniff_text_kind);
+    let kind = declared_kind.or(filename_kind).or(sniffed_kind);
+    let supported = !bytes.is_empty() && !has_nul && text.is_some() && kind.is_some();
+
+    TextDocumentRecognitionReport {
+        is_supported_text: supported,
+        kind,
+        utf8_valid: text.is_some(),
+        has_nul,
+        declared_content_type_text: declared_kind.is_some(),
+        filename_extension_text: filename_kind.is_some(),
+        structure_validation_performed: false,
+        conversion_performed: false,
+        canonical_pdfa_generated: false,
+    }
+}
+
+fn text_kind_from_content_type(content_type: &str) -> Option<&'static str> {
+    match content_type {
+        "application/xml" | "text/xml" | "application/xhtml+xml" | "application/rss+xml" => {
+            Some("xml")
+        }
+        "text/csv" | "application/csv" | "application/vnd.ms-excel" => Some("csv"),
+        _ => None,
+    }
+}
+
+fn text_kind_from_extension(extension: &str) -> Option<&'static str> {
+    match extension.to_ascii_lowercase().as_str() {
+        "xml" => Some("xml"),
+        "csv" => Some("csv"),
+        _ => None,
+    }
+}
+
+fn sniff_text_kind(text: &str) -> Option<&'static str> {
+    let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+    if trimmed.starts_with("<?xml") || (trimmed.starts_with('<') && trimmed.contains('>')) {
+        return Some("xml");
+    }
+    let first_data_line = trimmed
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    if first_data_line.contains(',')
+        || first_data_line.contains(';')
+        || first_data_line.contains('\t')
+    {
+        return Some("csv");
+    }
+    None
+}
+
+fn recognize_zip_bundle(bytes: &[u8]) -> ZipBundleRecognitionReport {
+    let is_zip = bytes.starts_with(ZIP_MAGIC)
+        || bytes.starts_with(ZIP_EMPTY_MAGIC)
+        || bytes.starts_with(ZIP_SPANNED_MAGIC);
+    if !is_zip {
+        return ZipBundleRecognitionReport {
+            is_zip: false,
+            readable: false,
+            entry_count: 0,
+            unsafe_entry_count: 0,
+            unsafe_entry_names: Vec::new(),
+            total_uncompressed_size: None,
+            extraction_performed: false,
+            canonical_pdfa_generated: false,
+            validation_error: None,
+        };
+    }
+
+    let mut archive = match ZipArchive::new(Cursor::new(bytes)) {
+        Ok(archive) => archive,
+        Err(err) => {
+            return ZipBundleRecognitionReport {
+                is_zip: true,
+                readable: false,
+                entry_count: 0,
+                unsafe_entry_count: 0,
+                unsafe_entry_names: Vec::new(),
+                total_uncompressed_size: None,
+                extraction_performed: false,
+                canonical_pdfa_generated: false,
+                validation_error: Some(format!("ZIP archive could not be read: {err}")),
+            };
+        }
+    };
+
+    let mut unsafe_entry_count = 0usize;
+    let mut unsafe_entry_names = Vec::new();
+    let mut total_uncompressed_size = 0u64;
+    let mut validation_error = None;
+    for index in 0..archive.len() {
+        let file = match archive.by_index(index) {
+            Ok(file) => file,
+            Err(err) => {
+                validation_error = Some(format!("ZIP member {index} could not be read: {err}"));
+                break;
+            }
+        };
+        total_uncompressed_size = total_uncompressed_size.saturating_add(file.size());
+        let name = file.name().to_owned();
+        if zip_entry_name_is_unsafe(&name, file.enclosed_name().is_none()) {
+            unsafe_entry_count += 1;
+            if unsafe_entry_names.len() < 5 {
+                unsafe_entry_names.push(name);
+            }
+        }
+    }
+
+    ZipBundleRecognitionReport {
+        is_zip: true,
+        readable: validation_error.is_none(),
+        entry_count: archive.len(),
+        unsafe_entry_count,
+        unsafe_entry_names,
+        total_uncompressed_size: Some(total_uncompressed_size),
+        extraction_performed: false,
+        canonical_pdfa_generated: false,
+        validation_error,
+    }
+}
+
+fn zip_entry_name_is_unsafe(name: &str, enclosed_name_missing: bool) -> bool {
+    if enclosed_name_missing
+        || name.trim().is_empty()
+        || name.contains('\0')
+        || name.contains('\\')
+        || name.contains(':')
+    {
+        return true;
+    }
+    std::path::Path::new(name).components().any(|component| {
+        matches!(
+            component,
+            Component::Prefix(_) | Component::RootDir | Component::ParentDir
+        )
+    })
 }
 
 fn recognize_signed_pdf(bytes: &[u8]) -> SignedPdfSignalReport {
@@ -1569,6 +1986,9 @@ fn detect_candidate_content_type(
     bytes: &[u8],
     is_pdf: bool,
     legacy_word: &LegacyWordDocRecognitionReport,
+    image: &ImageRecognitionReport,
+    text: &TextDocumentRecognitionReport,
+    zip_bundle: &ZipBundleRecognitionReport,
 ) -> &'static str {
     if legacy_word.is_legacy_word_doc {
         "application/msword"
@@ -1576,10 +1996,42 @@ fn detect_candidate_content_type(
         "application/vnd.ms-office"
     } else if is_pdf {
         "application/pdf"
-    } else if bytes.starts_with(b"PK\x03\x04") {
+    } else if image.format == Some("png") {
+        "image/png"
+    } else if image.format == Some("jpeg") {
+        "image/jpeg"
+    } else if zip_bundle.is_zip || bytes.starts_with(ZIP_MAGIC) {
         "application/zip"
+    } else if text.kind == Some("xml") {
+        "application/xml"
+    } else if text.kind == Some("csv") {
+        "text/csv"
     } else {
         "application/octet-stream"
+    }
+}
+
+fn document_evidence_classification(
+    detected_content_type: &str,
+) -> DocumentEvidenceClassificationReport {
+    let (family, classification) = match content_type_base(detected_content_type).as_str() {
+        "application/pdf" => ("pdf", "imported_pdf_non_canonical_evidence"),
+        "application/msword" => ("legacy_word_doc", "legacy_word_doc_non_canonical_evidence"),
+        "application/vnd.ms-office" => ("ole_compound_file", "ole_cfb_non_canonical_evidence"),
+        "image/png" | "image/jpeg" => ("image", "image_non_canonical_evidence"),
+        "application/xml" | "text/xml" => ("xml_text", "xml_text_non_canonical_evidence"),
+        "text/csv" => ("csv_text", "csv_text_non_canonical_evidence"),
+        "application/zip" => ("zip_bundle", "zip_bundle_non_canonical_evidence"),
+        _ => ("unknown", "unsupported_document_evidence"),
+    };
+    DocumentEvidenceClassificationReport {
+        family,
+        classification,
+        non_canonical: true,
+        warning: NON_CANONICAL_EVIDENCE_WARNING,
+        canonical_conversion_performed: false,
+        canonical_pdfa_generated: false,
+        legal_validity_claimed: false,
     }
 }
 
@@ -3651,6 +4103,29 @@ mod tests {
         bytes
     }
 
+    fn png_bytes() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(PNG_MAGIC);
+        bytes.extend_from_slice(&13u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&[8, 2, 0, 0, 0]);
+        bytes.extend_from_slice(&[0x90, 0x77, 0x53, 0xde]);
+        bytes
+    }
+
+    fn zip_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = ZipWriter::new(cursor);
+        let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for (name, bytes) in entries {
+            zip.start_file(*name, opts).expect("start zip member");
+            zip.write_all(bytes).expect("write zip member");
+        }
+        zip.finish().expect("finish zip").into_inner()
+    }
+
     fn signable_pdf() -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(b"%PDF-1.7\n%\xE2\xE3\xCF\xD3\n");
@@ -3933,7 +4408,103 @@ mod tests {
         assert_eq!(report.content_type.detected, "application/octet-stream");
         assert!(!report.pdf.is_pdf);
         assert!(!report.can_accept_non_canonical_import);
-        assert!(has_finding(&report, "not_pdf"));
+        assert!(has_finding(&report, "unsupported_document_family"));
+    }
+
+    #[test]
+    fn document_import_validation_accepts_png_as_non_canonical_evidence() {
+        let png = png_bytes();
+
+        let report =
+            validate_document_candidate(&png, Some("image/png"), Some("scan-page.png".to_owned()));
+
+        assert_eq!(report.content_type.detected, "image/png");
+        assert_eq!(report.classification.family, "image");
+        assert_eq!(
+            report.classification.classification,
+            "image_non_canonical_evidence"
+        );
+        assert!(report.image.is_image);
+        assert_eq!(report.image.format, Some("png"));
+        assert_eq!(report.image.width, Some(1));
+        assert_eq!(report.image.height, Some(1));
+        assert!(report.can_accept_non_canonical_import);
+        assert!(has_finding(&report, "non_canonical_import_only"));
+        assert!(has_finding(&report, "image_no_pdfa_conversion"));
+        assert!(!report.image.conversion_performed);
+        assert!(!report.image.canonical_pdfa_generated);
+    }
+
+    #[test]
+    fn document_import_validation_accepts_xml_and_csv_text_as_non_canonical_evidence() {
+        let xml = br#"<?xml version="1.0"?><minutes><item>Aprovado</item></minutes>"#;
+        let csv = b"ata,deliberacao\n1,aprovado\n";
+
+        let xml_report =
+            validate_document_candidate(xml, Some("application/xml"), Some("extract.xml".into()));
+        let csv_report =
+            validate_document_candidate(csv, Some("text/csv"), Some("extract.csv".into()));
+
+        assert_eq!(xml_report.content_type.detected, "application/xml");
+        assert_eq!(xml_report.classification.family, "xml_text");
+        assert!(xml_report.text.is_supported_text);
+        assert_eq!(xml_report.text.kind, Some("xml"));
+        assert!(xml_report.can_accept_non_canonical_import);
+        assert!(has_finding(
+            &xml_report,
+            "text_no_structure_or_pdfa_conversion"
+        ));
+
+        assert_eq!(csv_report.content_type.detected, "text/csv");
+        assert_eq!(csv_report.classification.family, "csv_text");
+        assert!(csv_report.text.is_supported_text);
+        assert_eq!(csv_report.text.kind, Some("csv"));
+        assert!(csv_report.can_accept_non_canonical_import);
+        assert!(has_finding(&csv_report, "non_canonical_import_only"));
+        assert!(!csv_report.text.structure_validation_performed);
+        assert!(!csv_report.text.canonical_pdfa_generated);
+    }
+
+    #[test]
+    fn document_import_validation_accepts_safe_zip_bundle_without_extraction() {
+        let zip = zip_bytes(&[
+            ("manifest.json", br#"{"kind":"support"}"#),
+            ("evidence/page-1.txt", b"page one"),
+        ]);
+
+        let report = validate_document_candidate(
+            &zip,
+            Some("application/zip"),
+            Some("supporting-evidence.zip".to_owned()),
+        );
+
+        assert_eq!(report.content_type.detected, "application/zip");
+        assert_eq!(report.classification.family, "zip_bundle");
+        assert!(report.zip_bundle.is_zip);
+        assert!(report.zip_bundle.readable);
+        assert_eq!(report.zip_bundle.entry_count, 2);
+        assert_eq!(report.zip_bundle.unsafe_entry_count, 0);
+        assert!(!report.zip_bundle.extraction_performed);
+        assert!(report.can_accept_non_canonical_import);
+        assert!(has_finding(&report, "zip_bundle_detected"));
+        assert!(has_finding(&report, "zip_not_extracted"));
+    }
+
+    #[test]
+    fn document_import_validation_rejects_zip_traversal_and_absolute_paths() {
+        let traversal = zip_bytes(&[("../secret.txt", b"secret")]);
+        let absolute = zip_bytes(&[("/absolute.txt", b"secret")]);
+        let windows_absolute = zip_bytes(&[("C:\\absolute.txt", b"secret")]);
+
+        for zip in [traversal, absolute, windows_absolute] {
+            let report = validate_document_candidate(&zip, Some("application/zip"), None);
+
+            assert_eq!(report.content_type.detected, "application/zip");
+            assert!(report.zip_bundle.is_zip);
+            assert!(report.zip_bundle.unsafe_entry_count > 0);
+            assert!(!report.can_accept_non_canonical_import);
+            assert!(has_finding(&report, "zip_unsafe_entry_name"));
+        }
     }
 
     #[test]
@@ -4245,6 +4816,201 @@ mod tests {
             .await
             .expect("download body");
         assert_eq!(downloaded.as_ref(), stored.bytes.as_slice());
+    }
+
+    #[tokio::test]
+    async fn document_import_preserves_png_as_act_scoped_non_canonical_evidence() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let act = sealed_csc_act(&book);
+        let act_id = act.id;
+        {
+            let mut ledger = state.ledger.write().await;
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &entity.id.to_string(),
+                "entity.created",
+                None,
+                b"entity",
+            )
+            .expect("entity genesis");
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &format!("entity:{}/book:{}", entity.id, book.id),
+                "book.opened",
+                None,
+                b"book",
+            )
+            .expect("book genesis");
+            let events = ledger.events().to_vec();
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .persist(|tx| {
+                    for event in &events {
+                        tx.append_event(event)?;
+                    }
+                    tx.upsert_entity(&entity)?;
+                    tx.upsert_book(&book)?;
+                    tx.upsert_act(&act)
+                })
+                .expect("seed persisted");
+        }
+        state.entities.write().await.insert(entity.id, entity);
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act_id, act);
+
+        let png = png_bytes();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            "application/json".parse().expect("content-type"),
+        );
+        let body = json!({
+            "act_id": act_id.to_string(),
+            "filename": "scan-page.png",
+            "content_type": "image/png",
+            "content_base64": B64.encode(&png),
+        });
+
+        let (status, Json(imported)) = import_document(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            headers,
+            Bytes::from(body.to_string()),
+        )
+        .await
+        .expect("PNG import succeeds");
+
+        assert_eq!(status, StatusCode::CREATED);
+        let act_id_string = act_id.to_string();
+        assert_eq!(imported.act_id.as_deref(), Some(act_id_string.as_str()));
+        assert_eq!(imported.detected_content_type, "image/png");
+        assert_eq!(imported.evidence_family, "image");
+        assert_eq!(imported.classification, "image_non_canonical_evidence");
+        assert_eq!(imported.size_bytes, png.len());
+        assert_eq!(
+            imported.bytes_download,
+            format!("/v1/documents/imported/{}/bytes", imported.id)
+        );
+        assert!(imported.non_canonical);
+        assert!(state.documents.read().await.is_empty());
+
+        let event = state
+            .ledger
+            .read()
+            .await
+            .events()
+            .last()
+            .expect("document.imported event")
+            .clone();
+        assert_eq!(event.kind, "document.imported");
+        assert!(event.scope.contains(&format!("act:{act_id}")));
+        assert!(
+            event
+                .scope
+                .contains(&format!("imported-document:{}", imported.id))
+        );
+
+        let stored = state
+            .store
+            .as_ref()
+            .expect("store")
+            .imported_document(&imported.id)
+            .expect("store read")
+            .expect("imported PNG stored");
+        assert_eq!(stored.bytes, png);
+        assert_eq!(stored.meta.sha256, imported.sha256);
+        assert_eq!(stored.meta.detected_content_type, "image/png");
+
+        let payload = imported_document_event_payload(&stored.meta);
+        assert_eq!(payload["evidence_family"], "image");
+        assert_eq!(payload["classification"], "image_non_canonical_evidence");
+        assert_eq!(payload["canonical_conversion_performed"], false);
+        assert_eq!(payload["canonical_pdfa_generated"], false);
+        assert_eq!(payload["legal_validity_claimed"], false);
+
+        let response =
+            get_imported_document_bytes(State(state.clone()), Path(imported.id.clone()), actor)
+                .await
+                .expect("PNG bytes stream");
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("image/png")
+        );
+        assert!(
+            response
+                .headers()
+                .get(header::CONTENT_DISPOSITION)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|value| value.contains(".png\""))
+        );
+        let downloaded = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("download body");
+        assert_eq!(downloaded.as_ref(), stored.bytes.as_slice());
+    }
+
+    #[tokio::test]
+    async fn document_import_rejects_unsafe_zip_without_partial_mutation() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let zip = zip_bytes(&[("../secret.txt", b"secret")]);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            "application/json".parse().expect("content-type"),
+        );
+        let body = json!({
+            "filename": "unsafe.zip",
+            "content_type": "application/zip",
+            "content_base64": B64.encode(&zip),
+        });
+        let ledger_before = state.ledger.read().await.len();
+
+        let err = import_document(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            headers,
+            Bytes::from(body.to_string()),
+        )
+        .await
+        .expect_err("unsafe ZIP import is rejected");
+
+        assert!(
+            matches!(err, ApiError::Unprocessable(message) if message.contains("zip_unsafe_entry_name"))
+        );
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
+        assert!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .all(|event| event.kind != "document.imported")
+        );
+        assert!(
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .imported_documents(None)
+                .expect("import list")
+                .is_empty()
+        );
     }
 
     #[tokio::test]

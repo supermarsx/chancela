@@ -130,6 +130,8 @@ const importedDocument: ImportedDocumentView = {
   sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
   declared_content_type: 'application/pdf',
   detected_content_type: 'application/pdf',
+  evidence_family: 'pdf',
+  classification: 'imported_pdf_non_canonical_evidence',
   imported_at: '2026-07-09T10:15:30Z',
   imported_by: 'amelia.marques',
   non_canonical: true,
@@ -178,6 +180,16 @@ const baseImportValidationReport: DocumentImportValidationReport = {
     detected: 'application/pdf',
     declared_matches_detected: true,
   },
+  classification: {
+    family: 'pdf',
+    classification: 'imported_pdf_non_canonical_evidence',
+    non_canonical: true,
+    warning:
+      'Imported bytes are preserved only as non-canonical evidence; no legal conversion, PDF/A conformance, signature validity, or canonical record replacement is claimed.',
+    canonical_conversion_performed: false,
+    canonical_pdfa_generated: false,
+    legal_validity_claimed: false,
+  },
   pdf: {
     is_pdf: true,
     header_offset: 0,
@@ -206,6 +218,38 @@ const baseImportValidationReport: DocumentImportValidationReport = {
     conversion_performed: false,
     canonical_pdfa_generated: false,
   },
+  image: {
+    is_image: false,
+    format: null,
+    width: null,
+    height: null,
+    declared_content_type_image: false,
+    filename_extension_image: false,
+    conversion_performed: false,
+    canonical_pdfa_generated: false,
+  },
+  text: {
+    is_supported_text: false,
+    kind: null,
+    utf8_valid: false,
+    has_nul: false,
+    declared_content_type_text: false,
+    filename_extension_text: false,
+    structure_validation_performed: false,
+    conversion_performed: false,
+    canonical_pdfa_generated: false,
+  },
+  zip_bundle: {
+    is_zip: false,
+    readable: false,
+    entry_count: 0,
+    unsafe_entry_count: 0,
+    unsafe_entry_names: [],
+    total_uncompressed_size: null,
+    extraction_performed: false,
+    canonical_pdfa_generated: false,
+    validation_error: null,
+  },
   signature: unsignedImportSignature,
   can_accept_non_canonical_import: true,
   findings: [],
@@ -225,6 +269,11 @@ const legacyWordImportValidationReport: DocumentImportValidationReport = {
     declared: 'application/msword',
     detected: 'application/msword',
     declared_matches_detected: true,
+  },
+  classification: {
+    ...baseImportValidationReport.classification,
+    family: 'legacy_word_doc',
+    classification: 'legacy_word_doc_non_canonical_evidence',
   },
   pdf: {
     ...baseImportValidationReport.pdf,
@@ -280,6 +329,11 @@ const ambiguousOlePdfValidationReport: DocumentImportValidationReport = {
     declared: 'application/pdf',
     detected: 'application/vnd.ms-office',
     declared_matches_detected: false,
+  },
+  classification: {
+    ...baseImportValidationReport.classification,
+    family: 'ole_compound_file',
+    classification: 'ole_cfb_non_canonical_evidence',
   },
   pdf: {
     ...baseImportValidationReport.pdf,
@@ -835,6 +889,8 @@ describe('ActDocumentPanel — imported evidence documents', () => {
       filename: null,
       declared_content_type: null,
       detected_content_type: 'application/octet-stream',
+      evidence_family: 'unknown',
+      classification: 'unsupported_document_evidence',
       sha256: 'a'.repeat(64),
       bytes_download: `/v1/documents/imported/${longId}/bytes`,
     };
@@ -989,6 +1045,8 @@ describe('ActDocumentPanel — imported evidence documents', () => {
       filename: 'board-minutes.doc',
       declared_content_type: 'application/msword',
       detected_content_type: 'application/msword',
+      evidence_family: 'legacy_word_doc',
+      classification: 'legacy_word_doc_non_canonical_evidence',
     };
 
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
