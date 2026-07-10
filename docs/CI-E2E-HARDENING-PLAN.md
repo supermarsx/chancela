@@ -1,6 +1,6 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-10 from the current CI configuration and head `783538c`. This
+Updated 2026-07-10 from the current CI configuration and head `fa57352`. This
 plan is the build and test operating checklist for driving Chancela toward
 release confidence.
 
@@ -315,10 +315,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `783538c`
+## Focused Gate Snapshot Through `fa57352`
 
 Historical focused checks from the active director loop, refreshed on
-2026-07-10 for current head `783538c`. This is not an exhaustive current
+2026-07-10 for current head `fa57352`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -420,6 +420,27 @@ settingsDefaults.test.ts contracts.test.ts`.
   storage settings, ESLint, Prettier, `npm run check:spec-coverage`,
   `node --check scripts/checkpoint-recent-landed.mjs`, and `npm run
   test:checkpoint:recent-landed:static` passed.
+- Recent notification footer checks through `938b61e`: the focused
+  `NotificationBell.test.tsx` coverage, Prettier, and ESLint passed for the
+  icon-only popup footer action.
+- Recent web focused checks through `5aad733`: onboarding first-user email,
+  Settings user create/edit email, Ata signatory email, and Data Management
+  cleanup-row/retained-export target coverage are the focused UI checks for the
+  latest web slices, alongside Prettier and ESLint.
+- Recent trust-source provider checks through `fa57352`: focused
+  `SettingsPage.test.tsx` trust-source/TSA-provider coverage, i18n locale
+  catalog validation, Prettier, and ESLint are the focused web checks for
+  settings-backed TSL/TSA provider management.
+- Recent checkpoint metadata/static checks through `fa57352` passed: `node
+  --check scripts/checkpoint-recent-landed.mjs`, `npm run
+  test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
+  `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
+  scripts\checkpoint-recent-landed.mjs`. These pin the spec snapshot,
+  hardening-plan head, PDF table-structure semantics, export save-prompt
+  routing, dashboard dates tab, notification footer icon-only action, and
+  clarified platform operations UI, user/signatory email capture, and compact
+  Data Management cleanup controls, plus SettingsPage/i18n trust-source
+  provider markers.
 
 Full workspace format/clippy should be rerun before commit. The prior
 `paper_import.rs` compile blocker, retention dead-code warning set, TSL `record`

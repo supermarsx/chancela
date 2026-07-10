@@ -506,6 +506,46 @@ function assertCheckpointMap() {
     "PDF/UA non-certification marker coverage",
   );
   assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    '("ChancelaKeyValue", "Table")',
+    "PDF key-value table role-map target marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    '("ChancelaVoteTable", "Table")',
+    "PDF vote table role-map target marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/layout.rs",
+    "StructureRole::KeyValueTable => \"Table\"",
+    "PDF key-value table structure role marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/layout.rs",
+    "StructureRole::TableHeaderCell => \"TH\"",
+    "PDF table header cell structure role marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/layout.rs",
+    "StructureRole::TableDataCell => \"TD\"",
+    "PDF table data cell structure role marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/pdfa.rs",
+    "layout::StructureRole::TableRow => \"TR\"",
+    "PDF structure tree table row role marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "\\\"key_value_tables_have_table_semantics\\\":true",
+    "PDF accessibility table semantics complete JSON marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "\\\"pdf_ua_blockers\\\":[\\\"no_alt_text_model\\\"]",
+    "PDF accessibility table blockers cleared marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/external_validator_evidence.rs",
     "create_external_validator_report_metadata",
     "external-validator report metadata capture API",
@@ -936,6 +976,26 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
+    "renders dashboard subtabs in the requested order",
+    "dashboard dates tab order coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "type DashboardTab = 'stats' | 'activity' | 'current' | 'dates' | 'queue' | 'events'",
+    "dashboard dates tab route-state marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.tsx",
+    "{ id: 'dates', label: t('dashboard.tabs.dates'), icon: <Icon.Calendar /> }",
+    "dashboard dates tab nav marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "'dashboard.tabs.dates': 'Datas'",
+    "dashboard dates tab pt-PT i18n marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/dashboard/DashboardPage.test.tsx",
     "renders the full archive affordance as a tooltip-backed icon link",
     "dashboard archive icon-only action coverage",
   );
@@ -1090,6 +1150,16 @@ function assertCheckpointMap() {
     "notification bell icon-only action coverage",
   );
   assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.test.tsx",
+    "expectIconOnlyControl(viewAll, 'Ver todas')",
+    "notification bell footer view-all icon-only coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.tsx",
+    "notification-center__view-all btn btn--ghost btn--icon btn--iconOnly",
+    "notification bell footer view-all icon-only marker",
+  );
+  assertFileContains(
     "apps/web/src/ui/SubNav.test.tsx",
     "can render an icon-only item with an accessible name and tooltip",
     "subnav icon-only tooltip coverage",
@@ -1120,6 +1190,51 @@ function assertCheckpointMap() {
     "notification compact popup tag coverage",
   );
   assertFileContains(
+    "apps/web/src/features/onboarding/onboarding.test.tsx",
+    "email: 'operador@example.pt'",
+    "onboarding first-user email coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/onboarding/OnboardingWizard.tsx",
+    "email: email.trim() || undefined",
+    "onboarding first-user email payload marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/users/users.test.tsx",
+    "creates a user with a valid slug and sends identity email fields",
+    "user creation email coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/users/users.test.tsx",
+    "updates a user email via PATCH /v1/users/{id}",
+    "user edit email PATCH coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/users/EditUserPage.tsx",
+    "email: trimmedEmail === '' ? null : trimmedEmail",
+    "user edit nullable email payload marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "renders and saves a signatory email through the act patch body",
+    "act signatory email coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorPage.tsx",
+    "onChange={(e) => update(i, { email: orNull(e.target.value) })}",
+    "act signatory email field marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/OpenBookForm.tsx",
+    "required_signatories: parseLines(signatories)",
+    "book opening signatories remain string-list marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/CloseBookForm.tsx",
+    "required_signatories: parseLines(signatories)",
+    "book closing signatories remain string-list marker",
+  );
+  assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
     "function permissionSummary",
     "data management permission summary marker",
@@ -1128,6 +1243,26 @@ function assertCheckpointMap() {
     "apps/web/src/features/recovery/GestaoDadosSection.tsx",
     "data-status-cleanups",
     "data management cleanup list marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "cleans retained exports without changing the crash cleanup target",
+    "data management retained-export cleanup row coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "data-status-cleanup__main",
+    "data management compact cleanup row DOM coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "data-status-cleanup__main",
+    "data management compact cleanup row implementation marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".data-status-cleanup__main",
+    "data management compact cleanup row CSS marker",
   );
   assertFileContains(
     "crates/chancela-api/src/settings.rs",
@@ -1148,6 +1283,36 @@ function assertCheckpointMap() {
     "contracts/platform.control.json",
     "\"kind\": \"supervisor_required\"",
     "platform service control supervisor-required fixture",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "renders only meaningful platform action buttons from backend capabilities",
+    "platform operations meaningful action coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "shows global-off effective platform logging even when service overrides remain stored",
+    "platform operations effective logging coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PlatformOperationsSection.tsx",
+    "function effectiveLogLevel",
+    "platform operations effective log helper marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PlatformOperationsSection.tsx",
+    "function ActionCapabilities",
+    "platform operations action-capability marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".platform-control-support",
+    "platform operations action-capability CSS marker",
+  );
+  assertFileContains(
+    "apps/web/src/theme.css",
+    ".platform-logging-effective__grid",
+    "platform operations effective logging CSS marker",
   );
   assertFileContains(
     "package.json",
@@ -1183,6 +1348,45 @@ function assertCheckpointMap() {
     "apps/web/src/features/books/BooksTable.tsx",
     "books-table__cell--truncate",
     "books truncating table cell marker",
+  );
+  assertFileContains(
+    "apps/web/src/desktop/saveFile.test.ts",
+    "falls back to a browser blob download when a requested save picker is unavailable",
+    "browser save picker unavailable fallback coverage",
+  );
+  assertFileContains(
+    "apps/web/src/desktop/saveFile.test.ts",
+    "falls back to a browser blob download when the requested save picker write fails",
+    "browser save picker failed-write fallback coverage",
+  );
+  assertFileExists(
+    "apps/web/src/features/documents/ActDocumentPanel.save.test.tsx",
+    "act document export save prompt test file",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.save.test.tsx",
+    "ActDocumentPanel export save prompts",
+    "act document export save prompt coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.save.test.tsx",
+    "routes a working-copy export through the save prompt helper with response metadata",
+    "act working-copy export save prompt coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "exports the current chain and scope filters through the save prompt helper",
+    "ledger archive export save prompt coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",
+    "exports a book bundle through the save prompt helper",
+    "book bundle export save prompt coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "preferBrowserSavePicker",
+    "books export save prompt marker",
   );
   assertFileContains(
     "crates/chancela-cli/tests/cli.rs",
@@ -1278,6 +1482,31 @@ function assertCheckpointMap() {
     "apps/web/e2e/chronology-and-pdf-validator.spec.ts",
     "PDF validator fail-closed refusals do not expose technical JSON actions",
     "PDF validator fail-closed browser coverage",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Updated 2026-07-10 from the current CI configuration and head `fa57352`",
+    "CI/E2E hardening plan current head marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Focused Gate Snapshot Through `fa57352`",
+    "CI/E2E hardening plan focused snapshot head marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent checkpoint metadata/static checks through `fa57352`",
+    "CI/E2E hardening plan current checkpoint checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent web focused checks through `5aad733`",
+    "CI/E2E hardening plan current web focused checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Recent notification footer checks through `938b61e`",
+    "CI/E2E hardening plan notification footer checks marker",
   );
   assertFileExists(
     "docs/fixtures/validator-corpus/manifest.json",
