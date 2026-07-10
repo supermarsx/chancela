@@ -268,6 +268,119 @@ async fn signed_status_without_evidence_is_rejected() {
 }
 
 #[tokio::test]
+async fn configured_identity_requirements_need_matching_evidence_before_signed() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.0.clone());
+    let token = bootstrap(&state).await;
+    let act_id = draft_act(&state, &token).await;
+
+    let (status, envelope) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/external-signing/envelopes"),
+            &token,
+            json!({
+                "order_policy": "parallel",
+                "slots": [{
+                    "signer_label": "Chair",
+                    "contact_hint": "***1234",
+                    "required": true,
+                    "identity_requirements": [
+                        "contact_control",
+                        "provider_identity_assertion"
+                    ]
+                }]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create envelope: {envelope}");
+    assert_eq!(
+        envelope["slots"][0]["identity_requirements"],
+        json!(["contact_control", "provider_identity_assertion"])
+    );
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let slot_id = envelope["slots"][0]["id"].as_str().expect("slot id");
+
+    let (status, body) = send(
+        &state,
+        json_req(
+            "PATCH",
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            &token,
+            json!({
+                "slots": [{
+                    "id": slot_id,
+                    "status": "signed",
+                    "evidence": [{
+                        "label": "signature artifact",
+                        "reference": "provider:event:chair-signed"
+                    }]
+                }]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing identity evidence refused: {body}"
+    );
+
+    let (status, signed) = send(
+        &state,
+        json_req(
+            "PATCH",
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            &token,
+            json!({
+                "slots": [{
+                    "id": slot_id,
+                    "status": "signed",
+                    "evidence": [
+                        {
+                            "label": "signature artifact",
+                            "reference": "provider:event:chair-signed",
+                            "digest": "0707070707070707070707070707070707070707070707070707070707070707"
+                        },
+                        {
+                            "label": "contact-channel evidence",
+                            "reference": "provider:event:contact-control",
+                            "identity_requirement": "contact_control"
+                        },
+                        {
+                            "label": "provider identity assertion",
+                            "reference": "provider:event:identity-asserted",
+                            "identity_requirement": "provider_identity_assertion"
+                        }
+                    ]
+                }],
+                "complete": true
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "identity-backed signed update succeeds: {signed}"
+    );
+    assert_eq!(signed["completed"], true);
+    assert_eq!(signed["slots"][0]["status"], "signed");
+    assert_eq!(
+        signed["slots"][0]["evidence"][1]["identity_requirement"],
+        "contact_control"
+    );
+    assert_eq!(
+        signed["slots"][0]["evidence"][2]["identity_requirement"],
+        "provider_identity_assertion"
+    );
+    assert!(signed.get("legal_effect").is_none());
+    assert!(signed.get("qualified").is_none());
+}
+
+#[tokio::test]
 async fn declined_expired_and_revoked_required_slots_block_completion() {
     for terminal in ["declined", "expired", "revoked"] {
         let dir = TempDir::new();
@@ -372,6 +485,31 @@ async fn sequential_flow_blocks_later_required_slots_until_earlier_resolves() {
         status,
         StatusCode::CONFLICT,
         "later slot blocked by sequential order: {body}"
+    );
+
+    let (status, body) = send(
+        &state,
+        json_req(
+            "PATCH",
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            &token,
+            json!({
+                "slots": [{
+                    "id": second,
+                    "status": "signed",
+                    "evidence": [{
+                        "label": "provider event",
+                        "reference": "provider:event:second-signed"
+                    }]
+                }]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "later signature blocked by sequential order: {body}"
     );
 
     let (status, updated) = send(

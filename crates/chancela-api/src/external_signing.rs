@@ -11,6 +11,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use chancela_authz::Permission;
+use chancela_core::external_signing::ExternalSignerIdentityRequirement;
 use chancela_core::{
     ActId, ExternalSignatureCompletionSummary, ExternalSignatureEnvelope,
     ExternalSignatureEnvelopeId, ExternalSignatureEvidence, ExternalSignerSlot,
@@ -50,6 +51,45 @@ impl From<ExternalSigningOrderPolicy> for ExternalSigningOrderPolicyDto {
         match value {
             ExternalSigningOrderPolicy::Parallel => Self::Parallel,
             ExternalSigningOrderPolicy::Sequential => Self::Sequential,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalSignerIdentityRequirementDto {
+    ContactControl,
+    ProviderIdentityAssertion,
+    GovernmentIdCheck,
+    RepresentativeCapacity,
+}
+
+impl From<ExternalSignerIdentityRequirementDto> for ExternalSignerIdentityRequirement {
+    fn from(value: ExternalSignerIdentityRequirementDto) -> Self {
+        match value {
+            ExternalSignerIdentityRequirementDto::ContactControl => Self::ContactControl,
+            ExternalSignerIdentityRequirementDto::ProviderIdentityAssertion => {
+                Self::ProviderIdentityAssertion
+            }
+            ExternalSignerIdentityRequirementDto::GovernmentIdCheck => Self::GovernmentIdCheck,
+            ExternalSignerIdentityRequirementDto::RepresentativeCapacity => {
+                Self::RepresentativeCapacity
+            }
+        }
+    }
+}
+
+impl From<ExternalSignerIdentityRequirement> for ExternalSignerIdentityRequirementDto {
+    fn from(value: ExternalSignerIdentityRequirement) -> Self {
+        match value {
+            ExternalSignerIdentityRequirement::ContactControl => Self::ContactControl,
+            ExternalSignerIdentityRequirement::ProviderIdentityAssertion => {
+                Self::ProviderIdentityAssertion
+            }
+            ExternalSignerIdentityRequirement::GovernmentIdCheck => Self::GovernmentIdCheck,
+            ExternalSignerIdentityRequirement::RepresentativeCapacity => {
+                Self::RepresentativeCapacity
+            }
         }
     }
 }
@@ -107,6 +147,8 @@ pub struct CreateSlotRequest {
     pub signer_label: String,
     #[serde(default)]
     pub contact_hint: Option<String>,
+    #[serde(default)]
+    pub identity_requirements: Vec<ExternalSignerIdentityRequirementDto>,
     #[serde(default = "default_required")]
     pub required: bool,
 }
@@ -137,6 +179,8 @@ pub struct EvidenceRequest {
     pub label: String,
     pub reference: String,
     #[serde(default)]
+    pub identity_requirement: Option<ExternalSignerIdentityRequirementDto>,
+    #[serde(default)]
     pub digest: Option<String>,
 }
 
@@ -157,6 +201,8 @@ pub struct SlotView {
     pub signer_label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contact_hint: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub identity_requirements: Vec<ExternalSignerIdentityRequirementDto>,
     pub required: bool,
     pub status: ExternalSignerSlotStatusDto,
     pub evidence: Vec<EvidenceView>,
@@ -166,6 +212,8 @@ pub struct SlotView {
 pub struct EvidenceView {
     pub label: String,
     pub reference: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity_requirement: Option<ExternalSignerIdentityRequirementDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub digest: Option<String>,
 }
@@ -196,7 +244,12 @@ pub async fn create_envelope(
         .into_iter()
         .map(|slot| {
             let id = ExternalSignerSlotId::new();
-            if slot.required {
+            let identity_requirements = slot
+                .identity_requirements
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            let slot = if slot.required {
                 ExternalSignerSlot::required(
                     id,
                     slot.signer_label,
@@ -208,7 +261,8 @@ pub async fn create_envelope(
                     slot.signer_label,
                     clean_optional(slot.contact_hint),
                 )
-            }
+            };
+            slot.with_identity_requirements(identity_requirements)
         })
         .collect();
     let envelope = ExternalSignatureEnvelope::new(act_id, req.order_policy.into(), slots)
@@ -400,12 +454,14 @@ fn apply_slot_update(
                     "signed slot updates require at least one evidence reference".to_owned(),
                 ));
             }
-            for evidence in req.evidence {
-                envelope
-                    .sign_slot(slot_id, evidence.try_into()?)
-                    .map_err(map_external_signing_error)?;
-            }
-            Ok(())
+            let evidence = req
+                .evidence
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()?;
+            envelope
+                .sign_slot_with_evidence(slot_id, evidence)
+                .map_err(map_external_signing_error)
         }
         ExternalSignerSlotStatus::Declined => {
             let evidence = optional_single_evidence(req.evidence)?;
@@ -458,11 +514,15 @@ impl TryFrom<EvidenceRequest> for ExternalSignatureEvidence {
     type Error = ApiError;
 
     fn try_from(value: EvidenceRequest) -> Result<Self, Self::Error> {
-        Ok(ExternalSignatureEvidence::new(
+        let evidence = ExternalSignatureEvidence::new(
             clean_required(value.label, "evidence.label")?,
             clean_required(value.reference, "evidence.reference")?,
             value.digest.map(parse_sha256_hex).transpose()?,
-        ))
+        );
+        Ok(match value.identity_requirement {
+            Some(requirement) => evidence.satisfying_identity_requirement(requirement.into()),
+            None => evidence,
+        })
     }
 }
 
@@ -486,6 +546,12 @@ impl From<&ExternalSignerSlot> for SlotView {
             id: slot.id.to_string(),
             signer_label: slot.signer_label.clone(),
             contact_hint: slot.contact_hint.clone(),
+            identity_requirements: slot
+                .identity_requirements
+                .iter()
+                .copied()
+                .map(Into::into)
+                .collect(),
             required: slot.required,
             status: slot.status.into(),
             evidence: slot.evidence.iter().map(EvidenceView::from).collect(),
@@ -498,6 +564,7 @@ impl From<&ExternalSignatureEvidence> for EvidenceView {
         Self {
             label: evidence.label.clone(),
             reference: evidence.reference.clone(),
+            identity_requirement: evidence.identity_requirement.map(Into::into),
             digest: evidence.digest.map(|digest| crate::hex::hex(&digest)),
         }
     }
@@ -607,6 +674,9 @@ fn map_external_signing_error(err: ExternalSigningError) -> ApiError {
         ExternalSigningError::RequiredSlotsNotSigned { .. }
         | ExternalSigningError::NoRequiredSlots
         | ExternalSigningError::DuplicateSlotId(_)
+        | ExternalSigningError::DuplicateIdentityRequirement { .. }
+        | ExternalSigningError::MissingIdentityEvidence { .. }
+        | ExternalSigningError::EmptySignatureEvidence { .. }
         | ExternalSigningError::SecretLikeMarker { .. }
         | ExternalSigningError::EmptyEvidenceReference { .. }
         | ExternalSigningError::EmptySignerLabel { .. } => ApiError::Unprocessable(err.to_string()),

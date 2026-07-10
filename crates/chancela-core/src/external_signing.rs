@@ -69,6 +69,22 @@ pub enum ExternalSigningOrderPolicy {
     Sequential,
 }
 
+/// Identity evidence required before a signer slot may be marked signed.
+///
+/// These requirements only describe workflow evidence that must be recorded with the envelope.
+/// They do not assert legal identity, representative authority, or qualified-signature status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ExternalSignerIdentityRequirement {
+    /// Evidence that the signer controlled the configured contact channel.
+    ContactControl,
+    /// Evidence that an external provider asserted the signer's identity.
+    ProviderIdentityAssertion,
+    /// Evidence of a government-id or equivalent identity check.
+    GovernmentIdCheck,
+    /// Evidence for the signer's claimed capacity or representation.
+    RepresentativeCapacity,
+}
+
 /// State of one external signer slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ExternalSignerSlotStatus {
@@ -126,6 +142,9 @@ pub struct ExternalSignatureEvidence {
     pub label: String,
     /// Opaque locator for the artifact/proof held outside this model.
     pub reference: String,
+    /// Identity requirement satisfied by this evidence, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_requirement: Option<ExternalSignerIdentityRequirement>,
     /// Optional SHA-256 digest of the referenced artifact/proof bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<[u8; 32]>,
@@ -141,8 +160,18 @@ impl ExternalSignatureEvidence {
         Self {
             label: label.into(),
             reference: reference.into(),
+            identity_requirement: None,
             digest,
         }
+    }
+
+    /// Mark this evidence as satisfying a configured signer identity requirement.
+    pub fn satisfying_identity_requirement(
+        mut self,
+        requirement: ExternalSignerIdentityRequirement,
+    ) -> Self {
+        self.identity_requirement = Some(requirement);
+        self
     }
 
     fn validate_for_slot(&self, slot_id: ExternalSignerSlotId) -> Result<(), ExternalSigningError> {
@@ -169,6 +198,9 @@ pub struct ExternalSignerSlot {
     /// Optional non-secret contact hint, e.g. a masked email or phone suffix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_hint: Option<String>,
+    /// Workflow identity evidence required before this slot may become signed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_requirements: Vec<ExternalSignerIdentityRequirement>,
     /// Required slots must be signed before the envelope can complete.
     #[serde(default = "default_required")]
     pub required: bool,
@@ -191,6 +223,7 @@ impl ExternalSignerSlot {
             id,
             signer_label: signer_label.into(),
             contact_hint,
+            identity_requirements: Vec::new(),
             required: true,
             status: ExternalSignerSlotStatus::Pending,
             evidence: Vec::new(),
@@ -209,9 +242,27 @@ impl ExternalSignerSlot {
         }
     }
 
+    /// Attach workflow identity requirements to the slot.
+    pub fn with_identity_requirements(
+        mut self,
+        identity_requirements: Vec<ExternalSignerIdentityRequirement>,
+    ) -> Self {
+        self.identity_requirements = identity_requirements;
+        self
+    }
+
     fn validate(&self) -> Result<(), ExternalSigningError> {
         if self.signer_label.trim().is_empty() {
             return Err(ExternalSigningError::EmptySignerLabel { slot_id: self.id });
+        }
+        let mut seen_requirements = HashSet::with_capacity(self.identity_requirements.len());
+        for requirement in &self.identity_requirements {
+            if !seen_requirements.insert(*requirement) {
+                return Err(ExternalSigningError::DuplicateIdentityRequirement {
+                    slot_id: self.id,
+                    requirement: *requirement,
+                });
+            }
         }
         if self
             .contact_hint
@@ -226,7 +277,36 @@ impl ExternalSignerSlot {
         for evidence in &self.evidence {
             evidence.validate_for_slot(self.id)?;
         }
+        if self.status == ExternalSignerSlotStatus::Signed {
+            self.ensure_identity_requirements_satisfied(&[])?;
+        }
         Ok(())
+    }
+
+    fn ensure_identity_requirements_satisfied(
+        &self,
+        pending_evidence: &[ExternalSignatureEvidence],
+    ) -> Result<(), ExternalSigningError> {
+        let missing_requirements: Vec<_> = self
+            .identity_requirements
+            .iter()
+            .copied()
+            .filter(|requirement| {
+                !self
+                    .evidence
+                    .iter()
+                    .chain(pending_evidence.iter())
+                    .any(|evidence| evidence.identity_requirement == Some(*requirement))
+            })
+            .collect();
+        if missing_requirements.is_empty() {
+            Ok(())
+        } else {
+            Err(ExternalSigningError::MissingIdentityEvidence {
+                slot_id: self.id,
+                requirements: missing_requirements,
+            })
+        }
     }
 }
 
@@ -330,6 +410,18 @@ impl ExternalSignatureEnvelope {
         self.transition_slot(slot_id, ExternalSignerSlotStatus::Signed, vec![evidence])
     }
 
+    /// Mark a slot signed and attach all evidence references for that signature event.
+    pub fn sign_slot_with_evidence(
+        &mut self,
+        slot_id: ExternalSignerSlotId,
+        evidence: Vec<ExternalSignatureEvidence>,
+    ) -> Result<(), ExternalSigningError> {
+        if evidence.is_empty() {
+            return Err(ExternalSigningError::EmptySignatureEvidence { slot_id });
+        }
+        self.transition_slot(slot_id, ExternalSignerSlotStatus::Signed, evidence)
+    }
+
     /// Mark a slot declined, optionally attaching provider/operator evidence.
     pub fn decline_slot(
         &mut self,
@@ -400,6 +492,9 @@ impl ExternalSignatureEnvelope {
                 from: slot.status,
                 to,
             });
+        }
+        if to == ExternalSignerSlotStatus::Signed {
+            slot.ensure_identity_requirements_satisfied(&evidence)?;
         }
 
         slot.status = to;
@@ -503,6 +598,30 @@ pub enum ExternalSigningError {
     RequiredSlotsNotSigned {
         /// Required slot ids that still block completion.
         slot_ids: Vec<ExternalSignerSlotId>,
+    },
+    /// A slot declares the same identity requirement more than once.
+    #[error("external signer slot {slot_id} has duplicate identity requirement {requirement:?}")]
+    DuplicateIdentityRequirement {
+        /// Slot containing the duplicate requirement.
+        slot_id: ExternalSignerSlotId,
+        /// Repeated requirement.
+        requirement: ExternalSignerIdentityRequirement,
+    },
+    /// A signed transition did not include evidence for every configured identity requirement.
+    #[error(
+        "external signer slot {slot_id} is missing identity evidence for requirements {requirements:?}"
+    )]
+    MissingIdentityEvidence {
+        /// Slot missing identity evidence.
+        slot_id: ExternalSignerSlotId,
+        /// Requirements not satisfied by the slot evidence.
+        requirements: Vec<ExternalSignerIdentityRequirement>,
+    },
+    /// Signed transitions must carry at least one evidence reference.
+    #[error("external signer slot {slot_id} signed transition has no evidence references")]
+    EmptySignatureEvidence {
+        /// Slot lacking signature evidence.
+        slot_id: ExternalSignerSlotId,
     },
     /// Completion requires at least one required slot.
     #[error("external signature envelope has no required slots")]
@@ -635,6 +754,67 @@ mod tests {
             envelope.sign_slot(slot_id, evidence("provider://event/password:raw")),
             Err(ExternalSigningError::SecretLikeMarker { slot_id: id, field })
                 if id == slot_id && field == "evidence.reference"
+        ));
+    }
+
+    #[test]
+    fn signed_slots_must_satisfy_configured_identity_requirements() {
+        let slot = required_slot("Chair").with_identity_requirements(vec![
+            ExternalSignerIdentityRequirement::ContactControl,
+            ExternalSignerIdentityRequirement::ProviderIdentityAssertion,
+        ]);
+        let slot_id = slot.id;
+        let mut envelope = envelope(ExternalSigningOrderPolicy::Parallel, vec![slot]);
+
+        assert!(matches!(
+            envelope.sign_slot(slot_id, evidence("provider:event:chair-signed")),
+            Err(ExternalSigningError::MissingIdentityEvidence {
+                slot_id: id,
+                requirements,
+            }) if id == slot_id
+                && requirements == vec![
+                    ExternalSignerIdentityRequirement::ContactControl,
+                    ExternalSignerIdentityRequirement::ProviderIdentityAssertion,
+                ]
+        ));
+
+        envelope
+            .sign_slot_with_evidence(
+                slot_id,
+                vec![
+                    evidence("provider:event:chair-signed"),
+                    evidence("provider:event:contact-control").satisfying_identity_requirement(
+                        ExternalSignerIdentityRequirement::ContactControl,
+                    ),
+                    evidence("provider:event:identity-asserted").satisfying_identity_requirement(
+                        ExternalSignerIdentityRequirement::ProviderIdentityAssertion,
+                    ),
+                ],
+            )
+            .unwrap();
+        let slot = envelope.slot(slot_id).unwrap();
+        assert_eq!(slot.status, ExternalSignerSlotStatus::Signed);
+        assert_eq!(slot.evidence.len(), 3);
+    }
+
+    #[test]
+    fn duplicate_identity_requirements_are_rejected() {
+        let slot = required_slot("Chair").with_identity_requirements(vec![
+            ExternalSignerIdentityRequirement::ContactControl,
+            ExternalSignerIdentityRequirement::ContactControl,
+        ]);
+        let slot_id = slot.id;
+
+        assert!(matches!(
+            ExternalSignatureEnvelope::new(
+                ActId::new(),
+                ExternalSigningOrderPolicy::Parallel,
+                vec![slot],
+            ),
+            Err(ExternalSigningError::DuplicateIdentityRequirement {
+                slot_id: id,
+                requirement: ExternalSignerIdentityRequirement::ContactControl,
+            }) if id == slot_id
         ));
     }
 
