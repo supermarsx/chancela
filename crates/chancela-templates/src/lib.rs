@@ -941,6 +941,27 @@ mod tests {
             expected_signature_policy: SignaturePolicyHint,
             actual_signature_policy: SignaturePolicyHint,
         },
+        TemplateIdAssetStemMismatch {
+            expected_stem: String,
+            actual_stem: String,
+        },
+        MissingTemplateIdVersionSuffix,
+        EmptyBlocks,
+        TemplateStageMismatch {
+            expected_stage: LifecycleStage,
+            actual_stage: LifecycleStage,
+        },
+        DuplicateChannel {
+            channel: MeetingChannel,
+        },
+        ChannelOrderMismatch {
+            previous_channel: MeetingChannel,
+            out_of_order_channel: MeetingChannel,
+        },
+        TemplateChannelsMismatch {
+            expected_channels: Vec<MeetingChannel>,
+            actual_channels: Vec<MeetingChannel>,
+        },
         MissingRulePackLawReference {
             rule_pack_id: String,
         },
@@ -1001,6 +1022,53 @@ mod tests {
                     "{}.json ({template_id}): signature_policy `{actual_signature_policy:?}` does not match family binding `{expected_signature_policy:?}`",
                     self.asset
                 ),
+                CatalogMetadataIssueKind::TemplateIdAssetStemMismatch {
+                    expected_stem,
+                    actual_stem,
+                } => write!(
+                    f,
+                    "{}.json ({template_id}): template id stem `{actual_stem}` does not match asset stem `{expected_stem}`",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::MissingTemplateIdVersionSuffix => write!(
+                    f,
+                    "{}.json ({template_id}): template id must use a `/vN` version suffix",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::EmptyBlocks => write!(
+                    f,
+                    "{}.json ({template_id}): template must author at least one block",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::TemplateStageMismatch {
+                    expected_stage,
+                    actual_stage,
+                } => write!(
+                    f,
+                    "{}.json ({template_id}): stage `{actual_stage:?}` does not match id-derived stage `{expected_stage:?}`",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::DuplicateChannel { channel } => write!(
+                    f,
+                    "{}.json ({template_id}): duplicate channel `{channel:?}`",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::ChannelOrderMismatch {
+                    previous_channel,
+                    out_of_order_channel,
+                } => write!(
+                    f,
+                    "{}.json ({template_id}): channel `{out_of_order_channel:?}` appears after `{previous_channel:?}` out of canonical order",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::TemplateChannelsMismatch {
+                    expected_channels,
+                    actual_channels,
+                } => write!(
+                    f,
+                    "{}.json ({template_id}): channels `{actual_channels:?}` do not match id-scoped channels `{expected_channels:?}`",
+                    self.asset
+                ),
                 CatalogMetadataIssueKind::MissingRulePackLawReference { rule_pack_id } => write!(
                     f,
                     "{}.json ({template_id}): rule_pack_id `{rule_pack_id}` has no local law-reference anchor",
@@ -1018,6 +1086,20 @@ mod tests {
                 ),
             }
         }
+    }
+
+    fn template_id_stem(template_id: &str) -> &str {
+        template_id
+            .split_once('/')
+            .map(|(stem, _)| stem)
+            .unwrap_or(template_id)
+    }
+
+    fn has_template_id_version_suffix(template_id: &str) -> bool {
+        let Some((stem, version)) = template_id.rsplit_once("/v") else {
+            return false;
+        };
+        !stem.is_empty() && !version.is_empty() && version.chars().all(|c| c.is_ascii_digit())
     }
 
     fn expected_template_id_prefix_for_family(family: EntityFamily) -> &'static str {
@@ -1047,6 +1129,57 @@ mod tests {
             EntityFamily::Association | EntityFamily::Foundation | EntityFamily::Cooperative => {
                 SignaturePolicyHint::ManualAttested
             }
+        }
+    }
+
+    fn expected_stage_for_template_id(template_id: &str) -> Option<LifecycleStage> {
+        let stem = template_id_stem(template_id);
+        if stem.contains("-convocatoria") || stem.contains("-aviso-convocatoria") {
+            Some(LifecycleStage::Convocatoria)
+        } else if stem.contains("-termo-abertura") {
+            Some(LifecycleStage::TermoAbertura)
+        } else if stem.contains("-termo-encerramento") || stem.contains("-termo-transporte") {
+            Some(LifecycleStage::TermoEncerramento)
+        } else if stem.contains("-lista-presencas") || stem.contains("-registo-telematico") {
+            Some(LifecycleStage::Reuniao)
+        } else if stem.contains("-certidao-")
+            || stem.contains("-declaracao-deliberacao")
+            || stem.contains("-comunicacao-")
+        {
+            Some(LifecycleStage::Certidao)
+        } else if stem.contains("-declaracao-voto")
+            || stem.contains("-circular-deliberacao-escrito")
+        {
+            Some(LifecycleStage::Deliberacao)
+        } else if stem.contains("-extrato-") {
+            Some(LifecycleStage::Extrato)
+        } else if stem.contains("-ata-")
+            || stem.contains("-termo-retificacao")
+            || stem.contains("-anexo-acordo-email")
+        {
+            Some(LifecycleStage::Ata)
+        } else {
+            None
+        }
+    }
+
+    fn channel_order(channel: MeetingChannel) -> u8 {
+        match channel {
+            MeetingChannel::Physical => 0,
+            MeetingChannel::Hybrid => 1,
+            MeetingChannel::Telematic => 2,
+            MeetingChannel::WrittenResolution => 3,
+        }
+    }
+
+    fn expected_channels_for_template_id(template_id: &str) -> Option<Vec<MeetingChannel>> {
+        let stem = template_id_stem(template_id);
+        if stem.contains("-registo-telematico") {
+            Some(vec![MeetingChannel::Telematic])
+        } else if stem.contains("-circular-deliberacao-escrito") {
+            Some(vec![MeetingChannel::WrittenResolution])
+        } else {
+            None
         }
     }
 
@@ -1156,6 +1289,32 @@ mod tests {
             };
             let spec = TemplateSpec::from(dto);
 
+            let actual_stem = template_id_stem(&spec.id);
+            if actual_stem != *asset {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::TemplateIdAssetStemMismatch {
+                        expected_stem: (*asset).to_string(),
+                        actual_stem: actual_stem.to_string(),
+                    },
+                ));
+            }
+            if !has_template_id_version_suffix(&spec.id) {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::MissingTemplateIdVersionSuffix,
+                ));
+            }
+            if spec.blocks.is_empty() {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::EmptyBlocks,
+                ));
+            }
+
             // Family bindings mirror `chancela-core::profile_for`: this is a local catalog drift
             // guard only, not an assertion that any legal source text/value has been verified.
             let expected_prefix = expected_template_id_prefix_for_family(spec.family);
@@ -1187,6 +1346,57 @@ mod tests {
                     CatalogMetadataIssueKind::SignaturePolicyFamilyMismatch {
                         expected_signature_policy,
                         actual_signature_policy: spec.signature_policy,
+                    },
+                ));
+            }
+
+            if let Some(expected_stage) = expected_stage_for_template_id(&spec.id)
+                && spec.stage != expected_stage
+            {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::TemplateStageMismatch {
+                        expected_stage,
+                        actual_stage: spec.stage,
+                    },
+                ));
+            }
+
+            let mut seen_channels = Vec::new();
+            let mut previous_channel = None;
+            for channel in &spec.channels {
+                if seen_channels.contains(channel) {
+                    issues.push(metadata_issue(
+                        asset,
+                        Some(&spec.id),
+                        CatalogMetadataIssueKind::DuplicateChannel { channel: *channel },
+                    ));
+                }
+                if let Some(previous) = previous_channel
+                    && channel_order(*channel) < channel_order(previous)
+                {
+                    issues.push(metadata_issue(
+                        asset,
+                        Some(&spec.id),
+                        CatalogMetadataIssueKind::ChannelOrderMismatch {
+                            previous_channel: previous,
+                            out_of_order_channel: *channel,
+                        },
+                    ));
+                }
+                seen_channels.push(*channel);
+                previous_channel = Some(*channel);
+            }
+            if let Some(expected_channels) = expected_channels_for_template_id(&spec.id)
+                && spec.channels != expected_channels
+            {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::TemplateChannelsMismatch {
+                        expected_channels,
+                        actual_channels: spec.channels.clone(),
                     },
                 ));
             }
@@ -1478,6 +1688,131 @@ mod tests {
                     )
             }),
             "expected missing derived template law_references issue:\n{report}"
+        );
+    }
+
+    #[test]
+    fn catalog_metadata_validation_reports_stage_channel_and_authored_metadata_drift() {
+        let stem_mismatch = r#"{"id":"assoc-wrong-stem/v1","family":"Association","stage":"Ata",
+            "channels":[],"signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1",
+            "locale":"pt-PT","blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
+        let missing_version = r#"{"id":"assoc-termo-abertura","family":"Association",
+            "stage":"TermoAbertura","channels":[],"signature_policy":"ManualAttested",
+            "rule_pack_id":"assoc-cc/v1","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
+        let empty_blocks = r#"{"id":"assoc-termo-encerramento/v1","family":"Association",
+            "stage":"TermoEncerramento","channels":[],"signature_policy":"ManualAttested",
+            "rule_pack_id":"assoc-cc/v1","locale":"pt-PT","blocks":[]}"#;
+        let wrong_stage = r#"{"id":"assoc-lista-presencas/v1","family":"Association",
+            "stage":"Ata","channels":["Physical","Hybrid","Telematic"],
+            "signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1",
+            "locale":"pt-PT","blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
+        let duplicate_channel = r#"{"id":"csc-ata-ag/v1","family":"CommercialCompany",
+            "stage":"Ata","channels":["Physical","Physical"],"signature_policy":"QualifiedPreferred",
+            "rule_pack_id":"csc-art63/v2","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
+        let out_of_order_channel = r#"{"id":"csc-ata-gerencia/v1","family":"CommercialCompany",
+            "stage":"Ata","channels":["Telematic","Physical"],"signature_policy":"QualifiedPreferred",
+            "rule_pack_id":"csc-art63/v2","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
+        let wrong_scoped_channel = r#"{"id":"csc-registo-telematico/v1","family":"CommercialCompany",
+            "stage":"Reuniao","channels":["Physical"],"signature_policy":"QualifiedPreferred",
+            "rule_pack_id":"csc-art63/v2","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
+
+        let issues = validate_catalog_metadata(&[
+            ("assoc-stem-fixture", stem_mismatch),
+            ("assoc-termo-abertura", missing_version),
+            ("assoc-termo-encerramento", empty_blocks),
+            ("assoc-lista-presencas", wrong_stage),
+            ("csc-ata-ag", duplicate_channel),
+            ("csc-ata-gerencia", out_of_order_channel),
+            ("csc-registo-telematico", wrong_scoped_channel),
+        ]);
+        let report = catalog_metadata_report(&issues);
+
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "assoc-stem-fixture"
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::TemplateIdAssetStemMismatch {
+                            expected_stem,
+                            actual_stem
+                        } if expected_stem == "assoc-stem-fixture"
+                            && actual_stem == "assoc-wrong-stem"
+                    )
+            }),
+            "expected template-id/asset-stem mismatch:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "assoc-termo-abertura"
+                    && matches!(
+                        issue.kind,
+                        CatalogMetadataIssueKind::MissingTemplateIdVersionSuffix
+                    )
+            }),
+            "expected missing template version suffix:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "assoc-termo-encerramento"
+                    && matches!(issue.kind, CatalogMetadataIssueKind::EmptyBlocks)
+            }),
+            "expected empty blocks issue:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "assoc-lista-presencas"
+                    && matches!(
+                        issue.kind,
+                        CatalogMetadataIssueKind::TemplateStageMismatch {
+                            expected_stage: LifecycleStage::Reuniao,
+                            actual_stage: LifecycleStage::Ata,
+                        }
+                    )
+            }),
+            "expected id-derived stage mismatch:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "csc-ata-ag"
+                    && matches!(
+                        issue.kind,
+                        CatalogMetadataIssueKind::DuplicateChannel {
+                            channel: MeetingChannel::Physical
+                        }
+                    )
+            }),
+            "expected duplicate channel issue:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "csc-ata-gerencia"
+                    && matches!(
+                        issue.kind,
+                        CatalogMetadataIssueKind::ChannelOrderMismatch {
+                            previous_channel: MeetingChannel::Telematic,
+                            out_of_order_channel: MeetingChannel::Physical,
+                        }
+                    )
+            }),
+            "expected channel order issue:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "csc-registo-telematico"
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::TemplateChannelsMismatch {
+                            expected_channels,
+                            actual_channels
+                        } if expected_channels == &vec![MeetingChannel::Telematic]
+                            && actual_channels == &vec![MeetingChannel::Physical]
+                    )
+            }),
+            "expected id-scoped channel issue:\n{report}"
         );
     }
 
