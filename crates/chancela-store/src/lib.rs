@@ -1184,6 +1184,9 @@ pub struct StoredSignedDocument {
     pub timestamp_token_der: Option<Vec<u8>>,
     /// Optional technical timestamp-trust diagnostic report JSON captured at signing completion.
     pub timestamp_trust_report_json: Option<String>,
+    /// Optional declared signer-capacity evidence JSON. This is request/operator evidence only;
+    /// the store does not interpret it as SCAP or authority verification.
+    pub signer_capacity_evidence_json: Option<String>,
     /// The signed PDF/A bytes.
     pub signed_pdf_bytes: Vec<u8>,
 }
@@ -1209,6 +1212,8 @@ pub struct PendingCmdSession {
     pub masked_phone: String,
     /// The human-readable document label used at initiate.
     pub doc_name: String,
+    /// Optional declared signer-capacity evidence JSON preserved across initiate/confirm.
+    pub signer_capacity_evidence_json: Option<String>,
     /// The non-secret `CmdSignSession` serde blob (opaque to the store).
     pub session_json: String,
     /// The non-secret `PreparedSignature` serde blob (opaque to the store).
@@ -1777,7 +1782,8 @@ impl Store {
         let mut stmt = guard.prepare(
             "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
              trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
-             timestamp_token_der, timestamp_trust_report_json, signed_pdf_bytes \
+             timestamp_token_der, timestamp_trust_report_json, signer_capacity_evidence_json, \
+             signed_pdf_bytes \
              FROM signed_documents WHERE act_id = ?1",
         )?;
         stmt.query_row(params![act_id.to_string()], row_to_signed_document)
@@ -1792,7 +1798,8 @@ impl Store {
         let mut stmt = guard.prepare(
             "SELECT act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
              trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
-             timestamp_token_der, timestamp_trust_report_json, signed_pdf_bytes \
+             timestamp_token_der, timestamp_trust_report_json, signer_capacity_evidence_json, \
+             signed_pdf_bytes \
              FROM signed_documents",
         )?;
         let rows = stmt.query_map([], row_to_signed_document)?;
@@ -1813,7 +1820,8 @@ impl Store {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = guard.prepare(
             "SELECT session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
-             prepared_json, created_at, expires_at FROM pending_cmd_sessions WHERE session_id = ?1",
+             prepared_json, created_at, expires_at, signer_capacity_evidence_json \
+             FROM pending_cmd_sessions WHERE session_id = ?1",
         )?;
         stmt.query_row(params![session_id], row_to_pending_session)
             .optional()?
@@ -1828,7 +1836,8 @@ impl Store {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = guard.prepare(
             "SELECT session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
-             prepared_json, created_at, expires_at FROM pending_cmd_sessions",
+             prepared_json, created_at, expires_at, signer_capacity_evidence_json \
+             FROM pending_cmd_sessions",
         )?;
         let rows = stmt.query_map([], row_to_pending_session)?;
         let mut out = HashMap::new();
@@ -2406,8 +2415,9 @@ impl Tx<'_> {
             "INSERT OR REPLACE INTO signed_documents \
              (act_id, document_id, signed_pdf_digest, signature_family, evidentiary_level, \
               trusted_list_status, signer_cert_subject, signing_time, signed_at, signer_cert_der, \
-              timestamp_token_der, timestamp_trust_report_json, signed_pdf_bytes) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+              timestamp_token_der, timestamp_trust_report_json, signer_capacity_evidence_json, \
+              signed_pdf_bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 doc.act_id.to_string(),
                 doc.document_id,
@@ -2421,6 +2431,7 @@ impl Tx<'_> {
                 doc.signer_cert_der,
                 doc.timestamp_token_der,
                 doc.timestamp_trust_report_json,
+                doc.signer_capacity_evidence_json,
                 doc.signed_pdf_bytes,
             ],
         )?;
@@ -2445,8 +2456,8 @@ impl Tx<'_> {
         self.txn.execute(
             "INSERT OR REPLACE INTO pending_cmd_sessions \
              (session_id, act_id, actor, status, masked_phone, doc_name, session_json, \
-              prepared_json, created_at, expires_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+              prepared_json, created_at, expires_at, signer_capacity_evidence_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 session.session_id,
                 session.act_id.to_string(),
@@ -2458,6 +2469,7 @@ impl Tx<'_> {
                 session.prepared_json,
                 created_at,
                 expires_at,
+                session.signer_capacity_evidence_json,
             ],
         )?;
         Ok(())
@@ -2903,7 +2915,8 @@ fn row_to_signed_document(
     let signer_cert_der: Vec<u8> = row.get(9)?;
     let timestamp_token_der: Option<Vec<u8>> = row.get(10)?;
     let timestamp_trust_report_json: Option<String> = row.get(11)?;
-    let signed_pdf_bytes: Vec<u8> = row.get(12)?;
+    let signer_capacity_evidence_json: Option<String> = row.get(12)?;
+    let signed_pdf_bytes: Vec<u8> = row.get(13)?;
     Ok((|| {
         Ok(StoredSignedDocument {
             act_id: parse_uuid_newtype::<ActId>(&act_id_raw)?,
@@ -2918,6 +2931,7 @@ fn row_to_signed_document(
             signer_cert_der,
             timestamp_token_der,
             timestamp_trust_report_json,
+            signer_capacity_evidence_json,
             signed_pdf_bytes,
         })
     })())
@@ -2939,6 +2953,7 @@ fn row_to_pending_session(
     let prepared_json: String = row.get(7)?;
     let created_at_raw: String = row.get(8)?;
     let expires_at_raw: String = row.get(9)?;
+    let signer_capacity_evidence_json: Option<String> = row.get(10)?;
     Ok((|| {
         Ok(PendingCmdSession {
             session_id,
@@ -2947,6 +2962,7 @@ fn row_to_pending_session(
             status,
             masked_phone,
             doc_name,
+            signer_capacity_evidence_json,
             session_json,
             prepared_json,
             created_at: parse_rfc3339(&created_at_raw)?,
@@ -3234,6 +3250,20 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
     if !table_has_column(conn, "signed_documents", "timestamp_trust_report_json")? {
         conn.execute_batch(
             "ALTER TABLE signed_documents ADD COLUMN timestamp_trust_report_json TEXT;",
+        )?;
+    }
+    if !table_has_column(conn, "signed_documents", "signer_capacity_evidence_json")? {
+        conn.execute_batch(
+            "ALTER TABLE signed_documents ADD COLUMN signer_capacity_evidence_json TEXT;",
+        )?;
+    }
+    if !table_has_column(
+        conn,
+        "pending_cmd_sessions",
+        "signer_capacity_evidence_json",
+    )? {
+        conn.execute_batch(
+            "ALTER TABLE pending_cmd_sessions ADD COLUMN signer_capacity_evidence_json TEXT;",
         )?;
     }
 

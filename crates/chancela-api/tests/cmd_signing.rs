@@ -603,7 +603,7 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
             "POST",
             &format!("/v1/acts/{act_id}/signature/cmd/initiate"),
             &token,
-            json!({ "phone": PHONE, "pin": PIN }),
+            json!({ "phone": PHONE, "pin": PIN, "capacity": "Administrador" }),
         ),
     )
     .await;
@@ -633,6 +633,14 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
         !format!("{pending:?}").contains(PIN),
         "PIN must not leak via Debug"
     );
+    let capacity_evidence = pending
+        .signer_capacity_evidence_json
+        .as_deref()
+        .expect("pending capacity evidence");
+    assert!(capacity_evidence.contains("\"requested_provider_capacity\":\"Administrador\""));
+    assert!(capacity_evidence.contains("\"verification_status\":\"not_checked_by_scap\""));
+    assert!(capacity_evidence.contains("\"status_scope\":\"declared_capacity_evidence_only\""));
+    assert!(!capacity_evidence.contains("verified_by_scap"));
 
     // Status now pending.
     let (_, view) = send(
@@ -658,6 +666,14 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
     assert_eq!(done["evidentiary_level"], "Qualified");
     assert_eq!(done["trusted_list_status"], "Granted");
     assert_eq!(done["finalization"], "finalizado_qualificado");
+    assert_eq!(
+        done["signer_capacity_evidence"]["requested_provider_capacity"],
+        "Administrador"
+    );
+    assert_eq!(
+        done["signer_capacity_evidence"]["verification_status"],
+        "not_checked_by_scap"
+    );
 
     // The signed PDF downloads and VALIDATES (SIG-24): ByteRange covers the whole file, signer is
     // the session leaf, and there is a signing time.
@@ -688,6 +704,25 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
         kinds.contains(&"document.signed"),
         "document.signed event present: {kinds:?}"
     );
+    let signed_event = events
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "document.signed")
+        .expect("document.signed event present");
+    if let Some(event_payload) = signed_event
+        .get("payload")
+        .or_else(|| signed_event.get("data"))
+    {
+        assert_eq!(
+            event_payload["signer_capacity_evidence"]["requested_provider_capacity"],
+            "Administrador"
+        );
+        assert_eq!(
+            event_payload["signer_capacity_evidence"]["verification_status"],
+            "not_checked_by_scap"
+        );
+    }
 
     // The chain still verifies.
     let (_, verify) = send(&state, get_req("/v1/ledger/verify", &token)).await;
@@ -702,6 +737,14 @@ async fn cmd_signing_round_trip_produces_a_validating_signed_pdf() {
     assert_eq!(view["status"], "signed");
     assert_eq!(view["finalization"], "finalizado_qualificado");
     assert_eq!(view["signed"]["evidentiary_level"], "Qualified");
+    assert_eq!(
+        view["signed"]["signer_capacity_evidence"]["requested_provider_capacity"],
+        "Administrador"
+    );
+    assert_eq!(
+        view["signed"]["signer_capacity_evidence"]["status_scope"],
+        "declared_capacity_evidence_only"
+    );
 
     // The pending session is single-use: replaying the same confirm is refused and does not append a
     // second `document.signed` event.

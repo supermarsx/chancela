@@ -4117,6 +4117,7 @@ mod tests {
                 signer_cert_der: vec![1],
                 timestamp_token_der: None,
                 timestamp_trust_report_json: None,
+                signer_capacity_evidence_json: None,
                 signed_pdf_bytes,
             },
         );

@@ -2063,6 +2063,8 @@ fn acts_carrying_convening_and_attendees_round_trip_through_the_store() {
 
 use chancela_store::{PendingCmdSession, StoredSignedDocument};
 
+const CAPACITY_EVIDENCE_JSON: &str = r#"{"requested_provider_capacity":"Administrador","source":"signature_request","verification_status":"not_checked_by_scap","verification_source":null,"verified_at":null,"authority_reference":null,"status_scope":"declared_capacity_evidence_only"}"#;
+
 fn sample_signed(act_id: ActId) -> StoredSignedDocument {
     StoredSignedDocument {
         act_id,
@@ -2077,6 +2079,7 @@ fn sample_signed(act_id: ActId) -> StoredSignedDocument {
         signer_cert_der: vec![0x30, 0x82, 0x01, 0x02],
         timestamp_token_der: Some(vec![0x30, 0x03, 0x01, 0x01, 0xff]),
         timestamp_trust_report_json: Some(r#"{"decision":"rejected","policy_oid":"1.2.3.4","policy_oid_accepted":null,"tsa_certificate_embedded":false,"embedded_certificate_count":0,"qtst_status":"unknown","qtst_authenticated":false,"qtst_matches":[],"trust_anchor_count":0,"certificate_path_valid":false,"certificate_path_anchor_index":null,"certificate_path_len":null,"failure_reasons":["fixture"],"status_scope":"technical_evidence_only"}"#.to_owned()),
+        signer_capacity_evidence_json: Some(CAPACITY_EVIDENCE_JSON.to_owned()),
         signed_pdf_bytes: b"%PDF-1.7 signed".to_vec(),
     }
 }
@@ -2089,6 +2092,7 @@ fn sample_pending(session_id: &str, act_id: ActId) -> PendingCmdSession {
         status: "otp_pending".to_string(),
         masked_phone: "+351 9•••••678".to_string(),
         doc_name: "ata.pdf".to_string(),
+        signer_capacity_evidence_json: Some(CAPACITY_EVIDENCE_JSON.to_owned()),
         session_json: r#"{"process_id":"p1"}"#.to_string(),
         prepared_json: r#"{"prepared":true}"#.to_string(),
         created_at: OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap(),
@@ -2106,6 +2110,15 @@ fn signed_document_round_trips_and_is_keyed_by_act() {
 
     let back = store.signed_document_for_act(act_id).unwrap().unwrap();
     assert_eq!(back, doc);
+    assert!(
+        back.signer_capacity_evidence_json
+            .as_deref()
+            .is_some_and(
+                |json| json.contains("\"verification_status\":\"not_checked_by_scap\"")
+                    && json.contains("\"status_scope\":\"declared_capacity_evidence_only\"")
+                    && !json.contains("verified_by_scap")
+            )
+    );
     // Unknown act → None.
     assert!(
         store
@@ -2149,6 +2162,16 @@ fn pending_cmd_session_round_trips_persists_and_deletes() {
     let loaded = store.pending_cmd_session("sess-1").unwrap().unwrap();
     assert!(!loaded.session_json.contains("pin"));
     assert!(!loaded.prepared_json.contains("otp"));
+    assert!(
+        loaded
+            .signer_capacity_evidence_json
+            .as_deref()
+            .is_some_and(
+                |json| json.contains("\"requested_provider_capacity\":\"Administrador\"")
+                    && json.contains("\"verification_status\":\"not_checked_by_scap\"")
+                    && !json.contains("authority_verified")
+            )
+    );
 
     // Delete consumes it (single-use).
     store

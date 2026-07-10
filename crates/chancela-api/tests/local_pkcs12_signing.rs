@@ -335,6 +335,14 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
     assert_eq!(signed["legal_status_claimed"], false);
     assert_eq!(signed["status_scope"], "local_technical_evidence_only");
     assert_eq!(signed["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(
+        signed["signer_capacity_evidence"]["requested_provider_capacity"],
+        "Administrador"
+    );
+    assert_eq!(
+        signed["signer_capacity_evidence"]["verification_status"],
+        "not_checked_by_scap"
+    );
     assert!(
         signed["notice"]
             .as_str()
@@ -370,6 +378,14 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
     assert_ne!(view["signed"]["evidentiary_level"], "Qualified");
     assert_eq!(view["evidence"]["current_level"], "B-B");
     assert_eq!(view["evidence"]["status_scope"], "technical_evidence_only");
+    assert_eq!(
+        view["signed"]["signer_capacity_evidence"]["requested_provider_capacity"],
+        "Administrador"
+    );
+    assert_eq!(
+        view["signed"]["signer_capacity_evidence"]["status_scope"],
+        "declared_capacity_evidence_only"
+    );
     assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
 
     let stored = state
@@ -382,6 +398,12 @@ async fn local_pkcs12_signs_as_advanced_technical_evidence_only() {
     assert_eq!(stored.signature_family, "LocalPkcs12SoftwareCertificate");
     assert_eq!(stored.evidentiary_level, "AdvancedLocalTechnicalEvidence");
     assert_eq!(stored.trusted_list_status, None);
+    let capacity_evidence = stored
+        .signer_capacity_evidence_json
+        .as_deref()
+        .expect("stored capacity evidence");
+    assert!(capacity_evidence.contains("\"verification_status\":\"not_checked_by_scap\""));
+    assert!(!capacity_evidence.contains("qualified_capacity"));
     assert!(!String::from_utf8_lossy(&stored.signed_pdf_bytes).contains(PASSWORD));
     assert!(!String::from_utf8_lossy(&stored.signer_cert_der).contains(PASSWORD));
 }

@@ -99,6 +99,7 @@ fn sample_signed_document(act_id: ActId, document_id: &str, bytes: &[u8]) -> Sto
         signer_cert_der: vec![0x30, 0x82, 0x01, 0x02],
         timestamp_token_der: Some(vec![0x30, 0x03, 0x01, 0x01, 0xff]),
         timestamp_trust_report_json: None,
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes: bytes.to_vec(),
     }
 }

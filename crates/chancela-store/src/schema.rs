@@ -215,6 +215,8 @@ pub const CREATE_IMPORTED_BOOKS_BOOK_IDX: &str =
 /// - `signer_cert_der` — the signer leaf certificate (DER).
 /// - `timestamp_token_der` — an optional RFC 3161 timestamp token (DER), or NULL (B-B has none).
 /// - `timestamp_trust_report_json` — optional technical timestamp-trust diagnostic report JSON.
+/// - `signer_capacity_evidence_json` — optional declared signer-capacity evidence JSON; this is
+///   request/operator evidence only and does not imply SCAP or authority verification.
 /// - `signed_pdf_bytes` — the signed PDF/A bytes.
 pub const CREATE_SIGNED_DOCUMENTS: &str = "\
 CREATE TABLE IF NOT EXISTS signed_documents (
@@ -230,6 +232,7 @@ CREATE TABLE IF NOT EXISTS signed_documents (
     signer_cert_der     BLOB NOT NULL,
     timestamp_token_der BLOB,
     timestamp_trust_report_json TEXT,
+    signer_capacity_evidence_json TEXT,
     signed_pdf_bytes    BLOB NOT NULL
 ) STRICT;";
 
@@ -249,6 +252,8 @@ CREATE TABLE IF NOT EXISTS signed_documents (
 /// - `status` — `'otp_pending'` while awaiting the OTP.
 /// - `masked_phone` — the citizen phone with the middle digits masked (non-secret, for the UI).
 /// - `doc_name` — the human-readable document label used at initiate.
+/// - `signer_capacity_evidence_json` — optional declared signer-capacity evidence JSON preserved
+///   through initiate/confirm without parsing display text.
 /// - `session_json` — the non-secret `CmdSignSession` serde blob.
 /// - `prepared_json` — the non-secret `PreparedSignature` serde blob.
 /// - `created_at` / `expires_at` — RFC 3339 (single-use, TTL-bounded).
@@ -260,6 +265,7 @@ CREATE TABLE IF NOT EXISTS pending_cmd_sessions (
     status       TEXT NOT NULL,
     masked_phone TEXT NOT NULL,
     doc_name     TEXT NOT NULL,
+    signer_capacity_evidence_json TEXT,
     session_json TEXT NOT NULL,
     prepared_json TEXT NOT NULL,
     created_at   TEXT NOT NULL,

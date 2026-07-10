@@ -602,7 +602,11 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
             "POST",
             &format!("{base}/initiate"),
             &token,
-            json!({ "user_ref": "amelia.marques@encosto.example", "credential": PIN }),
+            json!({
+                "user_ref": "amelia.marques@encosto.example",
+                "credential": PIN,
+                "capacity": "Administrador"
+            }),
         ),
     )
     .await;
@@ -631,6 +635,12 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
         !blob.contains(CSC_ACTIVATION),
         "activation must never be persisted"
     );
+    let capacity_evidence = pending
+        .signer_capacity_evidence_json
+        .as_deref()
+        .expect("pending capacity evidence");
+    assert!(capacity_evidence.contains("\"requested_provider_capacity\":\"Administrador\""));
+    assert!(capacity_evidence.contains("\"verification_status\":\"not_checked_by_scap\""));
 
     // Status now pending.
     let (_, view) = send(
@@ -657,6 +667,10 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
     assert_eq!(done["evidentiary_level"], "Qualified");
     assert_eq!(done["trusted_list_status"], "Granted");
     assert_eq!(done["finalization"], "finalizado_qualificado");
+    assert_eq!(
+        done["signer_capacity_evidence"]["requested_provider_capacity"],
+        "Administrador"
+    );
 
     // The signed PDF downloads and VALIDATES (SIG-24).
     let (status, signed_pdf) = send_bytes(
@@ -689,6 +703,10 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
         if let Some(fam) = p["family"].as_str() {
             assert_eq!(fam, "QualifiedCertificate");
         }
+        assert_eq!(
+            p["signer_capacity_evidence"]["verification_status"],
+            "not_checked_by_scap"
+        );
     }
 
     // Chain still verifies; status flipped to signed through the SAME status shape.
@@ -703,6 +721,14 @@ async fn csc_generic_round_trip_produces_a_validating_signed_pdf() {
     assert_eq!(view["finalization"], "finalizado_qualificado");
     assert_eq!(view["signed"]["family"], "QualifiedCertificate");
     assert_eq!(view["signed"]["evidentiary_level"], "Qualified");
+    assert_eq!(
+        view["signed"]["signer_capacity_evidence"]["requested_provider_capacity"],
+        "Administrador"
+    );
+    assert_eq!(
+        view["signed"]["signer_capacity_evidence"]["verification_source"],
+        serde_json::Value::Null
+    );
 
     // The pending session is single-use: replaying confirm is refused and does not append a second
     // signed event.

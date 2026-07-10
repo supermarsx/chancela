@@ -1136,6 +1136,7 @@ async fn archive_package_rejects_signed_metadata_for_the_wrong_document() {
         signer_cert_der: b"fixture signer certificate DER".to_vec(),
         timestamp_token_der: None,
         timestamp_trust_report_json: None,
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes,
     };
     state
@@ -1185,6 +1186,7 @@ async fn archive_package_rejects_signed_metadata_with_impossible_dates() {
         signer_cert_der: b"fixture signer certificate DER".to_vec(),
         timestamp_token_der: None,
         timestamp_trust_report_json: None,
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes,
     };
     state
@@ -1233,6 +1235,7 @@ async fn archive_package_rejects_incomplete_signature_evidence_without_mutating_
         signer_cert_der: b"fixture signer certificate DER".to_vec(),
         timestamp_token_der: Some(Vec::new()),
         timestamp_trust_report_json: None,
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes,
     };
     state
@@ -1545,6 +1548,7 @@ async fn archive_package_reports_persisted_signature_metadata_as_evidence() {
         signer_cert_der: signer_cert_der.clone(),
         timestamp_token_der: Some(timestamp_token_der.clone()),
         timestamp_trust_report_json: Some(timestamp_trust_report_json.to_owned()),
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes: signed_pdf_bytes.clone(),
     };
     state
@@ -1798,6 +1802,7 @@ async fn archive_package_reports_embedded_dss_without_legal_b_lt_claim() {
         signer_cert_der: signer_cert_der.clone(),
         timestamp_token_der: Some(timestamp_token_der),
         timestamp_trust_report_json: None,
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes: signed_pdf_with_dss,
     };
     state
@@ -1889,6 +1894,7 @@ async fn archive_package_reports_embedded_doc_timestamp_evidence_without_b_lta_c
         signer_cert_der,
         timestamp_token_der: Some(b"fixture timestamp token DER".to_vec()),
         timestamp_trust_report_json: None,
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes,
     };
     state

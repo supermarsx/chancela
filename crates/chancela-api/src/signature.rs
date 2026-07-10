@@ -238,6 +238,10 @@ pub struct CmdConfirmResponse {
     pub timestamp_token: bool,
     /// The derived finalization status (`finalizado_qualificado`).
     pub finalization: &'static str,
+    /// Declared signer-capacity evidence preserved from the request, when supplied. This is not
+    /// SCAP/authority verification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer_capacity_evidence: Option<SignerCapacityEvidence>,
 }
 
 /// `GET /v1/acts/{id}/signature` — the act's signature status view.
@@ -268,6 +272,8 @@ pub struct SignedInfo {
     pub evidentiary_level: String,
     pub trusted_list_status: Option<String>,
     pub signer_cert_subject: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer_capacity_evidence: Option<SignerCapacityEvidence>,
     pub signing_time: String,
     pub signed_at: String,
     pub signed_pdf_digest: String,
@@ -326,6 +332,20 @@ pub struct SignatureEvidenceStatus {
     pub timestamp_trust: Option<TimestampTrustEvidenceStatus>,
     /// Scope marker for consumers: these fields describe technical evidence only.
     pub status_scope: &'static str,
+}
+
+/// Declared signer-capacity evidence preserved with a signed artifact. This records only what the
+/// operator/request supplied; Chancela does not perform SCAP or authority verification in this
+/// slice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignerCapacityEvidence {
+    pub requested_provider_capacity: String,
+    pub source: String,
+    pub verification_status: String,
+    pub verification_source: Option<String>,
+    pub verified_at: Option<String>,
+    pub authority_reference: Option<String>,
+    pub status_scope: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -535,6 +555,8 @@ pub struct OfficialSignatureImportResponse {
     pub guardrail_ids: Vec<&'static str>,
     pub acknowledged_guardrail_ids: Vec<String>,
     pub acknowledgement_notice: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer_capacity_evidence: Option<SignerCapacityEvidence>,
 }
 
 /// Explicit legal-validation boundary for official handoff imports.
@@ -594,6 +616,8 @@ pub struct LocalPkcs12SignResponse {
     pub legal_status_claimed: bool,
     pub status_scope: &'static str,
     pub notice: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer_capacity_evidence: Option<SignerCapacityEvidence>,
 }
 
 // --- external signer invitations --------------------------------------------------------------
@@ -1148,12 +1172,10 @@ pub async fn initiate_cmd_signature(
     let signing_time = OffsetDateTime::now_utc()
         .replace_nanosecond(0)
         .unwrap_or_else(|_| OffsetDateTime::now_utc());
-    let reason = match req
-        .capacity
-        .as_deref()
-        .map(str::trim)
-        .filter(|c| !c.is_empty())
-    {
+    let capacity = optional_trimmed(req.capacity);
+    let signer_capacity_evidence = signer_capacity_evidence_from_capacity(capacity.clone());
+    let signer_capacity_evidence_json = signer_capacity_evidence_json(&signer_capacity_evidence)?;
+    let reason = match capacity.as_deref() {
         Some(capacity) => format!("Assinatura qualificada da ata ({capacity})"),
         None => "Assinatura qualificada da ata".to_owned(),
     };
@@ -1199,6 +1221,7 @@ pub async fn initiate_cmd_signature(
         status: "otp_pending".to_owned(),
         masked_phone: masked_phone.clone(),
         doc_name,
+        signer_capacity_evidence_json,
         session_json: serde_json::to_string(&session)?,
         prepared_json: serde_json::to_string(&prepared)?,
         created_at: signing_time,
@@ -1318,6 +1341,7 @@ pub async fn confirm_cmd_signature(
         signer_cert_der: session.signing_cert_der.clone(),
         timestamp_token_der: final_pdf.timestamp_token_der.clone(),
         timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
+        signer_capacity_evidence_json: pending.signer_capacity_evidence_json.clone(),
         signed_pdf_bytes: final_pdf.bytes,
     };
 
@@ -1330,6 +1354,9 @@ pub async fn confirm_cmd_signature(
         "family": FAMILY_CMD,
         "evidentiary_level": EVIDENTIARY_QUALIFIED,
         "trusted_list_status": trusted_list_status,
+        "signer_capacity_evidence": signer_capacity_evidence_value(
+            pending.signer_capacity_evidence_json.as_deref()
+        ),
         "profile": pades_profile(final_pdf.timestamp_token_der.is_some()),
     });
     let payload = serde_json::to_vec(&event_payload)?;
@@ -1368,6 +1395,9 @@ pub async fn confirm_cmd_signature(
         signed_pdf_digest,
         timestamp_token: final_pdf.report.has_signature_timestamp,
         finalization: "finalizado_qualificado",
+        signer_capacity_evidence: signer_capacity_evidence_from_json(
+            stored.signer_capacity_evidence_json.as_deref(),
+        ),
     }))
 }
 
@@ -1440,6 +1470,10 @@ pub struct CcSignResponse {
     pub timestamp_token: bool,
     /// The derived finalization status (`finalizado_qualificado`).
     pub finalization: &'static str,
+    /// Declared signer-capacity evidence preserved from the request, when supplied. This is not
+    /// SCAP/authority verification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer_capacity_evidence: Option<SignerCapacityEvidence>,
 }
 
 /// Body of `POST /v1/acts/{id}/signature/dss/attach`.
@@ -1614,12 +1648,10 @@ pub async fn sign_cc_signature(
     let signing_time = OffsetDateTime::now_utc()
         .replace_nanosecond(0)
         .unwrap_or_else(|_| OffsetDateTime::now_utc());
-    let reason = match req
-        .capacity
-        .as_deref()
-        .map(str::trim)
-        .filter(|c| !c.is_empty())
-    {
+    let capacity = optional_trimmed(req.capacity);
+    let signer_capacity_evidence = signer_capacity_evidence_from_capacity(capacity.clone());
+    let signer_capacity_evidence_json = signer_capacity_evidence_json(&signer_capacity_evidence)?;
+    let reason = match capacity.as_deref() {
         Some(capacity) => format!("Assinatura qualificada da ata ({capacity})"),
         None => "Assinatura qualificada da ata".to_owned(),
     };
@@ -1669,6 +1701,7 @@ pub async fn sign_cc_signature(
         signer_cert_der: cc.signing_cert_der.clone(),
         timestamp_token_der: final_pdf.timestamp_token_der.clone(),
         timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
+        signer_capacity_evidence_json,
         signed_pdf_bytes: final_pdf.bytes,
     };
 
@@ -1681,6 +1714,9 @@ pub async fn sign_cc_signature(
         "family": FAMILY_CC,
         "evidentiary_level": EVIDENTIARY_QUALIFIED,
         "trusted_list_status": trusted_list_status,
+        "signer_capacity_evidence": signer_capacity_evidence_value(
+            stored.signer_capacity_evidence_json.as_deref()
+        ),
         "profile": pades_profile(final_pdf.timestamp_token_der.is_some()),
     });
     let payload = serde_json::to_vec(&event_payload)?;
@@ -1713,6 +1749,7 @@ pub async fn sign_cc_signature(
         signed_pdf_digest,
         timestamp_token: final_pdf.report.has_signature_timestamp,
         finalization: "finalizado_qualificado",
+        signer_capacity_evidence,
     }))
 }
 
@@ -2184,6 +2221,10 @@ pub struct RemoteConfirmResponse {
     pub timestamp_token: bool,
     /// The derived finalization status (`finalizado_qualificado`).
     pub finalization: &'static str,
+    /// Declared signer-capacity evidence preserved from the request, when supplied. This is not
+    /// SCAP/authority verification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer_capacity_evidence: Option<SignerCapacityEvidence>,
 }
 
 /// One entry in `GET /v1/signature/providers` — a non-secret picker row (t59 F4).
@@ -2308,12 +2349,10 @@ pub async fn initiate_remote_signature(
     let signing_time = OffsetDateTime::now_utc()
         .replace_nanosecond(0)
         .unwrap_or_else(|_| OffsetDateTime::now_utc());
-    let reason = match req
-        .capacity
-        .as_deref()
-        .map(str::trim)
-        .filter(|c| !c.is_empty())
-    {
+    let capacity = optional_trimmed(req.capacity);
+    let signer_capacity_evidence = signer_capacity_evidence_from_capacity(capacity.clone());
+    let signer_capacity_evidence_json = signer_capacity_evidence_json(&signer_capacity_evidence)?;
+    let reason = match capacity.as_deref() {
         Some(capacity) => format!("Assinatura qualificada da ata ({capacity})"),
         None => "Assinatura qualificada da ata".to_owned(),
     };
@@ -2366,6 +2405,7 @@ pub async fn initiate_remote_signature(
         status: STATUS_ACTIVATION_PENDING.to_owned(),
         masked_phone: activation_hint.clone(),
         doc_name,
+        signer_capacity_evidence_json,
         session_json: serde_json::to_string(&session)?,
         prepared_json: serde_json::to_string(&prepared)?,
         created_at: signing_time,
@@ -2495,6 +2535,7 @@ pub async fn confirm_remote_signature(
         signer_cert_der: session.signing_cert_der.clone(),
         timestamp_token_der: final_pdf.timestamp_token_der.clone(),
         timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
+        signer_capacity_evidence_json: pending.signer_capacity_evidence_json.clone(),
         signed_pdf_bytes: final_pdf.bytes,
     };
 
@@ -2509,6 +2550,9 @@ pub async fn confirm_remote_signature(
         "provider_id": provider_id,
         "evidentiary_level": EVIDENTIARY_QUALIFIED,
         "trusted_list_status": trusted_list_status,
+        "signer_capacity_evidence": signer_capacity_evidence_value(
+            pending.signer_capacity_evidence_json.as_deref()
+        ),
         "profile": pades_profile(final_pdf.timestamp_token_der.is_some()),
     });
     let payload = serde_json::to_vec(&event_payload)?;
@@ -2547,6 +2591,9 @@ pub async fn confirm_remote_signature(
         signed_pdf_digest,
         timestamp_token: final_pdf.report.has_signature_timestamp,
         finalization: "finalizado_qualificado",
+        signer_capacity_evidence: signer_capacity_evidence_from_json(
+            stored.signer_capacity_evidence_json.as_deref(),
+        ),
     }))
 }
 
@@ -3011,6 +3058,7 @@ pub async fn import_official_signature(
         signer_cert_der,
         timestamp_token_der: None,
         timestamp_trust_report_json: None,
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes: signed_pdf,
     };
 
@@ -3091,6 +3139,7 @@ pub async fn import_official_signature(
         guardrail_ids: official_signature_import_guardrail_ids(),
         acknowledged_guardrail_ids,
         acknowledgement_notice: OFFICIAL_SIGNATURE_IMPORT_ACKNOWLEDGEMENT_NOTICE,
+        signer_capacity_evidence: None,
     }))
 }
 
@@ -3167,6 +3216,8 @@ pub async fn sign_local_pkcs12_signature(
         .map(Pkcs12IdentitySelector::by_friendly_name)
         .unwrap_or_else(Pkcs12IdentitySelector::any);
     let capacity = optional_trimmed(req.capacity);
+    let signer_capacity_evidence = signer_capacity_evidence_from_capacity(capacity.clone());
+    let signer_capacity_evidence_json = signer_capacity_evidence_json(&signer_capacity_evidence)?;
     let signing_time = OffsetDateTime::now_utc()
         .replace_nanosecond(0)
         .unwrap_or_else(|_| OffsetDateTime::now_utc());
@@ -3226,6 +3277,7 @@ pub async fn sign_local_pkcs12_signature(
         signer_cert_der: identity.signing_certificate_der.clone(),
         timestamp_token_der: final_pdf.timestamp_token_der.clone(),
         timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
+        signer_capacity_evidence_json,
         signed_pdf_bytes: final_pdf.bytes,
     };
 
@@ -3237,6 +3289,9 @@ pub async fn sign_local_pkcs12_signature(
         "family": FAMILY_LOCAL_PKCS12,
         "evidentiary_level": EVIDENTIARY_ADVANCED_LOCAL,
         "trusted_list_status": null,
+        "signer_capacity_evidence": signer_capacity_evidence_value(
+            stored.signer_capacity_evidence_json.as_deref()
+        ),
         "profile": pades_profile(final_pdf.timestamp_token_der.is_some()),
         "signer_cert_sha256": signer_cert_sha256,
         "certificate_chain_count": identity.chain_der.len(),
@@ -3295,6 +3350,7 @@ pub async fn sign_local_pkcs12_signature(
         legal_status_claimed: false,
         status_scope: LOCAL_TECHNICAL_EVIDENCE_ONLY,
         notice: LOCAL_PKCS12_NOTICE,
+        signer_capacity_evidence,
     }))
 }
 
@@ -3334,6 +3390,9 @@ pub async fn get_signature_status(
                 evidentiary_level: signed.evidentiary_level,
                 trusted_list_status: signed.trusted_list_status,
                 signer_cert_subject: signed.signer_cert_subject,
+                signer_capacity_evidence: signer_capacity_evidence_from_json(
+                    signed.signer_capacity_evidence_json.as_deref(),
+                ),
                 signing_time: rfc3339(signed.signing_time),
                 signed_at: rfc3339(signed.signed_at),
                 signed_pdf_digest: signed.signed_pdf_digest,
@@ -4081,6 +4140,7 @@ async fn prepare_external_signed_pdf_evidence(
         signer_cert_der,
         timestamp_token_der: None,
         timestamp_trust_report_json: None,
+        signer_capacity_evidence_json: None,
         signed_pdf_bytes: signed_pdf,
     };
 
@@ -4364,6 +4424,43 @@ fn optional_trimmed(value: Option<String>) -> Option<String> {
             Some(trimmed.to_owned())
         }
     })
+}
+
+fn signer_capacity_evidence_from_capacity(
+    capacity: Option<String>,
+) -> Option<SignerCapacityEvidence> {
+    optional_trimmed(capacity).map(|requested_provider_capacity| SignerCapacityEvidence {
+        requested_provider_capacity,
+        source: "signature_request".to_owned(),
+        verification_status: "not_checked_by_scap".to_owned(),
+        verification_source: None,
+        verified_at: None,
+        authority_reference: None,
+        status_scope: "declared_capacity_evidence_only".to_owned(),
+    })
+}
+
+fn signer_capacity_evidence_json(
+    evidence: &Option<SignerCapacityEvidence>,
+) -> Result<Option<String>, ApiError> {
+    evidence
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(Into::into)
+}
+
+fn signer_capacity_evidence_from_json(json: Option<&str>) -> Option<SignerCapacityEvidence> {
+    json.and_then(|json| serde_json::from_str(json).ok())
+}
+
+fn signer_capacity_evidence_value(json: Option<&str>) -> serde_json::Value {
+    signer_capacity_evidence_from_json(json)
+        .map(serde_json::to_value)
+        .transpose()
+        .ok()
+        .flatten()
+        .unwrap_or(serde_json::Value::Null)
 }
 
 fn official_import_candidate_from_request(
@@ -5283,6 +5380,7 @@ mod tests {
             signer_cert_der: vec![1, 2, 3],
             timestamp_token_der,
             timestamp_trust_report_json: None,
+            signer_capacity_evidence_json: None,
             signed_pdf_bytes: b"%PDF".to_vec(),
         }
     }

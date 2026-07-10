@@ -771,6 +771,14 @@ async fn cc_round_trip(card: CcTestCard) {
     assert_eq!(done["trusted_list_status"], "Granted");
     assert_eq!(done["finalization"], "finalizado_qualificado");
     assert_eq!(done["timestamp_token"], false);
+    assert_eq!(
+        done["signer_capacity_evidence"]["requested_provider_capacity"],
+        "Administrador"
+    );
+    assert_eq!(
+        done["signer_capacity_evidence"]["verification_status"],
+        "not_checked_by_scap"
+    );
 
     // The signed PDF downloads and VALIDATES (SIG-24): ByteRange covers the whole file, the signer
     // is the card's SIGNATURE leaf.
@@ -818,6 +826,14 @@ async fn cc_round_trip(card: CcTestCard) {
     assert_eq!(view["finalization"], "finalizado_qualificado");
     assert_eq!(view["signed"]["family"], "CartaoDeCidadao");
     assert_eq!(view["signed"]["evidentiary_level"], "Qualified");
+    assert_eq!(
+        view["signed"]["signer_capacity_evidence"]["requested_provider_capacity"],
+        "Administrador"
+    );
+    assert_eq!(
+        view["signed"]["signer_capacity_evidence"]["authority_reference"],
+        Value::Null
+    );
     assert_signature_evidence_status(&view, "B-B", false, "not_configured");
 
     // A second signature over the already-signed act is refused (409).
