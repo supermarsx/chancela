@@ -265,21 +265,26 @@ fn emit_structure_tree(
         .map(|_| pdf.new_object_id())
         .collect::<Vec<_>>();
 
-    for (element, &element_id) in laid.structure_elements.iter().zip(&element_ids) {
+    for (element_index, (element, &element_id)) in
+        laid.structure_elements.iter().zip(&element_ids).enumerate()
+    {
         let mut elem = Dictionary::new();
         elem.set("Type", name("StructElem"));
         elem.set("S", name(structure_role_name(element.role)));
-        elem.set("P", Object::Reference(document_id));
         elem.set(
-            "K",
-            Object::Array(
+            "P",
+            Object::Reference(
                 element
-                    .marked_content
-                    .iter()
-                    .map(|marked| marked_content_reference(marked, page_ids))
-                    .collect(),
+                    .parent
+                    .map(|parent_index| element_ids[parent_index])
+                    .unwrap_or(document_id),
             ),
         );
+        elem.set(
+            "K",
+            Object::Array(structure_element_kids(element, &element_ids, page_ids)),
+        );
+        debug_assert_eq!(element_ids[element_index], element_id);
         pdf.set_object(element_id, Object::Dictionary(elem));
     }
 
@@ -291,9 +296,11 @@ fn emit_structure_tree(
     document.set(
         "K",
         Object::Array(
-            element_ids
+            laid.structure_elements
                 .iter()
-                .map(|&id| Object::Reference(id))
+                .enumerate()
+                .filter(|(_, element)| element.parent.is_none())
+                .map(|(index, _)| Object::Reference(element_ids[index]))
                 .collect(),
         ),
     );
@@ -315,6 +322,27 @@ fn emit_structure_tree(
     pdf.set_object(root_id, Object::Dictionary(root));
 
     root_id
+}
+
+fn structure_element_kids(
+    element: &layout::TaggedElement,
+    element_ids: &[ObjectId],
+    page_ids: &[ObjectId],
+) -> Vec<Object> {
+    let mut kids = Vec::with_capacity(element.children.len() + element.marked_content.len());
+    kids.extend(
+        element
+            .children
+            .iter()
+            .map(|&child_index| Object::Reference(element_ids[child_index])),
+    );
+    kids.extend(
+        element
+            .marked_content
+            .iter()
+            .map(|marked| marked_content_reference(marked, page_ids)),
+    );
+    kids
 }
 
 fn marked_content_reference(marked: &layout::MarkedContentRef, page_ids: &[ObjectId]) -> Object {
@@ -364,8 +392,11 @@ fn structure_role_name(role: layout::StructureRole) -> &'static str {
         layout::StructureRole::Heading(3) => "ChancelaHeading3",
         layout::StructureRole::Heading(_) => "ChancelaHeading",
         layout::StructureRole::Paragraph => "ChancelaParagraph",
-        layout::StructureRole::KeyValue => "ChancelaKeyValue",
+        layout::StructureRole::KeyValueTable => "ChancelaKeyValue",
         layout::StructureRole::VoteTable => "ChancelaVoteTable",
+        layout::StructureRole::TableRow => "TR",
+        layout::StructureRole::TableHeaderCell => "TH",
+        layout::StructureRole::TableDataCell => "TD",
         layout::StructureRole::SignatureBlock => "ChancelaSignatureBlock",
     }
 }

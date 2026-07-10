@@ -44,6 +44,10 @@ pub struct Laid {
 pub struct TaggedElement {
     /// The writer's bounded semantic role for this element.
     pub role: StructureRole,
+    /// Parent structure element index, or `None` for children of the document root.
+    pub parent: Option<usize>,
+    /// Child structure element indices in reading order.
+    pub children: Vec<usize>,
     /// Marked-content references belonging to this structure element.
     pub marked_content: Vec<MarkedContentRef>,
 }
@@ -63,8 +67,11 @@ pub enum StructureRole {
     HeaderMetadata,
     Heading(u8),
     Paragraph,
-    KeyValue,
+    KeyValueTable,
     VoteTable,
+    TableRow,
+    TableHeaderCell,
+    TableDataCell,
     SignatureBlock,
 }
 
@@ -128,16 +135,28 @@ impl<'f> Layouter<'f> {
     }
 
     fn tagged_element(&mut self, role: StructureRole, render: impl FnOnce(&mut Self)) {
+        let parent = self.current_element;
         let index = self.structure_elements.len();
         self.structure_elements.push(TaggedElement {
             role,
+            parent,
+            children: Vec::new(),
             marked_content: Vec::new(),
         });
+        if let Some(parent_index) = parent {
+            self.structure_elements[parent_index].children.push(index);
+        }
         let previous = self.current_element.replace(index);
         render(self);
         self.current_element = previous;
-        if self.structure_elements[index].marked_content.is_empty() {
-            self.structure_elements.remove(index);
+        if self.structure_elements[index].marked_content.is_empty()
+            && self.structure_elements[index].children.is_empty()
+        {
+            self.structure_elements.pop();
+            if let Some(parent_index) = parent {
+                let removed = self.structure_elements[parent_index].children.pop();
+                debug_assert_eq!(removed, Some(index));
+            }
         }
     }
 
@@ -320,7 +339,7 @@ impl<'f> Layouter<'f> {
     }
 
     fn key_value(&mut self, rows: &[(String, String)]) {
-        self.tagged_element(StructureRole::KeyValue, |l| {
+        self.tagged_element(StructureRole::KeyValueTable, |l| {
             let x0 = l.content_x0();
             let val_x = x0 + 150.0;
             let val_x1 = l.content_x1();
@@ -332,35 +351,41 @@ impl<'f> Layouter<'f> {
     }
 
     fn draw_kv_row(&mut self, k: &str, v: &str, x0: f32, val_x: f32, val_x1: f32) {
-        let baseline = self.take_line(BODY);
-        self.frag(x0, baseline, BODY, true, false, k);
-        // value wrapped within [val_x, val_x1]; first line shares the key's baseline.
-        let vwords = split_words(v, false, false);
-        let col_w = val_x1 - val_x;
-        let space = self.space_w(BODY);
-        let mut cur_base = baseline;
-        let mut line_w = 0.0f32;
-        let mut line_started = false;
-        for w in &vwords {
-            let ww = self.text_w(&w.text, BODY);
-            let add = if line_started {
-                line_w + space + ww
-            } else {
-                ww
-            };
-            if line_started && add > col_w {
-                cur_base = self.take_line(BODY);
-                line_w = 0.0;
-                line_started = false;
-            }
-            if line_started {
-                self.frag(val_x + line_w, cur_base, BODY, false, false, " ");
-                line_w += space;
-            }
-            self.frag(val_x + line_w, cur_base, BODY, false, false, &w.text);
-            line_w += ww;
-            line_started = true;
-        }
+        self.tagged_element(StructureRole::TableRow, |l| {
+            let baseline = l.take_line(BODY);
+            l.tagged_element(StructureRole::TableHeaderCell, |l| {
+                l.frag(x0, baseline, BODY, true, false, k);
+            });
+            l.tagged_element(StructureRole::TableDataCell, |l| {
+                // value wrapped within [val_x, val_x1]; first line shares the key's baseline.
+                let vwords = split_words(v, false, false);
+                let col_w = val_x1 - val_x;
+                let space = l.space_w(BODY);
+                let mut cur_base = baseline;
+                let mut line_w = 0.0f32;
+                let mut line_started = false;
+                for w in &vwords {
+                    let ww = l.text_w(&w.text, BODY);
+                    let add = if line_started {
+                        line_w + space + ww
+                    } else {
+                        ww
+                    };
+                    if line_started && add > col_w {
+                        cur_base = l.take_line(BODY);
+                        line_w = 0.0;
+                        line_started = false;
+                    }
+                    if line_started {
+                        l.frag(val_x + line_w, cur_base, BODY, false, false, " ");
+                        line_w += space;
+                    }
+                    l.frag(val_x + line_w, cur_base, BODY, false, false, &w.text);
+                    line_w += ww;
+                    line_started = true;
+                }
+            });
+        });
     }
 
     fn vote_table(&mut self, rows: &[chancela_core::VoteRow]) {
@@ -376,20 +401,40 @@ impl<'f> Layouter<'f> {
             l.gap(4.0);
             // Header row.
             let base = l.take_line(BODY);
-            l.frag(x0, base, BODY, true, false, "Deliberação");
-            l.right(c1_r, base, BODY, true, "A favor");
-            l.right(c2_r, base, BODY, true, "Contra");
-            l.right(c3_r, base, BODY, true, "Abstenção");
+            l.tagged_element(StructureRole::TableRow, |l| {
+                l.tagged_element(StructureRole::TableHeaderCell, |l| {
+                    l.frag(x0, base, BODY, true, false, "Deliberação");
+                });
+                l.tagged_element(StructureRole::TableHeaderCell, |l| {
+                    l.right(c1_r, base, BODY, true, "A favor");
+                });
+                l.tagged_element(StructureRole::TableHeaderCell, |l| {
+                    l.right(c2_r, base, BODY, true, "Contra");
+                });
+                l.tagged_element(StructureRole::TableHeaderCell, |l| {
+                    l.right(c3_r, base, BODY, true, "Abstenção");
+                });
+            });
             l.rule_at(x0, x1, base - 3.0, 0.6);
             l.gap(3.0);
             for r in rows {
                 // Each row is atomic; `take_line` page-breaks if it will not fit.
                 let base = l.take_line(BODY);
-                // wrap-free label (truncation avoided by column width being generous)
-                l.frag_clip(x0, base, BODY, &r.label, label_x1 - x0);
-                l.right(c1_r, base, BODY, false, &r.favor.to_string());
-                l.right(c2_r, base, BODY, false, &r.against.to_string());
-                l.right(c3_r, base, BODY, false, &r.abstain.to_string());
+                l.tagged_element(StructureRole::TableRow, |l| {
+                    l.tagged_element(StructureRole::TableDataCell, |l| {
+                        // wrap-free label (truncation avoided by column width being generous)
+                        l.frag_clip(x0, base, BODY, &r.label, label_x1 - x0);
+                    });
+                    l.tagged_element(StructureRole::TableDataCell, |l| {
+                        l.right(c1_r, base, BODY, false, &r.favor.to_string());
+                    });
+                    l.tagged_element(StructureRole::TableDataCell, |l| {
+                        l.right(c2_r, base, BODY, false, &r.against.to_string());
+                    });
+                    l.tagged_element(StructureRole::TableDataCell, |l| {
+                        l.right(c3_r, base, BODY, false, &r.abstain.to_string());
+                    });
+                });
             }
             let end_y = l.y - 1.0;
             l.rule_at(x0, x1, end_y, 0.6);
@@ -488,8 +533,11 @@ fn marked_content_tag(role: StructureRole) -> &'static str {
         StructureRole::Heading(3) => "H3",
         StructureRole::Heading(_) => "H",
         StructureRole::Paragraph => "P",
-        StructureRole::KeyValue => "Div",
-        StructureRole::VoteTable => "Div",
+        StructureRole::KeyValueTable => "Table",
+        StructureRole::VoteTable => "Table",
+        StructureRole::TableRow => "TR",
+        StructureRole::TableHeaderCell => "TH",
+        StructureRole::TableDataCell => "TD",
         StructureRole::SignatureBlock => "Div",
     }
 }
