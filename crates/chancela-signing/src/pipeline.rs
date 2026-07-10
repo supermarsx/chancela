@@ -18,7 +18,10 @@ use chancela_pades::{
 use chancela_tsa::{HttpTsaTransport, Timestamp, TimestampRequest, TsaClient, TsaTransport};
 
 use crate::SigningError;
-use crate::asic::{create_asic_s_container, sha256_content_digest};
+use crate::asic::{
+    ASICE_CADES_SIGNATURE_PATH, AsicPayload, build_asic_e_manifest, create_asic_e_container,
+    create_asic_s_container, sha256_content_digest,
+};
 use crate::provider::SignerProvider;
 use crate::revocation::RevocationEvidence;
 
@@ -72,6 +75,23 @@ pub fn sign_asic_s(
     let content_digest = sha256_content_digest(content);
     let cades = sign_detached_cades(provider, &content_digest, signing_time)?;
     let container = create_asic_s_container(content_name, content, &cades)?;
+    Ok((container, cades))
+}
+
+/// Produce a bounded ASiC-E/CAdES container over one or more payloads.
+///
+/// The CAdES signature covers the generated `META-INF/ASiCManifest.xml`; that manifest records
+/// one SHA-256 digest per payload. This is a technical ASiC-E/CAdES container only and does not
+/// claim long-term or legal sufficiency.
+pub fn sign_asic_e(
+    provider: &dyn SignerProvider,
+    payloads: &[AsicPayload<'_>],
+    signing_time: OffsetDateTime,
+) -> Result<(Vec<u8>, Vec<u8>), SigningError> {
+    let manifest = build_asic_e_manifest(payloads, ASICE_CADES_SIGNATURE_PATH)?;
+    let manifest_digest = sha256_content_digest(&manifest);
+    let cades = sign_detached_cades(provider, &manifest_digest, signing_time)?;
+    let container = create_asic_e_container(payloads, &cades)?;
     Ok((container, cades))
 }
 

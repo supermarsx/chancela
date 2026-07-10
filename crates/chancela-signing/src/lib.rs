@@ -42,8 +42,11 @@ pub mod soft_cert;
 pub mod validate;
 
 pub use asic::{
-    ASICE_MIMETYPE, ASICS_CADES_SIGNATURE_PATH, ASICS_MIMETYPE, AsicSContainer,
-    create_asic_s_container, extract_asic_s_container, sha256_content_digest,
+    ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_CADES_SIGNATURE_PATH,
+    ASICS_MIMETYPE, AsicContainer, AsicEContainer, AsicEDataObject, AsicPayload, AsicSContainer,
+    build_asic_e_manifest, create_asic_e_container, create_asic_s_container,
+    extract_asic_container, extract_asic_e_container, extract_asic_s_container,
+    sha256_content_digest,
 };
 pub use cc::{CcSignedPdf, sign_pdf_cc};
 pub use cmd_session::{
@@ -54,7 +57,7 @@ pub use envelope::{
 };
 pub use mock::MockProvider;
 pub use pipeline::{
-    TimestampProvider, attach_pdf_dss, attach_pdf_revocation_evidence, sign_asic_s,
+    TimestampProvider, attach_pdf_dss, attach_pdf_revocation_evidence, sign_asic_e, sign_asic_s,
     sign_detached_cades, sign_pdf_pades, timestamp_pdf, timestamp_pdf_with_url,
 };
 pub use policy::{StaticTrustPolicy, TrustPolicy, TslTrustPolicy};
@@ -120,9 +123,9 @@ impl SigningFamily {
 }
 
 /// Advanced/Qualified Electronic Signature container formats the subsystem vocabulary recognises
-/// (SIG-20). PAdES, detached CAdES, and bounded single-payload ASiC-S/CAdES containers are
-/// implemented in this crate; XAdES is recognised explicitly but remains unavailable and returns
-/// [`SigningError::UnsupportedFormat`].
+/// (SIG-20). PAdES, detached CAdES, bounded single-payload ASiC-S/CAdES containers, and bounded
+/// ASiC-E/CAdES manifest containers are implemented in this crate; XAdES is recognised explicitly
+/// but remains unavailable and returns [`SigningError::UnsupportedFormat`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SignatureFormat {
@@ -132,7 +135,7 @@ pub enum SignatureFormat {
     XAdES,
     /// CAdES — CMS Advanced Electronic Signatures.
     CAdES,
-    /// ASiC — Associated Signature Containers (bounded ASiC-S/CAdES support).
+    /// ASiC — Associated Signature Containers (bounded ASiC-S/CAdES and ASiC-E/CAdES support).
     ASiC,
 }
 
@@ -304,7 +307,7 @@ pub struct SignatureArtifact {
     /// When the signature was produced.
     #[serde(with = "time::serde::rfc3339::option")]
     pub signed_at: Option<time::OffsetDateTime>,
-    /// The produced bytes: detached CMS DER (CAdES), signed-PDF bytes (PAdES), ASiC-S ZIP bytes, or
+    /// The produced bytes: detached CMS DER (CAdES), signed-PDF bytes (PAdES), ASiC ZIP bytes, or
     /// scan (Manual).
     pub signature: Vec<u8>,
     /// The trusted-list status of the signer's issuer resolved at signing time (SIG-11/23), if a
@@ -382,7 +385,7 @@ pub enum SigningError {
     /// PAdES PDF signing/validation failed (`chancela-pades`).
     #[error("PAdES error: {0}")]
     Pades(String),
-    /// ASiC-S container creation/parsing/validation failed.
+    /// ASiC container creation/parsing/validation failed.
     #[error("ASiC container error: {0}")]
     Asic(String),
     /// Qualified-timestamp acquisition failed (`chancela-tsa`).
@@ -392,7 +395,7 @@ pub enum SigningError {
     #[error("trusted-list error: {0}")]
     TrustedList(String),
     /// The container format requested is recognised by the vocabulary but not yet produced by this
-    /// crate (XAdES is phase-2; ASiC support is currently bounded to ASiC-S/CAdES).
+    /// crate (XAdES is phase-2; ASiC support is currently bounded to CAdES-backed ASiC-S/E).
     #[error("signature format not supported yet: {0:?}")]
     UnsupportedFormat(SignatureFormat),
     /// The document input did not match the requested format (e.g. PAdES needs PDF bytes, a

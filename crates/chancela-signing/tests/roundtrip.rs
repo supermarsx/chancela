@@ -21,11 +21,13 @@ use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
 use chancela_signing::{
-    ASICE_MIMETYPE, ASICS_MIMETYPE, BaselineProfile, DocumentInput, EvidentiaryLevel, MockProvider,
-    SignOptions, SignatureArtifact, SignatureEnvelope, SignatureFormat, SignatureRequest,
-    SignerCapacity, SignerProvider, SigningError, SigningFamily, SigningJob, SigningOrder,
-    StaticTrustPolicy, Timestamp, TimestampProvider, TrustedListStatus, create_asic_s_container,
-    extract_asic_s_container, sha256_content_digest, sign_slot, validate_signature,
+    ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_MIMETYPE, AsicPayload,
+    BaselineProfile, DocumentInput, EvidentiaryLevel, MockProvider, SignOptions, SignatureArtifact,
+    SignatureEnvelope, SignatureFormat, SignatureRequest, SignerCapacity, SignerProvider,
+    SigningError, SigningFamily, SigningJob, SigningOrder, StaticTrustPolicy, Timestamp,
+    TimestampProvider, TrustedListStatus, create_asic_e_container, create_asic_s_container,
+    extract_asic_e_container, extract_asic_s_container, sha256_content_digest, sign_slot,
+    validate_signature,
 };
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
@@ -552,14 +554,148 @@ fn asic_s_payload_tamper_fails_cades_validation() {
 }
 
 #[test]
+fn asic_e_cades_manifest_round_trip_rsa() {
+    let provider = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let payloads = [
+        AsicPayload {
+            name: "minutes.txt",
+            bytes: b"approved minutes payload for ASiC-E",
+            mime_type: Some("text/plain"),
+        },
+        AsicPayload {
+            name: "attachments/votes.csv",
+            bytes: b"member,vote\nA,yes\nB,yes\n",
+            mime_type: Some("text/csv"),
+        },
+    ];
+    let mut env = SignatureEnvelope::new(
+        SigningOrder::Parallel,
+        vec![request(
+            SigningFamily::CartaoDeCidadao,
+            SignatureFormat::ASiC,
+            BaselineProfile::B_B,
+        )],
+    );
+
+    sign_slot(
+        &mut env,
+        0,
+        SigningJob {
+            provider: &provider,
+            policy: None,
+            tsa: None,
+            input: DocumentInput::AsicPayloads(&payloads),
+            signing_time: fixed_time(),
+            pdf_options: SignOptions::default(),
+        },
+    )
+    .expect("sign ASiC-E");
+
+    let artifact = &env.artifacts[0];
+    assert_eq!(artifact.format, SignatureFormat::ASiC);
+    assert_eq!(artifact.profile, BaselineProfile::B_B);
+    assert!(
+        artifact.signature.starts_with(b"PK"),
+        "ASiC-E artifact is a ZIP container"
+    );
+
+    let parsed = extract_asic_e_container(&artifact.signature).expect("parse ASiC-E");
+    assert_eq!(parsed.signature_path, ASICE_CADES_SIGNATURE_PATH);
+    assert!(String::from_utf8_lossy(&parsed.manifest).contains("ASiCManifest"));
+    assert_eq!(parsed.data_objects.len(), 2);
+    assert_eq!(parsed.data_objects[0].name, "minutes.txt");
+    assert_eq!(parsed.data_objects[0].bytes, payloads[0].bytes);
+    assert_eq!(
+        parsed.data_objects[0].sha256_digest,
+        sha256_content_digest(payloads[0].bytes)
+    );
+    assert_eq!(parsed.data_objects[1].name, "attachments/votes.csv");
+
+    let report = validate_signature(artifact, None).expect("validate ASiC-E/CAdES");
+    assert!(report.cryptographically_valid);
+    assert_eq!(report.evidentiary_level, EvidentiaryLevel::Qualified);
+    assert_eq!(
+        report.signer_cert_der,
+        provider.signing_certificate_der().unwrap()
+    );
+    assert!(!report.has_signature_timestamp);
+    assert_eq!(report.covers_whole_file, None);
+
+    let err =
+        validate_signature(artifact, Some(&sha256_content_digest(payloads[0].bytes))).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(ref msg) if msg.contains("multiple payloads")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn asic_e_payload_tamper_fails_manifest_validation() {
+    let provider = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let payloads = [
+        AsicPayload {
+            name: "minutes.txt",
+            bytes: b"original ASiC-E minutes",
+            mime_type: Some("text/plain"),
+        },
+        AsicPayload {
+            name: "attachment.bin",
+            bytes: b"attached evidence",
+            mime_type: Some("application/octet-stream"),
+        },
+    ];
+    let mut env = SignatureEnvelope::new(
+        SigningOrder::Parallel,
+        vec![request(
+            SigningFamily::CartaoDeCidadao,
+            SignatureFormat::ASiC,
+            BaselineProfile::B_B,
+        )],
+    );
+    sign_slot(
+        &mut env,
+        0,
+        SigningJob {
+            provider: &provider,
+            policy: None,
+            tsa: None,
+            input: DocumentInput::AsicPayloads(&payloads),
+            signing_time: fixed_time(),
+            pdf_options: SignOptions::default(),
+        },
+    )
+    .unwrap();
+
+    let parsed = extract_asic_e_container(&env.artifacts[0].signature).unwrap();
+    let tampered = zip_container(&[
+        ("mimetype", ASICE_MIMETYPE.as_bytes()),
+        ("minutes.txt", b"tampered ASiC-E minutes" as &[u8]),
+        ("attachment.bin", payloads[1].bytes),
+        (ASICE_MANIFEST_PATH, parsed.manifest.as_slice()),
+        (
+            ASICE_CADES_SIGNATURE_PATH,
+            parsed.cades_signature_der.as_slice(),
+        ),
+    ]);
+    let mut artifact = env.artifacts[0].clone();
+    artifact.signature = tampered;
+
+    let err = validate_signature(&artifact, None).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(ref msg) if msg.contains("digest mismatch")),
+        "got {err:?}"
+    );
+}
+
+#[test]
 fn asic_unsupported_container_shapes_report_precise_gaps() {
     let asice = zip_container(&[
         ("mimetype", ASICE_MIMETYPE.as_bytes()),
         ("payload.txt", b"payload" as &[u8]),
-        ("META-INF/signatures.p7s", b"cms" as &[u8]),
+        (ASICE_CADES_SIGNATURE_PATH, b"cms" as &[u8]),
     ]);
     let err = validate_signature(&asic_artifact(asice), None).unwrap_err();
-    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("ASiC-E")));
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("ASiCManifest")));
 
     let xades = zip_container(&[
         ("mimetype", ASICS_MIMETYPE.as_bytes()),
@@ -589,6 +725,21 @@ fn asic_unsupported_container_shapes_report_precise_gaps() {
 
     let err = create_asic_s_container("meta-inf/payload.txt", b"payload", b"cms").unwrap_err();
     assert!(matches!(err, SigningError::Asic(msg) if msg.contains("META-INF")));
+
+    let duplicate_payload = [
+        AsicPayload {
+            name: "payload.txt",
+            bytes: b"one",
+            mime_type: Some("text/plain"),
+        },
+        AsicPayload {
+            name: "PAYLOAD.txt",
+            bytes: b"two",
+            mime_type: Some("text/plain"),
+        },
+    ];
+    let err = create_asic_e_container(&duplicate_payload, b"cms").unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("duplicate")));
 }
 
 // --- Full envelope with the trusted-list policy gate ---------------------------------------------

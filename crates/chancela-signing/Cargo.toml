@@ -24,6 +24,8 @@ uuid = { workspace = true }
 time = { workspace = true }
 der = { workspace = true }
 spki = { workspace = true }
+base64 = { workspace = true }
+quick-xml = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
 reqwest = { workspace = true }
@@ -39,6 +41,3 @@ x509-ocsp = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
-# Test-only: encode the in-test cert PEM + RSA signature into mock SCMD SOAP responses, and
-# build the SHA-256 DigestInfo the CMD raw signature covers (t57 two-phase round-trip).
-base64 = { workspace = true }

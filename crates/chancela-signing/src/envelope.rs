@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use chancela_pades::SignOptions;
 
+use crate::asic::AsicPayload;
 use crate::pipeline::{self, TimestampProvider};
 use crate::policy::TrustPolicy;
 use crate::provider::SignerProvider;
@@ -20,7 +21,8 @@ use crate::{
 };
 
 /// The document being signed for one slot: a precomputed content digest (detached CAdES), the PDF
-/// bytes to sign in place (PAdES), or one named payload to package in ASiC-S.
+/// bytes to sign in place (PAdES), one named payload to package in ASiC-S, or multiple payloads to
+/// package in ASiC-E/CAdES.
 #[derive(Debug, Clone, Copy)]
 pub enum DocumentInput<'a> {
     /// A SHA-256 content digest — for a detached [`SignatureFormat::CAdES`] signature.
@@ -34,6 +36,8 @@ pub enum DocumentInput<'a> {
         /// The payload bytes to hash, sign with detached CAdES-B, and package.
         bytes: &'a [u8],
     },
+    /// One or more payload files to package in a bounded ASiC-E/CAdES container.
+    AsicPayloads(&'a [AsicPayload<'a>]),
 }
 
 /// Everything needed to sign one envelope slot, beyond the envelope and the slot index.
@@ -180,6 +184,17 @@ pub fn sign_slot(
             // ASiC-S/CAdES generation is bounded to B-B. As with detached CAdES, a requested
             // timestamp is captured only as external evidence; it is not embedded in the ASiC ZIP
             // and does not upgrade the reported baseline profile.
+            let token = match (want_timestamp, tsa) {
+                (true, Some(tsa)) => Some(tsa.timestamp_data(&cades)?.token_der),
+                _ => None,
+            };
+            (container, BaselineProfile::B_B, token)
+        }
+        (SignatureFormat::ASiC, DocumentInput::AsicPayloads(payloads)) => {
+            let (container, cades) = pipeline::sign_asic_e(provider, payloads, signing_time)?;
+            // ASiC-E/CAdES generation is bounded to B-B: the CAdES signature covers the
+            // ASiCManifest, whose digest entries bind the payload files. A requested timestamp is
+            // external evidence and does not upgrade the reported profile.
             let token = match (want_timestamp, tsa) {
                 (true, Some(tsa)) => Some(tsa.timestamp_data(&cades)?.token_der),
                 _ => None,

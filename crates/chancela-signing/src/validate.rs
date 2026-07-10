@@ -1,7 +1,7 @@
 //! Signature validation and reporting (SIG-24).
 //!
 //! Delegates the cryptographic and structural check to `chancela-cades` (detached CAdES),
-//! `chancela-pades` (PAdES over the embedded ByteRange), or the bounded ASiC-S/CAdES parser, and
+//! `chancela-pades` (PAdES over the embedded ByteRange), or the bounded ASiC/CAdES parsers, and
 //! folds in the evidentiary labelling and trusted-list status recorded on the artifact. The EU DSS
 //! validation-sidecar cross-check (SIG-23) is a documented phase-2 seam; this native path produces
 //! the report required at sealing time.
@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 
 use crate::{
     EvidentiaryLevel, SignatureArtifact, SignatureFormat, SigningError, TrustedListStatus,
+    asic::AsicContainer,
 };
 
 /// Policy input for technical timestamp-trust validation.
@@ -109,8 +110,10 @@ pub struct SignatureValidationReport {
 /// signed PDF and validation is self-contained (`content_digest` is ignored). For
 /// [`SignatureFormat::CAdES`] the bytes are the detached CMS and the caller MUST supply the
 /// `content_digest` the signature covers. For [`SignatureFormat::ASiC`] the bytes are a bounded
-/// ASiC-S ZIP container and validation is self-contained; if `content_digest` is supplied, it is
-/// cross-checked against the packaged payload digest. XAdES remains unsupported (phase-2).
+/// ASiC-S or ASiC-E/CAdES ZIP container and validation is self-contained. If `content_digest` is
+/// supplied, it is cross-checked against the packaged ASiC-S payload digest, or against the single
+/// ASiC-E payload digest when the ASiC-E container has exactly one payload. XAdES remains
+/// unsupported (phase-2).
 pub fn validate_signature(
     artifact: &SignatureArtifact,
     content_digest: Option<&[u8; 32]>,
@@ -150,34 +153,64 @@ pub fn validate_signature(
                 has_local_dss_revocation_evidence: false,
             })
         }
-        SignatureFormat::ASiC => {
-            let container = crate::asic::extract_asic_s_container(&artifact.signature)?;
-            let packaged_digest = crate::asic::sha256_content_digest(&container.content);
-            if let Some(expected) = content_digest {
-                if expected != &packaged_digest {
-                    return Err(SigningError::Asic(
-                        "ASiC payload digest does not match the supplied content digest"
-                            .to_string(),
-                    ));
+        SignatureFormat::ASiC => match crate::asic::extract_asic_container(&artifact.signature)? {
+            AsicContainer::S(container) => {
+                let packaged_digest = crate::asic::sha256_content_digest(&container.content);
+                if let Some(expected) = content_digest {
+                    if expected != &packaged_digest {
+                        return Err(SigningError::Asic(
+                            "ASiC payload digest does not match the supplied content digest"
+                                .to_string(),
+                        ));
+                    }
                 }
+                validate_cades_member(artifact, container.cades_signature_der, &packaged_digest)
             }
+            AsicContainer::E(container) => {
+                if let Some(expected) = content_digest {
+                    match container.data_objects.as_slice() {
+                        [single] if expected == &single.sha256_digest => {}
+                        [single] => {
+                            return Err(SigningError::Asic(format!(
+                                "ASiC-E payload digest for {} does not match the supplied content digest",
+                                single.name
+                            )));
+                        }
+                        _ => {
+                            return Err(SigningError::Asic(
+                                "ASiC-E contains multiple payloads; a single supplied content digest is ambiguous"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
 
-            let cades_artifact = SignatureArtifact {
-                id: artifact.id,
-                slot: artifact.slot,
-                family: artifact.family,
-                format: SignatureFormat::CAdES,
-                profile: artifact.profile,
-                evidentiary_level: artifact.evidentiary_level,
-                signed_at: artifact.signed_at,
-                signature: container.cades_signature_der,
-                trusted_list_status: artifact.trusted_list_status,
-                timestamp_token_der: artifact.timestamp_token_der.clone(),
-            };
-            validate_signature(&cades_artifact, Some(&packaged_digest))
-        }
+                let manifest_digest = crate::asic::sha256_content_digest(&container.manifest);
+                validate_cades_member(artifact, container.cades_signature_der, &manifest_digest)
+            }
+        },
         other => Err(SigningError::UnsupportedFormat(other)),
     }
+}
+
+fn validate_cades_member(
+    artifact: &SignatureArtifact,
+    cades_signature_der: Vec<u8>,
+    content_digest: &[u8; 32],
+) -> Result<SignatureValidationReport, SigningError> {
+    let cades_artifact = SignatureArtifact {
+        id: artifact.id,
+        slot: artifact.slot,
+        family: artifact.family,
+        format: SignatureFormat::CAdES,
+        profile: artifact.profile,
+        evidentiary_level: artifact.evidentiary_level,
+        signed_at: artifact.signed_at,
+        signature: cades_signature_der,
+        trusted_list_status: artifact.trusted_list_status,
+        timestamp_token_der: artifact.timestamp_token_der.clone(),
+    };
+    validate_signature(&cades_artifact, Some(content_digest))
 }
 
 /// Validate technical timestamp trust from already-verified RFC 3161 output and QTST details.

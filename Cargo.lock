@@ -707,6 +707,7 @@ dependencies = [
  "der",
  "p12",
  "p256",
+ "quick-xml",
  "rand_core 0.6.4",
  "reqwest",
  "rsa",
