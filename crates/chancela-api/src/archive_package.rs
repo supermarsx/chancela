@@ -17,7 +17,7 @@ use chancela_archive::{
     validate_package,
 };
 use chancela_authz::Permission;
-use chancela_core::{Act, ActId, BookId, BookState, LegalHold};
+use chancela_core::{Act, ActId, ActState, BookId, BookState, LegalHold};
 use chancela_store::{StoredDocument, StoredSignedDocument};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -27,12 +27,20 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::CurrentActor;
+use crate::actor::CurrentAttestor;
 use crate::authz::{require_permission, scope_of_book};
 use crate::error::ApiError;
+use crate::privacy::{
+    RetentionDisposalAction, RetentionPolicyId, RetentionPolicyRecord, RetentionPolicyStatus,
+};
 
 const PACKAGE_PROFILE: &str = "chancela-internal-preservation-package/v1";
 const ZIP_CONTENT_TYPE: &str = "application/zip";
 const JSON_CONTENT_TYPE: &str = "application/json";
+const ARCHIVE_DISPOSAL_POLICY_SCOPE: &str = "book_archive";
+const ARCHIVE_DISPOSAL_POLICY_CATEGORY: &str = "documents";
+const ARCHIVE_DISPOSAL_EVENT_KIND: &str = "book.archive.disposal.execution_recorded";
+const MAX_DISPOSAL_OPERATOR_NOTES_CHARS: usize = 4096;
 const SIGNED_PDF_B_B_PROFILE: &str = "application/pdf; profile=PAdES-B-B";
 const SIGNED_PDF_B_T_PROFILE: &str = "application/pdf; profile=PAdES-B-T";
 const CERT_CONTENT_TYPE: &str = "application/pkix-cert";
@@ -77,6 +85,9 @@ pub struct ExportArchivePackageQuery {
 pub struct DisposalSimulationRequest {
     #[serde(default)]
     dry_run: bool,
+    retention_policy_id: Option<String>,
+    execution_request_id: Option<String>,
+    operator_notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -112,6 +123,62 @@ pub struct DisposalSimulationView {
     dry_run: bool,
     status: DisposalStatusView,
     would_delete: WouldDeleteManifest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    execution: Option<DisposalExecutionView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DisposalExecutionView {
+    record: DisposalExecutionRecord,
+    audit_event: DisposalAuditEvent,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DisposalExecutionRecord {
+    id: String,
+    requested_at: String,
+    actor: String,
+    retention_policy: DisposalRetentionPolicyEvidence,
+    candidate: DisposalRetentionCandidate,
+    outcome: &'static str,
+    execution_mode: &'static str,
+    physical_deletion_performed: bool,
+    limitation: &'static str,
+    deleted: Vec<WouldDeleteTarget>,
+    marked_disposed: Vec<WouldDeleteTarget>,
+    package_members_recorded: Vec<WouldDeleteTarget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operator_notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DisposalAuditEvent {
+    kind: &'static str,
+    scope: String,
+    seq: u64,
+    hash: String,
+    payload_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DisposalRetentionCandidate {
+    scope: &'static str,
+    category: &'static str,
+    record_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DisposalRetentionPolicyEvidence {
+    id: String,
+    name: String,
+    scope: String,
+    category: String,
+    schedule_id: String,
+    retention_period: String,
+    legal_basis: String,
+    disposal_action: RetentionDisposalAction,
+    status: RetentionPolicyStatus,
+    active: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,7 +191,7 @@ pub struct WouldDeleteManifest {
     package_members: Vec<WouldDeleteTarget>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct WouldDeleteTarget {
     kind: &'static str,
     id: String,
@@ -366,12 +433,14 @@ pub async fn get_book_disposal_status(
     Ok(Json(disposal_status(book_id, &inventory)))
 }
 
-/// `POST /v1/books/{id}/archive/disposal` - dry-run-only disposal simulation. This slice never
-/// deletes data; `dry_run=false` is refused until a later destructive implementation exists.
+/// `POST /v1/books/{id}/archive/disposal` - `dry_run=true` simulates disposal, while
+/// `dry_run=false` records a guarded non-destructive execution/evidence state. This slice never
+/// physically deletes stored archive/source records.
 pub async fn simulate_book_disposal(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     actor: CurrentActor,
+    attestor: CurrentAttestor,
     Json(req): Json<DisposalSimulationRequest>,
 ) -> Result<Json<DisposalSimulationView>, ApiError> {
     let book_id = BookId(id);
@@ -383,26 +452,37 @@ pub async fn simulate_book_disposal(
     )
     .await?;
 
-    if !req.dry_run {
-        return Err(ApiError::Conflict(
-            "destruição real ainda não está implementada; use dry_run=true".to_owned(),
-        ));
-    }
-
     let inventory = load_book_archive_inventory(&state, book_id).await?;
     let status = disposal_status(book_id, &inventory);
     if status.blocked {
         return Err(ApiError::Conflict(
-            "disposição bloqueada por retenção/hold legal ativo ou ausência de documentos preservados"
+            "disposição bloqueada; consulte os motivos de elegibilidade antes de executar"
                 .to_owned(),
         ));
     }
     validate_archive_inventory(book_id, &inventory.package_docs)?;
     let would_delete = would_delete_manifest(book_id, &inventory);
+    let execution = if req.dry_run {
+        None
+    } else {
+        Some(
+            execute_book_disposal(
+                &state,
+                book_id,
+                &actor,
+                &attestor,
+                &req,
+                &inventory,
+                &would_delete,
+            )
+            .await?,
+        )
+    };
     Ok(Json(DisposalSimulationView {
-        dry_run: true,
+        dry_run: req.dry_run,
         status,
         would_delete,
+        execution,
     }))
 }
 
@@ -657,6 +737,55 @@ fn disposal_status(book_id: BookId, inventory: &BookArchiveInventory) -> Disposa
             ),
         });
     }
+    if inventory.book_state != BookState::Closed {
+        reasons.push(DisposalReason {
+            code: "book_not_closed",
+            blocking: true,
+            message: format!(
+                "book is {:?}; disposal execution requires a closed book chain",
+                inventory.book_state
+            ),
+        });
+    }
+    let unsealed_count = inventory
+        .book_acts
+        .iter()
+        .filter(|act| {
+            act.ata_number.is_none() || !matches!(act.state, ActState::Sealed | ActState::Archived)
+        })
+        .count();
+    if unsealed_count > 0 {
+        reasons.push(DisposalReason {
+            code: "unsealed_acts_present",
+            blocking: true,
+            message: format!(
+                "{unsealed_count} act(s) are not sealed/archived with an assigned ata number"
+            ),
+        });
+    }
+    let documented_acts = inventory
+        .package_docs
+        .iter()
+        .filter_map(|doc| doc.act_id.map(|act_id| act_id.0))
+        .collect::<BTreeSet<_>>();
+    let missing_document_count = inventory
+        .book_acts
+        .iter()
+        .filter(|act| {
+            matches!(act.state, ActState::Sealed | ActState::Archived)
+                && act.ata_number.is_some()
+                && !documented_acts.contains(&act.id.0)
+        })
+        .count();
+    if missing_document_count > 0 {
+        reasons.push(DisposalReason {
+            code: "sealed_act_missing_preserved_document",
+            blocking: true,
+            message: format!(
+                "{missing_document_count} sealed/archived act(s) have no preserved PDF/A document"
+            ),
+        });
+    }
     let blocked = reasons.iter().any(|reason| reason.blocking);
     DisposalStatusView {
         book_id: book_id.0,
@@ -668,6 +797,262 @@ fn disposal_status(book_id: BookId, inventory: &BookArchiveInventory) -> Disposa
         export_time_legal_hold_persisted: false,
         signed_evidence: signed_evidence_summary(&inventory.package_docs),
         reasons,
+    }
+}
+
+async fn execute_book_disposal(
+    state: &AppState,
+    book_id: BookId,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+    req: &DisposalSimulationRequest,
+    inventory: &BookArchiveInventory,
+    would_delete: &WouldDeleteManifest,
+) -> Result<DisposalExecutionView, ApiError> {
+    ensure_disposal_execution_environment(state).await?;
+    let retention_policy = archive_disposal_retention_policy(state, req).await?;
+    let execution_id = parse_execution_request_id(req.execution_request_id.as_deref())?;
+    let actor_name = actor.resolve("api");
+    let scope = archive_disposal_event_scope(inventory, book_id);
+    let record = DisposalExecutionRecord {
+        id: execution_id.to_string(),
+        requested_at: rfc3339(OffsetDateTime::now_utc()),
+        actor: actor_name.clone(),
+        retention_policy: DisposalRetentionPolicyEvidence::from(&retention_policy),
+        candidate: DisposalRetentionCandidate {
+            scope: ARCHIVE_DISPOSAL_POLICY_SCOPE,
+            category: ARCHIVE_DISPOSAL_POLICY_CATEGORY,
+            record_id: format!("book:{book_id}"),
+        },
+        outcome: "disposed_mark_recorded",
+        execution_mode: "non_destructive_evidence_only",
+        physical_deletion_performed: false,
+        limitation: "physical deletion of archive/source records is not implemented in this guarded slice; this records a durable disposal execution request/evidence state only",
+        deleted: Vec::new(),
+        marked_disposed: would_delete.source_records.clone(),
+        package_members_recorded: would_delete.package_members.clone(),
+        operator_notes: clean_disposal_operator_notes(req.operator_notes.as_deref())?,
+    };
+    let payload = serde_json::to_vec(&record)?;
+    let mut ledger = state.ledger.write().await;
+    if !ledger.integrity_report().healthy {
+        return Err(ApiError::Conflict(
+            "archive disposal execution blocked because the ledger integrity report is degraded"
+                .to_owned(),
+        ));
+    }
+    if !ledger
+        .events()
+        .iter()
+        .any(|event| event.kind == "book.closed" && event.scope == scope)
+    {
+        return Err(ApiError::Conflict(
+            "archive disposal execution requires a closed book chain with a book.closed event"
+                .to_owned(),
+        ));
+    }
+    if ledger
+        .events()
+        .iter()
+        .any(|event| event.kind == ARCHIVE_DISPOSAL_EVENT_KIND && event.scope == scope)
+    {
+        return Err(ApiError::Conflict(
+            "archive disposal execution was already recorded for this book; repeated execution is blocked"
+                .to_owned(),
+        ));
+    }
+    crate::try_append_event(
+        &mut ledger,
+        &actor_name,
+        &scope,
+        ARCHIVE_DISPOSAL_EVENT_KIND,
+        Some("Archive disposal execution recorded without physical deletion"),
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |_| Ok(()))?;
+    let event = ledger
+        .events()
+        .last()
+        .expect("disposal execution event was just appended");
+    let audit_event = DisposalAuditEvent {
+        kind: ARCHIVE_DISPOSAL_EVENT_KIND,
+        scope,
+        seq: event.seq,
+        hash: hex_bytes(&event.hash),
+        payload_digest: hex_bytes(&event.payload_digest),
+    };
+    state.attest_latest(attestor, &ledger).await;
+
+    Ok(DisposalExecutionView {
+        record,
+        audit_event,
+    })
+}
+
+async fn ensure_disposal_execution_environment(state: &AppState) -> Result<(), ApiError> {
+    if state.store.is_none()
+        || state.retention_policies_path.is_none()
+        || state.chain_status.is_none()
+    {
+        return Err(ApiError::Conflict(
+            "archive disposal execution requires durable store-backed state; in-memory mode is dry-run only"
+                .to_owned(),
+        ));
+    }
+    if *state.degraded.read().await {
+        return Err(ApiError::Conflict(
+            "archive disposal execution blocked while the instance is in degraded read-only mode"
+                .to_owned(),
+        ));
+    }
+    if state
+        .chain_status
+        .as_ref()
+        .is_some_and(|status| status.as_ref().is_err())
+    {
+        return Err(ApiError::Conflict(
+            "archive disposal execution blocked because the boot ledger chain status is broken"
+                .to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+async fn archive_disposal_retention_policy(
+    state: &AppState,
+    req: &DisposalSimulationRequest,
+) -> Result<RetentionPolicyRecord, ApiError> {
+    let policy_id = parse_required_retention_policy_id(req.retention_policy_id.as_deref())?;
+    let policies = state.retention_policies.read().await;
+    let legal_hold_blockers = policies
+        .values()
+        .filter(|policy| {
+            policy.active
+                && policy.status == RetentionPolicyStatus::Active
+                && policy.disposal_action == RetentionDisposalAction::LegalHold
+                && retention_policy_value_matches(&policy.scope, ARCHIVE_DISPOSAL_POLICY_SCOPE)
+                && retention_policy_value_matches(
+                    &policy.category,
+                    ARCHIVE_DISPOSAL_POLICY_CATEGORY,
+                )
+        })
+        .map(|policy| policy.id.to_string())
+        .collect::<Vec<_>>();
+    if !legal_hold_blockers.is_empty() {
+        return Err(ApiError::Conflict(format!(
+            "archive disposal execution blocked by active legal-hold retention policy/policies: {}",
+            legal_hold_blockers.join(", ")
+        )));
+    }
+
+    let policy = policies
+        .get(&policy_id)
+        .cloned()
+        .ok_or_else(|| ApiError::Conflict("requested retention policy is missing".to_owned()))?;
+    validate_archive_disposal_policy(&policy)?;
+    Ok(policy)
+}
+
+fn validate_archive_disposal_policy(policy: &RetentionPolicyRecord) -> Result<(), ApiError> {
+    if !policy.active || policy.status != RetentionPolicyStatus::Active {
+        return Err(ApiError::Conflict(
+            "requested retention policy is not active".to_owned(),
+        ));
+    }
+    if !retention_policy_value_matches(&policy.scope, ARCHIVE_DISPOSAL_POLICY_SCOPE)
+        || !retention_policy_value_matches(&policy.category, ARCHIVE_DISPOSAL_POLICY_CATEGORY)
+    {
+        return Err(ApiError::Conflict(
+            "requested retention policy does not match archive disposal scope/category".to_owned(),
+        ));
+    }
+    for (field, value) in [
+        ("name", &policy.name),
+        ("schedule_id", &policy.schedule_id),
+        ("retention_period", &policy.retention_period),
+        ("legal_basis", &policy.legal_basis),
+    ] {
+        if value.trim().is_empty() {
+            return Err(ApiError::Conflict(format!(
+                "requested retention policy has an invalid empty {field}"
+            )));
+        }
+    }
+    match policy.disposal_action {
+        RetentionDisposalAction::Archive => Ok(()),
+        RetentionDisposalAction::Delete | RetentionDisposalAction::Anonymize => {
+            Err(ApiError::Conflict(
+                "delete/anonymize retention execution is unsupported in this guarded archive slice"
+                    .to_owned(),
+            ))
+        }
+        RetentionDisposalAction::LegalHold => Err(ApiError::Conflict(
+            "active legal hold retention policies block archive disposal execution".to_owned(),
+        )),
+        RetentionDisposalAction::Review | RetentionDisposalAction::NoAction => {
+            Err(ApiError::Conflict(
+                "requested retention policy does not authorize archive disposal execution"
+                    .to_owned(),
+            ))
+        }
+    }
+}
+
+fn parse_required_retention_policy_id(raw: Option<&str>) -> Result<RetentionPolicyId, ApiError> {
+    let value = raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ApiError::Unprocessable("retention_policy_id is required when dry_run=false".to_owned())
+        })?;
+    Uuid::parse_str(value)
+        .map(RetentionPolicyId)
+        .map_err(|_| ApiError::Unprocessable("retention_policy_id must be a UUID".to_owned()))
+}
+
+fn parse_execution_request_id(raw: Option<&str>) -> Result<Uuid, ApiError> {
+    let Some(value) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(Uuid::new_v4());
+    };
+    Uuid::parse_str(value)
+        .map_err(|_| ApiError::Unprocessable("execution_request_id must be a UUID".to_owned()))
+}
+
+fn clean_disposal_operator_notes(raw: Option<&str>) -> Result<Option<String>, ApiError> {
+    let Some(value) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if value.chars().count() > MAX_DISPOSAL_OPERATOR_NOTES_CHARS {
+        return Err(ApiError::Unprocessable(format!(
+            "operator_notes must be at most {MAX_DISPOSAL_OPERATOR_NOTES_CHARS} characters"
+        )));
+    }
+    Ok(Some(value.to_owned()))
+}
+
+fn retention_policy_value_matches(policy_value: &str, target: &str) -> bool {
+    let policy_value = policy_value.trim();
+    policy_value.eq_ignore_ascii_case(target) || policy_value.eq_ignore_ascii_case("all")
+}
+
+fn archive_disposal_event_scope(inventory: &BookArchiveInventory, book_id: BookId) -> String {
+    format!("entity:{}/book:{}", inventory.entity_id, book_id)
+}
+
+impl From<&RetentionPolicyRecord> for DisposalRetentionPolicyEvidence {
+    fn from(policy: &RetentionPolicyRecord) -> Self {
+        Self {
+            id: policy.id.to_string(),
+            name: policy.name.clone(),
+            scope: policy.scope.clone(),
+            category: policy.category.clone(),
+            schedule_id: policy.schedule_id.clone(),
+            retention_period: policy.retention_period.clone(),
+            legal_basis: policy.legal_basis.clone(),
+            disposal_action: policy.disposal_action,
+            status: policy.status,
+            active: policy.active,
+        }
     }
 }
 
@@ -1465,4 +1850,282 @@ fn signed_pdf_profile(has_timestamp: bool) -> &'static str {
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest: [u8; 32] = Sha256::digest(bytes).into();
     crate::hex::hex(&digest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::{Path, State};
+    use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, Scope};
+    use chancela_core::{ActState, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
+    use std::path::PathBuf;
+
+    use crate::actor::CurrentActor;
+    use crate::users::{SecretSource, User, UserId};
+
+    struct TempDir {
+        dir: PathBuf,
+    }
+
+    impl TempDir {
+        fn new() -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("chancela-archive-disposal-test-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).expect("create temp dir");
+            Self { dir }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    struct ArchiveFixture {
+        state: AppState,
+        _tmp: TempDir,
+        book_id: BookId,
+        policy_id: RetentionPolicyId,
+    }
+
+    impl ArchiveFixture {
+        fn actor(&self) -> CurrentActor {
+            CurrentActor::from_session_username(Some("owner".to_owned()))
+        }
+    }
+
+    async fn seeded_archive_fixture() -> ArchiveFixture {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        seed_owner(&state).await;
+
+        let entity = Entity::new(
+            "Arquivo Teste, S.A.",
+            Nipc::unvalidated("PT-ARCHIVE-1"),
+            "Lisboa",
+            EntityKind::SociedadeAnonima,
+        );
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Closed;
+        let mut act = Act::draft(book.id, "Ata de teste", MeetingChannel::Physical);
+        act.state = ActState::Sealed;
+        act.ata_number = Some(1);
+
+        let pdf_bytes = b"%PDF-1.7\n% archive disposal test\n".to_vec();
+        let document = StoredDocument {
+            id: Uuid::new_v4().to_string(),
+            act_id: act.id,
+            template_id: "csc-ata-ag/v1".to_owned(),
+            pdf_digest: sha256_hex(&pdf_bytes),
+            profile: crate::documents::PDFA_PROFILE.to_owned(),
+            created_at: OffsetDateTime::now_utc(),
+            pdf_bytes,
+        };
+        let policy_id = RetentionPolicyId(Uuid::new_v4());
+        let policy = RetentionPolicyRecord {
+            id: policy_id,
+            name: "Archive book documents".to_owned(),
+            scope: ARCHIVE_DISPOSAL_POLICY_SCOPE.to_owned(),
+            category: ARCHIVE_DISPOSAL_POLICY_CATEGORY.to_owned(),
+            schedule_id: "archive-documents-v1".to_owned(),
+            retention_period: "P7Y".to_owned(),
+            legal_basis: "Approved retention schedule".to_owned(),
+            disposal_action: RetentionDisposalAction::Archive,
+            status: RetentionPolicyStatus::Active,
+            active: true,
+            notes: None,
+            created_at: rfc3339(OffsetDateTime::now_utc()),
+            created_by: "owner".to_owned(),
+            updated_at: rfc3339(OffsetDateTime::now_utc()),
+            updated_by: "owner".to_owned(),
+        };
+
+        state
+            .entities
+            .write()
+            .await
+            .insert(entity.id, entity.clone());
+        state.books.write().await.insert(book.id, book.clone());
+        state.acts.write().await.insert(act.id, act.clone());
+        state
+            .documents
+            .write()
+            .await
+            .insert(act.id, document.clone());
+        state
+            .retention_policies
+            .write()
+            .await
+            .insert(policy.id, policy);
+        if let Some(path) = &state.retention_policies_path {
+            let policies = state.retention_policies.read().await;
+            crate::privacy::write_retention_policies_atomic(path, &policies)
+                .expect("persist retention policy fixture");
+        }
+
+        {
+            let mut ledger = state.ledger.write().await;
+            ledger.append(
+                "owner",
+                &format!("entity:{}", entity.id),
+                "entity.created",
+                None,
+                b"entity",
+            );
+            let book_scope = format!("entity:{}/book:{}", entity.id, book.id);
+            ledger.append("owner", &book_scope, "book.opened", None, b"opened");
+            ledger.append("owner", &book_scope, "book.closed", None, b"closed");
+            state
+                .persist_write_through(&mut ledger, 3, |tx| {
+                    tx.upsert_entity(&entity)?;
+                    tx.upsert_book(&book)?;
+                    tx.upsert_act(&act)?;
+                    tx.upsert_document(&document)?;
+                    Ok(())
+                })
+                .expect("persist archive fixture");
+        }
+
+        ArchiveFixture {
+            state,
+            _tmp: tmp,
+            book_id: book.id,
+            policy_id,
+        }
+    }
+
+    async fn seed_owner(state: &AppState) {
+        let user = User {
+            id: UserId(Uuid::new_v4()),
+            username: "owner".to_owned(),
+            display_name: "Owner".to_owned(),
+            email: None,
+            created_at: rfc3339(OffsetDateTime::now_utc()),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            secret_source: SecretSource::Password,
+            recovery_hash: None,
+            role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+        };
+        state.users.write().await.insert(user.id, user);
+    }
+
+    fn execution_request(policy_id: RetentionPolicyId) -> DisposalSimulationRequest {
+        DisposalSimulationRequest {
+            dry_run: false,
+            retention_policy_id: Some(policy_id.to_string()),
+            execution_request_id: Some(Uuid::new_v4().to_string()),
+            operator_notes: Some("approved for archive disposal evidence".to_owned()),
+        }
+    }
+
+    #[tokio::test]
+    async fn eligible_execution_records_non_destructive_evidence() {
+        let fixture = seeded_archive_fixture().await;
+        let Json(view) = simulate_book_disposal(
+            State(fixture.state.clone()),
+            Path(fixture.book_id.0),
+            fixture.actor(),
+            CurrentAttestor::default(),
+            Json(execution_request(fixture.policy_id)),
+        )
+        .await
+        .expect("eligible execution succeeds");
+
+        assert!(!view.dry_run);
+        assert!(view.status.eligible);
+        let execution = view.execution.expect("execution evidence");
+        assert!(!execution.record.physical_deletion_performed);
+        assert!(execution.record.deleted.is_empty());
+        assert!(!execution.record.marked_disposed.is_empty());
+        assert_eq!(
+            execution.record.retention_policy.id,
+            fixture.policy_id.to_string()
+        );
+        assert_eq!(execution.audit_event.kind, ARCHIVE_DISPOSAL_EVENT_KIND);
+
+        let loaded = fixture
+            .state
+            .store
+            .as_ref()
+            .expect("durable store")
+            .load()
+            .expect("load durable ledger");
+        assert!(loaded.ledger.events().iter().any(|event| {
+            event.kind == ARCHIVE_DISPOSAL_EVENT_KIND && event.scope == execution.audit_event.scope
+        }));
+    }
+
+    #[tokio::test]
+    async fn execution_is_blocked_by_persisted_legal_hold() {
+        let fixture = seeded_archive_fixture().await;
+        {
+            let mut books = fixture.state.books.write().await;
+            let book = books.get_mut(&fixture.book_id).expect("book");
+            book.legal_hold = Some(LegalHold {
+                reason: "litigation hold".to_owned(),
+                actor: "legal".to_owned(),
+                set_at: OffsetDateTime::now_utc(),
+            });
+        }
+
+        let err = simulate_book_disposal(
+            State(fixture.state.clone()),
+            Path(fixture.book_id.0),
+            fixture.actor(),
+            CurrentAttestor::default(),
+            Json(execution_request(fixture.policy_id)),
+        )
+        .await
+        .expect_err("legal hold blocks execution");
+        assert!(matches!(err, ApiError::Conflict(message) if message.contains("bloqueada")));
+    }
+
+    #[tokio::test]
+    async fn execution_blocks_degraded_and_in_memory_modes() {
+        let fixture = seeded_archive_fixture().await;
+        *fixture.state.degraded.write().await = true;
+        let err = simulate_book_disposal(
+            State(fixture.state.clone()),
+            Path(fixture.book_id.0),
+            fixture.actor(),
+            CurrentAttestor::default(),
+            Json(execution_request(fixture.policy_id)),
+        )
+        .await
+        .expect_err("degraded mode blocks execution");
+        assert!(matches!(err, ApiError::Conflict(message) if message.contains("degraded")));
+
+        let err = ensure_disposal_execution_environment(&AppState::default())
+            .await
+            .expect_err("in-memory mode blocks execution");
+        assert!(matches!(err, ApiError::Conflict(message) if message.contains("in-memory")));
+    }
+
+    #[tokio::test]
+    async fn repeated_execution_for_same_book_is_blocked() {
+        let fixture = seeded_archive_fixture().await;
+        let _ = simulate_book_disposal(
+            State(fixture.state.clone()),
+            Path(fixture.book_id.0),
+            fixture.actor(),
+            CurrentAttestor::default(),
+            Json(execution_request(fixture.policy_id)),
+        )
+        .await
+        .expect("first execution succeeds");
+
+        let err = simulate_book_disposal(
+            State(fixture.state.clone()),
+            Path(fixture.book_id.0),
+            fixture.actor(),
+            CurrentAttestor::default(),
+            Json(execution_request(fixture.policy_id)),
+        )
+        .await
+        .expect_err("second execution is blocked");
+        assert!(matches!(err, ApiError::Conflict(message) if message.contains("already recorded")));
+    }
 }
