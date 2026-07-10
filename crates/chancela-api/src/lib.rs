@@ -85,6 +85,7 @@ mod email;
 mod entities;
 mod error;
 mod external_signing;
+mod external_validator_evidence;
 mod followups;
 mod hex;
 mod law;
@@ -363,6 +364,10 @@ pub struct AppState {
     /// act, keyed by [`ActId`]. Mirrors `documents`: an in-memory read model backed by the durable
     /// `signed_documents` table, with the read endpoints falling back to the store on a miss.
     pub signed_documents: Arc<RwLock<HashMap<ActId, StoredSignedDocument>>>,
+    /// Runtime-supplied external-validator technical metadata JSON attachments. These are validated
+    /// at indexing time and matched only by observed canonical/signed PDF SHA-256; invalid,
+    /// overclaiming, duplicate-path, or non-JSON entries are ignored.
+    pub external_validator_report_metadata: Arc<RwLock<Vec<Vec<u8>>>>,
     /// In-flight two-phase Chave Móvel Digital signing sessions (t57-S3), keyed by session id. The
     /// non-secret resumable handle between `initiate` and `confirm`; **never holds a PIN or OTP**.
     /// Backed by the durable `pending_cmd_sessions` table (rehydrated on boot), so a session survives
@@ -1698,6 +1703,7 @@ mod tests {
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
     use serde_json::{Value, json};
+    use sha2::{Digest, Sha256};
     use tower::ServiceExt; // for `oneshot`
     use uuid::Uuid;
 
@@ -1766,6 +1772,85 @@ mod tests {
             return false;
         }
         haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    fn sha256_hex_test(bytes: &[u8]) -> String {
+        crate::hex::hex(&<[u8; 32]>::from(Sha256::digest(bytes)))
+    }
+
+    fn external_validator_metadata_bytes(
+        case_id: &str,
+        family: &str,
+        document_sha256: &str,
+    ) -> Vec<u8> {
+        json!({
+            "schema": "chancela-external-validator-report-evidence/v1",
+            "evidence_kind": "external_validator_report_metadata",
+            "legal_validity_claimed": false,
+            "evidence_scope": {
+                "kind": "external_validator_report",
+                "technical_only": true,
+                "legal_validity_assessment": "not_assessed",
+                "claim": "technical_validator_evidence_only"
+            },
+            "case_id": case_id,
+            "source_sidecar": {
+                "schema": "chancela-external-validator-sidecar/v1",
+                "path": format!("cases/{case_id}/expected/{family}.json")
+            },
+            "validator": {
+                "family": family,
+                "name": "Fixture validator",
+                "version": "1.0",
+                "run_status": "recorded",
+                "run_at": "2026-07-10T00:00:00Z",
+                "operator": "operator@example.test",
+                "environment": "test",
+                "command": "validator --fixture"
+            },
+            "document": {
+                "path": format!("cases/{case_id}/input/{case_id}.pdf"),
+                "sha256": document_sha256,
+                "bytes": 1
+            },
+            "report": {
+                "path": format!("cases/{case_id}/reports/{family}.json"),
+                "sidecar_path": format!("../reports/{family}.json"),
+                "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "bytes": 2,
+                "content_type": "application/json",
+                "source_filename": format!("{family}.json"),
+                "captured_at": "2026-07-10T00:00:00Z",
+                "preserved_at": "2026-07-10T00:00:00Z",
+                "preserved_by": "operator@example.test",
+                "preservation_action": "copied_to_corpus"
+            },
+            "transcription": {
+                "status": "raw_report_only",
+                "summary": "Raw report metadata preserved.",
+                "findings_available": false
+            },
+            "archive_attachment": {
+                "role": "technical_external_validator_report_metadata",
+                "content_type": "application/json",
+                "suggested_path": format!("evidence/external-validators/{case_id}-{family}.json")
+            },
+            "evidence_indexing": {
+                "status_scope": "technical_metadata_only",
+                "archive_package": {
+                    "index_path": "evidence/index.json",
+                    "indexed_path_prefix": "evidence/external-validators/",
+                    "indexed_path_pattern": "evidence/external-validators/{case_id}-{validator_family}.json"
+                },
+                "document_bundle": {
+                    "index_json_pointer": "/validation_report/evidence_index/external_validator_reports",
+                    "archive_path_prefix": "evidence/external-validators/",
+                    "archive_path_pattern": "evidence/external-validators/{case_id}-{validator_family}.json"
+                }
+            }
+        })
+        .to_string()
+        .into_bytes()
     }
 
     fn data_status_filesystem_concern<'a>(body: &'a Value, id: &str) -> &'a Value {
@@ -3498,6 +3583,56 @@ mod tests {
                 .any(|finding| finding["code"] == "signed_document_missing"
                     && finding["severity"] == "warning"),
             "missing signed document is flagged honestly: {report}"
+        );
+    }
+
+    #[tokio::test]
+    async fn document_bundle_indexes_matching_external_validator_metadata() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+        send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+
+        let doc = crate::documents::load_document(
+            &state,
+            ActId(Uuid::parse_str(&act_id).expect("act id")),
+        )
+        .await
+        .expect("document load")
+        .expect("sealed document");
+        let metadata = external_validator_metadata_bytes(
+            "bundle-runtime",
+            "eu-dss",
+            &sha256_hex_test(&doc.pdf_bytes),
+        );
+        let metadata_sha256 = sha256_hex_test(&metadata);
+        state
+            .external_validator_report_metadata
+            .write()
+            .await
+            .push(metadata);
+
+        let (status, bundle) =
+            send(state, get(&format!("/v1/acts/{act_id}/document/bundle"))).await;
+        assert_eq!(status, StatusCode::OK);
+        let external_reports =
+            &bundle["validation_report"]["evidence_index"]["external_validator_reports"];
+        assert_eq!(
+            external_reports["bundle_attachment_status"],
+            "external_validator_report_metadata_attached"
+        );
+        assert_eq!(
+            external_reports["attachments"],
+            json!([{
+                "case_id": "bundle-runtime",
+                "validator_family": "eu-dss",
+                "archive_path": "evidence/external-validators/bundle-runtime-eu-dss.json",
+                "content_type": "application/json",
+                "sha256": metadata_sha256
+            }])
         );
     }
 

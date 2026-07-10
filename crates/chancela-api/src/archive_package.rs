@@ -30,6 +30,12 @@ use crate::actor::CurrentActor;
 use crate::actor::CurrentAttestor;
 use crate::authz::{require_permission, scope_of_book};
 use crate::error::ApiError;
+use crate::external_validator_evidence::{
+    EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN, EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
+    EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND, EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
+    ExternalValidatorEvidenceAttachment, TECHNICAL_METADATA_ONLY, attachment_indexes,
+    matching_attachments,
+};
 use crate::privacy::{
     RetentionDisposalAction, RetentionPolicyId, RetentionPolicyRecord, RetentionPolicyStatus,
 };
@@ -55,14 +61,6 @@ const DOC_TIMESTAMP_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
 const RENEWAL_POLICY_NOT_CONFIGURED: &str = "not_configured";
 const RENEWAL_POLICY_MANUAL_REVIEW: &str = "manual_review";
 const ARCHIVE_EVIDENCE_INDEX_PATH: &str = "evidence/index.json";
-const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND: &str = "external_validator_report_metadata";
-const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA: &str =
-    "chancela-external-validator-report-evidence/v1";
-const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX: &str = "evidence/external-validators/";
-const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN: &str =
-    "evidence/external-validators/{case_id}-{validator_family}.json";
-const TECHNICAL_METADATA_ONLY: &str = "technical_metadata_only";
-
 #[derive(Clone)]
 struct PackageDocument {
     owner_kind: &'static str,
@@ -590,6 +588,10 @@ pub async fn export_book_archive_package(
         .collect::<Vec<_>>();
 
     let created_at = stable_package_time(&package_docs);
+    let external_validator_reports = {
+        let raw_metadata = state.external_validator_report_metadata.read().await;
+        matching_attachments(&raw_metadata, observed_package_pdf_sha256(&package_docs))
+    };
     let mut files = Vec::new();
     for doc in &package_docs {
         files.push(with_ids(
@@ -627,11 +629,25 @@ pub async fn export_book_archive_package(
             legal_hold_evidence_bytes(book_id, created_at, hold)?,
         ));
     }
+    for attachment in &external_validator_reports {
+        files.push(PackageFileInput::new(
+            attachment.archive_path.clone(),
+            PackageFileRole::EvidenceReport,
+            JSON_CONTENT_TYPE,
+            attachment.bytes.clone(),
+        ));
+    }
     files.push(PackageFileInput::new(
         ARCHIVE_EVIDENCE_INDEX_PATH,
         PackageFileRole::EvidenceReport,
         JSON_CONTENT_TYPE,
-        archive_evidence_index_bytes(book_id, created_at, &package_docs, legal_hold.is_some())?,
+        archive_evidence_index_bytes(
+            book_id,
+            created_at,
+            &package_docs,
+            legal_hold.is_some(),
+            &external_validator_reports,
+        )?,
     ));
 
     let package_id = stable_package_id(entity_id.0, book_id.0, created_at, &files);
@@ -1592,6 +1608,7 @@ fn archive_evidence_index_bytes(
     created_at: OffsetDateTime,
     docs: &[PackageDocument],
     legal_hold: bool,
+    external_validator_reports: &[ExternalValidatorEvidenceAttachment],
 ) -> Result<Vec<u8>, ApiError> {
     serde_json::to_vec_pretty(&ArchiveEvidenceIndex {
         package_profile: PACKAGE_PROFILE,
@@ -1606,7 +1623,7 @@ fn archive_evidence_index_bytes(
             legal_hold_evidence_path: legal_hold.then_some("evidence/legal-hold.json"),
         },
         external_validator_reports: external_validator_report_evidence_index(
-            "no_external_validator_report_metadata_attached",
+            external_validator_reports,
         ),
     })
     .map_err(|e| ApiError::Internal(format!("archive evidence index serialization failed: {e}")))
@@ -1641,8 +1658,25 @@ fn archive_document_evidence_index(doc: &PackageDocument) -> ArchiveDocumentEvid
 }
 
 fn external_validator_report_evidence_index(
-    attachment_status: &'static str,
+    attachments: &[ExternalValidatorEvidenceAttachment],
 ) -> ExternalValidatorReportEvidenceIndex {
+    let attachments = attachment_indexes(attachments)
+        .into_iter()
+        .map(
+            |attachment| ExternalValidatorReportEvidenceAttachmentIndex {
+                case_id: attachment.case_id,
+                validator_family: attachment.validator_family,
+                path: attachment.path,
+                content_type: attachment.content_type,
+                sha256: attachment.sha256,
+            },
+        )
+        .collect::<Vec<_>>();
+    let attachment_status = if attachments.is_empty() {
+        "no_external_validator_report_metadata_attached"
+    } else {
+        "external_validator_report_metadata_attached"
+    };
     ExternalValidatorReportEvidenceIndex {
         evidence_kind: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND,
         metadata_schema: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
@@ -1650,8 +1684,19 @@ fn external_validator_report_evidence_index(
         indexed_path_pattern: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN,
         attachment_status,
         status_scope: TECHNICAL_METADATA_ONLY,
-        attachments: Vec::new(),
+        attachments,
     }
+}
+
+fn observed_package_pdf_sha256(docs: &[PackageDocument]) -> Vec<String> {
+    let mut hashes = Vec::new();
+    for doc in docs {
+        hashes.push(sha256_hex(&doc.document.pdf_bytes));
+        if let Some(signed) = &doc.signed {
+            hashes.push(sha256_hex(&signed.signed_pdf_bytes));
+        }
+    }
+    hashes
 }
 
 fn legal_hold_evidence_bytes(

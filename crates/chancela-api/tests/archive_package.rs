@@ -394,6 +394,85 @@ fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn external_validator_metadata_value(case_id: &str, family: &str, document_sha256: &str) -> Value {
+    json!({
+        "schema": "chancela-external-validator-report-evidence/v1",
+        "evidence_kind": "external_validator_report_metadata",
+        "legal_validity_claimed": false,
+        "evidence_scope": {
+            "kind": "external_validator_report",
+            "technical_only": true,
+            "legal_validity_assessment": "not_assessed",
+            "claim": "technical_validator_evidence_only"
+        },
+        "case_id": case_id,
+        "source_sidecar": {
+            "schema": "chancela-external-validator-sidecar/v1",
+            "path": format!("cases/{case_id}/expected/{family}.json")
+        },
+        "validator": {
+            "family": family,
+            "name": "Fixture validator",
+            "version": "1.0",
+            "run_status": "recorded",
+            "run_at": "2026-07-10T00:00:00Z",
+            "operator": "operator@example.test",
+            "environment": "test",
+            "command": "validator --fixture"
+        },
+        "document": {
+            "path": format!("cases/{case_id}/input/{case_id}.pdf"),
+            "sha256": document_sha256,
+            "bytes": 1
+        },
+        "report": {
+            "path": format!("cases/{case_id}/reports/{family}.json"),
+            "sidecar_path": format!("../reports/{family}.json"),
+            "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "bytes": 2,
+            "content_type": "application/json",
+            "source_filename": format!("{family}.json"),
+            "captured_at": "2026-07-10T00:00:00Z",
+            "preserved_at": "2026-07-10T00:00:00Z",
+            "preserved_by": "operator@example.test",
+            "preservation_action": "copied_to_corpus"
+        },
+        "transcription": {
+            "status": "raw_report_only",
+            "summary": "Raw report metadata preserved.",
+            "findings_available": false
+        },
+        "archive_attachment": {
+            "role": "technical_external_validator_report_metadata",
+            "content_type": "application/json",
+            "suggested_path": format!("evidence/external-validators/{case_id}-{family}.json")
+        },
+        "evidence_indexing": {
+            "status_scope": "technical_metadata_only",
+            "archive_package": {
+                "index_path": "evidence/index.json",
+                "indexed_path_prefix": "evidence/external-validators/",
+                "indexed_path_pattern": "evidence/external-validators/{case_id}-{validator_family}.json"
+            },
+            "document_bundle": {
+                "index_json_pointer": "/validation_report/evidence_index/external_validator_reports",
+                "archive_path_prefix": "evidence/external-validators/",
+                "archive_path_pattern": "evidence/external-validators/{case_id}-{validator_family}.json"
+            }
+        }
+    })
+}
+
+fn external_validator_metadata_bytes(
+    case_id: &str,
+    family: &str,
+    document_sha256: &str,
+) -> Vec<u8> {
+    external_validator_metadata_value(case_id, family, document_sha256)
+        .to_string()
+        .into_bytes()
+}
+
 fn parse_act_id(value: &str) -> ActId {
     ActId(Uuid::parse_str(value).expect("act uuid"))
 }
@@ -1344,6 +1423,97 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
         !String::from_utf8_lossy(members.get(&evidence_path).expect("evidence bytes"))
             .contains("placeholder"),
         "report must not contain placeholder evidence"
+    );
+}
+
+#[tokio::test]
+async fn archive_package_indexes_matching_external_validator_metadata_only() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+    let document = stored_document(&state, parse_act_id(&sealed.act_id), &sealed.document_id);
+    let document_sha256 = sha256_hex(&document.pdf_bytes);
+    let valid = external_validator_metadata_bytes("runtime-valid", "eu-dss", &document_sha256);
+    let valid_sha256 = sha256_hex(&valid);
+
+    let mut legal_claim =
+        external_validator_metadata_value("runtime-legal", "adobe", &document_sha256);
+    legal_claim["legal_validity_claimed"] = json!(true);
+    let mut traversal =
+        external_validator_metadata_value("runtime-traversal", "eu-dss", &document_sha256);
+    traversal["archive_attachment"]["suggested_path"] =
+        json!("evidence/external-validators/../runtime-traversal-eu-dss.json");
+    let duplicate_a =
+        external_validator_metadata_bytes("runtime-duplicate", "eu-dss", &document_sha256);
+    let duplicate_b =
+        external_validator_metadata_bytes("runtime-duplicate", "eu-dss", &document_sha256);
+    let mut malformed_sha =
+        external_validator_metadata_value("runtime-bad-sha", "eu-dss", &document_sha256);
+    malformed_sha["document"]["sha256"] = json!("not-a-sha256");
+
+    {
+        let mut metadata = state.external_validator_report_metadata.write().await;
+        metadata.push(b"not json".to_vec());
+        metadata.push(legal_claim.to_string().into_bytes());
+        metadata.push(traversal.to_string().into_bytes());
+        metadata.push(duplicate_a);
+        metadata.push(duplicate_b);
+        metadata.push(malformed_sha.to_string().into_bytes());
+        metadata.push(valid.clone());
+    }
+
+    let package = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    validate_package(&package).expect("archive package validates");
+    let members = zip_members(&package);
+    let evidence_path = "evidence/external-validators/runtime-valid-eu-dss.json";
+    assert_eq!(
+        members
+            .get(evidence_path)
+            .expect("validator metadata member"),
+        &valid
+    );
+    assert!(
+        !members.contains_key("evidence/external-validators/runtime-duplicate-eu-dss.json"),
+        "duplicate suggested paths are ignored"
+    );
+    assert!(
+        members.keys().all(|path| !path.contains("runtime-legal")
+            && !path.contains("runtime-traversal")
+            && !path.contains("runtime-bad-sha")),
+        "invalid metadata is not packaged: {:?}",
+        members.keys().collect::<Vec<_>>()
+    );
+
+    let evidence_index = member_json(&members, "evidence/index.json");
+    assert_eq!(
+        evidence_index["external_validator_reports"]["attachment_status"],
+        "external_validator_report_metadata_attached"
+    );
+    assert_eq!(
+        evidence_index["external_validator_reports"]["attachments"],
+        json!([{
+            "case_id": "runtime-valid",
+            "validator_family": "eu-dss",
+            "path": evidence_path,
+            "content_type": "application/json",
+            "sha256": valid_sha256
+        }])
+    );
+    assert!(
+        !String::from_utf8_lossy(members.get("evidence/index.json").expect("index bytes"))
+            .contains("trust-list"),
+        "evidence index stays technical metadata scoped"
+    );
+    let attachment = member_json(&members, evidence_path);
+    assert_eq!(attachment["legal_validity_claimed"], false);
+    assert_eq!(
+        attachment["evidence_scope"]["legal_validity_assessment"],
+        "not_assessed"
+    );
+    assert!(
+        attachment["observed"].is_null(),
+        "raw external validator reports are not packaged as structured findings"
     );
 }
 

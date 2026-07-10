@@ -51,6 +51,12 @@ use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_act};
 use crate::dto::{ReadRedaction, format_date, format_time, read_redaction_for_actor};
 use crate::error::ApiError;
+use crate::external_validator_evidence::{
+    EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN, EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
+    EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND, EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
+    ExternalValidatorEvidenceAttachment, TECHNICAL_METADATA_ONLY, attachment_indexes,
+    matching_attachments,
+};
 
 /// The frozen PDF/A profile string bound into every `document.generated` event and stored row
 /// (plan §1-D4 step 3 / §3.4). Self-describing: MIME type + PDF/A part+conformance.
@@ -97,14 +103,6 @@ const IMPORTED_DOCUMENT_REVIEW_GUARDRAIL_CHECKLIST: &[&str] = &[
 const DOCUMENT_BUNDLE_VALIDATION_NOTICE: &str = "Technical bundle evidence report only; it does \
 not certify legal validity, PDF/A conformance, PDF/UA conformance, qualified-signature status, \
 DGLAB certification, or production long-term validation.";
-const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND: &str = "external_validator_report_metadata";
-const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA: &str =
-    "chancela-external-validator-report-evidence/v1";
-const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX: &str = "evidence/external-validators/";
-const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN: &str =
-    "evidence/external-validators/{case_id}-{validator_family}.json";
-const TECHNICAL_METADATA_ONLY: &str = "technical_metadata_only";
-
 const MAX_IMPORTED_DOCUMENT_REVIEW_NOTE_CHARS: usize = 2_000;
 
 /// The embedded template registry, loaded once. The assets are compile-time-validated by
@@ -4022,7 +4020,25 @@ fn document_bundle_evidence_index(
     act_id: ActId,
     doc: &StoredDocument,
     signed: Option<&StoredSignedDocument>,
+    external_validator_reports: &[ExternalValidatorEvidenceAttachment],
 ) -> DocumentBundleEvidenceIndex {
+    let attachments = attachment_indexes(external_validator_reports)
+        .into_iter()
+        .map(
+            |attachment| DocumentBundleExternalValidatorReportAttachment {
+                case_id: attachment.case_id,
+                validator_family: attachment.validator_family,
+                archive_path: attachment.path,
+                content_type: attachment.content_type,
+                sha256: attachment.sha256,
+            },
+        )
+        .collect::<Vec<_>>();
+    let bundle_attachment_status = if attachments.is_empty() {
+        "no_external_validator_report_metadata_attached"
+    } else {
+        "external_validator_report_metadata_attached"
+    };
     DocumentBundleEvidenceIndex {
         index_kind: "document_bundle_evidence_index",
         status_scope: TECHNICAL_METADATA_ONLY,
@@ -4039,9 +4055,9 @@ fn document_bundle_evidence_index(
             metadata_schema: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
             archive_path_prefix: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
             archive_path_pattern: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN,
-            bundle_attachment_status: "no_external_validator_report_metadata_attached",
+            bundle_attachment_status,
             status_scope: TECHNICAL_METADATA_ONLY,
-            attachments: Vec::new(),
+            attachments,
         },
     }
 }
@@ -4052,6 +4068,7 @@ fn build_document_bundle_validation_report(
     pdf: &BundlePdfRef,
     attachments_manifest: &[BundleAttachment],
     signed: Option<&StoredSignedDocument>,
+    external_validator_reports: &[ExternalValidatorEvidenceAttachment],
 ) -> DocumentBundleValidationReport {
     let canonical_pdf_sha256 = sha256_hex(&doc.pdf_bytes);
     let canonical_pdf_digest_matches_metadata = canonical_pdf_sha256 == doc.pdf_digest;
@@ -4278,7 +4295,12 @@ fn build_document_bundle_validation_report(
         report_kind: "document_bundle_validation",
         scope: "generated_document_bundle",
         status: report_status(&findings),
-        evidence_index: document_bundle_evidence_index(act_id, doc, signed),
+        evidence_index: document_bundle_evidence_index(
+            act_id,
+            doc,
+            signed,
+            external_validator_reports,
+        ),
         legal_notice: DOCUMENT_BUNDLE_VALIDATION_NOTICE,
         bundle_document_consistency: BundleDocumentConsistencyReport {
             route_act_id: act_id.to_string(),
@@ -4389,6 +4411,13 @@ pub async fn get_document_bundle(
             .unwrap_or_default()
     };
     let signed = load_signed_document_for_bundle(&state, act_id).await?;
+    let external_validator_report_metadata = state.external_validator_report_metadata.read().await;
+    let mut observed_pdf_sha256 = vec![sha256_hex(&doc.pdf_bytes)];
+    if let Some(signed) = signed.as_ref() {
+        observed_pdf_sha256.push(sha256_hex(&signed.signed_pdf_bytes));
+    }
+    let external_validator_reports =
+        matching_attachments(&external_validator_report_metadata, observed_pdf_sha256);
     let pdf = BundlePdfRef {
         media_type: "application/pdf",
         byte_length: doc.pdf_bytes.len(),
@@ -4400,6 +4429,7 @@ pub async fn get_document_bundle(
         &pdf,
         &attachments_manifest,
         signed.as_ref(),
+        &external_validator_reports,
     );
 
     Ok(Json(DocumentBundle {
