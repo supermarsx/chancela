@@ -1,6 +1,6 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-10 from the current CI configuration and head `c54fc0e`. This
+Updated 2026-07-10 from the current CI configuration and head `783538c`. This
 plan is the build and test operating checklist for driving Chancela toward
 release confidence.
 
@@ -69,6 +69,13 @@ release confidence.
 - The current Data Management slice adds `settings.manage`-gated cleanup for
   crash reports and retained exports plus SQLite logical usage estimates. Treat
   it as storage maintenance coverage, not legal data-lifecycle certification.
+- Release and package builds now opt into SQLCipher features by default where the
+  supported package scripts and CI metadata require it. Treat this as encrypted
+  build-default coverage, not proof of operator key custody, migration success,
+  or deployed encrypted data at rest.
+- Platform operations expose API-owned structured status/control/logging
+  contracts. They do not prove real supervisor-backed start/stop/restart,
+  historical stdout/stderr tailing, or child-process log forwarding.
 
 ## Last Broad Local Verification Snapshot
 
@@ -204,6 +211,18 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - API-key create/rotate shows plaintext exactly once and never after reload.
 - Recovery reset and start-over flows require step-up proof.
 - AI/MCP tenant gate defaults off and must be enabled before MCP can serve.
+- Platform service controls show unsupported and supervisor-required outcomes
+  exactly as returned by the backend; the UI must not present API self-restart or
+  MCP stdio start as if Chancela directly controls those processes.
+- Global logging level `off` suppresses service log output even if stale
+  per-service overrides remain stored; explicit service overrides take effect
+  only when the global/area level allows logging.
+- Storage cleanup presents crash reports and retained exports as separate
+  bounded maintenance rows, rejects unknown cleanup targets, and preserves
+  permission/usage diagnostics after a failed cleanup.
+- SQLCipher package defaults are checked statically, and plaintext development
+  paths remain explicit so local tests do not silently claim production
+  encrypted deployment.
 
 ### Dashboard and Ledger
 
@@ -212,6 +231,13 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - Metric cards remain stable with six cards on one desktop row.
 - Ledger archive export preserves active filters and refuses unauthorized
   downloads.
+- Export actions that create user-owned files open the desktop/browser save
+  prompt when available, return a visible cancellation state when the user backs
+  out, and fall back to a safe browser download only when direct save APIs are
+  unavailable.
+- Download filenames preserve the legal/evidentiary distinction: working copies
+  remain labeled as non-canonical, retained export ZIPs remain archive packages,
+  and signed/canonical PDFs are not renamed into ambiguous draft files.
 - Corrupt ledger/recovery mode shows degraded state without crashing the shell.
 
 ### Documents, Archive, and Legal Hold
@@ -234,8 +260,12 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   signing.
 - TSA diagnostics use offline fixtures in CI and do not make live timestamp
   network calls.
-- B-T timestamp evidence is included when configured; B-LT/B-LTA remains
-  honestly reported as not implemented.
+- B-T timestamp evidence is included when configured; local B-LT/B-LTA planning
+  and DSS/VRI evidence remain technical status only unless live trust validation,
+  policy validation, and legal review are actually present.
+- Arbitrary-PDF validation handles multiple signatures, missing ByteRange,
+  mismatched DSS/VRI entries, future DocTimeStamp values, and tampered DSS-only
+  evidence without turning local diagnostics into a qualified-signature decision.
 
 ### Imports and Search
 
@@ -247,6 +277,9 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   service-type/status/history/supply filters, URL params, fixture-only TSA
   records, and no-live-timestamp-call behavior.
 - Certidao import masks access codes and never returns raw secrets.
+- Registry auto-update jobs honor disabled schedules, expired access codes,
+  malformed e-mail/contact fields, and per-entity conflict review before
+  overwriting locally curated profile data.
 - MCP `draft_minutes` creates only draft act records, rejects missing/unknown
   arguments before HTTP, and never treats generated text as legal minutes.
 - Core weighted-voting checks cover complete capital/permilage attendance
@@ -282,10 +315,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `c54fc0e`
+## Focused Gate Snapshot Through `783538c`
 
 Historical focused checks from the active director loop, refreshed on
-2026-07-10 for current head `c54fc0e`. This is not an exhaustive current
+2026-07-10 for current head `783538c`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -372,6 +405,21 @@ settingsDefaults.test.ts contracts.test.ts`.
   (`cargo test -p chancela-store --locked --features sqlcipher sqlcipher`) now
   has a Windows CI lane that installs pinned Strawberry Perl before Rust/Cargo so
   vendored OpenSSL sees a Windows-native Perl first on `PATH`.
+- Recent 2026-07-10 focused checks through `783538c`: `npm run
+  check:encrypted-build-defaults`, `cargo metadata --locked --format-version 1
+  --features "chancela-server/sqlcipher chancela-cli/sqlcipher" --no-deps`,
+  desktop Tauri SQLCipher metadata, and Windows `cargo check -p
+  chancela-server -p chancela-cli --locked --features
+  "chancela-server/sqlcipher chancela-cli/sqlcipher"` passed with Strawberry
+  Perl pinned.
+- Recent platform/service checks through `5a79f1e`: `cargo fmt -p
+  chancela-api -- --check`, `cargo test -p chancela-api platform_ --locked`,
+  `cargo check -p chancela-api --locked`, and `cargo clippy -p chancela-api
+  --locked --all-targets -- -D warnings` passed.
+- Recent web focused checks through `3f19872`: books, notification popup/page,
+  storage settings, ESLint, Prettier, `npm run check:spec-coverage`,
+  `node --check scripts/checkpoint-recent-landed.mjs`, and `npm run
+  test:checkpoint:recent-landed:static` passed.
 
 Full workspace format/clippy should be rerun before commit. The prior
 `paper_import.rs` compile blocker, retention dead-code warning set, TSL `record`
