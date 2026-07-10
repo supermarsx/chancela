@@ -930,6 +930,17 @@ mod tests {
         },
         InvalidJson(String),
         InvalidSchema(String),
+        TemplateIdFamilyMismatch {
+            expected_prefix: &'static str,
+        },
+        RulePackFamilyMismatch {
+            expected_rule_pack_id: &'static str,
+            actual_rule_pack_id: String,
+        },
+        SignaturePolicyFamilyMismatch {
+            expected_signature_policy: SignaturePolicyHint,
+            actual_signature_policy: SignaturePolicyHint,
+        },
         MissingRulePackLawReference {
             rule_pack_id: String,
         },
@@ -969,6 +980,27 @@ mod tests {
                     "{}.json ({template_id}): invalid template schema: {error}",
                     self.asset
                 ),
+                CatalogMetadataIssueKind::TemplateIdFamilyMismatch { expected_prefix } => write!(
+                    f,
+                    "{}.json ({template_id}): template id does not use family prefix `{expected_prefix}`",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::RulePackFamilyMismatch {
+                    expected_rule_pack_id,
+                    actual_rule_pack_id,
+                } => write!(
+                    f,
+                    "{}.json ({template_id}): rule_pack_id `{actual_rule_pack_id}` does not match family binding `{expected_rule_pack_id}`",
+                    self.asset
+                ),
+                CatalogMetadataIssueKind::SignaturePolicyFamilyMismatch {
+                    expected_signature_policy,
+                    actual_signature_policy,
+                } => write!(
+                    f,
+                    "{}.json ({template_id}): signature_policy `{actual_signature_policy:?}` does not match family binding `{expected_signature_policy:?}`",
+                    self.asset
+                ),
                 CatalogMetadataIssueKind::MissingRulePackLawReference { rule_pack_id } => write!(
                     f,
                     "{}.json ({template_id}): rule_pack_id `{rule_pack_id}` has no local law-reference anchor",
@@ -984,6 +1016,36 @@ mod tests {
                     "{}.json ({template_id}): law reference `{citation}` has blank `{field}`",
                     self.asset
                 ),
+            }
+        }
+    }
+
+    fn expected_template_id_prefix_for_family(family: EntityFamily) -> &'static str {
+        match family {
+            EntityFamily::CommercialCompany => "csc-",
+            EntityFamily::Condominium => "condominio-",
+            EntityFamily::Association => "assoc-",
+            EntityFamily::Foundation => "fundacao-",
+            EntityFamily::Cooperative => "cooperativa-",
+        }
+    }
+
+    fn expected_rule_pack_id_for_family(family: EntityFamily) -> &'static str {
+        match family {
+            EntityFamily::CommercialCompany => "csc-art63/v2",
+            EntityFamily::Condominium => "condominio-dl268/v1",
+            EntityFamily::Association => "assoc-cc/v1",
+            EntityFamily::Foundation => "fundacao-cc/v1",
+            EntityFamily::Cooperative => "cooperativa-ccoop/v1",
+        }
+    }
+
+    fn expected_signature_policy_for_family(family: EntityFamily) -> SignaturePolicyHint {
+        match family {
+            EntityFamily::CommercialCompany => SignaturePolicyHint::QualifiedPreferred,
+            EntityFamily::Condominium => SignaturePolicyHint::QualifiedOrHandwritten,
+            EntityFamily::Association | EntityFamily::Foundation | EntityFamily::Cooperative => {
+                SignaturePolicyHint::ManualAttested
             }
         }
     }
@@ -1093,6 +1155,41 @@ mod tests {
                 }
             };
             let spec = TemplateSpec::from(dto);
+
+            // Family bindings mirror `chancela-core::profile_for`: this is a local catalog drift
+            // guard only, not an assertion that any legal source text/value has been verified.
+            let expected_prefix = expected_template_id_prefix_for_family(spec.family);
+            if !spec.id.starts_with(expected_prefix) {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::TemplateIdFamilyMismatch { expected_prefix },
+                ));
+            }
+
+            let expected_rule_pack_id = expected_rule_pack_id_for_family(spec.family);
+            if spec.rule_pack_id != expected_rule_pack_id {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::RulePackFamilyMismatch {
+                        expected_rule_pack_id,
+                        actual_rule_pack_id: spec.rule_pack_id.clone(),
+                    },
+                ));
+            }
+
+            let expected_signature_policy = expected_signature_policy_for_family(spec.family);
+            if spec.signature_policy != expected_signature_policy {
+                issues.push(metadata_issue(
+                    asset,
+                    Some(&spec.id),
+                    CatalogMetadataIssueKind::SignaturePolicyFamilyMismatch {
+                        expected_signature_policy,
+                        actual_signature_policy: spec.signature_policy,
+                    },
+                ));
+            }
 
             // These are structured discovery anchors for the API/template picker only; they do not
             // certify that the cited law text or legal analysis is complete or authoritative.
@@ -1381,6 +1478,65 @@ mod tests {
                     )
             }),
             "expected missing derived template law_references issue:\n{report}"
+        );
+    }
+
+    #[test]
+    fn catalog_metadata_validation_reports_family_binding_drift() {
+        let wrong_prefix = r#"{"id":"csc-family-drift/v1","family":"Association","stage":"Ata",
+            "channels":[],"signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1",
+            "locale":"pt-PT","blocks":[]}"#;
+        let wrong_rule_pack = r#"{"id":"assoc-rule-pack-drift/v1","family":"Association","stage":"Ata",
+            "channels":[],"signature_policy":"ManualAttested","rule_pack_id":"csc-art63/v2",
+            "locale":"pt-PT","blocks":[]}"#;
+        let wrong_signature_policy = r#"{"id":"condominio-signature-drift/v1","family":"Condominium","stage":"Ata",
+            "channels":[],"signature_policy":"ManualAttested","rule_pack_id":"condominio-dl268/v1",
+            "locale":"pt-PT","blocks":[]}"#;
+
+        let issues = validate_catalog_metadata(&[
+            ("wrong-prefix", wrong_prefix),
+            ("wrong-rule-pack", wrong_rule_pack),
+            ("wrong-signature-policy", wrong_signature_policy),
+        ]);
+        let report = catalog_metadata_report(&issues);
+
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "wrong-prefix"
+                    && matches!(
+                        issue.kind,
+                        CatalogMetadataIssueKind::TemplateIdFamilyMismatch {
+                            expected_prefix: "assoc-"
+                        }
+                    )
+            }),
+            "expected template-id family mismatch:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "wrong-rule-pack"
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::RulePackFamilyMismatch {
+                            expected_rule_pack_id: "assoc-cc/v1",
+                            actual_rule_pack_id
+                        } if actual_rule_pack_id == "csc-art63/v2"
+                    )
+            }),
+            "expected rule-pack family mismatch:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "wrong-signature-policy"
+                    && matches!(
+                        issue.kind,
+                        CatalogMetadataIssueKind::SignaturePolicyFamilyMismatch {
+                            expected_signature_policy: SignaturePolicyHint::QualifiedOrHandwritten,
+                            actual_signature_policy: SignaturePolicyHint::ManualAttested,
+                        }
+                    )
+            }),
+            "expected signature-policy family mismatch:\n{report}"
         );
     }
 
