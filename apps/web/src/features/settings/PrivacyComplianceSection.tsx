@@ -15,6 +15,7 @@ import {
 } from '../../api/hooks';
 import {
   type BreachPlaybookView,
+  type BreachEvidenceKind,
   type CreateBreachPlaybookBody,
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
@@ -76,6 +77,8 @@ interface BreachPlaybookFormState {
   riskLevel: PrivacyRiskLevel;
   status: PrivacyRecordStatus;
   reviewNotes: string;
+  evidenceType: BreachEvidenceKind;
+  evidenceNotes: string;
 }
 
 interface TransferControlFormState {
@@ -90,6 +93,7 @@ interface TransferControlFormState {
   riskLevel: PrivacyRiskLevel;
   status: PrivacyRecordStatus;
   reviewNotes: string;
+  evidenceNotes: string;
 }
 
 const EMPTY_FORM: RegisterFormState = {
@@ -113,6 +117,8 @@ const EMPTY_BREACH_FORM: BreachPlaybookFormState = {
   riskLevel: 'high',
   status: 'draft',
   reviewNotes: '',
+  evidenceType: 'review',
+  evidenceNotes: '',
 };
 
 const EMPTY_TRANSFER_FORM: TransferControlFormState = {
@@ -127,6 +133,7 @@ const EMPTY_TRANSFER_FORM: TransferControlFormState = {
   riskLevel: 'medium',
   status: 'draft',
   reviewNotes: '',
+  evidenceNotes: '',
 };
 
 const STATUS_LABELS: Record<PrivacyRecordStatus, string> = {
@@ -162,6 +169,11 @@ const riskSelectOptions = PRIVACY_RISK_LEVELS.map((risk) => ({
   value: risk,
   label: RISK_LABELS[risk],
 }));
+
+const breachEvidenceOptions: { value: BreachEvidenceKind; label: string }[] = [
+  { value: 'review', label: 'Revisão' },
+  { value: 'drill', label: 'Exercício' },
+];
 
 function primaryValue(kind: RegisterKind, record: RegisterRecord): string {
   return kind === 'processor'
@@ -212,6 +224,8 @@ function breachFormFromRecord(record: BreachPlaybookView): BreachPlaybookFormSta
     riskLevel: record.risk_level,
     status: record.status,
     reviewNotes: record.review_notes ?? '',
+    evidenceType: 'review',
+    evidenceNotes: '',
   };
 }
 
@@ -228,6 +242,7 @@ function transferFormFromRecord(record: TransferControlView): TransferControlFor
     riskLevel: record.risk_level,
     status: record.status,
     reviewNotes: record.review_notes ?? '',
+    evidenceNotes: '',
   };
 }
 
@@ -267,6 +282,14 @@ function breachCreateBody(form: BreachPlaybookFormState): CreateBreachPlaybookBo
     risk_level: form.riskLevel,
     status: form.status,
     review_notes: optionalText(form.reviewNotes),
+    evidence_receipt: optionalText(form.evidenceNotes)
+      ? {
+          evidence_type: form.evidenceType,
+          notes: form.evidenceNotes.trim(),
+          authority_notified: false,
+          subjects_notified: false,
+        }
+      : undefined,
   };
 }
 
@@ -283,6 +306,13 @@ function transferCreateBody(form: TransferControlFormState): CreateTransferContr
     risk_level: form.riskLevel,
     status: form.status,
     review_notes: optionalText(form.reviewNotes),
+    evidence_receipt: optionalText(form.evidenceNotes)
+      ? {
+          notes: form.evidenceNotes.trim(),
+          transfer_approved: false,
+          data_transfer_executed: false,
+        }
+      : undefined,
   };
 }
 
@@ -352,6 +382,10 @@ function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('pt-PT', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function latestReceipt<T extends { recorded_at: string }>(receipts: T[]): T | undefined {
+  return [...receipts].sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))[0];
 }
 
 function RegisterForm({
@@ -604,7 +638,7 @@ function RegisterPanel({
           </div>
 
           {loading ? (
-            <SkeletonTable cols={8} />
+            <SkeletonTable cols={9} />
           ) : error ? (
             <ErrorNote error={error} />
           ) : records.length === 0 ? (
@@ -835,6 +869,30 @@ function BreachPlaybookForm({
           rows={3}
         />
       </Field>
+      <InlineWarning tone="info" title="Evidência de operador">
+        Esta evidência regista apenas revisão ou exercício. Não notifica a autoridade nem os
+        titulares.
+      </InlineWarning>
+      <div className="api-key-rate-grid">
+        <Field label="Tipo de evidência" htmlFor={`${idPrefix}-evidence-type`}>
+          <Select
+            id={`${idPrefix}-evidence-type`}
+            value={form.evidenceType}
+            onChange={(e) =>
+              setForm({ ...form, evidenceType: e.target.value as BreachEvidenceKind })
+            }
+            options={breachEvidenceOptions}
+          />
+        </Field>
+        <Field label="Notas de evidência" htmlFor={`${idPrefix}-evidence-notes`}>
+          <TextArea
+            id={`${idPrefix}-evidence-notes`}
+            value={form.evidenceNotes}
+            onChange={(e) => setForm({ ...form, evidenceNotes: e.target.value })}
+            rows={2}
+          />
+        </Field>
+      </div>
       <div className="form__actions">
         <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
           {t('settings.privacy.action.cancel')}
@@ -961,7 +1019,7 @@ function BreachPlaybookPanel({
             </Field>
           </div>
           {loading ? (
-            <SkeletonTable cols={7} />
+            <SkeletonTable cols={8} />
           ) : error ? (
             <ErrorNote error={error} />
           ) : records.length === 0 ? (
@@ -980,42 +1038,61 @@ function BreachPlaybookPanel({
                   <th>{t('settings.privacy.breach.column.scope')}</th>
                   <th>{t('settings.privacy.breach.column.detection')}</th>
                   <th>{t('settings.privacy.breach.column.containment')}</th>
+                  <th>Evidência</th>
                   <th>{t('settings.privacy.field.risk')}</th>
                   <th>{t('settings.privacy.field.status')}</th>
                   <th>{t('settings.privacy.table.action')}</th>
                 </tr>
               }
             >
-              {filtered.map((record) => (
-                <tr key={record.id}>
-                  <td>{record.title}</td>
-                  <td>{record.scope}</td>
-                  <td>{record.detection_channels.join(', ')}</td>
-                  <td>{record.containment_steps.join(', ')}</td>
-                  <td>
-                    <Badge tone={riskTone(record.risk_level)}>
-                      {RISK_LABELS[record.risk_level]}
-                    </Badge>
-                  </td>
-                  <td>
-                    <Badge tone={statusTone(record.status)}>{STATUS_LABELS[record.status]}</Badge>
-                  </td>
-                  <td className="users-actions">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      icon={<Icon.Pencil />}
-                      disabled={saving}
-                      onClick={() => {
-                        setEditingId(record.id);
-                        setForm(breachFormFromRecord(record));
-                      }}
-                    >
-                      {t('settings.privacy.action.edit')}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((record) => {
+                const receipt = latestReceipt(record.evidence_receipts);
+                return (
+                  <tr key={record.id}>
+                    <td>{record.title}</td>
+                    <td>{record.scope}</td>
+                    <td>{record.detection_channels.join(', ')}</td>
+                    <td>{record.containment_steps.join(', ')}</td>
+                    <td>
+                      {receipt ? (
+                        <>
+                          {receipt.evidence_type === 'drill' ? 'Exercício' : 'Revisão'} por{' '}
+                          {receipt.recorded_by}
+                          <br />
+                          <span className="muted">
+                            {formatDateTime(receipt.recorded_at)} · Sem notificação à autoridade ·
+                            Sem notificação aos titulares
+                          </span>
+                        </>
+                      ) : (
+                        <span className="muted">Sem recibo</span>
+                      )}
+                    </td>
+                    <td>
+                      <Badge tone={riskTone(record.risk_level)}>
+                        {RISK_LABELS[record.risk_level]}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Badge tone={statusTone(record.status)}>{STATUS_LABELS[record.status]}</Badge>
+                    </td>
+                    <td className="users-actions">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Pencil />}
+                        disabled={saving}
+                        onClick={() => {
+                          setEditingId(record.id);
+                          setForm(breachFormFromRecord(record));
+                        }}
+                      >
+                        {t('settings.privacy.action.edit')}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </Table>
           )}
         </div>
@@ -1169,6 +1246,18 @@ function TransferControlForm({
           rows={3}
         />
       </Field>
+      <InlineWarning tone="info" title="Evidência de operador">
+        Esta evidência regista apenas revisão do controlo. Não aprova transferências, não executa
+        transferências de dados e não certifica conformidade legal.
+      </InlineWarning>
+      <Field label="Notas de evidência" htmlFor={`${idPrefix}-evidence-notes`}>
+        <TextArea
+          id={`${idPrefix}-evidence-notes`}
+          value={form.evidenceNotes}
+          onChange={(e) => setForm({ ...form, evidenceNotes: e.target.value })}
+          rows={2}
+        />
+      </Field>
       <div className="form__actions">
         <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
           {t('settings.privacy.action.cancel')}
@@ -1315,47 +1404,65 @@ function TransferControlPanel({
                   <th>{t('settings.privacy.transfer.column.mechanism')}</th>
                   <th>{t('settings.privacy.transfer.column.categories')}</th>
                   <th>{t('settings.privacy.transfer.column.safeguards')}</th>
+                  <th>Evidência</th>
                   <th>{t('settings.privacy.field.risk')}</th>
                   <th>{t('settings.privacy.field.status')}</th>
                   <th>{t('settings.privacy.table.action')}</th>
                 </tr>
               }
             >
-              {filtered.map((record) => (
-                <tr key={record.id}>
-                  <td>{record.name}</td>
-                  <td>
-                    {record.destination_country}
-                    <br />
-                    <span className="muted">{record.recipient}</span>
-                  </td>
-                  <td>{record.transfer_mechanism}</td>
-                  <td>{record.data_categories.join(', ')}</td>
-                  <td>{record.safeguards.join(', ')}</td>
-                  <td>
-                    <Badge tone={riskTone(record.risk_level)}>
-                      {RISK_LABELS[record.risk_level]}
-                    </Badge>
-                  </td>
-                  <td>
-                    <Badge tone={statusTone(record.status)}>{STATUS_LABELS[record.status]}</Badge>
-                  </td>
-                  <td className="users-actions">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      icon={<Icon.Pencil />}
-                      disabled={saving}
-                      onClick={() => {
-                        setEditingId(record.id);
-                        setForm(transferFormFromRecord(record));
-                      }}
-                    >
-                      {t('settings.privacy.action.edit')}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((record) => {
+                const receipt = latestReceipt(record.evidence_receipts);
+                return (
+                  <tr key={record.id}>
+                    <td>{record.name}</td>
+                    <td>
+                      {record.destination_country}
+                      <br />
+                      <span className="muted">{record.recipient}</span>
+                    </td>
+                    <td>{record.transfer_mechanism}</td>
+                    <td>{record.data_categories.join(', ')}</td>
+                    <td>{record.safeguards.join(', ')}</td>
+                    <td>
+                      {receipt ? (
+                        <>
+                          Revisão por {receipt.recorded_by}
+                          <br />
+                          <span className="muted">
+                            {formatDateTime(receipt.recorded_at)} · Sem aprovação · Sem execução
+                            de transferência
+                          </span>
+                        </>
+                      ) : (
+                        <span className="muted">Sem recibo</span>
+                      )}
+                    </td>
+                    <td>
+                      <Badge tone={riskTone(record.risk_level)}>
+                        {RISK_LABELS[record.risk_level]}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Badge tone={statusTone(record.status)}>{STATUS_LABELS[record.status]}</Badge>
+                    </td>
+                    <td className="users-actions">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Pencil />}
+                        disabled={saving}
+                        onClick={() => {
+                          setEditingId(record.id);
+                          setForm(transferFormFromRecord(record));
+                        }}
+                      >
+                        {t('settings.privacy.action.edit')}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </Table>
           )}
         </div>

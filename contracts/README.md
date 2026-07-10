@@ -40,6 +40,8 @@ counts, state transitions). Together they pin both shape and semantics.
 | `session.password-policy.json` | `PasswordPolicyView` — `GET /v1/session/password-policy`                               | t68 password policy                                                |
 | `privacy.processors.json`      | `[ProcessorRecordView]` — `GET /v1/privacy/processors`                                 | privacy/compliance registers                                       |
 | `privacy.dpias.json`           | `[DpiaRecordView]` — `GET /v1/privacy/dpias`                                           | privacy/compliance registers                                       |
+| `privacy.breach-playbooks.json`| `[BreachPlaybookView]` — `GET /v1/privacy/breach-playbooks`                            | privacy breach playbook evidence register                          |
+| `privacy.transfer-controls.json`| `[TransferControlView]` — `GET /v1/privacy/transfer-controls`                         | privacy transfer-control evidence register                         |
 | `retention.policies.json`      | `[RetentionPolicyView]` — `GET /v1/privacy/retention-policies`                         | privacy retention policy register                                  |
 | `paper-book.import.json`       | `PaperBookImportReport` — `POST /v1/books/paper-import/validate`                       | historical paper-book import validation                            |
 | `api-key.list.json`            | `[ApiKeyView]` — `GET /v1/api-keys`                                                    | integration API-key lifecycle                                      |

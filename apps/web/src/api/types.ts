@@ -2450,6 +2450,29 @@ export interface DpiaRecordView extends PrivacyRegisterRecordBase {
 }
 
 /** One breach-response playbook register record (`GET /v1/privacy/breach-playbooks`). */
+export type BreachEvidenceKind = 'review' | 'drill';
+
+export interface BreachPlaybookEvidenceReceipt {
+  id: string;
+  evidence_type: BreachEvidenceKind;
+  recorded_at: string;
+  recorded_by: string;
+  occurred_at?: string;
+  notes?: string;
+  authority_notified: false;
+  subjects_notified: false;
+}
+
+export interface TransferControlEvidenceReceipt {
+  id: string;
+  recorded_at: string;
+  recorded_by: string;
+  reviewed_at?: string;
+  notes?: string;
+  transfer_approved: false;
+  data_transfer_executed: false;
+}
+
 export interface BreachPlaybookView {
   id: string;
   title: string;
@@ -2462,6 +2485,7 @@ export interface BreachPlaybookView {
   risk_level: PrivacyRiskLevel;
   status: PrivacyRecordStatus;
   review_notes?: string;
+  evidence_receipts: BreachPlaybookEvidenceReceipt[];
   created_at: string;
   created_by: string;
   updated_at: string;
@@ -2482,6 +2506,7 @@ export interface TransferControlView {
   risk_level: PrivacyRiskLevel;
   status: PrivacyRecordStatus;
   review_notes?: string;
+  evidence_receipts: TransferControlEvidenceReceipt[];
   created_at: string;
   created_by: string;
   updated_at: string;
@@ -2629,6 +2654,7 @@ export interface CreateBreachPlaybookBody {
   risk_level: PrivacyRiskLevel;
   status: PrivacyRecordStatus;
   review_notes?: string;
+  evidence_receipt?: BreachEvidenceReceiptBody;
 }
 
 /** Body of `PATCH /v1/privacy/breach-playbooks/{id}`. */
@@ -2643,6 +2669,15 @@ export interface PatchBreachPlaybookBody {
   risk_level?: PrivacyRiskLevel;
   status?: PrivacyRecordStatus;
   review_notes?: string;
+  evidence_receipt?: BreachEvidenceReceiptBody;
+}
+
+export interface BreachEvidenceReceiptBody {
+  evidence_type?: BreachEvidenceKind;
+  occurred_at?: string;
+  notes?: string;
+  authority_notified?: false;
+  subjects_notified?: false;
 }
 
 /** Body of `POST /v1/privacy/transfer-controls`. */
@@ -2658,6 +2693,7 @@ export interface CreateTransferControlBody {
   risk_level: PrivacyRiskLevel;
   status: PrivacyRecordStatus;
   review_notes?: string;
+  evidence_receipt?: TransferEvidenceReceiptBody;
 }
 
 /** Body of `PATCH /v1/privacy/transfer-controls/{id}`. */
@@ -2673,6 +2709,14 @@ export interface PatchTransferControlBody {
   risk_level?: PrivacyRiskLevel;
   status?: PrivacyRecordStatus;
   review_notes?: string;
+  evidence_receipt?: TransferEvidenceReceiptBody;
+}
+
+export interface TransferEvidenceReceiptBody {
+  reviewed_at?: string;
+  notes?: string;
+  transfer_approved?: false;
+  data_transfer_executed?: false;
 }
 
 /** One role assignment embedded in the non-secret DSR user export. */

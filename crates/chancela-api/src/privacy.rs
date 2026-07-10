@@ -61,6 +61,7 @@ const MAX_PRIVACY_CONTROL_NAME_CHARS: usize = 160;
 const MAX_PRIVACY_CONTROL_FIELD_CHARS: usize = 128;
 const MAX_PRIVACY_CONTROL_TEXT_CHARS: usize = 4096;
 const MAX_PRIVACY_CONTROL_LIST_ITEMS: usize = 32;
+const MAX_PRIVACY_EVIDENCE_RECEIPTS: usize = 64;
 const SENSITIVE_EVIDENCE_MARKERS: &[&str] = &[
     "password_hash",
     "recovery_hash",
@@ -560,6 +561,58 @@ pub enum PrivacyRecordStatus {
     Retired,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BreachEvidenceKind {
+    Review,
+    Drill,
+}
+
+impl BreachEvidenceKind {
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "review" => Ok(Self::Review),
+            "drill" => Ok(Self::Drill),
+            "completed" | "notified" | "notification" | "incident_closed" => Err(
+                ApiError::Unprocessable(
+                    "breach evidence records review/drill evidence only; notification or completion claims are not accepted"
+                        .to_owned(),
+                ),
+            ),
+            _ => Err(ApiError::Unprocessable(
+                "invalid evidence_receipt.evidence_type; expected review or drill".to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BreachPlaybookEvidenceReceipt {
+    pub id: String,
+    pub evidence_type: BreachEvidenceKind,
+    pub recorded_at: String,
+    pub recorded_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurred_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    pub authority_notified: bool,
+    pub subjects_notified: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransferControlEvidenceReceipt {
+    pub id: String,
+    pub recorded_at: String,
+    pub recorded_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    pub transfer_approved: bool,
+    pub data_transfer_executed: bool,
+}
+
 impl PrivacyRecordStatus {
     fn parse(raw: &str) -> Result<Self, ApiError> {
         match normalize_enum(raw).as_str() {
@@ -630,6 +683,8 @@ pub struct BreachPlaybookRecord {
     pub status: PrivacyRecordStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_notes: Option<String>,
+    #[serde(default)]
+    pub evidence_receipts: Vec<BreachPlaybookEvidenceReceipt>,
     pub created_at: String,
     pub created_by: String,
     pub updated_at: String,
@@ -653,6 +708,8 @@ pub struct TransferControlRecord {
     pub status: PrivacyRecordStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review_notes: Option<String>,
+    #[serde(default)]
+    pub evidence_receipts: Vec<TransferControlEvidenceReceipt>,
     pub created_at: String,
     pub created_by: String,
     pub updated_at: String,
@@ -745,6 +802,7 @@ pub struct BreachPlaybookView {
     pub status: PrivacyRecordStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_notes: Option<String>,
+    pub evidence_receipts: Vec<BreachPlaybookEvidenceReceipt>,
     pub created_at: String,
     pub created_by: String,
     pub updated_at: String,
@@ -765,6 +823,7 @@ impl From<&BreachPlaybookRecord> for BreachPlaybookView {
             risk_level: record.risk_level,
             status: record.status,
             review_notes: record.review_notes.clone(),
+            evidence_receipts: record.evidence_receipts.clone(),
             created_at: record.created_at.clone(),
             created_by: record.created_by.clone(),
             updated_at: record.updated_at.clone(),
@@ -788,6 +847,7 @@ pub struct TransferControlView {
     pub status: PrivacyRecordStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_notes: Option<String>,
+    pub evidence_receipts: Vec<TransferControlEvidenceReceipt>,
     pub created_at: String,
     pub created_by: String,
     pub updated_at: String,
@@ -809,6 +869,7 @@ impl From<&TransferControlRecord> for TransferControlView {
             risk_level: record.risk_level,
             status: record.status,
             review_notes: record.review_notes.clone(),
+            evidence_receipts: record.evidence_receipts.clone(),
             created_at: record.created_at.clone(),
             created_by: record.created_by.clone(),
             updated_at: record.updated_at.clone(),
@@ -911,6 +972,8 @@ pub struct CreateBreachPlaybook {
     pub status: Option<String>,
     #[serde(default)]
     pub review_notes: Option<String>,
+    #[serde(default)]
+    pub evidence_receipt: Option<BreachEvidenceReceiptInput>,
 }
 
 #[derive(Deserialize)]
@@ -935,6 +998,8 @@ pub struct PatchBreachPlaybook {
     pub status: Option<String>,
     #[serde(default)]
     pub review_notes: Option<String>,
+    #[serde(default)]
+    pub evidence_receipt: Option<BreachEvidenceReceiptInput>,
 }
 
 #[derive(Deserialize)]
@@ -961,6 +1026,8 @@ pub struct CreateTransferControl {
     pub status: Option<String>,
     #[serde(default)]
     pub review_notes: Option<String>,
+    #[serde(default)]
+    pub evidence_receipt: Option<TransferEvidenceReceiptInput>,
 }
 
 #[derive(Deserialize)]
@@ -987,6 +1054,40 @@ pub struct PatchTransferControl {
     pub status: Option<String>,
     #[serde(default)]
     pub review_notes: Option<String>,
+    #[serde(default)]
+    pub evidence_receipt: Option<TransferEvidenceReceiptInput>,
+}
+
+#[derive(Deserialize)]
+pub struct BreachEvidenceReceiptInput {
+    #[serde(default)]
+    pub evidence_type: Option<String>,
+    #[serde(default)]
+    pub occurred_at: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub authority_notified: Option<bool>,
+    #[serde(default)]
+    pub subjects_notified: Option<bool>,
+    #[serde(default)]
+    pub notification_completed: Option<bool>,
+    #[serde(default)]
+    pub incident_closed: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct TransferEvidenceReceiptInput {
+    #[serde(default)]
+    pub reviewed_at: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub transfer_approved: Option<bool>,
+    #[serde(default)]
+    pub data_transfer_executed: Option<bool>,
+    #[serde(default)]
+    pub legal_certification_completed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -2308,6 +2409,12 @@ pub async fn create_breach_playbook(
             "review_notes",
             MAX_PRIVACY_CONTROL_TEXT_CHARS,
         )?,
+        evidence_receipts: req
+            .evidence_receipt
+            .map(|receipt| validate_breach_evidence_receipt(receipt, &actor_name))
+            .transpose()?
+            .into_iter()
+            .collect(),
         created_at: now.clone(),
         created_by: actor_name.clone(),
         updated_at: now,
@@ -2449,6 +2556,12 @@ pub async fn create_transfer_control(
             "review_notes",
             MAX_PRIVACY_CONTROL_TEXT_CHARS,
         )?,
+        evidence_receipts: req
+            .evidence_receipt
+            .map(|receipt| validate_transfer_evidence_receipt(receipt, &actor_name))
+            .transpose()?
+            .into_iter()
+            .collect(),
         created_at: now.clone(),
         created_by: actor_name.clone(),
         updated_at: now,
@@ -3013,6 +3126,20 @@ fn apply_breach_playbook_patch(
         )?;
         changed = true;
     }
+    if let Some(evidence_receipt) = req.evidence_receipt {
+        if record.evidence_receipts.len() >= MAX_PRIVACY_EVIDENCE_RECEIPTS {
+            return Err(ApiError::Unprocessable(format!(
+                "evidence_receipts must include at most {MAX_PRIVACY_EVIDENCE_RECEIPTS} entries"
+            )));
+        }
+        record
+            .evidence_receipts
+            .push(validate_breach_evidence_receipt(
+                evidence_receipt,
+                actor_name,
+            )?);
+        changed = true;
+    }
     if changed {
         record.updated_at = now_rfc3339();
         record.updated_by = actor_name.to_owned();
@@ -3094,6 +3221,20 @@ fn apply_transfer_control_patch(
             "review_notes",
             MAX_PRIVACY_CONTROL_TEXT_CHARS,
         )?;
+        changed = true;
+    }
+    if let Some(evidence_receipt) = req.evidence_receipt {
+        if record.evidence_receipts.len() >= MAX_PRIVACY_EVIDENCE_RECEIPTS {
+            return Err(ApiError::Unprocessable(format!(
+                "evidence_receipts must include at most {MAX_PRIVACY_EVIDENCE_RECEIPTS} entries"
+            )));
+        }
+        record
+            .evidence_receipts
+            .push(validate_transfer_evidence_receipt(
+                evidence_receipt,
+                actor_name,
+            )?);
         changed = true;
     }
     if changed {
@@ -4045,6 +4186,104 @@ fn optional_sensitive_checked_text(
     max_chars: usize,
 ) -> Result<Option<String>, ApiError> {
     clean_optional_bounded(raw, field, max_chars)
+}
+
+fn validate_breach_evidence_receipt(
+    raw: BreachEvidenceReceiptInput,
+    actor_name: &str,
+) -> Result<BreachPlaybookEvidenceReceipt, ApiError> {
+    reject_true_flag(
+        raw.authority_notified,
+        "evidence_receipt.authority_notified",
+        "authority notification",
+    )?;
+    reject_true_flag(
+        raw.subjects_notified,
+        "evidence_receipt.subjects_notified",
+        "data-subject notification",
+    )?;
+    reject_true_flag(
+        raw.notification_completed,
+        "evidence_receipt.notification_completed",
+        "notification completion",
+    )?;
+    reject_true_flag(
+        raw.incident_closed,
+        "evidence_receipt.incident_closed",
+        "incident completion",
+    )?;
+    let evidence_type = raw
+        .evidence_type
+        .as_deref()
+        .map(BreachEvidenceKind::parse)
+        .transpose()?
+        .unwrap_or(BreachEvidenceKind::Review);
+    Ok(BreachPlaybookEvidenceReceipt {
+        id: Uuid::new_v4().to_string(),
+        evidence_type,
+        recorded_at: now_rfc3339(),
+        recorded_by: actor_name.to_owned(),
+        occurred_at: optional_rfc3339_string(
+            raw.occurred_at,
+            "evidence_receipt.occurred_at",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?,
+        notes: optional_sensitive_checked_text(
+            raw.notes,
+            "evidence_receipt.notes",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?,
+        authority_notified: false,
+        subjects_notified: false,
+    })
+}
+
+fn validate_transfer_evidence_receipt(
+    raw: TransferEvidenceReceiptInput,
+    actor_name: &str,
+) -> Result<TransferControlEvidenceReceipt, ApiError> {
+    reject_true_flag(
+        raw.transfer_approved,
+        "evidence_receipt.transfer_approved",
+        "transfer approval",
+    )?;
+    reject_true_flag(
+        raw.data_transfer_executed,
+        "evidence_receipt.data_transfer_executed",
+        "data-transfer execution",
+    )?;
+    reject_true_flag(
+        raw.legal_certification_completed,
+        "evidence_receipt.legal_certification_completed",
+        "legal certification",
+    )?;
+    Ok(TransferControlEvidenceReceipt {
+        id: Uuid::new_v4().to_string(),
+        recorded_at: now_rfc3339(),
+        recorded_by: actor_name.to_owned(),
+        reviewed_at: optional_rfc3339_string(
+            raw.reviewed_at,
+            "evidence_receipt.reviewed_at",
+            MAX_PRIVACY_CONTROL_FIELD_CHARS,
+        )?,
+        notes: optional_sensitive_checked_text(
+            raw.notes,
+            "evidence_receipt.notes",
+            MAX_PRIVACY_CONTROL_TEXT_CHARS,
+        )?,
+        transfer_approved: false,
+        data_transfer_executed: false,
+    })
+}
+
+fn reject_true_flag(value: Option<bool>, field: &str, action: &str) -> Result<(), ApiError> {
+    if value == Some(true) {
+        Err(ApiError::Unprocessable(format!(
+            "{field} cannot be true; this API records review evidence only and does not perform {action}"
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 fn reject_path_like_value(value: &str, field: &str) -> Result<(), ApiError> {

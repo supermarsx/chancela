@@ -124,6 +124,17 @@ const BREACH_PLAYBOOK_ONE = {
   risk_level: 'high',
   status: 'active',
   review_notes: 'Annual review.',
+  evidence_receipts: [
+    {
+      id: 'breach-receipt-1',
+      evidence_type: 'drill',
+      recorded_at: '2026-07-09T12:10:00Z',
+      recorded_by: 'amelia.marques',
+      notes: 'Tabletop drill only.',
+      authority_notified: false,
+      subjects_notified: false,
+    },
+  ],
   created_at: '2026-07-09T12:00:00Z',
   created_by: 'amelia.marques',
   updated_at: '2026-07-09T12:00:00Z',
@@ -143,6 +154,16 @@ const TRANSFER_CONTROL_ONE = {
   risk_level: 'medium',
   status: 'draft',
   review_notes: 'Quarterly review.',
+  evidence_receipts: [
+    {
+      id: 'transfer-receipt-1',
+      recorded_at: '2026-07-09T12:40:00Z',
+      recorded_by: 'amelia.marques',
+      notes: 'Control review only.',
+      transfer_approved: false,
+      data_transfer_executed: false,
+    },
+  ],
   created_at: '2026-07-09T12:30:00Z',
   created_by: 'amelia.marques',
   updated_at: '2026-07-09T12:30:00Z',
@@ -652,11 +673,13 @@ function privacyFetch(
     detection_channels: [...record.detection_channels],
     containment_steps: [...record.containment_steps],
     notification_roles: [...record.notification_roles],
+    evidence_receipts: [...record.evidence_receipts],
   }));
   let transferControls = initialTransferControls.map((record) => ({
     ...record,
     data_categories: [...record.data_categories],
     safeguards: [...record.safeguards],
+    evidence_receipts: [...record.evidence_receipts],
   }));
 
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -694,12 +717,29 @@ function privacyFetch(
     }
     if (url.includes('/v1/privacy/breach-playbooks/') && method === 'PATCH') {
       const id = privacyRecordIdFromUrl(url, 'breach-playbooks');
-      const patch = JSON.parse(init?.body as string) as Partial<BreachPlaybookMetadata>;
+      const patch = JSON.parse(init?.body as string) as Partial<BreachPlaybookMetadata> & {
+        evidence_receipt?: { evidence_type?: 'review' | 'drill'; notes?: string };
+      };
       const current = breachPlaybooks.find((record) => record.id === id);
       if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const { evidence_receipt: receiptInput, ...recordPatch } = patch;
       const updated = {
         ...current,
-        ...patch,
+        ...recordPatch,
+        evidence_receipts: receiptInput
+          ? [
+              ...current.evidence_receipts,
+              {
+                id: 'breach-receipt-patch',
+                evidence_type: receiptInput.evidence_type ?? 'review',
+                recorded_at: '2026-07-09T13:00:00Z',
+                recorded_by: 'amelia.marques',
+                notes: receiptInput.notes ?? '',
+                authority_notified: false,
+                subjects_notified: false,
+              },
+            ]
+          : current.evidence_receipts,
         updated_at: '2026-07-09T13:00:00Z',
         updated_by: 'amelia.marques',
       };
@@ -708,12 +748,28 @@ function privacyFetch(
     }
     if (url.includes('/v1/privacy/transfer-controls/') && method === 'PATCH') {
       const id = privacyRecordIdFromUrl(url, 'transfer-controls');
-      const patch = JSON.parse(init?.body as string) as Partial<TransferControlMetadata>;
+      const patch = JSON.parse(init?.body as string) as Partial<TransferControlMetadata> & {
+        evidence_receipt?: { notes?: string };
+      };
       const current = transferControls.find((record) => record.id === id);
       if (!current) return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+      const { evidence_receipt: receiptInput, ...recordPatch } = patch;
       const updated = {
         ...current,
-        ...patch,
+        ...recordPatch,
+        evidence_receipts: receiptInput
+          ? [
+              ...current.evidence_receipts,
+              {
+                id: 'transfer-receipt-patch',
+                recorded_at: '2026-07-09T13:00:00Z',
+                recorded_by: 'amelia.marques',
+                notes: receiptInput.notes ?? '',
+                transfer_approved: false,
+                data_transfer_executed: false,
+              },
+            ]
+          : current.evidence_receipts,
         updated_at: '2026-07-09T13:00:00Z',
         updated_by: 'amelia.marques',
       };
@@ -754,10 +810,26 @@ function privacyFetch(
     }
     if (url.includes('/v1/privacy/breach-playbooks')) {
       if (method === 'POST') {
-        const body = JSON.parse(init?.body as string) as Omit<BreachPlaybookMetadata, 'id'>;
+        const body = JSON.parse(init?.body as string) as Omit<BreachPlaybookMetadata, 'id'> & {
+          evidence_receipt?: { evidence_type?: 'review' | 'drill'; notes?: string };
+        };
+        const { evidence_receipt: receiptInput, ...recordBody } = body;
         const created = {
-          ...body,
+          ...recordBody,
           id: 'breach-2',
+          evidence_receipts: receiptInput
+            ? [
+                {
+                  id: 'breach-receipt-2',
+                  evidence_type: receiptInput.evidence_type ?? 'review',
+                  recorded_at: '2026-07-09T13:00:00Z',
+                  recorded_by: 'amelia.marques',
+                  notes: receiptInput.notes ?? '',
+                  authority_notified: false,
+                  subjects_notified: false,
+                },
+              ]
+            : [],
           created_at: '2026-07-09T13:00:00Z',
           created_by: 'amelia.marques',
           updated_at: '2026-07-09T13:00:00Z',
@@ -770,10 +842,25 @@ function privacyFetch(
     }
     if (url.includes('/v1/privacy/transfer-controls')) {
       if (method === 'POST') {
-        const body = JSON.parse(init?.body as string) as Omit<TransferControlMetadata, 'id'>;
+        const body = JSON.parse(init?.body as string) as Omit<TransferControlMetadata, 'id'> & {
+          evidence_receipt?: { notes?: string };
+        };
+        const { evidence_receipt: receiptInput, ...recordBody } = body;
         const created = {
-          ...body,
+          ...recordBody,
           id: 'transfer-2',
+          evidence_receipts: receiptInput
+            ? [
+                {
+                  id: 'transfer-receipt-2',
+                  recorded_at: '2026-07-09T13:00:00Z',
+                  recorded_by: 'amelia.marques',
+                  notes: receiptInput.notes ?? '',
+                  transfer_approved: false,
+                  data_transfer_executed: false,
+                },
+              ]
+            : [],
           created_at: '2026-07-09T13:00:00Z',
           created_by: 'amelia.marques',
           updated_at: '2026-07-09T13:00:00Z',
@@ -1456,6 +1543,7 @@ describe('SettingsPage', () => {
     );
     expect(breachPanel).toBeTruthy();
     expect(await within(breachPanel!).findByText('Suspected account compromise')).toBeTruthy();
+    expect(await within(breachPanel!).findByText(/Sem notificação à autoridade/)).toBeTruthy();
     fireEvent.click(within(breachPanel!).getByRole('button', { name: 'Novo registo' }));
 
     let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
@@ -1476,6 +1564,9 @@ describe('SettingsPage', () => {
     fireEvent.change(within(form!).getByLabelText('Funções notificadas'), {
       target: { value: 'DPO' },
     });
+    fireEvent.change(within(form!).getByLabelText('Notas de evidência'), {
+      target: { value: 'Operator tabletop evidence only.' },
+    });
     fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
 
     const breachPost = await waitFor(() => {
@@ -1493,6 +1584,12 @@ describe('SettingsPage', () => {
       notification_roles: ['DPO'],
       risk_level: 'high',
       status: 'draft',
+      evidence_receipt: {
+        evidence_type: 'review',
+        notes: 'Operator tabletop evidence only.',
+        authority_notified: false,
+        subjects_notified: false,
+      },
     });
     expect(await screen.findByText('Suspected exfiltration')).toBeTruthy();
 
@@ -1501,6 +1598,7 @@ describe('SettingsPage', () => {
     );
     expect(transferPanel).toBeTruthy();
     expect(await within(transferPanel!).findByText('EU to UK support access')).toBeTruthy();
+    expect(await within(transferPanel!).findByText(/Sem aprovação/)).toBeTruthy();
     fireEvent.click(within(transferPanel!).getByRole('button', { name: 'Novo registo' }));
 
     formCard = await screen.findByRole('heading', { name: 'Novo registo' });
@@ -1530,6 +1628,9 @@ describe('SettingsPage', () => {
     fireEvent.change(within(form!).getByLabelText('Salvaguardas'), {
       target: { value: 'Pseudonymisation\nAccess review' },
     });
+    fireEvent.change(within(form!).getByLabelText('Notas de evidência'), {
+      target: { value: 'Operator transfer-control review only.' },
+    });
     fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
 
     const transferPost = await waitFor(() => {
@@ -1550,6 +1651,11 @@ describe('SettingsPage', () => {
       safeguards: ['Pseudonymisation', 'Access review'],
       risk_level: 'medium',
       status: 'draft',
+      evidence_receipt: {
+        notes: 'Operator transfer-control review only.',
+        transfer_approved: false,
+        data_transfer_executed: false,
+      },
     });
     expect(await screen.findByText('EU to US analytics export')).toBeTruthy();
   });

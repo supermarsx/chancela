@@ -64,6 +64,8 @@ import {
   type BackupFile,
   type BackupManifest,
   type BookView,
+  type BreachPlaybookEvidenceReceipt,
+  type BreachPlaybookView,
   type CaeSourceEntry,
   type CaeUpdates,
   type CaeVersion,
@@ -156,6 +158,8 @@ import {
   type SessionView,
   type Settings,
   type RetentionPolicyView,
+  type TransferControlEvidenceReceipt,
+  type TransferControlView,
   type SigningCmdSettings,
   type SigningProviderMetadata,
   type SigningSettings,
@@ -573,6 +577,136 @@ function assertDpiaRecord(obj: unknown, label: string): DpiaRecordView {
   expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
   expect(record.title.length, `${label}.title should be non-empty`).toBeGreaterThan(0);
   assertPrivacyRecordBase(record, label);
+  return record;
+}
+
+function assertBreachEvidenceReceipt(
+  obj: unknown,
+  label: string,
+): BreachPlaybookEvidenceReceipt {
+  const receipt = assertExactKeys<BreachPlaybookEvidenceReceipt>(
+    obj,
+    {
+      id: true,
+      evidence_type: true,
+      recorded_at: true,
+      recorded_by: true,
+      authority_notified: true,
+      subjects_notified: true,
+    },
+    label,
+    ['occurred_at', 'notes'],
+  );
+  expect(['review', 'drill'], `${label}.evidence_type`).toContain(receipt.evidence_type);
+  assertTimestamp(receipt.recorded_at, `${label}.recorded_at`);
+  if (receipt.occurred_at) assertTimestamp(receipt.occurred_at, `${label}.occurred_at`);
+  expect(receipt.authority_notified, `${label}.authority_notified`).toBe(false);
+  expect(receipt.subjects_notified, `${label}.subjects_notified`).toBe(false);
+  return receipt;
+}
+
+function assertBreachPlaybook(obj: unknown, label: string): BreachPlaybookView {
+  const record = assertExactKeys<BreachPlaybookView>(
+    obj,
+    {
+      id: true,
+      title: true,
+      scope: true,
+      detection_channels: true,
+      containment_steps: true,
+      notification_roles: true,
+      risk_level: true,
+      status: true,
+      evidence_receipts: true,
+      created_at: true,
+      created_by: true,
+      updated_at: true,
+      updated_by: true,
+    },
+    label,
+    ['authority_notification_window', 'subject_notification_guidance', 'review_notes'],
+  );
+  expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(record.title.length, `${label}.title should be non-empty`).toBeGreaterThan(0);
+  expect(record.scope.length, `${label}.scope should be non-empty`).toBeGreaterThan(0);
+  expect(Array.isArray(record.detection_channels), `${label}.detection_channels`).toBe(true);
+  expect(record.detection_channels.length, `${label}.detection_channels`).toBeGreaterThan(0);
+  expect(Array.isArray(record.containment_steps), `${label}.containment_steps`).toBe(true);
+  expect(record.containment_steps.length, `${label}.containment_steps`).toBeGreaterThan(0);
+  expect(Array.isArray(record.notification_roles), `${label}.notification_roles`).toBe(true);
+  inEnum(PRIVACY_RISK_LEVELS, record.risk_level, `${label}.risk_level`);
+  inEnum(PRIVACY_RECORD_STATUSES, record.status, `${label}.status`);
+  expect(Array.isArray(record.evidence_receipts), `${label}.evidence_receipts`).toBe(true);
+  expect(record.evidence_receipts.length, `${label}.evidence_receipts`).toBeGreaterThan(0);
+  assertBreachEvidenceReceipt(record.evidence_receipts[0], `${label}.evidence_receipts[]`);
+  assertTimestamp(record.created_at, `${label}.created_at`);
+  assertTimestamp(record.updated_at, `${label}.updated_at`);
+  return record;
+}
+
+function assertTransferEvidenceReceipt(
+  obj: unknown,
+  label: string,
+): TransferControlEvidenceReceipt {
+  const receipt = assertExactKeys<TransferControlEvidenceReceipt>(
+    obj,
+    {
+      id: true,
+      recorded_at: true,
+      recorded_by: true,
+      transfer_approved: true,
+      data_transfer_executed: true,
+    },
+    label,
+    ['reviewed_at', 'notes'],
+  );
+  assertTimestamp(receipt.recorded_at, `${label}.recorded_at`);
+  if (receipt.reviewed_at) assertTimestamp(receipt.reviewed_at, `${label}.reviewed_at`);
+  expect(receipt.transfer_approved, `${label}.transfer_approved`).toBe(false);
+  expect(receipt.data_transfer_executed, `${label}.data_transfer_executed`).toBe(false);
+  return receipt;
+}
+
+function assertTransferControl(obj: unknown, label: string): TransferControlView {
+  const record = assertExactKeys<TransferControlView>(
+    obj,
+    {
+      id: true,
+      name: true,
+      purpose: true,
+      legal_basis: true,
+      data_categories: true,
+      recipient: true,
+      destination_country: true,
+      transfer_mechanism: true,
+      safeguards: true,
+      risk_level: true,
+      status: true,
+      evidence_receipts: true,
+      created_at: true,
+      created_by: true,
+      updated_at: true,
+      updated_by: true,
+    },
+    label,
+    ['review_notes'],
+  );
+  expect(record.id.length, `${label}.id should be non-empty`).toBeGreaterThan(0);
+  expect(record.name.length, `${label}.name should be non-empty`).toBeGreaterThan(0);
+  expect(record.recipient.length, `${label}.recipient should be non-empty`).toBeGreaterThan(0);
+  expect(record.destination_country.length, `${label}.destination_country`).toBeGreaterThan(0);
+  expect(record.transfer_mechanism.length, `${label}.transfer_mechanism`).toBeGreaterThan(0);
+  expect(Array.isArray(record.data_categories), `${label}.data_categories`).toBe(true);
+  expect(record.data_categories.length, `${label}.data_categories`).toBeGreaterThan(0);
+  expect(Array.isArray(record.safeguards), `${label}.safeguards`).toBe(true);
+  expect(record.safeguards.length, `${label}.safeguards`).toBeGreaterThan(0);
+  inEnum(PRIVACY_RISK_LEVELS, record.risk_level, `${label}.risk_level`);
+  inEnum(PRIVACY_RECORD_STATUSES, record.status, `${label}.status`);
+  expect(Array.isArray(record.evidence_receipts), `${label}.evidence_receipts`).toBe(true);
+  expect(record.evidence_receipts.length, `${label}.evidence_receipts`).toBeGreaterThan(0);
+  assertTransferEvidenceReceipt(record.evidence_receipts[0], `${label}.evidence_receipts[]`);
+  assertTimestamp(record.created_at, `${label}.created_at`);
+  assertTimestamp(record.updated_at, `${label}.updated_at`);
   return record;
 }
 
@@ -3419,6 +3553,22 @@ describe('contract fixtures parse through the real client', () => {
     assertDpiaRecord(dpias[0], 'DpiaRecordView');
   });
 
+  it('privacy.breach-playbooks.json → BreachPlaybookView[] (GET /v1/privacy/breach-playbooks)', async () => {
+    stubFetch(fixture('privacy.breach-playbooks.json'));
+    const playbooks: BreachPlaybookView[] = await api.listBreachPlaybooks();
+    expect(Array.isArray(playbooks)).toBe(true);
+    expect(playbooks.length).toBeGreaterThan(0);
+    assertBreachPlaybook(playbooks[0], 'BreachPlaybookView');
+  });
+
+  it('privacy.transfer-controls.json → TransferControlView[] (GET /v1/privacy/transfer-controls)', async () => {
+    stubFetch(fixture('privacy.transfer-controls.json'));
+    const controls: TransferControlView[] = await api.listTransferControls();
+    expect(Array.isArray(controls)).toBe(true);
+    expect(controls.length).toBeGreaterThan(0);
+    assertTransferControl(controls[0], 'TransferControlView');
+  });
+
   it('retention.policies.json → RetentionPolicyView[] (GET /v1/privacy/retention-policies)', async () => {
     stubFetch(fixture('retention.policies.json'));
     const policies: RetentionPolicyView[] = await api.listRetentionPolicies();
@@ -3626,6 +3776,8 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'user.dsr-requests.json',
       'privacy.processors.json',
       'privacy.dpias.json',
+      'privacy.breach-playbooks.json',
+      'privacy.transfer-controls.json',
       'retention.policies.json',
       'paper-book.import.json',
       'paper-book.ocr-draft.json',

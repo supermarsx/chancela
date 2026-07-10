@@ -211,6 +211,7 @@ describe('api client', () => {
           subprocessors: [],
           risk_level: 'medium',
           status: 'draft',
+          evidence_receipts: [],
           created_at: '2026-07-09T10:00:00Z',
           created_by: 'amelia.marques',
           updated_at: '2026-07-09T10:00:00Z',
@@ -281,6 +282,12 @@ describe('api client', () => {
       notification_roles: ['DPO'],
       risk_level: 'high',
       status: 'active',
+      evidence_receipt: {
+        evidence_type: 'drill',
+        notes: 'Tabletop drill reviewed escalation paths.',
+        authority_notified: false,
+        subjects_notified: false,
+      },
     });
     expect(fetchMock.mock.calls[7][0]).toBe('/v1/privacy/breach-playbooks');
     expect(fetchMock.mock.calls[7][1].method).toBe('POST');
@@ -288,12 +295,34 @@ describe('api client', () => {
       title: 'Suspected compromise',
       detection_channels: ['SIEM alert'],
       risk_level: 'high',
+      evidence_receipt: {
+        evidence_type: 'drill',
+        notes: 'Tabletop drill reviewed escalation paths.',
+        authority_notified: false,
+        subjects_notified: false,
+      },
     });
 
-    await api.patchBreachPlaybook('breach-1', { status: 'under_review' });
+    await api.patchBreachPlaybook('breach-1', {
+      status: 'under_review',
+      evidence_receipt: {
+        evidence_type: 'review',
+        notes: 'Operator review only.',
+        authority_notified: false,
+        subjects_notified: false,
+      },
+    });
     expect(fetchMock.mock.calls[8][0]).toBe('/v1/privacy/breach-playbooks/breach-1');
     expect(fetchMock.mock.calls[8][1].method).toBe('PATCH');
-    expect(JSON.parse(fetchMock.mock.calls[8][1].body)).toEqual({ status: 'under_review' });
+    expect(JSON.parse(fetchMock.mock.calls[8][1].body)).toEqual({
+      status: 'under_review',
+      evidence_receipt: {
+        evidence_type: 'review',
+        notes: 'Operator review only.',
+        authority_notified: false,
+        subjects_notified: false,
+      },
+    });
 
     await api.listTransferControls();
     expect(fetchMock.mock.calls[9][0]).toBe('/v1/privacy/transfer-controls');
@@ -309,6 +338,11 @@ describe('api client', () => {
       safeguards: ['Ticket-scoped access'],
       risk_level: 'medium',
       status: 'draft',
+      evidence_receipt: {
+        notes: 'Quarterly review only.',
+        transfer_approved: false,
+        data_transfer_executed: false,
+      },
     });
     expect(fetchMock.mock.calls[10][0]).toBe('/v1/privacy/transfer-controls');
     expect(fetchMock.mock.calls[10][1].method).toBe('POST');
@@ -316,12 +350,31 @@ describe('api client', () => {
       name: 'EU to UK support access',
       recipient: 'UK Support Ltd',
       safeguards: ['Ticket-scoped access'],
+      evidence_receipt: {
+        notes: 'Quarterly review only.',
+        transfer_approved: false,
+        data_transfer_executed: false,
+      },
     });
 
-    await api.patchTransferControl('transfer-1', { risk_level: 'high' });
+    await api.patchTransferControl('transfer-1', {
+      risk_level: 'high',
+      evidence_receipt: {
+        notes: 'Follow-up control review.',
+        transfer_approved: false,
+        data_transfer_executed: false,
+      },
+    });
     expect(fetchMock.mock.calls[11][0]).toBe('/v1/privacy/transfer-controls/transfer-1');
     expect(fetchMock.mock.calls[11][1].method).toBe('PATCH');
-    expect(JSON.parse(fetchMock.mock.calls[11][1].body)).toEqual({ risk_level: 'high' });
+    expect(JSON.parse(fetchMock.mock.calls[11][1].body)).toEqual({
+      risk_level: 'high',
+      evidence_receipt: {
+        notes: 'Follow-up control review.',
+        transfer_approved: false,
+        data_transfer_executed: false,
+      },
+    });
   });
 
   it('downloads the read-only book preservation package from the archive endpoint', async () => {

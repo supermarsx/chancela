@@ -245,7 +245,14 @@ fn breach_playbook_payload(risk_level: &str, status: &str) -> Value {
         "subject_notification_guidance": "Notify affected subjects when high-risk impact is confirmed.",
         "risk_level": risk_level,
         "status": status,
-        "review_notes": "Register only; incident execution remains manual."
+        "review_notes": "Register only; incident execution remains manual.",
+        "evidence_receipt": {
+            "evidence_type": "drill",
+            "occurred_at": "2026-07-09T10:30:00Z",
+            "notes": "Tabletop drill reviewed escalation paths.",
+            "authority_notified": false,
+            "subjects_notified": false
+        }
     })
 }
 
@@ -261,7 +268,13 @@ fn transfer_control_payload(risk_level: &str, status: &str) -> Value {
         "safeguards": ["least-privilege access", "ticket-scoped audit"],
         "risk_level": risk_level,
         "status": status,
-        "review_notes": "Review annually."
+        "review_notes": "Review annually.",
+        "evidence_receipt": {
+            "reviewed_at": "2026-07-09T11:00:00Z",
+            "notes": "Quarterly control review captured by operator.",
+            "transfer_approved": false,
+            "data_transfer_executed": false
+        }
     })
 }
 
@@ -1733,6 +1746,81 @@ async fn breach_playbooks_allow_settings_manage_persist_and_audit() {
     assert_eq!(created["risk_level"], json!("high"));
     assert_eq!(created["status"], json!("active"));
     assert_eq!(created["created_by"], json!("settings-manager"));
+    assert_eq!(
+        created["evidence_receipts"][0]["evidence_type"],
+        json!("drill")
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["notes"],
+        json!("Tabletop drill reviewed escalation paths.")
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["authority_notified"],
+        json!(false)
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["subjects_notified"],
+        json!(false)
+    );
+
+    let before_invalid =
+        std::fs::read(tmp.dir.join(BREACH_PLAYBOOKS_FILE)).expect("breach sidecar before invalid");
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/breach-playbooks/{playbook_id}"),
+                json!({
+                    "evidence_receipt": {
+                        "evidence_type": "review",
+                        "notes": "Notification completed.",
+                        "authority_notified": true
+                    }
+                }),
+            ),
+            &settings_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("review evidence only")
+    );
+    let after_invalid =
+        std::fs::read(tmp.dir.join(BREACH_PLAYBOOKS_FILE)).expect("breach sidecar after invalid");
+    assert_eq!(after_invalid, before_invalid);
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/breach-playbooks/{playbook_id}"),
+                json!({
+                    "evidence_receipt": {
+                        "evidence_type": "review",
+                        "notes": "password_hash=secret",
+                        "authority_notified": false,
+                        "subjects_notified": false
+                    }
+                }),
+            ),
+            &settings_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("sensitive credential")
+    );
+    let after_sensitive_receipt = std::fs::read(tmp.dir.join(BREACH_PLAYBOOKS_FILE))
+        .expect("breach sidecar after sensitive receipt");
+    assert_eq!(after_sensitive_receipt, before_invalid);
 
     let (status, updated) = send(
         state.clone(),
@@ -1743,6 +1831,12 @@ async fn breach_playbooks_allow_settings_manage_persist_and_audit() {
                     "status": "under_review",
                     "risk_level": "critical",
                     "containment_steps": ["Disable affected sessions", "Preserve audit evidence"],
+                    "evidence_receipt": {
+                        "evidence_type": "review",
+                        "notes": "Operator reviewed playbook after drill.",
+                        "authority_notified": false,
+                        "subjects_notified": false
+                    }
                 }),
             ),
             &settings_token,
@@ -1755,6 +1849,17 @@ async fn breach_playbooks_allow_settings_manage_persist_and_audit() {
     assert_eq!(
         updated["containment_steps"],
         json!(["Disable affected sessions", "Preserve audit evidence"])
+    );
+    assert_eq!(
+        updated["evidence_receipts"]
+            .as_array()
+            .expect("evidence receipts")
+            .len(),
+        2
+    );
+    assert_eq!(
+        updated["evidence_receipts"][1]["authority_notified"],
+        json!(false)
     );
 
     let persisted: Value = serde_json::from_slice(
@@ -1774,6 +1879,13 @@ async fn breach_playbooks_allow_settings_manage_persist_and_audit() {
     assert_eq!(status, StatusCode::OK, "list after restart: {list}");
     assert_eq!(list.as_array().expect("playbook list").len(), 1);
     assert_eq!(list[0]["id"], json!(playbook_id));
+    assert_eq!(
+        list[0]["evidence_receipts"]
+            .as_array()
+            .expect("persisted receipts")
+            .len(),
+        2
+    );
 
     let (status, events) = send(
         restarted,
@@ -1829,6 +1941,14 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
         created["safeguards"],
         json!(["least-privilege access", "ticket-scoped audit"])
     );
+    assert_eq!(
+        created["evidence_receipts"][0]["transfer_approved"],
+        json!(false)
+    );
+    assert_eq!(
+        created["evidence_receipts"][0]["data_transfer_executed"],
+        json!(false)
+    );
 
     let (status, body) = send(
         state.clone(),
@@ -1849,6 +1969,64 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
             .contains("sensitive credential")
     );
 
+    let before_false_completion = std::fs::read(tmp.dir.join(TRANSFER_CONTROLS_FILE))
+        .expect("transfer sidecar before invalid");
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/transfer-controls/{control_id}"),
+                json!({
+                    "evidence_receipt": {
+                        "notes": "Approved and executed.",
+                        "transfer_approved": true,
+                        "data_transfer_executed": true
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("review evidence only")
+    );
+    let after_false_completion = std::fs::read(tmp.dir.join(TRANSFER_CONTROLS_FILE))
+        .expect("transfer sidecar after invalid");
+    assert_eq!(after_false_completion, before_false_completion);
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch_json(
+                &format!("/v1/privacy/transfer-controls/{control_id}"),
+                json!({
+                    "evidence_receipt": {
+                        "notes": "password_hash=secret",
+                        "transfer_approved": false,
+                        "data_transfer_executed": false
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body["error"]
+            .as_str()
+            .expect("error")
+            .contains("sensitive credential")
+    );
+    let after_sensitive_receipt = std::fs::read(tmp.dir.join(TRANSFER_CONTROLS_FILE))
+        .expect("transfer sidecar after sensitive receipt");
+    assert_eq!(after_sensitive_receipt, before_false_completion);
+
     let (status, updated) = send(
         state.clone(),
         with_session(
@@ -1858,6 +2036,12 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
                     "status": "active",
                     "risk_level": "high",
                     "safeguards": ["least-privilege access", "quarterly review"],
+                    "evidence_receipt": {
+                        "reviewed_at": "2026-07-09T12:00:00Z",
+                        "notes": "Follow-up control review; no approval or transfer execution.",
+                        "transfer_approved": false,
+                        "data_transfer_executed": false
+                    }
                 }),
             ),
             &owner_token,
@@ -1870,6 +2054,17 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
     assert_eq!(
         updated["safeguards"],
         json!(["least-privilege access", "quarterly review"])
+    );
+    assert_eq!(
+        updated["evidence_receipts"]
+            .as_array()
+            .expect("evidence receipts")
+            .len(),
+        2
+    );
+    assert_eq!(
+        updated["evidence_receipts"][1]["data_transfer_executed"],
+        json!(false)
     );
 
     let persisted: Value = serde_json::from_slice(
@@ -1889,6 +2084,13 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
     assert_eq!(status, StatusCode::OK, "list after restart: {list}");
     assert_eq!(list.as_array().expect("transfer list").len(), 1);
     assert_eq!(list[0]["id"], json!(control_id));
+    assert_eq!(
+        list[0]["evidence_receipts"]
+            .as_array()
+            .expect("persisted receipts")
+            .len(),
+        2
+    );
 
     let (status, events) = send(
         restarted,

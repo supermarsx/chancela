@@ -1,0 +1,31 @@
+[
+  {
+    "id": "7d3992e1-96e1-49e5-96b8-9c1c0442939a",
+    "title": "Suspected account compromise",
+    "scope": "account-access",
+    "detection_channels": ["SIEM alert", "support report"],
+    "containment_steps": ["Disable affected sessions", "Rotate API keys"],
+    "notification_roles": ["DPO", "Security lead"],
+    "authority_notification_window": "72 hours after awareness when required",
+    "subject_notification_guidance": "Notify affected subjects when high-risk impact is confirmed.",
+    "risk_level": "high",
+    "status": "under_review",
+    "review_notes": "Review evidence only; incident execution remains manual.",
+    "evidence_receipts": [
+      {
+        "id": "b0b436dd-92fe-4b18-b353-2b820ca64836",
+        "evidence_type": "drill",
+        "recorded_at": "2026-07-09T10:30:00Z",
+        "recorded_by": "amelia.marques",
+        "occurred_at": "2026-07-09T10:00:00Z",
+        "notes": "Tabletop drill reviewed escalation paths.",
+        "authority_notified": false,
+        "subjects_notified": false
+      }
+    ],
+    "created_at": "2026-07-09T10:00:00Z",
+    "created_by": "amelia.marques",
+    "updated_at": "2026-07-09T10:30:00Z",
+    "updated_by": "amelia.marques"
+  }
+]
