@@ -313,6 +313,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/review",
         RouteClass::Gated,
     ), // PATCH book.import@Global (OCR draft review metadata)
+    (
+        "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/canonical-draft",
+        RouteClass::Gated,
+    ), // POST act.draft@Book (accepted OCR draft to mutable act draft)
     ("/v1/books/paper-import/{id}/bytes", RouteClass::Gated), // GET book.import@Global (package bytes)
     ("/v1/books/{id}/legal-hold", RouteClass::Gated),         // GET/PUT/DELETE book.export@Book
     ("/v1/books/{id}/archive/package", RouteClass::Gated),    // GET book.export@Book

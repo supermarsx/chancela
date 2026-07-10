@@ -12,6 +12,7 @@ use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
+use chancela_core::{Act, BookId, MeetingChannel};
 use chancela_store::{
     StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrDraft,
     StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
@@ -30,13 +31,15 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::dto::{format_date, parse_date};
+use crate::authz::{require_permission, scope_of_book};
+use crate::dto::{ActView, format_date, parse_date};
 use crate::error::ApiError;
 
 const PAPER_BOOK_IMPORT_NOTICE: &str = "Historical paper-book scans are classified as non-canonical evidence only. This report does not preserve the package, replace canonical digital minutes, or claim PDF/A, legal, or qualified-signature validity.";
 const PAPER_BOOK_PRESERVATION_NOTICE: &str = "Historical paper-book package preserved as non-canonical evidence only. It does not replace canonical digital minutes and no PDF/A, legal-validity, signature-validity, or qualified-signature claim is made.";
 const PAPER_BOOK_OCR_STATUS_NOTICE: &str = "OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.";
 const PAPER_BOOK_OCR_DRAFT_NOTICE: &str = "OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.";
+const PAPER_BOOK_OCR_DRAFT_TO_ACT_NOTICE: &str = "Accepted OCR draft text was copied into a new mutable draft act as a drafting aid only. No canonical document, PDF/A, signature, seal, or legal-validity acceptance was created.";
 const MAX_NOTES_CHARS: usize = 2_000;
 const MAX_OCR_TEXT_CHARS: usize = 1_000_000;
 const MAX_OCR_REVIEW_NOTE_CHARS: usize = 2_000;
@@ -300,6 +303,27 @@ pub struct PaperBookOcrDraftView {
     pub canonical_act_created: bool,
     pub canonical_document_created: bool,
     pub signature_created: bool,
+    pub legal_validity_claimed: bool,
+    pub legal_notice: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct PaperBookOcrDraftCanonicalDraftResponse {
+    pub import_id: String,
+    pub draft_id: String,
+    pub act: ActView,
+    pub draft_act_created: bool,
+    pub act_state: &'static str,
+    pub notice: &'static str,
+    pub ocr_text_copied_to_deliberations: bool,
+    pub ocr_text_in_ledger_event: bool,
+    pub non_canonical: bool,
+    pub authoritative_text_claimed: bool,
+    pub canonical_minutes_claimed: bool,
+    pub canonical_document_created: bool,
+    pub pdfa_created: bool,
+    pub signature_created: bool,
+    pub seal_created: bool,
     pub legal_validity_claimed: bool,
     pub legal_notice: &'static str,
 }
@@ -930,6 +954,96 @@ pub async fn review_paper_book_import_ocr_draft(
         .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
         .ok_or(ApiError::NotFound)?;
     Ok(Json(paper_book_ocr_draft_view(&reviewed)))
+}
+
+/// `POST /v1/books/paper-import/{id}/ocr-drafts/{draft_id}/canonical-draft` - create one new
+/// mutable draft act from an accepted OCR draft. The OCR text is copied only as working
+/// deliberation text; no canonical document, PDF/A, signature, seal, or legal-validity acceptance
+/// is created.
+pub async fn create_act_draft_from_accepted_paper_book_ocr_draft(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path((id, draft_id)): Path<(String, String)>,
+) -> Result<(StatusCode, Json<PaperBookOcrDraftCanonicalDraftResponse>), ApiError> {
+    let import = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    let draft_id = validate_import_id(&draft_id)?;
+    let Some(store) = &state.store else {
+        return Err(ApiError::Unprocessable(
+            "paper-book OCR draft act creation requires on-disk persistence".to_owned(),
+        ));
+    };
+    let draft = store
+        .paper_book_ocr_draft(&draft_id)
+        .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+    if draft.import_id != import.meta.import_id {
+        return Err(ApiError::NotFound);
+    }
+    ensure_ocr_draft_can_create_act_draft(&draft)?;
+    let ocr_text = draft
+        .extracted_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| {
+            ApiError::Unprocessable(
+                "accepted OCR draft must contain extracted_text; digest-only drafts cannot create act drafts"
+                    .to_owned(),
+            )
+        })?;
+
+    let book_id = BookId(Uuid::parse_str(import.meta.book_ref.trim()).map_err(|_| {
+        ApiError::Unprocessable(
+            "paper-book import book_ref must be the target open book id to create an act draft"
+                .to_owned(),
+        )
+    })?);
+    require_permission(&state, &actor, Permission::ActDraft, scope_of_book(book_id)).await?;
+    let created_by = actor.resolve("api");
+
+    // books → acts → ledger.
+    let books = state.books.read().await;
+    let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
+    if !book.is_open() {
+        return Err(ApiError::Conflict(format!(
+            "book {book_id} is not open; OCR draft act creation is only available for open books"
+        )));
+    }
+    let entity_id = book.entity_id;
+
+    let mut acts = state.acts.write().await;
+    let mut ledger = state.ledger.write().await;
+    let mut act = Act::draft(
+        book_id,
+        paper_book_ocr_draft_act_title(&import.meta, &draft),
+        MeetingChannel::Physical,
+    );
+    act.set_deliberations(ocr_text.to_owned())
+        .map_err(|e| ApiError::Conflict(e.to_string()))?;
+
+    let scope = format!("entity:{}/book:{}/act:{}", entity_id, act.book_id, act.id);
+    let payload = serde_json::to_vec(&paper_book_ocr_draft_to_act_event_payload(
+        &import.meta,
+        &draft,
+        &act,
+        &created_by,
+    ))?;
+    crate::try_append_event(
+        &mut ledger,
+        &created_by,
+        &scope,
+        "paper_book_import.ocr_draft_act_drafted",
+        None,
+        &payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_act(&act))?;
+    state.attest_latest(&attestor, &ledger).await;
+
+    let response =
+        paper_book_ocr_draft_canonical_draft_response(&import.meta, &draft, ActView::from(&act));
+    acts.insert(act.id, act);
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// `GET /v1/books/paper-import/{id}/bytes` - download the preserved non-canonical package bytes.
@@ -1784,6 +1898,50 @@ fn build_ocr_draft(
     })
 }
 
+fn ensure_ocr_draft_can_create_act_draft(draft: &StoredPaperBookOcrDraft) -> Result<(), ApiError> {
+    match draft.review_status {
+        StoredPaperBookOcrReviewStatus::Accepted => {}
+        StoredPaperBookOcrReviewStatus::Unreviewed => {
+            return Err(ApiError::Conflict(
+                "OCR draft must be accepted before creating an act draft".to_owned(),
+            ));
+        }
+        StoredPaperBookOcrReviewStatus::Rejected => {
+            return Err(ApiError::Conflict(
+                "rejected OCR drafts cannot create act drafts".to_owned(),
+            ));
+        }
+        StoredPaperBookOcrReviewStatus::Superseded => {
+            return Err(ApiError::Conflict(
+                "superseded OCR drafts cannot create act drafts".to_owned(),
+            ));
+        }
+    }
+    if draft.superseded_by.is_some() {
+        return Err(ApiError::Conflict(
+            "superseded OCR drafts cannot create act drafts".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn paper_book_ocr_draft_act_title(
+    import: &StoredPaperBookImportMeta,
+    draft: &StoredPaperBookOcrDraft,
+) -> String {
+    let start_page = draft
+        .page_spans
+        .first()
+        .map(|span| span.start_page)
+        .unwrap_or(import.page_from);
+    let end_page = draft
+        .page_spans
+        .last()
+        .map(|span| span.end_page)
+        .unwrap_or(import.page_to);
+    format!("Rascunho de ata a partir de OCR do livro em papel (paginas {start_page}-{end_page})")
+}
+
 fn validate_ocr_page_spans(
     raw: Vec<PaperBookOcrDraftPageSpanRequest>,
     page_count: u32,
@@ -1922,6 +2080,39 @@ fn paper_book_ocr_draft_review_event_payload(
     })
 }
 
+fn paper_book_ocr_draft_to_act_event_payload(
+    import: &StoredPaperBookImportMeta,
+    draft: &StoredPaperBookOcrDraft,
+    act: &Act,
+    created_by: &str,
+) -> serde_json::Value {
+    json!({
+        "import_id": import.import_id,
+        "draft_id": draft.draft_id,
+        "book_id": act.book_id.to_string(),
+        "act_id": act.id.to_string(),
+        "created_by": created_by,
+        "source_review_status": draft.review_status.as_str(),
+        "source_reviewed_at": draft.reviewed_at.map(|t| t.format(&Rfc3339).unwrap_or_default()),
+        "source_reviewed_by": draft.reviewed_by.clone(),
+        "source_text_digest": draft.text_digest.clone(),
+        "source_extracted_text_present": draft.extracted_text.is_some(),
+        "source_extracted_text_in_payload": false,
+        "ocr_text_copied_to_deliberations": true,
+        "act_state": "Draft",
+        "draft_act_created": true,
+        "notice": PAPER_BOOK_OCR_DRAFT_TO_ACT_NOTICE,
+        "non_canonical": true,
+        "authoritative_text_claimed": false,
+        "canonical_minutes_claimed": false,
+        "canonical_document_created": false,
+        "pdfa_created": false,
+        "signature_created": false,
+        "seal_created": false,
+        "legal_validity_claimed": false,
+    })
+}
+
 fn paper_book_ocr_status_event_payload(
     meta: &StoredPaperBookImportMeta,
     status: StoredPaperBookOcrStatus,
@@ -1976,6 +2167,32 @@ fn paper_book_import_view(meta: &StoredPaperBookImportMeta) -> PaperBookImportVi
         qualified_signature_claimed: false,
         legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
         bytes_download: format!("/v1/books/paper-import/{}/bytes", meta.import_id),
+    }
+}
+
+fn paper_book_ocr_draft_canonical_draft_response(
+    import: &StoredPaperBookImportMeta,
+    draft: &StoredPaperBookOcrDraft,
+    act: ActView,
+) -> PaperBookOcrDraftCanonicalDraftResponse {
+    PaperBookOcrDraftCanonicalDraftResponse {
+        import_id: import.import_id.clone(),
+        draft_id: draft.draft_id.clone(),
+        act,
+        draft_act_created: true,
+        act_state: "Draft",
+        notice: PAPER_BOOK_OCR_DRAFT_TO_ACT_NOTICE,
+        ocr_text_copied_to_deliberations: true,
+        ocr_text_in_ledger_event: false,
+        non_canonical: true,
+        authoritative_text_claimed: false,
+        canonical_minutes_claimed: false,
+        canonical_document_created: false,
+        pdfa_created: false,
+        signature_created: false,
+        seal_created: false,
+        legal_validity_claimed: false,
+        legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
     }
 }
 

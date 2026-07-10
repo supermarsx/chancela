@@ -47,6 +47,7 @@ import type {
   PaperBookImportValidateBody,
   PaperBookImportPreserveBody,
   PaperBookImportView,
+  PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftCreateBody,
   PaperBookOcrDraftReviewBody,
   PaperBookOcrDraftView,
@@ -550,6 +551,20 @@ export function useReviewPaperBookOcrDraft() {
         upsertPaperBookOcrDraft(rows, draft),
       );
       void qc.invalidateQueries({ queryKey: keys.paperBookOcrDrafts(draft.import_id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useCreatePaperBookOcrDraftActDraft(bookId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ importId, draftId }: { importId: string; draftId: string }) =>
+      api.createPaperBookOcrDraftActDraft(importId, draftId),
+    onSuccess: (result: PaperBookOcrDraftCanonicalDraftResponse) => {
+      qc.setQueryData(keys.act(result.act.id), result.act);
+      void qc.invalidateQueries({ queryKey: keys.bookActs(bookId ?? result.act.book_id) });
+      void qc.invalidateQueries({ queryKey: keys.act(result.act.id) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });

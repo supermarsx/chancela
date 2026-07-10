@@ -1107,6 +1107,10 @@ pub fn router(state: AppState) -> Router {
             patch(paper_import::review_paper_book_import_ocr_draft),
         )
         .route(
+            "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/canonical-draft",
+            post(paper_import::create_act_draft_from_accepted_paper_book_ocr_draft),
+        )
+        .route(
             "/v1/books/paper-import/{id}/bytes",
             get(paper_import::get_paper_book_import_bytes),
         )

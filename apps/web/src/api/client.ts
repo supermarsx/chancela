@@ -85,6 +85,7 @@ import type {
   PaperBookImportPreserveBody,
   PaperBookImportView,
   PaperBookImportValidateBody,
+  PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftCreateBody,
   PaperBookOcrDraftReviewBody,
   PaperBookOcrDraftView,
@@ -890,6 +891,12 @@ export const api = {
         draftId,
       )}/review`,
       body,
+    ),
+  createPaperBookOcrDraftActDraft: (importId: string, draftId: string) =>
+    post<PaperBookOcrDraftCanonicalDraftResponse>(
+      `/v1/books/paper-import/${encodeURIComponent(importId)}/ocr-drafts/${encodeURIComponent(
+        draftId,
+      )}/canonical-draft`,
     ),
   fetchPaperBookImportBytes: (id: string) =>
     fetchBlob(`/v1/books/paper-import/${encodeURIComponent(id)}/bytes`),

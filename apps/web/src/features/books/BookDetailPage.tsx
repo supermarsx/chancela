@@ -14,6 +14,7 @@ import {
   useBookLegalHold,
   useClearBookLegalHold,
   useCreatePaperBookOcrDraft,
+  useCreatePaperBookOcrDraftActDraft,
   useDownloadBookArchivePackage,
   useDownloadPaperBookImport,
   useEntity,
@@ -32,6 +33,7 @@ import type {
   PaperBookImportPreservationReport,
   PaperBookImportReport,
   PaperBookImportView,
+  PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftReviewPatchStatus,
   PaperBookOcrDraftView,
   PaperBookOcrStatus,
@@ -461,6 +463,7 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   const toast = useToast();
   const drafts = usePaperBookOcrDrafts(row.import_id);
   const create = useCreatePaperBookOcrDraft();
+  const createActDraft = useCreatePaperBookOcrDraftActDraft(row.book_ref);
   const [extractedText, setExtractedText] = useState('');
   const [textDigest, setTextDigest] = useState('');
   const [startPage, setStartPage] = useState('1');
@@ -470,6 +473,9 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   const [engineVersion, setEngineVersion] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
   const [formError, setFormError] = useState<unknown>(null);
+  const [createdActDrafts, setCreatedActDrafts] = useState<
+    Record<string, PaperBookOcrDraftCanonicalDraftResponse>
+  >({});
 
   useEffect(() => {
     setStartPage('1');
@@ -532,6 +538,21 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   }
 
   const rows = drafts.data ?? [];
+
+  function onCreateActDraft(draft: PaperBookOcrDraftView) {
+    createActDraft.mutate(
+      { importId: row.import_id, draftId: draft.draft_id },
+      {
+        onSuccess: (result) => {
+          setCreatedActDrafts((current) => ({ ...current, [draft.draft_id]: result }));
+          toast.success(
+            'Rascunho de ata criado sem documento canónico, PDF/A, assinatura ou selo.',
+          );
+        },
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
 
   return (
     <section className="stack--tight" aria-label={`Rascunhos OCR da importação ${row.import_id}`}>
@@ -719,6 +740,52 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                     </dd>
                   </div>
                 </dl>
+                {draft.review_status === 'accepted' ? (
+                  <div className="stack--tight">
+                    <InlineWarning tone="info" title="Criar rascunho de ata">
+                      Cria uma ata em estado Draft com o texto OCR como apoio de deliberações. Não
+                      cria documento canónico, PDF/A, assinatura, selo nem aceitação de validade
+                      legal.
+                    </InlineWarning>
+                    {createdActDrafts[draft.draft_id] ? (
+                      <p className="muted">
+                        Rascunho criado:{' '}
+                        <Link to={`/atas/${createdActDrafts[draft.draft_id].act.id}`}>
+                          abrir ata
+                        </Link>
+                        . Documento canónico:{' '}
+                        {createdActDrafts[draft.draft_id].canonical_document_created
+                          ? 'sim'
+                          : 'não'}{' '}
+                        · PDF/A: {createdActDrafts[draft.draft_id].pdfa_created ? 'sim' : 'não'} ·
+                        assinatura:{' '}
+                        {createdActDrafts[draft.draft_id].signature_created ? 'sim' : 'não'} · selo:{' '}
+                        {createdActDrafts[draft.draft_id].seal_created ? 'sim' : 'não'} · validade
+                        legal:{' '}
+                        {createdActDrafts[draft.draft_id].legal_validity_claimed ? 'sim' : 'não'}
+                      </p>
+                    ) : null}
+                    {createActDraft.error ? <ErrorNote error={createActDraft.error} /> : null}
+                    <GateButton
+                      perm="act.draft"
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.Plus />}
+                      disabled={
+                        createActDraft.isPending ||
+                        !draft.extracted_text ||
+                        Boolean(createdActDrafts[draft.draft_id])
+                      }
+                      onClick={() => onCreateActDraft(draft)}
+                    >
+                      {createActDraft.isPending
+                        ? 'A criar rascunho de ata'
+                        : draft.extracted_text
+                          ? 'Criar rascunho de ata'
+                          : 'Texto OCR necessário'}
+                    </GateButton>
+                  </div>
+                ) : null}
                 <PaperBookOcrDraftReviewForm draft={draft} importId={row.import_id} />
               </div>
             </li>

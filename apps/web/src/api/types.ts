@@ -4455,6 +4455,27 @@ export interface PaperBookOcrDraftView {
   legal_notice: string;
 }
 
+/** `POST /v1/books/paper-import/{id}/ocr-drafts/{draft_id}/canonical-draft` result. */
+export interface PaperBookOcrDraftCanonicalDraftResponse {
+  import_id: string;
+  draft_id: string;
+  act: ActView;
+  draft_act_created: boolean;
+  act_state: 'Draft' | string;
+  notice: string;
+  ocr_text_copied_to_deliberations: boolean;
+  ocr_text_in_ledger_event: boolean;
+  non_canonical: boolean;
+  authoritative_text_claimed: boolean;
+  canonical_minutes_claimed: boolean;
+  canonical_document_created: boolean;
+  pdfa_created: boolean;
+  signature_created: boolean;
+  seal_created: boolean;
+  legal_validity_claimed: boolean;
+  legal_notice: string;
+}
+
 /** `POST /v1/books/paper-import/{id}/ocr/run` local OCR outcome. */
 export interface PaperBookOcrRunView {
   import_id: string;

@@ -535,6 +535,60 @@ describe('BookDetailPage — paper-book preserved imports', () => {
         drafts = [reviewed];
         return jsonResponse(reviewed);
       }
+      if (
+        url ===
+          '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/canonical-draft' &&
+        method === 'POST'
+      ) {
+        return jsonResponse(
+          {
+            import_id: preserved.import_id,
+            draft_id: createdDraft.draft_id,
+            act: {
+              id: '77777777-7777-4777-8777-777777777777',
+              book_id: 'book-1',
+              title: 'Rascunho de ata a partir de OCR do livro em papel (paginas 1-2)',
+              channel: 'Physical',
+              meeting_date: null,
+              meeting_time: null,
+              place: null,
+              mesa: { chair: null, secretaries: [] },
+              agenda: [],
+              attendance_reference: null,
+              members_present: null,
+              members_represented: null,
+              referenced_documents: [],
+              deliberations: 'Livro de atas digitalizado.',
+              deliberation_items: [],
+              telematic_evidence: null,
+              attachments: [],
+              signatories: [],
+              state: 'Draft',
+              ata_number: null,
+              payload_digest: null,
+              seal_event_seq: null,
+              seal_metadata: null,
+              retifies: null,
+            },
+            draft_act_created: true,
+            act_state: 'Draft',
+            notice:
+              'Accepted OCR draft text was copied into a new mutable draft act as a drafting aid only. No canonical document, PDF/A, signature, seal, or legal-validity acceptance was created.',
+            ocr_text_copied_to_deliberations: true,
+            ocr_text_in_ledger_event: false,
+            non_canonical: true,
+            authoritative_text_claimed: false,
+            canonical_minutes_claimed: false,
+            canonical_document_created: false,
+            pdfa_created: false,
+            signature_created: false,
+            seal_created: false,
+            legal_validity_claimed: false,
+            legal_notice: preserved.legal_notice,
+          },
+          201,
+        );
+      }
       return null;
     });
     vi.stubGlobal('fetch', fn);
@@ -557,6 +611,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     ).toBeTruthy();
     expect(await screen.findByText('Livro de atas digitalizado.')).toBeTruthy();
     expect(screen.getAllByText(/Texto autoritativo: não/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('button', { name: 'Criar rascunho de ata' })).toBeNull();
     const createCall = calls.find(
       (call) =>
         call.url === '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts' &&
@@ -584,6 +639,7 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect((await screen.findAllByText('Aceite para referência auxiliar')).length).toBeGreaterThan(
       0,
     );
+    expect(await screen.findByRole('button', { name: 'Criar rascunho de ata' })).toBeTruthy();
     const reviewCall = calls.find(
       (call) =>
         call.url ===
@@ -595,6 +651,28 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       review_note: 'Conferido contra o pacote preservado.',
       superseded_by: null,
     });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Criar rascunho de ata' }));
+
+    expect(
+      await screen.findByText(
+        'Rascunho de ata criado sem documento canónico, PDF/A, assinatura ou selo.',
+      ),
+    ).toBeTruthy();
+    expect((await screen.findByRole('link', { name: 'abrir ata' })).getAttribute('href')).toBe(
+      '/atas/77777777-7777-4777-8777-777777777777',
+    );
+    const actDraftCall = calls.find(
+      (call) =>
+        call.url ===
+          '/v1/books/paper-import/33333333-3333-4333-8333-333333333333/ocr-drafts/44444444-4444-4444-8444-444444444444/canonical-draft' &&
+        call.method === 'POST',
+    );
+    expect(actDraftCall).toBeTruthy();
+    expect(screen.getByText(/PDF\/A: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/selo: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it('runs local OCR for a preserved import and exposes the auxiliary non-canonical draft', async () => {
