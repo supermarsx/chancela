@@ -204,7 +204,12 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     // Tagged PDF structure. This is intentionally minimal and deterministic: one document root,
     // one structure element per semantic layout block/header item, and page-local MCID parent
     // arrays. It supports assistive reading order without making a PDF/UA claim.
-    let struct_tree_root_id = emit_structure_tree(&mut pdf, &laid, &page_ids);
+    let struct_tree_root_id = emit_structure_tree(
+        &mut pdf,
+        &laid,
+        &page_ids,
+        &accessibility.metadata.language.value,
+    );
 
     // Catalog.
     let catalog_id = pdf.new_object_id();
@@ -239,7 +244,12 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     Ok(bytes)
 }
 
-fn emit_structure_tree(pdf: &mut Document, laid: &layout::Laid, page_ids: &[ObjectId]) -> ObjectId {
+fn emit_structure_tree(
+    pdf: &mut Document,
+    laid: &layout::Laid,
+    page_ids: &[ObjectId],
+    language: &str,
+) -> ObjectId {
     let root_id = pdf.new_object_id();
     let document_id = pdf.new_object_id();
     let parent_tree_id = pdf.new_object_id();
@@ -269,8 +279,9 @@ fn emit_structure_tree(pdf: &mut Document, laid: &layout::Laid, page_ids: &[Obje
 
     let mut document = Dictionary::new();
     document.set("Type", name("StructElem"));
-    document.set("S", name("Document"));
+    document.set("S", name("ChancelaDocument"));
     document.set("P", Object::Reference(root_id));
+    document.set("Lang", lit(language));
     document.set(
         "K",
         Object::Array(
@@ -355,6 +366,7 @@ fn structure_role_name(role: layout::StructureRole) -> &'static str {
 
 fn role_map() -> Dictionary {
     let mut roles = Dictionary::new();
+    roles.set("ChancelaDocument", name("Document"));
     roles.set("ChancelaDocumentTitle", name("H1"));
     roles.set("ChancelaHeaderMetadata", name("P"));
     roles.set("ChancelaHeading1", name("H1"));

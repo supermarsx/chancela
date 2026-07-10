@@ -288,6 +288,7 @@ fn verify_tagged_structure(
     if role_map.is_empty() {
         return Err(fail("/StructTreeRoot /RoleMap is empty".into()));
     }
+    verify_role_map(role_map, fail)?;
 
     let parent_tree_ref = struct_root
         .get(b"ParentTree")
@@ -345,6 +346,7 @@ fn verify_tagged_structure(
             ))
         })?;
         let content = page_content_bytes(doc, page, page_index, fail)?;
+        verify_marked_content_scopes(&content, page_index, fail)?;
         let mcids = content_mcids(&content, page_index, fail)?;
         let expected_parent_count = mcids
             .iter()
@@ -398,6 +400,7 @@ fn verify_tagged_structure(
         &mut mcr_entries,
         &mut seen_struct_elems,
         fail,
+        role_map,
     )?;
 
     for (key, parent_element) in &parent_entries {
@@ -427,6 +430,108 @@ fn verify_tagged_structure(
     }
 
     Ok(())
+}
+
+fn verify_role_map(
+    role_map: &Dictionary,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    for (custom, mapped) in role_map.iter() {
+        if is_standard_structure_role(custom) {
+            return Err(fail(format!(
+                "/RoleMap redundantly maps standard role /{}",
+                String::from_utf8_lossy(custom)
+            )));
+        }
+        let mapped = mapped.as_name().map_err(|_| {
+            fail(format!(
+                "/RoleMap entry /{} does not map to a name",
+                String::from_utf8_lossy(custom)
+            ))
+        })?;
+        if !is_standard_structure_role(mapped) {
+            return Err(fail(format!(
+                "/RoleMap entry /{} maps to non-standard role /{}",
+                String::from_utf8_lossy(custom),
+                String::from_utf8_lossy(mapped)
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn verify_structure_role(
+    elem: &Dictionary,
+    role_map: &Dictionary,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let role = elem
+        .get(b"S")
+        .and_then(Object::as_name)
+        .map_err(|_| fail("StructElem has no /S role name".into()))?;
+    if is_standard_structure_role(role) || role_map.has(role) {
+        Ok(())
+    } else {
+        Err(fail(format!(
+            "StructElem uses unmapped custom role /{}",
+            String::from_utf8_lossy(role)
+        )))
+    }
+}
+
+fn is_standard_structure_role(role: &[u8]) -> bool {
+    matches!(
+        role,
+        b"Document"
+            | b"Part"
+            | b"Art"
+            | b"Sect"
+            | b"Div"
+            | b"BlockQuote"
+            | b"Caption"
+            | b"TOC"
+            | b"TOCI"
+            | b"Index"
+            | b"NonStruct"
+            | b"Private"
+            | b"P"
+            | b"H"
+            | b"H1"
+            | b"H2"
+            | b"H3"
+            | b"H4"
+            | b"H5"
+            | b"H6"
+            | b"L"
+            | b"LI"
+            | b"Lbl"
+            | b"LBody"
+            | b"Table"
+            | b"TR"
+            | b"TH"
+            | b"TD"
+            | b"THead"
+            | b"TBody"
+            | b"TFoot"
+            | b"Span"
+            | b"Quote"
+            | b"Note"
+            | b"Reference"
+            | b"BibEntry"
+            | b"Code"
+            | b"Link"
+            | b"Annot"
+            | b"Ruby"
+            | b"RB"
+            | b"RT"
+            | b"RP"
+            | b"Warichu"
+            | b"WT"
+            | b"WP"
+            | b"Figure"
+            | b"Formula"
+            | b"Form"
+    )
 }
 
 fn parse_parent_tree_nums(
@@ -560,6 +665,73 @@ fn content_mcids(
     Ok(mcids)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MarkedScope {
+    TaggedContent,
+    Artifact,
+}
+
+fn verify_marked_content_scopes(
+    content: &[u8],
+    page_index: usize,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let text = String::from_utf8_lossy(content);
+    let mut stack = Vec::new();
+
+    for (line_index, raw_line) in text.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.ends_with(" BDC") {
+            if line.starts_with("/Artifact ") {
+                return Err(fail(format!(
+                    "page {page_index} line {} uses /Artifact with BDC instead of BMC",
+                    line_index + 1
+                )));
+            }
+            if !line.contains("/MCID ") {
+                return Err(fail(format!(
+                    "page {page_index} line {} tagged content has no /MCID",
+                    line_index + 1
+                )));
+            }
+            stack.push(MarkedScope::TaggedContent);
+            continue;
+        }
+        if line.ends_with(" BMC") {
+            if !line.starts_with("/Artifact ") {
+                return Err(fail(format!(
+                    "page {page_index} line {} uses unrecognised BMC marked content",
+                    line_index + 1
+                )));
+            }
+            stack.push(MarkedScope::Artifact);
+            continue;
+        }
+        if line == "EMC" {
+            if stack.pop().is_none() {
+                return Err(fail(format!(
+                    "page {page_index} line {} closes marked content without an open scope",
+                    line_index + 1
+                )));
+            }
+            continue;
+        }
+        if line == "S" && stack.last() != Some(&MarkedScope::Artifact) {
+            return Err(fail(format!(
+                "page {page_index} paints a path outside an /Artifact marked-content scope"
+            )));
+        }
+    }
+
+    if !stack.is_empty() {
+        return Err(fail(format!(
+            "page {page_index} has unclosed marked-content scopes"
+        )));
+    }
+
+    Ok(())
+}
+
 fn is_pdf_whitespace(byte: u8) -> bool {
     matches!(byte, b'\0' | b'\t' | b'\n' | b'\x0c' | b'\r' | b' ')
 }
@@ -572,6 +744,7 @@ fn collect_mcr_entries(
     mcr_entries: &mut BTreeMap<(usize, i64), ObjectId>,
     seen_struct_elems: &mut BTreeSet<ObjectId>,
     fail: &dyn Fn(String) -> DocError,
+    role_map: &Dictionary,
 ) -> Result<(), DocError> {
     if let Ok(struct_ref) = object.as_reference() {
         if !seen_struct_elems.insert(struct_ref) {
@@ -590,6 +763,7 @@ fn collect_mcr_entries(
                 struct_ref
             )));
         }
+        verify_structure_role(elem, role_map, fail)?;
         if let Ok(kids) = elem.get(b"K") {
             collect_mcr_entries(
                 doc,
@@ -599,6 +773,7 @@ fn collect_mcr_entries(
                 mcr_entries,
                 seen_struct_elems,
                 fail,
+                role_map,
             )?;
         }
         return Ok(());
@@ -614,6 +789,7 @@ fn collect_mcr_entries(
                 mcr_entries,
                 seen_struct_elems,
                 fail,
+                role_map,
             )?;
         }
         return Ok(());

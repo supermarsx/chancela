@@ -137,6 +137,15 @@ fn content_stream_text(parsed: &Document) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+fn replace_once(bytes: &mut [u8], from: &[u8], to: &[u8]) {
+    assert_eq!(from.len(), to.len(), "replacement must preserve offsets");
+    let pos = bytes
+        .windows(from.len())
+        .position(|w| w == from)
+        .unwrap_or_else(|| panic!("missing byte pattern: {}", String::from_utf8_lossy(from)));
+    bytes[pos..pos + from.len()].copy_from_slice(to);
+}
+
 #[test]
 fn fixture_writes_and_self_checks() {
     let bytes = pdfa::write(&fixture()).expect("write PDF/A");
@@ -185,9 +194,27 @@ fn tagged_pdf_structure_markers_are_emitted() {
         .get(b"RoleMap")
         .and_then(Object::as_dict)
         .expect("RoleMap dict");
+    assert!(role_map.has(b"ChancelaDocument"));
     assert!(role_map.has(b"ChancelaDocumentTitle"));
     assert!(role_map.has(b"ChancelaParagraph"));
     assert!(role_map.has(b"ChancelaVoteTable"));
+
+    let document_ref = struct_root
+        .get(b"K")
+        .and_then(Object::as_reference)
+        .expect("document StructElem ref");
+    let document = parsed
+        .get_object(document_ref)
+        .and_then(Object::as_dict)
+        .expect("document StructElem");
+    assert_eq!(
+        document.get(b"S").and_then(Object::as_name).unwrap(),
+        b"ChancelaDocument"
+    );
+    assert_eq!(
+        document.get(b"Lang").and_then(Object::as_str).unwrap(),
+        b"pt-PT"
+    );
 
     let parent_tree_ref = struct_root
         .get(b"ParentTree")
@@ -242,6 +269,42 @@ fn selfcheck_rejects_structparents_parent_tree_drift() {
     let err = selfcheck::verify(&bytes).expect_err("corrupt StructParents must fail");
     assert!(
         err.to_string().contains("/StructParents"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_unmapped_custom_structure_role() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    replace_once(&mut bytes, b"/ChancelaParagraph/P", b"/ChancelaParaGraft/P");
+
+    let err = selfcheck::verify(&bytes).expect_err("unmapped role must fail");
+    assert!(
+        err.to_string().contains("unmapped custom role"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_unbalanced_marked_content() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    replace_once(&mut bytes, b"EMC\n", b"   \n");
+
+    let err = selfcheck::verify(&bytes).expect_err("unbalanced marked content must fail");
+    assert!(
+        err.to_string().contains("unclosed marked-content"),
+        "unexpected self-check error: {err}"
+    );
+}
+
+#[test]
+fn selfcheck_rejects_unscoped_layout_artifact_painting() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    replace_once(&mut bytes, b"/Artifact BMC", b"/Artifact XXX");
+
+    let err = selfcheck::verify(&bytes).expect_err("unscoped artifact drawing must fail");
+    assert!(
+        err.to_string().contains("outside an /Artifact"),
         "unexpected self-check error: {err}"
     );
 }
