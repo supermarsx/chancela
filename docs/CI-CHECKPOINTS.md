@@ -28,8 +28,9 @@ provider validity or authority approval.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
 recently landed work that crosses Rust API tests, data key preflight guards,
-guardrail acknowledgements, trust parsing, MCP resource/prompt coverage, web
-fixtures, recovery/document/dashboard/notification UI, template provenance UI,
+guardrail acknowledgements, trust parsing, live-provider static assurance, MCP
+resource/prompt coverage, web fixtures, recovery/document/dashboard/notification
+UI, Ferramentas external-validator metadata UI, template provenance UI,
 validator fixtures, and the standalone desktop Cargo workspace.
 
 It intentionally reuses existing test surfaces:
@@ -38,6 +39,10 @@ It intentionally reuses existing test surfaces:
   including the non-canonical canonical-conversion preflight evidence guard.
 - API archive package and `/DocTimeStamp` evidence:
   `cargo test -p chancela-api --test archive_package --locked`
+- API external-validator report metadata:
+  `cargo test -p chancela-api --locked external_validator_report_metadata`
+- Live-provider assurance static gate:
+  `npm run check:live-provider-assurance`
 - API local PKCS#12 signing:
   `cargo test -p chancela-api --test local_pkcs12_signing --locked`
 - API bounded retention execution:
@@ -48,9 +53,9 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test official_signature_import --locked official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
 - MCP resource/prompt coverage: `cargo test -p chancela-mcp --locked`
-- Web contract/dashboard/document/notification/recovery/signing/templates/i18n
+- Web client/contract/dashboard/document/Ferramentas/notification/recovery/signing/templates/i18n
   matrix:
-  `npm run test --workspace apps/web -- src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts`
+  `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/ferramentas/ferramentas.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts`
 - Validator corpus manifest:
   `npm run test:validator-corpus`
 - Desktop lockfile resolution:
@@ -60,11 +65,13 @@ The script also performs a cheap static map before running commands. That map
 asserts the expected test files, fixture markers, data key preflight markers,
 official-signature/imported-document guardrail acknowledgement markers,
 dashboard subtab markers, notification icon-only markers, template
-law-reference UI markers, validator manifest, and desktop `Cargo.lock` are
-present, so accidental deletion or rename of the checkpoint targets fails with a
-direct message. It also statically pins the imported-document review
-notification/export browser E2E marker; Playwright execution remains in the
-browser jobs so this recent-landed lane stays focused.
+law-reference UI markers, external-validator metadata API durability markers,
+Ferramentas panel/client/i18n markers, live-provider assurance markers,
+validator manifest, and desktop `Cargo.lock` are present, so accidental deletion
+or rename of the checkpoint targets fails with a direct message. It also
+statically pins the imported-document review notification/export browser E2E
+marker; Playwright execution remains in the browser jobs so this recent-landed
+lane stays focused.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 

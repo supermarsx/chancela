@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-10 through committed implementation snapshot `d57c24db628ceefb22f2ce6e9c672b007e61512f`,
+*Updated 2026-07-10 through committed implementation snapshot `2f74edbdec6c891255f7a613a4db45536b16897e`,
 refreshing the `cfcb3d9` baseline and the prior `4566715` coverage point
 with commits through that snapshot:
 `f312669` remote-signing TSA test isolation, `d9a1891` SBOM package linkage,
@@ -46,11 +46,14 @@ JSON report copy/save actions, `bae206b` TSL/TSA identifier lookup filters,
 `c6b5fe9` chronology/trust lookup checkpoint pinning, `401acad` web TSL/TSA
 identifier lookup controls, `fe6ccf8` external-validator report metadata
 capture/list API, and `d57c24d` entity chronology plus PDF validator browser
-E2E coverage.
+E2E coverage, then `b7ebfd4` durable external-validator report metadata
+sidecars, `7ba67eb` static live-provider assurance gating, and `2f74edb`
+Ferramentas external-validator report metadata management.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
-delivery, and not a claim that qualified-trust production operation, release
+delivery, and not a claim that qualified-trust production operation, live
+provider validity, provider credentials, authority approval, release
 signing/notarization/attestation, live SQLCipher encryption/rotation/migration
 across all builds, legal document acceptance, signed-PDF legal validity, or
 destructive GDPR erasure is complete.*
@@ -67,6 +70,25 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- `2f74edb` keeps Signatures/Documents/UX **PARTIAL**: Ferramentas now exposes an
+  external-validator report metadata panel under the PDF tools surface, with raw
+  selected JSON upload to `/v1/external-validator-reports`, redacted list and
+  storage/malformed/duplicate summary counts, and client-generated metadata
+  summary save actions that omit raw report bytes. This is technical metadata UI
+  only, not legal validity, trust-list validation, live provider validity,
+  credentials handling, or authority approval.
+- `7ba67eb` keeps CI/Architecture **PARTIAL**: `npm run
+  check:live-provider-assurance` statically checks that live CMD, CSC/QTSP, TSA,
+  and smartcard test seams remain feature-gated, ignored/manual, documented as
+  no-CI/operator-controlled, and compiled in CI with `cargo test ... --no-run`.
+  This is static/compile-time assurance only, not live provider validity,
+  credentials, network/hardware execution, or authority approval.
+- `b7ebfd4` keeps Signatures/Documents **PARTIAL**: data-dir mode now persists
+  external-validator report metadata as durable sidecars, reloads those sidecars
+  after restart, and counts malformed sidecars without trusting or listing them.
+  The list response exposes storage, malformed, duplicate-path, and redacted
+  summary evidence only; it does not claim legal validity, trust-list validation,
+  live provider validity, credentials, or authority approval.
 - `d57c24d` keeps Entity/Documents/UX/CI **PARTIAL**: browser E2E now covers
   route-stubbed entity chronology rows, copyable Mermaid graph source, PDF
   validator technical JSON copy/download, and fail-closed refusal paths that hide
@@ -463,15 +485,37 @@ Implementation checkpoints covered here:
 
 ## Recent Coverage Added
 
+- **Ferramentas external-validator report metadata management:** the PDF tools
+  surface now includes an external-validator report metadata panel that uploads
+  selected JSON as raw text, lists redacted metadata summaries with storage,
+  malformed-sidecar, and duplicate-path counts, and saves a client-generated
+  metadata summary without raw report bytes. This is technical metadata handling
+  only, not legal validity, trust-list validation, live provider validity,
+  credentials, or authority approval.
+- **Live-provider assurance static gate:** CI now runs `npm run
+  check:live-provider-assurance`, which verifies that live CMD, CSC/QTSP, TSA,
+  and smartcard seams remain feature-gated, ignored/manual, documented with
+  no-CI/operator boundaries, and compiled with `cargo test ... --no-run`. This
+  is static/compile-time assurance only; it does not run live providers, prove
+  live provider validity, use credentials, or record authority approval.
+- **Durable external-validator metadata sidecars:** `GET/POST
+  /v1/external-validator-reports` now persists bounded technical metadata JSON
+  as data-dir sidecars, reloads those sidecars after restart, counts malformed
+  sidecars without trusting them, and still returns only redacted summary
+  metadata. This is durable technical metadata evidence, not legal validity,
+  trust-list validation, live provider validity, credentials, or authority
+  approval.
 - **Web TSL/TSA identifier lookup controls:** Ferramentas now exposes technical
   identifier lookup fields for TSL services and TSA/QTST records, wiring
   `identifier=` into the catalog requests and rendering matched/empty states.
   This is read-only catalog lookup UI, not legal trust validation.
-- **External-validator report metadata API:** `GET/POST /v1/external-validator-reports`
-  accepts bounded operator-supplied technical metadata JSON, rejects legal
-  overclaims, unsafe paths, and bad SHA-256 values, and lists redacted summaries.
-  This records technical report metadata only, not durable raw report replay or
-  legal validator acceptance.
+- **External-validator report metadata API validation:** `GET/POST
+  /v1/external-validator-reports` accepts bounded operator-supplied technical
+  metadata JSON, rejects legal overclaims, unsafe paths, and bad SHA-256 values,
+  and lists redacted summaries. These validation boundaries feed the durable
+  sidecars above; they are technical metadata only, not raw report replay,
+  legal validator acceptance, trust-list validation, live provider validity,
+  credentials, or authority approval.
 - **Chronology and PDF validator browser E2E:** Playwright coverage now route-stubs
   entity chronology rows, copyable Mermaid sources, PDF validator JSON copy/save,
   and fail-closed refusal behavior that hides JSON actions. This is focused browser
@@ -1154,12 +1198,15 @@ Implementation checkpoints covered here:
   `recent-landed` job pin the cross-cutting recent work: paper import API tests including
   canonical-conversion preflight markers, archive package and DocTimeStamp evidence tests, local
   PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution tests, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests, MCP
-  resource/prompt tests, web contract/dashboard/signing/i18n/trust tests, external-validator report
-  metadata API tests, notification-popup browser coverage, static imported-document review
-  notification/export browser markers, static data-key rotation execution browser markers, static
-  entity chronology/PDF-validator browser markers, trust identifier UI markers, validator corpus sidecar validation, CLI encrypted-key
-  environment tests, and desktop lockfile metadata. The static mode catches accidental removal of
-  the mapped files and fixture markers without running the full commands.
+  resource/prompt tests, web contract/client/dashboard/ferramentas/signing/i18n/trust tests,
+  external-validator report metadata API tests including data-dir sidecar reload and malformed
+  sidecar counting, the static live-provider assurance gate, notification-popup browser coverage,
+  static imported-document review notification/export browser markers, static data-key rotation
+  execution browser markers, static entity chronology/PDF-validator browser markers, trust
+  identifier UI markers, external-validator metadata panel/client/i18n markers, validator corpus
+  sidecar validation, CLI encrypted-key environment tests, and desktop lockfile metadata. The static
+  mode catches accidental removal of the mapped files and fixture markers without running the full
+  commands.
 - **Release trust metadata guard:** `scripts/check-release-trust.mjs` validates explicit package
   `releaseTrust` metadata and Docker signing-status metadata in the current `unsigned-dev` /
   `local-ci` paths and in production declarations, with a CI self-test and release/Docker workflow

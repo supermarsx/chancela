@@ -47,9 +47,13 @@ const checks = [
         "-p",
         "chancela-api",
         "--locked",
-        "external_validator_report_metadata_api",
+        "external_validator_report_metadata",
       ],
     ],
+  },
+  {
+    name: "live provider assurance static gate",
+    command: npmCommand(["run", "check:live-provider-assurance"]),
   },
   {
     name: "API local PKCS#12 signing tests",
@@ -301,9 +305,59 @@ function assertCheckpointMap() {
     "external-validator report metadata list API",
   );
   assertFileContains(
+    "crates/chancela-api/src/external_validator_evidence.rs",
+    "EXTERNAL_VALIDATOR_REPORT_METADATA_DIR",
+    "external-validator durable metadata sidecar directory",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/external_validator_evidence.rs",
+    "load_external_validator_report_metadata",
+    "external-validator metadata sidecar reload helper",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/external_validator_evidence.rs",
+    "persist_external_validator_report_metadata",
+    "external-validator metadata sidecar persistence helper",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/external_validator_evidence.rs",
+    "malformed_count",
+    "external-validator malformed metadata counting",
+  );
+  assertFileContains(
     "crates/chancela-api/src/lib.rs",
     "external_validator_report_metadata_api_accepts_and_lists_redacted_summary",
     "API external-validator metadata capture/list regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "external_validator_report_metadata_persists_and_reloads_from_data_dir",
+    "API external-validator metadata data-dir reload coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "external_validator_report_metadata_malformed_sidecars_are_counted_not_trusted",
+    "API external-validator malformed sidecar coverage",
+  );
+  assertFileContains(
+    "package.json",
+    "check:live-provider-assurance",
+    "live-provider assurance package script",
+  );
+  assertFileContains(
+    "scripts/check-live-provider-assurance.mjs",
+    "checkCiNoRunCompileGates",
+    "live-provider assurance CI compile-gate checker",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "npm run check:live-provider-assurance",
+    "live-provider assurance CI gate",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "provider validity or authority approval",
+    "live-provider assurance conservative boundary copy",
   );
   assertFileContains(
     "crates/chancela-api/tests/local_pkcs12_signing.rs",
@@ -461,6 +515,26 @@ function assertCheckpointMap() {
     "web client data key execution endpoint coverage",
   );
   assertFileContains(
+    "apps/web/src/api/client.ts",
+    "listExternalValidatorReports",
+    "web client external-validator metadata list API",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "uploadExternalValidatorReport",
+    "web client external-validator metadata upload API",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "lists external-validator report metadata without raw report bytes",
+    "web client external-validator metadata list coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "uploads external-validator report JSON as raw selected text",
+    "web client external-validator raw JSON upload coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/books/books.test.tsx",
     "creates and reviews OCR drafts as auxiliary non-canonical metadata only",
     "paper-book OCR draft UI coverage",
@@ -499,6 +573,26 @@ function assertCheckpointMap() {
     "apps/web/src/features/ferramentas/ferramentas.test.tsx",
     "saves the technical JSON report as a browser-save/download Blob",
     "PDF validator report save coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "ExternalValidatorReportsPanel",
+    "Ferramentas external-validator metadata panel",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "downloadSummary",
+    "Ferramentas external-validator metadata summary save action",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "Ferramentas — external-validator reports panel",
+    "Ferramentas external-validator metadata panel coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/ferramentas.test.tsx",
+    "downloads a client-generated metadata summary, not raw report bytes",
+    "Ferramentas external-validator metadata summary-save coverage",
   );
   assertFileContains(
     "apps/web/src/features/notifications/NotificationBell.test.tsx",
@@ -564,6 +658,11 @@ function assertCheckpointMap() {
     "apps/web/src/i18n/i18n.test.ts",
     "catalog completeness matrix",
     "i18n catalog matrix coverage",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "externalValidatorReports.downloadSummary",
+    "i18n external-validator metadata panel keys",
   );
   assertFileContains(
     "apps/web/e2e/notification-popup-hardening.spec.ts",
