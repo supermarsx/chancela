@@ -110,6 +110,10 @@ The GitHub Actions job is `recent-landed` in `.github/workflows/ci.yml`. Keep
 this lane focused: add only short-running commands that prove the named landed
 areas still resolve together. Broader workspace clippy, full Rust tests,
 browser E2E, Docker, and Windows desktop smoke remain in their dedicated jobs.
+The `f58019c` refresh documents API-owned structured platform log threshold
+enforcement and paper-import clippy cleanup in `SPEC-COVERAGE.md` without adding
+new recent-landed commands or claiming stdout/stderr, MCP process logs, or
+supervisor lifecycle coverage.
 
 ## Release Hardening Artifacts
 
