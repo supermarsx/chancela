@@ -28,18 +28,23 @@ provider validity or authority approval.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
 recently landed work that crosses Rust API tests, data key preflight guards,
-guardrail acknowledgements, trust parsing, live-provider static assurance, MCP
-resource/prompt coverage, web fixtures, registry chronology graph markers, PDF
-writer spacing and PDF/UA blocker-decomposition markers, archive timestamp append
-markers, paper-book OCR API/UI markers, recovery/document/dashboard/notification UI, Ferramentas
-external-validator metadata UI, template provenance UI, validator fixtures, and
-the standalone desktop Cargo workspace.
+guardrail acknowledgements, written-resolution evidence status binding, trust
+parsing, declared signer-capacity evidence preservation, live-provider static
+assurance, MCP resource/prompt coverage, web fixtures, registry chronology graph
+markers, PDF writer spacing and PDF/UA blocker-decomposition markers, archive
+timestamp append markers, paper-book OCR API/UI markers plus focused paper-book
+OCR review browser workflow markers, recovery/document/dashboard/notification
+UI, Ferramentas external-validator metadata UI and compact validator-report
+actions, template provenance UI, validator fixtures, and the standalone desktop
+Cargo workspace.
 
 It intentionally reuses existing test surfaces:
 
 - API paper import: `cargo test -p chancela-api --test paper_import --locked`
   including the non-canonical canonical-conversion preflight guard and
-  operator-configured local OCR run coverage.
+  operator-configured local OCR run coverage. Focused Playwright coverage for
+  the non-canonical paper-book OCR review workflow is pinned statically here and
+  executed in browser jobs.
 - API archive package and `/DocTimeStamp` evidence:
   `cargo test -p chancela-api --test archive_package --locked`
 - API external-validator report metadata, including raw metadata download:
@@ -67,19 +72,24 @@ It intentionally reuses existing test surfaces:
 The script also performs a cheap static map before running commands. That map
 asserts the expected test files, fixture markers, data key preflight markers,
 official-signature/imported-document guardrail acknowledgement markers,
-dashboard subtab markers, dashboard/notification icon-only markers, template
-law-reference UI markers, structured registry chronology graph markers, mapped
-PDF inter-word space and PDF/UA blocker-decomposition markers, local paper-book OCR API/UI/contract markers,
+written-resolution evidence status/binding markers, declared signer-capacity
+evidence markers with `not_checked_by_scap` and
+`declared_capacity_evidence_only`, dashboard subtab markers,
+dashboard/notification icon-only markers, template law-reference UI markers,
+structured registry chronology graph markers, mapped PDF inter-word space and
+PDF/UA blocker-decomposition markers, local paper-book OCR API/UI/contract
+markers, focused paper-book OCR review browser workflow markers,
 caller-supplied archive timestamp append API markers, external-validator
 metadata API durability markers, the settings.read raw metadata download
-route/tests, Ferramentas panel/client/i18n markers, live-provider assurance
-markers, validator manifest, and desktop `Cargo.lock` are present, so accidental
-deletion or rename of the checkpoint targets fails with a direct message. It
-also statically pins the imported-document review notification/export browser E2E
-marker; Playwright execution remains in the browser jobs so this recent-landed
-lane stays focused. Static markers are deletion/rename guards only; they do not
-certify legal validity, PDF/UA, production B-LTA, live provider validity, or
-canonical OCR conversion.
+route/tests, Ferramentas panel/client/i18n markers including compact
+validator-report actions, live-provider assurance markers, validator manifest,
+and desktop `Cargo.lock` are present, so accidental deletion or rename of the
+checkpoint targets fails with a direct message. It also statically pins the
+imported-document review notification/export browser E2E marker; Playwright
+execution remains in the browser jobs so this recent-landed lane stays focused.
+Static markers are deletion/rename guards only; they do not certify legal
+validity, PDF/UA, production B-LT/B-LTA, SCAP verification, representative
+authority, live provider validity, or canonical OCR conversion.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 

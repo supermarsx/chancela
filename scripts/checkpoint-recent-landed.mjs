@@ -300,6 +300,41 @@ function assertCheckpointMap() {
     "paper import local OCR command configuration",
   );
   assertFileContains(
+    "apps/web/e2e/paper-book-import-ocr.spec.ts",
+    "paper-book import preserves non-canonical package and OCR review stays auxiliary",
+    "paper-book OCR review browser workflow coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/paper-book-import-ocr.spec.ts",
+    "Confirmo que este rascunho OCR é auxiliar",
+    "paper-book OCR draft auxiliary acknowledgement browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/paper-book-import-ocr.spec.ts",
+    "operator-configured local OCR command",
+    "paper-book OCR missing-command browser refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/acts.rs",
+    "written_resolution_evidence_status: WrittenResolutionEvidenceStatusView::from_summary",
+    "written-resolution evidence compliance status API marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/acts.rs",
+    "patch_act_written_resolution_evidence_round_trips_and_persists",
+    "written-resolution evidence patch persistence coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/acts.rs",
+    "compliance_reports_written_resolution_evidence_status_only",
+    "written-resolution evidence compliance status coverage",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/seal.rs",
+    "written_resolution_evidence_binds_into_the_seal_digest_when_present",
+    "written-resolution evidence seal digest binding coverage",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/archive_package.rs",
     "archive_package_reports_embedded_doc_timestamp_evidence_without_b_lta_claim",
     "archive package DocTimeStamp evidence coverage",
@@ -513,6 +548,31 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/signature.rs",
     "signature_evidence_status_reports_multi_signature_local_renewal_plan",
     "signature status multi-signature renewal-plan coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "status_scope: \"declared_capacity_evidence_only\".to_owned()",
+    "declared signer-capacity evidence scope marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "verification_status: \"not_checked_by_scap\".to_owned()",
+    "declared signer-capacity non-SCAP marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/cmd_signing.rs",
+    "cmd_signing_round_trip_produces_a_validating_signed_pdf",
+    "CMD declared signer-capacity evidence coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/local_pkcs12_signing.rs",
+    "local_pkcs12_signs_as_advanced_technical_evidence_only",
+    "local PKCS#12 declared signer-capacity evidence coverage",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/store.rs",
+    "declared_capacity_evidence_only",
+    "store declared signer-capacity evidence persistence marker",
   );
   assertFileContains(
     "crates/chancela-api/src/signature.rs",
@@ -784,6 +844,21 @@ function assertCheckpointMap() {
     "Ferramentas external-validator metadata summary save action",
   );
   assertFileContains(
+    "apps/web/src/features/ferramentas/ExternalValidatorReportsPanel.tsx",
+    "externalValidatorReports.table.metadataOnly",
+    "Ferramentas external-validator compact metadata-only action marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "pdf-validator-report-actions",
+    "PDF validator compact report action layout marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ferramentas/PdfSignatureValidatorPanel.tsx",
+    "pdfValidator.report.status",
+    "PDF validator compact report status copy marker",
+  );
+  assertFileContains(
     "apps/web/src/features/ferramentas/ferramentas.test.tsx",
     "Ferramentas — external-validator reports panel",
     "Ferramentas external-validator metadata panel coverage",
@@ -812,6 +887,16 @@ function assertCheckpointMap() {
     "apps/web/src/features/notifications/NotificationsPage.test.tsx",
     "expectIconOnlyFilter",
     "notifications page icon-only filter coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationsPage.test.tsx",
+    "renders active notification page actions as icon-only controls with tooltip labels",
+    "notifications page active action icon-only coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.test.tsx",
+    "const acknowledge = within(dialog).getByRole('button', { name: 'Reconhecer' })",
+    "notification bell acknowledge icon-only coverage",
   );
   assertFileContains(
     "crates/chancela-cli/tests/cli.rs",
