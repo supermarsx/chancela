@@ -57,6 +57,29 @@ The generator also validates that every local path in the implementation
 evidence map exists. If a mapped file moves or is deleted, generation fails
 until the map is updated.
 
+## Check
+
+Use the read-only check mode to validate the generated pack without contacting
+AMA/SCMD services and without claiming production approval or legal compliance:
+
+```powershell
+node docs/compliance/ama-cmd/generate-evidence-pack.mjs --check
+```
+
+The check verifies:
+
+- manifest claim boundaries remain `draft_evidence_pack_only`,
+  `not_claimed`, and externally evidenced;
+- official source IDs, URLs, and generated source metadata match
+  `source-metadata.json`;
+- rendered templates and evidence placeholders match deterministic generator
+  output and contain no unresolved `{{...}}` tokens;
+- implementation evidence map references point to files that exist in the
+  repository and are rendered in `IMPLEMENTATION-EVIDENCE-MAP.md`.
+
+If a pack was generated with explicit `--case-name` or `--generated-at` values,
+pass the same values to `--check` to assert those values.
+
 ## Claim Boundary
 
 The pack must not claim live production CMD validity, production onboarding, or
