@@ -3749,6 +3749,24 @@ export interface DataStatusResponse {
   usage: DataUsageStatus;
 }
 
+/** Bounded storage-maintenance targets under the configured data directory. */
+export type DataCleanupTarget = 'crash' | 'exports';
+
+/** `POST /v1/data/cleanup` request for non-domain storage maintenance. */
+export interface DataCleanupBody {
+  target: DataCleanupTarget;
+}
+
+/** `POST /v1/data/cleanup` response. */
+export interface DataCleanupResult {
+  target: DataCleanupTarget;
+  data_dir: string | null;
+  deleted_bytes: number;
+  deleted_files: number;
+  deleted_directories: number;
+  skipped: string[];
+}
+
 /** The destructive data-management scope (§2.11). */
 export type ResetScope = 'backend_domain' | 'backend_factory';
 

@@ -56,6 +56,7 @@ import type {
   UpdateEntityBody,
   UpdateUserBody,
   ActState,
+  DataCleanupBody,
   ReanchorBody,
   RestoreBody,
   CollisionPolicy,
@@ -858,6 +859,17 @@ export function useDataStatus() {
     queryFn: () => api.dataStatus(),
     staleTime: 15_000,
     retry: false,
+  });
+}
+
+/** Bounded storage cleanup for maintenance-only concerns such as crash reports and exports. */
+export function useCleanDataStorage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: DataCleanupBody) => api.cleanDataStorage(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.dataStatus });
+    },
   });
 }
 

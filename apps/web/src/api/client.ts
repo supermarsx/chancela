@@ -41,6 +41,8 @@ import type {
   CreateSessionBody,
   CreateUserBody,
   Dashboard,
+  DataCleanupBody,
+  DataCleanupResult,
   DataStatusResponse,
   NotificationTriageResponse,
   NotificationTriageUpdateBody,
@@ -810,6 +812,8 @@ export const api = {
   startOverBook: (id: string, body: StartOverBookBody) =>
     post<StartOverBookResult>(`/v1/books/${id}/start-over`, body),
   dataStatus: () => get<DataStatusResponse>('/v1/data/status'),
+  cleanDataStorage: (body: DataCleanupBody) =>
+    post<DataCleanupResult>('/v1/data/cleanup', body),
   // Data management (§2.11). Frontend-reset is client-only — it has NO endpoint here.
   resetData: (body: ResetDataBody) => post<ResetOutcomeView>('/v1/data/reset', body),
   startOverInstance: (body: StartOverInstanceBody) =>

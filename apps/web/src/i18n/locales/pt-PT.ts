@@ -2002,6 +2002,27 @@ export const ptPT = {
   'data.status.rows': 'Linhas: {count}',
   'data.status.roots': 'Raízes: {roots}',
   'data.status.scanErrors.title': 'Erros de leitura',
+  'data.status.cleanup.title': 'Manutenção',
+  'data.status.cleanup.body':
+    'Limpe ficheiros operacionais que a aplicação pode voltar a gerar. Dados jurídicos, livros, atas e definições não são apagados aqui.',
+  'data.status.cleanup.crash.title': 'Relatórios de falha',
+  'data.status.cleanup.crash.body':
+    'Remove diagnósticos locais de falhas antigas. Guarde-os antes se estiver a investigar um problema.',
+  'data.status.cleanup.crash.button': 'Limpar falhas',
+  'data.status.cleanup.crash.confirm':
+    'Apagar relatórios de falha guardados nesta pasta de dados? Esta ação não apaga livros, atas ou definições.',
+  'data.status.cleanup.exports.title': 'Exportações retidas',
+  'data.status.cleanup.exports.body':
+    'Remove pacotes de exportação guardados pelo servidor. Mantenha cópias externas antes de limpar.',
+  'data.status.cleanup.exports.button': 'Limpar exportações',
+  'data.status.cleanup.exports.confirm':
+    'Apagar exportações retidas nesta pasta de dados? Verifique primeiro que já tem as cópias necessárias.',
+  'data.status.cleanup.items': '{files} ficheiros · {directories} pastas',
+  'data.status.cleanup.pending': 'A limpar…',
+  'data.status.cleanup.done': 'Limpeza concluída.',
+  'data.status.cleanup.doneTitle': 'Manutenção concluída',
+  'data.status.cleanup.result':
+    'Apagados {files} ficheiros e {directories} pastas, libertando {bytes}.',
   'degraded.title': 'Sistema em modo só-leitura',
   'degraded.detail':
     'A cadeia de integridade está quebrada. As alterações estão bloqueadas até ser reparada.',

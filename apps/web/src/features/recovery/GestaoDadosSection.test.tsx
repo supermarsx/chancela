@@ -64,6 +64,26 @@ const durableStatus: DataStatusResponse = {
         directory_count: 0,
         relative_roots: ['settings.json'],
       },
+      {
+        id: 'crash',
+        label: 'Crash reports',
+        bytes: 512,
+        basis: 'filesystem',
+        exact: true,
+        file_count: 1,
+        directory_count: 1,
+        relative_roots: ['crash-reports'],
+      },
+      {
+        id: 'exports',
+        label: 'Exports',
+        bytes: 512,
+        basis: 'filesystem',
+        exact: true,
+        file_count: 2,
+        directory_count: 1,
+        relative_roots: ['exports'],
+      },
     ],
     sqlite_logical: [
       {
@@ -194,8 +214,10 @@ describe('GestaoDadosSection', () => {
     expect(screen.getByText('42')).toBeTruthy();
     expect(screen.getByText('Database')).toBeTruthy();
     expect(screen.getByText('Ledger payloads')).toBeTruthy();
+    expect(screen.getByText('Relatórios de falha')).toBeTruthy();
+    expect(screen.getByText('Exportações retidas')).toBeTruthy();
     expect(screen.getByText(/Total:/).textContent).toContain('4 KB');
-    expect(screen.getByText(/Ficheiros: 2/)).toBeTruthy();
+    expect(screen.getAllByText(/Ficheiros: 2/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/Pastas: 0/).length).toBeGreaterThanOrEqual(3);
     expect(screen.getByText(/Linhas: 3/)).toBeTruthy();
     expect(screen.getByText(/Raízes: chancela\.db, chancela\.db-wal/)).toBeTruthy();
@@ -250,6 +272,44 @@ describe('GestaoDadosSection', () => {
 
     expect(await screen.findByText('F:\\Data2')).toBeTruthy();
     expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2);
+  });
+
+  it('cleans crash reports from the storage maintenance panel and refreshes status', async () => {
+    const cleanedStatus: DataStatusResponse = {
+      ...durableStatus,
+      usage: {
+        ...durableStatus.usage,
+        filesystem: durableStatus.usage.filesystem.filter((concern) => concern.id !== 'crash'),
+      },
+    };
+    const calls = installFetch([durableStatus, cleanedStatus], (url) => {
+      if (url.includes('/v1/data/cleanup')) {
+        return jsonResponse({
+          target: 'crash',
+          data_dir: 'F:\\ChancelaData',
+          deleted_bytes: 512,
+          deleted_files: 1,
+          deleted_directories: 1,
+          skipped: [],
+        });
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+    await screen.findByText('F:\\ChancelaData');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Limpar falhas' }));
+    const confirmBtns = screen.getAllByRole('button', { name: 'Limpar falhas' });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/v1/data/cleanup'))).toBe(true));
+    const cleanupCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
+    expect(cleanupCall.method).toBe('POST');
+    expect(JSON.parse(cleanupCall.body as string)).toEqual({ target: 'crash' });
+    expect(await screen.findByText(/Apagados 1 ficheiros e 1 pastas/)).toBeTruthy();
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
+    );
   });
 
   it('viewing and refreshing the data tab do not PUT settings or call platform logs', async () => {

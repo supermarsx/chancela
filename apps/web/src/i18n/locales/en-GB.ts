@@ -1970,6 +1970,26 @@ export const enGB: Catalog = {
   'data.status.rows': 'Rows: {count}',
   'data.status.roots': 'Roots: {roots}',
   'data.status.scanErrors.title': 'Scan errors',
+  'data.status.cleanup.title': 'Maintenance',
+  'data.status.cleanup.body':
+    'Clean operational files that the app can regenerate. Legal data, books, minutes and settings are not deleted here.',
+  'data.status.cleanup.crash.title': 'Crash reports',
+  'data.status.cleanup.crash.body':
+    'Removes local diagnostics from older crashes. Save them first if you are investigating a problem.',
+  'data.status.cleanup.crash.button': 'Clean crashes',
+  'data.status.cleanup.crash.confirm':
+    'Delete crash reports stored in this data folder? This does not delete books, minutes or settings.',
+  'data.status.cleanup.exports.title': 'Retained exports',
+  'data.status.cleanup.exports.body':
+    'Removes export packages retained by the server. Keep external copies before cleaning.',
+  'data.status.cleanup.exports.button': 'Clean exports',
+  'data.status.cleanup.exports.confirm':
+    'Delete retained exports in this data folder? Check that you already have the copies you need.',
+  'data.status.cleanup.items': '{files} files · {directories} folders',
+  'data.status.cleanup.pending': 'Cleaning…',
+  'data.status.cleanup.done': 'Cleanup complete.',
+  'data.status.cleanup.doneTitle': 'Maintenance complete',
+  'data.status.cleanup.result': 'Deleted {files} files and {directories} folders, freeing {bytes}.',
   'degraded.title': 'System in read-only mode',
   'degraded.detail': 'The integrity chain is broken. Changes are blocked until it is repaired.',
   'degraded.link': 'Open Books & Integrity',

@@ -21,9 +21,16 @@
  */
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useDataStatus, useResetData, useStartOverInstance } from '../../api/hooks';
+import {
+  useCleanDataStorage,
+  useDataStatus,
+  useResetData,
+  useStartOverInstance,
+} from '../../api/hooks';
 import {
   RESET_PHRASE,
+  type DataCleanupResult,
+  type DataCleanupTarget,
   type DataPermissionCheck,
   type DataPermissionStatus,
   type DataPersistenceMode,
@@ -49,6 +56,31 @@ import { GateButton } from '../session/permissions';
 import { resetFrontend } from './frontendReset';
 
 type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
+
+type CleanupConfig = {
+  target: DataCleanupTarget;
+  title: MessageKey;
+  body: MessageKey;
+  button: MessageKey;
+  confirm: MessageKey;
+};
+
+const CLEANUP_TARGETS: CleanupConfig[] = [
+  {
+    target: 'crash',
+    title: 'data.status.cleanup.crash.title',
+    body: 'data.status.cleanup.crash.body',
+    button: 'data.status.cleanup.crash.button',
+    confirm: 'data.status.cleanup.crash.confirm',
+  },
+  {
+    target: 'exports',
+    title: 'data.status.cleanup.exports.title',
+    body: 'data.status.cleanup.exports.body',
+    button: 'data.status.cleanup.exports.button',
+    confirm: 'data.status.cleanup.exports.confirm',
+  },
+];
 
 const MODE_LABEL: Record<DataPersistenceMode, MessageKey> = {
   durable: 'data.status.mode.durable',
@@ -137,6 +169,21 @@ function concernMeta(concern: DataUsageConcern, t: TFunction, locale: string): s
   return parts.join(' · ');
 }
 
+function usageForTarget(
+  concerns: DataUsageConcern[] | undefined,
+  target: DataCleanupTarget,
+): DataUsageConcern | undefined {
+  return concerns?.find((concern) => concern.id === target);
+}
+
+function cleanupSummary(result: DataCleanupResult, t: TFunction, locale: string): string {
+  return t('data.status.cleanup.result', {
+    files: new Intl.NumberFormat(locale).format(result.deleted_files),
+    directories: new Intl.NumberFormat(locale).format(result.deleted_directories),
+    bytes: formatBytes(result.deleted_bytes, locale),
+  });
+}
+
 function StatusBadge({
   value,
   positive = true,
@@ -183,8 +230,18 @@ function DataStatusPanel() {
   const locale = useLocale();
   const toast = useToast();
   const status = useDataStatus();
+  const cleanup = useCleanDataStorage();
   const data = status.data;
   const dataPath = data?.data_dir.path ?? null;
+  const [cleanupTarget, setCleanupTarget] = useState<DataCleanupTarget | null>(null);
+  const [lastCleanup, setLastCleanup] = useState<DataCleanupResult | null>(null);
+  const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
+  const canClean = Boolean(
+    dataPath &&
+      data?.data_dir.exists &&
+      data?.data_dir.is_directory &&
+      data?.permissions.delete_probe_file.ok,
+  );
 
   async function copyPath() {
     if (!dataPath) return;
@@ -307,6 +364,68 @@ function DataStatusPanel() {
             <p className="field__hint">{t('data.status.openUnavailable')}</p>
           </section>
 
+          <section className="data-status-section" aria-labelledby="data-status-maintenance">
+            <div className="data-status-section__head">
+              <div>
+                <h4 id="data-status-maintenance">{t('data.status.cleanup.title')}</h4>
+                <p className="data-status-section__hint">{t('data.status.cleanup.body')}</p>
+              </div>
+            </div>
+            <div className="data-status-cleanups">
+              {CLEANUP_TARGETS.map((target) => {
+                const usage = usageForTarget(data.usage.filesystem, target.target);
+                return (
+                  <article key={target.target} className="data-status-cleanup">
+                    <div className="data-status-cleanup__body">
+                      <h5>{t(target.title)}</h5>
+                      <p>{t(target.body)}</p>
+                      <p className="data-status-cleanup__metric">
+                        <span className="mono">
+                          {formatBytes(usage?.bytes ?? 0, locale)}
+                        </span>{' '}
+                        <span>
+                          {t('data.status.cleanup.items', {
+                            files: new Intl.NumberFormat(locale).format(usage?.file_count ?? 0),
+                            directories: new Intl.NumberFormat(locale).format(
+                              usage?.directory_count ?? 0,
+                            ),
+                          })}
+                        </span>
+                      </p>
+                    </div>
+                    <GateButton
+                      perm="settings.manage"
+                      type="button"
+                      variant="secondary"
+                      className="btn--danger"
+                      icon={<Icon.Trash />}
+                      disabled={!canClean || cleanup.isPending}
+                      onClick={() => setCleanupTarget(target.target)}
+                    >
+                      {cleanup.isPending && cleanupTarget === target.target
+                        ? t('data.status.cleanup.pending')
+                        : t(target.button)}
+                    </GateButton>
+                  </article>
+                );
+              })}
+            </div>
+            {lastCleanup ? (
+              <InlineWarning tone="info" title={t('data.status.cleanup.doneTitle')}>
+                <p>{cleanupSummary(lastCleanup, t, locale)}</p>
+                {lastCleanup.skipped.length > 0 ? (
+                  <ul className="plain-list">
+                    {lastCleanup.skipped.map((item) => (
+                      <li key={item} className="mono">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </InlineWarning>
+            ) : null}
+          </section>
+
           <section className="data-status-section" aria-labelledby="data-status-permissions">
             <h4 id="data-status-permissions">{t('data.status.permissions.title')}</h4>
             <ul className="data-status-permissions">
@@ -360,6 +479,23 @@ function DataStatusPanel() {
           </section>
         </div>
       ) : null}
+
+      <ConfirmActionModal
+        open={activeCleanup !== null}
+        onClose={() => setCleanupTarget(null)}
+        title={activeCleanup ? t(activeCleanup.title) : ''}
+        danger
+        intro={activeCleanup ? t(activeCleanup.confirm) : ''}
+        confirmLabel={activeCleanup ? t(activeCleanup.button) : ''}
+        pendingLabel={t('data.status.cleanup.pending')}
+        pending={cleanup.isPending}
+        onConfirm={async () => {
+          if (!activeCleanup) return;
+          const result = await cleanup.mutateAsync({ target: activeCleanup.target });
+          setLastCleanup(result);
+          toast.success(t('data.status.cleanup.done'));
+        }}
+      />
     </Card>
   );
 }

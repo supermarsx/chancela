@@ -7,6 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import { ptPT } from './locales/pt-PT';
 import { enUS } from './locales/en-US';
+import { deDE } from './locales/de-DE';
+import { svSE } from './locales/sv-SE';
 import { interpolate } from './interpolate';
 import { i18nStore } from './store';
 import { LOCALE_LOADERS, LOCALE_QUALITY, SHIPPED_LOCALES } from './registry';
@@ -28,6 +30,13 @@ describe('catalog completeness matrix', () => {
     expect(enUS['pdfValidator.file.label']).toBe('Signed PDF');
     expect(enUS['pdfValidator.action.validate']).toBe('Validate PDF');
     expect(enUS['pdfValidator.notice.title']).not.toBe('Validação técnica local');
+  });
+
+  it('keeps representative non-English PDF validator copy out of stale Portuguese', () => {
+    for (const catalog of [deDE, svSE]) {
+      expect(catalog['pdfValidator.notice.title']).not.toBe('Validação técnica local');
+      expect(catalog['pdfValidator.file.label']).not.toBe('PDF assinado');
+    }
   });
 
   it('every shipped locale is registered with a quality tier', () => {
