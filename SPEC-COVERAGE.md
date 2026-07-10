@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-10 through committed implementation snapshot `4e83180`,
+*Updated 2026-07-10 through committed implementation snapshot `f300e65`,
 refreshing the `cfcb3d9` baseline and the prior `4566715` coverage point
 with commits through that snapshot:
 `f312669` remote-signing TSA test isolation, `d9a1891` SBOM package linkage,
@@ -16,8 +16,10 @@ guardrail alerts in the web UI, `02f0876` tighter tagged-PDF structural
 self-checks, `3f29557` explicit retention review workflow state, `3ba0222`
 multi-signature local PAdES renewal-policy modeling, `8082479` clippy-hygiene
 cleanup, `0e2953a` local PKCS#12 software-certificate signing, and `4e83180`
-repo-level lint/format restoration. Earlier coverage text remains prior snapshot
-context.
+repo-level lint/format restoration; then `c0cadf5` web local PKCS#12 signing UI,
+`5507f67` TSL XML-DSig hardening, `829c035` bounded retention execution evidence,
+and `f300e65` notification-popup browser E2E hardening. Earlier coverage text
+remains prior snapshot context.
 All top-level spec areas remain **PARTIAL**. This is an implementation and test
 coverage snapshot, not a legal certification, not production CMD approval, not
 DRE verification promotion, not full PDF/UA delivery, and not a claim that
@@ -220,6 +222,28 @@ Implementation checkpoints covered here:
   format checks were restored to green by removing stale clippy lifetime/format
   warnings and applying Prettier to already-existing web files. This is
   maintainability hygiene, not implementation of a new product/legal requirement.
+- `c0cadf5` keeps Signatures/UX **PARTIAL**: the web signing panel now exposes the
+  local PKCS#12/PFX software-certificate flow backed by the API endpoint, keeps
+  PFX/passphrase inputs transient, labels the result as local technical evidence,
+  and carries localized copy plus SigningPanel/i18n regression tests. This is UI
+  access to advanced local evidence only, not CMD, qualified remote signing, or a
+  legal-validity claim.
+- `5507f67` keeps Signatures/Trust **PARTIAL**: TSL XML-DSig validation now
+  fail-closes on malformed base64, unsupported signature/canonicalization/transform
+  metadata, multiple references, digest tampering, `SignedInfo` tampering, and
+  signature-value tampering, with `TslClient` downgrade coverage. It verifies only
+  the supported minimal RSA-SHA256 shape against the embedded signer certificate;
+  signer trust anchoring, certificate path/revocation policy, complete C14N, ECDSA,
+  and `URI="#id"` references remain incomplete.
+- `829c035` keeps Legal/Data Lifecycle **PARTIAL**: retention execution requests can
+  now record bounded archive/no-action execution evidence with target evidence,
+  approval metadata, idempotent repeat detection, acted/skipped targets, reason
+  codes, and persisted history. Destructive delete/anonymize and full GDPR erasure
+  remain blocked and explicitly false.
+- `f300e65` keeps UX/CI **PARTIAL**: browser E2E now covers notification popup
+  portal/z-index placement, outside-click closing, action routing to Arquivo, and
+  read-state/count updates. This broadens focused browser coverage but is not an
+  exhaustive UX matrix.
 
 ---
 
@@ -249,7 +273,22 @@ Implementation checkpoints covered here:
   public certificate evidence, and report `AdvancedLocalTechnicalEvidence`. This
   is advanced local technical evidence only; it performs no trusted-list lookup,
   does not become CMD/remote qualified signing, and does not claim legal
-  qualification or legal status.
+  qualification or legal status. The web signing panel now exposes this flow with
+  transient file/passphrase handling, localized warnings, and regression coverage.
+- **TSL XML-DSig trust-gate hardening:** `chancela-tsl` now rejects unsupported or
+  malformed XML-DSig shapes that the minimal verifier cannot check, and tests
+  digest/`SignedInfo`/signature-value tampering plus `TslClient` downgrade behavior.
+  This improves technical trust-list evidence, but it still does not authenticate
+  the TSL signer certificate against EU LOTL/national trust anchors or perform full
+  certificate path/revocation/policy validation.
+- **Bounded retention execution evidence:** non-destructive retention policies can
+  now record bounded archive/no-action execution evidence with approvals,
+  acted/skipped targets, reason codes, next steps, and idempotent repeat detection.
+  Destructive delete/anonymize, physical deletion, disposal approval, and GDPR
+  erasure remain outside this slice and are explicitly blocked/false.
+- **Notification popup browser hardening:** Playwright now covers the notification
+  popup as real browser UI for portal/z-index behavior, outside-click closing,
+  action routing, and read-state count updates.
 - **API-exposed and multi-signature PAdES renewal planning:** signature validation
   can now surface local PAdES renewal-plan evidence, and `chancela-pades` models
   per-signature DSS VRI/TU gaps plus caller-supplied renewal deadline
@@ -876,8 +915,8 @@ Implementation checkpoints covered here:
   human-review prompt, and settings/platform assurance panel, broader MCP prompt/resource coverage,
   additional MCP transports, and any legal-validity or AI-quality assessment.
 - CI/release assurance: broaden browser E2E for critical workflows beyond the current focused
-  signed-invite, export/save, and imported-document review regressions, add or explicitly waive
-  coverage thresholds beyond the web unit-test lane, convert
+  signed-invite, export/save, imported-document review, and notification-popup regressions, add or
+  explicitly waive coverage thresholds beyond the web unit-test lane, convert
   compile-only live signature seams into controlled integration lanes where credentials/hardware
   exist, harden package provenance beyond manifest/checksum/source metadata, SBOM package-linkage
   checks, and release-trust metadata-anchor guards, move Docker profiles toward production HA/ops
@@ -897,10 +936,12 @@ Implementation checkpoints covered here:
 - **TSL/TSA:** trust refresh/catalog, signing trust-policy selection, and timestamping
   selection/reporting now consume configured enabled TSL/TSA entries with legacy fallbacks, but
   production trust operation still needs valid live source material, production network
-  configuration, and policy/legal review. TSA diagnostics use an offline fixture probe unless a
-  signing flow explicitly requests a timestamp. Path-backed TSA providers and unsupported timestamp
-  digests remain deterministic blockers, not fake live signing. The bundled fixture is advisory and
-  must not be treated as legal trust completion.
+  configuration, signer-certificate trust anchoring to EU LOTL or national trust anchors, certificate
+  path/revocation/policy validation, and policy/legal review. TSA diagnostics use an offline fixture
+  probe unless a signing flow explicitly requests a timestamp. Path-backed TSA providers,
+  unsupported timestamp digests, and XML-DSig shapes outside the supported minimal verifier remain
+  deterministic blockers, not fake live signing. The bundled fixture is advisory and must not be
+  treated as legal trust completion.
 - **Law/legal review:** PT DRE corpus entries need authoritative source text/PDF extraction before
   they can be marked Verified; the current guard intentionally keeps incomplete DRE captures
   Pending, including when those articles are copied through the citation shelf. Generated
