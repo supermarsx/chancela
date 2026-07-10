@@ -7782,6 +7782,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn data_cleanup_exports_dry_run_reports_no_delete_and_preserves_files() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(exports.join("nested")).expect("exports dirs");
+        std::fs::write(exports.join("one.zip"), b"one").expect("export");
+        std::fs::write(exports.join("nested").join("two.zip"), b"two").expect("nested export");
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "dry_run": true }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["target"], "exports");
+        assert_eq!(body["dry_run"], true);
+        assert_eq!(body["deleted_files"], 0);
+        assert_eq!(body["deleted_directories"], 0);
+        assert_eq!(body["deleted_bytes"], 0);
+        assert!(exports.join("one.zip").is_file(), "root export preserved");
+        assert!(
+            exports.join("nested").join("two.zip").is_file(),
+            "nested export preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_minimum_age_filters_recent_files() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(&exports).expect("exports dir");
+        std::fs::write(exports.join("recent.zip"), b"recent").expect("export");
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "minimum_age_days": 36500 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["deleted_files"], 0);
+        assert_eq!(body["deleted_directories"], 0);
+        assert_eq!(body["deleted_bytes"], 0);
+        assert!(exports.join("recent.zip").is_file(), "recent export kept");
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_keep_latest_retains_newest_files() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(&exports).expect("exports dir");
+        std::fs::write(exports.join("old.zip"), b"old").expect("old export");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(exports.join("new.zip"), b"new").expect("new export");
+
+        let (status, body) = send(
+            state,
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "exports", "keep_latest": 1 }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["deleted_files"], 1);
+        assert_eq!(body["deleted_bytes"], 3);
+        assert!(!exports.join("old.zip").exists(), "older export deleted");
+        assert!(exports.join("new.zip").is_file(), "newest export retained");
+    }
+
+    #[tokio::test]
     async fn data_cleanup_is_settings_manage_gated_and_rejects_unknown_targets() {
         use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
 
@@ -7823,6 +7901,20 @@ mod tests {
         assert!(
             exports.join("kept.zip").is_file(),
             "unsupported target did not delete"
+        );
+
+        let (status, body) = send(
+            AppState::with_data_dir(tmp.dir.clone()),
+            post_json(
+                "/v1/data/cleanup",
+                json!({ "target": "crash", "dry_run": true }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+        assert!(
+            exports.join("kept.zip").is_file(),
+            "exports policy guardrail did not delete"
         );
     }
 

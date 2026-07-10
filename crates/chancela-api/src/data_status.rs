@@ -4,11 +4,11 @@
 //! logs, and never opens or migrates a second store connection. Filesystem checks run on a blocking
 //! worker so directory traversal and permission probes do not occupy the async runtime.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Json;
 use axum::extract::State;
@@ -99,11 +99,15 @@ pub struct ConcernUsage {
 #[derive(Debug, Deserialize)]
 pub struct DataCleanupRequest {
     pub target: String,
+    pub dry_run: Option<bool>,
+    pub minimum_age_days: Option<u64>,
+    pub keep_latest: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DataCleanupResponse {
     pub target: String,
+    pub dry_run: bool,
     pub deleted_bytes: u64,
     pub deleted_files: u64,
     pub deleted_directories: u64,
@@ -153,6 +157,63 @@ impl CleanupTarget {
             CleanupTarget::Crash => "crash",
             CleanupTarget::Exports => "exports",
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CleanupPolicy {
+    dry_run: bool,
+    minimum_age: Option<Duration>,
+    keep_latest: usize,
+    retained_files: BTreeSet<PathBuf>,
+    now: SystemTime,
+}
+
+impl CleanupPolicy {
+    fn from_request(target: CleanupTarget, req: &DataCleanupRequest) -> Result<Self, ApiError> {
+        let has_export_policy =
+            req.dry_run.is_some() || req.minimum_age_days.is_some() || req.keep_latest.is_some();
+        if target != CleanupTarget::Exports && has_export_policy {
+            return Err(ApiError::Unprocessable(
+                "cleanup retention policy options are supported only for exports".to_owned(),
+            ));
+        }
+
+        let minimum_age = req
+            .minimum_age_days
+            .map(|days| {
+                days.checked_mul(24 * 60 * 60)
+                    .map(Duration::from_secs)
+                    .ok_or_else(|| {
+                        ApiError::Unprocessable(
+                            "minimum_age_days is too large to evaluate".to_owned(),
+                        )
+                    })
+            })
+            .transpose()?;
+
+        Ok(Self {
+            dry_run: req.dry_run.unwrap_or(false),
+            minimum_age,
+            keep_latest: req.keep_latest.unwrap_or(0),
+            retained_files: BTreeSet::new(),
+            now: SystemTime::now(),
+        })
+    }
+
+    fn should_delete_file(&self, path: &Path, meta: &fs::Metadata) -> bool {
+        if self.retained_files.contains(path) {
+            return false;
+        }
+        let Some(minimum_age) = self.minimum_age else {
+            return true;
+        };
+        let Ok(modified) = meta.modified() else {
+            return false;
+        };
+        self.now
+            .duration_since(modified)
+            .is_ok_and(|age| age >= minimum_age)
     }
 }
 
@@ -213,6 +274,7 @@ pub async fn cleanup_data(
     require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
 
     let target = parse_cleanup_target(&req.target)?;
+    let policy = CleanupPolicy::from_request(target, &req)?;
     let Some(data_dir) = state.data_dir() else {
         return Err(ApiError::Unprocessable(
             "storage cleanup requires on-disk persistence; set CHANCELA_DATA_DIR".to_owned(),
@@ -220,7 +282,7 @@ pub async fn cleanup_data(
     };
     let data_dir_display = data_dir.to_string_lossy().into_owned();
 
-    let mut response = task::spawn_blocking(move || cleanup_data_dir(data_dir, target))
+    let mut response = task::spawn_blocking(move || cleanup_data_dir(data_dir, target, policy))
         .await
         .map_err(|e| ApiError::Internal(format!("data cleanup worker failed: {e}")))??;
     response.data_dir = Some(data_dir_display);
@@ -240,10 +302,12 @@ fn parse_cleanup_target(raw: &str) -> Result<CleanupTarget, ApiError> {
 fn cleanup_data_dir(
     data_dir: PathBuf,
     target: CleanupTarget,
+    mut policy: CleanupPolicy,
 ) -> Result<DataCleanupResponse, ApiError> {
     let base = canonical_data_dir(&data_dir)?;
     let mut response = DataCleanupResponse {
         target: target.id().to_owned(),
+        dry_run: policy.dry_run,
         deleted_bytes: 0,
         deleted_files: 0,
         deleted_directories: 0,
@@ -269,7 +333,16 @@ fn cleanup_data_dir(
         };
         let root = entry.file_name().to_string_lossy().into_owned();
         if concern_for_root(&root).id == target.id() {
-            cleanup_concern_root(&base, &entry.path(), &mut response);
+            if target == CleanupTarget::Exports && policy.keep_latest > 0 {
+                retain_latest_files(
+                    &base,
+                    &entry.path(),
+                    policy.keep_latest,
+                    &mut policy,
+                    &mut response,
+                );
+            }
+            cleanup_concern_root(&base, &entry.path(), &policy, &mut response);
         }
     }
 
@@ -301,7 +374,12 @@ fn canonical_data_dir(dir: &Path) -> Result<PathBuf, ApiError> {
     Ok(base)
 }
 
-fn cleanup_concern_root(base: &Path, root: &Path, response: &mut DataCleanupResponse) {
+fn cleanup_concern_root(
+    base: &Path,
+    root: &Path,
+    policy: &CleanupPolicy,
+    response: &mut DataCleanupResponse,
+) {
     let rel = relative_display(base, root);
     let meta = match fs::symlink_metadata(root) {
         Ok(meta) => meta,
@@ -324,9 +402,9 @@ fn cleanup_concern_root(base: &Path, root: &Path, response: &mut DataCleanupResp
     }
 
     if meta.is_dir() {
-        cleanup_directory_contents(base, root, response);
+        cleanup_directory_contents(base, root, policy, response);
     } else if meta.is_file() {
-        delete_file(root, meta.len(), base, response);
+        cleanup_file(root, &meta, base, policy, response);
     } else {
         response
             .skipped
@@ -334,7 +412,12 @@ fn cleanup_concern_root(base: &Path, root: &Path, response: &mut DataCleanupResp
     }
 }
 
-fn cleanup_directory_contents(base: &Path, dir: &Path, response: &mut DataCleanupResponse) {
+fn cleanup_directory_contents(
+    base: &Path,
+    dir: &Path,
+    policy: &CleanupPolicy,
+    response: &mut DataCleanupResponse,
+) {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) => {
@@ -357,11 +440,16 @@ fn cleanup_directory_contents(base: &Path, dir: &Path, response: &mut DataCleanu
                 continue;
             }
         };
-        cleanup_path(base, &entry.path(), response);
+        cleanup_path(base, &entry.path(), policy, response);
     }
 }
 
-fn cleanup_path(base: &Path, path: &Path, response: &mut DataCleanupResponse) {
+fn cleanup_path(
+    base: &Path,
+    path: &Path,
+    policy: &CleanupPolicy,
+    response: &mut DataCleanupResponse,
+) {
     let rel = relative_display(base, path);
     let meta = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
@@ -384,7 +472,10 @@ fn cleanup_path(base: &Path, path: &Path, response: &mut DataCleanupResponse) {
     }
 
     if meta.is_dir() {
-        cleanup_directory_contents(base, path, response);
+        cleanup_directory_contents(base, path, policy, response);
+        if policy.dry_run {
+            return;
+        }
         match fs::remove_dir(path) {
             Ok(()) => {
                 response.deleted_directories = response.deleted_directories.saturating_add(1);
@@ -394,12 +485,28 @@ fn cleanup_path(base: &Path, path: &Path, response: &mut DataCleanupResponse) {
                 .push(format!("{rel}: failed to delete directory: {e}")),
         }
     } else if meta.is_file() {
-        delete_file(path, meta.len(), base, response);
+        cleanup_file(path, &meta, base, policy, response);
     } else {
         response
             .skipped
             .push(format!("{rel}: unsupported filesystem entry type"));
     }
+}
+
+fn cleanup_file(
+    path: &Path,
+    meta: &fs::Metadata,
+    base: &Path,
+    policy: &CleanupPolicy,
+    response: &mut DataCleanupResponse,
+) {
+    if !policy.should_delete_file(path, meta) {
+        return;
+    }
+    if policy.dry_run {
+        return;
+    }
+    delete_file(path, meta.len(), base, response);
 }
 
 fn delete_file(path: &Path, bytes: u64, base: &Path, response: &mut DataCleanupResponse) {
@@ -428,6 +535,74 @@ fn validate_cleanup_target(base: &Path, target: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn retain_latest_files(
+    base: &Path,
+    root: &Path,
+    keep_latest: usize,
+    policy: &mut CleanupPolicy,
+    response: &mut DataCleanupResponse,
+) {
+    let mut files = Vec::new();
+    collect_cleanup_files(base, root, response, &mut files);
+    files.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| left.1.as_os_str().cmp(right.1.as_os_str()))
+    });
+    policy
+        .retained_files
+        .extend(files.into_iter().take(keep_latest).map(|(_, path)| path));
+}
+
+fn collect_cleanup_files(
+    base: &Path,
+    path: &Path,
+    response: &mut DataCleanupResponse,
+    files: &mut Vec<(SystemTime, PathBuf)>,
+) {
+    let rel = relative_display(base, path);
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) => {
+            response
+                .skipped
+                .push(format!("{rel}: failed to inspect cleanup target: {e}"));
+            return;
+        }
+    };
+    if meta.file_type().is_symlink() {
+        return;
+    }
+    if validate_cleanup_target(base, path).is_err() {
+        return;
+    }
+
+    if meta.is_dir() {
+        let entries = match fs::read_dir(path) {
+            Ok(entries) => entries,
+            Err(e) => {
+                response.skipped.push(format!(
+                    "{}: failed to read cleanup directory: {e}",
+                    relative_display(base, path)
+                ));
+                return;
+            }
+        };
+        for entry in entries {
+            match entry {
+                Ok(entry) => collect_cleanup_files(base, &entry.path(), response, files),
+                Err(e) => response.skipped.push(format!(
+                    "{}: failed to read cleanup directory entry: {e}",
+                    relative_display(base, path)
+                )),
+            }
+        }
+    } else if meta.is_file() {
+        files.push((meta.modified().unwrap_or(UNIX_EPOCH), path.to_path_buf()));
+    }
 }
 
 fn inspect_unconfigured_data_dir(durable_store_open: bool) -> FsInspection {
