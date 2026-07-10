@@ -60,6 +60,8 @@ import {
   type SigningProviderMetadata,
   type SigningSettings,
   type ThemeMode,
+  type TsaProviderSettings,
+  type TslSourceSettings,
   type UiSettings,
 } from '../../api/types';
 import { UI_VERSION } from '../../api/versionCheck';
@@ -101,6 +103,127 @@ import { UsersList } from '../users/UserListPage';
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
 
+const TRUST_SOURCE_ID_PREFIX = 'trust-source';
+const TSA_PROVIDER_ID_PREFIX = 'tsa-provider';
+
+function normalizeConfigId(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^[^a-z0-9]+/, '')
+    .replace(/-+/g, '-')
+    .slice(0, 64);
+  return normalized || 'source';
+}
+
+function nextConfigId(prefix: string, rows: readonly { id: string }[]): string {
+  const existing = new Set(rows.map((row) => row.id));
+  let index = rows.length + 1;
+  let candidate = normalizeConfigId(`${prefix}-${index}`);
+  while (existing.has(candidate)) {
+    index += 1;
+    candidate = normalizeConfigId(`${prefix}-${index}`);
+  }
+  return candidate;
+}
+
+function makeTslSource(rows: readonly TslSourceSettings[], name: string): TslSourceSettings {
+  return {
+    id: nextConfigId(TRUST_SOURCE_ID_PREFIX, rows),
+    name,
+    enabled: false,
+    url: DEFAULT_SETTINGS.signing.tsl_url,
+    path: null,
+    country: null,
+    scheme: 'eidas',
+    digest: null,
+    timeout_seconds: 30,
+    max_bytes: 26214400,
+    refresh: { enabled: false, cadence: { kind: 'manual' } },
+  };
+}
+
+function makeTsaProvider(
+  rows: readonly TsaProviderSettings[],
+  name: string,
+  enabledDefault: boolean,
+): TsaProviderSettings {
+  return {
+    id: nextConfigId(TSA_PROVIDER_ID_PREFIX, rows),
+    name,
+    enabled: enabledDefault,
+    url: DEFAULT_SETTINGS.signing.tsa_url,
+    path: null,
+    default: enabledDefault,
+    policy: null,
+    digest: 'sha256',
+    timeout_seconds: 30,
+    max_bytes: 1048576,
+  };
+}
+
+function normalizeRefreshCadence(cadence: TslSourceSettings['refresh']['cadence']) {
+  if (cadence.kind === 'daily') {
+    return { kind: 'daily' as const, hour_utc: Math.min(Math.max(cadence.hour_utc ?? 0, 0), 23) };
+  }
+  if (cadence.kind === 'interval_hours') {
+    return {
+      kind: 'interval_hours' as const,
+      hours: Math.min(Math.max(cadence.hours ?? 24, 1), 720),
+    };
+  }
+  return { kind: 'manual' as const };
+}
+
+function normalizeTslSource(source: TslSourceSettings): TslSourceSettings {
+  return {
+    ...source,
+    id: normalizeConfigId(source.id),
+    name: source.name.trim() || source.id,
+    url: orNull(source.url ?? ''),
+    path: orNull(source.path ?? ''),
+    country: orNull(source.country ?? ''),
+    scheme: orNull(source.scheme ?? ''),
+    digest: orNull(source.digest ?? ''),
+    timeout_seconds: Math.min(Math.max(source.timeout_seconds, 1), 300),
+    max_bytes: Math.min(Math.max(source.max_bytes, 1024), 104857600),
+    refresh: {
+      enabled: source.refresh.enabled,
+      cadence: normalizeRefreshCadence(source.refresh.cadence),
+    },
+  };
+}
+
+function normalizeTsaProvider(provider: TsaProviderSettings): TsaProviderSettings {
+  return {
+    ...provider,
+    id: normalizeConfigId(provider.id),
+    name: provider.name.trim() || provider.id,
+    url: orNull(provider.url ?? ''),
+    path: orNull(provider.path ?? ''),
+    policy: orNull(provider.policy ?? ''),
+    digest: provider.digest.trim() || 'sha256',
+    timeout_seconds: Math.min(Math.max(provider.timeout_seconds, 1), 300),
+    max_bytes: Math.min(Math.max(provider.max_bytes, 1024), 1048576),
+  };
+}
+
+function ensureOneEnabledDefaultProvider(
+  providers: readonly TsaProviderSettings[],
+): TsaProviderSettings[] {
+  const enabledProviders = providers.filter((provider) => provider.enabled);
+  if (enabledProviders.length === 0) {
+    return providers.map((provider) => ({ ...provider, default: false }));
+  }
+  const defaultId =
+    enabledProviders.find((provider) => provider.default)?.id ?? enabledProviders[0].id;
+  return providers.map((provider) => ({
+    ...provider,
+    default: provider.enabled && provider.id === defaultId,
+  }));
+}
+
 type SettingsWithMaybeAi = Omit<
   Settings,
   'ai' | 'signing' | 'registry_auto_update' | 'ui' | 'platform'
@@ -109,7 +232,8 @@ type SettingsWithMaybeAi = Omit<
   ui?: Partial<UiSettings> | null;
   platform?: Partial<PlatformSettings> | null;
   registry_auto_update?: Partial<RegistryAutoUpdateSettings> | null;
-  signing: Omit<SigningSettings, 'providers'> & Partial<Pick<SigningSettings, 'providers'>>;
+  signing: Omit<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'> &
+    Partial<Pick<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'>>;
 };
 
 function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
@@ -121,6 +245,8 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       ...DEFAULT_SETTINGS.signing,
       ...settings.signing,
       cmd: { ...DEFAULT_SETTINGS.signing.cmd, ...(settings.signing.cmd ?? {}) },
+      tsl_sources: settings.signing.tsl_sources ?? DEFAULT_SETTINGS.signing.tsl_sources,
+      tsa_providers: settings.signing.tsa_providers ?? DEFAULT_SETTINGS.signing.tsa_providers,
       providers: settings.signing.providers ?? DEFAULT_SETTINGS.signing.providers,
     },
     ai: { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) },
@@ -191,6 +317,10 @@ function toWireBody(draft: Settings): Settings {
       ...draft.signing,
       tsa_url: orNull(draft.signing.tsa_url ?? ''),
       tsl_url: orNull(draft.signing.tsl_url ?? ''),
+      tsl_sources: draft.signing.tsl_sources.map(normalizeTslSource),
+      tsa_providers: ensureOneEnabledDefaultProvider(
+        draft.signing.tsa_providers.map(normalizeTsaProvider),
+      ),
     },
     ai: {
       enabled: draft.ai.enabled === true,
@@ -643,6 +773,64 @@ export function SettingsPage() {
   const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
     setDraft((d) => (d ? { ...d, registry_auto_update } : d));
   const setPlatform = (platform: PlatformSettings) => setDraft((d) => (d ? { ...d, platform } : d));
+  const setTslSources = (updater: (sources: TslSourceSettings[]) => TslSourceSettings[]) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            signing: {
+              ...d.signing,
+              tsl_sources: updater(d.signing.tsl_sources),
+            },
+          }
+        : d,
+    );
+  const setTsaProviders = (updater: (providers: TsaProviderSettings[]) => TsaProviderSettings[]) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            signing: {
+              ...d.signing,
+              tsa_providers: ensureOneEnabledDefaultProvider(updater(d.signing.tsa_providers)),
+            },
+          }
+        : d,
+    );
+
+  const updateTslSource = (id: string, patch: Partial<TslSourceSettings>) =>
+    setTslSources((sources) =>
+      sources.map((source) => (source.id === id ? { ...source, ...patch } : source)),
+    );
+  const updateTsaProvider = (id: string, patch: Partial<TsaProviderSettings>) =>
+    setTsaProviders((providers) =>
+      providers.map((provider) => (provider.id === id ? { ...provider, ...patch } : provider)),
+    );
+  const addTslSource = () =>
+    setTslSources((sources) => [
+      ...sources,
+      makeTslSource(sources, t('settings.signing.tslSources.newName')),
+    ]);
+  const addTsaProvider = () =>
+    setTsaProviders((providers) => {
+      const enabledDefault = !providers.some((provider) => provider.enabled);
+      return [
+        ...providers,
+        makeTsaProvider(providers, t('settings.signing.tsaProviders.newName'), enabledDefault),
+      ];
+    });
+  const removeTslSource = (id: string) =>
+    setTslSources((sources) => sources.filter((source) => source.id !== id));
+  const removeTsaProvider = (id: string) =>
+    setTsaProviders((providers) => providers.filter((provider) => provider.id !== id));
+  const makeDefaultTsaProvider = (id: string) =>
+    setTsaProviders((providers) =>
+      providers.map((provider) => ({
+        ...provider,
+        enabled: provider.id === id ? true : provider.enabled,
+        default: provider.id === id,
+      })),
+    );
 
   const toggleEntityColumn = (column: RegisteredEntityColumn, checked: boolean) => {
     const current = draft.ui.registered_entity_columns;
@@ -901,6 +1089,290 @@ export function SettingsPage() {
                     />
                   </div>
                 </Field>
+
+                <section className="stack--tight" aria-labelledby="settings-tsl-sources-title">
+                  <div className="section-head">
+                    <div>
+                      <p className="card__label" id="settings-tsl-sources-title">
+                        {t('settings.signing.tslSources.title')}
+                      </p>
+                      <p className="field__hint">{t('settings.signing.tslSources.hint')}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.Plus />}
+                      onClick={addTslSource}
+                    >
+                      {t('settings.signing.tslSources.add')}
+                    </Button>
+                  </div>
+                  {draft.signing.tsl_sources.length === 0 ? (
+                    <InlineWarning tone="info" title={t('settings.signing.tslSources.empty.title')}>
+                      {t('settings.signing.tslSources.empty.body')}
+                    </InlineWarning>
+                  ) : (
+                    <div className="stack--tight">
+                      {draft.signing.tsl_sources.map((source) => {
+                        const title = source.name.trim() || source.id;
+                        return (
+                          <div
+                            key={source.id}
+                            className="stack--tight"
+                            role="group"
+                            aria-label={title}
+                          >
+                            <div className="section-head">
+                              <div>
+                                <p className="card__label">{title}</p>
+                                <p className="field__hint mono">{source.id}</p>
+                              </div>
+                              <span className="row-wrap">
+                                <Badge tone={source.enabled ? 'ok' : 'neutral'}>
+                                  {source.enabled
+                                    ? t('settings.signing.sourceStatus.enabled')
+                                    : t('settings.signing.sourceStatus.disabled')}
+                                </Badge>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  icon={<Icon.Trash />}
+                                  onClick={() => removeTslSource(source.id)}
+                                >
+                                  {t('common.remove')}
+                                </Button>
+                              </span>
+                            </div>
+                            <Toggle
+                              label={t('settings.signing.tslSources.enabled')}
+                              checked={source.enabled}
+                              onChange={(enabled) => updateTslSource(source.id, { enabled })}
+                            />
+                            <div className="api-key-rate-grid">
+                              <Field
+                                label={t('settings.signing.source.name')}
+                                htmlFor={`tsl-source-name-${source.id}`}
+                              >
+                                <Input
+                                  id={`tsl-source-name-${source.id}`}
+                                  value={source.name}
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { name: e.target.value })
+                                  }
+                                />
+                              </Field>
+                              <Field
+                                label={t('settings.signing.source.url')}
+                                htmlFor={`tsl-source-url-${source.id}`}
+                                hint={t('settings.signing.source.urlOrPath')}
+                              >
+                                <Input
+                                  id={`tsl-source-url-${source.id}`}
+                                  type="url"
+                                  value={source.url ?? ''}
+                                  placeholder={t('settings.signing.tslUrl.placeholder')}
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { url: e.target.value })
+                                  }
+                                />
+                              </Field>
+                              <Field
+                                label={t('settings.signing.source.path')}
+                                htmlFor={`tsl-source-path-${source.id}`}
+                              >
+                                <Input
+                                  id={`tsl-source-path-${source.id}`}
+                                  value={source.path ?? ''}
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { path: e.target.value })
+                                  }
+                                />
+                              </Field>
+                              <Field
+                                label={t('settings.signing.source.country')}
+                                htmlFor={`tsl-source-country-${source.id}`}
+                              >
+                                <Input
+                                  id={`tsl-source-country-${source.id}`}
+                                  value={source.country ?? ''}
+                                  placeholder="PT"
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { country: e.target.value })
+                                  }
+                                />
+                              </Field>
+                              <Field
+                                label={t('settings.signing.source.scheme')}
+                                htmlFor={`tsl-source-scheme-${source.id}`}
+                              >
+                                <Input
+                                  id={`tsl-source-scheme-${source.id}`}
+                                  value={source.scheme ?? ''}
+                                  placeholder="eidas"
+                                  onChange={(e) =>
+                                    updateTslSource(source.id, { scheme: e.target.value })
+                                  }
+                                />
+                              </Field>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                <section className="stack--tight" aria-labelledby="settings-tsa-providers-title">
+                  <div className="section-head">
+                    <div>
+                      <p className="card__label" id="settings-tsa-providers-title">
+                        {t('settings.signing.tsaProviders.title')}
+                      </p>
+                      <p className="field__hint">{t('settings.signing.tsaProviders.hint')}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      icon={<Icon.Plus />}
+                      onClick={addTsaProvider}
+                    >
+                      {t('settings.signing.tsaProviders.add')}
+                    </Button>
+                  </div>
+                  {draft.signing.tsa_providers.length === 0 ? (
+                    <InlineWarning
+                      tone="info"
+                      title={t('settings.signing.tsaProviders.empty.title')}
+                    >
+                      {t('settings.signing.tsaProviders.empty.body')}
+                    </InlineWarning>
+                  ) : (
+                    <div className="stack--tight">
+                      {draft.signing.tsa_providers.map((provider) => {
+                        const title = provider.name.trim() || provider.id;
+                        return (
+                          <div
+                            key={provider.id}
+                            className="stack--tight"
+                            role="group"
+                            aria-label={title}
+                          >
+                            <div className="section-head">
+                              <div>
+                                <p className="card__label">{title}</p>
+                                <p className="field__hint mono">{provider.id}</p>
+                              </div>
+                              <span className="row-wrap">
+                                <Badge tone={provider.enabled ? 'ok' : 'neutral'}>
+                                  {provider.enabled
+                                    ? t('settings.signing.sourceStatus.enabled')
+                                    : t('settings.signing.sourceStatus.disabled')}
+                                </Badge>
+                                {provider.enabled && provider.default ? (
+                                  <Badge tone="accent">
+                                    {t('settings.signing.tsaProviders.defaultBadge')}
+                                  </Badge>
+                                ) : null}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  icon={<Icon.Trash />}
+                                  onClick={() => removeTsaProvider(provider.id)}
+                                >
+                                  {t('common.remove')}
+                                </Button>
+                              </span>
+                            </div>
+                            <div className="row-wrap">
+                              <Toggle
+                                label={t('settings.signing.tsaProviders.enabled')}
+                                checked={provider.enabled}
+                                onChange={(enabled) => updateTsaProvider(provider.id, { enabled })}
+                              />
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                icon={<Icon.Check />}
+                                disabled={provider.enabled && provider.default}
+                                onClick={() => makeDefaultTsaProvider(provider.id)}
+                              >
+                                {t('settings.signing.tsaProviders.makeDefault')}
+                              </Button>
+                            </div>
+                            <div className="api-key-rate-grid">
+                              <Field
+                                label={t('settings.signing.source.name')}
+                                htmlFor={`tsa-provider-name-${provider.id}`}
+                              >
+                                <Input
+                                  id={`tsa-provider-name-${provider.id}`}
+                                  value={provider.name}
+                                  onChange={(e) =>
+                                    updateTsaProvider(provider.id, { name: e.target.value })
+                                  }
+                                />
+                              </Field>
+                              <Field
+                                label={t('settings.signing.source.url')}
+                                htmlFor={`tsa-provider-url-${provider.id}`}
+                                hint={t('settings.signing.source.urlOrPath')}
+                              >
+                                <Input
+                                  id={`tsa-provider-url-${provider.id}`}
+                                  type="url"
+                                  value={provider.url ?? ''}
+                                  placeholder={t('settings.signing.tsaUrl.placeholder')}
+                                  onChange={(e) =>
+                                    updateTsaProvider(provider.id, { url: e.target.value })
+                                  }
+                                />
+                              </Field>
+                              <Field
+                                label={t('settings.signing.source.path')}
+                                htmlFor={`tsa-provider-path-${provider.id}`}
+                              >
+                                <Input
+                                  id={`tsa-provider-path-${provider.id}`}
+                                  value={provider.path ?? ''}
+                                  onChange={(e) =>
+                                    updateTsaProvider(provider.id, { path: e.target.value })
+                                  }
+                                />
+                              </Field>
+                              <Field
+                                label={t('settings.signing.tsaProviders.policy')}
+                                htmlFor={`tsa-provider-policy-${provider.id}`}
+                              >
+                                <Input
+                                  id={`tsa-provider-policy-${provider.id}`}
+                                  value={provider.policy ?? ''}
+                                  placeholder="1.2.3.4"
+                                  onChange={(e) =>
+                                    updateTsaProvider(provider.id, { policy: e.target.value })
+                                  }
+                                />
+                              </Field>
+                            </div>
+                            <dl className="deflist deflist--tight">
+                              <div>
+                                <dt>{t('settings.signing.tsaProviders.digest')}</dt>
+                                <dd className="mono">{provider.digest}</dd>
+                              </div>
+                              <div>
+                                <dt>{t('settings.signing.source.timeout')}</dt>
+                                <dd>{provider.timeout_seconds}s</dd>
+                              </div>
+                              <div>
+                                <dt>{t('settings.signing.source.maxBytes')}</dt>
+                                <dd>{provider.max_bytes}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
                 <Toggle
                   label={
                     <>

@@ -222,6 +222,8 @@ function materializeSettings(value: unknown): TestSettings {
       ...DEFAULT_SETTINGS.signing,
       ...(partial.signing ?? {}),
       cmd: { ...DEFAULT_SETTINGS.signing.cmd, ...(partial.signing?.cmd ?? {}) },
+      tsl_sources: partial.signing?.tsl_sources ?? DEFAULT_SETTINGS.signing.tsl_sources,
+      tsa_providers: partial.signing?.tsa_providers ?? DEFAULT_SETTINGS.signing.tsa_providers,
       providers: partial.signing?.providers ?? DEFAULT_SETTINGS.signing.providers,
     },
     ai: { ...DEFAULT_SETTINGS.ai, ...(partial.ai ?? {}) },
@@ -570,6 +572,57 @@ function settingsWithoutProviderMetadata(): unknown {
       providers: undefined,
     },
   };
+}
+
+function settingsWithoutTrustSourceMetadata(): unknown {
+  return {
+    ...DEFAULT_SETTINGS,
+    signing: {
+      ...DEFAULT_SETTINGS.signing,
+      tsl_sources: undefined,
+      tsa_providers: undefined,
+    },
+  };
+}
+
+function settingsWithMultipleTrustSources(): TestSettings {
+  return materializeSettings({
+    ...DEFAULT_SETTINGS,
+    signing: {
+      ...DEFAULT_SETTINGS.signing,
+      tsl_sources: [
+        ...DEFAULT_SETTINGS.signing.tsl_sources,
+        {
+          id: 'operator-cache',
+          name: 'Operator cached TSL',
+          enabled: false,
+          url: null,
+          path: 'F:\\Projects\\chancela\\fixtures\\operator-tsl.xml',
+          country: 'PT',
+          scheme: 'operator-cache',
+          digest: null,
+          timeout_seconds: 30,
+          max_bytes: 26214400,
+          refresh: { enabled: false, cadence: { kind: 'manual' } },
+        },
+      ],
+      tsa_providers: [
+        ...DEFAULT_SETTINGS.signing.tsa_providers,
+        {
+          id: 'backup-tsa',
+          name: 'Backup Timestamp TSA',
+          enabled: true,
+          url: 'http://tsa.backup.example.test/tsa',
+          path: null,
+          default: false,
+          policy: '1.2.3.4.5',
+          digest: 'sha256',
+          timeout_seconds: 45,
+          max_bytes: 1048576,
+        },
+      ],
+    },
+  });
 }
 
 function apiKeysFetch(initialKeys: ApiKeyMetadata[] = [API_KEY_ONE]): {
@@ -2046,6 +2099,90 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
 
     expect(await screen.findByText(/Local soft certificate \(PKCS#12\/PFX\)/)).toBeTruthy();
+  });
+
+  it('renders multiple configured TSL sources and TSA providers from settings', async () => {
+    const { fn } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+
+    expect(await screen.findByText('Fontes TSL')).toBeTruthy();
+    expect(screen.getByText('Portugal GNS Trusted List')).toBeTruthy();
+    expect(screen.getByText('EU List of Trusted Lists')).toBeTruthy();
+    const cachedSource = screen.getByRole('group', { name: 'Operator cached TSL' });
+    expect(within(cachedSource).getByDisplayValue('operator-cache')).toBeTruthy();
+    expect(
+      within(cachedSource).getByDisplayValue('F:\\Projects\\chancela\\fixtures\\operator-tsl.xml'),
+    ).toBeTruthy();
+
+    expect(screen.getByText('Prestadores TSA')).toBeTruthy();
+    const backupTsa = screen.getByRole('group', { name: 'Backup Timestamp TSA' });
+    expect(within(backupTsa).getByDisplayValue('http://tsa.backup.example.test/tsa')).toBeTruthy();
+    expect(within(backupTsa).getByDisplayValue('1.2.3.4.5')).toBeTruthy();
+    expect(screen.getAllByText('Predefinido').length).toBe(1);
+  });
+
+  it('autosaves trust-source management actions through the settings document', async () => {
+    const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+
+    const cachedSource = await screen.findByRole('group', { name: 'Operator cached TSL' });
+    const enabled = within(cachedSource).getByRole('switch', {
+      name: 'Fonte TSL ativa',
+    }) as HTMLInputElement;
+    expect(enabled.checked).toBe(false);
+    fireEvent.click(enabled);
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+
+    const put = calls.filter((c) => c.method === 'PUT').at(-1);
+    expect(put).toBeTruthy();
+    const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+    expect(sent.signing.tsl_sources.find((source) => source.id === 'operator-cache')).toMatchObject(
+      {
+        enabled: true,
+        path: 'F:\\Projects\\chancela\\fixtures\\operator-tsl.xml',
+      },
+    );
+  });
+
+  it('keeps exactly one enabled default TSA provider when the operator changes it', async () => {
+    const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+
+    const backupTsa = await screen.findByRole('group', { name: 'Backup Timestamp TSA' });
+    fireEvent.click(within(backupTsa).getByRole('button', { name: 'Tornar predefinido' }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+
+    const sent = JSON.parse(
+      calls.filter((c) => c.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(
+      sent.signing.tsa_providers.filter((provider) => provider.enabled && provider.default),
+    ).toEqual([expect.objectContaining({ id: 'backup-tsa' })]);
+    expect(sent.signing.tsa_providers.find((provider) => provider.id === 'pt-cc')).toMatchObject({
+      default: false,
+    });
+  });
+
+  it('defaults TSL/TSA source arrays when an older settings payload omits them', async () => {
+    const { fn } = settingsFetch(settingsWithoutTrustSourceMetadata());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=assinaturas']);
+
+    expect(await screen.findByText('Portugal GNS Trusted List')).toBeTruthy();
+    expect(screen.getByText('Portugal Cartao de Cidadao TSA')).toBeTruthy();
   });
 
   it('lists API keys as persisted metadata including returned rate limits', async () => {
