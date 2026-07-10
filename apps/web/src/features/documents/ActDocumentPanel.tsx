@@ -214,9 +214,9 @@ function importedReviewStatusTone(status: unknown): 'neutral' | 'warn' | 'error'
 }
 
 function reviewPatchStatusFromDocument(
-  document: ImportedDocumentView | null,
+  status: ImportedDocumentView['operator_review_status'] | undefined,
 ): ImportedDocumentReviewPatchStatus {
-  return document?.operator_review_status === 'rejected_non_canonical_evidence'
+  return status === 'rejected_non_canonical_evidence'
     ? 'rejected_non_canonical_evidence'
     : 'reviewed_non_canonical_original_only';
 }
@@ -683,17 +683,16 @@ export function ActDocumentPanel({
   const selectedImportFromList =
     importList.find((document) => document.id === selectedImportId) ?? null;
   const selectedImport = selectedImportedDocument.data ?? selectedImportFromList;
+  const selectedImportReviewId = selectedImport?.id;
+  const selectedImportReviewStatus = selectedImport?.operator_review_status;
+  const selectedImportReviewNote = selectedImport?.operator_review_note;
   const importBusy = importValidationPending || importDocument.isPending;
 
   useEffect(() => {
-    if (!selectedImport) return;
-    setReviewStatus(reviewPatchStatusFromDocument(selectedImport));
-    setReviewNote(metadataText(selectedImport.operator_review_note) ?? '');
-  }, [
-    selectedImport?.id,
-    selectedImport?.operator_review_status,
-    selectedImport?.operator_review_note,
-  ]);
+    if (!selectedImportReviewId) return;
+    setReviewStatus(reviewPatchStatusFromDocument(selectedImportReviewStatus));
+    setReviewNote(metadataText(selectedImportReviewNote) ?? '');
+  }, [selectedImportReviewId, selectedImportReviewStatus, selectedImportReviewNote]);
 
   function downloadBaseName() {
     const base = entityName ? `${slug(entityName)}-` : '';

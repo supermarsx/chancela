@@ -139,7 +139,12 @@ function FollowUpItem({
   const scope = scopeBook(act.book_id);
 
   useEffect(() => {
-    setDraft(draftFromFollowUp(row));
+    setDraft({
+      title: row.title,
+      detail: row.detail ?? '',
+      due_date: row.due_date ?? '',
+      assignee: row.assignee_display ?? row.assignee ?? '',
+    });
     setTitleError(null);
   }, [
     row.id,
