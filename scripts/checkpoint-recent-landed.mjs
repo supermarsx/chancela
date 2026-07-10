@@ -11,19 +11,61 @@ const staticOnly = process.argv.includes("--static");
 const checks = [
   {
     name: "static checkpoint map",
-    command: [process.execPath, ["--check", "scripts/checkpoint-recent-landed.mjs"]],
+    command: [
+      process.execPath,
+      ["--check", "scripts/checkpoint-recent-landed.mjs"],
+    ],
     before: assertCheckpointMap,
   },
   {
     name: "API paper import tests",
-    command: ["cargo", ["test", "-p", "chancela-api", "--test", "paper_import", "--locked"]],
+    command: [
+      "cargo",
+      ["test", "-p", "chancela-api", "--test", "paper_import", "--locked"],
+    ],
   },
   {
     name: "API archive package and DocTimeStamp evidence tests",
-    command: ["cargo", ["test", "-p", "chancela-api", "--test", "archive_package", "--locked"]],
+    command: [
+      "cargo",
+      ["test", "-p", "chancela-api", "--test", "archive_package", "--locked"],
+    ],
   },
   {
-    name: "web contracts/dashboard/i18n matrix",
+    name: "API local PKCS#12 signing tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "local_pkcs12_signing",
+        "--locked",
+      ],
+    ],
+  },
+  {
+    name: "API bounded retention execution tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "privacy",
+        "--locked",
+        "retention_",
+      ],
+    ],
+  },
+  {
+    name: "TSL XML-DSig hardening tests",
+    command: ["cargo", ["test", "-p", "chancela-tsl", "--locked"]],
+  },
+  {
+    name: "web contracts/dashboard/signing/i18n matrix",
     command: npmCommand([
       "run",
       "test",
@@ -32,6 +74,7 @@ const checks = [
       "--",
       "src/contracts/contracts.test.ts",
       "src/features/dashboard/DashboardPage.test.tsx",
+      "src/features/signing/SigningPanel.test.tsx",
       "src/i18n/i18n.test.ts",
     ]),
   },
@@ -121,6 +164,21 @@ function assertCheckpointMap() {
     "archive package DocTimeStamp evidence coverage",
   );
   assertFileContains(
+    "crates/chancela-api/tests/local_pkcs12_signing.rs",
+    "local_pkcs12_signs_as_advanced_technical_evidence_only",
+    "local PKCS#12 signing API regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "retention_execution_records_bounded_archive_and_idempotent_repeat",
+    "bounded retention execution regression coverage",
+  );
+  assertFileContains(
+    "crates/chancela-tsl/tests/tsl_fixture.rs",
+    "tsl_signature_validation_rejects_tampered_signature_value",
+    "TSL XML-DSig tamper regression coverage",
+  );
+  assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
     "dashboard.json",
     "web dashboard contract fixture coverage",
@@ -131,17 +189,38 @@ function assertCheckpointMap() {
     "dashboard unit coverage",
   );
   assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.test.tsx",
+    "SigningPanel — local PKCS#12 software certificate",
+    "web local PKCS#12 signing coverage",
+  );
+  assertFileContains(
     "apps/web/src/i18n/i18n.test.ts",
     "catalog completeness matrix",
     "i18n catalog matrix coverage",
   );
-  assertFileExists("docs/fixtures/validator-corpus/manifest.json", "validator corpus manifest");
+  assertFileContains(
+    "apps/web/e2e/notification-popup-hardening.spec.ts",
+    "closes on outside click",
+    "notification popup outside-click browser coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/notification-popup-hardening.spec.ts",
+    "zIndex",
+    "notification popup z-index browser coverage",
+  );
+  assertFileExists(
+    "docs/fixtures/validator-corpus/manifest.json",
+    "validator corpus manifest",
+  );
   assertFileContains(
     "docs/fixtures/validator-corpus/manifest.json",
     "future-doctimestamp",
     "DocTimeStamp validator corpus case",
   );
-  assertFileExists("apps/desktop/src-tauri/Cargo.lock", "desktop Cargo lockfile");
+  assertFileExists(
+    "apps/desktop/src-tauri/Cargo.lock",
+    "desktop Cargo lockfile",
+  );
   assertFileContains(
     "apps/desktop/package.json",
     "--locked",
@@ -157,5 +236,8 @@ function assertFileExists(relativePath, label) {
 function assertFileContains(relativePath, needle, label) {
   assertFileExists(relativePath, label);
   const body = readFileSync(join(repoRoot, relativePath), "utf8");
-  assert.ok(body.includes(needle), `${label} missing expected marker ${needle}`);
+  assert.ok(
+    body.includes(needle),
+    `${label} missing expected marker ${needle}`,
+  );
 }
