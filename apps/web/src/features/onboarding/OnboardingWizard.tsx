@@ -59,6 +59,7 @@ export function OnboardingWizard() {
   const [org, setOrg] = useState('');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
@@ -96,6 +97,7 @@ export function OnboardingWizard() {
       const user = await api.createUser({
         username,
         display_name: displayName.trim() || undefined,
+        email: email.trim() || undefined,
       });
       // Sign in passwordless right away so the remaining (session-gated) steps work.
       const result = await api.createSession({ user_id: user.id });
@@ -284,6 +286,16 @@ export function OnboardingWizard() {
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder={t('users.field.displayName.placeholder')}
                   autoComplete="off"
+                />
+              </Field>
+              <Field label={t('registry.email.label')} htmlFor="ob-email">
+                <Input
+                  id="ob-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={t('registry.email.placeholder')}
+                  autoComplete="email"
                 />
               </Field>
               {error ? <InlineWarning tone="error">{errorMessage(error, t)}</InlineWarning> : null}

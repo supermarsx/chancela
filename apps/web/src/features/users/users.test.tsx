@@ -203,7 +203,7 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
     ).toBe(true);
   });
 
-  it('creates a user with a valid slug and sends the username', async () => {
+  it('creates a user with a valid slug and sends identity email fields', async () => {
     const { fn, calls } = recordingFetch((r) =>
       r.method === 'POST' ? jsonResponse(AMELIA, 201) : jsonResponse([]),
     );
@@ -217,6 +217,9 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
     fireEvent.change(screen.getByLabelText('Nome a apresentar (opcional)'), {
       target: { value: 'Amélia Marques' },
     });
+    fireEvent.change(screen.getByLabelText('E-mail (opcional)'), {
+      target: { value: 'amelia@example.pt' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /criar utilizador/i }));
 
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
@@ -225,6 +228,7 @@ describe('NewUserPanel (Configurações → Utilizadores → novo)', () => {
     expect(post?.body).toMatchObject({
       username: 'amelia.marques',
       display_name: 'Amélia Marques',
+      email: 'amelia@example.pt',
     });
     // A success toast confirms the create (t44 retrofit-b) — it fires as the page navigates
     // to the new user's edit screen (ToastProvider is above the router).
@@ -265,8 +269,9 @@ const BRUNO: UserView = {
 describe('EditUserPanel (Configurações → Utilizadores → user) — identity + access manager', () => {
   it('renders identity and resolves a cold deep link via GET /v1/users/{id}', async () => {
     // Empty list cache → the edit screen falls back to the single-user read.
+    const user = { ...AMELIA, email: 'amelia@example.pt' };
     const { fn, calls } = recordingFetch((r) =>
-      r.url.endsWith('/v1/users/u1') ? jsonResponse(AMELIA) : jsonResponse([]),
+      r.url.endsWith('/v1/users/u1') ? jsonResponse(user) : jsonResponse([]),
     );
     vi.stubGlobal('fetch', fn);
 
@@ -275,7 +280,32 @@ describe('EditUserPanel (Configurações → Utilizadores → user) — identity
     // The immutable username and display name show as form values in the inline panel.
     expect(await screen.findByDisplayValue('amelia.marques')).toBeTruthy();
     expect(screen.getByDisplayValue('Amélia Marques')).toBeTruthy();
+    expect(screen.getByDisplayValue('amelia@example.pt')).toBeTruthy();
     expect(calls.some((c) => c.url.endsWith('/v1/users/u1'))).toBe(true);
+  });
+
+  it('updates a user email via PATCH /v1/users/{id}', async () => {
+    const user = { ...AMELIA, email: 'amelia@example.pt' };
+    const { fn, calls } = recordingFetch((r) =>
+      r.method === 'PATCH'
+        ? jsonResponse({ ...user, email: 'amelia.legal@example.pt' })
+        : r.url.endsWith('/v1/users/u1')
+          ? jsonResponse(user)
+          : jsonResponse([user]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderEditAt('u1');
+
+    fireEvent.change(await screen.findByLabelText('E-mail (opcional)'), {
+      target: { value: 'amelia.legal@example.pt' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar nome' }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+    const patch = calls.find((c) => c.method === 'PATCH');
+    expect(patch?.url).toContain('/v1/users/u1');
+    expect(patch?.body).toMatchObject({ email: 'amelia.legal@example.pt' });
   });
 
   it('sets a sign-in password via POST /v1/users/{id}/secret', async () => {

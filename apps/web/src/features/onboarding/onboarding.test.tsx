@@ -128,6 +128,9 @@ describe('OnboardingWizard', () => {
     fireEvent.change(await screen.findByLabelText('Nome de utilizador'), {
       target: { value: 'operador' },
     });
+    fireEvent.change(screen.getByLabelText('E-mail (opcional)'), {
+      target: { value: 'operador@example.pt' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Seguinte' }));
 
     // Password → (set secret) → Recovery phrase
@@ -161,6 +164,11 @@ describe('OnboardingWizard', () => {
     expect(seq.indexOf('POST /v1/users/u1/secret')).toBeLessThan(
       seq.indexOf('POST /v1/users/u1/recovery'),
     );
+    const createdUser = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/users'));
+    expect(createdUser?.body).toMatchObject({
+      username: 'operador',
+      email: 'operador@example.pt',
+    });
     const recovery = calls.find((c) => c.url.includes('/v1/users/u1/recovery'));
     expect(recovery?.body).toMatchObject({ current_password: STRONG_PASSWORD });
 

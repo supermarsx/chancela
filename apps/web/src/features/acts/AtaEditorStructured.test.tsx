@@ -336,6 +336,35 @@ describe('AtaEditorPage — agenda add/remove', () => {
   });
 });
 
+describe('AtaEditorPage — signatories', () => {
+  it('renders and saves a signatory email through the act patch body', async () => {
+    const withChair: ActView = {
+      ...baseAct,
+      mesa: { presidente: 'Ana', secretarios: [] },
+      signatories: [{ name: 'Ana', email: 'ana@example.pt', capacity: 'Chair', signed: true }],
+    };
+    const shared = stateful(withChair);
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    expect(await screen.findByDisplayValue('ana@example.pt')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('E-mail (opcional)'), {
+      target: { value: 'ana.legal@example.pt' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => {
+      const signatories = shared.patches.at(-1)?.signatories as ActView['signatories'];
+      expect(signatories?.[0]).toMatchObject({
+        name: 'Ana',
+        email: 'ana.legal@example.pt',
+        capacity: 'Chair',
+        signed: true,
+      });
+    });
+  });
+});
+
 describe('AtaEditorPage — AI human review gate', () => {
   it('records reject and accept decisions and only enables Signing after acceptance', async () => {
     const withAi: ActView = {

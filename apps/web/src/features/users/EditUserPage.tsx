@@ -94,24 +94,31 @@ function IdentitySection({ user }: { user: UserView }) {
   const toast = useToast();
   const update = useUpdateUser(user.id);
   const [displayName, setDisplayName] = useState(user.display_name);
+  const [email, setEmail] = useState(user.email ?? '');
 
   // Keep the field in sync if the underlying user refetches (e.g. after a toggle).
   useEffect(() => {
     setDisplayName(user.display_name);
-  }, [user.display_name]);
+    setEmail(user.email ?? '');
+  }, [user.display_name, user.email]);
 
-  const dirty = displayName.trim() !== user.display_name;
+  const trimmedDisplayName = displayName.trim();
+  const trimmedEmail = email.trim();
+  const dirty = trimmedDisplayName !== user.display_name || trimmedEmail !== (user.email ?? '');
 
   function save(e: React.FormEvent) {
     e.preventDefault();
     if (!dirty) return;
-    update.mutate(
-      { display_name: displayName.trim() },
-      {
-        onSuccess: () => toast.success(t('toast.user.updated')),
-        onError: (e) => toast.error(e),
-      },
-    );
+    const body = {
+      ...(trimmedDisplayName !== user.display_name ? { display_name: trimmedDisplayName } : {}),
+      ...(trimmedEmail !== (user.email ?? '')
+        ? { email: trimmedEmail === '' ? null : trimmedEmail }
+        : {}),
+    };
+    update.mutate(body, {
+      onSuccess: () => toast.success(t('toast.user.updated')),
+      onError: (e) => toast.error(e),
+    });
   }
 
   return (
@@ -131,6 +138,16 @@ function IdentitySection({ user }: { user: UserView }) {
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder={t('users.field.displayName.placeholder')}
             autoComplete="off"
+          />
+        </Field>
+        <Field label={t('registry.email.label')} htmlFor="edit-email">
+          <Input
+            id="edit-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder={t('registry.email.placeholder')}
+            autoComplete="email"
           />
         </Field>
         <div className="form__actions">

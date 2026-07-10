@@ -706,6 +706,17 @@ function SignatoriesEditor({
               onChange={(e) => update(i, { name: e.target.value })}
             />
           </Field>
+          <Field label={t('registry.email.label')}>
+            <Input
+              type="email"
+              aria-label={t('registry.email.label')}
+              placeholder={t('registry.email.placeholder')}
+              value={s.email ?? ''}
+              disabled={disabled}
+              autoComplete="email"
+              onChange={(e) => update(i, { email: orNull(e.target.value) })}
+            />
+          </Field>
           <Field label={t('acts.capacityAria')} help={ataFieldHelp.signatoryCapacity}>
             <Select
               aria-label={t('acts.capacityAria')}
