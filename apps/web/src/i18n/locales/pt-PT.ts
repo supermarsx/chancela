@@ -478,7 +478,8 @@ export const ptPT = {
   'entities.chronology.title': 'Cronologia e grafo',
   'entities.chronology.loading': 'A carregar cronologia...',
   'entities.chronology.none': '—',
-  'entities.chronology.boundary': 'Leitura técnica derivada da certidão importada. Estes grafos são evidência de proveniência e navegação; não substituem a certidão nem acrescentam validade jurídica.',
+  'entities.chronology.boundary':
+    'Leitura técnica derivada da certidão importada. Estes grafos são evidência de proveniência e navegação; não substituem a certidão nem acrescentam validade jurídica.',
   'entities.chronology.events.empty': 'A certidão não expôs eventos cronológicos normalizados.',
   'entities.chronology.table.date': 'Data',
   'entities.chronology.table.kind': 'Tipo',
@@ -495,7 +496,8 @@ export const ptPT = {
   'entities.chronology.toast.copied': 'Grafo Mermaid copiado.',
   'entities.chronology.toast.copyFailed': 'Não foi possível copiar para a área de transferência.',
   'entities.chronology.empty.title': 'Sem cronologia',
-  'entities.chronology.empty.body': 'Importe uma certidão permanente para gerar a cronologia e os grafos técnicos a partir das inscrições do registo.',
+  'entities.chronology.empty.body':
+    'Importe uma certidão permanente para gerar a cronologia e os grafos técnicos a partir das inscrições do registo.',
   'entities.openBookButton': 'Abrir livro',
   'entities.newCrumb': 'Nova entidade',
   'entities.newPageTitle': 'Nova entidade',
@@ -1019,6 +1021,8 @@ export const ptPT = {
   'pdfValidator.action.pending': 'A validar…',
   'pdfValidator.report.copyJson': 'Copiar JSON',
   'pdfValidator.report.saveJson': 'Guardar JSON',
+  'pdfValidator.report.status':
+    'Relatório JSON de evidência local disponível para copiar ou guardar.',
   'pdfValidator.report.copyFailed': 'Não foi possível copiar o relatório.',
   'pdfValidator.failClosed.title': 'Validação recusada',
   'pdfValidator.failClosed.body':
@@ -1084,32 +1088,39 @@ export const ptPT = {
   'pdfValidator.field.declaredSize': 'Tamanho declarado',
   'pdfValidator.field.declaredSha256': 'SHA-256 declarado',
 
-  'externalValidatorReports.title': "Relatórios técnicos de validador externo",
-  'externalValidatorReports.notice.title': "Apenas metadados técnicos",
-  'externalValidatorReports.notice.body': "Carregue metadados JSON exportados por um validador externo. A lista mostra apenas resumos redigidos; os bytes do relatório bruto ficam guardados no servidor e não estão disponíveis para descarregar aqui.",
-  'externalValidatorReports.file.label': "JSON do validador externo",
-  'externalValidatorReports.file.hint': "Selecione um ficheiro .json até 256 KiB. O texto JSON selecionado é carregado sem reformatar.",
-  'externalValidatorReports.file.selected': "Selecionado: {name} ({size})",
-  'externalValidatorReports.file.readError': "Não foi possível ler o ficheiro selecionado.",
-  'externalValidatorReports.file.invalidJson': "O ficheiro selecionado não é JSON válido. Corrija-o antes de carregar.",
-  'externalValidatorReports.action.upload': "Carregar metadados",
-  'externalValidatorReports.action.pending': "A carregar…",
-  'externalValidatorReports.upload.success': "Metadados de validador externo carregados.",
-  'externalValidatorReports.loading': "A carregar relatórios de validador externo…",
-  'externalValidatorReports.empty.title': "Sem relatórios de validador externo",
-  'externalValidatorReports.empty.body': "Ainda não foram carregados relatórios de metadados técnicos.",
-  'externalValidatorReports.summary.storage': "Armazenamento",
-  'externalValidatorReports.summary.status': "Estado",
-  'externalValidatorReports.summary.count': "Relatórios",
-  'externalValidatorReports.summary.malformed': "Malformados",
-  'externalValidatorReports.summary.duplicates': "Caminhos duplicados",
-  'externalValidatorReports.table.caseId': "ID do caso",
-  'externalValidatorReports.table.validatorFamily': "Família do validador",
-  'externalValidatorReports.table.archivePath': "Caminho de arquivo",
-  'externalValidatorReports.table.contentType': "Tipo de conteúdo",
-  'externalValidatorReports.table.digest': "Digest",
-  'externalValidatorReports.table.actions': "Ações",
-  'externalValidatorReports.downloadSummary': "Guardar resumo de metadados",
+  'externalValidatorReports.title': 'Relatórios técnicos de validador externo',
+  'externalValidatorReports.notice.title': 'Apenas metadados técnicos',
+  'externalValidatorReports.notice.body':
+    'Carregue metadados JSON exportados por um validador externo. A lista mostra apenas resumos redigidos; os bytes do relatório bruto ficam guardados no servidor e não estão disponíveis para descarregar aqui.',
+  'externalValidatorReports.file.label': 'JSON do validador externo',
+  'externalValidatorReports.file.hint':
+    'Selecione um ficheiro .json até 256 KiB. O texto JSON selecionado é carregado sem reformatar.',
+  'externalValidatorReports.file.selected': 'Selecionado: {name} ({size})',
+  'externalValidatorReports.file.readError': 'Não foi possível ler o ficheiro selecionado.',
+  'externalValidatorReports.file.invalidJson':
+    'O ficheiro selecionado não é JSON válido. Corrija-o antes de carregar.',
+  'externalValidatorReports.action.upload': 'Carregar metadados',
+  'externalValidatorReports.action.pending': 'A carregar…',
+  'externalValidatorReports.upload.success': 'Metadados de validador externo carregados.',
+  'externalValidatorReports.loading': 'A carregar relatórios de validador externo…',
+  'externalValidatorReports.empty.title': 'Sem relatórios de validador externo',
+  'externalValidatorReports.empty.body':
+    'Ainda não foram carregados relatórios de metadados técnicos.',
+  'externalValidatorReports.summary.storage': 'Armazenamento',
+  'externalValidatorReports.summary.status': 'Estado',
+  'externalValidatorReports.summary.count': 'Relatórios',
+  'externalValidatorReports.summary.malformed': 'Malformados',
+  'externalValidatorReports.summary.duplicates': 'Caminhos duplicados',
+  'externalValidatorReports.table.caseId': 'ID do caso',
+  'externalValidatorReports.table.validatorFamily': 'Família do validador',
+  'externalValidatorReports.table.archivePath': 'Caminho de arquivo',
+  'externalValidatorReports.table.contentType': 'Tipo de conteúdo',
+  'externalValidatorReports.table.digest': 'Digest',
+  'externalValidatorReports.table.actions': 'Ações',
+  'externalValidatorReports.table.metadataOnly': 'Resumo, sem bytes do relatório',
+  'externalValidatorReports.status':
+    'Relatórios de metadados: {count}; malformados: {malformed}; caminhos duplicados: {duplicates}. A exportação inclui apenas o resumo local.',
+  'externalValidatorReports.downloadSummary': 'Guardar resumo de metadados',
 
   // --- Legislação (page chrome only; diploma content stays verbatim, UX-21) ------
   'legislacao.title': 'Legislação',
@@ -2196,14 +2207,11 @@ export const ptPT = {
     'Atenção: a API devolveu uma alegação de perfil/LTV; rever antes de usar.',
   'signing.evidence.renewal.action.none': 'sem ação',
   'signing.evidence.renewal.action.manualReview': 'revisão manual',
-  'signing.evidence.renewal.action.addSignatureTimestamp':
-    'adicionar selo temporal da assinatura',
+  'signing.evidence.renewal.action.addSignatureTimestamp': 'adicionar selo temporal da assinatura',
   'signing.evidence.renewal.action.embedDssRevocationEvidence':
     'incorporar evidência DSS de revogação',
-  'signing.evidence.renewal.action.recordDssValidationTime':
-    'registar tempo de validação DSS',
-  'signing.evidence.renewal.action.addDocumentTimestamp':
-    'adicionar selo temporal do documento',
+  'signing.evidence.renewal.action.recordDssValidationTime': 'registar tempo de validação DSS',
+  'signing.evidence.renewal.action.addDocumentTimestamp': 'adicionar selo temporal do documento',
   'signing.evidence.renewal.action.recordSignatureDssValidationTime':
     'registar tempo de validação DSS da assinatura',
   'signing.provider.cmd.title': 'Chave Móvel Digital',

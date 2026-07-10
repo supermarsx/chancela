@@ -1,20 +1,17 @@
 import { useState, type ReactNode } from 'react';
 import type { ExternalValidatorReportSummary } from '../../api/types';
-import {
-  useExternalValidatorReports,
-  useUploadExternalValidatorReport,
-} from '../../api/hooks';
+import { useExternalValidatorReports, useUploadExternalValidatorReport } from '../../api/hooks';
 import { saveBlobAs, saveBlobResultMessage } from '../../desktop/saveFile';
 import { useT, type TFunction } from '../../i18n';
 import {
   Badge,
-  Button,
   Card,
   Digest,
   EmptyState,
   ErrorNote,
   Field,
   Icon,
+  IconButton,
   InlineWarning,
   Loading,
   Table,
@@ -96,8 +93,7 @@ function metadataSummaryJson(report: ExternalValidatorReportSummary): string {
 }
 
 function metadataSummaryFilename(report: ExternalValidatorReportSummary): string {
-  const base =
-    reportCaseId(report) ?? reportArchivePath(report) ?? reportValidatorFamily(report);
+  const base = reportCaseId(report) ?? reportArchivePath(report) ?? reportValidatorFamily(report);
   return `${safeFilenameSegment(base)}-external-validator-metadata-summary.json`;
 }
 
@@ -178,15 +174,14 @@ function SummaryDownloadButton({ report }: { report: ExternalValidatorReportSumm
   }
 
   return (
-    <Button
-      type="button"
-      variant="secondary"
+    <IconButton
       icon={<Icon.Save />}
+      label={saving ? t('common.saving') : t('externalValidatorReports.downloadSummary')}
+      variant="secondary"
+      placement="left"
       disabled={saving}
       onClick={() => void downloadSummary()}
-    >
-      {saving ? t('common.saving') : t('externalValidatorReports.downloadSummary')}
-    </Button>
+    />
   );
 }
 
@@ -207,12 +202,7 @@ function ReportsTable({ reports }: { reports: ExternalValidatorReportSummary[] }
     >
       {reports.map((report, index) => {
         const digest = reportDigest(report);
-        const key = [
-          reportCaseId(report),
-          reportArchivePath(report),
-          digest,
-          String(index),
-        ]
+        const key = [reportCaseId(report), reportArchivePath(report), digest, String(index)]
           .filter(Boolean)
           .join(':');
         return (
@@ -222,7 +212,8 @@ function ReportsTable({ reports }: { reports: ExternalValidatorReportSummary[] }
             <td>{displayText(reportArchivePath(report))}</td>
             <td>{displayText(textValue(report.content_type))}</td>
             <td>{digest ? <Digest value={digest} copyable={false} /> : '—'}</td>
-            <td>
+            <td className="pdf-validator-actions-cell">
+              <span className="muted">{t('externalValidatorReports.table.metadataOnly')}</span>
               <SummaryDownloadButton report={report} />
             </td>
           </tr>
@@ -338,13 +329,22 @@ export function ExternalValidatorReportsPanel() {
         {reports.isLoading ? <Loading label={t('externalValidatorReports.loading')} /> : null}
         {reports.error ? <ErrorNote error={reports.error} /> : null}
         {data ? (
-          <StorageSummary
-            storage={data.storage}
-            status={data.status}
-            count={data.count}
-            malformed={data.malformed_count}
-            duplicates={data.duplicate_suggested_path_count}
-          />
+          <>
+            <p className="pdf-validator-status" aria-live="polite">
+              {t('externalValidatorReports.status', {
+                count: data.count,
+                malformed: data.malformed_count,
+                duplicates: data.duplicate_suggested_path_count,
+              })}
+            </p>
+            <StorageSummary
+              storage={data.storage}
+              status={data.status}
+              count={data.count}
+              malformed={data.malformed_count}
+              duplicates={data.duplicate_suggested_path_count}
+            />
+          </>
         ) : null}
         {data && data.reports.length === 0 ? (
           <EmptyState title={t('externalValidatorReports.empty.title')}>

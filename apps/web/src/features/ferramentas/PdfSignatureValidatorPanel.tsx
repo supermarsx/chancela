@@ -17,6 +17,7 @@ import {
   ErrorNote,
   Field,
   Icon,
+  IconButton,
   InlineWarning,
   useToast,
 } from '../../ui';
@@ -153,24 +154,23 @@ function ValidationReportActions({ report }: { report: PdfSignatureValidationRes
   }
 
   return (
-    <div className="form__actions">
-      <Button
-        type="button"
-        variant="secondary"
-        icon={<Icon.Copy />}
-        onClick={() => void copyReport()}
-      >
-        {t('pdfValidator.report.copyJson')}
-      </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        icon={<Icon.Save />}
-        disabled={saving}
-        onClick={() => void downloadReport()}
-      >
-        {saving ? t('common.saving') : t('pdfValidator.report.saveJson')}
-      </Button>
+    <div className="pdf-validator-report-actions">
+      <p className="pdf-validator-status">{t('pdfValidator.report.status')}</p>
+      <div className="pdf-validator-action-buttons">
+        <IconButton
+          icon={<Icon.Copy />}
+          label={t('pdfValidator.report.copyJson')}
+          variant="secondary"
+          onClick={() => void copyReport()}
+        />
+        <IconButton
+          icon={<Icon.Save />}
+          label={saving ? t('common.saving') : t('pdfValidator.report.saveJson')}
+          variant="secondary"
+          disabled={saving}
+          onClick={() => void downloadReport()}
+        />
+      </div>
     </div>
   );
 }

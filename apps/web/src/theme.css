@@ -3791,6 +3791,31 @@ a.btn--primary {
   font-size: 1.05rem;
 }
 
+.pdf-validator-status {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.pdf-validator-report-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+.pdf-validator-action-buttons,
+.pdf-validator-actions-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pdf-validator-actions-cell {
+  justify-content: flex-end;
+  min-width: max-content;
+}
+
 .pdf-validator-kv {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));

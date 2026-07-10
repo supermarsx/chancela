@@ -297,13 +297,19 @@ function externalValidatorReportsFetch(
     const method = init?.method ?? 'GET';
     if (url.includes('/v1/external-validator-reports') && method === 'GET') {
       return Promise.resolve(
-        jsonResponse(uploaded && options.afterUpload ? options.afterUpload : options.list ?? EMPTY_EXTERNAL_VALIDATOR_REPORTS),
+        jsonResponse(
+          uploaded && options.afterUpload
+            ? options.afterUpload
+            : (options.list ?? EMPTY_EXTERNAL_VALIDATOR_REPORTS),
+        ),
       );
     }
     if (url.includes('/v1/external-validator-reports') && method === 'POST') {
       uploaded = true;
       if (options.uploadError) {
-        return Promise.resolve(jsonResponse({ error: options.uploadError }, options.uploadStatus ?? 422));
+        return Promise.resolve(
+          jsonResponse({ error: options.uploadError }, options.uploadStatus ?? 422),
+        );
       }
       return Promise.resolve(
         jsonResponse(
@@ -374,6 +380,9 @@ describe('Ferramentas — PDF signature validator', () => {
     expect(screen.getByText('DSS, VRI e revogação embebida')).toBeTruthy();
     expect(screen.getByText('Confiança, revogação e qualificação')).toBeTruthy();
     expect(screen.getByText('pades_valid_local_technical')).toBeTruthy();
+    expect(
+      screen.getByText('Relatório JSON de evidência local disponível para copiar ou guardar.'),
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copiar JSON' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Guardar JSON' })).toBeTruthy();
   });
@@ -522,6 +531,12 @@ describe('Ferramentas — external-validator reports panel', () => {
     expect(screen.getByText('evidence/external-validators/CASE-001-ama-dss.json')).toBeTruthy();
     expect(screen.getByText('application/json')).toBeTruthy();
     expect(screen.getByText('aaaaaaaa…aaaaaaaa')).toBeTruthy();
+    expect(screen.getByText('Resumo, sem bytes do relatório')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Relatórios de metadados: 1; malformados: 0; caminhos duplicados: 0. A exportação inclui apenas o resumo local.',
+      ),
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Guardar resumo de metadados' })).toBeTruthy();
   });
 
