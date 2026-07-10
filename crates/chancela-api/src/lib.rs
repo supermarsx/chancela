@@ -25,6 +25,7 @@
 //! - `POST /v1/documents/import/validate` — read-only structural import validation report.
 //! - `POST|GET /v1/documents/import[ed]`, `GET /v1/documents/imported/{id}[/bytes]` —
 //!   validated non-canonical imported document evidence.
+//! - `POST /v1/signature/pdf/validate` — read-only local technical PDF/PAdES evidence validation.
 //! - `GET /v1/ledger/events`, `GET /v1/ledger/verify` — the audit feed and chain probe (§2.6).
 //! - `GET /v1/ledger/archive/document` — on-demand PDF/A archive export.
 //! - `GET /v1/dashboard` — WFL-40 counts and recent events (§2.7).
@@ -86,6 +87,7 @@ mod ledger;
 mod notifications;
 mod paper_import;
 mod password_policy;
+mod pdf_signature_validation;
 mod platform_logs;
 mod platform_ops;
 mod privacy;
@@ -1043,6 +1045,12 @@ pub fn router(state: AppState) -> Router {
             "/v1/documents/import/validate",
             post(documents::validate_document_import).layer(DefaultBodyLimit::max(
                 documents::DOCUMENT_IMPORT_VALIDATION_ENVELOPE_BYTES,
+            )),
+        )
+        .route(
+            "/v1/signature/pdf/validate",
+            post(pdf_signature_validation::validate_pdf_signature).layer(DefaultBodyLimit::max(
+                pdf_signature_validation::PDF_SIGNATURE_VALIDATION_ENVELOPE_BYTES,
             )),
         )
         .route(
