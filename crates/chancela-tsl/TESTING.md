@@ -32,6 +32,12 @@ Every default test is fully offline and deterministic. They parse the bundled fi
 - **Cache / validity window** (`cache::tests`, `tsl_fixture::client_caches_and_reports_staleness`):
   staleness follows the list's `NextUpdate`; a list without one uses a 24h fallback TTL.
 - **Discovery** (`tsl_fixture::discovery_lists_only_the_granted_esig_service`): SIG-12 listing.
+- **XML-DSig/TSL trust gate** (`tsl_fixture::tsl_signature_validation_*`,
+  `tsl_fixture::client_downgrades_*`): missing signatures, malformed base64, unsupported
+  canonicalization/signature algorithms, unsupported reference transforms, multiple references,
+  digest mismatches, tampered `SignedInfo`, tampered referenced content, and tampered
+  `SignatureValue` all fail closed. `TslClient` caches the parsed list for diagnostics but
+  downgrades `Granted` to `Unknown` when validation fails.
 - **Catalog edge fixture** (`fixtures/pt-tsl-sample.xml`): duplicate service names, accent-heavy
   operator/provider aliases, missing optional service names, malformed status dates, multiple TSA
   service types, withdrawn and revoked-like statuses, and service supply points.
@@ -59,9 +65,17 @@ Nothing in CI sets the feature or passes `--ignored`, so the network is never to
 
 `source::validate_tsl_signature` validates the Trusted List's XML-DSig metadata enough for the
 trust gate to reject missing/malformed signatures, unsupported algorithms, digest mismatches and
-signature verification failures. `TslClient` records the validation result at refresh time and
-never reports `QualifiedStatus::Granted` from an unauthenticated list. The bundled fixture carries
-a deliberately invalid placeholder signature, so catalog surfaces show it as advisory.
+signature verification failures against the public key embedded in `<ds:KeyInfo>`. `TslClient`
+records the validation result at refresh time and never reports `QualifiedStatus::Granted` when
+that validation fails. The bundled fixture carries a deliberately invalid placeholder signature, so
+catalog surfaces show it as advisory.
+
+This is **not** full legal/authenticated EU TSL validation yet. Remaining blockers include signer
+certificate trust anchoring to the EU LOTL or national scheme-operator trust anchor, certificate
+path/revocation/policy validation for the TSL signer, full XML canonicalization/transform
+processing, `URI="#id"` reference resolution, and ECDSA XML-DSig verification. Until those are
+implemented, a cryptographically valid XML-DSig only proves the document matches the embedded
+signer certificate's public key, not that the signer is legally trusted to publish the TSL.
 
 ## Fixtures
 

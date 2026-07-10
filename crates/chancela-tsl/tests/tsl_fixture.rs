@@ -5,6 +5,8 @@
 //! See `crates/chancela-tsl/TESTING.md`.
 
 use std::path::PathBuf;
+use std::str::FromStr;
+use std::time::Duration as StdDuration;
 
 use chancela_tsl::parse::{FOR_ESEALS, FOR_ESIGNATURES, SVCTYPE_CA_QC};
 use chancela_tsl::{
@@ -12,13 +14,37 @@ use chancela_tsl::{
     TslClient, TslError, parse_tsl, qualified_esig_services, resolve_esig_status,
     resolve_qtst_match_details, validate_tsl_signature,
 };
+use der::Encode;
+use der::asn1::{Any, BitString, ObjectIdentifier};
+use sha2::{Digest, Sha256};
+use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
 use time::OffsetDateTime;
 use time::macros::datetime;
+use x509_cert::name::Name;
+use x509_cert::serial_number::SerialNumber;
+use x509_cert::time::Validity;
+use x509_cert::{Certificate, TbsCertificate, Version};
 
 /// A moment inside the fixture's validity window (issued 2026-01-15, next update 2026-07-15).
 const NOW: OffsetDateTime = datetime!(2026-07-06 12:00:00 UTC);
 /// A moment after the fixture's `NextUpdate` — the cache should be stale here.
 const AFTER_NEXT_UPDATE: OffsetDateTime = datetime!(2026-08-01 00:00:00 UTC);
+
+const RSA_SHA256: &str = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+const C14N_10: &str = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315";
+const EXC_C14N_10: &str = "http://www.w3.org/2001/10/xml-exc-c14n#";
+const SHA256_DIGEST: &str = "http://www.w3.org/2001/04/xmlenc#sha256";
+
+const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
+const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+    0x00, 0x04, 0x20,
+];
+
+struct SignedFixture {
+    xml: Vec<u8>,
+    signature_value: Vec<u8>,
+}
 
 fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
@@ -40,6 +66,95 @@ fn fixture_without_signature() -> Vec<u8> {
     let end = xml[start..].find(end_tag).expect("signature end") + start + end_tag.len();
     xml.replace_range(start..end, "");
     xml.into_bytes()
+}
+
+fn signed_fixture() -> SignedFixture {
+    let unsigned_xml = String::from_utf8(fixture_without_signature()).expect("fixture is UTF-8");
+    let key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).expect("rsa keygen");
+    let spki =
+        SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(&key)).expect("rsa spki");
+    let cert_der = build_self_signed("TSL XML-DSig test signer", 7, spki);
+    let digest = Sha256::digest(unsigned_xml.as_bytes());
+    let signed_info = format!(
+        r#"<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="{EXC_C14N_10}"/><ds:SignatureMethod Algorithm="{RSA_SHA256}"/><ds:Reference URI=""><ds:DigestMethod Algorithm="{SHA256_DIGEST}"/><ds:DigestValue>{}</ds:DigestValue></ds:Reference></ds:SignedInfo>"#,
+        base64_standard(&digest)
+    );
+    let signed_info_hash: [u8; 32] = Sha256::digest(signed_info.as_bytes()).into();
+    let signature_value = sign_rsa_digest_info(&key, &signed_info_hash);
+    let signature = format!(
+        r#"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">{signed_info}<ds:SignatureValue>{}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>"#,
+        base64_standard(&signature_value),
+        base64_standard(&cert_der)
+    );
+    let insert_at = unsigned_xml
+        .find("</TrustServiceStatusList>")
+        .expect("fixture root close");
+    let xml = format!(
+        "{}{}{}",
+        &unsigned_xml[..insert_at],
+        signature,
+        &unsigned_xml[insert_at..]
+    );
+    SignedFixture {
+        xml: xml.into_bytes(),
+        signature_value,
+    }
+}
+
+fn build_self_signed(cn: &str, serial: u8, spki: SubjectPublicKeyInfoOwned) -> Vec<u8> {
+    let name = Name::from_str(&format!("CN={cn}")).expect("name");
+    let validity = Validity::from_now(StdDuration::from_secs(365 * 24 * 3600)).expect("validity");
+    let sig_alg = AlgorithmIdentifierOwned {
+        oid: OID_SHA256_WITH_RSA,
+        parameters: Some(Any::null()),
+    };
+    let cert = Certificate {
+        tbs_certificate: TbsCertificate {
+            version: Version::V3,
+            serial_number: SerialNumber::new(&[serial]).expect("serial"),
+            signature: sig_alg.clone(),
+            issuer: name.clone(),
+            validity,
+            subject: name,
+            subject_public_key_info: spki,
+            issuer_unique_id: None,
+            subject_unique_id: None,
+            extensions: None,
+        },
+        signature_algorithm: sig_alg,
+        signature: BitString::from_bytes(&[0u8; 256]).expect("bitstring"),
+    };
+    cert.to_der().expect("cert der")
+}
+
+fn sign_rsa_digest_info(key: &rsa::RsaPrivateKey, digest: &[u8; 32]) -> Vec<u8> {
+    let mut digest_info = SHA256_DIGEST_INFO_PREFIX.to_vec();
+    digest_info.extend_from_slice(digest);
+    key.sign(rsa::Pkcs1v15Sign::new_unprefixed(), &digest_info)
+        .expect("rsa sign")
+}
+
+fn base64_standard(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        out.push(TABLE[(b0 >> 2) as usize] as char);
+        out.push(TABLE[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(b2 & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }
 
 /// The DER of the first `X509Certificate` identity of the first service of the provider whose
@@ -400,6 +515,64 @@ fn tsl_signature_validation_rejects_unsupported_canonicalization_metadata() {
 }
 
 #[test]
+fn tsl_signature_validation_rejects_unsupported_signature_method_metadata() {
+    let mut signed = String::from_utf8(signed_fixture().xml).expect("signed fixture is UTF-8");
+    signed = signed.replace(RSA_SHA256, "http://www.w3.org/2000/09/xmldsig#rsa-sha1");
+
+    let err = validate_tsl_signature(signed.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureUnsupportedAlgorithm(ref alg) if alg.contains("signature method")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_validation_rejects_malformed_signature_value_base64() {
+    let signed = signed_fixture();
+    let good = base64_standard(&signed.signature_value);
+    let xml = String::from_utf8(signed.xml)
+        .expect("signed fixture is UTF-8")
+        .replace(&good, "not-base64*");
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(matches!(err, TslError::Base64(_)), "got {err:?}");
+}
+
+#[test]
+fn tsl_signature_validation_rejects_multiple_references() {
+    let xml = String::from_utf8(signed_fixture().xml)
+        .expect("signed fixture is UTF-8")
+        .replace(
+            "</ds:Reference></ds:SignedInfo>",
+            &format!(
+                "</ds:Reference><ds:Reference URI=\"\"><ds:DigestMethod Algorithm=\"{SHA256_DIGEST}\"/><ds:DigestValue>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</ds:DigestValue></ds:Reference></ds:SignedInfo>"
+            ),
+        );
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("multiple <ds:Reference>")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_validation_rejects_unsupported_reference_transform() {
+    let xml = String::from_utf8(signed_fixture().xml)
+        .expect("signed fixture is UTF-8")
+        .replace(
+            "<ds:DigestMethod",
+            r#"<ds:Transforms><ds:Transform Algorithm="urn:unsupported-transform"/></ds:Transforms><ds:DigestMethod"#,
+        );
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureUnsupportedAlgorithm(ref alg) if alg.contains("transform")),
+        "got {err:?}"
+    );
+}
+
+#[test]
 fn tsl_signature_validation_rejects_digest_mismatch_metadata() {
     let xml = br#"<TrustServiceStatusList>
       <SchemeInformation><SchemeTerritory>PT</SchemeTerritory></SchemeInformation>
@@ -420,6 +593,85 @@ fn tsl_signature_validation_rejects_digest_mismatch_metadata() {
         matches!(err, TslError::SignatureDigestMismatch),
         "got {err:?}"
     );
+}
+
+#[test]
+fn tsl_signature_validation_accepts_supported_fixture_shape_signed_by_embedded_cert() {
+    let signed = signed_fixture();
+    validate_tsl_signature(&signed.xml).expect("supported XML-DSig shape verifies");
+}
+
+#[test]
+fn tsl_signature_validation_rejects_tampered_signed_info() {
+    let xml = String::from_utf8(signed_fixture().xml)
+        .expect("signed fixture is UTF-8")
+        .replace(EXC_C14N_10, C14N_10);
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureVerificationFailed),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_validation_rejects_tampered_referenced_content() {
+    let xml = String::from_utf8(signed_fixture().xml)
+        .expect("signed fixture is UTF-8")
+        .replace(
+            "<SchemeTerritory>PT</SchemeTerritory>",
+            "<SchemeTerritory>ES</SchemeTerritory>",
+        );
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureDigestMismatch),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_validation_rejects_tampered_signature_value() {
+    let signed = signed_fixture();
+    let mut bad_signature = signed.signature_value.clone();
+    bad_signature[0] ^= 0x01;
+    let xml = String::from_utf8(signed.xml)
+        .expect("signed fixture is UTF-8")
+        .replace(
+            &base64_standard(&signed.signature_value),
+            &base64_standard(&bad_signature),
+        );
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureVerificationFailed),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn client_downgrades_granted_to_unknown_when_reference_digest_is_tampered() {
+    let xml = String::from_utf8(signed_fixture().xml)
+        .expect("signed fixture is UTF-8")
+        .replace(
+            "<SchemeTerritory>PT</SchemeTerritory>",
+            "<SchemeTerritory>ES</SchemeTerritory>",
+        )
+        .into_bytes();
+    let list = parse_tsl(&xml).unwrap();
+    let cert = issuer_cert(&list, "MULTICERT");
+    assert_eq!(
+        resolve_esig_status(&list, &cert, NOW),
+        QualifiedStatus::Granted
+    );
+
+    let mut client = TslClient::new(BytesTslSource::new(xml));
+    assert_eq!(
+        client.is_qualified_for_esig(&cert, NOW).unwrap(),
+        QualifiedStatus::Unknown,
+        "a digest-tampered list must not vouch for an issuer"
+    );
+    assert!(!client.cached().unwrap().signature_valid());
 }
 
 #[test]

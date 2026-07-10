@@ -113,7 +113,9 @@ impl TslSource for BytesTslSource {
 ///
 /// This is a best-effort implementation that parses the `<ds:Signature>` element, extracts the
 /// signer certificate from `<ds:KeyInfo>`, computes the digest of the referenced content, and
-/// verifies the signature value against the signer's public key.
+/// verifies the signature value against the public key embedded in that signer certificate. It
+/// does **not** authenticate that signer certificate against the EU LOTL or a national trust
+/// anchor.
 ///
 /// # What is implemented
 ///
@@ -122,9 +124,10 @@ impl TslSource for BytesTslSource {
 ///   `X509Data`, `X509Certificate`.
 /// - Extracting the signer certificate (base64 DER from `<ds:X509Certificate>`).
 /// - Computing the digest of the referenced content. For `URI=""` (the whole document), the
-///   signed content is the document with the `<ds:Signature>` element removed. For a specific
-///   `URI="#id"`, the element with that `Id` attribute is the signed content.
-/// - Verifying the signature value using RSA-SHA256 or ECDSA-SHA256.
+///   signed content is the document with the `<ds:Signature>` element removed.
+/// - Rejecting unsupported explicit reference transforms. The enveloped-signature transform and
+///   C14N transform URIs are accepted only for the already-canonical, whole-document path.
+/// - Verifying an RSA-SHA256 signature value against the embedded signer certificate's public key.
 ///
 /// # What is NOT implemented (limitations documented)
 ///
@@ -135,9 +138,17 @@ impl TslSource for BytesTslSource {
 ///   non-trivial canonicalization. The `CanonicalizationMethod` algorithm is checked: if it is
 ///   not `http://www.w3.org/TR/2001/REC-xml-c14n-20010315` (inclusive C14N) or
 ///   `http://www.w3.org/2001/10/xml-exc-c14n#` (exclusive C14N), an error is returned.
-/// - **Transform chains.** Only the implicit C14N transform is applied; explicit `<ds:Transform>`
-///   elements other than C14N are not supported.
-/// - **Multiple references.** Only the first `<ds:Reference>` is verified.
+/// - **Signer trust anchoring.** The embedded signer certificate is parsed only to extract its
+///   public key. The code does not yet validate that certificate against the EU LOTL, a national
+///   scheme-operator trust anchor, revocation data, or certificate validity policy.
+/// - **Transform chains.** Only the enveloped-signature removal for `URI=""` is applied. Explicit
+///   C14N transform URIs are accepted as already-canonical no-ops; other transforms are rejected.
+/// - **Reference URI fragments.** `URI="#id"` is rejected; only whole-document `URI=""` references
+///   are supported.
+/// - **Multiple references/signatures.** Rejected fail-closed; XML-DSig requires every reference to
+///   be checked and this minimal verifier supports exactly one signature with one reference.
+/// - **ECDSA signatures.** ECDSA-SHA256 is recognized as a known URI but verification is not wired
+///   up yet, so it is rejected as unsupported.
 ///
 /// For real-world Portuguese TSLs, the signature is typically a single enveloped signature over
 /// the whole document (`URI=""`) with exclusive C14N, RSA-SHA256.

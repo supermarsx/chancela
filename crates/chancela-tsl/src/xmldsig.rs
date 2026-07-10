@@ -26,10 +26,14 @@ const ECDSA_SHA256: &str = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"
 
 /// SHA-256 digest method.
 const SHA256_DIGEST: &str = "http://www.w3.org/2001/04/xmlenc#sha256";
+/// XML-DSig enveloped-signature transform.
+const ENVELOPED_SIGNATURE_TRANSFORM: &str = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
 
 /// The parsed XML-DSig `<ds:Signature>` element — enough to verify the signature.
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedSignature {
+    /// Number of `<ds:Signature>` elements seen. The minimal verifier supports exactly one.
+    pub signature_count: usize,
     /// The canonicalization algorithm URI.
     pub canonicalization_method: String,
     /// The signature algorithm URI.
@@ -38,6 +42,9 @@ pub(crate) struct ParsedSignature {
     pub signature_value: Vec<u8>,
     /// The first `<ds:Reference>` element (only one is supported).
     pub reference: Option<Reference>,
+    /// Number of `<ds:Reference>` elements seen. XML-DSig requires every reference to be checked;
+    /// this minimal verifier rejects multi-reference signatures instead of ignoring extras.
+    pub reference_count: usize,
     /// The signer certificate DER (from `<ds:KeyInfo>/<ds:X509Data>/<ds:X509Certificate>`), if
     /// the signature carried one.
     pub signer_cert_der: Option<Vec<u8>>,
@@ -54,6 +61,8 @@ pub(crate) struct Reference {
     pub uri: String,
     /// The digest method algorithm URI.
     pub digest_method: String,
+    /// Explicit transform algorithm URIs carried by this reference.
+    pub transforms: Vec<String>,
     /// The base64-decoded digest value bytes.
     pub digest_value: Vec<u8>,
 }
@@ -62,14 +71,56 @@ impl ParsedSignature {
     /// Verify the parsed signature against `xml` (the original document bytes).
     pub fn verify(self, xml: &[u8]) -> Result<(), TslError> {
         // 1. Structural completeness: the signature must carry a value and at least one reference.
+        if self.signature_count != 1 {
+            return Err(TslError::SignatureStructure(format!(
+                "expected exactly one <ds:Signature> element, found {}",
+                self.signature_count
+            )));
+        }
+        if self.signed_info_start == 0 && self.signed_info_end == 0 {
+            return Err(TslError::SignatureStructure(
+                "missing <ds:SignedInfo> element".to_owned(),
+            ));
+        }
+        if self.canonicalization_method.is_empty() {
+            return Err(TslError::SignatureStructure(
+                "missing <ds:CanonicalizationMethod Algorithm>".to_owned(),
+            ));
+        }
+        if self.signature_method.is_empty() {
+            return Err(TslError::SignatureStructure(
+                "missing <ds:SignatureMethod Algorithm>".to_owned(),
+            ));
+        }
         if self.signature_value.is_empty() {
             return Err(TslError::SignatureStructure(
                 "empty <ds:SignatureValue>".to_owned(),
             ));
         }
+        if self.reference_count > 1 {
+            return Err(TslError::SignatureStructure(format!(
+                "multiple <ds:Reference> elements are not supported by the minimal verifier: {}",
+                self.reference_count
+            )));
+        }
         let reference = self.reference.ok_or_else(|| {
             TslError::SignatureStructure("missing <ds:Reference> element".to_owned())
         })?;
+        if reference.digest_method.is_empty() {
+            return Err(TslError::SignatureStructure(
+                "missing <ds:DigestMethod Algorithm>".to_owned(),
+            ));
+        }
+        for transform in &reference.transforms {
+            match transform.as_str() {
+                ENVELOPED_SIGNATURE_TRANSFORM | C14N_10 | EXC_C14N_10 => {}
+                other => {
+                    return Err(TslError::SignatureUnsupportedAlgorithm(format!(
+                        "transform: {other}"
+                    )));
+                }
+            }
+        }
         if reference.digest_value.is_empty() {
             return Err(TslError::SignatureStructure(
                 "empty <ds:DigestValue>".to_owned(),
@@ -139,11 +190,14 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
         signature_method: String::new(),
         signature_value: Vec::new(),
         reference: None,
+        reference_count: 0,
         signer_cert_der: None,
         signed_info_start: 0,
         signed_info_end: 0,
+        signature_count: 0,
     };
 
+    let mut saw_signature = false;
     let mut in_signature = false;
     let mut in_signed_info = false;
     let mut in_signature_value = false;
@@ -157,16 +211,19 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
         match reader.read_event_into(&mut buf)? {
             Event::Start(e) => {
                 let local = local_name(e.name().as_ref());
-                let depth_in_sig = stack.iter().filter(|s| *s == "Signature").count();
                 stack.push(local.clone());
 
                 if local == "Signature" {
+                    sig.signature_count += 1;
+                    saw_signature = true;
                     in_signature = true;
                 } else if in_signature && local == "SignedInfo" {
                     in_signed_info = true;
                     // Record the byte offset of the SignedInfo start tag (including the tag
                     // itself, as it appears in the input).
-                    signed_info_start = Some(reader.buffer_position() as usize - e.as_ref().len());
+                    signed_info_start = Some(
+                        (reader.buffer_position() as usize).saturating_sub(e.as_ref().len() + 2),
+                    );
                 } else if in_signature && local == "SignatureValue" {
                     in_signature_value = true;
                     cur_text.clear();
@@ -177,6 +234,7 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
                     in_digest_value = true;
                     cur_text.clear();
                 } else if in_signature && local == "Reference" {
+                    sig.reference_count += 1;
                     // Extract the URI attribute.
                     let uri = e
                         .attributes()
@@ -192,8 +250,15 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
                     cur_reference = Some(Reference {
                         uri,
                         digest_method: String::new(),
+                        transforms: Vec::new(),
                         digest_value: Vec::new(),
                     });
+                } else if in_signature && local == "Transform" && cur_reference.is_some() {
+                    if let Some(uri) = read_algorithm_attr(&e) {
+                        if let Some(r) = cur_reference.as_mut() {
+                            r.transforms.push(uri);
+                        }
+                    }
                 } else if in_signature && local == "CanonicalizationMethod" && in_signed_info {
                     if let Some(uri) = read_algorithm_attr(&e) {
                         sig.canonicalization_method = uri;
@@ -209,11 +274,14 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
                         }
                     }
                 }
-                let _ = depth_in_sig;
             }
             Event::Empty(e) => {
                 let local = local_name(e.name().as_ref());
-                if in_signature && local == "Reference" {
+                if local == "Signature" {
+                    sig.signature_count += 1;
+                    saw_signature = true;
+                } else if in_signature && local == "Reference" {
+                    sig.reference_count += 1;
                     let uri = e
                         .attributes()
                         .find_map(|a| {
@@ -228,8 +296,15 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
                     cur_reference = Some(Reference {
                         uri,
                         digest_method: String::new(),
+                        transforms: Vec::new(),
                         digest_value: Vec::new(),
                     });
+                } else if in_signature && local == "Transform" && cur_reference.is_some() {
+                    if let Some(uri) = read_algorithm_attr(&e) {
+                        if let Some(r) = cur_reference.as_mut() {
+                            r.transforms.push(uri);
+                        }
+                    }
                 } else if in_signature && local == "DigestMethod" && cur_reference.is_some() {
                     if let Some(uri) = read_algorithm_attr(&e) {
                         if let Some(r) = cur_reference.as_mut() {
@@ -289,7 +364,7 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
         buf.clear();
     }
 
-    if sig.signature_method.is_empty() && sig.signature_value.is_empty() {
+    if !saw_signature {
         return Err(TslError::SignatureStructure(
             "no <ds:Signature> element found in the Trusted List".to_owned(),
         ));
@@ -479,6 +554,7 @@ mod tests {
         let reference = parsed.reference.expect("reference");
         assert_eq!(reference.uri, "");
         assert_eq!(reference.digest_method, SHA256_DIGEST);
+        assert!(reference.transforms.is_empty());
         assert_eq!(reference.digest_value, vec![0u8; 32]);
         assert!(parsed.signer_cert_der.is_some());
     }
