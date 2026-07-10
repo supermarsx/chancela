@@ -1020,7 +1020,11 @@ export function EntitiesPage() {
           </EmptyState>
         ) : (
           <div className="stack">
-            <div className="stack--tight" role="search" aria-label={t('entities.filters.aria')}>
+            <div
+              className="stack--tight entities-filters"
+              role="search"
+              aria-label={t('entities.filters.aria')}
+            >
               <div className="entities-filterbar filter">
                 <div className="entities-filterbar__primary">
                   <Field label={t('entities.filters.search.label')} htmlFor="entities-search">

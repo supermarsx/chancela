@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders, fetchTable } from '../../test/utils';
@@ -27,6 +28,10 @@ const ENTITY: Entity = {
   },
   statute: null,
 };
+
+function themeCss(): string {
+  return readFileSync('src/theme.css', 'utf8');
+}
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -146,8 +151,10 @@ describe('EntitiesPage', () => {
 
     expect(await screen.findByText(ENTITY.name)).toBeTruthy();
     const filters = screen.getByRole('search', { name: 'Pesquisar e filtrar entidades' });
+    expect(filters.className).toContain('entities-filters');
     const primary = filters.querySelector('.entities-filterbar__primary') as HTMLElement;
     expect(primary).toBeTruthy();
+    expect(primary.querySelectorAll('.field')).toHaveLength(3);
     expect(within(primary).getByLabelText('Pesquisar')).toBeTruthy();
     expect(within(primary).getByLabelText('Família')).toBeTruthy();
     expect(within(primary).getByLabelText('Forma')).toBeTruthy();
@@ -160,6 +167,9 @@ describe('EntitiesPage', () => {
     ) as HTMLDetailsElement;
     expect(advanced).toBeTruthy();
     expect(advanced.open).toBe(false);
+    const advancedBody = advanced.querySelector('.entities-advanced-filters__body.filter');
+    expect(advancedBody).toBeTruthy();
+    expect(advancedBody?.querySelectorAll('.field')).toHaveLength(8);
     expect(within(advanced).getByLabelText('NIPC')).toBeTruthy();
     expect(within(advanced).getByLabelText('Registo')).toBeTruthy();
 
@@ -169,7 +179,38 @@ describe('EntitiesPage', () => {
     expect(within(advanced).getByLabelText('Última alteração')).toBeTruthy();
   });
 
-  it('renders the default entity table columns as compact clamped cells', async () => {
+  it('pins entity table and filter CSS to single-line no-overflow rules', () => {
+    const css = themeCss();
+    const filterRule = css.match(/\.entities-filters\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const filterbarRule = css.match(/\.entities-filterbar\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const filterButtonRule =
+      css.match(/\.entities-filterbar__primary \.btn\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const tableWrapRule =
+      css.match(/\.entities-table \.table-wrap\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+    const tableCellRule =
+      css.match(/\.entities-table \.table th,\s*\.entities-table \.table td\s*{(?<body>[^}]*)}/s)
+        ?.groups?.body ?? '';
+    const truncateRule =
+      css.match(/\.entities-table__cell--truncate > \.truncate\s*{(?<body>[^}]*)}/s)?.groups
+        ?.body ?? '';
+    const cellLineRule =
+      css.match(/(?:^|\n)\.entity-cell-line\s*{(?<body>[^}]*)}/s)?.groups?.body ?? '';
+
+    expect(filterRule).toContain('min-width: 0;');
+    expect(filterRule).toContain('max-width: 100%;');
+    expect(filterRule).toContain('overflow-x: clip;');
+    expect(filterbarRule).toContain('overflow-x: clip;');
+    expect(filterButtonRule).toContain('max-width: 100%;');
+    expect(filterButtonRule).toContain('overflow: hidden;');
+    expect(tableWrapRule).toContain('overflow-x: hidden;');
+    expect(tableCellRule).toContain('white-space: nowrap;');
+    expect(truncateRule).toContain('white-space: nowrap;');
+    expect(truncateRule).not.toContain('-webkit-line-clamp');
+    expect(cellLineRule).toContain('flex-wrap: nowrap;');
+    expect(cellLineRule).toContain('white-space: nowrap;');
+  });
+
+  it('renders the default entity table columns as single-line truncating cells', async () => {
     const activity: LedgerEventView = {
       id: 'event-long-entity',
       seq: 1,
@@ -211,6 +252,9 @@ describe('EntitiesPage', () => {
     expect(cells).toHaveLength(5);
     for (const cell of cells.slice(0, 4)) {
       expect(cell.className).toContain('entities-table__cell--truncate');
+      const singleLine = cell.querySelector('.truncate, .entity-cell-line');
+      expect(singleLine).toBeTruthy();
+      expect(singleLine?.getAttribute('title')).toBeTruthy();
     }
     expect(cells[4].className).toContain('entities-table__cell--actions');
     expect(cells[4].className).not.toContain('entities-table__cell--truncate');
@@ -483,34 +527,31 @@ describe('EntityDetailPage', () => {
   it('surfaces the backend entity chronology and Mermaid graph source', async () => {
     const { fn, calls } = entityDetailFetch(ENTITY);
     const urls: string[] = [];
-    vi.stubGlobal(
-      'fetch',
-      ((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        urls.push(url);
-        if (url.includes(`/v1/entities/${ENTITY.id}/chronology`)) {
-          return Promise.resolve(
-            jsonResponse({
-              events: [
-                {
-                  date: '2020-01-01',
-                  kind: 'Constitution',
-                  description: 'Constituição de sociedade',
-                  source_inscription: '1',
-                  actors: ['Maria Silva'],
-                },
-              ],
-              mermaid: {
-                shareholders: 'graph TD\n  Maria[Maria Silva] --> Quota[Quota EUR 5000]',
-                organs: 'timeline\n  2020 : Gerência',
-                relationships: 'graph LR\n  Entidade --> Registo',
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      urls.push(url);
+      if (url.includes(`/v1/entities/${ENTITY.id}/chronology`)) {
+        return Promise.resolve(
+          jsonResponse({
+            events: [
+              {
+                date: '2020-01-01',
+                kind: 'Constitution',
+                description: 'Constituição de sociedade',
+                source_inscription: '1',
+                actors: ['Maria Silva'],
               },
-            }),
-          );
-        }
-        return fn(input, init);
-      }) as typeof fetch,
-    );
+            ],
+            mermaid: {
+              shareholders: 'graph TD\n  Maria[Maria Silva] --> Quota[Quota EUR 5000]',
+              organs: 'timeline\n  2020 : Gerência',
+              relationships: 'graph LR\n  Entidade --> Registo',
+            },
+          }),
+        );
+      }
+      return fn(input, init);
+    }) as typeof fetch);
 
     renderWithProviders(
       <Routes>
@@ -526,8 +567,9 @@ describe('EntityDetailPage', () => {
     expect(
       (screen.getByLabelText('Código Mermaid: Sócios e quotas') as HTMLTextAreaElement).value,
     ).toContain('Maria[Maria Silva] --> Quota[Quota EUR 5000]');
-    expect((screen.getByLabelText('Código Mermaid: Órgãos sociais') as HTMLTextAreaElement).value)
-      .toContain('timeline');
+    expect(
+      (screen.getByLabelText('Código Mermaid: Órgãos sociais') as HTMLTextAreaElement).value,
+    ).toContain('timeline');
     expect(urls.some((url) => url.includes(`/v1/entities/${ENTITY.id}/chronology`))).toBe(true);
     expect(calls.some((c) => c.url.includes('/chronology'))).toBe(false);
   });

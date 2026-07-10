@@ -1535,10 +1535,22 @@ a.btn.btn--iconOnly {
   min-width: 14rem;
 }
 
+.entities-filters {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.entities-filters .field,
+.entities-filters .control {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .entities-filterbar {
   min-width: 0;
   max-width: 100%;
-  overflow: visible;
+  overflow-x: clip;
   padding-bottom: 0;
 }
 
@@ -1548,27 +1560,35 @@ a.btn.btn--iconOnly {
   align-items: flex-end;
   gap: 0.75rem;
   min-width: 0;
+  width: 100%;
   max-width: 100%;
 }
 
 .entities-filterbar__primary .field {
   flex: 1 1 10rem;
   min-width: min(100%, 10rem);
+  max-width: 100%;
 }
 
 .entities-filterbar__primary .field:first-child {
   flex: 1.8 1 16rem;
   min-width: min(100%, 16rem);
+  max-width: 100%;
 }
 
 .entities-filterbar__primary .btn {
   flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .entities-advanced-filters {
+  box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
+  overflow-x: clip;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1593,6 +1613,8 @@ a.btn.btn--iconOnly {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   align-items: end;
   gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .entities-advanced-filters__body .field {
@@ -1601,13 +1623,18 @@ a.btn.btn--iconOnly {
 
 .entities-table {
   min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .entities-table .table-wrap {
+  max-width: 100%;
   overflow-x: hidden;
 }
 
 .entities-table .table {
+  width: 100%;
+  max-width: 100%;
   table-layout: fixed;
   min-width: 0;
 }
@@ -1616,13 +1643,12 @@ a.btn.btn--iconOnly {
 .entities-table .table td {
   min-width: 0;
   overflow: hidden;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .entities-table .table th {
   line-height: 1.2;
   text-overflow: ellipsis;
-  overflow-wrap: anywhere;
 }
 
 .entities-table .table th[data-entity-column='Actions'] {
@@ -1668,11 +1694,9 @@ a.btn.btn--iconOnly {
 }
 
 .entities-table__cell--truncate > .truncate {
-  display: -webkit-box;
+  display: block;
   line-height: 1.25;
-  white-space: normal;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
 }
 
 .entities-table__cell--truncate > .entity-cell-line {
@@ -1681,15 +1705,14 @@ a.btn.btn--iconOnly {
 
 .entity-cell-line {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.18rem 0.45rem;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  max-height: 3.2em;
   line-height: 1.25;
-  white-space: normal;
+  white-space: nowrap;
   vertical-align: middle;
 }
 
@@ -1717,7 +1740,7 @@ a.btn.btn--iconOnly {
 }
 
 .entities-table__cell--actions {
-  width: 1%;
+  width: 4.2rem;
 }
 
 .entities-table .table td.entities-table__cell--actions {

@@ -330,6 +330,16 @@ describe('EntitiesPage enrichment and filtering', () => {
 
     const entityRow = screen.getByText(ENTITY_A.name).closest('tr') as HTMLElement;
     const cells = within(entityRow).getAllByRole('cell');
+    expect(cells).toHaveLength(REGISTERED_ENTITY_COLUMNS.length);
+    for (const cell of cells.slice(0, -1)) {
+      expect(cell.className).toContain('entities-table__cell--truncate');
+      const singleLine = cell.querySelector('.truncate, .entity-cell-line');
+      expect(singleLine).toBeTruthy();
+      expect(singleLine?.getAttribute('title')).toBeTruthy();
+    }
+    expect(cells.at(-1)?.className).toContain('entities-table__cell--actions');
+    expect(within(cells.at(-1) as HTMLElement).getByRole('button', { name: 'Abrir' })).toBeTruthy();
+
     const typeLine = cells[3].querySelector('.entity-cell-line');
     expect(typeLine?.textContent).toBe('Lda.');
     expect(typeLine?.className).toContain('entity-cell-line--compact');
