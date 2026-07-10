@@ -61,9 +61,9 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test official_signature_import --locked official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
 - MCP resource/prompt coverage: `cargo test -p chancela-mcp --locked`
-- Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/signing/templates/i18n/subnav
+- Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/settings/signing/templates/i18n/subnav
   matrix:
-  `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/books/books.test.tsx src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/entities/entities.test.tsx src/features/ferramentas/ferramentas.test.tsx src/features/ferramentas/trust.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts src/ui/SubNav.test.tsx`
+  `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/books/books.test.tsx src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/entities/entities.test.tsx src/features/ferramentas/ferramentas.test.tsx src/features/ferramentas/trust.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/settings/SettingsPage.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts src/ui/SubNav.test.tsx`
 - Validator corpus manifest:
   `npm run test:validator-corpus`
 - Desktop lockfile resolution:
@@ -81,15 +81,19 @@ PDF/UA blocker-decomposition markers, local paper-book OCR API/UI/contract
 markers, focused paper-book OCR review browser workflow markers,
 caller-supplied archive timestamp append API markers, external-validator
 metadata API durability markers, the settings.read raw metadata download
-route/tests, Ferramentas panel/client/i18n markers including compact
-validator-report actions, live-provider assurance markers, validator manifest,
+route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
+locale keys, and non-destructive payload assertions, Ferramentas
+panel/client/i18n markers including compact validator-report actions,
+live-provider assurance markers, validator manifest,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
 imported-document review notification/export browser E2E marker; Playwright
 execution remains in the browser jobs so this recent-landed lane stays focused.
 Static markers are deletion/rename guards only; they do not certify legal
-validity, PDF/UA, production B-LT/B-LTA, SCAP verification, representative
-authority, live provider validity, or canonical OCR conversion.
+validity, legal retention schedules or approvals, retention deletion or
+anonymization execution, GDPR erasure, PDF/UA, production B-LT/B-LTA, SCAP
+verification, representative authority, live provider validity, or canonical OCR
+conversion.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 

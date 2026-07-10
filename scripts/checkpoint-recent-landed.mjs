@@ -188,6 +188,7 @@ const checks = [
       "src/features/notifications/NotificationBell.test.tsx",
       "src/features/notifications/NotificationsPage.test.tsx",
       "src/features/recovery/GestaoDadosSection.test.tsx",
+      "src/features/settings/SettingsPage.test.tsx",
       "src/features/signing/SigningPanel.test.tsx",
       "src/features/templates/TemplatesCatalogPage.test.tsx",
       "src/i18n/i18n.test.ts",
@@ -583,6 +584,56 @@ function assertCheckpointMap() {
     "crates/chancela-api/tests/privacy.rs",
     "retention_execution_records_bounded_archive_and_idempotent_repeat",
     "bounded retention execution regression coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "useDryRunPrivacyRetentionPolicy",
+    "web retention policy dry-run hook",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "function RetentionPolicyPanel",
+    "Settings privacy retention policy panel",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "function RetentionDryRunPanel",
+    "Settings privacy retention dry-run panel",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "destructive_execution_supported",
+    "Settings privacy retention non-destructive execution marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "lists, creates, patches, and dry-runs retention policies without destructive execution",
+    "Settings privacy retention policy UI regression coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "would_execute: false",
+    "Settings privacy retention dry-run no-execution assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "/execute|delete|anonymize/",
+    "Settings privacy retention destructive endpoint refusal assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "!call.body?.includes('\"anonymize\"')",
+    "Settings privacy retention destructive payload refusal assertion",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/en-US.ts",
+    "settings.privacy.retention.dryRun.notice.body",
+    "i18n retention dry-run boundary keys",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/pt-PT.ts",
+    "settings.privacy.retention.execution.false",
+    "i18n retention non-destructive execution key",
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",

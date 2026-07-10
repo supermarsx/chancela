@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-10 through committed implementation snapshot `b73de07b13f21ce2f36b617a92515c37d26d5610`,
+*Updated 2026-07-10 through committed implementation snapshot `246238e2cf4739bb14273cdd65f7c3cf7b3fb975`,
 refreshing the `cfcb3d9` baseline, the prior `4566715` coverage point,
 and the `c66ea3f`/`5fcaedd` checkpoint snapshot
 with commits through that snapshot:
@@ -60,8 +60,8 @@ web local OCR run UI, then `c66ea3f` decomposed PDF/UA blocker reporting,
 then `5fcaedd` recent checkpoint refresh, `6eecdc5` notification action
 icon-only hardening, `80e83d5` written-resolution evidence status binding,
 `ed2a72c` compact validator-report actions, `2451730` paper-book OCR review
-browser E2E workflow coverage, and `b73de07` declared signer-capacity evidence
-preservation.
+browser E2E workflow coverage, `b73de07` declared signer-capacity evidence
+preservation, and `246238e` web retention-policy dry-run exposure.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -83,6 +83,16 @@ blockers.
 
 Implementation checkpoints covered here:
 
+- `246238e` keeps Legal/Data Lifecycle/UX/CI **PARTIAL**: Settings >
+  Privacidade now exposes the existing retention-policy register as a list,
+  create, patch, filter, status, and dry-run UI, with retention copy added across
+  the locale catalog. The focused Settings test covers list/create/patch/dry-run
+  behavior and asserts the UI sends only retention-policy register or dry-run
+  requests, with no execution/delete/anonymize endpoint call and no execution,
+  delete, or anonymize payload markers. This is operator visibility and
+  regression coverage only, not destructive retention execution, deletion,
+  anonymization, GDPR erasure, legal default schedules, legal disposal approval,
+  or legal certification.
 - `b73de07` keeps Signatures/Trust/Documents **PARTIAL**: CMD, CSC remote,
   local PKCS#12, and official signed-PDF handoff paths can now preserve
   request/operator-declared signer-capacity evidence through pending sessions,
@@ -1142,8 +1152,12 @@ Implementation checkpoints covered here:
   `would_execute: false`; destructive, stale, missing-policy, and legal-hold cases remain blocked.
   Execution request evidence is now also persisted to `privacy-retention-executions.json` in
   data-dir mode and listed through `GET /v1/privacy/retention-executions` for authorized
-  operators. This is retention execution history only: it still performs no deletion,
-  anonymization, archive disposal, or legal-retention certification.
+  operators. Settings > Privacidade now exposes policy list/create/patch/filter/status controls and
+  a dry-run form using the same policy and dry-run endpoints; locale coverage includes the retention
+  labels and non-destructive boundary copy, and focused tests assert no execution, delete, or
+  anonymize endpoint/payload is sent by the UI flow. This is retention register, dry-run, and
+  execution-history evidence only: it still performs no deletion, anonymization, archive disposal,
+  legal-retention certification, legal default scheduling, or legal disposal approval.
 - **Persisted book legal hold:** `GET|PUT|DELETE /v1/books/{id}/legal-hold` stores book-level legal
   hold metadata (`reason`, `actor`, `set_at`) through the existing durable book aggregate and appends
   ledger events on set/clear. Archive packages automatically include active persisted holds in
@@ -1394,7 +1408,7 @@ Implementation checkpoints covered here:
 - **Recent-landed checkpoint:** `npm run test:checkpoint:recent-landed` and the GitHub Actions
   `recent-landed` job pin the cross-cutting recent work: paper import API tests including
   canonical-conversion preflight markers, archive package and DocTimeStamp evidence tests, local
-  PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution tests, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests, MCP
+  PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution tests, Settings retention policy list/create/patch/dry-run UI markers and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests, MCP
   resource/prompt tests, web contract/client/dashboard/ferramentas/signing/i18n/trust tests,
   external-validator report metadata API tests including data-dir sidecar reload, settings.read raw
   metadata download, malformed sidecar refusal, duplicate-identity conflict, and malformed sidecar
