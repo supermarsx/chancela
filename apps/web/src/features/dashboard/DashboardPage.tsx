@@ -6,16 +6,20 @@
  */
 import { Link } from 'react-router-dom';
 import { useDashboard } from '../../api/hooks';
+import { actStateLabels, bookKindLabels } from '../../api/labels';
 import type {
   DashboardAlert,
+  DashboardActStateCounts,
   DashboardLawReference,
+  DashboardOpenBook,
   DashboardReminder,
   LedgerEventView,
 } from '../../api/types';
-import { useT, type MessageKey, type TFunction, type TParams } from '../../i18n';
+import { useLocale, useT, type MessageKey, type TFunction, type TParams } from '../../i18n';
 import {
   Badge,
   Card,
+  EmptyState,
   ErrorNote,
   Icon,
   InlineWarning,
@@ -25,10 +29,13 @@ import {
   Tooltip,
 } from '../../ui';
 import { LedgerTable } from '../ledger/LedgerTable';
+import './DashboardPage.css';
 
 const RECENT_EVENTS_LIMIT = 10;
+const SUMMARY_LIST_LIMIT = 5;
 
 type QueueTone = 'neutral' | 'accent' | 'warn' | 'error';
+type ActivityKind = 'act' | 'book' | 'entity';
 
 interface WorkQueueItem {
   id: string;
@@ -39,6 +46,12 @@ interface WorkQueueItem {
   title: string;
   detail: string;
   meta: string[];
+  href?: string;
+}
+
+interface ActivityItem {
+  event: LedgerEventView;
+  kind: ActivityKind;
   href?: string;
 }
 
@@ -70,6 +83,97 @@ function Metric({ label, value, note }: { label: string; value: number | string;
       {note ? <p className="card__note">{note}</p> : null}
     </li>
   );
+}
+
+function formatDateTime(value: string, locale: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale);
+}
+
+function shortId(value: string): string {
+  return value.slice(0, 8);
+}
+
+function idFromScopedValue(value: string, prefix: string): string | undefined {
+  const marker = `${prefix}:`;
+  return value.startsWith(marker) ? value.slice(marker.length).trim() || undefined : undefined;
+}
+
+function firstChainId(event: LedgerEventView, prefix: string): string | undefined {
+  for (const chain of event.chains) {
+    const id = idFromScopedValue(chain, prefix);
+    if (id) return id;
+  }
+  return undefined;
+}
+
+function activityKind(event: LedgerEventView): ActivityKind | null {
+  if (event.kind.startsWith('act.') || idFromScopedValue(event.scope, 'act')) return 'act';
+  if (
+    event.kind.startsWith('book.') ||
+    idFromScopedValue(event.scope, 'book') ||
+    firstChainId(event, 'book')
+  ) {
+    return 'book';
+  }
+  if (
+    event.kind.startsWith('entity.') ||
+    idFromScopedValue(event.scope, 'entity') ||
+    firstChainId(event, 'company')
+  ) {
+    return 'entity';
+  }
+  return null;
+}
+
+function routeFromActivity(event: LedgerEventView, kind: ActivityKind): string | undefined {
+  if (kind === 'act') {
+    const actId = idFromScopedValue(event.scope, 'act');
+    return actId ? `/atas/${actId}` : undefined;
+  }
+  if (kind === 'book') {
+    const bookId = idFromScopedValue(event.scope, 'book') ?? firstChainId(event, 'book');
+    return bookId ? `/livros/${bookId}` : undefined;
+  }
+
+  const entityId =
+    idFromScopedValue(event.scope, 'entity') ??
+    firstChainId(event, 'company') ??
+    (!event.scope.includes(':') && event.scope !== 'global' && event.scope !== 'application'
+      ? event.scope
+      : undefined);
+  return entityId ? `/entidades/${entityId}` : undefined;
+}
+
+function activityTone(kind: ActivityKind): QueueTone {
+  if (kind === 'act') return 'accent';
+  if (kind === 'book') return 'neutral';
+  return 'warn';
+}
+
+function activityLabel(kind: ActivityKind, t: TFunction): string {
+  if (kind === 'act') return t('dashboard.activity.kind.act');
+  if (kind === 'book') return t('dashboard.activity.kind.book');
+  return t('dashboard.activity.kind.entity');
+}
+
+function recentActivityItems(events: LedgerEventView[]): ActivityItem[] {
+  return events
+    .slice()
+    .sort(compareByRecency)
+    .reduce<ActivityItem[]>((items, event) => {
+      if (items.length >= RECENT_EVENTS_LIMIT) return items;
+      const kind = activityKind(event);
+      if (!kind) return items;
+      items.push({ event, kind, href: routeFromActivity(event, kind) });
+      return items;
+    }, []);
+}
+
+function compactScope(scope: string): string {
+  const [kind, id] = scope.split(':', 2);
+  if (!id) return scope.length > 24 ? `${scope.slice(0, 8)}...` : scope;
+  return `${kind}:${shortId(id)}`;
 }
 
 function reminderTone(reminder: DashboardReminder): 'neutral' | 'accent' | 'warn' {
@@ -394,6 +498,216 @@ function OperatorWorkQueue({ items }: { items: WorkQueueItem[] }) {
   );
 }
 
+function RecentActivity({ events }: { events: LedgerEventView[] }) {
+  const t = useT();
+  const locale = useLocale();
+  const items = recentActivityItems(events);
+
+  return (
+    <Card title={t('dashboard.activity.title')}>
+      {items.length === 0 ? (
+        <EmptyState title={t('dashboard.activity.empty')} />
+      ) : (
+        <ol
+          className="dashboard-list dashboard-list--activity"
+          aria-label={t('dashboard.activity.aria')}
+        >
+          {items.map(({ event, kind, href }) => {
+            const title = t('dashboard.activity.eventTitle', { kind: event.kind });
+            return (
+              <li className="dashboard-list__item" key={event.id}>
+                <div className="dashboard-list__head">
+                  <Badge tone={activityTone(kind)}>{activityLabel(kind, t)}</Badge>
+                  {href ? (
+                    <Link className="dashboard-list__title" to={href}>
+                      {title}
+                    </Link>
+                  ) : (
+                    <span className="dashboard-list__title">{title}</span>
+                  )}
+                </div>
+                <div className="dashboard-list__meta">
+                  <span>{formatDateTime(event.timestamp, locale)}</span>
+                  <span>{t('dashboard.activity.actor', { actor: event.actor })}</span>
+                  <span title={event.scope}>
+                    {t('dashboard.activity.scope', { scope: compactScope(event.scope) })}
+                  </span>
+                  <span>{t('dashboard.activity.sequence', { seq: event.seq })}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Card>
+  );
+}
+
+function sortedOpenBooks(openBooks: DashboardOpenBook[]): DashboardOpenBook[] {
+  return openBooks.slice().sort((a, b) => {
+    const aTime = a.opening_date ? Date.parse(a.opening_date) : Number.NEGATIVE_INFINITY;
+    const bTime = b.opening_date ? Date.parse(b.opening_date) : Number.NEGATIVE_INFINITY;
+    const aValid = !Number.isNaN(aTime);
+    const bValid = !Number.isNaN(bTime);
+    if (aValid && bValid && aTime !== bTime) return bTime - aTime;
+    if (aValid !== bValid) return aValid ? -1 : 1;
+    return a.entity_name?.localeCompare(b.entity_name ?? '', 'pt') ?? 0;
+  });
+}
+
+function OpenBooksSummary({ openBooks }: { openBooks: DashboardOpenBook[] }) {
+  const t = useT();
+  const items = sortedOpenBooks(openBooks).slice(0, SUMMARY_LIST_LIMIT);
+  const hidden = Math.max(0, openBooks.length - items.length);
+
+  return (
+    <Card title={t('dashboard.openItems.title')}>
+      {items.length === 0 ? (
+        <EmptyState title={t('dashboard.openItems.empty')} />
+      ) : (
+        <>
+          <ol className="dashboard-list" aria-label={t('dashboard.openItems.aria')}>
+            {items.map((book) => {
+              const title = book.entity_name?.trim() || t('dashboard.openItems.unnamedEntity');
+              const href = frontendRouteFromApi(book.links.book) ?? `/livros/${book.book_id}`;
+              return (
+                <li className="dashboard-list__item" key={book.book_id}>
+                  <div className="dashboard-list__head">
+                    <Badge tone="neutral">{bookKindLabels[book.kind]}</Badge>
+                    <Link className="dashboard-list__title" to={href}>
+                      {title}
+                    </Link>
+                  </div>
+                  <p className="dashboard-list__detail muted">
+                    {book.purpose?.trim() || t('dashboard.openItems.noPurpose')}
+                  </p>
+                  <div className="dashboard-list__meta">
+                    <span>
+                      {t('dashboard.openItems.nextAta', { number: book.next_ata_number })}
+                    </span>
+                    <span>{t('dashboard.openItems.openActs', { count: book.open_acts })}</span>
+                    <span>{t('dashboard.openItems.totalActs', { count: book.total_acts })}</span>
+                    <span>
+                      {book.opening_date
+                        ? t('dashboard.openItems.openedAt', { date: book.opening_date })
+                        : t('dashboard.openItems.openedUnknown')}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          {hidden > 0 ? (
+            <p className="dashboard-list__more muted">
+              {t('dashboard.openItems.more', { count: hidden })}
+            </p>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+const ACTIVE_ACT_STATES: (keyof DashboardActStateCounts)[] = [
+  'Draft',
+  'Review',
+  'Convened',
+  'Deliberated',
+  'TextApproved',
+  'Signing',
+];
+
+function ActStatusSummary({ counts }: { counts: DashboardActStateCounts }) {
+  const t = useT();
+  const activeTotal = ACTIVE_ACT_STATES.reduce((total, state) => total + counts[state], 0);
+
+  return (
+    <Card title={t('dashboard.actStatus.title')}>
+      {activeTotal === 0 ? (
+        <EmptyState title={t('dashboard.actStatus.empty')} />
+      ) : (
+        <dl className="dashboard-status-grid" aria-label={t('dashboard.actStatus.aria')}>
+          {ACTIVE_ACT_STATES.map((state) => (
+            <div className="dashboard-status-grid__item" key={state}>
+              <dt>{actStateLabels[state]}</dt>
+              <dd>{counts[state]}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </Card>
+  );
+}
+
+function reminderSortValue(reminder: DashboardReminder): number {
+  const date = parseReminderDate(reminder.due_date);
+  if (date !== null) return date;
+  if (reminder.status === 'Overdue') return Number.NEGATIVE_INFINITY;
+  return Number.POSITIVE_INFINITY;
+}
+
+function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] }) {
+  const t = useT();
+  const sortedReminders = dedupeReminders(reminders)
+    .slice()
+    .sort((a, b) => reminderSortValue(a) - reminderSortValue(b));
+  const items = sortedReminders.slice(0, SUMMARY_LIST_LIMIT);
+  const hidden = Math.max(0, sortedReminders.length - items.length);
+
+  return (
+    <Card title={t('dashboard.dates.title')}>
+      {items.length === 0 ? (
+        <EmptyState title={t('dashboard.dates.empty')} />
+      ) : (
+        <>
+          <ol className="dashboard-list" aria-label={t('dashboard.dates.aria')}>
+            {items.map((reminder) => {
+              const entityName =
+                reminder.entity_name.trim() || t('dashboard.workQueue.entity.unnamed');
+              const href = routeFromReminder(reminder);
+              const dateLabel = reminderDateLabel(reminder.due_date, t);
+              return (
+                <li
+                  className="dashboard-list__item"
+                  key={`${reminder.entity_id}:${reminder.source_rule}:${reminder.source_profile}:${reminder.due_date}:${reminder.status}`}
+                >
+                  <div className="dashboard-list__head">
+                    <Badge tone={reminderTone(reminder)}>
+                      {reminderStatusLabel(reminder.status, t)}
+                    </Badge>
+                    {href ? (
+                      <Link className="dashboard-list__title" to={href}>
+                        {entityName}
+                      </Link>
+                    ) : (
+                      <span className="dashboard-list__title">{entityName}</span>
+                    )}
+                  </div>
+                  <div className="dashboard-list__meta">
+                    <span>{t('dashboard.dates.due', { date: dateLabel })}</span>
+                    <span>
+                      {t('dashboard.workQueue.source', {
+                        rule: reminder.source_rule || t('dashboard.workQueue.rule.missing'),
+                        profile:
+                          reminder.source_profile || t('dashboard.workQueue.profile.missing'),
+                      })}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          {hidden > 0 ? (
+            <p className="dashboard-list__more muted">
+              {t('dashboard.dates.more', { count: hidden })}
+            </p>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
 export function DashboardPage() {
   const t = useT();
   const { data, isLoading, error } = useDashboard();
@@ -479,6 +793,13 @@ export function DashboardPage() {
             : t('dashboard.compliance.body.other', { count: data.unresolved_compliance })}
         </InlineWarning>
       ) : null}
+
+      <div className="dashboard-section-grid">
+        <RecentActivity events={data.recent_events} />
+        <OpenBooksSummary openBooks={data.current_work.open_books} />
+        <ActStatusSummary counts={data.current_work.act_counts_by_state} />
+        <ReminderDatesSummary reminders={data.reminders} />
+      </div>
 
       <OperatorWorkQueue items={workQueueItems} />
 

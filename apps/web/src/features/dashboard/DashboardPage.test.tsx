@@ -33,7 +33,10 @@ const baseDashboard: Dashboard = {
   recent_events: [],
 };
 
-function eventFor(seq: number): LedgerEventView {
+function eventFor(
+  seq: number,
+  overrides: Partial<Pick<LedgerEventView, 'kind' | 'scope' | 'chains' | 'timestamp'>> = {},
+): LedgerEventView {
   return {
     id: `event-${seq}`,
     seq,
@@ -47,6 +50,7 @@ function eventFor(seq: number): LedgerEventView {
     hash: `${seq}`.padStart(64, 'a'),
     chains: ['global'],
     attestation: null,
+    ...overrides,
   };
 }
 
@@ -66,7 +70,7 @@ describe('DashboardPage', () => {
       acts_awaiting_signature: 6,
       acts_sealed: 7,
       ledger_length: 12,
-      recent_events: [4, 12, 1, 7, 3, 9, 11, 2, 6, 5, 10, 8].map(eventFor),
+      recent_events: [4, 12, 1, 7, 3, 9, 11, 2, 6, 5, 10, 8].map((seq) => eventFor(seq)),
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
@@ -109,6 +113,151 @@ describe('DashboardPage', () => {
     );
   });
 
+  it('shows the 10 most recent act, book, and entity activities with inferred links', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      recent_events: [
+        eventFor(1, { kind: 'settings.updated', scope: 'application' }),
+        eventFor(2, {
+          kind: 'entity.created',
+          scope: 'entity-2',
+          chains: ['global', 'company:entity-2'],
+        }),
+        eventFor(3, {
+          kind: 'book.opened',
+          scope: 'book:book-3',
+          chains: ['global', 'book:book-3'],
+        }),
+        eventFor(4, { kind: 'act.drafted', scope: 'act:act-4' }),
+        eventFor(5, {
+          kind: 'entity.updated',
+          scope: 'entity-5',
+          chains: ['global', 'company:entity-5'],
+        }),
+        eventFor(6, {
+          kind: 'book.closed',
+          scope: 'book:book-6',
+          chains: ['global', 'book:book-6'],
+        }),
+        eventFor(7, { kind: 'act.advanced', scope: 'act:act-7' }),
+        eventFor(8, {
+          kind: 'entity.registry_imported',
+          scope: 'entity-8',
+          chains: ['global', 'company:entity-8'],
+        }),
+        eventFor(9, {
+          kind: 'book.legal_hold_set',
+          scope: 'book:book-9',
+          chains: ['global', 'book:book-9'],
+        }),
+        eventFor(10, { kind: 'act.sealed', scope: 'act:act-10' }),
+        eventFor(11, {
+          kind: 'entity.statute_updated',
+          scope: 'entity-11',
+          chains: ['global', 'company:entity-11'],
+        }),
+        eventFor(12, {
+          kind: 'book.exported',
+          scope: 'book:book-12',
+          chains: ['global', 'book:book-12'],
+        }),
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const activity = await screen.findByRole('list', {
+      name: 'Atividade recente de atas, livros e entidades',
+    });
+    const items = within(activity).getAllByRole('listitem');
+    expect(items).toHaveLength(10);
+    expect(items.map((item) => within(item).getByText(/^Evento /).textContent)).toEqual([
+      'Evento book.exported',
+      'Evento entity.statute_updated',
+      'Evento act.sealed',
+      'Evento book.legal_hold_set',
+      'Evento entity.registry_imported',
+      'Evento act.advanced',
+      'Evento book.closed',
+      'Evento entity.updated',
+      'Evento act.drafted',
+      'Evento book.opened',
+    ]);
+    expect(within(items[0]).getByRole('link').getAttribute('href')).toBe('/livros/book-12');
+    expect(within(items[2]).getByRole('link').getAttribute('href')).toBe('/atas/act-10');
+    expect(screen.queryByText('Evento entity.created')).toBeNull();
+    expect(screen.queryByText('Evento settings.updated')).toBeNull();
+  });
+
+  it('renders open books, active act states, and dated reminders from current dashboard data', async () => {
+    const dashboard: Dashboard = {
+      ...baseDashboard,
+      current_work: {
+        open_books: [
+          {
+            book_id: 'book-1',
+            entity_id: 'entity-1',
+            entity_name: 'Encosto Estratégico, S.A.',
+            kind: 'AssembleiaGeral',
+            purpose: 'Livro de atas da assembleia geral',
+            opening_date: '2026-02-01',
+            last_ata_number: 3,
+            total_acts: 4,
+            open_acts: 2,
+            next_ata_number: 4,
+            links: {
+              entity: '/v1/entities/entity-1',
+              book: '/v1/books/book-1',
+              act: null,
+              ledger: '/v1/ledger/events?chain=book:book-1',
+            },
+          },
+        ],
+        act_counts_by_state: {
+          ...baseDashboard.current_work.act_counts_by_state,
+          Draft: 2,
+          Review: 1,
+          Signing: 1,
+        },
+      },
+      reminders: [
+        {
+          due_date: '2026-03-31',
+          severity: 'Advisory',
+          status: 'DueSoon',
+          reason: 'Annual item due.',
+          entity_id: 'entity-1',
+          entity_name: 'Encosto Estratégico, S.A.',
+          source_rule: 'csc-art376-annual',
+          source_profile: 'csc-commercial',
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
+    renderWithProviders(<DashboardPage />);
+
+    const openItems = await screen.findByRole('list', { name: 'Livros abertos atualmente em uso' });
+    expect(
+      within(openItems)
+        .getByRole('link', { name: 'Encosto Estratégico, S.A.' })
+        .getAttribute('href'),
+    ).toBe('/livros/book-1');
+    expect(within(openItems).getByText('Assembleia Geral')).toBeTruthy();
+    expect(within(openItems).getByText('Próxima ata n.º 4')).toBeTruthy();
+    expect(within(openItems).getByText('2 atas abertas')).toBeTruthy();
+
+    const status = screen.getByLabelText('Atas ativas por estado');
+    expect(within(status).getByText('Rascunho')).toBeTruthy();
+    expect(within(status).getByText('Em revisão')).toBeTruthy();
+    expect(within(status).getByText('Em assinatura')).toBeTruthy();
+
+    const dates = screen.getByRole('list', { name: 'Lembretes com data' });
+    expect(within(dates).getByText('Vence em 2026-03-31')).toBeTruthy();
+    expect(within(dates).getByText('Fonte csc-art376-annual / csc-commercial')).toBeTruthy();
+  });
+
   it('renders annual-meeting reminders in the work queue without adding rows to the recent-events table', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,
@@ -125,7 +274,7 @@ describe('DashboardPage', () => {
           source_profile: 'csc-commercial',
         },
       ],
-      recent_events: [1].map(eventFor),
+      recent_events: [1].map((seq) => eventFor(seq)),
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));
@@ -176,7 +325,7 @@ describe('DashboardPage', () => {
           },
         },
       ],
-      recent_events: [1].map(eventFor),
+      recent_events: [1].map((seq) => eventFor(seq)),
     };
 
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard }]));

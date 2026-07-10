@@ -1,0 +1,130 @@
+.dashboard-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.65rem;
+}
+
+.dashboard-metrics > .card {
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.dashboard-metrics .card__label {
+  font-size: 0.56rem;
+  line-height: 1.2;
+  margin-bottom: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-metrics .card__metric {
+  font-size: 1.55rem;
+}
+
+.dashboard-metrics .card__note {
+  font-size: 0.68rem;
+  line-height: 1.25;
+  margin-top: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 960px) {
+  .dashboard-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.dashboard-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.dashboard-list {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-list__item {
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.dashboard-list__head,
+.dashboard-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  min-width: 0;
+}
+
+.dashboard-list__title {
+  min-width: 0;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-list__detail {
+  margin: 0.35rem 0 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-list__meta {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.25;
+  margin-top: 0.35rem;
+}
+
+.dashboard-list__more {
+  margin: 0.65rem 0 0;
+  font-size: 0.82rem;
+}
+
+.dashboard-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.dashboard-status-grid__item {
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.dashboard-status-grid dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-status-grid dd {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  margin: 0.35rem 0 0;
+}
+
+@media (max-width: 860px) {
+  .dashboard-section-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
