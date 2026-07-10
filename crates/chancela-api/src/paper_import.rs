@@ -2260,7 +2260,7 @@ fn paper_book_download_filename(meta: &StoredPaperBookImportMeta) -> String {
 }
 
 fn paper_book_package_extension(meta: &StoredPaperBookImportMeta) -> &'static str {
-    let ext = match meta
+    match meta
         .content_type
         .split(';')
         .next()
@@ -2272,8 +2272,7 @@ fn paper_book_package_extension(meta: &StoredPaperBookImportMeta) -> &'static st
         "application/pdf" => "pdf",
         "application/zip" => "zip",
         _ => "bin",
-    };
-    ext
+    }
 }
 
 fn verify_package_fixity(
