@@ -19,7 +19,10 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::authz::require_permission;
 use crate::error::ApiError;
-use crate::settings::{PlatformLogLevel, validate_platform_service_id};
+use crate::settings::{
+    PLATFORM_API_SERVICE_ID, PLATFORM_APP_SERVICE_ID, PLATFORM_MCP_STDIO_SERVICE_ID,
+    PlatformLogLevel, PlatformLoggingSettings, validate_platform_service_id,
+};
 
 pub(crate) const PLATFORM_LOG_DEFAULT_TAIL: usize = 100;
 pub(crate) const PLATFORM_LOG_MAX_TAIL: usize = 200;
@@ -231,10 +234,20 @@ pub(crate) struct PlatformLogInput<'a> {
 pub(crate) async fn record_platform_log(
     state: &AppState,
     input: PlatformLogInput<'_>,
-) -> Result<PlatformLogEntry, ApiError> {
+) -> Result<(), ApiError> {
+    validate_platform_service_id(input.service_id)?;
+    validate_emitted_level(input.level)?;
+    let threshold = {
+        let settings = state.settings.read().await;
+        platform_log_threshold(&settings.platform.logging, input.service_id)
+    };
+    if !platform_log_level_enabled(input.level, threshold) {
+        return Ok(());
+    }
+
     let mut logs = state.platform_logs.write().await;
     let before = logs.clone();
-    let entry = logs.push(
+    logs.push(
         input.service_id,
         input.level,
         input.target,
@@ -249,7 +262,43 @@ pub(crate) async fn record_platform_log(
             )));
         }
     }
-    Ok(entry)
+    Ok(())
+}
+
+fn platform_log_threshold(logging: &PlatformLoggingSettings, service_id: &str) -> PlatformLogLevel {
+    if let Some(level) = logging.service_overrides.get(service_id) {
+        return *level;
+    }
+    let area = match service_id {
+        PLATFORM_APP_SERVICE_ID => logging.app,
+        PLATFORM_API_SERVICE_ID => logging.api,
+        PLATFORM_MCP_STDIO_SERVICE_ID => logging.mcp,
+        _ => logging.global,
+    };
+    stricter_log_threshold(logging.global, area)
+}
+
+fn platform_log_level_enabled(level: PlatformLogLevel, threshold: PlatformLogLevel) -> bool {
+    threshold != PlatformLogLevel::Off && log_level_rank(level) >= log_level_rank(threshold)
+}
+
+fn stricter_log_threshold(left: PlatformLogLevel, right: PlatformLogLevel) -> PlatformLogLevel {
+    if log_level_rank(left) >= log_level_rank(right) {
+        left
+    } else {
+        right
+    }
+}
+
+fn log_level_rank(level: PlatformLogLevel) -> u8 {
+    match level {
+        PlatformLogLevel::Trace => 0,
+        PlatformLogLevel::Debug => 1,
+        PlatformLogLevel::Info => 2,
+        PlatformLogLevel::Warn => 3,
+        PlatformLogLevel::Error => 4,
+        PlatformLogLevel::Off => 5,
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -319,12 +368,12 @@ fn limitations(durable: bool) -> Vec<String> {
         ]
     } else {
         vec![
-            "This is an in-memory API log ring; entries reset when the API process restarts."
+            "This is an in-memory API-owned structured log ring; entries reset when the API process restarts."
                 .to_owned(),
         ]
     };
     limitations.push(
-        "It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards them."
+        "It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards structured events into the API."
             .to_owned(),
     );
     limitations

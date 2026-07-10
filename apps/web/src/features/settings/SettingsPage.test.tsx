@@ -347,8 +347,8 @@ function platformServicesResponse(settings: TestSettings) {
 }
 
 const PLATFORM_LOG_LIMITATIONS = [
-  'This is an in-memory API log ring; entries reset when the API process restarts.',
-  'It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards them.',
+  'This is an in-memory API-owned structured log ring; entries reset when the API process restarts.',
+  'It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards structured events into the API.',
 ];
 
 const PLATFORM_LOG_FIXTURE = [
@@ -1119,9 +1119,9 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/configuracoes?sec=operacoes']);
 
-    expect(await screen.findByText('Cauda de logs da plataforma')).toBeTruthy();
+    expect(await screen.findByText('Cauda estruturada de logs da API')).toBeTruthy();
     expect(await screen.findByText('Platform service status read')).toBeTruthy();
-    expect(screen.getByText(/in-memory API log ring/)).toBeTruthy();
+    expect(screen.getByText(/in-memory API-owned structured log ring/)).toBeTruthy();
     expect(screen.getByText('2 entradas · limite 100 · cronológico')).toBeTruthy();
     expect(screen.getAllByText('Servidor API').length).toBeGreaterThan(0);
     expect(screen.getByText('platform.services')).toBeTruthy();

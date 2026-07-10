@@ -2243,8 +2243,8 @@ export function usePlatformServices() {
   });
 }
 
-/** Platform log tail (`GET /v1/platform/logs`): API-owned in-memory ring, newest
- * entries returned in chronological order after optional service/level filters. */
+/** Platform log tail (`GET /v1/platform/logs`): API-owned structured entries
+ * returned from the bounded tail after optional service/level filters. */
 export function usePlatformLogs(params: PlatformLogsQueryParams) {
   return useQuery({
     queryKey: keys.platformLogs(params),

@@ -1369,9 +1369,9 @@ export const ptPT = {
   'settings.platform.logLevel.off': 'Off',
   'settings.platform.auditTail': 'Auditoria de operações',
   'settings.platform.audit.empty': 'Sem eventos de operações registados.',
-  'settings.platform.logs.cardTitle': 'Cauda de logs da plataforma',
+  'settings.platform.logs.cardTitle': 'Cauda estruturada de logs da API',
   'settings.platform.logs.hint':
-    'Mostra as entradas mais recentes do anel em memória gerido pela API. Não é histórico de stdout/stderr nem inclui logs do processo MCP sem encaminhamento externo.',
+    'Mostra as entradas estruturadas mais recentes, geridas pela API, retidas na cauda limitada da plataforma. Não é leitura de stdout/stderr nem inclui logs do processo MCP sem encaminhamento estruturado externo.',
   'settings.platform.logs.refresh': 'Atualizar logs',
   'settings.platform.logs.refreshing': 'A atualizar logs…',
   'settings.platform.logs.loading': 'A carregar logs da plataforma…',
@@ -1385,7 +1385,7 @@ export const ptPT = {
   'settings.platform.logs.summary': '{count} entradas · limite {tail} · {order}',
   'settings.platform.logs.empty.title': 'Sem logs da plataforma',
   'settings.platform.logs.empty.body':
-    'Não há entradas que correspondam aos filtros no anel em memória atual da API.',
+    'Não há entradas estruturadas geridas pela API que correspondam aos filtros na cauda limitada atual.',
   'settings.platform.logs.limitations.title': 'Âmbito dos logs',
   'settings.platform.logs.column.seq': 'Seq',
   'settings.platform.logs.column.time': 'Hora',

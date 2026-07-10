@@ -25,7 +25,7 @@
   "tail": 5,
   "order": "chronological",
   "limitations": [
-    "This is an in-memory API log ring; entries reset when the API process restarts.",
-    "It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards them."
+    "This is an in-memory API-owned structured log ring; entries reset when the API process restarts.",
+    "It is not historical stdout/stderr tailing and does not include MCP process logs unless a future supervisor forwards structured events into the API."
   ]
 }

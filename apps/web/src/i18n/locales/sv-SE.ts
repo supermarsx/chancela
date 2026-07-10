@@ -1358,9 +1358,9 @@ export const svSE: Catalog = {
   'settings.platform.logLevel.off': 'Off',
   'settings.platform.auditTail': 'Operations audit',
   'settings.platform.audit.empty': 'No operations events have been recorded.',
-  'settings.platform.logs.cardTitle': 'Platform log tail',
+  'settings.platform.logs.cardTitle': 'API-owned structured log tail',
   'settings.platform.logs.hint':
-    'Shows the newest entries in the API-owned in-memory ring. This is not historical stdout/stderr and does not include MCP process logs without external forwarding.',
+    'Shows the newest API-owned structured platform log entries retained in the bounded tail. This is not stdout/stderr tailing and does not include MCP process logs unless an external supervisor forwards structured events.',
   'settings.platform.logs.refresh': 'Refresh logs',
   'settings.platform.logs.refreshing': 'Refreshing logs…',
   'settings.platform.logs.loading': 'Loading platform logs…',
@@ -1374,7 +1374,7 @@ export const svSE: Catalog = {
   'settings.platform.logs.summary': '{count} entries · tail {tail} · {order}',
   'settings.platform.logs.empty.title': 'No platform logs',
   'settings.platform.logs.empty.body':
-    'No entries match the selected filters in the current API memory ring.',
+    'No API-owned structured entries match the selected filters in the current bounded tail.',
   'settings.platform.logs.limitations.title': 'Log scope',
   'settings.platform.logs.column.seq': 'Seq',
   'settings.platform.logs.column.time': 'Time',

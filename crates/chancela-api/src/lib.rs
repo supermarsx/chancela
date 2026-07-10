@@ -5331,7 +5331,7 @@ mod tests {
         target: &str,
         message: &str,
         context: Option<Value>,
-    ) -> PlatformLogEntry {
+    ) {
         platform_logs::record_platform_log(
             state,
             platform_logs::PlatformLogInput {
@@ -5343,7 +5343,7 @@ mod tests {
             },
         )
         .await
-        .expect("platform log seed")
+        .expect("platform log seed");
     }
 
     #[tokio::test]
@@ -5362,7 +5362,7 @@ mod tests {
                 .any(|item| item
                     .as_str()
                     .expect("limitation text")
-                    .contains("in-memory API log ring"))
+                    .contains("in-memory API-owned structured log ring"))
         );
     }
 
@@ -5548,6 +5548,179 @@ mod tests {
         let (status, body) = send(state, get("/v1/platform/logs")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["logs"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn platform_logs_respect_global_floor_and_area_thresholds() {
+        let state = AppState::default();
+        {
+            let mut settings = state.settings.write().await;
+            settings.platform.logging.global = PlatformLogLevel::Warn;
+            settings.platform.logging.app = PlatformLogLevel::Debug;
+            settings.platform.logging.api = PlatformLogLevel::Info;
+            settings.platform.logging.mcp = PlatformLogLevel::Error;
+            settings.platform.logging.service_overrides.clear();
+        }
+
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Info,
+            "platform.threshold",
+            "api info suppressed by global floor",
+            None,
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Warn,
+            "platform.threshold",
+            "api warn recorded",
+            None,
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "mcp_stdio",
+            PlatformLogLevel::Warn,
+            "platform.threshold",
+            "mcp warn suppressed by area threshold",
+            None,
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "mcp_stdio",
+            PlatformLogLevel::Error,
+            "platform.threshold",
+            "mcp error recorded",
+            None,
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "app",
+            PlatformLogLevel::Debug,
+            "platform.threshold",
+            "app debug suppressed by global floor",
+            None,
+        )
+        .await;
+        seed_platform_log(
+            &state,
+            "app",
+            PlatformLogLevel::Warn,
+            "platform.threshold",
+            "app warn recorded",
+            None,
+        )
+        .await;
+
+        let (status, body) = send(state, get("/v1/platform/logs?tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        let messages = body["logs"]
+            .as_array()
+            .expect("logs array")
+            .iter()
+            .map(|entry| entry["message"].as_str().expect("message"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            messages,
+            vec![
+                "api warn recorded",
+                "mcp error recorded",
+                "app warn recorded"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_logs_service_override_can_lower_threshold_or_turn_service_off() {
+        let state = AppState::default();
+        {
+            let mut settings = state.settings.write().await;
+            settings.platform.logging.global = PlatformLogLevel::Error;
+            settings.platform.logging.api = PlatformLogLevel::Error;
+            settings
+                .platform
+                .logging
+                .service_overrides
+                .insert("api".to_owned(), PlatformLogLevel::Debug);
+        }
+
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Debug,
+            "platform.threshold",
+            "api debug recorded by service override",
+            None,
+        )
+        .await;
+        state
+            .settings
+            .write()
+            .await
+            .platform
+            .logging
+            .service_overrides
+            .insert("api".to_owned(), PlatformLogLevel::Off);
+        seed_platform_log(
+            &state,
+            "api",
+            PlatformLogLevel::Error,
+            "platform.threshold",
+            "api error suppressed by service override off",
+            None,
+        )
+        .await;
+
+        let (status, body) = send(state, get("/v1/platform/logs?service_id=api&tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        let messages = body["logs"]
+            .as_array()
+            .expect("logs array")
+            .iter()
+            .map(|entry| entry["message"].as_str().expect("message"))
+            .collect::<Vec<_>>();
+        assert_eq!(messages, vec!["api debug recorded by service override"]);
+    }
+
+    #[tokio::test]
+    async fn platform_logs_apply_persisted_thresholds_to_api_owned_endpoint_logs() {
+        let tmp = TempDir::new();
+        let first = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(
+            first,
+            put_json(
+                "/v1/settings",
+                json!({
+                    "platform": {
+                        "logging": {
+                            "global": "warn",
+                            "app": "info",
+                            "api": "info",
+                            "mcp": "info",
+                            "service_overrides": {}
+                        }
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "settings response: {body}");
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(restarted.clone(), get("/v1/platform/services")).await;
+        assert_eq!(status, StatusCode::OK, "services response: {body}");
+        let (status, body) = send(restarted, get("/v1/platform/logs?tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["logs"], json!([]));
+        assert!(
+            !tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE).exists(),
+            "suppressed API-owned log should not create a platform log sidecar"
+        );
     }
 
     #[tokio::test]
