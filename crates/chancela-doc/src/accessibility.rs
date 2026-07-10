@@ -241,7 +241,7 @@ pub struct NonTextContentReport {
     pub text_alternative_count: usize,
     /// Number of decorative artifact entries supplied.
     pub decorative_artifact_count: usize,
-    /// Count of model blocks this writer treats as known decorative content.
+    /// Count of model blocks this writer emits as known decorative content.
     pub known_decorative_block_count: usize,
     /// Known decorative block targets absent from the supplied decorative entries.
     pub missing_decorative_artifacts: Vec<String>,
@@ -775,13 +775,13 @@ fn known_decorative_targets(doc: &DocumentModel) -> Vec<String> {
     doc.blocks
         .iter()
         .enumerate()
-        .filter(|(_, block)| is_known_decorative_block(block))
+        .filter(|(_, block)| emits_decorative_artifact_block(block))
         .map(|(index, _)| block_target(index))
         .collect()
 }
 
-fn is_known_decorative_block(block: &Block) -> bool {
-    matches!(block, Block::PageBreak | Block::Rule)
+fn emits_decorative_artifact_block(block: &Block) -> bool {
+    matches!(block, Block::Rule)
 }
 
 fn block_target(index: usize) -> String {

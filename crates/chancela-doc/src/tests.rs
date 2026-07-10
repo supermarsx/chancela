@@ -1008,9 +1008,61 @@ fn accessibility_explicit_alt_text_decorative_model_clears_local_blockers_withou
 }
 
 #[test]
+fn accessibility_page_breaks_do_not_require_decorative_accounting() {
+    let mut doc = DocumentModel::new("Quebra", "Encosto Estratégico Lda", "PageBreak");
+    doc.blocks = vec![
+        Block::Paragraph {
+            runs: vec![Run {
+                text: "Primeira página.".to_string(),
+                bold: false,
+                italic: false,
+            }],
+        },
+        Block::PageBreak,
+        Block::Paragraph {
+            runs: vec![Run {
+                text: "Segunda página.".to_string(),
+                bold: false,
+                italic: false,
+            }],
+        },
+    ];
+
+    let report = pdfa::accessibility_report(&doc);
+
+    assert_eq!(report.non_text_content.known_decorative_block_count, 0);
+    assert!(
+        report
+            .non_text_content
+            .missing_decorative_artifacts
+            .is_empty()
+    );
+    assert!(!report.alt_text_model_present);
+    assert!(!report.pdf_ua_claimed);
+    assert!(
+        !report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
+    );
+    assert!(
+        !report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::NonTextContentNotAccountedFor)
+    );
+
+    let bytes = pdfa::write(&doc).expect("write page-break PDF");
+    assert!(
+        !bytes.windows(7).any(|w| w == b"pdfuaid"),
+        "page-break accounting must not introduce PDF/UA identification"
+    );
+    let parsed = Document::load_mem(&bytes).expect("parse page-break PDF");
+    assert_eq!(parsed.get_pages().len(), 2);
+}
+
+#[test]
 fn accessibility_non_text_accounting_reports_missing_and_invalid_entries() {
     let mut doc = DocumentModel::new("Decorativos", "Encosto Estratégico Lda", "Teste");
-    doc.blocks = vec![Block::Rule, Block::PageBreak];
+    doc.blocks = vec![Block::PageBreak, Block::Rule];
     let alt_text_model = pdfa::AltTextModel {
         all_non_text_content_accounted_for: true,
         text_alternatives: vec![pdfa::TextAlternative::new("asset:seal", " ")],
@@ -1027,7 +1079,7 @@ fn accessibility_non_text_accounting_reports_missing_and_invalid_entries() {
     assert!(report.non_text_content.model_supplied);
     assert_eq!(report.non_text_content.text_alternative_count, 1);
     assert_eq!(report.non_text_content.decorative_artifact_count, 2);
-    assert_eq!(report.non_text_content.known_decorative_block_count, 2);
+    assert_eq!(report.non_text_content.known_decorative_block_count, 1);
     assert_eq!(
         report.non_text_content.missing_decorative_artifacts,
         vec!["block:1".to_string()]
