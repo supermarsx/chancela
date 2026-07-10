@@ -12,6 +12,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,json,html}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,json,html}\"",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:browser": "cargo build --release -p chancela-server --locked && npm run build && node e2e/run-playwright-with-cleanup-proof.mjs --project=chromium",
     "test:browser:matrix": "cargo build --release -p chancela-server --locked && npm run build && node e2e/run-playwright-with-cleanup-proof.mjs"
   },
@@ -33,6 +34,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^3.2.7",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-react-hooks": "^5.1.0",

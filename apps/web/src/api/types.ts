@@ -2589,10 +2589,50 @@ export interface SigningProviderMetadata {
   note: string;
 }
 
+export interface TrustRefreshCadence {
+  kind: 'manual' | 'interval_hours' | 'daily';
+  hours?: number;
+  hour_utc?: number;
+}
+
+export interface TrustRefreshSettings {
+  enabled: boolean;
+  cadence: TrustRefreshCadence;
+}
+
+export interface TslSourceSettings {
+  id: string;
+  name: string;
+  enabled: boolean;
+  url: string | null;
+  path: string | null;
+  country: string | null;
+  scheme: string | null;
+  digest: string | null;
+  timeout_seconds: number;
+  max_bytes: number;
+  refresh: TrustRefreshSettings;
+}
+
+export interface TsaProviderSettings {
+  id: string;
+  name: string;
+  enabled: boolean;
+  url: string | null;
+  path: string | null;
+  default: boolean;
+  policy: string | null;
+  digest: string;
+  timeout_seconds: number;
+  max_bytes: number;
+}
+
 export interface SigningSettings {
   preferred_family: SignatureFamily;
   tsa_url: string | null;
   tsl_url: string | null;
+  tsl_sources: TslSourceSettings[];
+  tsa_providers: TsaProviderSettings[];
   require_qualified_for_seal: boolean;
   cmd: SigningCmdSettings;
   providers: SigningProviderMetadata[];
@@ -3219,6 +3259,48 @@ export const DEFAULT_SETTINGS: Settings = {
     // backend/contract default is http, so the web default must NOT "upgrade" it to https.
     tsa_url: 'http://ts.cartaodecidadao.pt/tsa/server',
     tsl_url: 'https://www.gns.gov.pt/media/TSLPT.xml',
+    tsl_sources: [
+      {
+        id: 'pt-gns',
+        name: 'Portugal GNS Trusted List',
+        enabled: true,
+        url: 'https://www.gns.gov.pt/media/TSLPT.xml',
+        path: null,
+        country: 'PT',
+        scheme: 'eidas',
+        digest: null,
+        timeout_seconds: 30,
+        max_bytes: 26214400,
+        refresh: { enabled: false, cadence: { kind: 'daily', hour_utc: 3 } },
+      },
+      {
+        id: 'eu-lotl',
+        name: 'EU List of Trusted Lists',
+        enabled: false,
+        url: 'https://ec.europa.eu/tools/lotl/eu-lotl.xml',
+        path: null,
+        country: 'EU',
+        scheme: 'lotl',
+        digest: null,
+        timeout_seconds: 30,
+        max_bytes: 26214400,
+        refresh: { enabled: false, cadence: { kind: 'daily', hour_utc: 2 } },
+      },
+    ],
+    tsa_providers: [
+      {
+        id: 'pt-cc',
+        name: 'Portugal Cartao de Cidadao TSA',
+        enabled: true,
+        url: 'http://ts.cartaodecidadao.pt/tsa/server',
+        path: null,
+        default: true,
+        policy: null,
+        digest: 'sha256',
+        timeout_seconds: 30,
+        max_bytes: 1048576,
+      },
+    ],
     require_qualified_for_seal: false,
     cmd: { env: 'preprod', application_id: null, ama_cert_configured: false },
     providers: [

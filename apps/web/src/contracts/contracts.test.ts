@@ -152,6 +152,8 @@ import {
   type SigningCmdSettings,
   type SigningProviderMetadata,
   type SigningSettings,
+  type TrustRefreshCadence,
+  type TrustRefreshSettings,
   type TslCatalogView,
   type TslIdentitySummaryView,
   type TslProviderAnalysisView,
@@ -159,6 +161,7 @@ import {
   type TslRefreshStatusView,
   type TslServiceStatusView,
   type TslServiceSummaryView,
+  type TslSourceSettings,
   type TslSourceView,
   type TslSummaryView,
   type TslValidationView,
@@ -166,6 +169,7 @@ import {
   type TsaCatalogView,
   type TsaPolicyAnalysisView,
   type TsaProbeView,
+  type TsaProviderSettings,
   type TsaProfileView,
   type TsaRecordAnalysisView,
   type TsaRecordView,
@@ -1604,6 +1608,8 @@ describe('contract fixtures parse through the real client', () => {
         preferred_family: true,
         tsa_url: true,
         tsl_url: true,
+        tsl_sources: true,
+        tsa_providers: true,
         require_qualified_for_seal: true,
         cmd: true,
         providers: true,
@@ -1612,6 +1618,84 @@ describe('contract fixtures parse through the real client', () => {
     );
     inEnum(SIGNATURE_FAMILIES, signing.preferred_family, 'signing.preferred_family');
     expect(typeof signing.require_qualified_for_seal).toBe('boolean');
+    expect(Array.isArray(signing.tsl_sources)).toBe(true);
+    for (const source of signing.tsl_sources) {
+      const row = assertExactKeys<TslSourceSettings>(
+        source,
+        {
+          id: true,
+          name: true,
+          enabled: true,
+          url: true,
+          path: true,
+          country: true,
+          scheme: true,
+          digest: true,
+          timeout_seconds: true,
+          max_bytes: true,
+          refresh: true,
+        },
+        'Settings.signing.tsl_sources[]',
+      );
+      expect(typeof row.id).toBe('string');
+      expect(typeof row.name).toBe('string');
+      expect(typeof row.enabled).toBe('boolean');
+      if (row.url !== null) expect(typeof row.url).toBe('string');
+      if (row.path !== null) expect(typeof row.path).toBe('string');
+      if (row.country !== null) expect(typeof row.country).toBe('string');
+      if (row.scheme !== null) expect(typeof row.scheme).toBe('string');
+      if (row.digest !== null) expect(typeof row.digest).toBe('string');
+      expect(typeof row.timeout_seconds).toBe('number');
+      expect(typeof row.max_bytes).toBe('number');
+      const refresh = assertExactKeys<TrustRefreshSettings>(
+        row.refresh,
+        { enabled: true, cadence: true },
+        'Settings.signing.tsl_sources[].refresh',
+      );
+      expect(typeof refresh.enabled).toBe('boolean');
+      const cadence = assertExactKeys<TrustRefreshCadence>(
+        refresh.cadence,
+        { kind: true },
+        'Settings.signing.tsl_sources[].refresh.cadence',
+        ['hours', 'hour_utc'],
+      );
+      inEnum(
+        ['manual', 'interval_hours', 'daily'],
+        cadence.kind,
+        'tsl_sources[].refresh.cadence.kind',
+      );
+      if (cadence.kind === 'interval_hours') expect(typeof cadence.hours).toBe('number');
+      if (cadence.kind === 'daily') expect(typeof cadence.hour_utc).toBe('number');
+    }
+    expect(Array.isArray(signing.tsa_providers)).toBe(true);
+    for (const provider of signing.tsa_providers) {
+      const row = assertExactKeys<TsaProviderSettings>(
+        provider,
+        {
+          id: true,
+          name: true,
+          enabled: true,
+          url: true,
+          path: true,
+          default: true,
+          policy: true,
+          digest: true,
+          timeout_seconds: true,
+          max_bytes: true,
+        },
+        'Settings.signing.tsa_providers[]',
+      );
+      expect(typeof row.id).toBe('string');
+      expect(typeof row.name).toBe('string');
+      expect(typeof row.enabled).toBe('boolean');
+      if (row.url !== null) expect(typeof row.url).toBe('string');
+      if (row.path !== null) expect(typeof row.path).toBe('string');
+      expect(typeof row.default).toBe('boolean');
+      if (row.policy !== null) expect(typeof row.policy).toBe('string');
+      expect(typeof row.digest).toBe('string');
+      expect(typeof row.timeout_seconds).toBe('number');
+      expect(typeof row.max_bytes).toBe('number');
+    }
     // CMD remote-signing config (t57-S3) — env string, nullable application_id, cert flag.
     const cmd = assertExactKeys<SigningCmdSettings>(
       signing.cmd,

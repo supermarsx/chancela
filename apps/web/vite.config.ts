@@ -58,5 +58,26 @@ export default defineConfig({
     globals: false,
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
+      reportsDirectory: './coverage',
+      all: true,
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.{test,spec}.{ts,tsx}',
+        'src/test/**',
+        'src/i18n/locales/**',
+        'src/**/*.d.ts',
+        'src/i18n/types.ts',
+        'src/ui/toast/types.ts',
+      ],
+      thresholds: {
+        statements: 90,
+        branches: 78,
+        functions: 83,
+        lines: 90,
+      },
+    },
   },
 });

@@ -27,6 +27,36 @@ describe('DEFAULT_SETTINGS.signing', () => {
     });
   });
 
+  it('mirrors the default configured TSL and TSA trust sources', () => {
+    expect(DEFAULT_SETTINGS.signing.tsl_sources.map((source) => source.id)).toEqual([
+      'pt-gns',
+      'eu-lotl',
+    ]);
+    expect(DEFAULT_SETTINGS.signing.tsl_sources[0]).toMatchObject({
+      enabled: true,
+      url: 'https://www.gns.gov.pt/media/TSLPT.xml',
+      country: 'PT',
+      scheme: 'eidas',
+      timeout_seconds: 30,
+      max_bytes: 26214400,
+      refresh: { enabled: false, cadence: { kind: 'daily', hour_utc: 3 } },
+    });
+    expect(DEFAULT_SETTINGS.signing.tsa_providers).toEqual([
+      {
+        id: 'pt-cc',
+        name: 'Portugal Cartao de Cidadao TSA',
+        enabled: true,
+        url: 'http://ts.cartaodecidadao.pt/tsa/server',
+        path: null,
+        default: true,
+        policy: null,
+        digest: 'sha256',
+        timeout_seconds: 30,
+        max_bytes: 1048576,
+      },
+    ]);
+  });
+
   it('surfaces non-secret provider-mode metadata by default', () => {
     expect(DEFAULT_SETTINGS.signing.providers.map((p) => p.mode)).toEqual([
       'CMD',

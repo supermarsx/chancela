@@ -23,6 +23,7 @@
     "test": "npm run test:rust && npm run test:web",
     "test:rust": "cargo test --workspace --locked",
     "test:web": "npm run test --workspace apps/web",
+    "test:web:coverage": "npm run test:coverage --workspace apps/web",
     "test:validator-corpus": "node scripts/validate-validator-corpus.mjs && node --test scripts/validator-corpus-sidecar.test.mjs",
     "test:checkpoint:recent-landed": "node scripts/checkpoint-recent-landed.mjs",
     "test:checkpoint:recent-landed:static": "node scripts/checkpoint-recent-landed.mjs --static",
