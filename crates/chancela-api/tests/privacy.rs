@@ -1769,6 +1769,12 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
         execution_record["outcome"],
         json!("blocked_destructive_action")
     );
+    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(execution_record["execution_status"], json!("blocked"));
+    assert_eq!(
+        execution_record["operator_review_decision"],
+        json!("blocked")
+    );
     assert_eq!(execution_record["would_execute"], json!(false));
     assert_eq!(execution_record["workflow"]["status"], json!("blocked"));
     assert_eq!(
@@ -1798,11 +1804,11 @@ async fn retention_policies_allow_settings_manage_update_and_guarded_execution_r
         json!("Operator reviewed the retention candidate.")
     );
     assert_eq!(
-        execution_record["operator_evidence"][0]["label"],
+        execution_record["audit_evidence"][0]["label"],
         json!("case")
     );
     assert_eq!(
-        execution_record["operator_evidence"][0]["value"],
+        execution_record["audit_evidence"][0]["value"],
         json!("archive package hash reviewed")
     );
     assert_eq!(
@@ -1956,6 +1962,15 @@ async fn retention_execution_request_records_manual_review_for_non_destructive_p
         execution_record["requested_policy"]["destructive_action"],
         json!(false)
     );
+    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(
+        execution_record["execution_status"],
+        json!("awaiting_review")
+    );
+    assert_eq!(
+        execution_record["operator_review_decision"],
+        json!("review_required")
+    );
     assert_eq!(execution_record["outcome"], json!("manual_review_required"));
     assert_eq!(execution_record["would_execute"], json!(false));
     assert_eq!(
@@ -1976,6 +1991,12 @@ async fn retention_execution_request_records_manual_review_for_non_destructive_p
         execution_record["legal_hold_blockers"]
             .as_array()
             .expect("legal hold blockers")
+            .is_empty()
+    );
+    assert!(
+        execution_record["audit_evidence"]
+            .as_array()
+            .expect("audit evidence")
             .is_empty()
     );
     assert_eq!(
@@ -2068,6 +2089,12 @@ async fn retention_execution_request_blocks_active_legal_hold() {
     assert_eq!(body["matched_count"], json!(2));
     let execution_record = &body["execution_record"];
     assert_eq!(execution_record["outcome"], json!("blocked_legal_hold"));
+    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(execution_record["execution_status"], json!("blocked"));
+    assert_eq!(
+        execution_record["operator_review_decision"],
+        json!("blocked")
+    );
     assert_eq!(execution_record["would_execute"], json!(false));
     assert_eq!(execution_record["workflow"]["status"], json!("blocked"));
     assert_eq!(
@@ -2156,6 +2183,12 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
         execution_record["requested_policy"]["id"],
         json!(missing_policy_id)
     );
+    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(execution_record["execution_status"], json!("blocked"));
+    assert_eq!(
+        execution_record["operator_review_decision"],
+        json!("blocked")
+    );
     assert_eq!(execution_record["would_execute"], json!(false));
     assert_eq!(execution_record["workflow"]["status"], json!("blocked"));
     assert_eq!(
@@ -2227,6 +2260,12 @@ async fn retention_execution_request_records_missing_and_stale_policy_blocks() {
         json!("suspended")
     );
     assert_eq!(execution_record["requested_policy"]["active"], json!(false));
+    assert_eq!(execution_record["execution_intent"], json!("review_only"));
+    assert_eq!(execution_record["execution_status"], json!("blocked"));
+    assert_eq!(
+        execution_record["operator_review_decision"],
+        json!("blocked")
+    );
     assert_eq!(execution_record["would_execute"], json!(false));
     assert_eq!(
         execution_record["workflow"]["blockers"][0]["code"],
@@ -2572,6 +2611,18 @@ async fn retention_policy_records_persist_across_restart() {
         .as_str()
         .expect("execution id")
         .to_owned();
+    assert_eq!(
+        execution["execution_record"]["execution_intent"],
+        json!("review_only")
+    );
+    assert_eq!(
+        execution["execution_record"]["execution_status"],
+        json!("awaiting_review")
+    );
+    assert_eq!(
+        execution["execution_record"]["operator_review_decision"],
+        json!("review_required")
+    );
     assert!(tmp.dir.join(RETENTION_EXECUTIONS_FILE).is_file());
 
     let (status, updated) = send(
@@ -2627,6 +2678,12 @@ async fn retention_policy_records_persist_across_restart() {
     assert_eq!(executions[0]["id"], json!(execution_id));
     assert_eq!(executions[0]["requested_policy"]["id"], json!(policy_id));
     assert_eq!(executions[0]["outcome"], json!("manual_review_required"));
+    assert_eq!(executions[0]["execution_intent"], json!("review_only"));
+    assert_eq!(executions[0]["execution_status"], json!("awaiting_review"));
+    assert_eq!(
+        executions[0]["operator_review_decision"],
+        json!("review_required")
+    );
     assert_eq!(
         executions[0]["workflow"]["status"],
         json!("awaiting_manual_review")
@@ -2634,6 +2691,12 @@ async fn retention_policy_records_persist_across_restart() {
     assert_eq!(
         executions[0]["operator_notes"],
         json!("Recorded before restart.")
+    );
+    assert!(
+        executions[0]["audit_evidence"]
+            .as_array()
+            .expect("audit evidence")
+            .is_empty()
     );
     assert_eq!(executions[0]["would_execute"], json!(false));
 

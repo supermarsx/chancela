@@ -1114,18 +1114,46 @@ pub struct RetentionExecutionRecord {
     pub id: String,
     pub requested_at: String,
     pub actor: String,
+    #[serde(default = "default_retention_execution_intent")]
+    pub execution_intent: RetentionExecutionIntent,
+    #[serde(default = "default_retention_execution_status")]
+    pub execution_status: RetentionExecutionStatus,
+    #[serde(default = "default_retention_operator_review_decision")]
+    pub operator_review_decision: RetentionOperatorReviewDecision,
     pub requested_policy: RetentionExecutionRequestedPolicy,
     pub candidate: RetentionDryRunCandidate,
     pub matched_records_summary: RetentionMatchedRecordsSummary,
     pub legal_hold_blockers: Vec<RetentionLegalHoldBlocker>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operator_notes: Option<String>,
-    pub operator_evidence: Vec<RetentionOperatorEvidence>,
+    #[serde(default)]
+    #[serde(rename = "audit_evidence", alias = "operator_evidence")]
+    pub audit_evidence: Vec<RetentionOperatorEvidence>,
     pub outcome: RetentionExecutionOutcome,
     pub block_reason: String,
     #[serde(default = "legacy_retention_operator_workflow")]
     pub workflow: RetentionOperatorWorkflow,
     pub would_execute: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionExecutionIntent {
+    ReviewOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionExecutionStatus {
+    AwaitingReview,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionOperatorReviewDecision {
+    ReviewRequired,
+    Blocked,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1337,7 +1365,10 @@ pub(crate) fn load_retention_execution_records(
     match serde_json::from_slice::<Vec<RetentionExecutionRecord>>(&bytes) {
         Ok(list) => Some(
             list.into_iter()
-                .map(|record| (record.id.clone(), record))
+                .map(|mut record| {
+                    normalize_retention_execution_record(&mut record);
+                    (record.id.clone(), record)
+                })
                 .collect(),
         ),
         Err(e) => {
@@ -2945,12 +2976,15 @@ fn build_retention_execution_record(
         id: Uuid::new_v4().to_string(),
         requested_at: now_rfc3339(),
         actor: actor_name.to_owned(),
+        execution_intent: RetentionExecutionIntent::ReviewOnly,
+        execution_status: retention_execution_status(outcome),
+        operator_review_decision: retention_operator_review_decision(outcome),
         requested_policy,
         candidate: candidate.clone(),
         matched_records_summary: retention_matched_records_summary(candidate, matches),
         legal_hold_blockers,
         operator_notes: request.operator_notes,
-        operator_evidence: request.evidence,
+        audit_evidence: request.evidence,
         outcome,
         block_reason: block_reason.to_owned(),
         workflow,
@@ -3220,6 +3254,52 @@ fn retention_required_approval(
         required_from: required_from.into(),
         reason: reason.into(),
     }
+}
+
+fn retention_execution_status(outcome: RetentionExecutionOutcome) -> RetentionExecutionStatus {
+    match outcome {
+        RetentionExecutionOutcome::ManualReviewRequired => RetentionExecutionStatus::AwaitingReview,
+        RetentionExecutionOutcome::BlockedMissingPolicy
+        | RetentionExecutionOutcome::BlockedStalePolicy
+        | RetentionExecutionOutcome::BlockedPolicyMismatch
+        | RetentionExecutionOutcome::BlockedLegalHold
+        | RetentionExecutionOutcome::BlockedDestructiveAction => RetentionExecutionStatus::Blocked,
+    }
+}
+
+fn retention_operator_review_decision(
+    outcome: RetentionExecutionOutcome,
+) -> RetentionOperatorReviewDecision {
+    match outcome {
+        RetentionExecutionOutcome::ManualReviewRequired => {
+            RetentionOperatorReviewDecision::ReviewRequired
+        }
+        RetentionExecutionOutcome::BlockedMissingPolicy
+        | RetentionExecutionOutcome::BlockedStalePolicy
+        | RetentionExecutionOutcome::BlockedPolicyMismatch
+        | RetentionExecutionOutcome::BlockedLegalHold
+        | RetentionExecutionOutcome::BlockedDestructiveAction => {
+            RetentionOperatorReviewDecision::Blocked
+        }
+    }
+}
+
+fn normalize_retention_execution_record(record: &mut RetentionExecutionRecord) {
+    record.execution_intent = RetentionExecutionIntent::ReviewOnly;
+    record.execution_status = retention_execution_status(record.outcome);
+    record.operator_review_decision = retention_operator_review_decision(record.outcome);
+}
+
+fn default_retention_execution_intent() -> RetentionExecutionIntent {
+    RetentionExecutionIntent::ReviewOnly
+}
+
+fn default_retention_execution_status() -> RetentionExecutionStatus {
+    RetentionExecutionStatus::AwaitingReview
+}
+
+fn default_retention_operator_review_decision() -> RetentionOperatorReviewDecision {
+    RetentionOperatorReviewDecision::ReviewRequired
 }
 
 fn legacy_retention_operator_workflow() -> RetentionOperatorWorkflow {
