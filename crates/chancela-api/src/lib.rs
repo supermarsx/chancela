@@ -127,6 +127,7 @@ use tokio::sync::RwLock;
 use tower_http::services::{ServeDir, ServeFile};
 
 pub use actor::{CurrentActor, CurrentAttestor};
+pub use attestation::VerifierSeed;
 pub use authz::{
     Authorizer, authorizer, require_permission, require_permission_with, scope_of_act,
     scope_of_book, scope_of_entity,
@@ -260,6 +261,10 @@ pub struct AppState {
     pub notification_triage_path: Option<Arc<PathBuf>>,
     /// Where `users.json` is persisted, or `None` for in-memory profiles. Mirrors `persist_path`.
     pub users_path: Option<Arc<PathBuf>>,
+    /// App-level seed material for hardened password/recovery verifiers. File-backed states load or
+    /// lazily save it as a seed config sidecar; API/ledger payloads carry only user views and never
+    /// this material.
+    pub verifier_seed: Arc<RwLock<VerifierSeed>>,
     /// The scoped RBAC role catalog (t64): the seeded defaults + any custom roles. `Default` empty;
     /// [`AppState::with_data_dir`] loads `roles.json` and **ensures the seeded defaults are present**
     /// (Owner forced canonical/locked). Mirrors `users`.
@@ -444,6 +449,8 @@ impl AppState {
         let loaded = settings::load_settings(&settings_path).unwrap_or_default();
         let users_path = dir.join(users::USERS_FILE);
         let mut loaded_users = users::load_users(&users_path).unwrap_or_default();
+        let verifier_seed_path = dir.join(attestation::VERIFIER_SEED_FILE);
+        let verifier_seed = attestation::VerifierSeed::load_or_generate(verifier_seed_path.clone());
 
         // Scoped RBAC stores (t64): the role catalog + the delegation table, mirroring `users.json`.
         // The catalog seeds the four defaults if absent (Owner forced canonical/locked); the users
@@ -498,6 +505,7 @@ impl AppState {
             persist_path: Some(Arc::new(settings_path)),
             users: Arc::new(RwLock::new(loaded_users)),
             users_path: Some(Arc::new(users_path)),
+            verifier_seed: Arc::new(RwLock::new(verifier_seed)),
             roles: Arc::new(RwLock::new(roles_catalog)),
             roles_path: Some(Arc::new(roles_path)),
             delegations: Arc::new(RwLock::new(loaded_delegations)),
@@ -687,13 +695,15 @@ impl AppState {
     }
 
     /// The whole-instance sidecar files bundled alongside the SQLite snapshot in a backup / export
-    /// archive and removed on a factory reset (t54 §2.11): `settings.json`, user/RBAC/privacy/API
-    /// sidecars, the CAE cache, and the `laws/` archive. Mirrors [`backup::create_backup`]'s list.
+    /// archive and removed on a factory reset (t54 §2.11): `settings.json`, the password-verifier
+    /// seed config, user/RBAC/privacy/API sidecars, the CAE cache, and the `laws/` archive. Mirrors
+    /// [`backup::create_backup`]'s list.
     /// Empty when in-memory.
     pub(crate) fn instance_sidecars(&self) -> Vec<PathBuf> {
         match self.data_dir() {
             Some(dir) => vec![
                 dir.join(crate::settings::SETTINGS_FILE),
+                dir.join(crate::attestation::VERIFIER_SEED_FILE),
                 dir.join(crate::users::USERS_FILE),
                 dir.join(crate::roles::ROLES_FILE),
                 dir.join(crate::delegations::DELEGATIONS_FILE),
@@ -741,6 +751,9 @@ impl AppState {
                 settings::load_settings(&dir.join(settings::SETTINGS_FILE)).unwrap_or_default();
             *self.users.write().await =
                 users::load_users(&dir.join(users::USERS_FILE)).unwrap_or_default();
+            *self.verifier_seed.write().await = attestation::VerifierSeed::load_or_generate(
+                dir.join(attestation::VERIFIER_SEED_FILE),
+            );
 
             let mut role_catalog =
                 roles::load_roles(&dir.join(roles::ROLES_FILE)).unwrap_or_default();
@@ -818,6 +831,7 @@ impl AppState {
         // what a subsequent load of the wiped data dir would reseed.
         *self.roles.write().await = chancela_authz::RoleCatalog::seeded_defaults();
         self.delegations.write().await.clear();
+        *self.verifier_seed.write().await = attestation::VerifierSeed::default();
         *self.settings.write().await = settings::Settings::default();
     }
 
@@ -1148,6 +1162,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/books/{id}/start-over", post(bundles::start_over_book))
         .route("/v1/data/reset", post(data::reset_data))
         .route("/v1/data/status", get(data_status::get_data_status))
+        .route("/v1/data/cleanup", post(data_status::cleanup_data))
         .route("/v1/data/start-over", post(data::start_over_instance))
         .route("/v1/dashboard", get(dashboard::dashboard))
         .route(
@@ -7224,6 +7239,7 @@ mod tests {
     async fn data_status_reports_durable_permissions_and_filesystem_usage() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
+        let _ = seal_one(&state).await;
         std::fs::write(
             tmp.dir.join(crate::settings::SETTINGS_FILE),
             br#"{"schema_version":1}"#,
@@ -7277,22 +7293,38 @@ mod tests {
         assert_eq!(laws["file_count"], 1);
         assert!(laws["directory_count"].as_u64().expect("law dirs") >= 1);
 
-        assert!(body["usage"]["total_bytes"].as_u64().expect("total bytes") > 0);
-        assert_eq!(
-            body["usage"]["sqlite_logical"]
-                .as_array()
-                .expect("sqlite logical")
-                .len(),
-            0
+        let sqlite_logical = body["usage"]["sqlite_logical"]
+            .as_array()
+            .expect("sqlite logical");
+        assert!(
+            !sqlite_logical.is_empty(),
+            "durable status reports logical SQLite usage"
         );
+        let ledger = sqlite_logical
+            .iter()
+            .find(|entry| entry["id"] == "ledger")
+            .unwrap_or_else(|| panic!("missing ledger logical usage in {body}"));
+        assert_eq!(ledger["basis"], "sqlite_logical_payload");
+        assert_eq!(ledger["exact"], false);
+        assert!(ledger["row_count"].as_u64().expect("ledger rows") > 0);
+        assert!(ledger["bytes"].as_u64().expect("ledger bytes") > 0);
+        let domain = sqlite_logical
+            .iter()
+            .find(|entry| entry["id"] == "domain")
+            .unwrap_or_else(|| panic!("missing domain logical usage in {body}"));
+        assert!(domain["row_count"].as_u64().expect("domain rows") >= 3);
+        assert!(domain["bytes"].as_u64().expect("domain bytes") > 0);
+
+        assert!(body["usage"]["total_bytes"].as_u64().expect("total bytes") > 0);
         assert!(
             body["usage"]["scan_errors"]
                 .as_array()
                 .expect("scan errors")
                 .iter()
-                .any(|err| err
+                .all(|err| !err
                     .as_str()
-                    .is_some_and(|msg| msg.contains("sqlite logical usage not reported")))
+                    .is_some_and(|msg| msg.contains("sqlite logical usage not reported"))),
+            "old sqlite logical placeholder must not be emitted: {body}"
         );
 
         let leftovers: Vec<_> = std::fs::read_dir(&tmp.dir)
@@ -7306,6 +7338,124 @@ mod tests {
             })
             .collect();
         assert!(leftovers.is_empty(), "probe files left behind");
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_crash_deletes_only_crash_concern_contents() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let crash = tmp.dir.join("crash");
+        std::fs::create_dir_all(crash.join("nested")).expect("crash dirs");
+        std::fs::write(crash.join("one.log"), b"crash").expect("crash file");
+        std::fs::write(crash.join("nested").join("two.log"), b"report").expect("nested crash");
+        std::fs::write(tmp.dir.join("crash-report.txt"), b"top").expect("top crash");
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(&exports).expect("exports dir");
+        std::fs::write(exports.join("kept.zip"), b"export").expect("export file");
+
+        let (status, body) = send(
+            state,
+            post_json("/v1/data/cleanup", json!({ "target": "crash" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["target"], "crash");
+        assert_eq!(body["data_dir"], tmp.dir.to_string_lossy().into_owned());
+        assert_eq!(body["deleted_files"], 3);
+        assert_eq!(body["deleted_directories"], 1);
+        assert_eq!(body["deleted_bytes"], 14);
+        assert!(
+            body["skipped"].as_array().expect("skipped").is_empty(),
+            "no skipped entries: {body}"
+        );
+        assert!(crash.is_dir(), "cleanup preserves the crash root directory");
+        assert!(
+            std::fs::read_dir(&crash)
+                .expect("read crash root")
+                .next()
+                .is_none(),
+            "crash root emptied"
+        );
+        assert!(!tmp.dir.join("crash-report.txt").exists());
+        assert!(exports.join("kept.zip").is_file(), "exports untouched");
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_exports_deletes_exports_contents_only() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(exports.join("nested")).expect("exports dirs");
+        std::fs::write(exports.join("nested").join("bundle.zip"), b"bundle").expect("bundle");
+        std::fs::write(tmp.dir.join("crash.log"), b"crash").expect("crash");
+
+        let (status, body) = send(
+            state,
+            post_json("/v1/data/cleanup", json!({ "target": "exports" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(body["target"], "exports");
+        assert_eq!(body["deleted_files"], 1);
+        assert_eq!(body["deleted_directories"], 1);
+        assert_eq!(body["deleted_bytes"], 6);
+        assert!(
+            exports.is_dir(),
+            "cleanup preserves the exports root directory"
+        );
+        assert!(
+            std::fs::read_dir(&exports)
+                .expect("read exports root")
+                .next()
+                .is_none(),
+            "exports root emptied"
+        );
+        assert!(tmp.dir.join("crash.log").is_file(), "crash untouched");
+    }
+
+    #[tokio::test]
+    async fn data_cleanup_is_settings_manage_gated_and_rejects_unknown_targets() {
+        use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
+
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let (status, _) = send_raw(
+            state.clone(),
+            post_json("/v1/data/cleanup", json!({ "target": "crash" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "session required");
+
+        let leitor = seed_user(
+            &state,
+            "leitor.storage",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let token = open_session(&state, &leitor.to_string()).await;
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json("/v1/data/cleanup", json!({ "target": "crash" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "body: {body}");
+
+        let exports = tmp.dir.join("exports");
+        std::fs::create_dir_all(&exports).expect("exports dir");
+        std::fs::write(exports.join("kept.zip"), b"export").expect("export");
+        let (status, body) = send(
+            state,
+            post_json("/v1/data/cleanup", json!({ "target": "database" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "body: {body}");
+        assert!(
+            exports.join("kept.zip").is_file(),
+            "unsupported target did not delete"
+        );
     }
 
     // --- t29: optional passwords + PKI audit attestation ----------------------------------
@@ -9439,13 +9589,9 @@ mod tests {
         assert_eq!(issued["has_recovery_phrase"], true);
         // The verifier is stored, never the plaintext.
         let stored = stored_user(&state, &target).await;
-        assert!(
-            stored
-                .recovery_hash
-                .as_deref()
-                .expect("verifier")
-                .starts_with("$argon2")
-        );
+        let recovery_verifier = stored.recovery_hash.as_deref().expect("verifier");
+        assert!(recovery_verifier.starts_with(crate::attestation::HARDENED_VERIFIER_PREFIX));
+        assert!(recovery_verifier.contains("$argon2id$"));
         assert_ne!(stored.recovery_hash.as_deref(), Some(phrase.as_str()));
 
         // Bruno (another operator) resets the forgotten password using the recovery phrase.

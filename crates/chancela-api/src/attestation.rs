@@ -17,16 +17,24 @@
 //! ## Crypto choices (plan t29 §3, pinned)
 //!
 //! - **argon2id** (`argon2::Argon2::default()` params) for both the sign-in **verification hash**
-//!   (a PHC string) and, separately, a 32-byte **KEK** derived from the password + a per-key salt
-//!   via `hash_password_into`.
+//!   and, separately, a 32-byte **KEK** derived from the password + a per-key salt via
+//!   `hash_password_into`. New sign-in/recovery verifiers keep argon2's random PHC salt and add a
+//!   file-backed application seed (argon2 secret input) plus a per-verifier pepper. The stored
+//!   per-verifier pepper is not a classical hidden pepper once an attacker has `users.json`; it is
+//!   extra verifier material kept off API/ledger surfaces, while the app seed lives in its own seed
+//!   config sidecar.
 //! - **XChaCha20-Poly1305** wraps the 32-byte P-256 secret scalar under the KEK — pure-Rust, no
 //!   AES-NI-detection surface, and its 24-byte random nonce removes all nonce-management burden.
 //! - **P-256** ECDSA (ES256 semantics) signs each ledger event's chain `hash` via
 //!   `sign_prehash` (the event hash *is* the prehash); verified with `verify_prehash`.
 
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock, RwLock as StdRwLock};
+
 use argon2::password_hash::rand_core::OsRng as SaltRng;
 use argon2::password_hash::{PasswordHash, SaltString};
-use argon2::{Argon2, PasswordHasher, PasswordVerifier};
+use argon2::{Algorithm, Argon2, Params, PasswordHasher, PasswordVerifier, Version};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chacha20poly1305::aead::Aead;
@@ -68,7 +76,131 @@ fn crypto<E: std::fmt::Display>(e: E) -> AttestationError {
 
 // --- Password (sign-in secret) hashing ----------------------------------------------------
 
-/// Hash a sign-in secret into an argon2id PHC string for storage in `users.json`.
+/// The file-backed seed config used by hardened password/recovery verifiers.
+pub const VERIFIER_SEED_FILE: &str = "password-verifier-seed.json";
+
+/// Prefix for the v1 Chancela verifier envelope stored in `User.password_hash` /
+/// `User.recovery_hash`: `chancela-secret-v1$<seed-id>$<pepper-b64>$<argon2id-phc>`.
+pub(crate) const HARDENED_VERIFIER_PREFIX: &str = "chancela-secret-v1$";
+
+const VERIFIER_SEED_BYTES: usize = 32;
+const VERIFIER_PEPPER_BYTES: usize = 32;
+const VERIFIER_SEED_KIND: &str = "seed";
+const VERIFIER_SEED_PURPOSE: &str = "password_verifier_app_seed";
+
+#[derive(Clone)]
+pub struct VerifierSeed {
+    inner: Arc<VerifierSeedInner>,
+}
+
+struct VerifierSeedInner {
+    id: String,
+    bytes: [u8; VERIFIER_SEED_BYTES],
+    path: Option<PathBuf>,
+    saved: Mutex<bool>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct VerifierSeedFile {
+    schema_version: u32,
+    #[serde(rename = "type")]
+    kind: String,
+    purpose: String,
+    seed_id: String,
+    seed_b64: String,
+}
+
+impl Default for VerifierSeed {
+    fn default() -> Self {
+        Self::generate(None, true)
+    }
+}
+
+impl VerifierSeed {
+    /// Load the app verifier seed from a data-dir sidecar if present; otherwise generate a seed that
+    /// will be saved lazily before the first hardened verifier is committed. Startup stays
+    /// read-only-friendly, while credential mutation fails closed if the seed cannot be persisted.
+    pub(crate) fn load_or_generate(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        match std::fs::read(&path) {
+            Ok(bytes) => match serde_json::from_slice::<VerifierSeedFile>(&bytes)
+                .ok()
+                .and_then(|file| decode_seed_file(&file))
+            {
+                Some(seed) => Self::from_bytes(seed, Some(path), true),
+                None => {
+                    eprintln!(
+                        "warning: {} is not a valid password verifier seed config; generating a new seed",
+                        path.display()
+                    );
+                    Self::generate(Some(path), false)
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::generate(Some(path), false),
+            Err(e) => {
+                eprintln!(
+                    "warning: failed to read password verifier seed config {} ({e}); generating a new seed",
+                    path.display()
+                );
+                Self::generate(Some(path), false)
+            }
+        }
+    }
+
+    pub(crate) fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    fn bytes(&self) -> &[u8; VERIFIER_SEED_BYTES] {
+        &self.inner.bytes
+    }
+
+    pub(crate) fn ensure_saved(&self) -> Result<(), AttestationError> {
+        let Some(path) = &self.inner.path else {
+            return Ok(());
+        };
+        let mut saved = self
+            .inner
+            .saved
+            .lock()
+            .map_err(|_| AttestationError("verifier seed state lock poisoned".to_owned()))?;
+        if *saved {
+            return Ok(());
+        }
+        write_seed_file(path, self)?;
+        *saved = true;
+        Ok(())
+    }
+
+    fn generate(path: Option<PathBuf>, saved: bool) -> Self {
+        let mut bytes = [0u8; VERIFIER_SEED_BYTES];
+        OsRng.fill_bytes(&mut bytes);
+        Self::from_bytes(bytes, path, saved)
+    }
+
+    fn from_bytes(bytes: [u8; VERIFIER_SEED_BYTES], path: Option<PathBuf>, saved: bool) -> Self {
+        let id = seed_id(&bytes);
+        register_seed(&id, bytes);
+        VerifierSeed {
+            inner: Arc::new(VerifierSeedInner {
+                id,
+                bytes,
+                path,
+                saved: Mutex::new(saved),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SecretVerification {
+    pub verified: bool,
+    pub needs_upgrade: bool,
+}
+
+/// Hash a sign-in secret into a legacy argon2id PHC string. New user/recovery credential storage
+/// should use [`hash_secret_with_seed`]; this helper remains for legacy tests and constant-work
+/// dummy verifiers.
 pub fn hash_secret(secret: &str) -> Result<String, AttestationError> {
     let salt = SaltString::generate(&mut SaltRng);
     Ok(Argon2::default()
@@ -77,15 +209,211 @@ pub fn hash_secret(secret: &str) -> Result<String, AttestationError> {
         .to_string())
 }
 
-/// Verify a sign-in secret against a stored argon2id PHC string. A malformed stored hash (should
-/// never happen) verifies as `false` rather than erroring — the caller treats it as "wrong".
-pub fn verify_secret(secret: &str, phc: &str) -> bool {
+/// Hash a sign-in/recovery secret into the hardened v1 verifier envelope.
+pub(crate) fn hash_secret_with_seed(
+    secret: &str,
+    seed: &VerifierSeed,
+) -> Result<String, AttestationError> {
+    seed.ensure_saved()?;
+    let mut pepper = [0u8; VERIFIER_PEPPER_BYTES];
+    OsRng.fill_bytes(&mut pepper);
+    let salt = SaltString::generate(&mut SaltRng);
+    let input = verifier_input(secret, &pepper);
+    let phc = seeded_argon2(seed.bytes())?
+        .hash_password(&input, &salt)
+        .map_err(crypto)?
+        .to_string();
+    Ok(format!(
+        "{HARDENED_VERIFIER_PREFIX}{}${}${phc}",
+        seed.id(),
+        B64.encode(pepper)
+    ))
+}
+
+/// Verify a sign-in/recovery secret and report whether the stored verifier should be rewritten to
+/// the current hardened format. Legacy PHC strings remain readable and are marked for upgrade after
+/// a successful proof.
+pub(crate) fn verify_secret_with_seed(
+    secret: &str,
+    stored: &str,
+    seed: &VerifierSeed,
+) -> SecretVerification {
+    if let Some(parsed) = parse_hardened_verifier(stored) {
+        let verified = if parsed.seed_id == seed.id() {
+            verify_hardened_parts(secret, &parsed, seed.bytes())
+        } else {
+            lookup_seed(parsed.seed_id)
+                .map(|bytes| verify_hardened_parts(secret, &parsed, &bytes))
+                .unwrap_or(false)
+        };
+        return SecretVerification {
+            verified,
+            needs_upgrade: verified && parsed.seed_id != seed.id(),
+        };
+    }
+
+    let verified = verify_legacy_phc(secret, stored);
+    SecretVerification {
+        verified,
+        needs_upgrade: verified,
+    }
+}
+
+/// Verify a sign-in secret against a stored verifier. Supports legacy PHC strings and hardened v1
+/// verifiers whose seed has been registered by a [`VerifierSeed`] loaded into this process. A
+/// malformed stored hash verifies as `false` rather than erroring — the caller treats it as "wrong".
+pub fn verify_secret(secret: &str, stored: &str) -> bool {
+    if let Some(parsed) = parse_hardened_verifier(stored) {
+        return lookup_seed(parsed.seed_id)
+            .map(|bytes| verify_hardened_parts(secret, &parsed, &bytes))
+            .unwrap_or(false);
+    }
+    verify_legacy_phc(secret, stored)
+}
+
+fn verify_legacy_phc(secret: &str, phc: &str) -> bool {
     match PasswordHash::new(phc) {
         Ok(parsed) => Argon2::default()
             .verify_password(secret.as_bytes(), &parsed)
             .is_ok(),
         Err(_) => false,
     }
+}
+
+struct ParsedHardenedVerifier<'a> {
+    seed_id: &'a str,
+    pepper: [u8; VERIFIER_PEPPER_BYTES],
+    phc: &'a str,
+}
+
+fn parse_hardened_verifier(stored: &str) -> Option<ParsedHardenedVerifier<'_>> {
+    let rest = stored.strip_prefix(HARDENED_VERIFIER_PREFIX)?;
+    let (seed_id, rest) = rest.split_once('$')?;
+    let (pepper_b64, phc) = rest.split_once('$')?;
+    let pepper = decode_fixed::<VERIFIER_PEPPER_BYTES>(pepper_b64)?;
+    Some(ParsedHardenedVerifier {
+        seed_id,
+        pepper,
+        phc,
+    })
+}
+
+fn verify_hardened_parts(
+    secret: &str,
+    parsed: &ParsedHardenedVerifier<'_>,
+    seed: &[u8; VERIFIER_SEED_BYTES],
+) -> bool {
+    let Ok(phc) = PasswordHash::new(parsed.phc) else {
+        return false;
+    };
+    let input = verifier_input(secret, &parsed.pepper);
+    seeded_argon2(seed)
+        .and_then(|argon2| {
+            argon2
+                .verify_password(&input, &phc)
+                .map_err(|e| AttestationError(e.to_string()))
+        })
+        .is_ok()
+}
+
+fn verifier_input(secret: &str, pepper: &[u8; VERIFIER_PEPPER_BYTES]) -> Vec<u8> {
+    let secret = secret.as_bytes();
+    let mut input = Vec::with_capacity(32 + 8 + secret.len() + 8 + pepper.len());
+    input.extend_from_slice(b"chancela.secret.verifier.v1");
+    input.extend_from_slice(&(secret.len() as u64).to_be_bytes());
+    input.extend_from_slice(secret);
+    input.extend_from_slice(&(pepper.len() as u64).to_be_bytes());
+    input.extend_from_slice(pepper);
+    input
+}
+
+fn seeded_argon2(seed: &[u8]) -> Result<Argon2<'_>, AttestationError> {
+    Argon2::new_with_secret(seed, Algorithm::Argon2id, Version::V0x13, Params::default())
+        .map_err(crypto)
+}
+
+fn seed_registry() -> &'static StdRwLock<HashMap<String, [u8; VERIFIER_SEED_BYTES]>> {
+    static REGISTRY: OnceLock<StdRwLock<HashMap<String, [u8; VERIFIER_SEED_BYTES]>>> =
+        OnceLock::new();
+    REGISTRY.get_or_init(|| StdRwLock::new(HashMap::new()))
+}
+
+fn register_seed(id: &str, bytes: [u8; VERIFIER_SEED_BYTES]) {
+    seed_registry()
+        .write()
+        .expect("verifier seed registry lock poisoned")
+        .insert(id.to_owned(), bytes);
+}
+
+fn lookup_seed(id: &str) -> Option<[u8; VERIFIER_SEED_BYTES]> {
+    seed_registry()
+        .read()
+        .expect("verifier seed registry lock poisoned")
+        .get(id)
+        .copied()
+}
+
+fn seed_id(seed: &[u8; VERIFIER_SEED_BYTES]) -> String {
+    let digest: [u8; 32] = Sha256::digest(seed).into();
+    crate::hex::hex(&digest)[..32].to_owned()
+}
+
+fn decode_seed_file(file: &VerifierSeedFile) -> Option<[u8; VERIFIER_SEED_BYTES]> {
+    if file.schema_version != 1
+        || file.kind != VERIFIER_SEED_KIND
+        || file.purpose != VERIFIER_SEED_PURPOSE
+    {
+        return None;
+    }
+    let seed = decode_fixed::<VERIFIER_SEED_BYTES>(&file.seed_b64)?;
+    let computed = seed_id(&seed);
+    if file.seed_id != computed {
+        eprintln!(
+            "warning: password verifier seed config id mismatch; using the id derived from the seed"
+        );
+    }
+    Some(seed)
+}
+
+fn decode_fixed<const N: usize>(b64: &str) -> Option<[u8; N]> {
+    let bytes = B64.decode(b64).ok()?;
+    bytes.try_into().ok()
+}
+
+fn write_seed_file(path: &Path, seed: &VerifierSeed) -> Result<(), AttestationError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(crypto)?;
+        }
+    }
+    let file = VerifierSeedFile {
+        schema_version: 1,
+        kind: VERIFIER_SEED_KIND.to_owned(),
+        purpose: VERIFIER_SEED_PURPOSE.to_owned(),
+        seed_id: seed.id().to_owned(),
+        seed_b64: B64.encode(seed.bytes()),
+    };
+    let json = serde_json::to_vec_pretty(&file).map_err(crypto)?;
+    let tmp = seed_tmp_path(path);
+    std::fs::write(&tmp, &json).map_err(crypto)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(crypto(e))
+        }
+    }
+}
+
+fn seed_tmp_path(path: &Path) -> PathBuf {
+    let mut random = [0u8; 8];
+    OsRng.fill_bytes(&mut random);
+    let mut name = path
+        .file_name()
+        .map(|s| s.to_os_string())
+        .unwrap_or_else(|| VERIFIER_SEED_FILE.into());
+    name.push(format!(".{:016x}.tmp", u64::from_be_bytes(random)));
+    path.with_file_name(name)
 }
 
 // --- Recovery phrase (independent reset credential, t51 Phase B) ----------------------------
@@ -101,8 +429,9 @@ const CROCKFORD_BASE32: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 /// Crockford base32 (32 chars, no ambiguous letters, no padding) grouped `XXXXXXXX-XXXXXXXX-…`.
 ///
 /// The phrase is an **independent** credential — it is NOT derived from, nor does it wrap, the
-/// password. The server stores only its argon2id verifier ([`hash_secret`]); the plaintext is
-/// shown to the user exactly once, at issuance, and is unrecoverable thereafter.
+/// password. The server stores only its verifier ([`hash_secret_with_seed`] for new writes; legacy
+/// PHC strings remain readable); the plaintext is shown to the user exactly once, at issuance, and
+/// is unrecoverable thereafter.
 pub fn generate_recovery_phrase() -> String {
     let mut bytes = [0u8; RECOVERY_ENTROPY_BYTES];
     OsRng.fill_bytes(&mut bytes);

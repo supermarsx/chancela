@@ -388,11 +388,20 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // --- Data management ------------------------------------------------------------------------
     ("/v1/data/reset", RouteClass::Gated), // POST data.wipe@Global + step-up
     ("/v1/data/status", RouteClass::Gated), // GET settings.read@Global
+    ("/v1/data/cleanup", RouteClass::Gated), // POST settings.manage@Global
     ("/v1/data/start-over", RouteClass::Gated), // POST data.start_over@Global + step-up
     ("/v1/backup", RouteClass::Gated),     // POST data.backup@Global
     ("/v1/dashboard", RouteClass::Gated),  // GET act.read@Global
+    ("/v1/notifications/triage", RouteClass::Gated), // GET act.read@Global
+    ("/v1/notifications/triage/{id}", RouteClass::Gated), // PATCH act.read@Global
     // --- Settings -------------------------------------------------------------------------------
     ("/v1/settings", RouteClass::Gated), // GET settings.read@Global · PUT settings.manage@Global
+    ("/v1/platform/services", RouteClass::Gated), // GET settings.read@Global
+    (
+        "/v1/platform/services/{id}/actions/{action}",
+        RouteClass::Gated,
+    ), // POST settings.manage@Global
+    ("/v1/platform/logs", RouteClass::Gated), // GET settings.read@Global
     // --- Reference: CAE + law -------------------------------------------------------------------
     ("/v1/cae", RouteClass::Gated),          // GET cae.read@Global
     ("/v1/cae/refresh", RouteClass::Gated),  // POST cae.refresh@Global

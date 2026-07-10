@@ -26,7 +26,7 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::actor::{SESSION_HEADER, SESSION_TTL_SECS, resolve_session_actor};
 use crate::apikeys::read_bearer_api_key;
-use crate::attestation::verify_secret;
+use crate::attestation::{hash_secret_with_seed, verify_secret_with_seed};
 use crate::error::ApiError;
 use crate::users::{User, UserId, UserView};
 
@@ -208,7 +208,7 @@ pub async fn create_session(
     Json(req): Json<CreateSession>,
 ) -> Result<Json<SessionCreated>, ApiError> {
     let uid = UserId(req.user_id);
-    let user = {
+    let mut user = {
         let users = state.users.read().await;
         match users.get(&uid).cloned() {
             Some(u) if u.active => u,
@@ -216,10 +216,11 @@ pub async fn create_session(
         }
     };
 
-    let unlocked_key = match &user.password_hash {
+    let unlocked_key = match user.password_hash.clone() {
         None => None,
-        Some(phc) => {
+        Some(stored) => {
             let now = OffsetDateTime::now_utc();
+            let seed = state.verifier_seed.read().await.clone();
             let mut backoff = state.signin_backoff.write().await;
             let entry = backoff.entry(uid).or_insert(Backoff {
                 fails: 0,
@@ -232,12 +233,15 @@ pub async fn create_session(
                     "demasiadas tentativas — tente novamente em {remaining} s"
                 )));
             }
-            let ok = req
+            let verification = req
                 .password
                 .as_deref()
-                .map(|p| verify_secret(p, phc))
-                .unwrap_or(false);
-            if !ok {
+                .map(|p| verify_secret_with_seed(p, &stored, &seed))
+                .unwrap_or(crate::attestation::SecretVerification {
+                    verified: false,
+                    needs_upgrade: false,
+                });
+            if !verification.verified {
                 entry.fails += 1;
                 entry.next_allowed_at = now + Duration::seconds(backoff_secs(entry.fails));
                 return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
@@ -245,6 +249,14 @@ pub async fn create_session(
             drop(backoff);
             state.signin_backoff.write().await.remove(&uid);
             let password = req.password.as_deref().unwrap_or_default();
+            if verification.needs_upgrade {
+                let upgraded = hash_secret_with_seed(password, &seed)?;
+                if let Some(updated) =
+                    upgrade_password_hash_after_signin(&state, uid, &stored, upgraded).await?
+                {
+                    user = updated;
+                }
+            }
             match &user.attestation_key {
                 Some(blob) => Some(blob.unlock(password)?),
                 None => None,
@@ -267,6 +279,30 @@ pub async fn create_session(
         token,
         user: UserView::from(&user),
     }))
+}
+
+async fn upgrade_password_hash_after_signin(
+    state: &AppState,
+    uid: UserId,
+    old_hash: &str,
+    new_hash: String,
+) -> Result<Option<User>, ApiError> {
+    let mut users = state.users.write().await;
+    let changed = match users.get_mut(&uid) {
+        Some(current) if current.password_hash.as_deref() == Some(old_hash) => {
+            current.password_hash = Some(new_hash);
+            true
+        }
+        _ => false,
+    };
+    if !changed {
+        return Ok(None);
+    }
+    if let Some(path) = &state.users_path {
+        crate::users::write_users_atomic(path, &users)
+            .map_err(|e| ApiError::Internal(format!("failed to persist users: {e}")))?;
+    }
+    Ok(users.get(&uid).cloned())
 }
 
 /// `GET /v1/session` — the user behind the `X-Chancela-Session` header, or `{ "user": null }`.

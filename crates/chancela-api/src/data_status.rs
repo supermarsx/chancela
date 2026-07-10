@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::Json;
 use axum::extract::State;
 use chancela_authz::{Permission, Scope};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
 use tokio::task;
 
@@ -96,6 +96,21 @@ pub struct ConcernUsage {
     pub relative_roots: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DataCleanupRequest {
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DataCleanupResponse {
+    pub target: String,
+    pub deleted_bytes: u64,
+    pub deleted_files: u64,
+    pub deleted_directories: u64,
+    pub skipped: Vec<String>,
+    pub data_dir: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageBasis {
@@ -126,6 +141,21 @@ struct ConcernAccumulator {
     relative_roots: BTreeMap<String, ()>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CleanupTarget {
+    Crash,
+    Exports,
+}
+
+impl CleanupTarget {
+    fn id(self) -> &'static str {
+        match self {
+            CleanupTarget::Crash => "crash",
+            CleanupTarget::Exports => "exports",
+        }
+    }
+}
+
 /// `GET /v1/data/status` - read-only storage and data-directory telemetry.
 pub async fn get_data_status(
     State(state): State<AppState>,
@@ -135,7 +165,8 @@ pub async fn get_data_status(
 
     let data_dir = state.data_dir();
     let data_dir_configured = data_dir.is_some();
-    let durable_store_open = state.store.is_some();
+    let store = state.store.clone();
+    let durable_store_open = store.is_some();
     let mode = match (data_dir_configured, durable_store_open) {
         (_, true) => PersistenceMode::Durable,
         (true, false) => PersistenceMode::FallbackInMemory,
@@ -145,19 +176,12 @@ pub async fn get_data_status(
     let ledger_verified = state.chain_status.as_ref().map(|status| status.is_ok());
     let degraded = *state.degraded.read().await;
 
-    let mut fs = match data_dir {
-        Some(dir) => task::spawn_blocking(move || inspect_data_dir(dir, durable_store_open))
+    let fs = match data_dir {
+        Some(dir) => task::spawn_blocking(move || inspect_data_dir(dir, store))
             .await
             .map_err(|e| ApiError::Internal(format!("data status worker failed: {e}")))?,
         None => inspect_unconfigured_data_dir(durable_store_open),
     };
-
-    if durable_store_open {
-        fs.usage.scan_errors.push(
-            "sqlite logical usage not reported: chancela-store does not expose read-only table payload statistics"
-                .to_owned(),
-        );
-    }
 
     Ok(Json(DataStatusResponse {
         generated_at: now_rfc3339(),
@@ -176,6 +200,234 @@ pub async fn get_data_status(
         permissions: fs.permissions,
         usage: fs.usage,
     }))
+}
+
+/// `POST /v1/data/cleanup` - bounded storage cleanup for crash reports or retained exports.
+pub async fn cleanup_data(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(req): Json<DataCleanupRequest>,
+) -> Result<Json<DataCleanupResponse>, ApiError> {
+    // Storage maintenance is a settings/data-management operation: not public, and stronger than
+    // the read-only status view, but intentionally below the full data.wipe destructive reset rail.
+    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+
+    let target = parse_cleanup_target(&req.target)?;
+    let Some(data_dir) = state.data_dir() else {
+        return Err(ApiError::Unprocessable(
+            "storage cleanup requires on-disk persistence; set CHANCELA_DATA_DIR".to_owned(),
+        ));
+    };
+    let data_dir_display = data_dir.to_string_lossy().into_owned();
+
+    let mut response = task::spawn_blocking(move || cleanup_data_dir(data_dir, target))
+        .await
+        .map_err(|e| ApiError::Internal(format!("data cleanup worker failed: {e}")))??;
+    response.data_dir = Some(data_dir_display);
+    Ok(Json(response))
+}
+
+fn parse_cleanup_target(raw: &str) -> Result<CleanupTarget, ApiError> {
+    match raw.trim() {
+        "crash" => Ok(CleanupTarget::Crash),
+        "exports" => Ok(CleanupTarget::Exports),
+        other => Err(ApiError::Unprocessable(format!(
+            "unsupported cleanup target {other:?} (use crash | exports)"
+        ))),
+    }
+}
+
+fn cleanup_data_dir(
+    data_dir: PathBuf,
+    target: CleanupTarget,
+) -> Result<DataCleanupResponse, ApiError> {
+    let base = canonical_data_dir(&data_dir)?;
+    let mut response = DataCleanupResponse {
+        target: target.id().to_owned(),
+        deleted_bytes: 0,
+        deleted_files: 0,
+        deleted_directories: 0,
+        skipped: Vec::new(),
+        data_dir: None,
+    };
+
+    let entries = fs::read_dir(&base).map_err(|e| {
+        ApiError::Unprocessable(format!(
+            "data directory cannot be read for cleanup ({}): {e}",
+            base.display()
+        ))
+    })?;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                response
+                    .skipped
+                    .push(format!("failed to read a data-directory entry: {e}"));
+                continue;
+            }
+        };
+        let root = entry.file_name().to_string_lossy().into_owned();
+        if concern_for_root(&root).id == target.id() {
+            cleanup_concern_root(&base, &entry.path(), &mut response);
+        }
+    }
+
+    Ok(response)
+}
+
+fn canonical_data_dir(dir: &Path) -> Result<PathBuf, ApiError> {
+    let base = fs::canonicalize(dir).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => {
+            ApiError::Unprocessable(format!("data directory does not exist: {}", dir.display()))
+        }
+        _ => ApiError::Unprocessable(format!(
+            "data directory cannot be resolved for cleanup ({}): {e}",
+            dir.display()
+        )),
+    })?;
+    let meta = fs::symlink_metadata(&base).map_err(|e| {
+        ApiError::Unprocessable(format!(
+            "data directory cannot be inspected for cleanup ({}): {e}",
+            base.display()
+        ))
+    })?;
+    if !meta.is_dir() {
+        return Err(ApiError::Unprocessable(format!(
+            "data directory is not a directory: {}",
+            base.display()
+        )));
+    }
+    Ok(base)
+}
+
+fn cleanup_concern_root(base: &Path, root: &Path, response: &mut DataCleanupResponse) {
+    let rel = relative_display(base, root);
+    let meta = match fs::symlink_metadata(root) {
+        Ok(meta) => meta,
+        Err(e) => {
+            response
+                .skipped
+                .push(format!("{rel}: failed to inspect cleanup root: {e}"));
+            return;
+        }
+    };
+    if meta.file_type().is_symlink() {
+        response
+            .skipped
+            .push(format!("{rel}: protected symlink cleanup root"));
+        return;
+    }
+    if let Err(reason) = validate_cleanup_target(base, root) {
+        response.skipped.push(format!("{rel}: {reason}"));
+        return;
+    }
+
+    if meta.is_dir() {
+        cleanup_directory_contents(base, root, response);
+    } else if meta.is_file() {
+        delete_file(root, meta.len(), base, response);
+    } else {
+        response
+            .skipped
+            .push(format!("{rel}: unsupported filesystem entry type"));
+    }
+}
+
+fn cleanup_directory_contents(base: &Path, dir: &Path, response: &mut DataCleanupResponse) {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            response.skipped.push(format!(
+                "{}: failed to read cleanup directory: {e}",
+                relative_display(base, dir)
+            ));
+            return;
+        }
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                response.skipped.push(format!(
+                    "{}: failed to read cleanup directory entry: {e}",
+                    relative_display(base, dir)
+                ));
+                continue;
+            }
+        };
+        cleanup_path(base, &entry.path(), response);
+    }
+}
+
+fn cleanup_path(base: &Path, path: &Path, response: &mut DataCleanupResponse) {
+    let rel = relative_display(base, path);
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) => {
+            response
+                .skipped
+                .push(format!("{rel}: failed to inspect cleanup target: {e}"));
+            return;
+        }
+    };
+    if meta.file_type().is_symlink() {
+        response
+            .skipped
+            .push(format!("{rel}: protected symlink cleanup target"));
+        return;
+    }
+    if let Err(reason) = validate_cleanup_target(base, path) {
+        response.skipped.push(format!("{rel}: {reason}"));
+        return;
+    }
+
+    if meta.is_dir() {
+        cleanup_directory_contents(base, path, response);
+        match fs::remove_dir(path) {
+            Ok(()) => {
+                response.deleted_directories = response.deleted_directories.saturating_add(1);
+            }
+            Err(e) => response
+                .skipped
+                .push(format!("{rel}: failed to delete directory: {e}")),
+        }
+    } else if meta.is_file() {
+        delete_file(path, meta.len(), base, response);
+    } else {
+        response
+            .skipped
+            .push(format!("{rel}: unsupported filesystem entry type"));
+    }
+}
+
+fn delete_file(path: &Path, bytes: u64, base: &Path, response: &mut DataCleanupResponse) {
+    let rel = relative_display(base, path);
+    match fs::remove_file(path) {
+        Ok(()) => {
+            response.deleted_files = response.deleted_files.saturating_add(1);
+            response.deleted_bytes = response.deleted_bytes.saturating_add(bytes);
+        }
+        Err(e) => response
+            .skipped
+            .push(format!("{rel}: failed to delete file: {e}")),
+    }
+}
+
+fn validate_cleanup_target(base: &Path, target: &Path) -> Result<(), String> {
+    let resolved = fs::canonicalize(target)
+        .map_err(|e| format!("cleanup target could not be resolved: {e}"))?;
+    if resolved == base {
+        return Err("refusing to clean the data-directory root".to_owned());
+    }
+    if !resolved.starts_with(base) {
+        return Err(format!(
+            "protected target resolved outside the data directory ({})",
+            resolved.display()
+        ));
+    }
+    Ok(())
 }
 
 fn inspect_unconfigured_data_dir(durable_store_open: bool) -> FsInspection {
@@ -210,7 +462,8 @@ fn inspect_unconfigured_data_dir(durable_store_open: bool) -> FsInspection {
     }
 }
 
-fn inspect_data_dir(dir: PathBuf, durable_store_open: bool) -> FsInspection {
+fn inspect_data_dir(dir: PathBuf, store: Option<chancela_store::Store>) -> FsInspection {
+    let durable_store_open = store.is_some();
     let mut scan_errors = Vec::new();
     let (exists, is_directory) = match fs::symlink_metadata(&dir) {
         Ok(meta) => (Some(true), Some(meta.is_dir())),
@@ -226,6 +479,9 @@ fn inspect_data_dir(dir: PathBuf, durable_store_open: bool) -> FsInspection {
 
     let permissions = probe_permissions(&dir, durable_store_open);
     let mut usage = scan_filesystem_usage(&dir);
+    if let Some(store) = store.as_ref() {
+        usage.sqlite_logical = scan_sqlite_logical_usage(store, &mut usage.scan_errors);
+    }
     scan_errors.append(&mut usage.scan_errors);
     usage.scan_errors = scan_errors;
 
@@ -327,6 +583,373 @@ fn scan_filesystem_usage(dir: &Path) -> UsageStatus {
         sqlite_logical: Vec::new(),
         scan_errors,
     }
+}
+
+fn scan_sqlite_logical_usage(
+    store: &chancela_store::Store,
+    scan_errors: &mut Vec<String>,
+) -> Vec<ConcernUsage> {
+    let loaded = match store.load() {
+        Ok(loaded) => loaded,
+        Err(e) => {
+            scan_errors.push(format!("failed to read SQLite logical usage: {e}"));
+            return Vec::new();
+        }
+    };
+
+    let mut usage = Vec::new();
+
+    let ledger_bytes = loaded
+        .ledger
+        .events()
+        .iter()
+        .map(|event| json_len_estimate(event))
+        .fold(0_u64, u64::saturating_add);
+    usage.push(sqlite_logical_concern(
+        "ledger",
+        "Ledger events",
+        loaded.ledger.len() as u64,
+        ledger_bytes,
+        vec!["events"],
+    ));
+
+    let entity_bytes = loaded
+        .entities
+        .values()
+        .map(|entity| json_len_estimate(entity))
+        .fold(0_u64, u64::saturating_add);
+    let book_bytes = loaded
+        .books
+        .values()
+        .map(|book| json_len_estimate(book))
+        .fold(0_u64, u64::saturating_add);
+    let act_bytes = loaded
+        .acts
+        .values()
+        .map(|act| json_len_estimate(act))
+        .fold(0_u64, u64::saturating_add);
+    usage.push(sqlite_logical_concern(
+        "domain",
+        "Domain records",
+        (loaded.entities.len() + loaded.books.len() + loaded.acts.len()) as u64,
+        entity_bytes
+            .saturating_add(book_bytes)
+            .saturating_add(act_bytes),
+        vec!["entities", "books", "acts"],
+    ));
+
+    let registry_bytes = loaded
+        .registry_extracts
+        .values()
+        .map(|extract| json_len_estimate(extract))
+        .fold(0_u64, u64::saturating_add);
+    usage.push(sqlite_logical_concern(
+        "registry",
+        "Registry extracts",
+        loaded.registry_extracts.len() as u64,
+        registry_bytes,
+        vec!["registry_extracts"],
+    ));
+
+    let follow_up_bytes = loaded
+        .follow_ups
+        .values()
+        .map(follow_up_len_estimate)
+        .fold(0_u64, u64::saturating_add);
+    usage.push(sqlite_logical_concern(
+        "follow_ups",
+        "Follow-ups",
+        loaded.follow_ups.len() as u64,
+        follow_up_bytes,
+        vec!["follow_ups"],
+    ));
+
+    let mut document_rows = 0_u64;
+    let mut document_bytes = 0_u64;
+    for act_id in loaded.acts.keys().copied() {
+        match store.documents_for_act(act_id) {
+            Ok(docs) => {
+                document_rows = document_rows.saturating_add(docs.len() as u64);
+                document_bytes = document_bytes.saturating_add(
+                    docs.iter()
+                        .map(stored_document_len_estimate)
+                        .fold(0_u64, u64::saturating_add),
+                );
+            }
+            Err(e) => scan_errors.push(format!(
+                "failed to read SQLite logical usage for documents: {e}"
+            )),
+        }
+    }
+    usage.push(sqlite_logical_concern(
+        "documents",
+        "Generated documents",
+        document_rows,
+        document_bytes,
+        vec!["documents"],
+    ));
+
+    match store.all_signed_documents() {
+        Ok(signed) => {
+            let bytes = signed
+                .values()
+                .map(signed_document_len_estimate)
+                .fold(0_u64, u64::saturating_add);
+            usage.push(sqlite_logical_concern(
+                "signed_documents",
+                "Signed documents",
+                signed.len() as u64,
+                bytes,
+                vec!["signed_documents"],
+            ));
+        }
+        Err(e) => scan_errors.push(format!(
+            "failed to read SQLite logical usage for signed_documents: {e}"
+        )),
+    }
+
+    match store.all_pending_cmd_sessions() {
+        Ok(pending) => {
+            let bytes = pending
+                .values()
+                .map(pending_session_len_estimate)
+                .fold(0_u64, u64::saturating_add);
+            usage.push(sqlite_logical_concern(
+                "pending_signatures",
+                "Pending signing sessions",
+                pending.len() as u64,
+                bytes,
+                vec!["pending_cmd_sessions"],
+            ));
+        }
+        Err(e) => scan_errors.push(format!(
+            "failed to read SQLite logical usage for pending_cmd_sessions: {e}"
+        )),
+    }
+
+    match store.imported_documents(None) {
+        Ok(imports) => {
+            let bytes = imports
+                .iter()
+                .map(imported_document_meta_len_estimate)
+                .fold(0_u64, u64::saturating_add);
+            usage.push(sqlite_logical_concern(
+                "imported_documents",
+                "Imported document evidence",
+                imports.len() as u64,
+                bytes,
+                vec!["imported_documents"],
+            ));
+        }
+        Err(e) => scan_errors.push(format!(
+            "failed to read SQLite logical usage for imported_documents: {e}"
+        )),
+    }
+
+    match store.imported_books() {
+        Ok(imports) => {
+            let mut bytes = 0_u64;
+            for import in &imports {
+                bytes = bytes.saturating_add(imported_book_len_estimate(import));
+                match store.imported_bundle(&import.import_id) {
+                    Ok(Some(bundle)) => {
+                        bytes = bytes.saturating_add(bundle.len() as u64);
+                    }
+                    Ok(None) => scan_errors.push(format!(
+                        "imported_books row {} has no retained bundle bytes",
+                        import.import_id
+                    )),
+                    Err(e) => scan_errors.push(format!(
+                        "failed to read retained bundle bytes for import {}: {e}",
+                        import.import_id
+                    )),
+                }
+            }
+            usage.push(sqlite_logical_concern(
+                "imported_books",
+                "Imported book bundles",
+                imports.len() as u64,
+                bytes,
+                vec!["imported_books"],
+            ));
+        }
+        Err(e) => scan_errors.push(format!(
+            "failed to read SQLite logical usage for imported_books: {e}"
+        )),
+    }
+
+    match store.paper_book_imports(None) {
+        Ok(imports) => {
+            let bytes = imports
+                .iter()
+                .map(paper_book_import_meta_len_estimate)
+                .fold(0_u64, u64::saturating_add);
+            usage.push(sqlite_logical_concern(
+                "paper_book_imports",
+                "Paper book imports",
+                imports.len() as u64,
+                bytes,
+                vec!["paper_book_imports"],
+            ));
+
+            let mut draft_rows = 0_u64;
+            let mut draft_bytes = 0_u64;
+            for import in imports {
+                match store.paper_book_ocr_drafts(&import.import_id) {
+                    Ok(drafts) => {
+                        draft_rows = draft_rows.saturating_add(drafts.len() as u64);
+                        draft_bytes = draft_bytes.saturating_add(
+                            drafts
+                                .iter()
+                                .map(paper_book_ocr_draft_len_estimate)
+                                .fold(0_u64, u64::saturating_add),
+                        );
+                    }
+                    Err(e) => scan_errors.push(format!(
+                        "failed to read SQLite logical usage for paper_book_ocr_drafts: {e}"
+                    )),
+                }
+            }
+            usage.push(sqlite_logical_concern(
+                "paper_book_ocr_drafts",
+                "Paper book OCR drafts",
+                draft_rows,
+                draft_bytes,
+                vec!["paper_book_ocr_drafts"],
+            ));
+        }
+        Err(e) => scan_errors.push(format!(
+            "failed to read SQLite logical usage for paper_book_imports: {e}"
+        )),
+    }
+
+    usage
+}
+
+fn sqlite_logical_concern(
+    id: &str,
+    label: &str,
+    row_count: u64,
+    bytes: u64,
+    tables: Vec<&str>,
+) -> ConcernUsage {
+    ConcernUsage {
+        id: id.to_owned(),
+        label: label.to_owned(),
+        bytes,
+        basis: UsageBasis::SqliteLogicalPayload,
+        exact: false,
+        file_count: 0,
+        directory_count: 0,
+        row_count: Some(row_count),
+        relative_roots: tables.into_iter().map(str::to_owned).collect(),
+    }
+}
+
+fn json_len_estimate(value: &impl Serialize) -> u64 {
+    serde_json::to_vec(value).map_or(0, |bytes| bytes.len() as u64)
+}
+
+fn opt_len(value: Option<&str>) -> u64 {
+    value.map_or(0, |s| s.len() as u64)
+}
+
+fn follow_up_len_estimate(follow_up: &chancela_store::StoredFollowUp) -> u64 {
+    follow_up.id.len() as u64
+        + follow_up.act_id.to_string().len() as u64
+        + follow_up.title.len() as u64
+        + opt_len(follow_up.detail.as_deref())
+        + opt_len(follow_up.assignee.as_deref())
+        + opt_len(follow_up.assignee_display.as_deref())
+        + follow_up.created_by.len() as u64
+        + opt_len(follow_up.completed_by.as_deref())
+        + 32
+}
+
+fn stored_document_len_estimate(doc: &chancela_store::StoredDocument) -> u64 {
+    doc.id.len() as u64
+        + doc.act_id.to_string().len() as u64
+        + doc.template_id.len() as u64
+        + doc.pdf_digest.len() as u64
+        + doc.profile.len() as u64
+        + doc.pdf_bytes.len() as u64
+}
+
+fn signed_document_len_estimate(doc: &chancela_store::StoredSignedDocument) -> u64 {
+    doc.act_id.to_string().len() as u64
+        + doc.document_id.len() as u64
+        + doc.signed_pdf_digest.len() as u64
+        + doc.signature_family.len() as u64
+        + doc.evidentiary_level.len() as u64
+        + opt_len(doc.trusted_list_status.as_deref())
+        + opt_len(doc.signer_cert_subject.as_deref())
+        + doc.signer_cert_der.len() as u64
+        + doc
+            .timestamp_token_der
+            .as_ref()
+            .map_or(0, |bytes| bytes.len() as u64)
+        + opt_len(doc.timestamp_trust_report_json.as_deref())
+        + doc.signed_pdf_bytes.len() as u64
+}
+
+fn pending_session_len_estimate(session: &chancela_store::PendingCmdSession) -> u64 {
+    session.session_id.len() as u64
+        + session.act_id.to_string().len() as u64
+        + session.actor.len() as u64
+        + session.status.len() as u64
+        + session.masked_phone.len() as u64
+        + session.doc_name.len() as u64
+        + session.session_json.len() as u64
+        + session.prepared_json.len() as u64
+}
+
+fn imported_document_meta_len_estimate(meta: &chancela_store::StoredImportedDocumentMeta) -> u64 {
+    meta.id.len() as u64
+        + meta.act_id.map_or(0, |id| id.to_string().len() as u64)
+        + opt_len(meta.filename.as_deref())
+        + opt_len(meta.declared_content_type.as_deref())
+        + meta.detected_content_type.len() as u64
+        + meta.sha256.len() as u64
+        + meta.imported_by.len() as u64
+        + meta.size_bytes as u64
+}
+
+fn imported_book_len_estimate(import: &chancela_store::recovery::ImportRecord) -> u64 {
+    import.import_id.len() as u64
+        + import.entity_id.len() as u64
+        + import.book_id.len() as u64
+        + import.source_instance_id.len() as u64
+        + import.bundle_digest.len() as u64
+        + format!("{:?}", import.verdict).len() as u64
+        + 8
+}
+
+fn paper_book_import_meta_len_estimate(meta: &chancela_store::StoredPaperBookImportMeta) -> u64 {
+    meta.import_id.len() as u64
+        + meta.entity_ref.len() as u64
+        + meta.entity_name.len() as u64
+        + meta.entity_nipc.len() as u64
+        + meta.book_ref.len() as u64
+        + meta.sha256.len() as u64
+        + meta.content_type.len() as u64
+        + opt_len(meta.source_filename.as_deref())
+        + opt_len(meta.notes.as_deref())
+        + meta.imported_by.len() as u64
+        + meta.size_bytes as u64
+}
+
+fn paper_book_ocr_draft_len_estimate(draft: &chancela_store::StoredPaperBookOcrDraft) -> u64 {
+    draft.draft_id.len() as u64
+        + draft.import_id.len() as u64
+        + opt_len(draft.extracted_text.as_deref())
+        + opt_len(draft.text_digest.as_deref())
+        + json_len_estimate(&draft.page_spans)
+        + draft.engine_name.len() as u64
+        + opt_len(draft.engine_version.as_deref())
+        + draft.created_by.len() as u64
+        + opt_len(draft.reviewed_by.as_deref())
+        + opt_len(draft.review_note.as_deref())
+        + opt_len(draft.superseded_by.as_deref())
 }
 
 fn scan_dir(
@@ -538,6 +1161,28 @@ fn unchecked(message: impl Into<String>) -> PermissionCheck {
 mod tests {
     use super::*;
 
+    struct TempDir {
+        dir: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "chancela-data-status-{name}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            Self { dir }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
     #[test]
     fn data_status_concern_classification_covers_known_roots() {
         assert_eq!(concern_for_root("chancela.db").id, "database");
@@ -566,5 +1211,21 @@ mod tests {
         assert_eq!(concern_for_root("exports").id, "exports");
         assert_eq!(concern_for_root("crash").id, "crash");
         assert_eq!(concern_for_root("misc.bin").id, "other");
+    }
+
+    #[test]
+    fn cleanup_target_validation_refuses_root_and_outside_paths() {
+        let base = TempDir::new("base");
+        let outside = TempDir::new("outside");
+        let base = std::fs::canonicalize(&base.dir).expect("canonical base");
+        let outside_file = outside.dir.join("crash.log");
+        std::fs::write(&outside_file, b"outside").expect("outside file");
+
+        let root_error = validate_cleanup_target(&base, &base).expect_err("root refused");
+        assert!(root_error.contains("data-directory root"));
+
+        let outside_error =
+            validate_cleanup_target(&base, &outside_file).expect_err("outside refused");
+        assert!(outside_error.contains("outside the data directory"));
     }
 }

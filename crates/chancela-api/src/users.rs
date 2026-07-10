@@ -86,10 +86,12 @@ pub struct User {
     /// How the current secret was established (t51). Additive; defaults to `Password`.
     #[serde(default)]
     pub secret_source: SecretSource,
-    /// argon2id **verifier** for the user's recovery phrase (t51 Phase B), or `None` when no
-    /// recovery credential is established. Stores ONLY the verifier — never the plaintext phrase and
-    /// never anything reversible. Independent of the password: possession of the phrase is its own
-    /// proof. Consumed (set back to `None`) after a successful recovery-authorized reset (single-use).
+    /// Verifier for the user's recovery phrase (t51 Phase B), or `None` when no recovery credential
+    /// is established. Stores ONLY the verifier — never the plaintext phrase and never anything
+    /// reversible. New verifiers carry a per-verifier pepper and reference the app verifier seed
+    /// sidecar; legacy argon2id PHC strings still load and verify. Independent of the password:
+    /// possession of the phrase is its own proof. Consumed (set back to `None`) after a successful
+    /// recovery-authorized reset (single-use).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_hash: Option<String>,
     /// The user's scoped RBAC role assignments (t64). **Additive** — `#[serde(default)]` keeps every
@@ -739,7 +741,8 @@ pub async fn set_secret(
         verify_current(&snapshot, req.current_password.as_deref())?;
     }
 
-    let new_hash = attestation::hash_secret(&req.password)?;
+    let seed = state.verifier_seed.read().await.clone();
+    let new_hash = attestation::hash_secret_with_seed(&req.password, &seed)?;
 
     // Attestation-key + provenance handling by authorization path (argon2/rewrap OUTSIDE the lock).
     // `proof` is `Some` only on a cross-user reset (drives the distinct audit event + recovery
@@ -1080,7 +1083,8 @@ pub async fn issue_recovery(
 
     // Generate the phrase and its verifier OUTSIDE the write lock (argon2 discipline, t41 H2).
     let phrase = attestation::generate_recovery_phrase();
-    let verifier = attestation::hash_secret(&phrase)?;
+    let seed = state.verifier_seed.read().await.clone();
+    let verifier = attestation::hash_secret_with_seed(&phrase, &seed)?;
 
     let user = {
         let mut users = state.users.write().await;
