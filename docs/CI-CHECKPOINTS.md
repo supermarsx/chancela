@@ -87,7 +87,8 @@ API/UI/refusal markers,
 focused paper-book OCR review browser workflow markers,
 caller-supplied archive timestamp append API markers, dashboard current-work
 summary caps/hidden-count markers, registered-entity single-line table and
-filter no-overflow markers, external-validator
+filter no-overflow markers, books filter/table no-overflow markers, platform
+service/control desired-state markers, encrypted-build-default markers, external-validator
 metadata API durability markers, the settings.read raw metadata download
 route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
 locale keys, and non-destructive payload assertions, Ferramentas
@@ -110,10 +111,12 @@ The GitHub Actions job is `recent-landed` in `.github/workflows/ci.yml`. Keep
 this lane focused: add only short-running commands that prove the named landed
 areas still resolve together. Broader workspace clippy, full Rust tests,
 browser E2E, Docker, and Windows desktop smoke remain in their dedicated jobs.
-The `f58019c` refresh documents API-owned structured platform log threshold
-enforcement and paper-import clippy cleanup in `SPEC-COVERAGE.md` without adding
-new recent-landed commands or claiming stdout/stderr, MCP process logs, or
-supervisor lifecycle coverage.
+The `3f19872` refresh documents compact notification/storage UI, honest
+platform service controls, encrypted package-build defaults, and books
+filter/table density in `SPEC-COVERAGE.md` and the static checkpoint map without
+claiming stdout/stderr, MCP process logs, supervisor lifecycle coverage,
+hardware-ID-derived key security, production key custody, legal validity, or
+complete UX/spec coverage.
 
 ## Release Hardening Artifacts
 

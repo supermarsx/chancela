@@ -1115,6 +1115,76 @@ function assertCheckpointMap() {
     "notification bell acknowledge icon-only coverage",
   );
   assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.test.tsx",
+    "folds compact popup item tags into the title without separate row badges",
+    "notification compact popup tag coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "function permissionSummary",
+    "data management permission summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "data-status-cleanups",
+    "data management cleanup list marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/settings.rs",
+    "global = off",
+    "platform logging global off kill switch marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "platform_logs_service_override_can_lower_threshold_or_turn_service_off",
+    "platform log service override coverage",
+  );
+  assertFileContains(
+    "contracts/platform.services.json",
+    "\"actual_runtime_status\": \"unknown\"",
+    "platform services honest MCP status fixture",
+  );
+  assertFileContains(
+    "contracts/platform.control.json",
+    "\"kind\": \"supervisor_required\"",
+    "platform service control supervisor-required fixture",
+  );
+  assertFileContains(
+    "package.json",
+    "check:encrypted-build-defaults",
+    "encrypted build defaults package script",
+  );
+  assertFileContains(
+    "scripts/check-encrypted-build-defaults.mjs",
+    "checkRootReleaseBuild",
+    "encrypted build defaults static checker",
+  );
+  assertFileContains(
+    "docker/Dockerfile.server",
+    "--features chancela-server/sqlcipher",
+    "Docker SQLCipher server build default",
+  );
+  assertFileContains(
+    "apps/desktop/package.json",
+    "tauri build --features sqlcipher",
+    "desktop SQLCipher package build default",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/books.test.tsx",
+    "keeps books filter and table CSS from forcing horizontal scroll or wrapping rows",
+    "books filter/table no-overflow CSS coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BooksPage.tsx",
+    "books-filterbar__primary",
+    "books primary filterbar marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BooksTable.tsx",
+    "books-table__cell--truncate",
+    "books truncating table cell marker",
+  );
+  assertFileContains(
     "crates/chancela-cli/tests/cli.rs",
     "db_key_env_fails_closed_without_sqlcipher_and_does_not_create_plaintext_db",
     "CLI database key env fail-closed coverage",
