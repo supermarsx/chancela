@@ -146,6 +146,7 @@ pub use database::{
 pub use delegations::{DelegationId, StoredDelegation};
 pub use error::ApiError;
 pub use law::{LawEntry, LawEntryView, LawStore, StoredLawInfo};
+pub use paper_import::PaperBookOcrCommandConfig;
 pub use platform_logs::{PlatformLogEntry, PlatformLogRing, PlatformLogsResponse};
 pub use roles::{
     count_owner_admins, effective_permissions_for, effective_permissions_for_actor,
@@ -336,6 +337,11 @@ pub struct AppState {
     /// of the manifest's pinned `pdf_url`, so tests exercise the real download path against an
     /// in-process fixture server. `None` in production (mirrors `registry`/`cae_source`).
     pub law_pdf_base_override: Option<Arc<String>>,
+    /// Opt-in local OCR command for preserved paper-book imports. `None` by default; when configured
+    /// from environment or injected by tests, `POST /v1/books/paper-import/{id}/ocr/run` executes the
+    /// command directly (no shell) against a temporary copy of the preserved package bytes and stores
+    /// bounded stdout as a non-authoritative OCR draft.
+    pub paper_book_ocr_command: Option<Arc<paper_import::PaperBookOcrCommandConfig>>,
     /// The durable system of record (t30): the SQLite store backing `entities`/`books`/`acts`/
     /// `registry_extracts` and the ledger's `events` table. `None` = pure in-memory (the current
     /// behaviour, byte-identical). Set only by [`AppState::with_data_dir`]/[`AppState::from_env`];
@@ -690,6 +696,8 @@ impl AppState {
         // provider LIST + non-secret selectors come from `CHANCELA_CSC_*` env vars, NOT the
         // web-asserted settings document (drift-safe). Empty when none are configured.
         state.csc_providers = Arc::new(signature::load_csc_providers_from_env());
+        state.paper_book_ocr_command =
+            paper_import::PaperBookOcrCommandConfig::from_env().map(Arc::new);
         Ok(state)
     }
 
@@ -982,6 +990,8 @@ impl AppState {
                     local_signing: signature::local_signing_from_env(),
                     // Resolve CSC providers from the environment (t59-s3) even in-memory.
                     csc_providers: Arc::new(signature::load_csc_providers_from_env()),
+                    paper_book_ocr_command: paper_import::PaperBookOcrCommandConfig::from_env()
+                        .map(Arc::new),
                     ..state
                 })
             }
@@ -1080,6 +1090,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/books/paper-import/{id}/ocr-status",
             patch(paper_import::update_paper_book_import_ocr_status),
+        )
+        .route(
+            "/v1/books/paper-import/{id}/ocr/run",
+            post(paper_import::run_paper_book_import_ocr),
         )
         .route(
             "/v1/books/paper-import/{id}/ocr-drafts",

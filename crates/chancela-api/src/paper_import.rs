@@ -19,8 +19,13 @@ use chancela_store::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::path::{Path as FsPath, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use tokio::io::AsyncReadExt;
+use tokio::process::{ChildStdout, Command};
 use uuid::Uuid;
 
 use crate::AppState;
@@ -36,6 +41,17 @@ const MAX_NOTES_CHARS: usize = 2_000;
 const MAX_OCR_TEXT_CHARS: usize = 1_000_000;
 const MAX_OCR_REVIEW_NOTE_CHARS: usize = 2_000;
 const SQLITE_MAX_INTEGER_U64: u64 = i64::MAX as u64;
+const DEFAULT_OCR_ARGS_TEMPLATE: &str = "{input}";
+const DEFAULT_OCR_ENGINE_NAME: &str = "operator-configured-ocr";
+const DEFAULT_OCR_TIMEOUT_SECS: u64 = 60;
+const MAX_OCR_TIMEOUT_SECS: u64 = 300;
+const DEFAULT_OCR_MAX_STDOUT_BYTES: usize = 256 * 1024;
+pub const PAPER_BOOK_OCR_COMMAND_ENV: &str = "CHANCELA_PAPER_BOOK_OCR_COMMAND";
+pub const PAPER_BOOK_OCR_ARGS_TEMPLATE_ENV: &str = "CHANCELA_PAPER_BOOK_OCR_ARGS_TEMPLATE";
+pub const PAPER_BOOK_OCR_ENGINE_NAME_ENV: &str = "CHANCELA_PAPER_BOOK_OCR_ENGINE_NAME";
+pub const PAPER_BOOK_OCR_ENGINE_VERSION_ENV: &str = "CHANCELA_PAPER_BOOK_OCR_ENGINE_VERSION";
+pub const PAPER_BOOK_OCR_TIMEOUT_SECS_ENV: &str = "CHANCELA_PAPER_BOOK_OCR_TIMEOUT_SECS";
+pub const PAPER_BOOK_OCR_MAX_STDOUT_BYTES_ENV: &str = "CHANCELA_PAPER_BOOK_OCR_MAX_STDOUT_BYTES";
 pub(crate) const PAPER_BOOK_IMPORT_MAX_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const PAPER_BOOK_IMPORT_ENVELOPE_BYTES: usize =
     PAPER_BOOK_IMPORT_MAX_BYTES * 4 / 3 + 64 * 1024;
@@ -161,6 +177,66 @@ pub struct PaperBookImportsQuery {
     pub book_ref: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaperBookOcrCommandConfig {
+    pub command_path: PathBuf,
+    pub args_template: Vec<String>,
+    pub engine_name: String,
+    pub engine_version: Option<String>,
+    pub timeout: Duration,
+    pub max_stdout_bytes: usize,
+}
+
+impl PaperBookOcrCommandConfig {
+    pub fn new(command_path: impl Into<PathBuf>) -> Self {
+        Self {
+            command_path: command_path.into(),
+            args_template: vec![DEFAULT_OCR_ARGS_TEMPLATE.to_owned()],
+            engine_name: DEFAULT_OCR_ENGINE_NAME.to_owned(),
+            engine_version: None,
+            timeout: Duration::from_secs(DEFAULT_OCR_TIMEOUT_SECS),
+            max_stdout_bytes: DEFAULT_OCR_MAX_STDOUT_BYTES,
+        }
+    }
+
+    pub(crate) fn from_env() -> Option<Self> {
+        let command_path = std::env::var(PAPER_BOOK_OCR_COMMAND_ENV).ok()?;
+        let command_path = command_path.trim();
+        if command_path.is_empty() {
+            return None;
+        }
+
+        let args_template = std::env::var(PAPER_BOOK_OCR_ARGS_TEMPLATE_ENV)
+            .ok()
+            .map(|raw| parse_args_template_env(&raw))
+            .unwrap_or_else(|| vec![DEFAULT_OCR_ARGS_TEMPLATE.to_owned()]);
+        let engine_name = env_text(PAPER_BOOK_OCR_ENGINE_NAME_ENV)
+            .unwrap_or_else(|| DEFAULT_OCR_ENGINE_NAME.to_owned());
+        let engine_version = env_text(PAPER_BOOK_OCR_ENGINE_VERSION_ENV);
+        let timeout = Duration::from_secs(env_u64(
+            PAPER_BOOK_OCR_TIMEOUT_SECS_ENV,
+            DEFAULT_OCR_TIMEOUT_SECS,
+            1,
+            MAX_OCR_TIMEOUT_SECS,
+        ));
+        let max_stdout_bytes = env_usize(
+            PAPER_BOOK_OCR_MAX_STDOUT_BYTES_ENV,
+            DEFAULT_OCR_MAX_STDOUT_BYTES,
+            1,
+            MAX_OCR_TEXT_CHARS,
+        );
+
+        Some(Self {
+            command_path: PathBuf::from(command_path),
+            args_template,
+            engine_name,
+            engine_version,
+            timeout,
+            max_stdout_bytes,
+        })
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PaperBookOcrStatusUpdateRequest {
     pub status: String,
@@ -217,6 +293,32 @@ pub struct PaperBookOcrDraftView {
     pub reviewed_by: Option<String>,
     pub review_note: Option<String>,
     pub superseded_by: Option<String>,
+    pub draft_notice: &'static str,
+    pub non_canonical: bool,
+    pub authoritative_text_claimed: bool,
+    pub canonical_minutes_claimed: bool,
+    pub canonical_act_created: bool,
+    pub canonical_document_created: bool,
+    pub signature_created: bool,
+    pub legal_validity_claimed: bool,
+    pub legal_notice: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PaperBookOcrRunResponse {
+    pub import_id: String,
+    pub previous_ocr_status: &'static str,
+    pub ocr_status: &'static str,
+    pub command_configured: bool,
+    pub command_exit_success: bool,
+    pub command_exit_code: Option<i32>,
+    pub timed_out: bool,
+    pub failure_reason: Option<&'static str>,
+    pub stdout_bytes_captured: usize,
+    pub stdout_truncated: bool,
+    pub engine: PaperBookOcrEngineView,
+    pub draft: Option<PaperBookOcrDraftView>,
+    pub status_notice: &'static str,
     pub draft_notice: &'static str,
     pub non_canonical: bool,
     pub authoritative_text_claimed: bool,
@@ -580,6 +682,130 @@ pub async fn update_paper_book_import_ocr_status(
         .map(Json)
 }
 
+/// `POST /v1/books/paper-import/{id}/ocr/run` - run an operator-configured local OCR command
+/// against the preserved package bytes and store bounded stdout as a non-authoritative draft.
+/// The command is executed directly with `Command::new`, never through a shell.
+pub async fn run_paper_book_import_ocr(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path(id): Path<String>,
+) -> Result<Json<PaperBookOcrRunResponse>, ApiError> {
+    let import = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    let config = state.paper_book_ocr_command.clone().ok_or_else(|| {
+        ApiError::Unprocessable(
+            "paper-book OCR run requires an operator-configured local OCR command".to_owned(),
+        )
+    })?;
+    validate_ocr_command_config(&config)?;
+    let output = execute_ocr_command(&config, &import).await?;
+    let previous_ocr_status = import.meta.ocr_status;
+    let updated_by = actor.resolve("api");
+
+    if output.command_exit_success {
+        let extracted_text = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !extracted_text.is_empty() {
+            let text_digest: [u8; 32] = Sha256::digest(extracted_text.as_bytes()).into();
+            let draft = build_ocr_draft(
+                PaperBookOcrDraftCreateRequest {
+                    extracted_text: Some(extracted_text),
+                    text_digest: Some(crate::hex::hex(&text_digest)),
+                    page_spans: vec![PaperBookOcrDraftPageSpanRequest {
+                        start_page: import.meta.page_from,
+                        end_page: import.meta.page_to,
+                    }],
+                    confidence: None,
+                    engine_name: config.engine_name.clone(),
+                    engine_version: config.engine_version.clone(),
+                },
+                &import.meta,
+                &actor,
+            )?;
+
+            let status_payload = serde_json::to_vec(&paper_book_ocr_status_event_payload(
+                &import.meta,
+                StoredPaperBookOcrStatus::Completed,
+                &updated_by,
+            ))?;
+            let draft_payload =
+                serde_json::to_vec(&paper_book_ocr_draft_event_payload(&draft, "created"))?;
+            let mut ledger = state.ledger.write().await;
+            crate::try_append_event(
+                &mut ledger,
+                &updated_by,
+                &format!("paper-book-import:{}", import.meta.import_id),
+                "paper_book_import.ocr_status_updated",
+                None,
+                &status_payload,
+            )?;
+            if let Err(err) = crate::try_append_event(
+                &mut ledger,
+                &draft.created_by,
+                &format!("paper-book-import:{}", import.meta.import_id),
+                "paper_book_import.ocr_draft_created",
+                None,
+                &draft_payload,
+            ) {
+                AppState::rollback_ledger_events(&mut ledger, 1);
+                return Err(err);
+            }
+            state.persist_write_through(&mut ledger, 2, |tx| {
+                tx.update_paper_book_import_ocr_status(
+                    &import.meta.import_id,
+                    StoredPaperBookOcrStatus::Completed,
+                )?;
+                tx.upsert_paper_book_ocr_draft(&draft)
+            })?;
+            state.attest_latest(&attestor, &ledger).await;
+            drop(ledger);
+
+            return Ok(Json(paper_book_ocr_run_response(
+                &import.meta.import_id,
+                previous_ocr_status,
+                StoredPaperBookOcrStatus::Completed,
+                &config,
+                &output,
+                None,
+                Some(&draft),
+            )));
+        }
+    }
+
+    let failure_reason = output.failure_reason.or(Some("empty_stdout"));
+    let status_payload = serde_json::to_vec(&paper_book_ocr_status_event_payload(
+        &import.meta,
+        StoredPaperBookOcrStatus::Failed,
+        &updated_by,
+    ))?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &updated_by,
+        &format!("paper-book-import:{}", import.meta.import_id),
+        "paper_book_import.ocr_status_updated",
+        None,
+        &status_payload,
+    )?;
+    state.persist_write_through(&mut ledger, 1, |tx| {
+        tx.update_paper_book_import_ocr_status(
+            &import.meta.import_id,
+            StoredPaperBookOcrStatus::Failed,
+        )
+    })?;
+    state.attest_latest(&attestor, &ledger).await;
+    drop(ledger);
+
+    Ok(Json(paper_book_ocr_run_response(
+        &import.meta.import_id,
+        previous_ocr_status,
+        StoredPaperBookOcrStatus::Failed,
+        &config,
+        &output,
+        failure_reason,
+        None,
+    )))
+}
+
 /// `POST /v1/books/paper-import/{id}/ocr-drafts` - store a non-authoritative OCR draft result
 /// linked to a preserved paper-book import. This does not run OCR and does not create canonical
 /// text.
@@ -807,6 +1033,258 @@ async fn update_paper_book_import_ocr_status_internal(
         legal_validity_claimed: false,
         legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
     })
+}
+
+struct OcrCommandOutput {
+    command_exit_success: bool,
+    command_exit_code: Option<i32>,
+    timed_out: bool,
+    failure_reason: Option<&'static str>,
+    stdout: Vec<u8>,
+    stdout_truncated: bool,
+}
+
+struct BoundedStdout {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+async fn execute_ocr_command(
+    config: &PaperBookOcrCommandConfig,
+    import: &StoredPaperBookImport,
+) -> Result<OcrCommandOutput, ApiError> {
+    let (temp_dir, input_path) = write_ocr_temp_input(import).await?;
+    let output = run_local_ocr_command(config, &input_path).await;
+    if let Err(e) = tokio::fs::remove_dir_all(&temp_dir).await {
+        eprintln!(
+            "paper-book OCR: failed to remove temporary input directory {} ({e})",
+            temp_dir.display()
+        );
+    }
+    output
+}
+
+async fn write_ocr_temp_input(
+    import: &StoredPaperBookImport,
+) -> Result<(PathBuf, PathBuf), ApiError> {
+    let temp_dir = std::env::temp_dir().join(format!(
+        "chancela-paper-ocr-{}-{}",
+        import.meta.import_id,
+        Uuid::new_v4()
+    ));
+    tokio::fs::create_dir_all(&temp_dir).await.map_err(|e| {
+        ApiError::Internal(format!(
+            "failed to create temporary paper-book OCR directory: {e}"
+        ))
+    })?;
+    let input_path = temp_dir.join(format!(
+        "paper-book-import-{}.{}",
+        import.meta.import_id,
+        paper_book_package_extension(&import.meta)
+    ));
+    if let Err(e) = tokio::fs::write(&input_path, &import.bytes).await {
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+        return Err(ApiError::Internal(format!(
+            "failed to write temporary paper-book OCR input: {e}"
+        )));
+    }
+    Ok((temp_dir, input_path))
+}
+
+async fn run_local_ocr_command(
+    config: &PaperBookOcrCommandConfig,
+    input_path: &FsPath,
+) -> Result<OcrCommandOutput, ApiError> {
+    let args = expand_ocr_command_args(config, input_path)?;
+    let mut command = Command::new(&config.command_path);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(_) => {
+            return Ok(OcrCommandOutput {
+                command_exit_success: false,
+                command_exit_code: None,
+                timed_out: false,
+                failure_reason: Some("spawn_failed"),
+                stdout: Vec::new(),
+                stdout_truncated: false,
+            });
+        }
+    };
+    let Some(stdout) = child.stdout.take() else {
+        return Err(ApiError::Internal(
+            "failed to capture paper-book OCR command stdout".to_owned(),
+        ));
+    };
+    let read_task = tokio::spawn(read_bounded_stdout(stdout, config.max_stdout_bytes));
+
+    let (command_exit_success, command_exit_code, timed_out, mut failure_reason) =
+        match tokio::time::timeout(config.timeout, child.wait()).await {
+            Ok(Ok(status)) => (
+                status.success(),
+                status.code(),
+                false,
+                (!status.success()).then_some("exit_status"),
+            ),
+            Ok(Err(_)) => (false, None, false, Some("wait_failed")),
+            Err(_) => {
+                let _ = child.kill().await;
+                (false, None, true, Some("timeout"))
+            }
+        };
+
+    let stdout = match read_task.await {
+        Ok(Ok(stdout)) => stdout,
+        Ok(Err(_)) => {
+            failure_reason = Some("stdout_read_failed");
+            BoundedStdout {
+                bytes: Vec::new(),
+                truncated: false,
+            }
+        }
+        Err(_) => {
+            failure_reason = Some("stdout_read_failed");
+            BoundedStdout {
+                bytes: Vec::new(),
+                truncated: false,
+            }
+        }
+    };
+
+    Ok(OcrCommandOutput {
+        command_exit_success,
+        command_exit_code,
+        timed_out,
+        failure_reason,
+        stdout: stdout.bytes,
+        stdout_truncated: stdout.truncated,
+    })
+}
+
+async fn read_bounded_stdout(
+    mut stdout: ChildStdout,
+    max_stdout_bytes: usize,
+) -> std::io::Result<BoundedStdout> {
+    let mut captured = Vec::with_capacity(max_stdout_bytes.min(8 * 1024));
+    let mut total = 0usize;
+    let mut buf = [0u8; 8 * 1024];
+    loop {
+        let read = stdout.read(&mut buf).await?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read);
+        let remaining = max_stdout_bytes.saturating_sub(captured.len());
+        if remaining > 0 {
+            captured.extend_from_slice(&buf[..read.min(remaining)]);
+        }
+    }
+    Ok(BoundedStdout {
+        bytes: captured,
+        truncated: total > max_stdout_bytes,
+    })
+}
+
+fn validate_ocr_command_config(config: &PaperBookOcrCommandConfig) -> Result<(), ApiError> {
+    if config.command_path.as_os_str().is_empty() {
+        return Err(ApiError::Unprocessable(
+            "paper-book OCR command path is empty".to_owned(),
+        ));
+    }
+    if config.timeout.is_zero() {
+        return Err(ApiError::Unprocessable(
+            "paper-book OCR timeout must be greater than zero".to_owned(),
+        ));
+    }
+    if config.timeout > Duration::from_secs(MAX_OCR_TIMEOUT_SECS) {
+        return Err(ApiError::Unprocessable(format!(
+            "paper-book OCR timeout must be at most {MAX_OCR_TIMEOUT_SECS} seconds"
+        )));
+    }
+    if config.max_stdout_bytes == 0 || config.max_stdout_bytes > MAX_OCR_TEXT_CHARS {
+        return Err(ApiError::Unprocessable(format!(
+            "paper-book OCR max stdout bytes must be between 1 and {MAX_OCR_TEXT_CHARS}"
+        )));
+    }
+    let template = normalized_ocr_args_template(config);
+    if !template
+        .iter()
+        .any(|arg| arg.contains(DEFAULT_OCR_ARGS_TEMPLATE))
+    {
+        return Err(ApiError::Unprocessable(
+            "paper-book OCR args template must include {input}".to_owned(),
+        ));
+    }
+    let engine_name = required_text(Some(config.engine_name.clone()), "engine_name")?;
+    reject_secret_markers("engine_name", &engine_name)?;
+    if let Some(version) = optional_text(config.engine_version.clone(), "engine_version")? {
+        reject_secret_markers("engine_version", &version)?;
+    }
+    Ok(())
+}
+
+fn normalized_ocr_args_template(config: &PaperBookOcrCommandConfig) -> Vec<String> {
+    if config.args_template.is_empty() {
+        vec![DEFAULT_OCR_ARGS_TEMPLATE.to_owned()]
+    } else {
+        config.args_template.clone()
+    }
+}
+
+fn expand_ocr_command_args(
+    config: &PaperBookOcrCommandConfig,
+    input_path: &FsPath,
+) -> Result<Vec<String>, ApiError> {
+    let input = input_path.to_str().ok_or_else(|| {
+        ApiError::Internal("temporary paper-book OCR input path is not UTF-8".to_owned())
+    })?;
+    Ok(normalized_ocr_args_template(config)
+        .into_iter()
+        .map(|arg| arg.replace(DEFAULT_OCR_ARGS_TEMPLATE, input))
+        .collect())
+}
+
+fn paper_book_ocr_run_response(
+    import_id: &str,
+    previous_ocr_status: StoredPaperBookOcrStatus,
+    ocr_status: StoredPaperBookOcrStatus,
+    config: &PaperBookOcrCommandConfig,
+    output: &OcrCommandOutput,
+    failure_reason: Option<&'static str>,
+    draft: Option<&StoredPaperBookOcrDraft>,
+) -> PaperBookOcrRunResponse {
+    PaperBookOcrRunResponse {
+        import_id: import_id.to_owned(),
+        previous_ocr_status: previous_ocr_status.as_str(),
+        ocr_status: ocr_status.as_str(),
+        command_configured: true,
+        command_exit_success: output.command_exit_success,
+        command_exit_code: output.command_exit_code,
+        timed_out: output.timed_out,
+        failure_reason,
+        stdout_bytes_captured: output.stdout.len(),
+        stdout_truncated: output.stdout_truncated,
+        engine: PaperBookOcrEngineView {
+            name: config.engine_name.clone(),
+            version: config.engine_version.clone(),
+        },
+        draft: draft.map(paper_book_ocr_draft_view),
+        status_notice: PAPER_BOOK_OCR_STATUS_NOTICE,
+        draft_notice: PAPER_BOOK_OCR_DRAFT_NOTICE,
+        non_canonical: true,
+        authoritative_text_claimed: false,
+        canonical_minutes_claimed: false,
+        canonical_act_created: false,
+        canonical_document_created: false,
+        signature_created: false,
+        legal_validity_claimed: false,
+        legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
+    }
 }
 
 fn validate_candidate(
@@ -1272,7 +1750,7 @@ fn build_ocr_draft(
     actor: &CurrentActor,
 ) -> Result<StoredPaperBookOcrDraft, ApiError> {
     let extracted_text =
-        optional_limited_text(req.extracted_text, "extracted_text", MAX_OCR_TEXT_CHARS)?;
+        optional_limited_ocr_text(req.extracted_text, "extracted_text", MAX_OCR_TEXT_CHARS)?;
     let text_digest = optional_digest(req.text_digest)?;
     if extracted_text.is_none() && text_digest.is_none() {
         return Err(ApiError::Unprocessable(
@@ -1557,6 +2035,14 @@ fn paper_book_download_filename(meta: &StoredPaperBookImportMeta) -> String {
     if let Some(filename) = meta.source_filename.as_deref() {
         return filename.to_owned();
     }
+    format!(
+        "paper-book-import-{}.{}",
+        meta.import_id,
+        paper_book_package_extension(meta)
+    )
+}
+
+fn paper_book_package_extension(meta: &StoredPaperBookImportMeta) -> &'static str {
     let ext = match meta
         .content_type
         .split(';')
@@ -1570,7 +2056,7 @@ fn paper_book_download_filename(meta: &StoredPaperBookImportMeta) -> String {
         "application/zip" => "zip",
         _ => "bin",
     };
-    format!("paper-book-import-{}.{}", meta.import_id, ext)
+    ext
 }
 
 fn verify_package_fixity(
@@ -1650,6 +2136,34 @@ fn optional_limited_text(
         )));
     }
     Ok(Some(value))
+}
+
+fn optional_limited_ocr_text(
+    value: Option<String>,
+    field: &'static str,
+    max_chars: usize,
+) -> Result<Option<String>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value
+        .chars()
+        .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must not contain control characters other than tabs or line breaks"
+        )));
+    }
+    if value.chars().count() > max_chars {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} must be at most {max_chars} characters"
+        )));
+    }
+    Ok(Some(value.to_owned()))
 }
 
 fn optional_uuid_ref(
@@ -1760,6 +2274,48 @@ fn secret_marker(value: &str) -> Option<&'static str> {
         .iter()
         .find(|(needle, _)| compact.contains(*needle))
         .map(|(_, label)| *label)
+}
+
+fn env_text(name: &str) -> Option<String> {
+    let value = std::env::var(name).ok()?;
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+fn env_u64(name: &str, default: u64, min: u64, max: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|value| (*value >= min) && (*value <= max))
+        .unwrap_or(default)
+}
+
+fn env_usize(name: &str, default: usize, min: usize, max: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|value| (*value >= min) && (*value <= max))
+        .unwrap_or(default)
+}
+
+fn parse_args_template_env(raw: &str) -> Vec<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return vec![DEFAULT_OCR_ARGS_TEMPLATE.to_owned()];
+    }
+    if raw.starts_with('[') {
+        if let Ok(args) = serde_json::from_str::<Vec<String>>(raw) {
+            let args: Vec<String> = args
+                .into_iter()
+                .map(|arg| arg.trim().to_owned())
+                .filter(|arg| !arg.is_empty())
+                .collect();
+            if !args.is_empty() {
+                return args;
+            }
+        }
+    }
+    raw.split_whitespace().map(str::to_owned).collect()
 }
 
 #[cfg(test)]

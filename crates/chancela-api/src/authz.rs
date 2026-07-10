@@ -307,6 +307,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/books/paper-import/{id}", RouteClass::Gated), // GET book.import@Global (metadata)
     ("/v1/books/paper-import/{id}/ocr/enqueue", RouteClass::Gated), // POST book.import@Global (metadata-only OCR status)
     ("/v1/books/paper-import/{id}/ocr-status", RouteClass::Gated), // PATCH book.import@Global (metadata-only OCR status)
+    ("/v1/books/paper-import/{id}/ocr/run", RouteClass::Gated), // POST book.import@Global (local non-authoritative OCR draft)
     ("/v1/books/paper-import/{id}/ocr-drafts", RouteClass::Gated), // GET/POST book.import@Global (non-authoritative OCR drafts)
     (
         "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/review",

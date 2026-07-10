@@ -2,11 +2,14 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use chancela_api::{AppState, router};
+use chancela_api::{AppState, PaperBookOcrCommandConfig, router};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tower::ServiceExt;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -229,6 +232,18 @@ async fn update_ocr_status(
     .await
 }
 
+async fn run_ocr(state: &AppState, token: &str, import_id: &str) -> (StatusCode, Value) {
+    send(
+        state,
+        json_req(
+            &format!("/v1/books/paper-import/{import_id}/ocr/run"),
+            token,
+            json!({}),
+        ),
+    )
+    .await
+}
+
 async fn create_ocr_draft(
     state: &AppState,
     token: &str,
@@ -244,6 +259,62 @@ async fn create_ocr_draft(
         ),
     )
     .await
+}
+
+fn build_ocr_helper(dir: &Path) -> PathBuf {
+    let src = dir.join("ocr_helper.rs");
+    std::fs::write(
+        &src,
+        r#"
+use std::{env, fs, process};
+
+fn main() {
+    let mut args = env::args().skip(1);
+    let mode = args.next().unwrap_or_else(|| "ok".to_owned());
+    let input = args.next().expect("input path");
+    if mode == "fail" {
+        process::exit(17);
+    }
+    let bytes = fs::read(input).expect("read input");
+    let needle = b"historical paper book scan package";
+    if !bytes.windows(needle.len()).any(|window| window == needle) {
+        process::exit(18);
+    }
+    println!("Livro de atas digitalizado via OCR helper.");
+}
+"#,
+    )
+    .expect("write OCR helper source");
+    let exe = dir.join(if cfg!(windows) {
+        "ocr_helper.exe"
+    } else {
+        "ocr_helper"
+    });
+    let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_owned());
+    let output = Command::new(rustc)
+        .arg(&src)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .expect("spawn rustc for OCR helper");
+    assert!(
+        output.status.success(),
+        "compile OCR helper failed: status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    exe
+}
+
+fn ocr_command_config(helper: PathBuf, mode: &str) -> Arc<PaperBookOcrCommandConfig> {
+    let mut config = PaperBookOcrCommandConfig::new(helper);
+    config.args_template = vec![mode.to_owned(), "{input}".to_owned()];
+    config.engine_name = "test-local-ocr".to_owned();
+    config.engine_version = Some("0.0.1".to_owned());
+    config.timeout = Duration::from_secs(10);
+    config.max_stdout_bytes = 8 * 1024;
+    Arc::new(config)
 }
 
 async fn review_ocr_draft(
@@ -784,6 +855,217 @@ async fn paper_book_import_ocr_status_rejects_unknown_status_without_mutation() 
         .expect("store read")
         .expect("paper import row");
     assert_eq!(stored.meta.ocr_status.as_str(), "not_run");
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_run_configured_command_stores_unreviewed_non_authoritative_draft() {
+    let dir = TempDir::new();
+    let helper = build_ocr_helper(dir.path());
+    let mut state = AppState::with_data_dir(dir.path());
+    state.paper_book_ocr_command = Some(ocr_command_config(helper, "ok"));
+    let token = bootstrap(&state).await;
+    let bytes = package_bytes();
+    let (status, created) = preserve(&state, &token, preserve_body(&bytes)).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let before = state.ledger.read().await.events().len();
+
+    let (status, body) = run_ocr(&state, &token, import_id).await;
+
+    assert_eq!(status, StatusCode::OK, "run OCR: {body}");
+    assert_eq!(body["import_id"], import_id);
+    assert_eq!(body["previous_ocr_status"], "not_run");
+    assert_eq!(body["ocr_status"], "completed");
+    assert_eq!(body["command_configured"], true);
+    assert_eq!(body["command_exit_success"], true);
+    assert_eq!(body["timed_out"], false);
+    assert_eq!(body["engine"]["name"], "test-local-ocr");
+    assert_eq!(body["engine"]["version"], "0.0.1");
+    assert_eq!(body["canonical_act_created"], false);
+    assert_eq!(body["canonical_document_created"], false);
+    assert_eq!(body["signature_created"], false);
+    assert_eq!(body["legal_validity_claimed"], false);
+    let draft = &body["draft"];
+    assert_eq!(
+        draft["extracted_text"],
+        "Livro de atas digitalizado via OCR helper."
+    );
+    assert_eq!(draft["review_status"], "unreviewed");
+    assert_eq!(draft["non_canonical"], true);
+    assert_eq!(draft["authoritative_text_claimed"], false);
+    assert_eq!(draft["canonical_act_created"], false);
+    assert_eq!(draft["canonical_document_created"], false);
+    assert_eq!(draft["signature_created"], false);
+    assert_eq!(draft["legal_validity_claimed"], false);
+
+    let ledger = state.ledger.read().await;
+    assert_eq!(
+        ledger.events().len(),
+        before + 2,
+        "OCR run appends status and draft metadata events"
+    );
+    assert_eq!(
+        ledger.events()[ledger.events().len() - 2].kind,
+        "paper_book_import.ocr_status_updated"
+    );
+    assert_eq!(
+        ledger.events().last().expect("last event").kind,
+        "paper_book_import.ocr_draft_created"
+    );
+    drop(ledger);
+
+    let stored_import = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_import(import_id)
+        .expect("store read")
+        .expect("paper import row");
+    assert_eq!(stored_import.meta.ocr_status.as_str(), "completed");
+    assert_eq!(stored_import.bytes, bytes);
+    let drafts = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_drafts(import_id)
+        .expect("draft list");
+    assert_eq!(drafts.len(), 1);
+    assert_eq!(drafts[0].review_status.as_str(), "unreviewed");
+    assert_eq!(
+        drafts[0].extracted_text.as_deref(),
+        Some("Livro de atas digitalizado via OCR helper.")
+    );
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_run_command_failure_marks_failed_without_draft() {
+    let dir = TempDir::new();
+    let helper = build_ocr_helper(dir.path());
+    let mut state = AppState::with_data_dir(dir.path());
+    state.paper_book_ocr_command = Some(ocr_command_config(helper, "fail"));
+    let token = bootstrap(&state).await;
+    let (status, created) = preserve(&state, &token, preserve_body(&package_bytes())).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let before = state.ledger.read().await.events().len();
+
+    let (status, body) = run_ocr(&state, &token, import_id).await;
+
+    assert_eq!(status, StatusCode::OK, "failed OCR run response: {body}");
+    assert_eq!(body["previous_ocr_status"], "not_run");
+    assert_eq!(body["ocr_status"], "failed");
+    assert_eq!(body["command_exit_success"], false);
+    assert_eq!(body["command_exit_code"], 17);
+    assert_eq!(body["failure_reason"], "exit_status");
+    assert_eq!(body["draft"], Value::Null);
+    assert_eq!(body["canonical_act_created"], false);
+    assert_eq!(body["canonical_document_created"], false);
+    assert_eq!(body["signature_created"], false);
+    assert_eq!(body["legal_validity_claimed"], false);
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        before + 1,
+        "failed command appends only the failed status event"
+    );
+    let stored_import = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_import(import_id)
+        .expect("store read")
+        .expect("paper import row");
+    assert_eq!(stored_import.meta.ocr_status.as_str(), "failed");
+    let drafts = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_drafts(import_id)
+        .expect("draft list");
+    assert!(drafts.is_empty(), "failed command must not create a draft");
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_run_missing_config_returns_422_without_mutation() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let (status, created) = preserve(&state, &token, preserve_body(&package_bytes())).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let before = state.ledger.read().await.events().len();
+
+    let (status, body) = run_ocr(&state, &token, import_id).await;
+
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "missing config: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("operator-configured local OCR command")),
+        "error names missing OCR command config: {body}"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        before,
+        "missing config must not append ledger events"
+    );
+    let stored_import = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_import(import_id)
+        .expect("store read")
+        .expect("paper import row");
+    assert_eq!(stored_import.meta.ocr_status.as_str(), "not_run");
+    let drafts = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_drafts(import_id)
+        .expect("draft list");
+    assert!(drafts.is_empty(), "missing config must not create a draft");
+}
+
+#[tokio::test]
+async fn paper_book_import_ocr_run_is_blocked_while_degraded_without_mutation() {
+    let dir = TempDir::new();
+    let helper = build_ocr_helper(dir.path());
+    let mut state = AppState::with_data_dir(dir.path());
+    state.paper_book_ocr_command = Some(ocr_command_config(helper, "ok"));
+    let token = bootstrap(&state).await;
+    let (status, created) = preserve(&state, &token, preserve_body(&package_bytes())).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    *state.degraded.write().await = true;
+    let before = state.ledger.read().await.events().len();
+
+    let (status, body) = run_ocr(&state, &token, import_id).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "degraded: {body}");
+    assert_eq!(body["read_only"], true);
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        before,
+        "degraded gate must block before mutation"
+    );
+    let stored_import = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_import(import_id)
+        .expect("store read")
+        .expect("paper import row");
+    assert_eq!(stored_import.meta.ocr_status.as_str(), "not_run");
+    let drafts = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_drafts(import_id)
+        .expect("draft list");
+    assert!(drafts.is_empty(), "degraded run must not create a draft");
 }
 
 #[tokio::test]
