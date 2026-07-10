@@ -1,8 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use axum::Json;
+use axum::body::Bytes;
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use chancela_authz::{Permission, Scope};
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+
+use crate::{ApiError, AppState, CurrentActor, require_permission};
 
 pub const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND: &str = "external_validator_report_metadata";
 pub const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA: &str =
@@ -11,6 +18,7 @@ pub const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX: &str = "evidence/extern
 pub const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN: &str =
     "evidence/external-validators/{case_id}-{validator_family}.json";
 pub const TECHNICAL_METADATA_ONLY: &str = "technical_metadata_only";
+pub const EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct ExternalValidatorEvidenceAttachment {
@@ -41,6 +49,76 @@ impl From<&ExternalValidatorEvidenceAttachment> for ExternalValidatorEvidenceAtt
             sha256: value.sha256.clone(),
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExternalValidatorReportMetadataList {
+    pub storage: &'static str,
+    pub status: &'static str,
+    pub count: usize,
+    pub malformed_count: usize,
+    pub duplicate_suggested_path_count: usize,
+    pub reports: Vec<ExternalValidatorEvidenceAttachmentIndex>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExternalValidatorReportMetadataCreateResponse {
+    pub storage: &'static str,
+    pub status: &'static str,
+    pub report: ExternalValidatorEvidenceAttachmentIndex,
+}
+
+/// `GET /v1/external-validator-reports` - list technical metadata summaries only.
+pub async fn list_external_validator_report_metadata(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<ExternalValidatorReportMetadataList>, ApiError> {
+    require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
+    let raw_entries = state.external_validator_report_metadata.read().await;
+    Ok(Json(metadata_list_response(&raw_entries)))
+}
+
+/// `POST /v1/external-validator-reports` - accept operator-supplied technical metadata only.
+pub async fn create_external_validator_report_metadata(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<
+    (
+        StatusCode,
+        Json<ExternalValidatorReportMetadataCreateResponse>,
+    ),
+    ApiError,
+> {
+    require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
+    require_json_content_type(&headers)?;
+    let attachment = validate_external_validator_report_metadata(&body).map_err(|e| {
+        ApiError::Unprocessable(format!("invalid external-validator metadata: {e}"))
+    })?;
+
+    let mut raw_entries = state.external_validator_report_metadata.write().await;
+    for raw in raw_entries.iter() {
+        let Ok(existing) = validate_external_validator_report_metadata(raw) else {
+            continue;
+        };
+        if existing.archive_path == attachment.archive_path {
+            return Err(ApiError::Conflict(format!(
+                "duplicate external-validator suggested_path would be ambiguous: {}",
+                attachment.archive_path
+            )));
+        }
+    }
+    raw_entries.push(body.to_vec());
+
+    Ok((
+        StatusCode::CREATED,
+        Json(ExternalValidatorReportMetadataCreateResponse {
+            storage: "in_memory",
+            status: "external_validator_report_metadata_attached",
+            report: ExternalValidatorEvidenceAttachmentIndex::from(&attachment),
+        }),
+    ))
 }
 
 pub fn matching_attachments(
@@ -79,6 +157,14 @@ pub fn attachment_indexes(
     attachments: &[ExternalValidatorEvidenceAttachment],
 ) -> Vec<ExternalValidatorEvidenceAttachmentIndex> {
     attachments.iter().map(Into::into).collect()
+}
+
+pub fn validate_external_validator_report_metadata(
+    raw: &[u8],
+) -> Result<ExternalValidatorEvidenceAttachment, String> {
+    parse_attachment(raw).ok_or_else(|| {
+        "expected external_validator_report_metadata JSON with technical-only scope, legal_validity_claimed=false, safe suggested_path, and lowercase SHA-256 values".to_owned()
+    })
 }
 
 fn parse_attachment(raw: &[u8]) -> Option<ExternalValidatorEvidenceAttachment> {
@@ -211,4 +297,66 @@ fn is_sha256_hex(value: &str) -> bool {
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest: [u8; 32] = Sha256::digest(bytes).into();
     crate::hex::hex(&digest)
+}
+
+fn metadata_list_response(raw_entries: &[Vec<u8>]) -> ExternalValidatorReportMetadataList {
+    let mut reports = Vec::new();
+    let mut malformed_count = 0;
+    let mut path_counts = BTreeMap::<String, usize>::new();
+    for raw in raw_entries {
+        match validate_external_validator_report_metadata(raw) {
+            Ok(attachment) => {
+                *path_counts
+                    .entry(attachment.archive_path.clone())
+                    .or_default() += 1;
+                reports.push(attachment);
+            }
+            Err(_) => malformed_count += 1,
+        }
+    }
+
+    let duplicate_suggested_path_count = path_counts.values().filter(|count| **count > 1).count();
+    reports.retain(|report| path_counts.get(&report.archive_path) == Some(&1));
+    reports.sort_by(|left, right| left.archive_path.cmp(&right.archive_path));
+    let reports = attachment_indexes(&reports);
+    let status = if reports.is_empty() {
+        "no_external_validator_report_metadata_attached"
+    } else {
+        "external_validator_report_metadata_attached"
+    };
+
+    ExternalValidatorReportMetadataList {
+        storage: "in_memory",
+        status,
+        count: reports.len(),
+        malformed_count,
+        duplicate_suggested_path_count,
+        reports,
+    }
+}
+
+fn require_json_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
+    let Some(value) = headers.get(axum::http::header::CONTENT_TYPE) else {
+        return Err(ApiError::Unprocessable(
+            "external-validator metadata must be submitted as application/json".to_owned(),
+        ));
+    };
+    let Ok(value) = value.to_str() else {
+        return Err(ApiError::Unprocessable(
+            "external-validator metadata content-type is invalid".to_owned(),
+        ));
+    };
+    let media_type = value
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    if media_type == "application/json" || media_type.ends_with("+json") {
+        Ok(())
+    } else {
+        Err(ApiError::Unprocessable(
+            "external-validator metadata must be submitted as application/json".to_owned(),
+        ))
+    }
 }

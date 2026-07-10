@@ -343,6 +343,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/documents/imported/{id}/bytes", RouteClass::Gated), // GET act.read@import scope
     ("/v1/documents/imported/{id}/review", RouteClass::Gated), // PATCH document.generate@import scope
     ("/v1/documents/import/validate", RouteClass::Gated), // POST act.read@Global (read-only validation)
+    ("/v1/external-validator-reports", RouteClass::Gated), // GET settings.read@Global · POST settings.manage@Global
     ("/v1/signature/pdf/validate", RouteClass::Gated), // POST act.read@Global (read-only technical PDF/PAdES validation)
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book

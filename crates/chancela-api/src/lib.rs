@@ -1156,6 +1156,16 @@ pub fn router(state: AppState) -> Router {
             )),
         )
         .route(
+            "/v1/external-validator-reports",
+            get(external_validator_evidence::list_external_validator_report_metadata).post(
+                post(external_validator_evidence::create_external_validator_report_metadata).layer(
+                    DefaultBodyLimit::max(
+                        external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES,
+                    ),
+                ),
+            ),
+        )
+        .route(
             "/v1/signature/pdf/validate",
             post(pdf_signature_validation::validate_pdf_signature).layer(DefaultBodyLimit::max(
                 pdf_signature_validation::PDF_SIGNATURE_VALIDATION_ENVELOPE_BYTES,
@@ -1851,6 +1861,172 @@ mod tests {
         })
         .to_string()
         .into_bytes()
+    }
+
+    fn post_external_validator_metadata(bytes: Vec<u8>) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/external-validator-reports")
+            .header("content-type", "application/json")
+            .body(Body::from(bytes))
+            .expect("request builds")
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_api_accepts_and_lists_redacted_summary() {
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let metadata = external_validator_metadata_bytes("api-valid", "eu-dss", &document_sha256);
+        let metadata_sha256 = sha256_hex_test(&metadata);
+
+        let (status, created) =
+            send(state.clone(), post_external_validator_metadata(metadata)).await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        assert_eq!(created["storage"], "in_memory");
+        assert_eq!(
+            created["status"],
+            "external_validator_report_metadata_attached"
+        );
+        assert_eq!(created["report"]["case_id"], "api-valid");
+        assert_eq!(created["report"]["validator_family"], "eu-dss");
+        assert_eq!(
+            created["report"]["path"],
+            "evidence/external-validators/api-valid-eu-dss.json"
+        );
+        assert_eq!(created["report"]["sha256"], metadata_sha256);
+
+        let (status, listed) = send(state, get("/v1/external-validator-reports")).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed["storage"], "in_memory");
+        assert_eq!(
+            listed["status"],
+            "external_validator_report_metadata_attached"
+        );
+        assert_eq!(listed["count"], 1);
+        assert_eq!(listed["malformed_count"], 0);
+        assert_eq!(listed["duplicate_suggested_path_count"], 0);
+        let report = &listed["reports"][0];
+        assert_eq!(report["case_id"], "api-valid");
+        assert_eq!(report["validator_family"], "eu-dss");
+        assert_eq!(report["content_type"], "application/json");
+        assert!(report.get("bytes").is_none(), "raw bytes are not listed");
+        let listed_text = listed.to_string();
+        assert!(!listed_text.contains("operator@example.test"));
+        assert!(!listed_text.contains("validator --fixture"));
+        assert!(!listed_text.contains("raw_report_only"));
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_api_rejects_legal_overclaim() {
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let mut value: Value = serde_json::from_slice(&external_validator_metadata_bytes(
+            "api-legal",
+            "adobe",
+            &document_sha256,
+        ))
+        .expect("fixture JSON");
+        value["legal_validity_claimed"] = json!(true);
+
+        let (status, body) = send(
+            state,
+            post_external_validator_metadata(value.to_string().into_bytes()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("external-validator metadata"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_api_rejects_malformed_and_non_json() {
+        let state = AppState::default();
+        let (status, body) = send(
+            state.clone(),
+            post_external_validator_metadata(b"{not json".to_vec()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/external-validator-reports")
+            .header("content-type", "text/plain")
+            .body(Body::from("not json"))
+            .expect("request builds");
+        let (status, body) = send(state, req).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("application/json"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_api_rejects_duplicate_suggested_path() {
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let metadata =
+            external_validator_metadata_bytes("api-duplicate", "eu-dss", &document_sha256);
+
+        let (status, body) = send(
+            state.clone(),
+            post_external_validator_metadata(metadata.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+
+        let (status, body) = send(state, post_external_validator_metadata(metadata)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("duplicate external-validator suggested_path"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_api_rejects_unsafe_path_and_bad_sha256() {
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let mut traversal: Value = serde_json::from_slice(&external_validator_metadata_bytes(
+            "api-traversal",
+            "eu-dss",
+            &document_sha256,
+        ))
+        .expect("fixture JSON");
+        traversal["archive_attachment"]["suggested_path"] =
+            json!("evidence/external-validators/../api-traversal-eu-dss.json");
+        let (status, body) = send(
+            state.clone(),
+            post_external_validator_metadata(traversal.to_string().into_bytes()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+        let mut bad_sha: Value = serde_json::from_slice(&external_validator_metadata_bytes(
+            "api-bad-sha",
+            "eu-dss",
+            &document_sha256,
+        ))
+        .expect("fixture JSON");
+        bad_sha["document"]["sha256"] = json!("NOT-A-SHA256");
+        let (status, body) = send(
+            state,
+            post_external_validator_metadata(bad_sha.to_string().into_bytes()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     }
 
     fn data_status_filesystem_concern<'a>(body: &'a Value, id: &str) -> &'a Value {
