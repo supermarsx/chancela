@@ -117,6 +117,26 @@ fn xmp_text(parsed: &Document) -> String {
     String::from_utf8_lossy(&meta.content).into_owned()
 }
 
+fn content_stream_text(parsed: &Document) -> String {
+    let mut bytes = Vec::new();
+    for page_id in parsed.page_iter() {
+        let page = parsed
+            .get_object(page_id)
+            .and_then(Object::as_dict)
+            .unwrap();
+        let content_ref = page
+            .get(b"Contents")
+            .and_then(Object::as_reference)
+            .unwrap();
+        let content = parsed
+            .get_object(content_ref)
+            .and_then(Object::as_stream)
+            .unwrap();
+        bytes.extend_from_slice(&content.content);
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 #[test]
 fn fixture_writes_and_self_checks() {
     let bytes = pdfa::write(&fixture()).expect("write PDF/A");
@@ -133,6 +153,79 @@ fn fixture_writes_and_self_checks() {
     assert!(parsed.trailer.has(b"Root"));
     assert!(parsed.trailer.has(b"ID"));
     assert!(!parsed.trailer.has(b"Encrypt"));
+}
+
+#[test]
+fn tagged_pdf_structure_markers_are_emitted() {
+    let bytes = pdfa::write(&fixture()).expect("write");
+    assert!(bytes.windows(15).any(|w| w == b"/StructTreeRoot"));
+    assert!(bytes.windows(8).any(|w| w == b"/RoleMap"));
+    assert!(bytes.windows(11).any(|w| w == b"/ParentTree"));
+
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let catalog = catalog(&parsed);
+    let mark_info = catalog
+        .get(b"MarkInfo")
+        .and_then(Object::as_dict)
+        .expect("MarkInfo dictionary");
+    assert!(matches!(
+        mark_info.get(b"Marked"),
+        Ok(Object::Boolean(true))
+    ));
+
+    let struct_root_ref = catalog
+        .get(b"StructTreeRoot")
+        .and_then(Object::as_reference)
+        .expect("StructTreeRoot ref");
+    let struct_root = parsed
+        .get_object(struct_root_ref)
+        .and_then(Object::as_dict)
+        .expect("StructTreeRoot dict");
+    let role_map = struct_root
+        .get(b"RoleMap")
+        .and_then(Object::as_dict)
+        .expect("RoleMap dict");
+    assert!(role_map.has(b"ChancelaDocumentTitle"));
+    assert!(role_map.has(b"ChancelaParagraph"));
+    assert!(role_map.has(b"ChancelaVoteTable"));
+
+    let parent_tree_ref = struct_root
+        .get(b"ParentTree")
+        .and_then(Object::as_reference)
+        .expect("ParentTree ref");
+    let parent_tree = parsed
+        .get_object(parent_tree_ref)
+        .and_then(Object::as_dict)
+        .expect("ParentTree dict");
+    let nums = parent_tree
+        .get(b"Nums")
+        .and_then(Object::as_array)
+        .expect("ParentTree nums");
+    assert!(!nums.is_empty(), "parent tree must map page StructParents");
+    let first_parent_array = nums[1].as_array().expect("page 0 parent array");
+    assert!(
+        !first_parent_array.is_empty(),
+        "tagged text must have structure parents"
+    );
+
+    let first_page_id = parsed.page_iter().next().expect("first page");
+    let first_page = parsed
+        .get_object(first_page_id)
+        .and_then(Object::as_dict)
+        .expect("first page dict");
+    assert_eq!(
+        first_page
+            .get(b"StructParents")
+            .and_then(Object::as_i64)
+            .expect("page StructParents"),
+        0
+    );
+
+    let content = content_stream_text(&parsed);
+    assert!(content.contains("/H1 << /MCID 0 >> BDC"));
+    assert!(content.contains("/Div << /MCID"));
+    assert!(content.contains("/Artifact BMC"));
+    assert!(content.contains("EMC"));
 }
 
 /// The pades byte-shape contract (C1–C12): the guarantees `chancela-pades::sign_pdf` relies on
@@ -342,7 +435,7 @@ fn implausible_language_metadata_is_reported_and_falls_back() {
     assert!(
         report
             .pdf_ua_blockers
-            .contains(&pdfa::PdfUaBlocker::MissingStructTreeRoot)
+            .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
     );
 
     let bytes = pdfa::write(&doc).expect("write");
@@ -388,6 +481,9 @@ fn long_non_ascii_title_is_preserved_in_report_and_xmp() {
 fn accessibility_default_fixture_reports_no_alt_text_model() {
     let report = pdfa::accessibility_report(&fixture());
 
+    assert!(report.structure_tree_present);
+    assert!(report.tagged_content_present);
+    assert!(report.layout_artifacts_marked);
     assert!(!report.alt_text_model_present);
     assert!(!report.pdf_ua_claimed);
     assert!(
@@ -395,10 +491,35 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
     );
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
+    );
+    assert!(
+        !report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::MissingStructTreeRoot)
+    );
+    assert!(
+        !report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::ContentIsNotTagged)
+    );
+    assert!(
+        !report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::MissingRoleMap)
+    );
+    assert!(
+        !report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::LayoutArtifactsNotMarked)
+    );
 }
 
 #[test]
-fn accessibility_explicit_alt_text_decorative_model_clears_only_alt_text_blocker() {
+fn accessibility_explicit_alt_text_decorative_model_leaves_only_limited_tagging_blocker() {
     let mut doc = DocumentModel::new(
         "Ata com metadados de acessibilidade",
         "Encosto Estratégico Lda",
@@ -429,28 +550,32 @@ fn accessibility_explicit_alt_text_decorative_model_clears_only_alt_text_blocker
 
     assert!(report.alt_text_model_present);
     assert!(!report.pdf_ua_claimed);
+    assert_eq!(
+        report.pdf_ua_blockers,
+        vec![pdfa::PdfUaBlocker::LimitedTaggedStructure]
+    );
     assert!(
         !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
     );
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::MissingStructTreeRoot)
     );
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::ContentIsNotTagged)
     );
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::MissingRoleMap)
     );
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::LayoutArtifactsNotMarked)
     );
@@ -463,23 +588,30 @@ fn accessibility_report_json_is_deterministic() {
     assert_eq!(a, b);
     assert_eq!(
         a,
-        "{\"version\":1,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":false,\"tagged_content_present\":false,\"layout_artifacts_marked\":false},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"missing_struct_tree_root\",\"content_is_not_tagged\",\"missing_role_map\",\"no_alt_text_model\",\"layout_artifacts_not_marked\"]}"
+        "{\"version\":1,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":true,\"tagged_content_present\":true,\"layout_artifacts_marked\":true},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"no_alt_text_model\",\"limited_tagged_structure\"]}"
     );
 }
 
 #[test]
-fn pdf_ua_is_not_claimed_without_tagging() {
+fn pdf_ua_is_not_claimed_with_minimal_tagging() {
     let report = pdfa::accessibility_report(&fixture());
     assert!(!report.pdf_ua_claimed);
+    assert!(report.structure_tree_present);
+    assert!(report.tagged_content_present);
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::MissingStructTreeRoot)
     );
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::ContentIsNotTagged)
+    );
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
     );
 
     let bytes = pdfa::write(&fixture()).expect("write");
@@ -489,13 +621,13 @@ fn pdf_ua_is_not_claimed_without_tagging() {
     );
     let parsed = Document::load_mem(&bytes).expect("parse");
     let catalog = catalog(&parsed);
-    assert!(!catalog.has(b"StructTreeRoot"));
+    assert!(catalog.has(b"StructTreeRoot"));
     let mark_info = catalog
         .get(b"MarkInfo")
         .and_then(Object::as_dict)
         .expect("honest MarkInfo dictionary");
     assert!(matches!(
         mark_info.get(b"Marked"),
-        Ok(Object::Boolean(false))
+        Ok(Object::Boolean(true))
     ));
 }

@@ -16,8 +16,9 @@
 //! font with a `/ToUnicode` CMap, attaches the sRGB OutputIntent (`assets/icc/`) and the XMP
 //! metadata packet (`xmp`), forces a classic cross-reference table, and structurally self-verifies
 //! (`selfcheck`) — all deterministically (no clock/RNG), so the same model reproduces identical
-//! bytes and a stable `pdf_digest`. The writer also exposes an accessibility report (`pdfa`), but
-//! it does **not** claim PDF/UA because the current PDF is not tagged.
+//! bytes and a stable `pdf_digest`. The writer also exposes an accessibility report (`pdfa`) and
+//! emits a minimal tagged-PDF structure, but it does **not** claim PDF/UA because the structure is
+//! deliberately bounded and not a full PDF/UA implementation.
 
 mod accessibility;
 mod font;

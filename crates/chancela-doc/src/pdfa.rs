@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use chancela_core::DocumentModel;
 use lopdf::xref::XrefType;
-use lopdf::{Dictionary, Document, Object, Stream, StringFormat};
+use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 use sha2::{Digest, Sha256};
 
 use crate::font::Font;
@@ -159,7 +159,7 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
 
     // --- Pages -----------------------------------------------------------------------------------
     let mut page_ids = Vec::with_capacity(laid.pages.len());
-    for content in &laid.pages {
+    for (page_index, content) in laid.pages.iter().enumerate() {
         let content_id = pdf.new_object_id();
         pdf.set_object(
             content_id,
@@ -186,6 +186,7 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
         );
         page.set("Resources", Object::Dictionary(resources));
         page.set("Contents", Object::Reference(content_id));
+        page.set("StructParents", Object::Integer(page_index as i64));
         pdf.set_object(page_id, Object::Dictionary(page));
         page_ids.push(page_id);
     }
@@ -200,6 +201,11 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     pages.set("Count", Object::Integer(page_ids.len() as i64));
     pdf.set_object(pages_id, Object::Dictionary(pages));
 
+    // Tagged PDF structure. This is intentionally minimal and deterministic: one document root,
+    // one structure element per semantic layout block/header item, and page-local MCID parent
+    // arrays. It supports assistive reading order without making a PDF/UA claim.
+    let struct_tree_root_id = emit_structure_tree(&mut pdf, &laid, &page_ids);
+
     // Catalog.
     let catalog_id = pdf.new_object_id();
     let mut catalog = Dictionary::new();
@@ -211,11 +217,9 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
         Object::Array(vec![Object::Reference(oi_id)]),
     );
     catalog.set("Lang", lit(&accessibility.metadata.language.value));
+    catalog.set("StructTreeRoot", Object::Reference(struct_tree_root_id));
     let mut mark_info = Dictionary::new();
-    mark_info.set(
-        "Marked",
-        Object::Boolean(accessibility.tagged_content_present),
-    );
+    mark_info.set("Marked", Object::Boolean(true));
     catalog.set("MarkInfo", Object::Dictionary(mark_info));
     pdf.set_object(catalog_id, Object::Dictionary(catalog));
 
@@ -233,6 +237,135 @@ pub fn write(doc: &DocumentModel) -> Result<Vec<u8>, DocError> {
     // Structural self-verification before handing the bytes back.
     selfcheck::verify(&bytes)?;
     Ok(bytes)
+}
+
+fn emit_structure_tree(pdf: &mut Document, laid: &layout::Laid, page_ids: &[ObjectId]) -> ObjectId {
+    let root_id = pdf.new_object_id();
+    let document_id = pdf.new_object_id();
+    let parent_tree_id = pdf.new_object_id();
+    let element_ids = laid
+        .structure_elements
+        .iter()
+        .map(|_| pdf.new_object_id())
+        .collect::<Vec<_>>();
+
+    for (element, &element_id) in laid.structure_elements.iter().zip(&element_ids) {
+        let mut elem = Dictionary::new();
+        elem.set("Type", name("StructElem"));
+        elem.set("S", name(structure_role_name(element.role)));
+        elem.set("P", Object::Reference(document_id));
+        elem.set(
+            "K",
+            Object::Array(
+                element
+                    .marked_content
+                    .iter()
+                    .map(|marked| marked_content_reference(marked, page_ids))
+                    .collect(),
+            ),
+        );
+        pdf.set_object(element_id, Object::Dictionary(elem));
+    }
+
+    let mut document = Dictionary::new();
+    document.set("Type", name("StructElem"));
+    document.set("S", name("Document"));
+    document.set("P", Object::Reference(root_id));
+    document.set(
+        "K",
+        Object::Array(
+            element_ids
+                .iter()
+                .map(|&id| Object::Reference(id))
+                .collect(),
+        ),
+    );
+    pdf.set_object(document_id, Object::Dictionary(document));
+
+    let mut parent_tree = Dictionary::new();
+    parent_tree.set(
+        "Nums",
+        Object::Array(parent_tree_nums(laid, page_ids.len(), &element_ids)),
+    );
+    pdf.set_object(parent_tree_id, Object::Dictionary(parent_tree));
+
+    let mut root = Dictionary::new();
+    root.set("Type", name("StructTreeRoot"));
+    root.set("K", Object::Reference(document_id));
+    root.set("ParentTree", Object::Reference(parent_tree_id));
+    root.set("ParentTreeNextKey", Object::Integer(page_ids.len() as i64));
+    root.set("RoleMap", Object::Dictionary(role_map()));
+    pdf.set_object(root_id, Object::Dictionary(root));
+
+    root_id
+}
+
+fn marked_content_reference(marked: &layout::MarkedContentRef, page_ids: &[ObjectId]) -> Object {
+    let mut mcr = Dictionary::new();
+    mcr.set("Type", name("MCR"));
+    mcr.set("Pg", Object::Reference(page_ids[marked.page_index]));
+    mcr.set("MCID", Object::Integer(marked.mcid));
+    Object::Dictionary(mcr)
+}
+
+fn parent_tree_nums(
+    laid: &layout::Laid,
+    page_count: usize,
+    element_ids: &[ObjectId],
+) -> Vec<Object> {
+    let mut parents_by_page = vec![Vec::<Option<ObjectId>>::new(); page_count];
+    for (element_index, element) in laid.structure_elements.iter().enumerate() {
+        for marked in &element.marked_content {
+            let page_parents = &mut parents_by_page[marked.page_index];
+            let mcid = marked.mcid as usize;
+            if page_parents.len() <= mcid {
+                page_parents.resize(mcid + 1, None);
+            }
+            page_parents[mcid] = Some(element_ids[element_index]);
+        }
+    }
+
+    let mut nums = Vec::with_capacity(page_count * 2);
+    for (page_index, page_parents) in parents_by_page.iter().enumerate() {
+        nums.push(Object::Integer(page_index as i64));
+        nums.push(Object::Array(
+            page_parents
+                .iter()
+                .map(|parent| Object::Reference(parent.expect("every emitted MCID has a parent")))
+                .collect(),
+        ));
+    }
+    nums
+}
+
+fn structure_role_name(role: layout::StructureRole) -> &'static str {
+    match role {
+        layout::StructureRole::DocumentTitle => "ChancelaDocumentTitle",
+        layout::StructureRole::HeaderMetadata => "ChancelaHeaderMetadata",
+        layout::StructureRole::Heading(1) => "ChancelaHeading1",
+        layout::StructureRole::Heading(2) => "ChancelaHeading2",
+        layout::StructureRole::Heading(3) => "ChancelaHeading3",
+        layout::StructureRole::Heading(_) => "ChancelaHeading",
+        layout::StructureRole::Paragraph => "ChancelaParagraph",
+        layout::StructureRole::KeyValue => "ChancelaKeyValue",
+        layout::StructureRole::VoteTable => "ChancelaVoteTable",
+        layout::StructureRole::SignatureBlock => "ChancelaSignatureBlock",
+    }
+}
+
+fn role_map() -> Dictionary {
+    let mut roles = Dictionary::new();
+    roles.set("ChancelaDocumentTitle", name("H1"));
+    roles.set("ChancelaHeaderMetadata", name("P"));
+    roles.set("ChancelaHeading1", name("H1"));
+    roles.set("ChancelaHeading2", name("H2"));
+    roles.set("ChancelaHeading3", name("H3"));
+    roles.set("ChancelaHeading", name("H"));
+    roles.set("ChancelaParagraph", name("P"));
+    roles.set("ChancelaKeyValue", name("Div"));
+    roles.set("ChancelaVoteTable", name("Div"));
+    roles.set("ChancelaSignatureBlock", name("Div"));
+    roles
 }
 
 /// Derive a 16-byte document `/ID` deterministically from the content (XMP + page streams), never a

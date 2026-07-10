@@ -171,7 +171,7 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
     }
     if find(&meta.content, b"pdfuaid:") || find(&meta.content, b"<pdfuaid") {
         return Err(fail(
-            "XMP claims PDF/UA, but the writer has no tagged-PDF implementation".into(),
+            "XMP claims PDF/UA, but the writer only emits a bounded tagged-PDF structure".into(),
         ));
     }
 

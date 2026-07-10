@@ -2,9 +2,9 @@
 //!
 //! This module is deliberately a report surface, not a certification claim. The writer currently
 //! emits useful text-extraction primitives (document language/title metadata, embedded fonts and
-//! `/ToUnicode` CMaps) but it does not emit a PDF structure tree, tagged content, role maps, or
-//! marked artifacts. Those missing pieces are material PDF/UA blockers, so `pdf_ua_claimed`
-//! remains false until the writer genuinely produces tagged PDF.
+//! `/ToUnicode` CMaps) plus a bounded tagged-PDF structure for the deterministic block set. That
+//! structure is intentionally minimal and is not a full PDF/UA implementation, so
+//! `pdf_ua_claimed` remains false.
 
 use std::collections::BTreeSet;
 
@@ -158,6 +158,7 @@ pub enum PdfUaBlocker {
     MissingRoleMap,
     NoAltTextModel,
     LayoutArtifactsNotMarked,
+    LimitedTaggedStructure,
 }
 
 impl PdfUaBlocker {
@@ -169,6 +170,7 @@ impl PdfUaBlocker {
             Self::MissingRoleMap => "missing_role_map",
             Self::NoAltTextModel => "no_alt_text_model",
             Self::LayoutArtifactsNotMarked => "layout_artifacts_not_marked",
+            Self::LimitedTaggedStructure => "limited_tagged_structure",
         }
     }
 }
@@ -231,15 +233,11 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         .alt_text_model
         .is_some_and(|model| has_meaningful_alt_text_model(input.doc, model));
 
-    let mut blockers = vec![
-        PdfUaBlocker::MissingStructTreeRoot,
-        PdfUaBlocker::ContentIsNotTagged,
-        PdfUaBlocker::MissingRoleMap,
-    ];
+    let mut blockers = Vec::new();
     if !alt_text_model_present {
         blockers.push(PdfUaBlocker::NoAltTextModel);
     }
-    blockers.push(PdfUaBlocker::LayoutArtifactsNotMarked);
+    blockers.push(PdfUaBlocker::LimitedTaggedStructure);
 
     AccessibilityReport {
         metadata: metadata(input.doc),
@@ -249,9 +247,9 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         embedded_fonts: true,
         to_unicode_cmaps: true,
         content_streams_follow_model_order: true,
-        structure_tree_present: false,
-        tagged_content_present: false,
-        layout_artifacts_marked: false,
+        structure_tree_present: true,
+        tagged_content_present: true,
+        layout_artifacts_marked: true,
         alt_text_model_present,
         pdf_ua_claimed: blockers.is_empty(),
         pdf_ua_blockers: blockers,

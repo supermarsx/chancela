@@ -29,12 +29,43 @@ struct Word {
     italic: bool,
 }
 
-/// The laid-out document: per-page content streams and the glyphs used across all pages.
+/// The laid-out document: per-page content streams, glyphs used across all pages, and the
+/// page-local marked-content references needed for the PDF structure tree.
 pub struct Laid {
     /// Uncompressed content-stream bytes, one entry per page (never empty).
     pub pages: Vec<Vec<u8>>,
     /// glyph id → a representative Unicode scalar (for the `/ToUnicode` CMap and `/W` widths).
     pub used: BTreeMap<u16, u32>,
+    /// Semantic structure elements in reading order.
+    pub structure_elements: Vec<TaggedElement>,
+}
+
+/// A semantic structure element backed by one or more page-local marked-content sequences.
+pub struct TaggedElement {
+    /// The writer's bounded semantic role for this element.
+    pub role: StructureRole,
+    /// Marked-content references belonging to this structure element.
+    pub marked_content: Vec<MarkedContentRef>,
+}
+
+/// One marked-content sequence in one page content stream.
+pub struct MarkedContentRef {
+    /// Zero-based index into [`Laid::pages`].
+    pub page_index: usize,
+    /// Page-local `/MCID` value.
+    pub mcid: i64,
+}
+
+/// Bounded roles emitted by the current deterministic writer.
+#[derive(Clone, Copy)]
+pub enum StructureRole {
+    DocumentTitle,
+    HeaderMetadata,
+    Heading(u8),
+    Paragraph,
+    KeyValue,
+    VoteTable,
+    SignatureBlock,
 }
 
 struct Layouter<'f> {
@@ -44,6 +75,9 @@ struct Layouter<'f> {
     /// Top of the remaining free area on the current page.
     y: f32,
     used: BTreeMap<u16, u32>,
+    structure_elements: Vec<TaggedElement>,
+    current_element: Option<usize>,
+    next_mcids: Vec<i64>,
 }
 
 /// Format a coordinate deterministically (fixed 2 decimals, no negative zero).
@@ -60,6 +94,9 @@ impl<'f> Layouter<'f> {
             cur: Vec::new(),
             y: PAGE_H - MARGIN,
             used: BTreeMap::new(),
+            structure_elements: Vec::new(),
+            current_element: None,
+            next_mcids: Vec::new(),
         }
     }
 
@@ -74,6 +111,34 @@ impl<'f> Layouter<'f> {
         let done = std::mem::take(&mut self.cur);
         self.pages.push(done);
         self.y = PAGE_H - MARGIN;
+    }
+
+    fn current_page_index(&self) -> usize {
+        self.pages.len()
+    }
+
+    fn next_mcid(&mut self) -> i64 {
+        let page_index = self.current_page_index();
+        if self.next_mcids.len() <= page_index {
+            self.next_mcids.resize(page_index + 1, 0);
+        }
+        let mcid = self.next_mcids[page_index];
+        self.next_mcids[page_index] += 1;
+        mcid
+    }
+
+    fn tagged_element(&mut self, role: StructureRole, render: impl FnOnce(&mut Self)) {
+        let index = self.structure_elements.len();
+        self.structure_elements.push(TaggedElement {
+            role,
+            marked_content: Vec::new(),
+        });
+        let previous = self.current_element.replace(index);
+        render(self);
+        self.current_element = previous;
+        if self.structure_elements[index].marked_content.is_empty() {
+            self.structure_elements.remove(index);
+        }
     }
 
     /// Reserve vertical space `h`; break the page if it would not fit.
@@ -115,6 +180,22 @@ impl<'f> Layouter<'f> {
             self.used.entry(gid).or_insert(c as u32);
             hex.push_str(&format!("{gid:04X}"));
         }
+        let marked = if let Some(element_index) = self.current_element {
+            let role = self.structure_elements[element_index].role;
+            let page_index = self.current_page_index();
+            let mcid = self.next_mcid();
+            self.structure_elements[element_index]
+                .marked_content
+                .push(MarkedContentRef { page_index, mcid });
+            Some((marked_content_tag(role), mcid))
+        } else {
+            None
+        };
+        let close_marked = marked.is_some();
+        if let Some((tag, mcid)) = marked {
+            self.cur
+                .extend_from_slice(format!("/{tag} << /MCID {mcid} >> BDC\n").as_bytes());
+        }
         self.cur.extend_from_slice(b"BT\n");
         self.cur
             .extend_from_slice(format!("/F1 {} Tf\n", num(size)).as_bytes());
@@ -142,10 +223,14 @@ impl<'f> Layouter<'f> {
         }
         self.cur
             .extend_from_slice(format!("<{hex}> Tj\nET\n").as_bytes());
+        if close_marked {
+            self.cur.extend_from_slice(b"EMC\n");
+        }
     }
 
     /// Draw a horizontal rule at height `y` from `x0` to `x1`.
     fn rule_at(&mut self, x0: f32, x1: f32, y: f32, width: f32) {
+        self.cur.extend_from_slice(b"/Artifact BMC\n");
         self.cur.extend_from_slice(
             format!(
                 "{} w\n{} {} m\n{} {} l\nS\n",
@@ -157,6 +242,7 @@ impl<'f> Layouter<'f> {
             )
             .as_bytes(),
         );
+        self.cur.extend_from_slice(b"EMC\n");
     }
 
     /// Greedy word-wrap `words` into the column `[x0, x1]` at `size`, drawing each line and paging
@@ -207,10 +293,12 @@ impl<'f> Layouter<'f> {
             3 => 12.0,
             _ => BODY,
         };
-        self.gap(size * 0.5);
-        let words = split_words(text, true, false);
-        self.flow(&words, size, self.content_x0(), self.content_x1());
-        self.gap(size * 0.25);
+        self.tagged_element(StructureRole::Heading(level), |l| {
+            l.gap(size * 0.5);
+            let words = split_words(text, true, false);
+            l.flow(&words, size, l.content_x0(), l.content_x1());
+            l.gap(size * 0.25);
+        });
     }
 
     fn paragraph(&mut self, runs: &[Run]) {
@@ -221,18 +309,22 @@ impl<'f> Layouter<'f> {
         if words.is_empty() {
             return;
         }
-        self.flow(&words, BODY, self.content_x0(), self.content_x1());
-        self.gap(BODY * 0.5);
+        self.tagged_element(StructureRole::Paragraph, |l| {
+            l.flow(&words, BODY, l.content_x0(), l.content_x1());
+            l.gap(BODY * 0.5);
+        });
     }
 
     fn key_value(&mut self, rows: &[(String, String)]) {
-        let x0 = self.content_x0();
-        let val_x = x0 + 150.0;
-        let val_x1 = self.content_x1();
-        for (k, v) in rows {
-            self.draw_kv_row(k, v, x0, val_x, val_x1);
-        }
-        self.gap(BODY * 0.3);
+        self.tagged_element(StructureRole::KeyValue, |l| {
+            let x0 = l.content_x0();
+            let val_x = x0 + 150.0;
+            let val_x1 = l.content_x1();
+            for (k, v) in rows {
+                l.draw_kv_row(k, v, x0, val_x, val_x1);
+            }
+            l.gap(BODY * 0.3);
+        });
     }
 
     fn draw_kv_row(&mut self, k: &str, v: &str, x0: f32, val_x: f32, val_x1: f32) {
@@ -264,35 +356,37 @@ impl<'f> Layouter<'f> {
     }
 
     fn vote_table(&mut self, rows: &[chancela_core::VoteRow]) {
-        let x0 = self.content_x0();
-        let x1 = self.content_x1();
-        let num_w = 72.0f32;
-        let c3_r = x1;
-        let c2_r = x1 - num_w;
-        let c1_r = x1 - 2.0 * num_w;
-        let label_x1 = x1 - 3.0 * num_w;
+        self.tagged_element(StructureRole::VoteTable, |l| {
+            let x0 = l.content_x0();
+            let x1 = l.content_x1();
+            let num_w = 72.0f32;
+            let c3_r = x1;
+            let c2_r = x1 - num_w;
+            let c1_r = x1 - 2.0 * num_w;
+            let label_x1 = x1 - 3.0 * num_w;
 
-        self.gap(4.0);
-        // Header row.
-        let base = self.take_line(BODY);
-        self.frag(x0, base, BODY, true, false, "Deliberação");
-        self.right(c1_r, base, BODY, true, "A favor");
-        self.right(c2_r, base, BODY, true, "Contra");
-        self.right(c3_r, base, BODY, true, "Abstenção");
-        self.rule_at(x0, x1, base - 3.0, 0.6);
-        self.gap(3.0);
-        for r in rows {
-            // Each row is atomic; `take_line` page-breaks if it will not fit.
-            let base = self.take_line(BODY);
-            // wrap-free label (truncation avoided by column width being generous)
-            self.frag_clip(x0, base, BODY, &r.label, label_x1 - x0);
-            self.right(c1_r, base, BODY, false, &r.favor.to_string());
-            self.right(c2_r, base, BODY, false, &r.against.to_string());
-            self.right(c3_r, base, BODY, false, &r.abstain.to_string());
-        }
-        let end_y = self.y - 1.0;
-        self.rule_at(x0, x1, end_y, 0.6);
-        self.gap(6.0);
+            l.gap(4.0);
+            // Header row.
+            let base = l.take_line(BODY);
+            l.frag(x0, base, BODY, true, false, "Deliberação");
+            l.right(c1_r, base, BODY, true, "A favor");
+            l.right(c2_r, base, BODY, true, "Contra");
+            l.right(c3_r, base, BODY, true, "Abstenção");
+            l.rule_at(x0, x1, base - 3.0, 0.6);
+            l.gap(3.0);
+            for r in rows {
+                // Each row is atomic; `take_line` page-breaks if it will not fit.
+                let base = l.take_line(BODY);
+                // wrap-free label (truncation avoided by column width being generous)
+                l.frag_clip(x0, base, BODY, &r.label, label_x1 - x0);
+                l.right(c1_r, base, BODY, false, &r.favor.to_string());
+                l.right(c2_r, base, BODY, false, &r.against.to_string());
+                l.right(c3_r, base, BODY, false, &r.abstain.to_string());
+            }
+            let end_y = l.y - 1.0;
+            l.rule_at(x0, x1, end_y, 0.6);
+            l.gap(6.0);
+        });
     }
 
     /// Draw right-aligned text ending at `x_right`.
@@ -321,22 +415,24 @@ impl<'f> Layouter<'f> {
     }
 
     fn signature_block(&mut self, slots: &[chancela_core::SignatureSlot]) {
-        let x0 = self.content_x0();
-        let line_w = 220.0f32;
-        self.gap(10.0);
-        for slot in slots {
-            // Reserve the whole slot (signature gap + rule + two text lines) as a unit.
-            self.ensure(60.0);
-            self.gap(26.0); // blank space for the ink signature
-            let rule_y = self.y;
-            self.rule_at(x0, x0 + line_w, rule_y, 0.6);
-            self.gap(2.0);
-            let b1 = self.take_line(BODY);
-            self.frag(x0, b1, BODY, true, false, &slot.role);
-            let b2 = self.take_line(BODY);
-            self.frag(x0, b2, BODY, false, false, &slot.name);
-            self.gap(8.0);
-        }
+        self.tagged_element(StructureRole::SignatureBlock, |l| {
+            let x0 = l.content_x0();
+            let line_w = 220.0f32;
+            l.gap(10.0);
+            for slot in slots {
+                // Reserve the whole slot (signature gap + rule + two text lines) as a unit.
+                l.ensure(60.0);
+                l.gap(26.0); // blank space for the ink signature
+                let rule_y = l.y;
+                l.rule_at(x0, x0 + line_w, rule_y, 0.6);
+                l.gap(2.0);
+                let b1 = l.take_line(BODY);
+                l.frag(x0, b1, BODY, true, false, &slot.role);
+                let b2 = l.take_line(BODY);
+                l.frag(x0, b2, BODY, false, false, &slot.name);
+                l.gap(8.0);
+            }
+        });
     }
 
     fn horizontal_rule(&mut self) {
@@ -349,23 +445,44 @@ impl<'f> Layouter<'f> {
 
     fn header_prologue(&mut self, doc: &DocumentModel) {
         // Title.
-        let title_words = split_words(&doc.title, true, false);
-        self.flow(&title_words, 17.0, self.content_x0(), self.content_x1());
-        self.gap(3.0);
+        self.tagged_element(StructureRole::DocumentTitle, |l| {
+            let title_words = split_words(&doc.title, true, false);
+            l.flow(&title_words, 17.0, l.content_x0(), l.content_x1());
+            l.gap(3.0);
+        });
         // Entity line.
         let entity = match &doc.entity_nipc {
             Some(n) if !n.is_empty() => format!("{} — NIPC {}", doc.entity_name, n),
             _ => doc.entity_name.clone(),
         };
-        let ewords = split_words(&entity, false, false);
-        self.flow(&ewords, BODY, self.content_x0(), self.content_x1());
+        self.tagged_element(StructureRole::HeaderMetadata, |l| {
+            let ewords = split_words(&entity, false, false);
+            l.flow(&ewords, BODY, l.content_x0(), l.content_x1());
+        });
         // Subject.
         if !doc.subject.is_empty() {
-            self.gap(2.0);
-            let swords = split_words(&doc.subject, false, true);
-            self.flow(&swords, 12.0, self.content_x0(), self.content_x1());
+            self.tagged_element(StructureRole::HeaderMetadata, |l| {
+                l.gap(2.0);
+                let swords = split_words(&doc.subject, false, true);
+                l.flow(&swords, 12.0, l.content_x0(), l.content_x1());
+            });
         }
         self.horizontal_rule();
+    }
+}
+
+fn marked_content_tag(role: StructureRole) -> &'static str {
+    match role {
+        StructureRole::DocumentTitle => "H1",
+        StructureRole::HeaderMetadata => "P",
+        StructureRole::Heading(1) => "H1",
+        StructureRole::Heading(2) => "H2",
+        StructureRole::Heading(3) => "H3",
+        StructureRole::Heading(_) => "H",
+        StructureRole::Paragraph => "P",
+        StructureRole::KeyValue => "Div",
+        StructureRole::VoteTable => "Div",
+        StructureRole::SignatureBlock => "Div",
     }
 }
 
@@ -410,5 +527,6 @@ pub fn lay_out(doc: &DocumentModel, font: &Font) -> Laid {
     Laid {
         pages: l.pages,
         used: l.used,
+        structure_elements: l.structure_elements,
     }
 }
