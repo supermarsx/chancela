@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { GestaoDadosSection } from './GestaoDadosSection';
 import { renderWithProviders } from '../../test/utils';
 import type { DataStatusResponse } from '../../api/types';
@@ -217,10 +217,15 @@ describe('GestaoDadosSection', () => {
     expect(screen.getByText('Relatórios de falha')).toBeTruthy();
     expect(screen.getByText('Exportações retidas')).toBeTruthy();
     expect(screen.getByText(/Total:/).textContent).toContain('4 KB');
-    expect(screen.getAllByText(/Ficheiros: 2/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/Pastas: 0/).length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByText(/Linhas: 3/)).toBeTruthy();
-    expect(screen.getByText(/Raízes: chancela\.db, chancela\.db-wal/)).toBeTruthy();
+    const usageSection = screen.getByRole('heading', { name: 'Utilização' }).closest('section')!;
+    const databaseRow = within(usageSection).getByText('Database').closest('li')!;
+    expect(within(databaseRow).getByText('ficheiro SQLite')).toBeTruthy();
+    expect(within(databaseRow).getByText('medição exata')).toBeTruthy();
+    expect(within(databaseRow).getByText('Ficheiros: 2')).toBeTruthy();
+    expect(within(databaseRow).getByText('Pastas: 0')).toBeTruthy();
+    expect(within(databaseRow).getByText('Raízes: chancela.db, chancela.db-wal')).toBeTruthy();
+    const ledgerRow = within(usageSection).getByText('Ledger payloads').closest('li')!;
+    expect(within(ledgerRow).getByText('Linhas: 3')).toBeTruthy();
     expect(screen.getByText('failed to read exports: access denied')).toBeTruthy();
 
     const open = screen.getByRole('button', { name: 'Abrir pasta' }) as HTMLButtonElement;
@@ -247,6 +252,18 @@ describe('GestaoDadosSection', () => {
     renderWithProviders(<GestaoDadosSection />);
 
     expect(await screen.findByText('Ler pasta')).toBeTruthy();
+    const permissionsSection = screen
+      .getByRole('heading', { name: 'Permissões' })
+      .closest('section')!;
+    const permissionItems = within(permissionsSection).getAllByRole('listitem');
+    expect(permissionItems).toHaveLength(5);
+    expect(permissionItems.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Ler pasta'),
+      expect.stringContaining('Criar ficheiro'),
+      expect.stringContaining('Escrever ficheiro'),
+      expect.stringContaining('Apagar ficheiro de teste'),
+      expect.stringContaining('SQLite aberto'),
+    ]);
     expect(screen.getByText('directory can be read')).toBeTruthy();
     expect(screen.getByText('probe file cannot be created: denied')).toBeTruthy();
     expect(
@@ -369,6 +386,13 @@ describe('GestaoDadosSection', () => {
     });
     renderWithProviders(<GestaoDadosSection />);
     await screen.findByText('F:\\ChancelaData');
+    const maintenanceSection = screen
+      .getByRole('heading', { name: 'Manutenção' })
+      .closest('section')!;
+    const cleanupRows = within(maintenanceSection).getAllByRole('listitem');
+    expect(cleanupRows).toHaveLength(2);
+    expect(cleanupRows[0].textContent).toContain('Relatórios de falha');
+    expect(cleanupRows[1].textContent).toContain('Exportações retidas');
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar falhas' }));
     const confirmBtns = screen.getAllByRole('button', { name: 'Limpar falhas' });
