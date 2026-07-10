@@ -62,6 +62,7 @@ import type {
   DpiaRecordView,
   DsrRequestView,
   Entity,
+  EntityChronologyView,
   EntityFamily,
   LifecycleStage,
   TemplateSummary,
@@ -495,6 +496,8 @@ export const api = {
   // Entities (§2.3)
   listEntities: () => get<Entity[]>('/v1/entities'),
   getEntity: (id: string) => get<Entity>(`/v1/entities/${id}`),
+  getEntityChronology: (id: string) =>
+    get<EntityChronologyView>(`/v1/entities/${id}/chronology`),
   createEntity: (body: CreateEntityBody) => post<Entity>('/v1/entities', body),
   // Statute overlay (ENT-03, t31). Omit `statute` to leave it untouched, `null` to
   // clear it, or an object to set it; appends an `entity.statute_updated` ledger event.

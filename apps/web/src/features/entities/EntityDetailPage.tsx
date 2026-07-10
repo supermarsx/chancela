@@ -26,6 +26,7 @@ import {
 import { GateButton, GateButtonLink, scopeEntity } from '../session/permissions';
 import { BooksTable } from '../books/BooksTable';
 import { RegistryProvenance } from '../registry/RegistryProvenance';
+import { EntityChronologyPanel } from './EntityChronologyPanel';
 import { EntityStatuteEditor } from './EntityStatuteEditor';
 import { NipcBadge } from './NipcBadge';
 import { PrintButton } from './PrintButton';
@@ -239,6 +240,8 @@ export function EntityDetailPage() {
         </div>
         <RegistryProvenance entityId={ent.id} />
       </section>
+
+      <EntityChronologyPanel entityId={ent.id} />
 
       <Card
         title={t('entities.booksCard')}

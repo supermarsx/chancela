@@ -251,6 +251,25 @@ export interface Entity {
   registry_summary?: EntityRegistrySummary | null;
 }
 
+export interface EntityChronologyEvent {
+  date: string | null;
+  kind: string;
+  description: string;
+  source_inscription: string;
+  actors: string[];
+}
+
+export interface EntityChronologyMermaid {
+  shareholders: string;
+  organs: string;
+  relationships: string;
+}
+
+export interface EntityChronologyView {
+  events: EntityChronologyEvent[];
+  mermaid: EntityChronologyMermaid;
+}
+
 export interface BookView {
   id: string;
   entity_id: string;

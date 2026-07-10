@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
-import { FerramentasPage } from './FerramentasPage';
-import { CaeExplorer } from '../cae/CaeExplorer';
 import type {
   CaeCatalogView,
   CaeEntryView,
@@ -11,10 +9,32 @@ import type {
   PdfSignatureValidationResponse,
 } from '../../api/types';
 
+const saveFileMock = vi.hoisted(() => ({
+  saveBlobAs: vi.fn(),
+  saveBlobResultMessage: vi.fn(
+    (result: { filename: string }) =>
+      `Transferência iniciada pelo navegador: ${result.filename}. A pasta é definida pelo browser.`,
+  ),
+}));
+
+vi.mock('../../desktop/saveFile', () => saveFileMock);
+
+import { FerramentasPage } from './FerramentasPage';
+import { CaeExplorer } from '../cae/CaeExplorer';
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function blobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
   });
 }
 
@@ -112,6 +132,8 @@ function ferramentasFetch(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  saveFileMock.saveBlobAs.mockReset();
+  saveFileMock.saveBlobResultMessage.mockClear();
 });
 
 const PDF_VALIDATION_RESPONSE: PdfSignatureValidationResponse = {
@@ -286,6 +308,61 @@ describe('Ferramentas — PDF signature validator', () => {
     expect(screen.getByText('DSS, VRI e revogação embebida')).toBeTruthy();
     expect(screen.getByText('Confiança, revogação e qualificação')).toBeTruthy();
     expect(screen.getByText('pades_valid_local_technical')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copiar JSON' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Guardar JSON' })).toBeTruthy();
+  });
+
+  it('copies the technical JSON report after validation returns a report body', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    vi.stubGlobal('fetch', pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['%PDF-1.7\n%%EOF'], 'signed.pdf', { type: 'application/pdf' });
+    fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /validar pdf/i }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copiar JSON' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const copied = String(writeText.mock.calls[0][0]);
+    expect(copied).toContain('\n  "report_kind": "pdf_signature_validation"');
+    expect(copied).toContain('technical PDF/PAdES evidence validation only');
+    expect(JSON.parse(copied)).toEqual(PDF_VALIDATION_RESPONSE);
+  });
+
+  it('saves the technical JSON report as a browser-save/download Blob', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-download',
+      filename: 'signed-validation-report.json',
+      contentType: 'application/json;charset=utf-8',
+      bytes: 1,
+    });
+    vi.stubGlobal('fetch', pdfValidatorFetch(jsonResponse(PDF_VALIDATION_RESPONSE)));
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const file = new File(['%PDF-1.7\n%%EOF'], 'signed.pdf', { type: 'application/pdf' });
+    fireEvent.change(await screen.findByLabelText('PDF assinado'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /validar pdf/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Guardar JSON' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+      filters: { name: string; extensions: string[] }[];
+      preferBrowserSavePicker: boolean;
+    };
+    expect(saved.filename).toBe('signed-validation-report.json');
+    expect(saved.contentType).toBe('application/json;charset=utf-8');
+    expect(saved.filters).toEqual([{ name: 'JSON', extensions: ['json'] }]);
+    expect(saved.preferBrowserSavePicker).toBe(true);
+    expect(saved.blob.type).toBe('application/json;charset=utf-8');
+    expect(JSON.parse(await blobText(saved.blob))).toEqual(PDF_VALIDATION_RESPONSE);
   });
 
   it('renders invalid findings from the backend report', async () => {
@@ -340,6 +417,8 @@ describe('Ferramentas — PDF signature validator', () => {
     expect(await screen.findByText('Validação recusada')).toBeTruthy();
     expect(screen.getByText(/recusa segura/i)).toBeTruthy();
     expect(screen.getByText(/SHA-256 digest does not match/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Copiar JSON' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Guardar JSON' })).toBeNull();
   });
 });
 

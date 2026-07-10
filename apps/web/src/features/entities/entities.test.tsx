@@ -44,6 +44,9 @@ function entityDetailFetch(initial: Entity) {
     const body = init?.body ? JSON.parse(init.body as string) : null;
     calls.push({ url, method, body });
 
+    if (url.includes(`/v1/entities/${current.id}/chronology`)) {
+      return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
+    }
     if (url.includes(`/v1/entities/${current.id}/registry`)) {
       return Promise.resolve(jsonResponse({ error: 'not found' }, 404));
     }
@@ -475,5 +478,57 @@ describe('EntityDetailPage', () => {
 
     expect(await screen.findByText('Use uma data válida no formato MM-DD.')).toBeTruthy();
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+  });
+
+  it('surfaces the backend entity chronology and Mermaid graph source', async () => {
+    const { fn, calls } = entityDetailFetch(ENTITY);
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      ((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        urls.push(url);
+        if (url.includes(`/v1/entities/${ENTITY.id}/chronology`)) {
+          return Promise.resolve(
+            jsonResponse({
+              events: [
+                {
+                  date: '2020-01-01',
+                  kind: 'Constitution',
+                  description: 'Constituição de sociedade',
+                  source_inscription: '1',
+                  actors: ['Maria Silva'],
+                },
+              ],
+              mermaid: {
+                shareholders: 'graph TD\n  Maria[Maria Silva] --> Quota[Quota EUR 5000]',
+                organs: 'timeline\n  2020 : Gerência',
+                relationships: 'graph LR\n  Entidade --> Registo',
+              },
+            }),
+          );
+        }
+        return fn(input, init);
+      }) as typeof fetch,
+    );
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/entidades/:id" element={<EntityDetailPage />} />
+      </Routes>,
+      ['/entidades/new-ent-1'],
+    );
+
+    expect(await screen.findByText('Cronologia e grafo')).toBeTruthy();
+    expect(await screen.findByText('Constituição de sociedade')).toBeTruthy();
+    expect(screen.getByText('Maria Silva')).toBeTruthy();
+    expect(screen.getByText('Insc. 1')).toBeTruthy();
+    expect(
+      (screen.getByLabelText('Código Mermaid: Sócios e quotas') as HTMLTextAreaElement).value,
+    ).toContain('Maria[Maria Silva] --> Quota[Quota EUR 5000]');
+    expect((screen.getByLabelText('Código Mermaid: Órgãos sociais') as HTMLTextAreaElement).value)
+      .toContain('timeline');
+    expect(urls.some((url) => url.includes(`/v1/entities/${ENTITY.id}/chronology`))).toBe(true);
+    expect(calls.some((c) => c.url.includes('/chronology'))).toBe(false);
   });
 });

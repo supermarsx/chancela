@@ -7,8 +7,19 @@ import type {
   PdfValidationStatus,
 } from '../../api/types';
 import { useValidatePdfSignature } from '../../api/hooks';
+import { saveBlobAs, saveBlobResultMessage } from '../../desktop/saveFile';
 import { useT, type TFunction } from '../../i18n';
-import { Badge, Button, Card, Digest, ErrorNote, Field, Icon, InlineWarning } from '../../ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Digest,
+  ErrorNote,
+  Field,
+  Icon,
+  InlineWarning,
+  useToast,
+} from '../../ui';
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -83,6 +94,85 @@ function findingTone(severity: string): 'neutral' | 'warn' | 'error' {
   if (severity === 'error') return 'error';
   if (severity === 'warning') return 'warn';
   return 'neutral';
+}
+
+function reportJson(report: PdfSignatureValidationResponse): string {
+  return `${JSON.stringify(report, null, 2)}\n`;
+}
+
+function reportFilename(report: PdfSignatureValidationResponse): string {
+  const base = (report.filename ?? 'pdf')
+    .replace(/\.pdf$/i, '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  return `${base || 'pdf'}-validation-report.json`;
+}
+
+function ValidationReportActions({ report }: { report: PdfSignatureValidationResponse }) {
+  const t = useT();
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+
+  async function copyReport() {
+    if (!navigator.clipboard) {
+      toast.error(t('data.status.copyUnsupported'));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(reportJson(report));
+      toast.success(t('common.copied'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error : t('pdfValidator.report.copyFailed'));
+    }
+  }
+
+  async function downloadReport() {
+    setSaving(true);
+    try {
+      const blob = new Blob([reportJson(report)], { type: 'application/json;charset=utf-8' });
+      const result = await saveBlobAs({
+        blob,
+        filename: reportFilename(report),
+        contentType: 'application/json;charset=utf-8',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        preferBrowserSavePicker: true,
+      });
+      if (result.kind === 'cancelled') {
+        toast.info(saveBlobResultMessage(result));
+        return;
+      }
+      toast.success(saveBlobResultMessage(result));
+    } catch (error) {
+      toast.error(error);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="form__actions">
+      <Button
+        type="button"
+        variant="secondary"
+        icon={<Icon.Copy />}
+        onClick={() => void copyReport()}
+      >
+        {t('pdfValidator.report.copyJson')}
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        icon={<Icon.Save />}
+        disabled={saving}
+        onClick={() => void downloadReport()}
+      >
+        {saving ? t('common.saving') : t('pdfValidator.report.saveJson')}
+      </Button>
+    </div>
+  );
 }
 
 function FindingList({ findings }: { findings: PdfSignatureValidationFinding[] }) {
@@ -326,6 +416,7 @@ function ValidationReport({ report }: { report: PdfSignatureValidationResponse }
         </div>
         <Badge tone={statusTone(report.status)}>{statusLabel(report.status, t)}</Badge>
       </div>
+      <ValidationReportActions report={report} />
 
       {mismatch ? (
         <InlineWarning tone="error" title={t('pdfValidator.mismatch.title')}>

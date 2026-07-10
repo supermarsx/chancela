@@ -102,6 +102,7 @@ import { clearSessionToken, onSessionCleared, setSessionToken } from './session'
 export const keys = {
   entities: ['entities'] as const,
   entity: (id: string) => ['entities', id] as const,
+  entityChronology: (id: string) => ['entities', id, 'chronology'] as const,
   entityRegistry: (id: string) => ['entities', id, 'registry'] as const,
   registryAutoUpdatePlan: ['registry', 'auto-update', 'due-plan'] as const,
   books: (entityId?: string) => ['books', { entityId: entityId ?? null }] as const,
@@ -188,6 +189,15 @@ export function useEntities() {
 
 export function useEntity(id: string) {
   return useQuery({ queryKey: keys.entity(id), queryFn: () => api.getEntity(id), enabled: !!id });
+}
+
+export function useEntityChronology(id: string) {
+  return useQuery({
+    queryKey: keys.entityChronology(id),
+    queryFn: () => api.getEntityChronology(id),
+    enabled: !!id,
+    retry: false,
+  });
 }
 
 export function useCreateEntity() {
