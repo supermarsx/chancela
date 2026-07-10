@@ -21,13 +21,14 @@ use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
 use chancela_signing::{
-    ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_MIMETYPE, AsicPayload,
-    BaselineProfile, DocumentInput, EvidentiaryLevel, MockProvider, SignOptions, SignatureArtifact,
+    ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_MIMETYPE,
+    AsicBoundedProfile, AsicContainerKind, AsicPayload, AsicSignatureProfile, BaselineProfile,
+    DocumentInput, EvidentiaryLevel, MockProvider, SignOptions, SignatureArtifact,
     SignatureEnvelope, SignatureFormat, SignatureRequest, SignerCapacity, SignerProvider,
     SigningError, SigningFamily, SigningJob, SigningOrder, StaticTrustPolicy, Timestamp,
     TimestampProvider, TrustedListStatus, create_asic_e_container, create_asic_s_container,
-    extract_asic_e_container, extract_asic_s_container, sha256_content_digest, sign_slot,
-    validate_signature,
+    extract_asic_e_container, extract_asic_s_container, inspect_asic_profile,
+    sha256_content_digest, sign_slot, validate_signature,
 };
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
@@ -455,6 +456,54 @@ fn zip_container(members: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 #[test]
+fn asic_profile_report_identifies_bounded_cades_shapes() {
+    let asics = create_asic_s_container("minutes.txt", b"minutes", b"cms").unwrap();
+    let report = inspect_asic_profile(&asics).expect("inspect ASiC-S profile");
+    assert_eq!(report.container_kind, AsicContainerKind::AsicS);
+    assert_eq!(report.mimetype, ASICS_MIMETYPE);
+    assert_eq!(report.signature_profile, AsicSignatureProfile::Cades);
+    assert_eq!(
+        report.bounded_profile,
+        Some(AsicBoundedProfile::AsicSCadesSinglePayload)
+    );
+    assert!(report.is_bounded_supported_candidate());
+    assert_eq!(report.payload_paths, vec!["minutes.txt".to_string()]);
+    assert_eq!(
+        report.cades_signature_paths,
+        vec!["META-INF/signatures.p7s".to_string()]
+    );
+    assert!(report.xades_signature_paths.is_empty());
+
+    let payloads = [
+        AsicPayload {
+            name: "minutes.txt",
+            bytes: b"minutes",
+            mime_type: Some("text/plain"),
+        },
+        AsicPayload {
+            name: "attachments/votes.csv",
+            bytes: b"votes",
+            mime_type: Some("text/csv"),
+        },
+    ];
+    let asice = create_asic_e_container(&payloads, b"cms").unwrap();
+    let report = inspect_asic_profile(&asice).expect("inspect ASiC-E profile");
+    assert_eq!(report.container_kind, AsicContainerKind::AsicE);
+    assert_eq!(report.mimetype, ASICE_MIMETYPE);
+    assert_eq!(report.signature_profile, AsicSignatureProfile::Cades);
+    assert_eq!(
+        report.bounded_profile,
+        Some(AsicBoundedProfile::AsicECadesSingleManifest)
+    );
+    assert!(report.is_bounded_supported_candidate());
+    assert_eq!(report.manifest_paths, vec![ASICE_MANIFEST_PATH.to_string()]);
+    assert_eq!(
+        report.cades_signature_paths,
+        vec![ASICE_CADES_SIGNATURE_PATH.to_string()]
+    );
+}
+
+#[test]
 fn asic_s_cades_round_trip_rsa() {
     let provider = rsa_provider(SigningFamily::CartaoDeCidadao);
     let content = b"approved minutes payload for ASiC-S";
@@ -702,8 +751,122 @@ fn asic_unsupported_container_shapes_report_precise_gaps() {
         ("payload.txt", b"payload" as &[u8]),
         ("META-INF/signatures.xml", b"<Signature/>" as &[u8]),
     ]);
+    let report = inspect_asic_profile(&xades).expect("inspect ASiC-XAdES profile");
+    assert_eq!(report.container_kind, AsicContainerKind::AsicS);
+    assert_eq!(report.signature_profile, AsicSignatureProfile::Xades);
+    assert_eq!(
+        report.xades_signature_paths,
+        vec!["META-INF/signatures.xml".to_string()]
+    );
+    assert!(
+        report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("XAdES"))
+    );
+    assert!(!report.is_bounded_supported_candidate());
     let err = validate_signature(&asic_artifact(xades), None).unwrap_err();
-    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("XAdES")));
+    match err {
+        SigningError::UnsupportedProfile(profile) => {
+            assert_eq!(profile.format, SignatureFormat::ASiC);
+            assert_eq!(profile.profile, "ASiC-XAdES");
+            assert!(
+                profile
+                    .evidence
+                    .iter()
+                    .any(|item| item == "xades_signature_path=META-INF/signatures.xml")
+            );
+            assert!(
+                profile
+                    .supported_profiles
+                    .iter()
+                    .any(|supported| supported == "ASiC-E/CAdES single manifest")
+            );
+        }
+        other => panic!("expected structured ASiC-XAdES unsupported-profile error, got {other:?}"),
+    }
+
+    let asice_xades = zip_container(&[
+        ("mimetype", ASICE_MIMETYPE.as_bytes()),
+        ("payload.txt", b"payload" as &[u8]),
+        ("META-INF/signature.xml", b"<ds:Signature/>" as &[u8]),
+    ]);
+    let report = inspect_asic_profile(&asice_xades).expect("inspect ASiC-E/XAdES profile");
+    assert_eq!(report.container_kind, AsicContainerKind::AsicE);
+    assert_eq!(report.signature_profile, AsicSignatureProfile::Xades);
+    assert_eq!(
+        report.xades_signature_paths,
+        vec!["META-INF/signature.xml".to_string()]
+    );
+    let err = validate_signature(&asic_artifact(asice_xades), None).unwrap_err();
+    assert!(
+        matches!(err, SigningError::UnsupportedProfile(ref profile) if profile.profile == "ASiC-XAdES"
+            && profile.evidence.iter().any(|item| item == "container_kind=ASiC-E")),
+        "got {err:?}"
+    );
+
+    let manifest_payload = [AsicPayload {
+        name: "payload.txt",
+        bytes: b"payload",
+        mime_type: Some("text/plain"),
+    }];
+    let manifest =
+        chancela_signing::build_asic_e_manifest(&manifest_payload, ASICE_CADES_SIGNATURE_PATH)
+            .unwrap();
+
+    let multi_manifest = zip_container(&[
+        ("mimetype", ASICE_MIMETYPE.as_bytes()),
+        ("payload.txt", b"payload" as &[u8]),
+        (ASICE_MANIFEST_PATH, manifest.as_slice()),
+        ("META-INF/ASiCManifest002.xml", manifest.as_slice()),
+        (ASICE_CADES_SIGNATURE_PATH, b"cms" as &[u8]),
+    ]);
+    let report = inspect_asic_profile(&multi_manifest).expect("inspect multi-manifest profile");
+    assert_eq!(report.manifest_paths.len(), 2);
+    assert!(
+        report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("one ASiCManifest"))
+    );
+    let err = validate_signature(&asic_artifact(multi_manifest), None).unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("multiple ASiC-E ASiCManifest")));
+
+    let multi_signature = zip_container(&[
+        ("mimetype", ASICE_MIMETYPE.as_bytes()),
+        ("payload.txt", b"payload" as &[u8]),
+        (ASICE_MANIFEST_PATH, manifest.as_slice()),
+        (ASICE_CADES_SIGNATURE_PATH, b"cms" as &[u8]),
+        ("META-INF/signature002.p7s", b"cms2" as &[u8]),
+    ]);
+    let report = inspect_asic_profile(&multi_signature).expect("inspect multi-signature profile");
+    assert_eq!(report.signature_profile, AsicSignatureProfile::Cades);
+    assert_eq!(report.cades_signature_paths.len(), 2);
+    assert!(
+        report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("one CAdES signature"))
+    );
+    let err = validate_signature(&asic_artifact(multi_signature), None).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(msg) if msg.contains("additional ASiC-E CAdES signature"))
+    );
+
+    let extension_manifest = br#"<?xml version="1.0" encoding="UTF-8"?>
+<asic:ASiCManifest xmlns:asic="http://uri.etsi.org/02918/v1.2.1#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+  <asic:SigReference URI="META-INF/signature001.p7s" MimeType="application/pkcs7-signature"/>
+  <asic:ASiCManifestExtensions/>
+</asic:ASiCManifest>
+"#;
+    let extension_container = zip_container(&[
+        ("mimetype", ASICE_MIMETYPE.as_bytes()),
+        ("payload.txt", b"payload" as &[u8]),
+        (ASICE_MANIFEST_PATH, extension_manifest as &[u8]),
+        (ASICE_CADES_SIGNATURE_PATH, b"cms" as &[u8]),
+    ]);
+    let err = validate_signature(&asic_artifact(extension_container), None).unwrap_err();
+    assert!(matches!(err, SigningError::Asic(msg) if msg.contains("ASiCManifestExtensions")));
 
     let multi_payload = zip_container(&[
         ("mimetype", ASICS_MIMETYPE.as_bytes()),

@@ -26,6 +26,8 @@
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 pub mod asic;
@@ -43,10 +45,11 @@ pub mod validate;
 
 pub use asic::{
     ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_CADES_SIGNATURE_PATH,
-    ASICS_MIMETYPE, AsicContainer, AsicEContainer, AsicEDataObject, AsicPayload, AsicSContainer,
+    ASICS_MIMETYPE, AsicBoundedProfile, AsicContainer, AsicContainerKind, AsicEContainer,
+    AsicEDataObject, AsicPayload, AsicProfileReport, AsicSContainer, AsicSignatureProfile,
     build_asic_e_manifest, create_asic_e_container, create_asic_s_container,
     extract_asic_container, extract_asic_e_container, extract_asic_s_container,
-    sha256_content_digest,
+    inspect_asic_profile, sha256_content_digest,
 };
 pub use cc::{CcSignedPdf, sign_pdf_cc};
 pub use cmd_session::{
@@ -125,7 +128,7 @@ impl SigningFamily {
 /// Advanced/Qualified Electronic Signature container formats the subsystem vocabulary recognises
 /// (SIG-20). PAdES, detached CAdES, bounded single-payload ASiC-S/CAdES containers, and bounded
 /// ASiC-E/CAdES manifest containers are implemented in this crate; XAdES is recognised explicitly
-/// but remains unavailable and returns [`SigningError::UnsupportedFormat`].
+/// but remains unavailable and returns [`SigningError::UnsupportedProfile`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SignatureFormat {
@@ -353,6 +356,76 @@ impl SignatureEnvelope {
     }
 }
 
+/// Structured evidence for a recognised signature profile this crate deliberately does not
+/// implement yet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct UnsupportedSignatureProfile {
+    /// The top-level format family the caller requested or the container declared.
+    pub format: SignatureFormat,
+    /// The unsupported profile name, e.g. `XAdES` or `ASiC-XAdES`.
+    pub profile: String,
+    /// Why the profile was rejected by this bounded implementation.
+    pub reason: String,
+    /// Concrete evidence that led to the decision, such as member paths found in a container.
+    pub evidence: Vec<String>,
+    /// Profiles this crate can currently produce or validate instead.
+    pub supported_profiles: Vec<String>,
+}
+
+impl UnsupportedSignatureProfile {
+    /// Build an unsupported-profile diagnostic with no evidence yet.
+    pub fn new(
+        format: SignatureFormat,
+        profile: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            format,
+            profile: profile.into(),
+            reason: reason.into(),
+            evidence: Vec::new(),
+            supported_profiles: Vec::new(),
+        }
+    }
+
+    /// Attach concrete evidence used to classify the unsupported profile.
+    pub fn with_evidence(mut self, evidence: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.evidence = evidence.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Attach the currently supported alternatives.
+    pub fn with_supported_profiles(
+        mut self,
+        supported_profiles: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.supported_profiles = supported_profiles.into_iter().map(Into::into).collect();
+        self
+    }
+}
+
+impl fmt::Display for UnsupportedSignatureProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:?}/{} is not supported: {}",
+            self.format, self.profile, self.reason
+        )?;
+        if !self.evidence.is_empty() {
+            write!(f, "; evidence: {}", self.evidence.join(", "))?;
+        }
+        if !self.supported_profiles.is_empty() {
+            write!(
+                f,
+                "; supported profiles: {}",
+                self.supported_profiles.join(", ")
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Errors from the signing subsystem.
 ///
 /// Kept `Clone + PartialEq + Eq` (the vocabulary contract): failures from the underlying
@@ -388,6 +461,10 @@ pub enum SigningError {
     /// ASiC container creation/parsing/validation failed.
     #[error("ASiC container error: {0}")]
     Asic(String),
+    /// A recognised profile is deliberately unsupported; includes evidence and supported
+    /// alternatives so callers can surface an actionable diagnostic without overclaiming support.
+    #[error("unsupported signature profile: {0}")]
+    UnsupportedProfile(UnsupportedSignatureProfile),
     /// Qualified-timestamp acquisition failed (`chancela-tsa`).
     #[error("timestamp error: {0}")]
     Timestamp(String),
@@ -395,7 +472,7 @@ pub enum SigningError {
     #[error("trusted-list error: {0}")]
     TrustedList(String),
     /// The container format requested is recognised by the vocabulary but not yet produced by this
-    /// crate (XAdES is phase-2; ASiC support is currently bounded to CAdES-backed ASiC-S/E).
+    /// crate. More specific profile gaps use [`SigningError::UnsupportedProfile`].
     #[error("signature format not supported yet: {0:?}")]
     UnsupportedFormat(SignatureFormat),
     /// The document input did not match the requested format (e.g. PAdES needs PDF bytes, a
@@ -439,6 +516,24 @@ pub enum SigningError {
         /// The family that was mis-routed.
         family: SigningFamily,
     },
+}
+
+impl SigningError {
+    pub(crate) fn unsupported_xades(operation: &'static str) -> Self {
+        SigningError::UnsupportedProfile(
+            UnsupportedSignatureProfile::new(
+                SignatureFormat::XAdES,
+                "XAdES",
+                format!("{operation} is not implemented for XMLDSig/XAdES artifacts"),
+            )
+            .with_supported_profiles([
+                "PAdES/CAdES-backed PDF signatures",
+                "detached CAdES-B",
+                "bounded ASiC-S/CAdES",
+                "bounded ASiC-E/CAdES",
+            ]),
+        )
+    }
 }
 
 #[cfg(test)]

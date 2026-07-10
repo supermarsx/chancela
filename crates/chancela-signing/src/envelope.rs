@@ -216,7 +216,9 @@ pub fn sign_slot(
                 format: SignatureFormat::ASiC,
             });
         }
-        (other, _) => return Err(SigningError::UnsupportedFormat(other)),
+        (SignatureFormat::XAdES, _) => {
+            return Err(SigningError::unsupported_xades("signing"));
+        }
     };
 
     let artifact = SignatureArtifact {

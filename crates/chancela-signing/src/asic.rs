@@ -17,11 +17,11 @@ use sha2::{Digest, Sha256};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
-use crate::SigningError;
+use crate::{SignatureFormat, SigningError, UnsupportedSignatureProfile};
 
 /// The ASiC-S MIME type stored in the first, uncompressed ZIP member.
 pub const ASICS_MIMETYPE: &str = "application/vnd.etsi.asic-s+zip";
-/// ASiC-E is recognised explicitly but remains outside this bounded implementation.
+/// The ASiC-E MIME type stored in the first, uncompressed ZIP member.
 pub const ASICE_MIMETYPE: &str = "application/vnd.etsi.asic-e+zip";
 /// The detached CAdES signature member this implementation creates and validates.
 pub const ASICS_CADES_SIGNATURE_PATH: &str = "META-INF/signatures.p7s";
@@ -96,6 +96,96 @@ pub enum AsicContainer {
     S(AsicSContainer),
     /// ASiC-E/CAdES with one manifest and one detached CAdES signature over that manifest.
     E(AsicEContainer),
+}
+
+/// ASiC container family declared by the ZIP `mimetype` member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AsicContainerKind {
+    /// ASiC-S ZIP container.
+    AsicS,
+    /// ASiC-E ZIP container.
+    AsicE,
+}
+
+impl AsicContainerKind {
+    fn mimetype(self) -> &'static str {
+        match self {
+            AsicContainerKind::AsicS => ASICS_MIMETYPE,
+            AsicContainerKind::AsicE => ASICE_MIMETYPE,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            AsicContainerKind::AsicS => "ASiC-S",
+            AsicContainerKind::AsicE => "ASiC-E",
+        }
+    }
+}
+
+/// Signature technology indicated by the ASiC signature members.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AsicSignatureProfile {
+    /// One or more CAdES `.p7s` signature members.
+    Cades,
+    /// One or more XAdES XML signature members.
+    Xades,
+    /// Both CAdES and XAdES signature members were found.
+    Mixed,
+    /// No recognised ASiC signature member was found.
+    Unsigned,
+}
+
+/// Bounded ASiC profiles this crate can attempt to parse and validate today.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AsicBoundedProfile {
+    /// ASiC-S with exactly one payload and one detached CAdES signature at
+    /// `META-INF/signatures.p7s`.
+    AsicSCadesSinglePayload,
+    /// ASiC-E with one `META-INF/ASiCManifest.xml` and one referenced CAdES `.p7s` signature.
+    AsicECadesSingleManifest,
+}
+
+/// ZIP/member-level ASiC profile report.
+///
+/// This is a diagnostic classifier only: it does not validate CAdES cryptography, XAdES XML,
+/// manifest digest binding, timestamps, or legal/qualified sufficiency.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AsicProfileReport {
+    /// Container family from the strict first ZIP `mimetype` member.
+    pub container_kind: AsicContainerKind,
+    /// Exact mimetype value expected for the container family.
+    pub mimetype: &'static str,
+    /// ZIP member names in archive order.
+    pub member_names: Vec<String>,
+    /// Non-`META-INF`, non-`mimetype` payload member paths.
+    pub payload_paths: Vec<String>,
+    /// `META-INF/ASiCManifest*.xml` members.
+    pub manifest_paths: Vec<String>,
+    /// CAdES `.p7s` signature members.
+    pub cades_signature_paths: Vec<String>,
+    /// XAdES XML signature members.
+    pub xades_signature_paths: Vec<String>,
+    /// Other `META-INF` members outside this bounded implementation.
+    pub unsupported_meta_inf_paths: Vec<String>,
+    /// Signature technology inferred from signature member names.
+    pub signature_profile: AsicSignatureProfile,
+    /// Bounded profile candidate if the member shape matches a supported ASiC/CAdES slice.
+    pub bounded_profile: Option<AsicBoundedProfile>,
+    /// Structural reasons this member shape cannot be handled by the bounded ASiC/CAdES parser.
+    pub blockers: Vec<String>,
+}
+
+impl AsicProfileReport {
+    /// Whether the member shape is one of the bounded ASiC/CAdES candidates. This still does not
+    /// prove manifest digest binding or CAdES cryptographic validity.
+    pub fn is_bounded_supported_candidate(&self) -> bool {
+        self.bounded_profile.is_some() && self.blockers.is_empty()
+    }
 }
 
 /// Compute the SHA-256 content digest used by detached CAdES-B validation.
@@ -245,9 +335,108 @@ pub fn create_asic_e_container(
 /// Parse and validate either bounded ASiC shape implemented by this crate.
 pub fn extract_asic_container(container: &[u8]) -> Result<AsicContainer, SigningError> {
     match detect_mimetype(container)? {
-        AsicMimeKind::S => extract_asic_s_container(container).map(AsicContainer::S),
-        AsicMimeKind::E => extract_asic_e_container(container).map(AsicContainer::E),
+        AsicContainerKind::AsicS => extract_asic_s_container(container).map(AsicContainer::S),
+        AsicContainerKind::AsicE => extract_asic_e_container(container).map(AsicContainer::E),
     }
+}
+
+/// Inspect ASiC ZIP structure and report the declared profile shape.
+///
+/// The report is meant for diagnostics and compliance evidence. It validates the strict ASiC
+/// `mimetype` member placement/compression and safe member names, but it does not parse XAdES,
+/// validate CAdES signatures, or prove ASiC-E manifest digest binding.
+pub fn inspect_asic_profile(container: &[u8]) -> Result<AsicProfileReport, SigningError> {
+    let mut archive = ZipArchive::new(Cursor::new(container))
+        .map_err(|e| zip_err("ASiC container is not a readable ZIP archive", e))?;
+    if archive.is_empty() {
+        return Err(asic_err("ASiC container ZIP archive is empty"));
+    }
+
+    let container_kind = read_mimetype(&mut archive)?;
+    let mut seen = HashSet::new();
+    let mut member_names = Vec::with_capacity(archive.len());
+    let mut payload_paths = Vec::new();
+    let mut manifest_paths = Vec::new();
+    let mut cades_signature_paths = Vec::new();
+    let mut xades_signature_paths = Vec::new();
+    let mut unsupported_meta_inf_paths = Vec::new();
+    let mut blockers = Vec::new();
+
+    for index in 0..archive.len() {
+        let file = archive
+            .by_index(index)
+            .map_err(|e| zip_err("failed to read ASiC ZIP member", e))?;
+        let name = file.name().to_owned();
+        validate_member_name(&name)?;
+        if !seen.insert(name.clone()) {
+            blockers.push(format!("duplicate ASiC ZIP member {name}"));
+        }
+        if file.encrypted() {
+            blockers.push(format!("encrypted ASiC ZIP member {name} is not supported"));
+        }
+        member_names.push(name.clone());
+        if file.is_dir() || name == MIMETYPE_PATH {
+            continue;
+        }
+
+        if is_xades_signature_path(&name) {
+            xades_signature_paths.push(name);
+        } else if is_asic_manifest_path(&name) {
+            manifest_paths.push(name);
+        } else if is_meta_inf_path(&name) {
+            if is_cades_signature_path(&name) {
+                cades_signature_paths.push(name);
+            } else {
+                unsupported_meta_inf_paths.push(name);
+            }
+        } else {
+            payload_paths.push(name);
+        }
+    }
+
+    let signature_profile = match (
+        cades_signature_paths.is_empty(),
+        xades_signature_paths.is_empty(),
+    ) {
+        (false, false) => AsicSignatureProfile::Mixed,
+        (false, true) => AsicSignatureProfile::Cades,
+        (true, false) => AsicSignatureProfile::Xades,
+        (true, true) => AsicSignatureProfile::Unsigned,
+    };
+
+    append_profile_blockers(
+        container_kind,
+        &payload_paths,
+        &manifest_paths,
+        &cades_signature_paths,
+        &xades_signature_paths,
+        &unsupported_meta_inf_paths,
+        &mut blockers,
+    );
+    let bounded_profile = if blockers.is_empty() {
+        bounded_profile(
+            container_kind,
+            &payload_paths,
+            &manifest_paths,
+            &cades_signature_paths,
+        )
+    } else {
+        None
+    };
+
+    Ok(AsicProfileReport {
+        container_kind,
+        mimetype: container_kind.mimetype(),
+        member_names,
+        payload_paths,
+        manifest_paths,
+        cades_signature_paths,
+        xades_signature_paths,
+        unsupported_meta_inf_paths,
+        signature_profile,
+        bounded_profile,
+        blockers,
+    })
 }
 
 /// Parse and validate the bounded ASiC-S/CAdES container shape.
@@ -317,10 +506,10 @@ pub fn extract_asic_s_container(container: &[u8]) -> Result<AsicSContainer, Sign
     }
 
     if !xades_signature_paths.is_empty() {
-        return Err(asic_err(format!(
-            "ASiC containers with XAdES XML signatures are not supported; found {}",
-            xades_signature_paths.join(", ")
-        )));
+        return Err(unsupported_asic_xades_error(
+            AsicContainerKind::AsicS,
+            &xades_signature_paths,
+        ));
     }
 
     let cades_signature_der = cades_signature_der.ok_or_else(|| {
@@ -416,10 +605,10 @@ pub fn extract_asic_e_container(container: &[u8]) -> Result<AsicEContainer, Sign
     }
 
     if !xades_signature_paths.is_empty() {
-        return Err(asic_err(format!(
-            "ASiC-E containers with XAdES XML signatures are not supported; found {}",
-            xades_signature_paths.join(", ")
-        )));
+        return Err(unsupported_asic_xades_error(
+            AsicContainerKind::AsicE,
+            &xades_signature_paths,
+        ));
     }
     if payloads.is_empty() {
         return Err(asic_err("ASiC-E container is missing payload data objects"));
@@ -504,13 +693,7 @@ pub fn extract_asic_e_container(container: &[u8]) -> Result<AsicEContainer, Sign
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AsicMimeKind {
-    S,
-    E,
-}
-
-fn detect_mimetype(container: &[u8]) -> Result<AsicMimeKind, SigningError> {
+fn detect_mimetype(container: &[u8]) -> Result<AsicContainerKind, SigningError> {
     let mut archive = ZipArchive::new(Cursor::new(container))
         .map_err(|e| zip_err("ASiC container is not a readable ZIP archive", e))?;
     if archive.is_empty() {
@@ -521,8 +704,8 @@ fn detect_mimetype(container: &[u8]) -> Result<AsicMimeKind, SigningError> {
 
 fn read_and_check_mimetype(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<(), SigningError> {
     match read_mimetype(archive)? {
-        AsicMimeKind::S => Ok(()),
-        AsicMimeKind::E => Err(asic_err(
+        AsicContainerKind::AsicS => Ok(()),
+        AsicContainerKind::AsicE => Err(asic_err(
             "ASiC-E containers must be parsed through the ASiC-E/CAdES manifest path",
         )),
     }
@@ -532,14 +715,16 @@ fn read_and_check_asice_mimetype(
     archive: &mut ZipArchive<Cursor<&[u8]>>,
 ) -> Result<(), SigningError> {
     match read_mimetype(archive)? {
-        AsicMimeKind::E => Ok(()),
-        AsicMimeKind::S => Err(asic_err(
+        AsicContainerKind::AsicE => Ok(()),
+        AsicContainerKind::AsicS => Err(asic_err(
             "ASiC-S containers must be parsed through the ASiC-S/CAdES path",
         )),
     }
 }
 
-fn read_mimetype(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<AsicMimeKind, SigningError> {
+fn read_mimetype(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+) -> Result<AsicContainerKind, SigningError> {
     let mut first = archive
         .by_index(0)
         .map_err(|e| zip_err("failed to read first ASiC ZIP member", e))?;
@@ -564,12 +749,139 @@ fn read_mimetype(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<AsicMimeKind
         .map_err(|e| asic_err(format!("failed to read ASiC mimetype member: {e}")))?;
 
     match mimetype.as_str() {
-        ASICS_MIMETYPE => Ok(AsicMimeKind::S),
-        ASICE_MIMETYPE => Ok(AsicMimeKind::E),
+        ASICS_MIMETYPE => Ok(AsicContainerKind::AsicS),
+        ASICE_MIMETYPE => Ok(AsicContainerKind::AsicE),
         other => Err(asic_err(format!(
             "unsupported ASiC mimetype {other}; expected {ASICS_MIMETYPE} or {ASICE_MIMETYPE}"
         ))),
     }
+}
+
+fn append_profile_blockers(
+    container_kind: AsicContainerKind,
+    payload_paths: &[String],
+    manifest_paths: &[String],
+    cades_signature_paths: &[String],
+    xades_signature_paths: &[String],
+    unsupported_meta_inf_paths: &[String],
+    blockers: &mut Vec<String>,
+) {
+    if !xades_signature_paths.is_empty() {
+        blockers.push(format!(
+            "{} XAdES XML signature members are not implemented: {}",
+            container_kind.label(),
+            xades_signature_paths.join(", ")
+        ));
+    }
+    if !unsupported_meta_inf_paths.is_empty() {
+        blockers.push(format!(
+            "{} contains unsupported META-INF members: {}",
+            container_kind.label(),
+            unsupported_meta_inf_paths.join(", ")
+        ));
+    }
+
+    match container_kind {
+        AsicContainerKind::AsicS => {
+            if payload_paths.len() != 1 {
+                blockers.push(format!(
+                    "ASiC-S/CAdES requires exactly one payload; found {}",
+                    payload_paths.len()
+                ));
+            }
+            if !manifest_paths.is_empty() {
+                blockers.push(format!(
+                    "ASiC-S/CAdES does not use ASiCManifest members: {}",
+                    manifest_paths.join(", ")
+                ));
+            }
+            match cades_signature_paths {
+                [] => blockers.push(format!(
+                    "ASiC-S/CAdES requires {ASICS_CADES_SIGNATURE_PATH}"
+                )),
+                [path] if path.as_str() == ASICS_CADES_SIGNATURE_PATH => {}
+                _ => blockers.push(format!(
+                    "ASiC-S/CAdES supports only {ASICS_CADES_SIGNATURE_PATH}; found {}",
+                    cades_signature_paths.join(", ")
+                )),
+            }
+        }
+        AsicContainerKind::AsicE => {
+            if payload_paths.is_empty() {
+                blockers.push("ASiC-E/CAdES requires at least one payload".to_owned());
+            }
+            match manifest_paths {
+                [] => blockers.push(format!("ASiC-E/CAdES requires {ASICE_MANIFEST_PATH}")),
+                [path] if path.as_str() == ASICE_MANIFEST_PATH => {}
+                [path] => blockers.push(format!(
+                    "ASiC-E/CAdES supports only {ASICE_MANIFEST_PATH}; found {path}"
+                )),
+                _ => blockers.push(format!(
+                    "ASiC-E/CAdES supports one ASiCManifest; found {}",
+                    manifest_paths.join(", ")
+                )),
+            }
+            match cades_signature_paths {
+                [] => blockers
+                    .push("ASiC-E/CAdES requires one META-INF/*signature*.p7s member".to_owned()),
+                [_] => {}
+                _ => blockers.push(format!(
+                    "ASiC-E/CAdES supports one CAdES signature member; found {}",
+                    cades_signature_paths.join(", ")
+                )),
+            }
+        }
+    }
+}
+
+fn bounded_profile(
+    container_kind: AsicContainerKind,
+    payload_paths: &[String],
+    manifest_paths: &[String],
+    cades_signature_paths: &[String],
+) -> Option<AsicBoundedProfile> {
+    match container_kind {
+        AsicContainerKind::AsicS
+            if payload_paths.len() == 1
+                && manifest_paths.is_empty()
+                && cades_signature_paths.len() == 1
+                && cades_signature_paths[0] == ASICS_CADES_SIGNATURE_PATH =>
+        {
+            Some(AsicBoundedProfile::AsicSCadesSinglePayload)
+        }
+        AsicContainerKind::AsicE
+            if !payload_paths.is_empty()
+                && manifest_paths.len() == 1
+                && manifest_paths[0] == ASICE_MANIFEST_PATH
+                && cades_signature_paths.len() == 1 =>
+        {
+            Some(AsicBoundedProfile::AsicECadesSingleManifest)
+        }
+        _ => None,
+    }
+}
+
+fn unsupported_asic_xades_error(
+    container_kind: AsicContainerKind,
+    xades_signature_paths: &[String],
+) -> SigningError {
+    let evidence = std::iter::once(format!("container_kind={}", container_kind.label()))
+        .chain(
+            xades_signature_paths
+                .iter()
+                .map(|path| format!("xades_signature_path={path}")),
+        )
+        .collect::<Vec<_>>();
+
+    SigningError::UnsupportedProfile(
+        UnsupportedSignatureProfile::new(
+            SignatureFormat::ASiC,
+            "ASiC-XAdES",
+            "XAdES XML signatures inside ASiC containers are recognised but not generated or validated by this crate",
+        )
+        .with_evidence(evidence)
+        .with_supported_profiles(["ASiC-S/CAdES single payload", "ASiC-E/CAdES single manifest"]),
+    )
 }
 
 fn read_zip_member<R: Read>(name: &str, file: &mut R) -> Result<Vec<u8>, SigningError> {

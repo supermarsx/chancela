@@ -387,10 +387,21 @@ fn xades_signing_remains_explicitly_unsupported() {
             BaselineProfile::B_B,
         )],
     );
-    assert_eq!(
-        sign_slot(&mut env, 0, cades_job(&provider, None, &digest)).unwrap_err(),
-        SigningError::UnsupportedFormat(SignatureFormat::XAdES)
-    );
+    let err = sign_slot(&mut env, 0, cades_job(&provider, None, &digest)).unwrap_err();
+    match err {
+        SigningError::UnsupportedProfile(profile) => {
+            assert_eq!(profile.format, SignatureFormat::XAdES);
+            assert_eq!(profile.profile, "XAdES");
+            assert!(profile.reason.contains("signing"));
+            assert!(
+                profile
+                    .supported_profiles
+                    .iter()
+                    .any(|supported| supported.contains("ASiC-S/CAdES"))
+            );
+        }
+        other => panic!("expected structured XAdES unsupported-profile error, got {other:?}"),
+    }
     assert!(
         env.artifacts.is_empty(),
         "XAdES must not produce an artifact"
@@ -437,10 +448,15 @@ fn xades_validation_remains_explicitly_unsupported() {
         timestamp_token_der: None,
     };
 
-    assert_eq!(
-        validate_signature(&artifact, Some(&[0u8; 32])).unwrap_err(),
-        SigningError::UnsupportedFormat(SignatureFormat::XAdES)
-    );
+    let err = validate_signature(&artifact, Some(&[0u8; 32])).unwrap_err();
+    match err {
+        SigningError::UnsupportedProfile(profile) => {
+            assert_eq!(profile.format, SignatureFormat::XAdES);
+            assert_eq!(profile.profile, "XAdES");
+            assert!(profile.reason.contains("validation"));
+        }
+        other => panic!("expected structured XAdES unsupported-profile error, got {other:?}"),
+    }
 }
 
 #[test]

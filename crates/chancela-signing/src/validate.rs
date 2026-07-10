@@ -189,7 +189,7 @@ pub fn validate_signature(
                 validate_cades_member(artifact, container.cades_signature_der, &manifest_digest)
             }
         },
-        other => Err(SigningError::UnsupportedFormat(other)),
+        SignatureFormat::XAdES => Err(SigningError::unsupported_xades("validation")),
     }
 }
 
