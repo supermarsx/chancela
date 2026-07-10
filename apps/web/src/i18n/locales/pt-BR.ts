@@ -873,7 +873,8 @@ export const ptBR: Catalog = {
   'pdfValidator.status.unsigned': 'Sem assinatura',
   'pdfValidator.size.unknown': 'tamanho desconhecido',
   'pdfValidator.mismatch.title': 'Divergência de integridade',
-  'pdfValidator.mismatch.body': 'O tamanho declarado ou SHA-256 não corresponde ao relatório. Trate o arquivo como não validado.',
+  'pdfValidator.mismatch.body':
+    'O tamanho declarado ou SHA-256 não corresponde ao relatório. Trate o arquivo como não validado.',
   'pdfValidator.section.structure': 'Estrutura PDF',
   'pdfValidator.section.signature': 'Assinatura / PAdES',
   'pdfValidator.section.dss': 'DSS, VRI e revogação incorporada',
@@ -1092,6 +1093,15 @@ export const ptBR: Catalog = {
   'settings.platform.cardTitle': 'Operations',
   'settings.platform.intro':
     'Operational status for the API server and MCP stdio server. The actions below record desired state and backend limitations; they do not promise direct process control.',
+  'settings.platform.assurance.title': 'Garantia IA/MCP',
+  'settings.platform.assurance.gates':
+    'O MCP fica desligado a menos que o controle IA/MCP do tenant e o controle do servidor MCP estejam ambos ativos.',
+  'settings.platform.assurance.rbac':
+    'As ferramentas MCP usam RBAC por chave de API no servidor; esta página não expõe segredos.',
+  'settings.platform.assurance.drafts':
+    'As saídas draft_minutes e draft_act são rascunhos de IA não autoritativos; verifique-as antes de selar.',
+  'settings.platform.assurance.signature':
+    'validate_signature_bundle é apenas evidência técnica; não é uma declaração legal de assinatura qualificada.',
   'settings.platform.loading': 'Loading platform services…',
   'settings.platform.empty.title': 'No services',
   'settings.platform.empty.body': 'The backend did not return configurable platform services.',

@@ -794,6 +794,29 @@ describe('SettingsPage', () => {
     expect(screen.getAllByRole('button', { name: /Registar reinício/ }).length).toBeGreaterThan(0);
   });
 
+  it('shows AI/MCP provenance assurance to settings managers without secret material', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission === 'settings.manage')}
+      >
+        <SettingsPage />
+      </StaticPermissionsProvider>,
+      ['/configuracoes?sec=operacoes'],
+    );
+
+    const title = await screen.findByText('Garantia IA/MCP');
+    const panel = title.closest('[role="note"]') as HTMLElement | null;
+    expect(panel).toBeTruthy();
+    expect(within(panel!).getByText(/O MCP fica inativo/)).toBeTruthy();
+    expect(within(panel!).getByText(/RBAC por chave API no servidor/)).toBeTruthy();
+    expect(within(panel!).getByText(/draft_minutes e draft_act/)).toBeTruthy();
+    expect(within(panel!).getByText(/validate_signature_bundle/)).toBeTruthy();
+    expect(panel!.textContent ?? '').not.toMatch(/chk_[A-Za-z0-9_]+|Bearer\s+\S+|plaintext/i);
+  });
+
   it('renders the platform log tail with limitations and expandable context', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);

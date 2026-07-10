@@ -31,6 +31,12 @@ import {
 
 const LOG_BASE_FIELDS = ['global', 'app', 'api', 'mcp'] as const;
 const LOG_OVERRIDE_IDS: readonly PlatformServiceId[] = ['app', 'api', 'mcp_stdio'];
+const AI_MCP_ASSURANCE_KEYS = [
+  'settings.platform.assurance.gates',
+  'settings.platform.assurance.rbac',
+  'settings.platform.assurance.drafts',
+  'settings.platform.assurance.signature',
+] as const satisfies readonly MessageKey[];
 
 function logLevelOptions(t: ReturnType<typeof useT>) {
   return PLATFORM_LOG_LEVELS.map((level) => ({
@@ -91,6 +97,19 @@ function ServiceBadges({ service }: { service: PlatformServiceStatus }) {
         {t(`settings.platform.runtime.${service.actual_runtime_status}` as MessageKey)}
       </Badge>
     </div>
+  );
+}
+
+function AiMcpAssurancePanel() {
+  const t = useT();
+  return (
+    <InlineWarning tone="info" title={t('settings.platform.assurance.title')}>
+      <ul>
+        {AI_MCP_ASSURANCE_KEYS.map((key) => (
+          <li key={key}>{t(key)}</li>
+        ))}
+      </ul>
+    </InlineWarning>
   );
 }
 
@@ -310,6 +329,7 @@ export function PlatformOperationsSection({
       <Card title={t('settings.platform.cardTitle')}>
         <div className="form">
           <p className="field__hint">{t('settings.platform.intro')}</p>
+          <AiMcpAssurancePanel />
           {services.isLoading ? <Loading label={t('settings.platform.loading')} /> : null}
           {services.error ? <ErrorNote error={services.error} /> : null}
           {services.data && services.data.services.length === 0 ? (

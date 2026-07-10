@@ -1100,6 +1100,15 @@ export const ptPT = {
   'settings.platform.cardTitle': 'Operações',
   'settings.platform.intro':
     'Estado operacional do servidor API e do servidor MCP stdio. As ações abaixo registam o estado desejado e as limitações do backend; não prometem controlo direto de processos.',
+  'settings.platform.assurance.title': 'Garantia IA/MCP',
+  'settings.platform.assurance.gates':
+    'O MCP fica inativo salvo se o controlo IA/MCP do tenant e o controlo do servidor MCP estiverem ambos ativos.',
+  'settings.platform.assurance.rbac':
+    'As ferramentas MCP usam RBAC por chave API no servidor; esta página não expõe segredos.',
+  'settings.platform.assurance.drafts':
+    'As saídas draft_minutes e draft_act são rascunhos de IA não autoritativos; verifique-as antes de selar.',
+  'settings.platform.assurance.signature':
+    'validate_signature_bundle é apenas evidência técnica; não é uma declaração legal de assinatura qualificada.',
   'settings.platform.loading': 'A carregar serviços da plataforma…',
   'settings.platform.empty.title': 'Sem serviços',
   'settings.platform.empty.body': 'O backend não devolveu serviços de plataforma configuráveis.',

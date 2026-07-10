@@ -873,7 +873,8 @@ export const daDK: Catalog = {
   'pdfValidator.status.unsigned': 'Usigneret',
   'pdfValidator.size.unknown': 'ukendt størrelse',
   'pdfValidator.mismatch.title': 'Integritetsafvigelse',
-  'pdfValidator.mismatch.body': 'Den deklarerede størrelse eller SHA-256 svarer ikke til rapporten. Behandl filen som ikke valideret.',
+  'pdfValidator.mismatch.body':
+    'Den deklarerede størrelse eller SHA-256 svarer ikke til rapporten. Behandl filen som ikke valideret.',
   'pdfValidator.section.structure': 'PDF-struktur',
   'pdfValidator.section.signature': 'Signatur / PAdES',
   'pdfValidator.section.dss': 'DSS, VRI og indlejret tilbagekaldelse',
@@ -1090,6 +1091,15 @@ export const daDK: Catalog = {
   'settings.platform.cardTitle': 'Operations',
   'settings.platform.intro':
     'Operational status for the API server and MCP stdio server. The actions below record desired state and backend limitations; they do not promise direct process control.',
+  'settings.platform.assurance.title': 'AI/MCP assurance',
+  'settings.platform.assurance.gates':
+    'MCP is off unless both the tenant AI/MCP gate and the MCP server gate are enabled.',
+  'settings.platform.assurance.rbac':
+    'MCP tools use API-key RBAC server-side; this page does not expose secrets.',
+  'settings.platform.assurance.drafts':
+    'draft_minutes and draft_act outputs are non-authoritative AI drafts; verify them before sealing.',
+  'settings.platform.assurance.signature':
+    'validate_signature_bundle is technical evidence only, not a legal qualified-signature claim.',
   'settings.platform.loading': 'Loading platform services…',
   'settings.platform.empty.title': 'No services',
   'settings.platform.empty.body': 'The backend did not return configurable platform services.',
