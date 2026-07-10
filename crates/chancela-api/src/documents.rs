@@ -489,6 +489,7 @@ pub struct DocumentImportValidationReport {
     pub fixity: DocumentFixityReport,
     pub content_type: DocumentContentTypeReport,
     pub classification: DocumentEvidenceClassificationReport,
+    pub preservation_policy: DocumentPreservationPolicyReport,
     pub pdf: PdfRecognitionReport,
     pub legacy_word: LegacyWordDocRecognitionReport,
     pub image: ImageRecognitionReport,
@@ -525,6 +526,19 @@ pub struct DocumentEvidenceClassificationReport {
     pub canonical_conversion_performed: bool,
     pub canonical_pdfa_generated: bool,
     pub legal_validity_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocumentPreservationPolicyReport {
+    pub review_state: &'static str,
+    pub requires_operator_review: bool,
+    pub requires_ocr_review: bool,
+    pub canonical_conversion_status: &'static str,
+    pub original_bytes_preservation_status: &'static str,
+    pub preservation_action: &'static str,
+    pub canonical_conversion_performed: bool,
+    pub canonical_pdfa_generated: bool,
+    pub legal_acceptance_claimed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -851,6 +865,10 @@ fn validate_document_candidate_with_fixity(
             "legacy_word_doc_detected",
             "legacy Microsoft Word .doc/OLE CFB detected; it can be preserved only as non-canonical evidence",
         ));
+        findings.push(DocumentValidationFinding::warning(
+            "legacy_word_conversion_review_required",
+            "legacy DOC import requires operator review before any later canonical conversion workflow; no conversion is performed here",
+        ));
         findings.push(DocumentValidationFinding::info(
             "legacy_word_no_macro_execution",
             "OLE CFB bytes were inspected by magic bytes and metadata only; macros and embedded objects were not executed",
@@ -868,6 +886,10 @@ fn validate_document_candidate_with_fixity(
         findings.push(DocumentValidationFinding::info(
             "image_evidence_detected",
             "image evidence detected; bytes can be preserved unchanged as non-canonical supporting evidence",
+        ));
+        findings.push(DocumentValidationFinding::warning(
+            "requires_ocr_review",
+            "image evidence requires operator OCR/content review before any extracted text is used for search, drafting, or canonical records",
         ));
         findings.push(DocumentValidationFinding::info(
             "image_no_pdfa_conversion",
@@ -1017,6 +1039,11 @@ fn validate_document_candidate_with_fixity(
 
     let can_accept_non_canonical_import =
         !findings.iter().any(|finding| finding.severity == "error");
+    let preservation_policy = document_preservation_policy(
+        content_type.detected,
+        can_accept_non_canonical_import,
+        false,
+    );
 
     DocumentImportValidationReport {
         report_kind: "document_import_validation",
@@ -1028,6 +1055,7 @@ fn validate_document_candidate_with_fixity(
         fixity,
         content_type,
         classification,
+        preservation_policy,
         pdf,
         legacy_word,
         image,
@@ -1060,6 +1088,9 @@ pub struct ImportedDocumentView {
     pub imported_at: String,
     pub imported_by: String,
     pub non_canonical: bool,
+    pub requires_ocr_review: bool,
+    pub canonical_conversion_status: &'static str,
+    pub preservation_policy: DocumentPreservationPolicyReport,
     pub legal_notice: &'static str,
     pub bytes_download: String,
 }
@@ -1261,6 +1292,7 @@ async fn imported_document_event_scope(
 
 fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocumentView {
     let classification = document_evidence_classification(&meta.detected_content_type);
+    let preservation_policy = document_preservation_policy(&meta.detected_content_type, true, true);
     ImportedDocumentView {
         id: meta.id.clone(),
         act_id: meta.act_id.as_ref().map(ToString::to_string),
@@ -1274,6 +1306,9 @@ fn imported_document_view(meta: &StoredImportedDocumentMeta) -> ImportedDocument
         imported_at: meta.imported_at.format(&Rfc3339).unwrap_or_default(),
         imported_by: meta.imported_by.clone(),
         non_canonical: true,
+        requires_ocr_review: preservation_policy.requires_ocr_review,
+        canonical_conversion_status: preservation_policy.canonical_conversion_status,
+        preservation_policy,
         legal_notice: DOCUMENT_IMPORTED_NOTICE,
         bytes_download: format!("/v1/documents/imported/{}/bytes", meta.id),
     }
@@ -1329,6 +1364,7 @@ fn imported_document_download_extension(detected_content_type: &str) -> &'static
 
 fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
     let classification = document_evidence_classification(&meta.detected_content_type);
+    let preservation_policy = document_preservation_policy(&meta.detected_content_type, true, true);
     json!({
         "document_id": meta.id.clone(),
         "act_id": meta.act_id.as_ref().map(ToString::to_string),
@@ -1340,13 +1376,16 @@ fn imported_document_event_payload(meta: &StoredImportedDocumentMeta) -> Value {
         "classification": classification.classification,
         "imported_at": meta.imported_at.format(&Rfc3339).unwrap_or_default(),
         "non_canonical": true,
+        "requires_ocr_review": preservation_policy.requires_ocr_review,
         "legal_notice": DOCUMENT_IMPORTED_NOTICE,
         "non_canonical_warning": NON_CANONICAL_EVIDENCE_WARNING,
         "bytes_in_payload": false,
         "pdfa_conformance_validation_performed": false,
+        "canonical_conversion_status": preservation_policy.canonical_conversion_status,
         "canonical_conversion_performed": false,
         "canonical_pdfa_generated": false,
         "signature_validation_performed": false,
+        "preservation_policy": preservation_policy,
         "legal_validity_claimed": false,
     })
 }
@@ -2054,6 +2093,59 @@ fn document_evidence_classification(
         canonical_conversion_performed: false,
         canonical_pdfa_generated: false,
         legal_validity_claimed: false,
+    }
+}
+
+fn document_preservation_policy(
+    detected_content_type: &str,
+    can_accept_non_canonical_import: bool,
+    original_bytes_preserved: bool,
+) -> DocumentPreservationPolicyReport {
+    let base = content_type_base(detected_content_type);
+    let requires_ocr_review = matches!(base.as_str(), "image/png" | "image/jpeg");
+    let is_legacy_word_doc = base == "application/msword";
+    let original_bytes_preservation_status = if original_bytes_preserved {
+        "preserved_original_bytes"
+    } else {
+        "not_preserved_by_validation"
+    };
+    let canonical_conversion_status = if can_accept_non_canonical_import {
+        "not_performed_non_canonical_original_only"
+    } else {
+        "not_performed_validation_failed"
+    };
+    let (review_state, preservation_action) = if !can_accept_non_canonical_import {
+        (
+            "validation_failed",
+            "resolve_validation_errors_before_preservation",
+        )
+    } else if requires_ocr_review {
+        (
+            "ocr_review_required",
+            "preserve_original_bytes_then_operator_review_ocr_if_needed",
+        )
+    } else if is_legacy_word_doc {
+        (
+            "canonical_conversion_review_required",
+            "preserve_original_bytes_then_operator_review_conversion_if_needed",
+        )
+    } else {
+        (
+            "operator_review_required",
+            "preserve_original_bytes_as_non_canonical_evidence_if_needed",
+        )
+    };
+
+    DocumentPreservationPolicyReport {
+        review_state,
+        requires_operator_review: true,
+        requires_ocr_review,
+        canonical_conversion_status,
+        original_bytes_preservation_status,
+        preservation_action,
+        canonical_conversion_performed: false,
+        canonical_pdfa_generated: false,
+        legal_acceptance_claimed: false,
     }
 }
 
