@@ -29,6 +29,9 @@
 //! - `chancela-api` (and `tokio`/`axum`) are pulled in ONLY behind the feature,
 //!   so a `--no-default-features` build stays dependency-light.
 
+#[cfg(feature = "embedded-server")]
+mod database_encryption;
+
 /// Runs the desktop application.
 ///
 /// The `mobile_entry_point` attribute lets the same function serve as the
@@ -199,11 +202,11 @@ fn start_embedded_server_if_enabled(app: &tauri::App) -> Result<(), Box<dyn std:
     // Dev mode keeps the WebView on Vite's devUrl for hot-reload; start the API on
     // the fixed address the Vite proxy targets, but do NOT navigate the window.
     if tauri::is_dev() {
-        spawn_dev_server(build_app_state(app));
+        spawn_dev_server(build_app_state(app)?);
         return Ok(());
     }
 
-    let state = build_app_state(app);
+    let state = build_app_state(app)?;
     let port = spawn_server(resolve_web_dist(app), state)?;
 
     // Desktop safe-mode entry (t26): when `CHANCELA_SAFE_MODE` is set we append the same
@@ -305,12 +308,18 @@ fn install_panic_hook(crash_base: std::path::PathBuf) {
 ///      `~/.local/share/pt.chancela.desktop/chancela-data`, on macOS
 ///      `~/Library/Application Support/pt.chancela.desktop/chancela-data`. The
 ///      directory itself is created lazily on the first settings write.
-///   3. If even that cannot be resolved (no home/app-data dir), fall back to pure
-///      in-memory state so the app still launches.
+///   3. If even that cannot be resolved (no home/app-data dir), fail startup instead
+///      of silently running the embedded desktop API without a durable encrypted
+///      database location.
 ///
-/// Only `settings.json` is persisted today; all other state remains in memory.
+/// In SQLCipher-enabled desktop builds, the database key defaults to a fresh random
+/// key protected by the desktop OS current-user provider. A direct
+/// `CHANCELA_DB_KEY`/`CHANCELA_DB_KEY_FILE` override still works as an explicit
+/// operator/test configuration. Non-SQLCipher builds refuse durable plaintext
+/// startup unless `CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB=1` is set for a local
+/// development/no-sqlcipher run.
 #[cfg(feature = "embedded-server")]
-fn build_app_state(app: &tauri::App) -> chancela_api::AppState {
+fn build_app_state(app: &tauri::App) -> Result<chancela_api::AppState, Box<dyn std::error::Error>> {
     use tauri::Manager;
 
     // 1. Explicit env / walk-up data dir wins (parity with chancela-server).
@@ -318,12 +327,11 @@ fn build_app_state(app: &tauri::App) -> chancela_api::AppState {
         eprintln!("chancela: persisting settings to {}", dir.display());
         // Panic logs live alongside the persisted state (t26).
         install_panic_hook(dir.clone());
+        let state = build_persistent_app_state(dir.clone())?;
         // Proactively refresh the CAE cache in that data dir (detached, offline-safe:
         // a no-op without CHANCELA_CAE_URL or while the cache is still fresh).
-        chancela_cae::spawn_background_refresh(Some(dir.clone()));
-        let state = chancela_api::AppState::with_data_dir(dir.clone());
-        report_durable_store(&state, &dir);
-        return state;
+        chancela_cae::spawn_background_refresh(Some(dir));
+        return Ok(state);
     }
 
     // 2. Desktop default: the OS per-app data directory.
@@ -332,24 +340,54 @@ fn build_app_state(app: &tauri::App) -> chancela_api::AppState {
             let dir = base.join("chancela-data");
             eprintln!("chancela: persisting settings to {}", dir.display());
             install_panic_hook(dir.clone());
-            chancela_cae::spawn_background_refresh(Some(dir.clone()));
-            let state = chancela_api::AppState::with_data_dir(dir.clone());
-            report_durable_store(&state, &dir);
-            state
+            let state = build_persistent_app_state(dir.clone())?;
+            chancela_cae::spawn_background_refresh(Some(dir));
+            Ok(state)
         }
-        // 3. No app-data dir available: run in memory rather than fail to launch.
-        Err(e) => {
+        Err(e) => Err(format!(
+            "chancela: could not resolve an app-data directory ({e}); refusing to start the \
+                 embedded API without a durable encrypted database location"
+        )
+        .into()),
+    }
+}
+
+#[cfg(feature = "embedded-server")]
+fn build_persistent_app_state(
+    dir: std::path::PathBuf,
+) -> Result<chancela_api::AppState, Box<dyn std::error::Error>> {
+    let resolved = database_encryption::resolve_database_encryption_config(&dir)?;
+    report_database_encryption_mode(&resolved.mode);
+    let state = chancela_api::AppState::try_with_data_dir(dir.clone(), resolved.config)?;
+    report_durable_store(&state, &dir);
+    Ok(state)
+}
+
+#[cfg(feature = "embedded-server")]
+fn report_database_encryption_mode(mode: &database_encryption::ResolvedDatabaseEncryptionMode) {
+    match mode {
+        database_encryption::ResolvedDatabaseEncryptionMode::EnvOverride => {
             eprintln!(
-                "chancela: could not resolve an app-data directory ({e}); \
-                 settings will not persist (in-memory only)"
+                "chancela: database encryption key resolved from explicit environment config"
             );
-            // No persistent data dir — still capture panics under the OS temp dir so a
-            // crash on an unconfigured box is not lost entirely (t26, best-effort).
-            install_panic_hook(std::env::temp_dir().join("chancela-data"));
-            // Still start the refresh (cacheless): it can supersede the in-memory
-            // catalog for this run if a source URL is configured.
-            chancela_cae::spawn_background_refresh(None);
-            chancela_api::AppState::default()
+        }
+        database_encryption::ResolvedDatabaseEncryptionMode::OsProtectedKeyFile {
+            provider,
+            path,
+            created,
+        } => {
+            let action = if *created { "created" } else { "loaded" };
+            eprintln!(
+                "chancela: {action} SQLCipher database key via {provider} ({})",
+                path.display()
+            );
+        }
+        database_encryption::ResolvedDatabaseEncryptionMode::ExplicitPlaintextFallback => {
+            eprintln!(
+                "chancela: {env}=1 set — running durable SQLite without SQLCipher for this \
+                 explicit local development/no-sqlcipher run",
+                env = database_encryption::ALLOW_PLAINTEXT_DB_ENV
+            );
         }
     }
 }
@@ -359,7 +397,7 @@ fn build_app_state(app: &tauri::App) -> chancela_api::AppState {
 /// chain-verification outcome (§D-boot), and the store path + schema version. The desktop shell
 /// has no stdout banner, so these lines go to stderr alongside the other `chancela:` startup logs.
 ///
-/// `AppState::with_data_dir` already emits its own loud warning if the store fails to open/load or
+/// `AppState::try_with_data_dir` already emits its own loud warning if the store fails to open/load or
 /// the chain is broken; this adds the positive confirmation and the on-disk details. The ledger
 /// length is read with `try_read` (never blocking, never panicking regardless of async context) —
 /// the state is freshly built and uncontended here, so it always succeeds.
@@ -376,14 +414,19 @@ fn report_durable_store(state: &chancela_api::AppState, dir: &std::path::Path) {
     let db = dir.join(chancela_store::DB_FILE);
     let schema = chancela_store::schema::SCHEMA_VERSION;
     let len = state.ledger.try_read().map(|l| l.len()).unwrap_or(0);
+    let store_label = if state.database_encryption_configured {
+        "encrypted durable store"
+    } else {
+        "durable store"
+    };
     match state.chain_status.as_deref() {
         Some(Err(e)) => eprintln!(
-            "chancela: durable store {} (schema v{schema}) — {len} events on disk, \
+            "chancela: {store_label} {} (schema v{schema}) — {len} events on disk, \
              CHAIN BROKEN — {e}; restore from backup",
             db.display()
         ),
         _ => eprintln!(
-            "chancela: durable store {} (schema v{schema}) — {len} events on disk, chain verified",
+            "chancela: {store_label} {} (schema v{schema}) — {len} events on disk, chain verified",
             db.display()
         ),
     }

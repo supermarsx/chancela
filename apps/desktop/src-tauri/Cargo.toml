@@ -81,6 +81,13 @@ chancela-cae = { path = "../../../crates/chancela-cae", optional = true }
 # the same way `chancela-server`'s startup banner does (t30 §3.4). chancela-api already
 # depends on this crate, so this is a direct handle to two constants, not a new build.
 chancela-store = { path = "../../../crates/chancela-store", optional = true }
+# Fresh random SQLCipher key generation for the desktop encrypted-store default.
+getrandom = { version = "0.3", optional = true }
+# Windows current-user DPAPI provider for protecting the generated SQLCipher key at rest.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+], optional = true }
 # We drive the Axum app on our own multi-thread Tokio runtime. `net` is needed
 # for the loopback TcpListener; `rt-multi-thread` so API requests are served off
 # the Tauri/WebView thread.
@@ -106,8 +113,18 @@ embedded-server = [
     "dep:chancela-api",
     "dep:chancela-cae",
     "dep:chancela-store",
+    "dep:getrandom",
+    "dep:windows-sys",
     "dep:tokio",
     "dep:axum",
+]
+
+# Enables whole-database encryption in the embedded API/store. In this mode the desktop app
+# defaults to a fresh random SQLCipher key protected by the OS current-user provider.
+sqlcipher = [
+    "embedded-server",
+    "chancela-api/sqlcipher",
+    "chancela-store/sqlcipher",
 ]
 
 # Keep the release binary small; mirrors the root workspace's release profile.
