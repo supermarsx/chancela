@@ -257,8 +257,40 @@ a:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.dashboard-tab--stats > .dashboard-metrics--summary {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.75rem), 1fr));
+  gap: 0.55rem;
+}
+
+.dashboard-tab--stats > .dashboard-metrics--summary > .card {
+  padding: 0.65rem 0.7rem;
+}
+
+.dashboard-tab--stats > .dashboard-metrics--summary .card__label {
+  font-size: 0.55rem;
+  line-height: 1.18;
+  margin-bottom: 0.28rem;
+}
+
+.dashboard-tab--stats > .dashboard-metrics--summary .card__metric {
+  font-size: 1.45rem;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-tab--stats > .dashboard-metrics--summary .card__note {
+  font-size: 0.66rem;
+  line-height: 1.22;
+  margin-top: 0.28rem;
+}
+
 @media (min-width: 960px) {
   .dashboard-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .dashboard-tab--stats > .dashboard-metrics--summary {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }

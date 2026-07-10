@@ -150,6 +150,28 @@ describe('DashboardPage', () => {
     ).toBe('true');
   });
 
+  it('marks the six main stats cards as a compact desktop metrics row', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: baseDashboard }]));
+    renderDashboard();
+
+    const metrics = (await screen.findByText('Entidades')).closest('ul');
+    if (!metrics) throw new Error('Stats metrics list was not rendered');
+
+    expect(metrics.className).toContain('dashboard-metrics--summary');
+    expect(metrics.getAttribute('data-dashboard-density')).toBe('desktop-six');
+
+    const items = within(metrics).getAllByRole('listitem');
+    expect(items).toHaveLength(6);
+    expect(items.map((item) => item.querySelector('.card__label')?.textContent)).toEqual([
+      'Entidades',
+      'Livros abertos',
+      'Atas em rascunho',
+      'A aguardar assinatura',
+      'Atas seladas',
+      'Registo (eventos)',
+    ]);
+  });
+
   it('shows only the 10 most recent dashboard events, newest first', async () => {
     const dashboard: Dashboard = {
       ...baseDashboard,

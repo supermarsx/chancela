@@ -698,7 +698,10 @@ function DashboardStats({ data }: { data: Dashboard }) {
 
   return (
     <div className="dashboard-tab dashboard-tab--stats">
-      <ul className="cards dashboard-metrics">
+      <ul
+        className="cards dashboard-metrics dashboard-metrics--summary"
+        data-dashboard-density="desktop-six"
+      >
         <Metric label={t('dashboard.metric.entities')} value={data.entities} />
         <Metric
           label={t('dashboard.metric.booksOpen')}
