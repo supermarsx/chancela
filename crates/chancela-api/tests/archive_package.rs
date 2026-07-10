@@ -12,7 +12,7 @@ use std::io::{Cursor, Read};
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use chancela_api::{AppState, router};
-use chancela_archive::{PackageFileRole, PreservationLevel, validate_package};
+use chancela_archive::{ArchiveError, PackageFileRole, PreservationLevel, validate_package};
 use chancela_core::ActId;
 use chancela_signing::{
     DssEvidence, MockProvider, SignOptions, SignerProvider, SigningFamily, attach_pdf_dss,
@@ -275,6 +275,111 @@ fn zip_members(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
     out
 }
 
+fn write_zip_entries(entries: &[(String, Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut central_directory = Vec::new();
+    for (name, bytes) in entries {
+        let offset = out.len() as u32;
+        let name_bytes = name.as_bytes();
+        let crc = crc32(bytes);
+        append_u32(&mut out, 0x0403_4b50);
+        append_u16(&mut out, 20);
+        append_u16(&mut out, 0);
+        append_u16(&mut out, 0);
+        append_u16(&mut out, 0);
+        append_u16(&mut out, 0x0021);
+        append_u32(&mut out, crc);
+        append_u32(&mut out, bytes.len() as u32);
+        append_u32(&mut out, bytes.len() as u32);
+        append_u16(&mut out, name_bytes.len() as u16);
+        append_u16(&mut out, 0);
+        out.extend_from_slice(name_bytes);
+        out.extend_from_slice(bytes);
+
+        append_u32(&mut central_directory, 0x0201_4b50);
+        append_u16(&mut central_directory, 20);
+        append_u16(&mut central_directory, 20);
+        append_u16(&mut central_directory, 0);
+        append_u16(&mut central_directory, 0);
+        append_u16(&mut central_directory, 0);
+        append_u16(&mut central_directory, 0x0021);
+        append_u32(&mut central_directory, crc);
+        append_u32(&mut central_directory, bytes.len() as u32);
+        append_u32(&mut central_directory, bytes.len() as u32);
+        append_u16(&mut central_directory, name_bytes.len() as u16);
+        append_u16(&mut central_directory, 0);
+        append_u16(&mut central_directory, 0);
+        append_u16(&mut central_directory, 0);
+        append_u16(&mut central_directory, 0);
+        append_u32(&mut central_directory, 0);
+        append_u32(&mut central_directory, offset);
+        central_directory.extend_from_slice(name_bytes);
+    }
+
+    let central_directory_offset = out.len() as u32;
+    let central_directory_size = central_directory.len() as u32;
+    out.extend_from_slice(&central_directory);
+    append_u32(&mut out, 0x0605_4b50);
+    append_u16(&mut out, 0);
+    append_u16(&mut out, 0);
+    append_u16(&mut out, entries.len() as u16);
+    append_u16(&mut out, entries.len() as u16);
+    append_u32(&mut out, central_directory_size);
+    append_u32(&mut out, central_directory_offset);
+    append_u16(&mut out, 0);
+    out
+}
+
+fn append_u16(out: &mut Vec<u8>, value: u16) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn append_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            if crc & 1 == 1 {
+                crc = (crc >> 1) ^ 0xedb8_8320;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    !crc
+}
+
+fn write_zip_members(members: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
+    let mut entries = Vec::new();
+    if let Some(manifest) = members.get("manifest.json") {
+        entries.push(("manifest.json".to_owned(), manifest.clone()));
+    }
+    entries.extend(
+        members
+            .iter()
+            .filter(|(name, _)| name.as_str() != "manifest.json")
+            .map(|(name, bytes)| (name.clone(), bytes.clone())),
+    );
+    write_zip_entries(&entries)
+}
+
+fn tamper_manifest_json(bytes: &[u8], mutate: impl FnOnce(&mut Value)) -> Vec<u8> {
+    let mut members = zip_members(bytes);
+    let manifest_bytes = members.get("manifest.json").expect("manifest member");
+    let mut manifest: Value =
+        serde_json::from_slice(manifest_bytes).expect("manifest is JSON before tamper");
+    mutate(&mut manifest);
+    members.insert(
+        "manifest.json".to_owned(),
+        serde_json::to_vec_pretty(&manifest).expect("tampered manifest JSON"),
+    );
+    write_zip_members(&members)
+}
+
 fn member_json(members: &BTreeMap<String, Vec<u8>>, path: &str) -> Value {
     serde_json::from_slice(
         members
@@ -318,6 +423,45 @@ async fn ledger_events(state: &AppState, token: &str) -> Value {
     let (status, body) = send(state, get_req("/v1/ledger/events?limit=1000", token)).await;
     assert_eq!(status, StatusCode::OK, "ledger events: {body}");
     body
+}
+
+async fn close_book(state: &AppState, token: &str, book_id: &str) {
+    let (status, body) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/books/{book_id}/close"),
+            token,
+            json!({
+                "reason": "BookFull",
+                "closing_date": "2026-12-31",
+                "required_signatories": ["Administrador"]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "close book: {body}");
+    assert_eq!(body["state"], "Closed");
+}
+
+async fn assert_failed_package_validation_is_read_only(
+    state: &AppState,
+    token: &str,
+    book_id: &str,
+    before_ledger: &Value,
+    before_package: &[u8],
+) {
+    let after_ledger = ledger_events(state, token).await;
+    assert_eq!(
+        before_ledger, &after_ledger,
+        "failed package validation must not append ledger events"
+    );
+    let after_package = archive_package_bytes(state, book_id, token).await;
+    assert_eq!(
+        before_package,
+        after_package.as_slice(),
+        "failed package validation must not rewrite archive inputs"
+    );
 }
 
 #[tokio::test]
@@ -558,6 +702,8 @@ async fn disposal_dry_run_allowed_without_persisted_hold_after_export_time_hold(
     )
     .await;
 
+    close_book(&state, &token, &sealed.book_id).await;
+
     let (status, body) = send(
         &state,
         json_req(
@@ -604,6 +750,7 @@ async fn disposal_non_dry_run_is_refused_without_deleting_data() {
     let state = AppState::with_data_dir(&dir.0);
     let token = bootstrap(&state).await;
     let sealed = seal_act(&state, &token).await;
+    close_book(&state, &token, &sealed.book_id).await;
 
     let (status, body) = send(
         &state,
@@ -615,12 +762,16 @@ async fn disposal_non_dry_run_is_refused_without_deleting_data() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "non-dry-run refused: {body}");
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "non-dry-run without policy refused: {body}"
+    );
     assert!(
         body["error"]
             .as_str()
-            .is_some_and(|error| error.contains("dry_run=true")),
-        "refusal tells clients to use dry_run=true: {body}"
+            .is_some_and(|error| error.contains("retention_policy_id is required")),
+        "refusal tells clients to provide retention policy evidence: {body}"
     );
 
     let (status, book) = send(
@@ -662,6 +813,129 @@ async fn archive_package_rejects_stored_pdf_digest_mismatch_without_mutating_led
 
     let after = ledger_events(&state, &token).await;
     assert_eq!(before, after, "failed archive validation is read-only");
+}
+
+#[tokio::test]
+async fn archive_package_validation_rejects_missing_manifest_entries_without_mutating_state() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+    let package = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    let before_ledger = ledger_events(&state, &token).await;
+    let document_path = format!("documents/{}.pdf", sealed.document_id);
+
+    let mut members = zip_members(&package);
+    members.remove("manifest.json");
+    let missing_manifest = write_zip_members(&members);
+    assert_eq!(
+        validate_package(&missing_manifest),
+        Err(ArchiveError::InvalidPackage(
+            "missing manifest.json".to_owned()
+        ))
+    );
+
+    let mut members = zip_members(&package);
+    members.remove(&document_path);
+    let missing_member = write_zip_members(&members);
+    assert_eq!(
+        validate_package(&missing_member),
+        Err(ArchiveError::MissingArtifact(document_path.clone()))
+    );
+
+    let missing_manifest_entry = tamper_manifest_json(&package, |manifest| {
+        let files = manifest["files"].as_array_mut().expect("manifest files");
+        let removed_index = files
+            .iter()
+            .position(|file| file["path"] == document_path)
+            .expect("document manifest entry");
+        files.remove(removed_index);
+        let total_byte_len = files
+            .iter()
+            .map(|file| file["byte_len"].as_u64().expect("byte_len"))
+            .sum::<u64>();
+        manifest["preservation_interchange"]["fixity"]["file_count"] = json!(files.len());
+        manifest["preservation_interchange"]["fixity"]["total_byte_len"] = json!(total_byte_len);
+    });
+    assert!(
+        matches!(
+            validate_package(&missing_manifest_entry),
+            Err(ArchiveError::InvalidPackage(message))
+                if message == format!("untracked member {document_path}")
+        ),
+        "manifest that omits an existing member must be rejected"
+    );
+
+    assert_failed_package_validation_is_read_only(
+        &state,
+        &token,
+        &sealed.book_id,
+        &before_ledger,
+        &package,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn archive_package_validation_rejects_checksum_path_and_duplicate_tampering() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+    let package = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    let before_ledger = ledger_events(&state, &token).await;
+    let document_path = format!("documents/{}.pdf", sealed.document_id);
+
+    let mut members = zip_members(&package);
+    let document_bytes = members.get_mut(&document_path).expect("document member");
+    let last = document_bytes.last_mut().expect("document bytes");
+    *last ^= 0x01;
+    let checksum_mismatch = write_zip_members(&members);
+    assert!(
+        matches!(
+            validate_package(&checksum_mismatch),
+            Err(ArchiveError::ChecksumMismatch { path, .. }) if path == document_path
+        ),
+        "content tampering must be reported as a checksum mismatch"
+    );
+
+    for unsafe_path in ["../escape.pdf", "/absolute.pdf", "C:/absolute.pdf"] {
+        let path_tampered = tamper_manifest_json(&package, |manifest| {
+            let files = manifest["files"].as_array_mut().expect("manifest files");
+            let document_file = files
+                .iter_mut()
+                .find(|file| file["path"] == document_path)
+                .expect("document manifest entry");
+            document_file["path"] = json!(unsafe_path);
+        });
+        assert_eq!(
+            validate_package(&path_tampered),
+            Err(ArchiveError::InvalidPath(unsafe_path.to_owned())),
+            "unsafe manifest path {unsafe_path} must be rejected"
+        );
+    }
+
+    let duplicate_path = tamper_manifest_json(&package, |manifest| {
+        let files = manifest["files"].as_array_mut().expect("manifest files");
+        let document_index = files
+            .iter()
+            .position(|file| file["path"] == document_path)
+            .expect("document manifest entry");
+        files.insert(document_index + 1, files[document_index].clone());
+    });
+    assert_eq!(
+        validate_package(&duplicate_path),
+        Err(ArchiveError::DuplicatePath(document_path))
+    );
+
+    assert_failed_package_validation_is_read_only(
+        &state,
+        &token,
+        &sealed.book_id,
+        &before_ledger,
+        &package,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -855,6 +1129,71 @@ async fn archive_package_rejects_signed_metadata_with_impossible_dates() {
             .as_str()
             .is_some_and(|error| error.contains("signed_at before signing_time")),
         "impossible signature chronology is explicit: {body}"
+    );
+}
+
+#[tokio::test]
+async fn archive_package_rejects_incomplete_signature_evidence_without_mutating_state() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+    let before_ledger = ledger_events(&state, &token).await;
+    let act_id = parse_act_id(&sealed.act_id);
+    let signed_pdf_bytes = b"%PDF-1.7\n%signed fixture\n".to_vec();
+    let signed = StoredSignedDocument {
+        act_id,
+        document_id: sealed.document_id.clone(),
+        signed_pdf_digest: sha256_hex(&signed_pdf_bytes),
+        signature_family: "CartaoDeCidadao".to_owned(),
+        evidentiary_level: "Qualified".to_owned(),
+        trusted_list_status: Some("Granted".to_owned()),
+        signer_cert_subject: Some("CN=Amelia Marques".to_owned()),
+        signing_time: datetime!(2026-04-01 12:00:00 UTC),
+        signed_at: datetime!(2026-04-01 12:01:00 UTC),
+        signer_cert_der: b"fixture signer certificate DER".to_vec(),
+        timestamp_token_der: Some(Vec::new()),
+        timestamp_trust_report_json: None,
+        signed_pdf_bytes,
+    };
+    state
+        .store
+        .as_ref()
+        .expect("store")
+        .persist(|tx| tx.upsert_signed_document(&signed))
+        .expect("signed document persisted");
+
+    let (status, body) = send(
+        &state,
+        get_req(
+            &format!("/v1/books/{}/archive/package", sealed.book_id),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "empty timestamp: {body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("empty timestamp token")),
+        "invalid signature evidence state is explicit: {body}"
+    );
+    let after_ledger = ledger_events(&state, &token).await;
+    assert_eq!(
+        before_ledger, after_ledger,
+        "failed export must not append ledger events"
+    );
+    let persisted = state
+        .store
+        .as_ref()
+        .expect("store")
+        .signed_document_for_act(act_id)
+        .expect("signed lookup")
+        .expect("signed document still present");
+    assert_eq!(
+        persisted.timestamp_token_der,
+        Some(Vec::new()),
+        "failed export must not rewrite invalid signature evidence"
     );
 }
 
