@@ -2,13 +2,27 @@
 set -euo pipefail
 
 image="${1:-chancela-server:local}"
+compose_profile=false
+if [ "${1:-}" = "--compose-profile" ]; then
+  compose_profile=true
+  image="${2:-chancela-server:local}"
+fi
+
 data_dir="$(mktemp -d)"
 container=""
+project="chancela-smoke-$(date +%s)-$$"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+compose_file="$repo_root/docker/docker-compose.yml"
 
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ] && [ -n "$container" ]; then
     docker logs "$container" || true
+  fi
+  if [ "$compose_profile" = true ]; then
+    CHANCELA_SERVER_IMAGE="$image" CHANCELA_HOST_PORT=0 \
+      docker compose -f "$compose_file" -p "$project" down -v --remove-orphans >/dev/null 2>&1 || true
   fi
   if [ -n "$container" ]; then
     docker rm -f "$container" >/dev/null 2>&1 || true
@@ -19,13 +33,19 @@ trap cleanup EXIT
 
 chmod 777 "$data_dir"
 
-container="$(docker run -d \
-  -p 127.0.0.1::8080 \
-  -e CHANCELA_DATA_DIR=/data \
-  -v "$data_dir:/data" \
-  "$image")"
+if [ "$compose_profile" = true ]; then
+  CHANCELA_SERVER_IMAGE="$image" CHANCELA_HOST_PORT=0 \
+    docker compose -f "$compose_file" --profile single-node -p "$project" up -d --no-build server
+  mapped="$(docker compose -f "$compose_file" -p "$project" port server 8080)"
+else
+  container="$(docker run -d \
+    -p 127.0.0.1::8080 \
+    -e CHANCELA_DATA_DIR=/data \
+    -v "$data_dir:/data" \
+    "$image")"
 
-mapped="$(docker port "$container" 8080/tcp)"
+  mapped="$(docker port "$container" 8080/tcp)"
+fi
 health_url="http://${mapped}/health"
 body=""
 
