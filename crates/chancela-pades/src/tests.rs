@@ -22,12 +22,13 @@ use chancela_cades::{
 };
 
 use crate::error::PadesError;
+use crate::renewal::{LtvRenewalDeadlineStatus, LtvRenewalPolicy, plan_ltv_renewal_with_policy};
 use crate::sign::MAX_CONTENTS_BYTES;
 use crate::{
-    DocTimeStampFailureReason, DocTimeStampSemanticStatus, DssEvidence, LtvRenewalPlanAction,
-    LtvRenewalPlanInput, LtvRenewalPlanScope, SignOptions, add_doc_timestamp_revision,
-    add_dss_revision, add_dss_revision_with_validation_time, add_signature_timestamp,
-    inspect_doc_timestamps, inspect_dss, sign_pdf, validate_pdf_signature,
+    DocTimeStampFailureReason, DocTimeStampReport, DocTimeStampSemanticStatus, DssEvidence,
+    DssReport, LtvRenewalPlanAction, LtvRenewalPlanInput, LtvRenewalPlanScope, SignOptions,
+    add_doc_timestamp_revision, add_dss_revision, add_dss_revision_with_validation_time,
+    add_signature_timestamp, inspect_doc_timestamps, inspect_dss, sign_pdf, validate_pdf_signature,
 };
 
 // --- OIDs used only for the in-test self-signed certificates -------------------------------------
@@ -725,6 +726,94 @@ fn ltv_renewal_plan_monitors_when_local_evidence_inputs_are_present() {
 }
 
 #[test]
+fn ltv_renewal_policy_classifies_caller_supplied_deadlines_only() {
+    let policy = LtvRenewalPolicy {
+        now_unix_seconds: Some(1_750_000_000),
+        renewal_deadline_unix_seconds: Some(1_750_000_300),
+        due_soon_window_seconds: Some(600),
+    };
+    let plan = plan_ltv_renewal_with_policy(
+        false,
+        &DssReport::default(),
+        &DocTimeStampReport::default(),
+        policy,
+    );
+
+    assert_eq!(plan.policy, policy);
+    assert_eq!(
+        plan.renewal_deadline.status,
+        LtvRenewalDeadlineStatus::DueSoon
+    );
+    assert_eq!(plan.renewal_deadline.seconds_until_deadline, Some(300));
+    assert_eq!(
+        plan.next_action,
+        LtvRenewalPlanAction::AddSignatureTimestamp
+    );
+
+    let past_due = plan_ltv_renewal_with_policy(
+        true,
+        &DssReport::default(),
+        &DocTimeStampReport::default(),
+        LtvRenewalPolicy {
+            now_unix_seconds: Some(1_750_000_000),
+            renewal_deadline_unix_seconds: Some(1_749_999_999),
+            due_soon_window_seconds: None,
+        },
+    );
+    assert_eq!(
+        past_due.renewal_deadline.status,
+        LtvRenewalDeadlineStatus::PastDue
+    );
+    assert_eq!(past_due.renewal_deadline.seconds_until_deadline, Some(-1));
+}
+
+#[test]
+fn multi_signature_renewal_plan_reports_each_signature_vri_coverage() {
+    let signer = TestSigner::new_rsa("PAdES Multi Renewal", 18);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let with_ts = add_fixture_timestamp(&signed);
+    let evidence = fixture_dss_evidence(&signer);
+    let with_dss = add_dss_revision_with_validation_time(&with_ts, &evidence, "D:20260709120000Z")
+        .expect("DSS append with TU");
+    let token = doc_timestamp_token_for_revision(&with_dss);
+    let with_doc_ts = add_doc_timestamp_revision(&with_dss, &token).expect("DTS append");
+    let with_second_sig =
+        append_synthetic_sig_dictionary(&with_doc_ts, DOC_TIMESTAMP_TOKEN_DER_FIXTURE);
+
+    let report = validate_pdf_signature(&with_second_sig).expect("validate first signature");
+
+    assert_eq!(report.multi_signature_ltv_renewal_plan.signature_count, 2);
+    assert_eq!(
+        report
+            .multi_signature_ltv_renewal_plan
+            .signatures_with_local_evidence_gaps,
+        vec![1]
+    );
+    assert!(
+        report.multi_signature_ltv_renewal_plan.signatures[0].dss_vri_present,
+        "real signature has a matching DSS VRI entry"
+    );
+    assert!(
+        report.multi_signature_ltv_renewal_plan.signatures[0].dss_vri_validation_time_present,
+        "real signature VRI has /TU"
+    );
+    assert!(
+        !report.multi_signature_ltv_renewal_plan.signatures[1].dss_vri_present,
+        "synthetic second signature has no matching DSS VRI entry"
+    );
+    assert!(
+        report.multi_signature_ltv_renewal_plan.signatures[1]
+            .plan
+            .missing_inputs
+            .contains(&LtvRenewalPlanInput::SignatureDssVri)
+    );
+    assert_eq!(
+        report.multi_signature_ltv_renewal_plan.next_action,
+        LtvRenewalPlanAction::AddSignatureDssVri
+    );
+}
+
+#[test]
 fn validation_rejects_unsigned_pdf() {
     let err = validate_pdf_signature(&base_pdf()).unwrap_err();
     assert!(matches!(err, PadesError::NoSignature), "got {err:?}");
@@ -831,4 +920,33 @@ fn dss_array_refs(pdf: &[u8], key: &[u8]) -> Vec<(u32, u16)> {
         .iter()
         .map(|item| item.as_reference().expect("stream ref"))
         .collect()
+}
+
+fn append_synthetic_sig_dictionary(pdf: &[u8], contents_der: &[u8]) -> Vec<u8> {
+    let doc = lopdf::Document::load_mem(pdf).expect("parse PDF");
+    let root = doc
+        .trailer
+        .get(b"Root")
+        .and_then(lopdf::Object::as_reference)
+        .expect("root");
+    let prev_startxref = crate::pdf::last_startxref(pdf).expect("startxref");
+    let sig_id = doc.max_id + 1;
+    let mut out = pdf.to_vec();
+    let obj_offset = out.len() + 1;
+    out.extend_from_slice(b"\n");
+    out.extend_from_slice(format!("{sig_id} 0 obj\n").as_bytes());
+    out.extend_from_slice(b"<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached ");
+    out.extend_from_slice(b"/ByteRange [0 0 0 0] /Contents <");
+    out.extend_from_slice(&crate::pdf::to_hex(contents_der));
+    out.extend_from_slice(b"> >>\nendobj\n");
+    let xref_offset = out.len();
+    out.extend_from_slice(
+        format!(
+            "xref\n{sig_id} 1\n{obj_offset:010} 00000 n\r\ntrailer\n<< /Size {} /Root {} 0 R /Prev {prev_startxref} >>\nstartxref\n{xref_offset}\n%%EOF\n",
+            sig_id + 1,
+            root.0
+        )
+        .as_bytes(),
+    );
+    out
 }
