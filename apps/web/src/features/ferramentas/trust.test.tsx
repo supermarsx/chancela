@@ -297,7 +297,14 @@ const SERVICE_DETAILS: Record<string, TslServiceDetailView> = {
   },
 };
 
-const TRUST_QUERY_KEYS = ['search', 'service_type', 'status', 'history', 'supply_point'];
+const TRUST_QUERY_KEYS = [
+  'search',
+  'identifier',
+  'service_type',
+  'status',
+  'history',
+  'supply_point',
+];
 
 function foldFixture(value: string): string {
   return value
@@ -310,6 +317,23 @@ function fixtureIncludes(values: string[], term: string | null): boolean {
   if (!term?.trim()) return true;
   const folded = foldFixture(term.trim());
   return values.some((value) => foldFixture(value).includes(folded));
+}
+
+function serviceIdentifierValues(service: TslServiceSummaryView): string[] {
+  const detail = SERVICE_DETAILS[service.id];
+  return [
+    service.name,
+    service.provider_name,
+    service.service_type,
+    ...service.service_supply_points,
+    ...service.identities.subject_names,
+    ...service.identities.subject_key_ids,
+    ...(detail?.digital_identities.flatMap((identity) => [
+      identity.kind,
+      identity.value,
+      identity.sha256 ?? '',
+    ]) ?? []),
+  ];
 }
 
 function hasTrustQuery(params: URLSearchParams): boolean {
@@ -337,6 +361,7 @@ function serviceMatchesFixtureQuery(
       params.get('search'),
     ) &&
     fixtureIncludes([service.service_type], params.get('service_type')) &&
+    fixtureIncludes(serviceIdentifierValues(service), params.get('identifier')) &&
     fixtureIncludes([service.status.kind, service.status.uri ?? ''], params.get('status')) &&
     (params.get('history') !== 'any' || service.history_count > 0) &&
     (params.get('supply_point') !== 'any' || service.service_supply_points.length > 0)
@@ -367,6 +392,17 @@ function tsaMatchesFixtureQuery(
       params.get('search'),
     ) &&
     fixtureIncludes([record.service_type], params.get('service_type')) &&
+    fixtureIncludes(
+      [
+        record.name,
+        record.provider_name,
+        record.service_type,
+        ...record.service_supply_points,
+        ...record.identities.subject_names,
+        ...record.identities.subject_key_ids,
+      ],
+      params.get('identifier'),
+    ) &&
     fixtureIncludes([record.status.kind, record.status.uri ?? ''], params.get('status')) &&
     (params.get('history') !== 'any' || record.history_count > 0) &&
     (params.get('supply_point') !== 'any' || record.service_supply_points.length > 0)
@@ -554,6 +590,57 @@ describe('Ferramentas — TSL trust catalog', () => {
     const historyEntry = screen.getByText('MULTICERT Qualified CA legacy');
     expect(historyEntry.closest('[role="group"]')?.getAttribute('aria-label')).toBe('Histórico');
     expect(screen.queryByText('AMA Legacy CA')).toBeNull();
+  });
+
+  it('passes identifier lookups to the TSL catalog endpoint and renders matching services', async () => {
+    const fetchMock = vi.fn(trustFetch());
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+
+    await screen.findByRole('group', { name: 'Filtros TSL' });
+    expect(
+      screen.getAllByText(
+        'Aceita SHA-256 de certificado, SKI, sujeito, prestador, serviço ou ponto de serviço.',
+      ).length,
+    ).toBeGreaterThanOrEqual(1);
+
+    const certificateSha256 = 'b'.repeat(64);
+    fireEvent.change(screen.getByLabelText('Procurar por identificador técnico TSL'), {
+      target: { value: certificateSha256 },
+    });
+
+    await waitFor(() =>
+      expect(
+        requestMatching(fetchMock, '/v1/trust/catalog', {
+          identifier: certificateSha256,
+        }),
+      ).toBe(true),
+    );
+    expect(await screen.findByRole('button', { name: /MULTICERT Qualified CA/i })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('AMA Legacy CA')).toBeNull());
+  });
+
+  it('passes identifier lookups to TSA search and shows the empty state for no matches', async () => {
+    const fetchMock = vi.fn(trustFetch());
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+
+    await screen.findByRole('group', { name: 'Resumo TSA' });
+    fireEvent.change(screen.getByLabelText('Procurar registos TSA por identificador técnico'), {
+      target: { value: 'no-such-technical-identifier' },
+    });
+
+    await waitFor(() =>
+      expect(
+        requestMatching(fetchMock, '/v1/trust/tsa', {
+          identifier: 'no-such-technical-identifier',
+        }),
+      ).toBe(true),
+    );
+    expect(await screen.findByText('Sem registos TSA')).toBeTruthy();
+    expect(
+      screen.getByText(/Nenhum serviço de selo temporal corresponde a “no-such-technical-identifier”/),
+    ).toBeTruthy();
   });
 
   it('filters to providers and drills from provider detail into a service', async () => {

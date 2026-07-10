@@ -895,6 +895,13 @@ export const nlNL: Catalog = {
   'trust.explorer.title': 'Trust catalog',
   'trust.search.placeholder': 'Provider, service, type, certificate…',
   'trust.search.aria': 'Search the TSL trust list',
+  'trust.identifier.label': 'Identifier',
+  'trust.identifier.placeholder': 'SHA-256, SKI, subject, aanbieder…',
+  'trust.identifier.aria': 'TSL zoeken op technische identifier',
+  'trust.identifier.hint':
+    'Accepteert certificaat-SHA-256, SKI, subject, aanbieder, dienst of servicepunt.',
+  'trust.identifier.help':
+    'Gebruik volledige fingerprints bij zoeken op hash. Gedeeltelijke of onjuist gevormde fingerprint-achtige waarden worden door de server gevalideerd.',
   'trust.catalog.loading': 'Loading trust catalog…',
   'trust.filter.aria': 'Trust list filters',
   'trust.filter.all': 'All',
@@ -2815,6 +2822,7 @@ export const nlNL: Catalog = {
   'trust.tsa.search.title': 'Pesquisar registos TSA',
   'trust.tsa.search.placeholder': 'Prestador, serviço, QTST, certificado…',
   'trust.tsa.search.aria': 'Procurar registos TSA',
+  'trust.tsa.identifier.aria': 'TSA-records zoeken op technische identifier',
   'trust.tsa.filters.aria': 'Filtros TSA',
   'trust.tsa.search.loading': 'A pesquisar registos TSA',
   'trust.tsa.search.count': '{shown} de {total} registos TSA',

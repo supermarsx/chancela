@@ -895,6 +895,13 @@ export const daDK: Catalog = {
   'trust.explorer.title': 'Trust catalog',
   'trust.search.placeholder': 'Provider, service, type, certificate…',
   'trust.search.aria': 'Search the TSL trust list',
+  'trust.identifier.label': 'Identifikator',
+  'trust.identifier.placeholder': 'SHA-256, SKI, subject, udbyder…',
+  'trust.identifier.aria': 'Søg i TSL efter teknisk identifikator',
+  'trust.identifier.hint':
+    'Accepterer certifikat-SHA-256, SKI, subject, udbyder, tjeneste eller servicepunkt.',
+  'trust.identifier.help':
+    'Brug komplette fingerprints ved hash-søgning. Delvise eller fejlformaterede fingerprint-lignende værdier valideres af serveren.',
   'trust.catalog.loading': 'Loading trust catalog…',
   'trust.filter.aria': 'Trust list filters',
   'trust.filter.all': 'All',
@@ -2806,6 +2813,7 @@ export const daDK: Catalog = {
   'trust.tsa.search.title': 'Pesquisar registos TSA',
   'trust.tsa.search.placeholder': 'Prestador, serviço, QTST, certificado…',
   'trust.tsa.search.aria': 'Procurar registos TSA',
+  'trust.tsa.identifier.aria': 'Søg i TSA-poster efter teknisk identifikator',
   'trust.tsa.filters.aria': 'Filtros TSA',
   'trust.tsa.search.loading': 'A pesquisar registos TSA',
   'trust.tsa.search.count': '{shown} de {total} registos TSA',

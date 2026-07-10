@@ -893,6 +893,13 @@ export const fiFI: Catalog = {
   'trust.explorer.title': 'Trust catalog',
   'trust.search.placeholder': 'Provider, service, type, certificate…',
   'trust.search.aria': 'Search the TSL trust list',
+  'trust.identifier.label': 'Tunniste',
+  'trust.identifier.placeholder': 'SHA-256, SKI, subject, tarjoaja…',
+  'trust.identifier.aria': 'Hae TSL:sta teknisellä tunnisteella',
+  'trust.identifier.hint':
+    'Hyväksyy varmenteen SHA-256:n, SKI:n, subject-arvon, tarjoajan, palvelun tai palvelupisteen.',
+  'trust.identifier.help':
+    'Käytä täydellisiä fingerprints-arvoja hash-haussa. Palvelin validoi osittaiset tai virheelliset fingerprint-tyyppiset arvot.',
   'trust.catalog.loading': 'Loading trust catalog…',
   'trust.filter.aria': 'Trust list filters',
   'trust.filter.all': 'All',
@@ -2807,6 +2814,7 @@ export const fiFI: Catalog = {
   'trust.tsa.search.title': 'Pesquisar registos TSA',
   'trust.tsa.search.placeholder': 'Prestador, serviço, QTST, certificado…',
   'trust.tsa.search.aria': 'Procurar registos TSA',
+  'trust.tsa.identifier.aria': 'Hae TSA-tietueita teknisellä tunnisteella',
   'trust.tsa.filters.aria': 'Filtros TSA',
   'trust.tsa.search.loading': 'A pesquisar registos TSA',
   'trust.tsa.search.count': '{shown} de {total} registos TSA',

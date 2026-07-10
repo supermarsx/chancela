@@ -115,6 +115,7 @@ function localizedOptions<T extends string>(
 function hasStructuredSearchParams(params: TslCatalogSearchParams): boolean {
   return (
     !!params.search?.trim() ||
+    !!params.identifier?.trim() ||
     !!params.service_type ||
     !!params.status ||
     !!params.history ||
@@ -407,6 +408,7 @@ function TsaToolingPanel() {
   const [params, setParams] = useSearchParams();
   const tsa = useTsaCatalog();
   const term = params.get('tsaQ') ?? '';
+  const identifier = params.get('tsaIdentifier') ?? '';
   const normalizedTerm = normalize(term.trim());
   const selectedId = params.get('tsaRecord') ?? '';
   const typeFilter = optionValue(params.get('tsaType'), TSA_TYPE_FILTERS, 'all');
@@ -415,12 +417,13 @@ function TsaToolingPanel() {
   const tsaSearchParams = useMemo<TsaCatalogSearchParams>(
     () => ({
       search: term,
+      identifier,
       service_type: tsaServiceTypeParam(typeFilter),
       status: statusFilter === 'all' ? undefined : statusFilter,
       supply_point: supplyOnly ? 'any' : undefined,
       limit: TRUST_SEARCH_LIMIT,
     }),
-    [statusFilter, supplyOnly, term, typeFilter],
+    [identifier, statusFilter, supplyOnly, term, typeFilter],
   );
   const tsaSearchEnabled = hasStructuredSearchParams(tsaSearchParams);
   const tsaSearch = useTsaCatalogSearch(tsaSearchParams, tsaSearchEnabled);
@@ -621,6 +624,26 @@ function TsaToolingPanel() {
                     autoComplete="off"
                   />
                 </div>
+                <Field
+                  label={t('trust.identifier.label')}
+                  htmlFor="tsa-identifier-filter"
+                  hint={t('trust.identifier.hint')}
+                  help={t('trust.identifier.help')}
+                >
+                  <div className="trust-searchbox">
+                    <Icon.Search />
+                    <Input
+                      id="tsa-identifier-filter"
+                      type="search"
+                      value={identifier}
+                      onChange={(e) => setParam('tsaIdentifier', e.target.value)}
+                      placeholder={t('trust.identifier.placeholder')}
+                      aria-label={t('trust.tsa.identifier.aria')}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </div>
+                </Field>
               </TrustControlPanel>
               <div
                 className="trust-filter-controls"
@@ -687,7 +710,7 @@ function TsaToolingPanel() {
                     </ul>
                   ) : (
                     <EmptyState title={t('trust.tsa.empty.title')}>
-                      <p>{t('trust.tsa.empty.body', { term: term.trim() })}</p>
+                      <p>{t('trust.tsa.empty.body', { term: identifier.trim() || term.trim() })}</p>
                     </EmptyState>
                   )}
                 </div>
@@ -1270,6 +1293,7 @@ function TrustCatalogExplorer() {
   const [params, setParams] = useSearchParams();
   const catalog = useTrustCatalog();
   const term = params.get('trustQ') ?? '';
+  const identifier = params.get('trustIdentifier') ?? '';
   const normalizedTerm = normalize(term.trim());
   const filterParam = params.get('trustFilter') as TrustFilter | null;
   const filter: TrustFilter =
@@ -1283,15 +1307,18 @@ function TrustCatalogExplorer() {
   const trustSearchParams = useMemo<TslCatalogSearchParams>(
     () => ({
       search: term,
+      identifier,
       service_type: trustServiceTypeParam(typeFilter, filter),
       status: statusFilter === 'all' ? undefined : statusFilter,
       history: historyOnly ? 'any' : undefined,
       supply_point: supplyOnly ? 'any' : undefined,
       limit: TRUST_SEARCH_LIMIT,
     }),
-    [filter, historyOnly, statusFilter, supplyOnly, term, typeFilter],
+    [filter, historyOnly, identifier, statusFilter, supplyOnly, term, typeFilter],
   );
-  const trustSearchEnabled = filter !== 'providers' && hasStructuredSearchParams(trustSearchParams);
+  const identifierActive = !!identifier.trim();
+  const trustSearchEnabled =
+    (filter !== 'providers' || identifierActive) && hasStructuredSearchParams(trustSearchParams);
   const trustSearch = useTrustCatalogSearch(trustSearchParams, trustSearchEnabled);
   const trustSearchPending = trustSearchEnabled && trustSearch.isPending;
 
@@ -1301,15 +1328,19 @@ function TrustCatalogExplorer() {
       return { providers: [] as TslProviderView[], services: [] as TslServiceSummaryView[] };
     const matchesStructured = (service: TslServiceSummaryView) =>
       serviceMatchesStructuredFilters(service, typeFilter, statusFilter, historyOnly, supplyOnly);
-    const providers =
-      filter === 'all' || filter === 'providers'
-        ? data.providers.filter(
-            (provider) =>
-              providerMatches(provider, normalizedTerm) &&
-              provider.services.some((service) => matchesStructured(service)),
-          )
-        : [];
     const serviceCandidates = trustSearchEnabled ? (trustSearch.data ?? []) : flattenServices(data);
+    const providers = (() => {
+      if (filter !== 'all' && filter !== 'providers') return [];
+      if (identifierActive && trustSearchEnabled) {
+        const providerIds = new Set(serviceCandidates.map((service) => service.provider_id));
+        return data.providers.filter((provider) => providerIds.has(provider.id));
+      }
+      return data.providers.filter(
+        (provider) =>
+          providerMatches(provider, normalizedTerm) &&
+          provider.services.some((service) => matchesStructured(service)),
+      );
+    })();
     const services =
       filter !== 'providers'
         ? serviceCandidates.filter((service) => {
@@ -1325,6 +1356,7 @@ function TrustCatalogExplorer() {
     catalog.data,
     filter,
     historyOnly,
+    identifierActive,
     normalizedTerm,
     statusFilter,
     supplyOnly,
@@ -1394,6 +1426,26 @@ function TrustCatalogExplorer() {
               autoComplete="off"
             />
           </div>
+          <Field
+            label={t('trust.identifier.label')}
+            htmlFor="trust-identifier-filter"
+            hint={t('trust.identifier.hint')}
+            help={t('trust.identifier.help')}
+          >
+            <div className="trust-searchbox">
+              <Icon.Search />
+              <Input
+                id="trust-identifier-filter"
+                type="search"
+                value={identifier}
+                onChange={(e) => setParam('trustIdentifier', e.target.value)}
+                placeholder={t('trust.identifier.placeholder')}
+                aria-label={t('trust.identifier.aria')}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+          </Field>
           <TrustFilterPills active={filter} onSelect={selectFilter} />
           <div className="trust-filter-controls" role="group" aria-label={t('trust.filters.aria')}>
             <Field label={t('trust.filter.type')} htmlFor="trust-type-filter">
@@ -1440,7 +1492,7 @@ function TrustCatalogExplorer() {
             <EmptyState title={t('trust.search.noResults.title')}>
               <p>
                 {t('trust.search.noResults.body', {
-                  term: term.trim() || t(filterLabel(filter)),
+                  term: identifier.trim() || term.trim() || t(filterLabel(filter)),
                 })}
               </p>
             </EmptyState>

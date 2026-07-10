@@ -1296,12 +1296,14 @@ function normalizeTrustSearchParams(params: TslCatalogSearchParams): TslCatalogS
   return {
     ...params,
     search: params.search?.trim() || undefined,
+    identifier: params.identifier?.trim() || undefined,
   };
 }
 
 function hasTrustSearchParams(params: TslCatalogSearchParams): boolean {
   return (
     !!params.search ||
+    !!params.identifier ||
     !!params.service_type ||
     !!params.status ||
     !!params.history ||

@@ -898,6 +898,13 @@ export const itIT: Catalog = {
   'trust.explorer.title': 'Trust catalog',
   'trust.search.placeholder': 'Provider, service, type, certificate…',
   'trust.search.aria': 'Search the TSL trust list',
+  'trust.identifier.label': 'Identificatore',
+  'trust.identifier.placeholder': 'SHA-256, SKI, soggetto, prestatore…',
+  'trust.identifier.aria': 'Cerca nella TSL per identificatore tecnico',
+  'trust.identifier.hint':
+    'Accetta SHA-256 del certificato, SKI, soggetto, prestatore, servizio o punto di servizio.',
+  'trust.identifier.help':
+    'Usa fingerprint completi quando cerchi per hash. I valori parziali o malformati simili a fingerprint vengono validati dal server.',
   'trust.catalog.loading': 'Loading trust catalog…',
   'trust.filter.aria': 'Trust list filters',
   'trust.filter.all': 'All',
@@ -2817,6 +2824,7 @@ export const itIT: Catalog = {
   'trust.tsa.search.title': 'Pesquisar registos TSA',
   'trust.tsa.search.placeholder': 'Prestador, serviço, QTST, certificado…',
   'trust.tsa.search.aria': 'Procurar registos TSA',
+  'trust.tsa.identifier.aria': 'Cerca record TSA per identificatore tecnico',
   'trust.tsa.filters.aria': 'Filtros TSA',
   'trust.tsa.search.loading': 'A pesquisar registos TSA',
   'trust.tsa.search.count': '{shown} de {total} registos TSA',

@@ -1659,6 +1659,7 @@ export interface TslCatalogView {
 
 export interface TslCatalogSearchParams {
   search?: string;
+  identifier?: string;
   service_type?: string;
   status?: string;
   history?: string;

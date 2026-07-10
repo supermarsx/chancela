@@ -901,6 +901,13 @@ export const ptPT = {
   'trust.explorer.title': 'Catálogo de confiança',
   'trust.search.placeholder': 'Prestador, serviço, tipo, certificado…',
   'trust.search.aria': 'Procurar na lista de confiança TSL',
+  'trust.identifier.label': 'Identificador',
+  'trust.identifier.placeholder': 'SHA-256, SKI, sujeito, prestador…',
+  'trust.identifier.aria': 'Procurar por identificador técnico TSL',
+  'trust.identifier.hint':
+    'Aceita SHA-256 de certificado, SKI, sujeito, prestador, serviço ou ponto de serviço.',
+  'trust.identifier.help':
+    'Use impressões digitais completas quando pesquisar por hash. Valores parciais ou malformados com aspeto de fingerprint são validados pelo servidor.',
   'trust.catalog.loading': 'A carregar catálogo de confiança…',
   'trust.filter.aria': 'Filtros da lista de confiança',
   'trust.filter.all': 'Todos',
@@ -2825,6 +2832,7 @@ export const ptPT = {
   'trust.tsa.search.title': 'Pesquisar registos TSA',
   'trust.tsa.search.placeholder': 'Prestador, serviço, QTST, certificado…',
   'trust.tsa.search.aria': 'Procurar registos TSA',
+  'trust.tsa.identifier.aria': 'Procurar registos TSA por identificador técnico',
   'trust.tsa.filters.aria': 'Filtros TSA',
   'trust.tsa.search.loading': 'A pesquisar registos TSA',
   'trust.tsa.search.count': '{shown} de {total} registos TSA',

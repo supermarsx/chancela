@@ -463,6 +463,7 @@ function trustSearchQuery(
   if (typeof params === 'string') return { search: params, limit };
   return {
     search: params.search,
+    identifier: params.identifier,
     service_type: params.service_type,
     status: params.status,
     history: params.history,

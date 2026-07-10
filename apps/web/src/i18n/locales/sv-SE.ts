@@ -894,6 +894,13 @@ export const svSE: Catalog = {
   'trust.explorer.title': 'Trust catalog',
   'trust.search.placeholder': 'Provider, service, type, certificate…',
   'trust.search.aria': 'Search the TSL trust list',
+  'trust.identifier.label': 'Identifierare',
+  'trust.identifier.placeholder': 'SHA-256, SKI, subject, leverantör…',
+  'trust.identifier.aria': 'Sök i TSL med teknisk identifierare',
+  'trust.identifier.hint':
+    'Accepterar certifikat-SHA-256, SKI, subject, leverantör, tjänst eller tjänstepunkt.',
+  'trust.identifier.help':
+    'Använd kompletta fingerprints vid hashsökning. Partiella eller felformaterade fingerprint-liknande värden valideras av servern.',
   'trust.catalog.loading': 'Loading trust catalog…',
   'trust.filter.aria': 'Trust list filters',
   'trust.filter.all': 'All',
@@ -2806,6 +2813,7 @@ export const svSE: Catalog = {
   'trust.tsa.search.title': 'Pesquisar registos TSA',
   'trust.tsa.search.placeholder': 'Prestador, serviço, QTST, certificado…',
   'trust.tsa.search.aria': 'Procurar registos TSA',
+  'trust.tsa.identifier.aria': 'Sök TSA-poster med teknisk identifierare',
   'trust.tsa.filters.aria': 'Filtros TSA',
   'trust.tsa.search.loading': 'A pesquisar registos TSA',
   'trust.tsa.search.count': '{shown} de {total} registos TSA',
