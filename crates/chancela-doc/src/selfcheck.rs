@@ -19,7 +19,9 @@
 //! Flavour codes: `2u` = PDF/A-2U, `2a` = 2A, `2b` = 2B. Verify the flag spelling
 //! (`--flavour`/`-f`) against the installed veraPDF build; older releases differ.
 
-use lopdf::{Document, Object};
+use std::collections::{BTreeMap, BTreeSet};
+
+use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use crate::DocError;
 
@@ -129,18 +131,7 @@ pub fn verify(bytes: &[u8]) -> Result<(), DocError> {
     if lang.is_empty() {
         return Err(fail("catalog /Lang is empty".into()));
     }
-    if let Ok(mark_info_obj) = catalog.get(b"MarkInfo") {
-        let mark_info = mark_info_obj
-            .as_dict()
-            .map_err(|_| fail("catalog /MarkInfo is not a dictionary".into()))?;
-        if matches!(mark_info.get(b"Marked"), Ok(Object::Boolean(true)))
-            && !catalog.has(b"StructTreeRoot")
-        {
-            return Err(fail(
-                "catalog claims /MarkInfo /Marked true without /StructTreeRoot".into(),
-            ));
-        }
-    }
+    verify_tagged_structure(&doc, catalog, &fail)?;
     let oi_arr = catalog
         .get(b"OutputIntents")
         .and_then(Object::as_array)
@@ -261,4 +252,409 @@ fn verify_fonts(doc: &Document, fail: &dyn Fn(String) -> DocError) -> Result<(),
         }
     }
     Ok(())
+}
+
+fn verify_tagged_structure(
+    doc: &Document,
+    catalog: &Dictionary,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let mark_info = catalog
+        .get(b"MarkInfo")
+        .and_then(Object::as_dict)
+        .map_err(|_| fail("catalog has no /MarkInfo dictionary".into()))?;
+    if !matches!(mark_info.get(b"Marked"), Ok(Object::Boolean(true))) {
+        return Err(fail(
+            "catalog /MarkInfo does not mark emitted tagged content".into(),
+        ));
+    }
+
+    let struct_root_ref = catalog
+        .get(b"StructTreeRoot")
+        .and_then(Object::as_reference)
+        .map_err(|_| fail("catalog has no /StructTreeRoot reference".into()))?;
+    let struct_root = doc
+        .get_object(struct_root_ref)
+        .and_then(Object::as_dict)
+        .map_err(|_| fail("/StructTreeRoot object missing".into()))?;
+    if !struct_root.has_type(b"StructTreeRoot") {
+        return Err(fail("/StructTreeRoot has the wrong /Type".into()));
+    }
+
+    let role_map = struct_root
+        .get(b"RoleMap")
+        .and_then(Object::as_dict)
+        .map_err(|_| fail("/StructTreeRoot has no /RoleMap dictionary".into()))?;
+    if role_map.is_empty() {
+        return Err(fail("/StructTreeRoot /RoleMap is empty".into()));
+    }
+
+    let parent_tree_ref = struct_root
+        .get(b"ParentTree")
+        .and_then(Object::as_reference)
+        .map_err(|_| fail("/StructTreeRoot has no /ParentTree reference".into()))?;
+    let parent_tree = doc
+        .get_object(parent_tree_ref)
+        .and_then(Object::as_dict)
+        .map_err(|_| fail("/ParentTree object missing".into()))?;
+    let parent_tree_nums = parent_tree
+        .get(b"Nums")
+        .and_then(Object::as_array)
+        .map_err(|_| fail("/ParentTree has no /Nums array".into()))?;
+    let parent_arrays = parse_parent_tree_nums(parent_tree_nums, fail)?;
+
+    let page_ids = doc.page_iter().collect::<Vec<_>>();
+    let parent_tree_next_key = struct_root
+        .get(b"ParentTreeNextKey")
+        .and_then(Object::as_i64)
+        .map_err(|_| fail("/StructTreeRoot has no /ParentTreeNextKey integer".into()))?;
+    if parent_tree_next_key != page_ids.len() as i64 {
+        return Err(fail(format!(
+            "/ParentTreeNextKey is {parent_tree_next_key}, expected {}",
+            page_ids.len()
+        )));
+    }
+
+    let page_index_by_id = page_ids
+        .iter()
+        .enumerate()
+        .map(|(index, &id)| (id, index))
+        .collect::<BTreeMap<_, _>>();
+    let mut page_keys = BTreeSet::new();
+    let mut parent_entries = BTreeMap::<(usize, i64), ObjectId>::new();
+
+    for (page_index, &page_id) in page_ids.iter().enumerate() {
+        let page = doc
+            .get_object(page_id)
+            .and_then(Object::as_dict)
+            .map_err(|_| fail(format!("page {page_index} object missing")))?;
+        let struct_parents = page
+            .get(b"StructParents")
+            .and_then(Object::as_i64)
+            .map_err(|_| fail(format!("page {page_index} has no /StructParents integer")))?;
+        if struct_parents != page_index as i64 {
+            return Err(fail(format!(
+                "page {page_index} /StructParents is {struct_parents}, expected {page_index}"
+            )));
+        }
+        page_keys.insert(struct_parents);
+
+        let parents = parent_arrays.get(&struct_parents).ok_or_else(|| {
+            fail(format!(
+                "/ParentTree has no array for page {page_index} /StructParents {struct_parents}"
+            ))
+        })?;
+        let content = page_content_bytes(doc, page, page_index, fail)?;
+        let mcids = content_mcids(&content, page_index, fail)?;
+        let expected_parent_count = mcids
+            .iter()
+            .next_back()
+            .map(|mcid| (*mcid as usize) + 1)
+            .unwrap_or(0);
+        if parents.len() != expected_parent_count {
+            return Err(fail(format!(
+                "page {page_index} /ParentTree array has {} entries, expected {expected_parent_count} from content /MCID values",
+                parents.len()
+            )));
+        }
+        for expected_mcid in 0..expected_parent_count {
+            let expected_mcid = expected_mcid as i64;
+            if !mcids.contains(&expected_mcid) {
+                return Err(fail(format!(
+                    "page {page_index} /ParentTree has an entry for unused /MCID {expected_mcid}"
+                )));
+            }
+        }
+        for (mcid, &element_ref) in parents.iter().enumerate() {
+            parent_entries.insert((page_index, mcid as i64), element_ref);
+        }
+    }
+
+    if parent_arrays.len() != page_keys.len() {
+        return Err(fail(format!(
+            "/ParentTree has {} page arrays, expected {}",
+            parent_arrays.len(),
+            page_keys.len()
+        )));
+    }
+    for key in parent_arrays.keys() {
+        if !page_keys.contains(key) {
+            return Err(fail(format!(
+                "/ParentTree has an array for unreferenced StructParents key {key}"
+            )));
+        }
+    }
+
+    let mut mcr_entries = BTreeMap::<(usize, i64), ObjectId>::new();
+    let mut seen_struct_elems = BTreeSet::new();
+    let root_k = struct_root
+        .get(b"K")
+        .map_err(|_| fail("/StructTreeRoot has no /K entry".into()))?;
+    collect_mcr_entries(
+        doc,
+        root_k,
+        None,
+        &page_index_by_id,
+        &mut mcr_entries,
+        &mut seen_struct_elems,
+        fail,
+    )?;
+
+    for (key, parent_element) in &parent_entries {
+        match mcr_entries.get(key) {
+            Some(mcr_element) if mcr_element == parent_element => {}
+            Some(mcr_element) => {
+                return Err(fail(format!(
+                    "/ParentTree entry for page {} /MCID {} points to {:?}, but the /MCR is under {:?}",
+                    key.0, key.1, parent_element, mcr_element
+                )));
+            }
+            None => {
+                return Err(fail(format!(
+                    "/ParentTree entry for page {} /MCID {} has no matching structure /MCR",
+                    key.0, key.1
+                )));
+            }
+        }
+    }
+    for key in mcr_entries.keys() {
+        if !parent_entries.contains_key(key) {
+            return Err(fail(format!(
+                "structure /MCR for page {} /MCID {} has no /ParentTree entry",
+                key.0, key.1
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_parent_tree_nums(
+    nums: &[Object],
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<BTreeMap<i64, Vec<ObjectId>>, DocError> {
+    if nums.len() % 2 != 0 {
+        return Err(fail(
+            "/ParentTree /Nums must contain key/value pairs".into(),
+        ));
+    }
+
+    let mut parent_arrays = BTreeMap::new();
+    for pair in nums.chunks(2) {
+        let key = pair[0]
+            .as_i64()
+            .map_err(|_| fail("/ParentTree /Nums key is not an integer".into()))?;
+        if key < 0 {
+            return Err(fail(format!("/ParentTree /Nums key {key} is negative")));
+        }
+        let values = pair[1].as_array().map_err(|_| {
+            fail(format!(
+                "/ParentTree /Nums value for key {key} is not an array"
+            ))
+        })?;
+        let mut parents = Vec::with_capacity(values.len());
+        for (index, value) in values.iter().enumerate() {
+            parents.push(value.as_reference().map_err(|_| {
+                fail(format!(
+                    "/ParentTree /Nums value for key {key} index {index} is not a structure reference"
+                ))
+            })?);
+        }
+        if parent_arrays.insert(key, parents).is_some() {
+            return Err(fail(format!(
+                "/ParentTree /Nums repeats StructParents key {key}"
+            )));
+        }
+    }
+
+    Ok(parent_arrays)
+}
+
+fn page_content_bytes(
+    doc: &Document,
+    page: &Dictionary,
+    page_index: usize,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<Vec<u8>, DocError> {
+    let contents = page
+        .get(b"Contents")
+        .map_err(|_| fail(format!("page {page_index} has no /Contents")))?;
+    if let Ok(array) = contents.as_array() {
+        let mut bytes = Vec::new();
+        for item in array {
+            bytes.extend_from_slice(&content_stream_bytes(doc, item, page_index, fail)?);
+        }
+        Ok(bytes)
+    } else {
+        content_stream_bytes(doc, contents, page_index, fail)
+    }
+}
+
+fn content_stream_bytes(
+    doc: &Document,
+    object: &Object,
+    page_index: usize,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<Vec<u8>, DocError> {
+    if let Ok(stream_ref) = object.as_reference() {
+        let stream = doc
+            .get_object(stream_ref)
+            .and_then(Object::as_stream)
+            .map_err(|_| {
+                fail(format!(
+                    "page {page_index} /Contents reference is not a stream"
+                ))
+            })?;
+        Ok(stream.content.clone())
+    } else if let Ok(stream) = object.as_stream() {
+        Ok(stream.content.clone())
+    } else {
+        Err(fail(format!(
+            "page {page_index} /Contents is neither a stream nor an array of streams"
+        )))
+    }
+}
+
+fn content_mcids(
+    content: &[u8],
+    page_index: usize,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<BTreeSet<i64>, DocError> {
+    let mut mcids = BTreeSet::new();
+    let mut index = 0;
+    while index + b"/MCID".len() <= content.len() {
+        if &content[index..index + b"/MCID".len()] != b"/MCID" {
+            index += 1;
+            continue;
+        }
+
+        let mut value_start = index + b"/MCID".len();
+        if value_start < content.len() && !is_pdf_whitespace(content[value_start]) {
+            index += b"/MCID".len();
+            continue;
+        }
+        while value_start < content.len() && is_pdf_whitespace(content[value_start]) {
+            value_start += 1;
+        }
+        let mut value_end = value_start;
+        while value_end < content.len() && content[value_end].is_ascii_digit() {
+            value_end += 1;
+        }
+        if value_start == value_end {
+            return Err(fail(format!(
+                "page {page_index} marked content has /MCID without a non-negative integer"
+            )));
+        }
+        let mcid = std::str::from_utf8(&content[value_start..value_end])
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+            .ok_or_else(|| fail(format!("page {page_index} has an invalid /MCID value")))?;
+        if !mcids.insert(mcid) {
+            return Err(fail(format!(
+                "page {page_index} repeats marked-content /MCID {mcid}"
+            )));
+        }
+        index = value_end;
+    }
+
+    Ok(mcids)
+}
+
+fn is_pdf_whitespace(byte: u8) -> bool {
+    matches!(byte, b'\0' | b'\t' | b'\n' | b'\x0c' | b'\r' | b' ')
+}
+
+fn collect_mcr_entries(
+    doc: &Document,
+    object: &Object,
+    current_element: Option<ObjectId>,
+    page_index_by_id: &BTreeMap<ObjectId, usize>,
+    mcr_entries: &mut BTreeMap<(usize, i64), ObjectId>,
+    seen_struct_elems: &mut BTreeSet<ObjectId>,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    if let Ok(struct_ref) = object.as_reference() {
+        if !seen_struct_elems.insert(struct_ref) {
+            return Err(fail(format!(
+                "structure tree repeats StructElem reference {:?}",
+                struct_ref
+            )));
+        }
+        let elem = doc
+            .get_object(struct_ref)
+            .and_then(Object::as_dict)
+            .map_err(|_| fail(format!("StructElem {:?} is not a dictionary", struct_ref)))?;
+        if !elem.has_type(b"StructElem") {
+            return Err(fail(format!(
+                "object {:?} is not a /StructElem",
+                struct_ref
+            )));
+        }
+        if let Ok(kids) = elem.get(b"K") {
+            collect_mcr_entries(
+                doc,
+                kids,
+                Some(struct_ref),
+                page_index_by_id,
+                mcr_entries,
+                seen_struct_elems,
+                fail,
+            )?;
+        }
+        return Ok(());
+    }
+
+    if let Ok(array) = object.as_array() {
+        for item in array {
+            collect_mcr_entries(
+                doc,
+                item,
+                current_element,
+                page_index_by_id,
+                mcr_entries,
+                seen_struct_elems,
+                fail,
+            )?;
+        }
+        return Ok(());
+    }
+
+    if let Ok(dict) = object.as_dict() {
+        if dict.has_type(b"MCR") {
+            let element_ref = current_element
+                .ok_or_else(|| fail("structure /MCR has no containing /StructElem".into()))?;
+            let page_ref = dict
+                .get(b"Pg")
+                .and_then(Object::as_reference)
+                .map_err(|_| fail("structure /MCR has no /Pg page reference".into()))?;
+            let page_index = page_index_by_id
+                .get(&page_ref)
+                .ok_or_else(|| fail(format!("structure /MCR points to non-page {:?}", page_ref)))?;
+            let mcid = dict
+                .get(b"MCID")
+                .and_then(Object::as_i64)
+                .map_err(|_| fail("structure /MCR has no /MCID integer".into()))?;
+            if mcid < 0 {
+                return Err(fail(format!("structure /MCR has negative /MCID {mcid}")));
+            }
+            if mcr_entries
+                .insert((*page_index, mcid), element_ref)
+                .is_some()
+            {
+                return Err(fail(format!(
+                    "structure tree repeats /MCR for page {} /MCID {mcid}",
+                    page_index
+                )));
+            }
+            return Ok(());
+        }
+
+        return Err(fail(
+            "structure /K dictionary is neither an /MCR nor an indirect /StructElem".into(),
+        ));
+    }
+
+    Err(fail(
+        "structure /K uses a form outside the writer's bounded tagged-PDF shape".into(),
+    ))
 }

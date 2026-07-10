@@ -7,7 +7,7 @@
 use chancela_core::{Block, DocumentModel, KvRow, Run, SignatureSlot, VoteRow};
 use lopdf::{Dictionary, Document, Object};
 
-use crate::pdfa;
+use crate::{pdfa, selfcheck};
 
 /// A representative CSC general-meeting ata exercising every block type, with pt-PT diacritics.
 fn fixture() -> DocumentModel {
@@ -226,6 +226,24 @@ fn tagged_pdf_structure_markers_are_emitted() {
     assert!(content.contains("/Div << /MCID"));
     assert!(content.contains("/Artifact BMC"));
     assert!(content.contains("EMC"));
+}
+
+#[test]
+fn selfcheck_rejects_structparents_parent_tree_drift() {
+    let mut bytes = pdfa::write(&fixture()).expect("write");
+    let from = b"/StructParents 0";
+    let to = b"/StructParents 9";
+    let pos = bytes
+        .windows(from.len())
+        .position(|w| w == from)
+        .expect("first page StructParents marker");
+    bytes[pos..pos + from.len()].copy_from_slice(to);
+
+    let err = selfcheck::verify(&bytes).expect_err("corrupt StructParents must fail");
+    assert!(
+        err.to_string().contains("/StructParents"),
+        "unexpected self-check error: {err}"
+    );
 }
 
 /// The pades byte-shape contract (C1–C12): the guarantees `chancela-pades::sign_pdf` relies on
