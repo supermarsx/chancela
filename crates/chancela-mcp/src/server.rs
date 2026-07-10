@@ -6,9 +6,10 @@
 //! is no way to serve a disabled server — "off" is genuinely zero surface, not a soft flag.
 //!
 //! Dispatch handles the MCP subset needed for a tool server: `initialize`, `notifications/*`,
-//! `ping`, `tools/list`, `tools/call`. `tools/call` resolves the tool to an `/api/v1` request via
-//! [`crate::registry::resolve_call`] and forwards it through the [`ApiBridge`] with the configured
-//! key. Authorization is entirely server-side (the key's principal); this layer never re-checks it.
+//! `ping`, `tools/list`, `tools/call`, and a read-only `chancela://mcp/status` resource.
+//! `tools/call` resolves the tool to an `/api/v1` request via [`crate::registry::resolve_call`] and
+//! forwards it through the [`ApiBridge`] with the configured key. Authorization is entirely
+//! server-side (the key's principal); this layer never re-checks it.
 
 use std::io::{BufRead, Write};
 
@@ -24,6 +25,8 @@ use crate::registry::{McpTool, ResolvedCall, ToolError, catalog, resolve_call};
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 /// Advertised server name.
 pub const SERVER_NAME: &str = "chancela-mcp";
+/// Read-only MCP resource URI for local server operability state.
+pub const MCP_STATUS_RESOURCE_URI: &str = "chancela://mcp/status";
 
 const HUMAN_VERIFICATION_PENDING: &str = "pending_human_verification";
 const HUMAN_VERIFICATION_ACCEPTED: &str = "accepted_by_human";
@@ -36,6 +39,15 @@ const AI_DRAFT_LEGAL_EFFECT: &str = "none_until_human_verification_and_seal";
 pub struct McpServer<T: HttpTransport> {
     tools: Vec<McpTool>,
     bridge: ApiBridge<T>,
+    runtime: RuntimeStatus,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeStatus {
+    transport: McpTransport,
+    base_url: String,
+    base_path: String,
+    catalog_tool_count: usize,
 }
 
 impl<T: HttpTransport> McpServer<T> {
@@ -49,11 +61,19 @@ impl<T: HttpTransport> McpServer<T> {
             return Err(McpError::Disabled);
         }
         config.validate()?;
-        let tools = catalog()
+        let all_tools = catalog();
+        let catalog_tool_count = all_tools.len();
+        let tools = all_tools
             .into_iter()
             .filter(|t| config.enabled_tools.allows(t.name))
             .collect();
         Ok(Self {
+            runtime: RuntimeStatus {
+                transport: config.transport,
+                base_url: config.base_url.clone(),
+                base_path: config.base_path.clone(),
+                catalog_tool_count,
+            },
             tools,
             bridge: ApiBridge::new(config, transport),
         })
@@ -74,6 +94,8 @@ impl<T: HttpTransport> McpServer<T> {
         let resp = match req.method.as_str() {
             "initialize" => JsonRpcResponse::success(id, self.initialize_result()),
             "ping" => JsonRpcResponse::success(id, json!({})),
+            "resources/list" => JsonRpcResponse::success(id, self.resources_list_result()),
+            "resources/read" => self.resources_read(id, req.params.as_ref()),
             "tools/list" => JsonRpcResponse::success(id, self.tools_list_result()),
             "tools/call" => self.tools_call(id, req.params.as_ref()),
             other => JsonRpcResponse::error(
@@ -88,7 +110,10 @@ impl<T: HttpTransport> McpServer<T> {
     fn initialize_result(&self) -> Value {
         json!({
             "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": { "tools": { "listChanged": false } },
+            "capabilities": {
+                "tools": { "listChanged": false },
+                "resources": { "listChanged": false },
+            },
             "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
             "instructions": "Chancela platform operations as permission-gated MCP tools. Every tool call is authorized server-side by the configured API key's RBAC principal.",
         })
@@ -112,6 +137,114 @@ impl<T: HttpTransport> McpServer<T> {
             })
             .collect();
         json!({ "tools": tools })
+    }
+
+    fn resources_list_result(&self) -> Value {
+        json!({
+            "resources": [
+                {
+                    "uri": MCP_STATUS_RESOURCE_URI,
+                    "name": "mcp_status",
+                    "title": "MCP Status",
+                    "description": "Read-only Chancela MCP server operability snapshot. Contains no API key material and does not probe the integration API.",
+                    "mimeType": "application/json",
+                    "annotations": {
+                        "audience": ["user", "assistant"],
+                        "priority": 0.8,
+                    },
+                }
+            ]
+        })
+    }
+
+    fn resources_read(&self, id: Value, params: Option<&Value>) -> JsonRpcResponse {
+        let params = match params.and_then(Value::as_object) {
+            Some(params) => params,
+            None => {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "resources/read requires object params",
+                );
+            }
+        };
+        let uri = match params.get("uri").and_then(Value::as_str) {
+            Some(uri) => uri,
+            None => {
+                return JsonRpcResponse::error(
+                    id,
+                    codes::INVALID_PARAMS,
+                    "resources/read requires a string uri",
+                );
+            }
+        };
+        if uri != MCP_STATUS_RESOURCE_URI {
+            return JsonRpcResponse::error_with_data(
+                id,
+                codes::RESOURCE_NOT_FOUND,
+                "Resource not found",
+                json!({ "uri": uri }),
+            );
+        }
+
+        let text = serde_json::to_string_pretty(&self.status_resource_payload())
+            .unwrap_or_else(|_| "{}".to_string());
+        JsonRpcResponse::success(
+            id,
+            json!({
+                "contents": [
+                    {
+                        "uri": MCP_STATUS_RESOURCE_URI,
+                        "mimeType": "application/json",
+                        "text": text,
+                    }
+                ]
+            }),
+        )
+    }
+
+    fn status_resource_payload(&self) -> Value {
+        json!({
+            "kind": "chancela_mcp_status",
+            "status": "serving",
+            "server": {
+                "name": SERVER_NAME,
+                "version": env!("CARGO_PKG_VERSION"),
+                "protocol_version": PROTOCOL_VERSION,
+            },
+            "transport": {
+                "active": transport_name(self.runtime.transport),
+                "supported": ["stdio"],
+                "reserved_not_served": ["http-sse"],
+                "non_stdio_served": false,
+            },
+            "gates": {
+                "mcp_enabled": true,
+                "tenant_ai_enabled": true,
+                "api_key_configured": true,
+                "api_key_exposed": false,
+            },
+            "integration_api": {
+                "base_url": self.runtime.base_url.as_str(),
+                "base_path": self.runtime.base_path.as_str(),
+                "health_probe": "not_performed",
+            },
+            "tools": {
+                "enabled": self.tools.len(),
+                "catalog": self.runtime.catalog_tool_count,
+            },
+            "security": {
+                "authorization_forwarded_server_side": true,
+                "rbac_reimplemented_in_mcp": false,
+                "secrets_in_resource": false,
+            },
+            "limitations": [
+                "stdio_transport_only",
+                "http_sse_reserved_not_served",
+                "integration_api_health_not_probed",
+                "no_stdout_stderr_log_tail",
+            ],
+        })
     }
 
     fn tools_call(&self, id: Value, params: Option<&Value>) -> JsonRpcResponse {
@@ -264,6 +397,13 @@ pub fn enabled_tool_count(config: &McpConfig) -> usize {
             .into_iter()
             .filter(|t| config.enabled_tools.allows(t.name))
             .count(),
+    }
+}
+
+fn transport_name(transport: McpTransport) -> &'static str {
+    match transport {
+        McpTransport::Stdio => "stdio",
+        McpTransport::HttpSse => "http-sse",
     }
 }
 
@@ -817,6 +957,93 @@ mod tests {
         // schema + annotations present
         assert!(tools[0]["inputSchema"].is_object());
         assert!(tools[0]["annotations"]["readOnlyHint"].is_boolean());
+    }
+
+    #[test]
+    fn resources_list_exposes_mcp_status_resource() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req("resources/list", 20, Value::Null))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let resources = result["resources"].as_array().unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0]["uri"], json!(MCP_STATUS_RESOURCE_URI));
+        assert_eq!(resources[0]["mimeType"], json!("application/json"));
+        assert_eq!(
+            resources[0]["annotations"]["audience"],
+            json!(["user", "assistant"])
+        );
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_mcp_status_returns_operability_without_http_or_secret() {
+        let cfg = McpConfig {
+            base_url: "http://127.0.0.1:9191".to_string(),
+            base_path: "/api/v1".to_string(),
+            enabled_tools: EnabledTools::List(vec!["list_entities".into()]),
+            ..enabled_cfg()
+        };
+        let server = McpServer::from_config(&cfg, MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                21,
+                json!({ "uri": MCP_STATUS_RESOURCE_URI }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let contents = result["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(contents[0]["uri"], json!(MCP_STATUS_RESOURCE_URI));
+        assert_eq!(contents[0]["mimeType"], json!("application/json"));
+        let text = contents[0]["text"].as_str().unwrap();
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+
+        let status: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(status["kind"], json!("chancela_mcp_status"));
+        assert_eq!(status["status"], json!("serving"));
+        assert_eq!(status["server"]["name"], json!(SERVER_NAME));
+        assert_eq!(
+            status["server"]["protocol_version"],
+            json!(PROTOCOL_VERSION)
+        );
+        assert_eq!(status["transport"]["active"], json!("stdio"));
+        assert_eq!(status["transport"]["non_stdio_served"], json!(false));
+        assert_eq!(status["gates"]["mcp_enabled"], json!(true));
+        assert_eq!(status["gates"]["tenant_ai_enabled"], json!(true));
+        assert_eq!(status["gates"]["api_key_configured"], json!(true));
+        assert_eq!(status["gates"]["api_key_exposed"], json!(false));
+        assert_eq!(
+            status["integration_api"]["base_url"],
+            json!("http://127.0.0.1:9191")
+        );
+        assert_eq!(
+            status["integration_api"]["health_probe"],
+            json!("not_performed")
+        );
+        assert_eq!(status["tools"]["enabled"], json!(1));
+        assert_eq!(status["tools"]["catalog"], json!(catalog().len()));
+        assert_eq!(status["security"]["secrets_in_resource"], json!(false));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_unknown_uri_is_resource_not_found() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                22,
+                json!({ "uri": "chancela://mcp/missing" }),
+            ))
+            .unwrap();
+        let error = resp.error.unwrap();
+        assert_eq!(error.code, codes::RESOURCE_NOT_FOUND);
+        assert_eq!(error.data.unwrap()["uri"], json!("chancela://mcp/missing"));
+        assert!(server.bridge_recorded().is_empty());
     }
 
     #[test]
@@ -1621,6 +1848,7 @@ mod tests {
         assert_eq!(result["protocolVersion"], json!(PROTOCOL_VERSION));
         assert_eq!(result["serverInfo"]["name"], json!(SERVER_NAME));
         assert!(result["capabilities"]["tools"].is_object());
+        assert!(result["capabilities"]["resources"].is_object());
     }
 
     #[test]
@@ -1636,7 +1864,7 @@ mod tests {
     #[test]
     fn unknown_method_is_method_not_found() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
-        let resp = server.handle(&req("resources/list", 8, json!({}))).unwrap();
+        let resp = server.handle(&req("prompts/list", 8, json!({}))).unwrap();
         assert_eq!(resp.error.unwrap().code, codes::METHOD_NOT_FOUND);
     }
 

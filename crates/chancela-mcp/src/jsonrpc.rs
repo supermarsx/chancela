@@ -19,6 +19,8 @@ pub mod codes {
     pub const INVALID_PARAMS: i64 = -32602;
     /// Internal JSON-RPC error.
     pub const INTERNAL_ERROR: i64 = -32603;
+    /// MCP resource not found.
+    pub const RESOURCE_NOT_FOUND: i64 = -32002;
 }
 
 /// An inbound JSON-RPC message. A request carries an `id`; a notification omits it (`id == None`).
@@ -92,6 +94,20 @@ impl JsonRpcResponse {
                 code,
                 message: message.into(),
                 data: None,
+            }),
+        }
+    }
+
+    /// An error response with structured `data`.
+    pub fn error_with_data(id: Value, code: i64, message: impl Into<String>, data: Value) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            result: None,
+            error: Some(JsonRpcError {
+                code,
+                message: message.into(),
+                data: Some(data),
             }),
         }
     }
