@@ -1212,6 +1212,10 @@ pub fn router(state: AppState) -> Router {
             post(documents::generate_document),
         )
         .route(
+            "/v1/documents/generated/{document_id}",
+            get(documents::get_generated_document_pdf),
+        )
+        .route(
             "/v1/acts/{id}/document/working-copy",
             get(documents::export_working_copy),
         )
@@ -2812,7 +2816,13 @@ mod tests {
 
     /// Create an entity and an open book for it; returns (state, entity_id, book_id).
     async fn entity_and_open_book(kind: &str) -> (AppState, String, String) {
-        let state = AppState::default();
+        entity_and_open_book_in_state(AppState::default(), kind).await
+    }
+
+    async fn entity_and_open_book_in_state(
+        state: AppState,
+        kind: &str,
+    ) -> (AppState, String, String) {
         let token = auth_token(&state).await;
         let (status, entity) = send(
             state.clone(),
@@ -4710,7 +4720,12 @@ mod tests {
 
     #[tokio::test]
     async fn on_demand_generate_persists_a_chosen_document_and_emits_the_event() {
-        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let tmp = TempDir::new();
+        let (state, _entity_id, book_id) = entity_and_open_book_in_state(
+            AppState::with_data_dir(tmp.dir.clone()),
+            "SociedadeAnonima",
+        )
+        .await;
         let act_id = draft_fill_and_advance(&state, &book_id).await;
 
         // Unknown template id → 404.
@@ -4743,6 +4758,15 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
 
+        let (status, canonical_ctype, canonical_ata) =
+            send_bytes(state.clone(), get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            canonical_ctype.starts_with("application/pdf"),
+            "ctype={canonical_ctype}"
+        );
+        let canonical_digest = sha256_hex_test(&canonical_ata);
+
         let (status, made) = send(
             state.clone(),
             post_json(
@@ -4755,6 +4779,17 @@ mod tests {
         assert_eq!(made["template_id"], "csc-certidao-ata/v1");
         assert_eq!(made["act_id"], act_id);
         assert_eq!(made["pdf_digest"].as_str().expect("digest").len(), 64);
+        let generated_id = made["id"].as_str().expect("generated id");
+        let generated_download = made["download"].as_str().expect("download url");
+        assert_eq!(
+            generated_download,
+            format!("/v1/documents/generated/{generated_id}")
+        );
+        assert_ne!(
+            generated_download,
+            format!("/v1/acts/{act_id}/document"),
+            "on-demand document download must not point at the canonical Ata endpoint"
+        );
 
         let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
         let doc_events = events
@@ -4768,12 +4803,114 @@ mod tests {
             "the sealed ata doc + the on-demand certidão doc are both on the chain: {events}"
         );
 
-        // The chosen document is persisted and downloads as a real PDF.
-        let (status, ctype, bytes) =
+        // The chosen document is persisted and downloads by its own document id.
+        let token = auth_token(&state).await;
+        let (status, headers, bytes) =
+            send_raw_bytes(state.clone(), with_session(get(generated_download), &token)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers.get("content-type").unwrap(), "application/pdf");
+        assert_eq!(headers.get("x-chancela-document-id").unwrap(), generated_id);
+        assert_eq!(
+            headers.get("x-chancela-template-id").unwrap(),
+            "csc-certidao-ata/v1"
+        );
+        assert_eq!(
+            headers.get("x-chancela-pdf-digest").unwrap(),
+            made["pdf_digest"].as_str().expect("generated digest")
+        );
+        assert!(bytes.starts_with(b"%PDF-"));
+        assert_eq!(
+            sha256_hex_test(&bytes),
+            made["pdf_digest"].as_str().expect("generated digest")
+        );
+        assert_ne!(
+            sha256_hex_test(&bytes),
+            canonical_digest,
+            "certidão bytes must not be the sealed Ata bytes"
+        );
+
+        // The canonical Ata endpoint still serves the original sealed Ata for signing/bundles.
+        let (status, ctype, still_canonical_ata) =
+            send_bytes(state.clone(), get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(ctype.starts_with("application/pdf"), "ctype={ctype}");
+        assert_eq!(still_canonical_ata, canonical_ata);
+
+        let (status, _) = send(
+            state.clone(),
+            with_session(get("/v1/documents/generated/not-a-document"), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let powerless = powerless_token(&state).await;
+        let (status, _) = send(state, with_session(get(generated_download), &powerless)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        assert!(state.store.is_none(), "regression must use no-store state");
+        let act_id = draft_fill_and_advance(&state, &book_id).await;
+
+        let (status, _) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (status, ctype, canonical_ata) =
+            send_bytes(state.clone(), get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(ctype.starts_with("application/pdf"), "ctype={ctype}");
+        let canonical_digest = sha256_hex_test(&canonical_ata);
+
+        let (status, made) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/acts/{act_id}/document/generate?template_id=csc-certidao-ata/v1"),
+                json!({}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "generate: {made}");
+        assert_eq!(made["template_id"], "csc-certidao-ata/v1");
+        assert_eq!(made["act_id"], act_id);
+        let generated_id = made["id"].as_str().expect("generated id");
+        let generated_download = made["download"].as_str().expect("download url");
+        assert_eq!(
+            generated_download,
+            format!("/v1/documents/generated/{generated_id}")
+        );
+
+        let token = auth_token(&state).await;
+        let (status, headers, generated_bytes) =
+            send_raw_bytes(state.clone(), with_session(get(generated_download), &token)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers.get("content-type").unwrap(), "application/pdf");
+        assert_eq!(headers.get("x-chancela-document-id").unwrap(), generated_id);
+        assert_eq!(
+            headers.get("x-chancela-template-id").unwrap(),
+            "csc-certidao-ata/v1"
+        );
+        assert!(generated_bytes.starts_with(b"%PDF-"));
+        assert_eq!(
+            sha256_hex_test(&generated_bytes),
+            made["pdf_digest"].as_str().expect("generated digest")
+        );
+        assert_ne!(
+            sha256_hex_test(&generated_bytes),
+            canonical_digest,
+            "generated certidao must not be the sealed Ata bytes"
+        );
+
+        let (status, ctype, still_canonical_ata) =
             send_bytes(state, get(&format!("/v1/acts/{act_id}/document"))).await;
         assert_eq!(status, StatusCode::OK);
         assert!(ctype.starts_with("application/pdf"), "ctype={ctype}");
-        assert!(bytes.starts_with(b"%PDF-"));
+        assert_eq!(still_canonical_ata, canonical_ata);
     }
 
     #[tokio::test]

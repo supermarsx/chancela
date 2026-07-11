@@ -350,10 +350,11 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/convening/dispatch", RouteClass::Gated), // POST act.edit@Book (t61-E1)
     ("/v1/acts/{id}/document/preview", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/generate", RouteClass::Gated), // POST document.generate@Book
-    ("/v1/acts/{id}/document", RouteClass::Gated), // GET act.read@Book
-    ("/v1/acts/{id}/document/working-copy", RouteClass::Gated), // GET act.read@Book
-    ("/v1/acts/{id}/document/office", RouteClass::Gated), // GET act.read@Book
-    ("/v1/acts/{id}/document/bundle", RouteClass::Gated), // GET act.read@Book
+    ("/v1/documents/generated/{document_id}", RouteClass::Gated), // GET act.read@Book(document.act_id)
+    ("/v1/acts/{id}/document", RouteClass::Gated),                // GET act.read@Book
+    ("/v1/acts/{id}/document/working-copy", RouteClass::Gated),   // GET act.read@Book
+    ("/v1/acts/{id}/document/office", RouteClass::Gated),         // GET act.read@Book
+    ("/v1/acts/{id}/document/bundle", RouteClass::Gated),         // GET act.read@Book
     ("/v1/documents/import", RouteClass::Gated), // POST document.generate@Global|Book
     ("/v1/documents/imported", RouteClass::Gated), // GET act.read@Global|Book(act_id)
     ("/v1/documents/imported/{id}", RouteClass::Gated), // GET act.read@import scope
@@ -638,6 +639,14 @@ mod tests {
     fn office_document_export_route_is_classified_as_gated() {
         assert_eq!(
             classify("/v1/acts/{id}/document/office"),
+            Some(RouteClass::Gated)
+        );
+    }
+
+    #[test]
+    fn generated_document_download_route_is_classified_as_gated() {
+        assert_eq!(
+            classify("/v1/documents/generated/{document_id}"),
             Some(RouteClass::Gated)
         );
     }

@@ -2698,8 +2698,20 @@ pub async fn generate_document(
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
-    // Publish only a canonical Ata candidate to the live read model. Certidões/extratos remain
-    // persisted rows but must not replace the sealed Ata used by download/bundle/signing.
+    // Publish only a canonical Ata candidate under the owner id. In pure in-memory mode, also keep
+    // non-Ata generated rows addressable by document id without replacing that canonical owner slot.
+    if state.store.is_none() && spec.stage != LifecycleStage::Ata {
+        let mut documents = state.documents.write().await;
+        if let Some(mut key) = in_memory_generated_document_key(&made.stored) {
+            while documents
+                .get(&key)
+                .is_some_and(|doc| doc.id != made.stored.id)
+            {
+                key = ActId(Uuid::new_v4());
+            }
+            documents.insert(key, made.stored.clone());
+        }
+    }
     if spec.stage == LifecycleStage::Ata {
         let mut documents = state.documents.write().await;
         let keep_existing_ata = documents
@@ -2710,15 +2722,46 @@ pub async fn generate_document(
         }
     }
 
+    let document_id = made.stored.id.clone();
     let view = GeneratedDocumentView {
-        id: made.stored.id,
+        id: document_id.clone(),
         act_id: made.stored.act_id.to_string(),
         template_id: made.stored.template_id,
         pdf_digest: made.stored.pdf_digest,
         profile: made.stored.profile,
-        download: format!("/v1/acts/{id}/document"),
+        download: format!("/v1/documents/generated/{document_id}"),
     };
     Ok((StatusCode::CREATED, Json(view)).into_response())
+}
+
+/// `GET /v1/documents/generated/{document_id}` — stream one generated document row by its own id.
+/// This is for on-demand generated post-act outputs (certidões, extratos, comunicações, and other
+/// non-canonical catalog artifacts). It intentionally does not use [`load_document`], because that
+/// helper preserves `/v1/acts/{id}/document` as the canonical sealed Ata target for signing/bundles.
+pub async fn get_generated_document_pdf(
+    State(state): State<AppState>,
+    Path(document_id): Path<String>,
+    actor: CurrentActor,
+) -> Result<Response, ApiError> {
+    let doc = load_document_by_id(&state, &document_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    // RBAC: by-id generated-document reads inherit `act.read` from the document's owning act.
+    let scope = scope_of_act(&state, doc.act_id).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
+
+    let act_id = doc.act_id.to_string();
+    Response::builder()
+        .header(header::CONTENT_TYPE, "application/pdf")
+        .header("x-chancela-document-id", doc.id)
+        .header("x-chancela-act-id", act_id)
+        .header("x-chancela-template-id", doc.template_id)
+        .header("x-chancela-pdf-digest", doc.pdf_digest)
+        .header("x-chancela-profile", doc.profile)
+        .body(Body::from(doc.pdf_bytes))
+        .map_err(|e| {
+            ApiError::Internal(format!("failed to build generated document response: {e}"))
+        })
 }
 
 /// `GET /v1/acts/{id}/document` — the persisted PDF/A bytes (`application/pdf`); `404` until the
@@ -2735,6 +2778,29 @@ pub async fn get_document_pdf(
         .await?
         .ok_or(ApiError::NotFound)?;
     Ok(([(header::CONTENT_TYPE, "application/pdf")], doc.pdf_bytes).into_response())
+}
+
+async fn load_document_by_id(
+    state: &AppState,
+    document_id: &str,
+) -> Result<Option<StoredDocument>, ApiError> {
+    if let Some(store) = &state.store {
+        return store
+            .document_by_id(document_id)
+            .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")));
+    }
+
+    Ok(state
+        .documents
+        .read()
+        .await
+        .values()
+        .find(|doc| doc.id == document_id)
+        .cloned())
+}
+
+fn in_memory_generated_document_key(doc: &StoredDocument) -> Option<ActId> {
+    Uuid::parse_str(&doc.id).ok().map(ActId)
 }
 
 /// `GET /v1/acts/{id}/document/working-copy` — Markdown/TXT/HTML/RTF/ODT convenience export of the
@@ -3847,7 +3913,14 @@ pub(crate) async fn load_document(
             .filter(|doc| is_ata_template(&doc.template_id)));
     }
 
-    if let Some(doc) = state.documents.read().await.get(&act_id).cloned() {
+    if let Some(doc) = state
+        .documents
+        .read()
+        .await
+        .get(&act_id)
+        .cloned()
+        .filter(|doc| doc.act_id == act_id)
+    {
         return Ok(Some(doc));
     }
     if let Some(store) = &state.store {
