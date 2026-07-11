@@ -29,6 +29,10 @@ pub const ASICS_CADES_SIGNATURE_PATH: &str = "META-INF/signatures.p7s";
 pub const ASICE_MANIFEST_PATH: &str = "META-INF/ASiCManifest.xml";
 /// The ASiC-E detached CAdES signature member this implementation creates and validates.
 pub const ASICE_CADES_SIGNATURE_PATH: &str = "META-INF/signature001.p7s";
+/// Maximum declared or actual uncompressed size accepted for one ASiC ZIP member.
+pub const ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES: u64 = 16 * 1024 * 1024;
+/// Maximum total uncompressed size accepted across ASiC ZIP members.
+pub const ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES: u64 = 32 * 1024 * 1024;
 
 const MIMETYPE_PATH: &str = "mimetype";
 const META_INF_PREFIX: &str = "META-INF/";
@@ -196,6 +200,10 @@ pub enum AsicDiagnosticBlockerId {
     DuplicateMember,
     /// The ZIP member is encrypted.
     EncryptedMember,
+    /// A ZIP member declares or decompresses to more bytes than the bounded ASiC reader accepts.
+    MemberUncompressedSizeExceeded,
+    /// ZIP members declare or decompress to more total bytes than the bounded ASiC reader accepts.
+    TotalUncompressedSizeExceeded,
     /// XAdES was detected; this crate does not validate XAdES.
     XadesNotSupported,
     /// A `META-INF` member is outside the bounded ASiC/CAdES slice.
@@ -244,6 +252,12 @@ impl AsicDiagnosticBlockerId {
         match self {
             AsicDiagnosticBlockerId::DuplicateMember => "duplicate_member",
             AsicDiagnosticBlockerId::EncryptedMember => "encrypted_member",
+            AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded => {
+                "member_uncompressed_size_exceeded"
+            }
+            AsicDiagnosticBlockerId::TotalUncompressedSizeExceeded => {
+                "total_uncompressed_size_exceeded"
+            }
             AsicDiagnosticBlockerId::XadesNotSupported => "xades_not_supported",
             AsicDiagnosticBlockerId::UnsupportedMetaInfMember => "unsupported_meta_inf_member",
             AsicDiagnosticBlockerId::AsicSRequiresSinglePayload => "asic_s_requires_single_payload",
@@ -577,6 +591,7 @@ pub fn inspect_asic_profile(container: &[u8]) -> Result<AsicProfileReport, Signi
     let mut manifest_members = Vec::new();
     let mut signature_diagnostics = Vec::new();
     let mut blocker_details = Vec::new();
+    let mut size_budget = ZipSizeBudget::default();
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -592,7 +607,8 @@ pub fn inspect_asic_profile(container: &[u8]) -> Result<AsicProfileReport, Signi
                 Some(name.clone()),
             );
         }
-        if file.encrypted() {
+        let encrypted = file.encrypted();
+        if encrypted {
             push_blocker(
                 &mut blocker_details,
                 AsicDiagnosticBlockerId::EncryptedMember,
@@ -601,6 +617,10 @@ pub fn inspect_asic_profile(container: &[u8]) -> Result<AsicProfileReport, Signi
             );
         }
         let size = file.size();
+        let size_inspection =
+            size_budget.inspect_declared_preflight(&name, size, &mut blocker_details);
+        let read_allowed = size_inspection.read_allowed && !encrypted;
+        let size_blockers = size_inspection.blockers;
         member_names.push(name.clone());
         if file.is_dir() || name == MIMETYPE_PATH {
             continue;
@@ -608,22 +628,54 @@ pub fn inspect_asic_profile(container: &[u8]) -> Result<AsicProfileReport, Signi
 
         if is_xades_signature_path(&name) {
             xades_signature_paths.push(name.clone());
+            let mut signature_blockers = size_blockers;
+            let diagnostic_size = if read_allowed {
+                let (actual_size, actual_size_inspection) = account_zip_member_for_inspection(
+                    &name,
+                    &mut file,
+                    &mut size_budget,
+                    &mut blocker_details,
+                )?;
+                signature_blockers.extend(actual_size_inspection.blockers);
+                actual_size
+            } else {
+                size
+            };
             signature_diagnostics.push(AsicSignatureDiagnostic {
                 path: name,
                 member_kind: AsicSignatureMemberKind::Xades,
-                size,
+                size: diagnostic_size,
                 referenced_by_manifest_paths: Vec::new(),
-                blockers: Vec::new(),
+                blockers: signature_blockers,
             });
         } else if is_asic_manifest_path(&name) {
             manifest_paths.push(name.clone());
-            let bytes = read_zip_member(&name, &mut file)?;
-            manifest_members.push((name, bytes, size));
+            if read_allowed {
+                let bytes = read_zip_member_for_inspection(&name, &mut file, size)?;
+                let actual_size = bytes.len() as u64;
+                let actual_size_inspection =
+                    size_budget.inspect_actual_consumed(&name, actual_size, &mut blocker_details);
+                if actual_size_inspection.read_allowed {
+                    manifest_members.push((name, bytes, actual_size));
+                }
+            }
         } else if is_meta_inf_path(&name) {
             if is_cades_signature_path(&name) {
                 cades_signature_paths.push(name.clone());
-                let mut signature_blockers = Vec::new();
-                if size == 0 {
+                let mut signature_blockers = size_blockers;
+                let diagnostic_size = if read_allowed {
+                    let (actual_size, actual_size_inspection) = account_zip_member_for_inspection(
+                        &name,
+                        &mut file,
+                        &mut size_budget,
+                        &mut blocker_details,
+                    )?;
+                    signature_blockers.extend(actual_size_inspection.blockers);
+                    actual_size
+                } else {
+                    size
+                };
+                if diagnostic_size == 0 {
                     let blocker = diagnostic_blocker(
                         AsicDiagnosticBlockerId::EmptySignatureMember,
                         format!("ASiC CAdES signature member {name} is empty"),
@@ -635,16 +687,34 @@ pub fn inspect_asic_profile(container: &[u8]) -> Result<AsicProfileReport, Signi
                 signature_diagnostics.push(AsicSignatureDiagnostic {
                     path: name,
                     member_kind: AsicSignatureMemberKind::Cades,
-                    size,
+                    size: diagnostic_size,
                     referenced_by_manifest_paths: Vec::new(),
                     blockers: signature_blockers,
                 });
             } else {
-                unsupported_meta_inf_paths.push(name);
+                unsupported_meta_inf_paths.push(name.clone());
+                if read_allowed {
+                    let _ = account_zip_member_for_inspection(
+                        &name,
+                        &mut file,
+                        &mut size_budget,
+                        &mut blocker_details,
+                    )?;
+                }
             }
         } else {
             payload_paths.push(name.clone());
-            payloads.insert(name.clone(), read_zip_member(&name, &mut file)?);
+            if read_allowed {
+                let bytes = read_zip_member_for_inspection(&name, &mut file, size)?;
+                let actual_size_inspection = size_budget.inspect_actual_consumed(
+                    &name,
+                    bytes.len() as u64,
+                    &mut blocker_details,
+                );
+                if actual_size_inspection.read_allowed {
+                    payloads.insert(name.clone(), bytes);
+                }
+            }
         }
     }
 
@@ -735,6 +805,7 @@ pub fn extract_asic_s_container(container: &[u8]) -> Result<AsicSContainer, Sign
     let mut content: Option<(String, Vec<u8>)> = None;
     let mut cades_signature_der: Option<Vec<u8>> = None;
     let mut xades_signature_paths = Vec::new();
+    let mut size_budget = ZipSizeBudget::default();
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -750,6 +821,8 @@ pub fn extract_asic_s_container(container: &[u8]) -> Result<AsicSContainer, Sign
                 "encrypted ASiC ZIP member {name} is not supported"
             )));
         }
+        let size = file.size();
+        size_budget.enforce_declared_preflight(&name, size)?;
         if file.is_dir() {
             continue;
         }
@@ -758,7 +831,8 @@ pub fn extract_asic_s_container(container: &[u8]) -> Result<AsicSContainer, Sign
             continue;
         }
         if name == ASICS_CADES_SIGNATURE_PATH {
-            let bytes = read_zip_member(&name, &mut file)?;
+            let bytes = read_zip_member(&name, &mut file, size)?;
+            size_budget.enforce_actual_consumed(&name, bytes.len() as u64)?;
             if bytes.is_empty() {
                 return Err(asic_err("ASiC-S signatures.p7s cannot be empty"));
             }
@@ -780,7 +854,8 @@ pub fn extract_asic_s_container(container: &[u8]) -> Result<AsicSContainer, Sign
                 "ASiC-E or multi-payload ASiC containers are not supported; only one ASiC-S payload is implemented",
             ));
         }
-        let bytes = read_zip_member(&name, &mut file)?;
+        let bytes = read_zip_member(&name, &mut file, size)?;
+        size_budget.enforce_actual_consumed(&name, bytes.len() as u64)?;
         content = Some((name, bytes));
     }
 
@@ -824,6 +899,7 @@ pub fn extract_asic_e_container(container: &[u8]) -> Result<AsicEContainer, Sign
     let mut meta_inf_files: HashMap<String, Vec<u8>> = HashMap::new();
     let mut manifest: Option<(String, Vec<u8>)> = None;
     let mut xades_signature_paths = Vec::new();
+    let mut size_budget = ZipSizeBudget::default();
 
     for index in 0..archive.len() {
         let mut file = archive
@@ -839,6 +915,8 @@ pub fn extract_asic_e_container(container: &[u8]) -> Result<AsicEContainer, Sign
                 "encrypted ASiC ZIP member {name} is not supported"
             )));
         }
+        let size = file.size();
+        size_budget.enforce_declared_preflight(&name, size)?;
         if file.is_dir() {
             continue;
         }
@@ -856,7 +934,8 @@ pub fn extract_asic_e_container(container: &[u8]) -> Result<AsicEContainer, Sign
                     "multiple ASiC-E ASiCManifest files are not supported",
                 ));
             }
-            let bytes = read_zip_member(&name, &mut file)?;
+            let bytes = read_zip_member(&name, &mut file, size)?;
+            size_budget.enforce_actual_consumed(&name, bytes.len() as u64)?;
             if bytes.is_empty() {
                 return Err(asic_err("ASiC-E ASiCManifest file cannot be empty"));
             }
@@ -869,7 +948,8 @@ pub fn extract_asic_e_container(container: &[u8]) -> Result<AsicEContainer, Sign
                     "unsupported ASiC-E META-INF member {name}; only ASiCManifest XML and CAdES .p7s signature files are implemented"
                 )));
             }
-            let bytes = read_zip_member(&name, &mut file)?;
+            let bytes = read_zip_member(&name, &mut file, size)?;
+            size_budget.enforce_actual_consumed(&name, bytes.len() as u64)?;
             if bytes.is_empty() {
                 return Err(asic_err(format!(
                     "ASiC-E CAdES signature member {name} is empty"
@@ -880,7 +960,9 @@ pub fn extract_asic_e_container(container: &[u8]) -> Result<AsicEContainer, Sign
         }
 
         validate_payload_name(&name)?;
-        payloads.insert(name.clone(), read_zip_member(&name, &mut file)?);
+        let bytes = read_zip_member(&name, &mut file, size)?;
+        size_budget.enforce_actual_consumed(&name, bytes.len() as u64)?;
+        payloads.insert(name.clone(), bytes);
     }
 
     if !xades_signature_paths.is_empty() {
@@ -1022,6 +1104,7 @@ fn read_mimetype(
             "ASiC mimetype member must be stored without compression",
         ));
     }
+    check_zip_member_uncompressed_size(&name, first.size(), ZipSizeObservation::Declared)?;
     let mut mimetype = String::new();
     first
         .read_to_string(&mut mimetype)
@@ -1055,6 +1138,162 @@ fn push_blocker(
     member_path: Option<String>,
 ) {
     blockers.push(diagnostic_blocker(id, message, member_path));
+}
+
+#[derive(Debug, Default)]
+struct ZipSizeBudget {
+    actual_uncompressed_size: u64,
+    total_limit_exceeded: bool,
+}
+
+#[derive(Debug)]
+struct ZipMemberSizeInspection {
+    read_allowed: bool,
+    blockers: Vec<AsicDiagnosticBlocker>,
+}
+
+impl ZipSizeBudget {
+    fn enforce_declared_preflight(
+        &self,
+        name: &str,
+        declared_size: u64,
+    ) -> Result<(), SigningError> {
+        check_zip_member_uncompressed_size(name, declared_size, ZipSizeObservation::Declared)?;
+        if self.total_limit_exceeded {
+            return Err(zip_total_uncompressed_size_error(
+                name,
+                self.actual_uncompressed_size,
+                ZipSizeObservation::Actual,
+            ));
+        }
+        let predicted_total = self.actual_uncompressed_size.saturating_add(declared_size);
+        if predicted_total > ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES {
+            return Err(zip_total_uncompressed_size_error(
+                name,
+                predicted_total,
+                ZipSizeObservation::Declared,
+            ));
+        }
+        Ok(())
+    }
+
+    fn enforce_actual_consumed(
+        &mut self,
+        name: &str,
+        actual_size: u64,
+    ) -> Result<(), SigningError> {
+        check_zip_member_uncompressed_size(name, actual_size, ZipSizeObservation::Actual)?;
+        let total = self.actual_uncompressed_size.saturating_add(actual_size);
+        self.actual_uncompressed_size = total;
+        if total > ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES {
+            self.total_limit_exceeded = true;
+            return Err(zip_total_uncompressed_size_error(
+                name,
+                total,
+                ZipSizeObservation::Actual,
+            ));
+        }
+        Ok(())
+    }
+
+    fn inspect_declared_preflight(
+        &mut self,
+        name: &str,
+        declared_size: u64,
+        global_blockers: &mut Vec<AsicDiagnosticBlocker>,
+    ) -> ZipMemberSizeInspection {
+        let mut blockers = Vec::new();
+        let member_within_limit = if declared_size > ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES {
+            let blocker = diagnostic_blocker(
+                AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded,
+                zip_member_uncompressed_size_message(
+                    name,
+                    declared_size,
+                    ZipSizeObservation::Declared,
+                ),
+                Some(name.to_owned()),
+            );
+            global_blockers.push(blocker.clone());
+            blockers.push(blocker);
+            false
+        } else {
+            true
+        };
+
+        let total_within_limit = if self.total_limit_exceeded {
+            false
+        } else {
+            let predicted_total = self.actual_uncompressed_size.saturating_add(declared_size);
+            if predicted_total > ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES {
+                self.total_limit_exceeded = true;
+                let blocker = diagnostic_blocker(
+                    AsicDiagnosticBlockerId::TotalUncompressedSizeExceeded,
+                    zip_total_uncompressed_size_message(
+                        name,
+                        predicted_total,
+                        ZipSizeObservation::Declared,
+                    ),
+                    Some(name.to_owned()),
+                );
+                global_blockers.push(blocker.clone());
+                blockers.push(blocker);
+                false
+            } else {
+                true
+            }
+        };
+
+        ZipMemberSizeInspection {
+            read_allowed: member_within_limit && total_within_limit,
+            blockers,
+        }
+    }
+
+    fn inspect_actual_consumed(
+        &mut self,
+        name: &str,
+        actual_size: u64,
+        global_blockers: &mut Vec<AsicDiagnosticBlocker>,
+    ) -> ZipMemberSizeInspection {
+        let mut blockers = Vec::new();
+        let member_within_limit = if actual_size > ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES {
+            let blocker = diagnostic_blocker(
+                AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded,
+                zip_member_uncompressed_size_message(name, actual_size, ZipSizeObservation::Actual),
+                Some(name.to_owned()),
+            );
+            global_blockers.push(blocker.clone());
+            blockers.push(blocker);
+            false
+        } else {
+            true
+        };
+
+        let total_within_limit = if self.total_limit_exceeded {
+            false
+        } else {
+            let total = self.actual_uncompressed_size.saturating_add(actual_size);
+            self.actual_uncompressed_size = total;
+            if total > ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES {
+                self.total_limit_exceeded = true;
+                let blocker = diagnostic_blocker(
+                    AsicDiagnosticBlockerId::TotalUncompressedSizeExceeded,
+                    zip_total_uncompressed_size_message(name, total, ZipSizeObservation::Actual),
+                    Some(name.to_owned()),
+                );
+                global_blockers.push(blocker.clone());
+                blockers.push(blocker);
+                false
+            } else {
+                true
+            }
+        };
+
+        ZipMemberSizeInspection {
+            read_allowed: member_within_limit && total_within_limit,
+            blockers,
+        }
+    }
 }
 
 fn profile_shape(
@@ -1494,11 +1733,126 @@ fn unsupported_asic_xades_error(
     )
 }
 
-fn read_zip_member<R: Read>(name: &str, file: &mut R) -> Result<Vec<u8>, SigningError> {
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
+fn read_zip_member_for_inspection<R: Read>(
+    name: &str,
+    file: &mut R,
+    declared_size: u64,
+) -> Result<Vec<u8>, SigningError> {
+    let capacity = declared_size.min(ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES + 1) as usize;
+    let mut bytes = Vec::with_capacity(capacity);
+    let mut limited = file.take(ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES + 1);
+    limited
+        .read_to_end(&mut bytes)
         .map_err(|e| asic_err(format!("failed to read ASiC ZIP member {name}: {e}")))?;
     Ok(bytes)
+}
+
+fn account_zip_member_for_inspection<R: Read>(
+    name: &str,
+    file: &mut R,
+    size_budget: &mut ZipSizeBudget,
+    global_blockers: &mut Vec<AsicDiagnosticBlocker>,
+) -> Result<(u64, ZipMemberSizeInspection), SigningError> {
+    let mut limited = file.take(ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES + 1);
+    let actual_size = std::io::copy(&mut limited, &mut std::io::sink())
+        .map_err(|e| asic_err(format!("failed to read ASiC ZIP member {name}: {e}")))?;
+    let inspection = size_budget.inspect_actual_consumed(name, actual_size, global_blockers);
+    Ok((actual_size, inspection))
+}
+
+fn read_zip_member<R: Read>(
+    name: &str,
+    file: &mut R,
+    declared_size: u64,
+) -> Result<Vec<u8>, SigningError> {
+    check_zip_member_uncompressed_size(name, declared_size, ZipSizeObservation::Declared)?;
+    let capacity = usize::try_from(declared_size).map_err(|_| {
+        zip_member_uncompressed_size_error(name, declared_size, ZipSizeObservation::Declared)
+    })?;
+    let mut bytes = Vec::with_capacity(capacity);
+    let mut limited = file.take(ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES + 1);
+    limited
+        .read_to_end(&mut bytes)
+        .map_err(|e| asic_err(format!("failed to read ASiC ZIP member {name}: {e}")))?;
+    if bytes.len() as u64 > ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES {
+        return Err(zip_member_uncompressed_size_error(
+            name,
+            bytes.len() as u64,
+            ZipSizeObservation::Actual,
+        ));
+    }
+    Ok(bytes)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ZipSizeObservation {
+    Declared,
+    Actual,
+}
+
+fn check_zip_member_uncompressed_size(
+    name: &str,
+    size: u64,
+    observation: ZipSizeObservation,
+) -> Result<(), SigningError> {
+    if size > ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES {
+        return Err(zip_member_uncompressed_size_error(name, size, observation));
+    }
+    Ok(())
+}
+
+fn zip_member_uncompressed_size_error(
+    name: &str,
+    size: u64,
+    observation: ZipSizeObservation,
+) -> SigningError {
+    asic_err(zip_member_uncompressed_size_message(
+        name,
+        size,
+        observation,
+    ))
+}
+
+fn zip_member_uncompressed_size_message(
+    name: &str,
+    size: u64,
+    observation: ZipSizeObservation,
+) -> String {
+    match observation {
+        ZipSizeObservation::Declared => format!(
+            "ASiC ZIP member {name} declares {size} uncompressed bytes; maximum supported member size is {ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES} bytes"
+        ),
+        ZipSizeObservation::Actual => format!(
+            "ASiC ZIP member {name} decompressed to {size} bytes; maximum supported member size is {ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES} bytes"
+        ),
+    }
+}
+
+fn zip_total_uncompressed_size_error(
+    name: &str,
+    total: u64,
+    observation: ZipSizeObservation,
+) -> SigningError {
+    asic_err(zip_total_uncompressed_size_message(
+        name,
+        total,
+        observation,
+    ))
+}
+
+fn zip_total_uncompressed_size_message(
+    name: &str,
+    total: u64,
+    observation: ZipSizeObservation,
+) -> String {
+    match observation {
+        ZipSizeObservation::Declared => format!(
+            "ASiC ZIP members declare at least {total} uncompressed bytes through {name}; maximum supported total uncompressed size is {ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES} bytes"
+        ),
+        ZipSizeObservation::Actual => format!(
+            "ASiC ZIP members decompressed to {total} bytes through {name}; maximum supported total uncompressed size is {ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES} bytes"
+        ),
+    }
 }
 
 fn validate_payload_name(name: &str) -> Result<(), SigningError> {

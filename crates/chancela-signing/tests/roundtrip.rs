@@ -20,11 +20,14 @@ use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
-use chancela_signing::asic::{AsicDiagnosticBlockerId, AsicProfileShape, AsicSignatureMemberKind};
+use chancela_signing::asic::{
+    ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES, ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES,
+    AsicDiagnosticBlockerId, AsicProfileShape, AsicSignatureMemberKind,
+};
 use chancela_signing::{
-    ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_MIMETYPE,
-    AsicBoundedProfile, AsicContainerKind, AsicPayload, AsicSignatureProfile, BaselineProfile,
-    DocumentInput, EvidentiaryLevel, MockProvider, SignOptions, SignatureArtifact,
+    ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_CADES_SIGNATURE_PATH,
+    ASICS_MIMETYPE, AsicBoundedProfile, AsicContainerKind, AsicPayload, AsicSignatureProfile,
+    BaselineProfile, DocumentInput, EvidentiaryLevel, MockProvider, SignOptions, SignatureArtifact,
     SignatureEnvelope, SignatureFormat, SignatureRequest, SignerCapacity, SignerProvider,
     SigningError, SigningFamily, SigningJob, SigningOrder, StaticTrustPolicy, Timestamp,
     TimestampProvider, TrustedListStatus, create_asic_e_container, create_asic_s_container,
@@ -454,6 +457,328 @@ fn zip_container(members: &[(&str, &[u8])]) -> Vec<u8> {
         zip.write_all(bytes).expect("write zip member");
     }
     zip.finish().expect("finish zip").into_inner()
+}
+
+fn compressed_asic_s_container(payload: &[u8]) -> Vec<u8> {
+    compressed_asic_s_container_with_signature_and_meta(payload, b"cms", &[])
+}
+
+fn compressed_asic_s_container_with_signature_and_meta(
+    payload: &[u8],
+    cades_signature: &[u8],
+    extra_meta_members: &[(&str, &[u8])],
+) -> Vec<u8> {
+    let stored = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .last_modified_time(zip::DateTime::default());
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .last_modified_time(zip::DateTime::default());
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("mimetype", stored).expect("start mimetype");
+    zip.write_all(ASICS_MIMETYPE.as_bytes())
+        .expect("write mimetype");
+    zip.start_file("payload.txt", deflated)
+        .expect("start payload");
+    zip.write_all(payload).expect("write payload");
+    zip.start_file(ASICS_CADES_SIGNATURE_PATH, deflated)
+        .expect("start signature");
+    zip.write_all(cades_signature).expect("write signature");
+    for (name, bytes) in extra_meta_members {
+        zip.start_file(*name, deflated)
+            .expect("start extra META-INF member");
+        zip.write_all(bytes).expect("write extra META-INF member");
+    }
+    zip.finish().expect("finish zip").into_inner()
+}
+
+fn compressed_asic_e_container(payloads: &[AsicPayload<'_>]) -> Vec<u8> {
+    let manifest = chancela_signing::build_asic_e_manifest(payloads, ASICE_CADES_SIGNATURE_PATH)
+        .expect("manifest");
+    let stored = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .last_modified_time(zip::DateTime::default());
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .last_modified_time(zip::DateTime::default());
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("mimetype", stored).expect("start mimetype");
+    zip.write_all(ASICE_MIMETYPE.as_bytes())
+        .expect("write mimetype");
+    for payload in payloads {
+        zip.start_file(payload.name, deflated)
+            .expect("start payload");
+        zip.write_all(payload.bytes).expect("write payload");
+    }
+    zip.start_file(ASICE_MANIFEST_PATH, deflated)
+        .expect("start manifest");
+    zip.write_all(&manifest).expect("write manifest");
+    zip.start_file(ASICE_CADES_SIGNATURE_PATH, deflated)
+        .expect("start signature");
+    zip.write_all(b"cms").expect("write signature");
+    zip.finish().expect("finish zip").into_inner()
+}
+
+fn read_u16_le(bytes: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes(bytes[offset..offset + 2].try_into().expect("u16 field"))
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("u32 field"))
+}
+
+fn eocd_offset(zip: &[u8]) -> usize {
+    zip.windows(4)
+        .rposition(|window| window == [0x50, 0x4b, 0x05, 0x06])
+        .expect("end of central directory")
+}
+
+fn underdeclare_zip_member_uncompressed_sizes(
+    zip: &mut [u8],
+    member_names: &[&str],
+    declared_size: u32,
+) {
+    let mut remaining = member_names.to_vec();
+    let eocd = eocd_offset(zip);
+    let central_dir_size = read_u32_le(zip, eocd + 12) as usize;
+    let mut offset = read_u32_le(zip, eocd + 16) as usize;
+    let central_dir_end = offset + central_dir_size;
+    while offset < central_dir_end {
+        assert_eq!(
+            &zip[offset..offset + 4],
+            &[0x50, 0x4b, 0x01, 0x02],
+            "central directory header"
+        );
+
+        let name_len = read_u16_le(zip, offset + 28) as usize;
+        let extra_len = read_u16_le(zip, offset + 30) as usize;
+        let comment_len = read_u16_le(zip, offset + 32) as usize;
+        let name_start = offset + 46;
+        let name_end = name_start + name_len;
+        let next = name_end + extra_len + comment_len;
+        let name = std::str::from_utf8(&zip[name_start..name_end])
+            .expect("zip member name")
+            .to_owned();
+
+        if let Some(pos) = remaining.iter().position(|candidate| *candidate == name) {
+            remaining.remove(pos);
+            zip[offset + 24..offset + 28].copy_from_slice(&declared_size.to_le_bytes());
+            let local_header_offset = read_u32_le(zip, offset + 42) as usize;
+            assert_eq!(
+                &zip[local_header_offset..local_header_offset + 4],
+                &[0x50, 0x4b, 0x03, 0x04],
+                "local header for {name}"
+            );
+            zip[local_header_offset + 22..local_header_offset + 26]
+                .copy_from_slice(&declared_size.to_le_bytes());
+        }
+
+        offset = next;
+    }
+
+    assert!(remaining.is_empty(), "members not found: {remaining:?}");
+}
+
+#[test]
+fn asic_zip_member_uncompressed_size_limit_blocks_inflation() {
+    let oversized_payload = vec![0u8; ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES as usize + 1];
+    let container = compressed_asic_s_container(&oversized_payload);
+    assert!(
+        container.len() < 1024 * 1024,
+        "fixture should be small while declaring a large member"
+    );
+
+    let report = inspect_asic_profile(&container).expect("inspect oversized ASiC-S");
+    assert!(!report.is_bounded_supported_candidate());
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded
+            && blocker.member_path.as_deref() == Some("payload.txt")
+    }));
+
+    let err = extract_asic_s_container(&container).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(ref msg) if msg.contains("maximum supported member size")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn asic_zip_total_actual_uncompressed_size_limit_blocks_underdeclared_inflation() {
+    let payload_size = (ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES / 3 + 1) as usize;
+    assert!((payload_size as u64) < ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES);
+    let payload = vec![0u8; payload_size];
+    let payloads = [
+        AsicPayload {
+            name: "a.txt",
+            bytes: &payload,
+            mime_type: Some("application/octet-stream"),
+        },
+        AsicPayload {
+            name: "b.txt",
+            bytes: &payload,
+            mime_type: Some("application/octet-stream"),
+        },
+        AsicPayload {
+            name: "c.txt",
+            bytes: &payload,
+            mime_type: Some("application/octet-stream"),
+        },
+    ];
+    let mut container = compressed_asic_e_container(&payloads);
+    underdeclare_zip_member_uncompressed_sizes(&mut container, &["a.txt", "b.txt", "c.txt"], 1);
+    assert!(container.len() < 1024 * 1024);
+
+    let report = inspect_asic_profile(&container).expect("inspect underdeclared ASiC-E");
+    assert!(!report.is_bounded_supported_candidate());
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::TotalUncompressedSizeExceeded
+            && blocker.member_path.as_deref() == Some("c.txt")
+            && blocker.message.contains("decompressed")
+    }));
+    assert!(
+        report
+            .blocker_details
+            .iter()
+            .all(|blocker| blocker.id != AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded)
+    );
+
+    let err = extract_asic_e_container(&container).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(ref msg) if msg.contains("decompressed") && msg.contains("maximum supported total uncompressed size")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn asic_profile_inspection_blocks_underdeclared_oversized_cades_signature() {
+    let oversized_signature = vec![0u8; ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES as usize + 1];
+    let mut container =
+        compressed_asic_s_container_with_signature_and_meta(b"payload", &oversized_signature, &[]);
+    underdeclare_zip_member_uncompressed_sizes(&mut container, &[ASICS_CADES_SIGNATURE_PATH], 1);
+    assert!(
+        container.len() < 1024 * 1024,
+        "fixture should be small while hiding a large signature member"
+    );
+
+    let report = inspect_asic_profile(&container).expect("inspect underdeclared ASiC-S/CAdES");
+    assert_eq!(
+        report.bounded_profile,
+        Some(AsicBoundedProfile::AsicSCadesSinglePayload)
+    );
+    assert!(!report.is_bounded_supported_candidate());
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded
+            && blocker.member_path.as_deref() == Some(ASICS_CADES_SIGNATURE_PATH)
+            && blocker.message.contains("decompressed")
+    }));
+    assert!(report.signature_diagnostics.iter().any(|signature| {
+        signature.path == ASICS_CADES_SIGNATURE_PATH
+            && signature.blockers.iter().any(|blocker| {
+                blocker.id == AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded
+                    && blocker.member_path.as_deref() == Some(ASICS_CADES_SIGNATURE_PATH)
+            })
+    }));
+
+    let err = extract_asic_s_container(&container).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(ref msg) if msg.contains("maximum supported member size")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn asic_profile_inspection_accounts_underdeclared_unsupported_meta_inf_members() {
+    let extra_size = (ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES / 3 + 1) as usize;
+    assert!((extra_size as u64) < ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES);
+    let extra = vec![0u8; extra_size];
+    let extra_members = [
+        ("META-INF/extra-a.bin", extra.as_slice()),
+        ("META-INF/extra-b.bin", extra.as_slice()),
+        ("META-INF/extra-c.bin", extra.as_slice()),
+    ];
+    let mut container =
+        compressed_asic_s_container_with_signature_and_meta(b"payload", b"cms", &extra_members);
+    underdeclare_zip_member_uncompressed_sizes(
+        &mut container,
+        &[
+            "META-INF/extra-a.bin",
+            "META-INF/extra-b.bin",
+            "META-INF/extra-c.bin",
+        ],
+        1,
+    );
+    assert!(
+        container.len() < 1024 * 1024,
+        "fixture should be small while hiding large unsupported META-INF members"
+    );
+
+    let report = inspect_asic_profile(&container).expect("inspect unsupported META-INF accounting");
+    assert_eq!(
+        report.bounded_profile,
+        Some(AsicBoundedProfile::AsicSCadesSinglePayload)
+    );
+    assert!(!report.is_bounded_supported_candidate());
+    assert_eq!(
+        report.unsupported_meta_inf_paths,
+        vec![
+            "META-INF/extra-a.bin".to_string(),
+            "META-INF/extra-b.bin".to_string(),
+            "META-INF/extra-c.bin".to_string(),
+        ]
+    );
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::UnsupportedMetaInfMember
+            && blocker.message.contains("unsupported META-INF")
+    }));
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::TotalUncompressedSizeExceeded
+            && blocker.member_path.as_deref() == Some("META-INF/extra-c.bin")
+            && blocker.message.contains("decompressed")
+    }));
+}
+
+#[test]
+fn asic_zip_total_uncompressed_size_limit_blocks_inflation() {
+    let payload = vec![0u8; ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES as usize];
+    let payloads = [
+        AsicPayload {
+            name: "a.txt",
+            bytes: &payload,
+            mime_type: Some("application/octet-stream"),
+        },
+        AsicPayload {
+            name: "b.txt",
+            bytes: &payload,
+            mime_type: Some("application/octet-stream"),
+        },
+    ];
+    let container = compressed_asic_e_container(&payloads);
+    assert!(container.len() < 1024 * 1024);
+
+    let report = inspect_asic_profile(&container).expect("inspect oversized ASiC-E");
+    assert!(!report.is_bounded_supported_candidate());
+    assert!(report.blocker_details.iter().any(|blocker| {
+        blocker.id == AsicDiagnosticBlockerId::TotalUncompressedSizeExceeded
+            && blocker.id.as_str() == "total_uncompressed_size_exceeded"
+    }));
+    assert!(
+        report
+            .blocker_details
+            .iter()
+            .all(|blocker| blocker.id != AsicDiagnosticBlockerId::MemberUncompressedSizeExceeded)
+    );
+    assert!(
+        report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains(&ASIC_ZIP_TOTAL_UNCOMPRESSED_MAX_BYTES.to_string()))
+    );
+
+    let err = extract_asic_e_container(&container).unwrap_err();
+    assert!(
+        matches!(err, SigningError::Asic(ref msg) if msg.contains("maximum supported total uncompressed size")),
+        "got {err:?}"
+    );
 }
 
 #[test]
