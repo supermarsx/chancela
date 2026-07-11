@@ -46,6 +46,7 @@ import type {
   TsaProbeStatus,
   TsaRecordView,
   TsaStatusKind,
+  TrustIdentifierMatchField,
 } from '../../api/types';
 
 type TrustFilter = 'all' | 'providers' | 'services' | 'qualified' | 'trusted' | 'caqc';
@@ -155,6 +156,60 @@ function signatureLabel(status: TslSignatureStatus): MessageKey {
 
 function filterLabel(filter: TrustFilter): MessageKey {
   return `trust.filter.${filter}` as MessageKey;
+}
+
+const IDENTIFIER_MATCH_LABELS: Record<TrustIdentifierMatchField, string> = {
+  certificate_sha256: 'certificate SHA-256',
+  subject_key_id: 'subject key ID',
+  subject_name: 'subject name',
+  provider: 'provider',
+  service: 'service',
+  supply_point: 'supply point',
+  catalog: 'catalog text',
+};
+
+function identifierMatchText(
+  fields: readonly TrustIdentifierMatchField[] | null | undefined,
+): string | null {
+  if (!fields?.length) return null;
+  const labels = fields
+    .filter((field, index) => fields.indexOf(field) === index)
+    .map((field) => IDENTIFIER_MATCH_LABELS[field] ?? field.replace(/_/g, ' '));
+  if (!labels.length) return null;
+  return `Matched by technical catalog identifier only: ${labels.join(', ')}`;
+}
+
+function IdentifierMatchNote({
+  fields,
+}: {
+  fields: readonly TrustIdentifierMatchField[] | null | undefined;
+}) {
+  const text = identifierMatchText(fields);
+  if (!text) return null;
+  return (
+    <span className="trust-pick__meta muted" title={text}>
+      {text}
+    </span>
+  );
+}
+
+function isDigestIdentity(value: string): boolean {
+  return (value.length === 64 || value.length === 40) && /^[0-9a-f]+$/i.test(value);
+}
+
+function IdentityValue({ value }: { value: string }) {
+  if (isDigestIdentity(value)) {
+    return (
+      <span className="trust-digest-cell">
+        <Digest value={value} />
+      </span>
+    );
+  }
+  return (
+    <code className="mono trust-opaque" title={value}>
+      {value}
+    </code>
+  );
 }
 
 function signatureTone(status: TslSignatureStatus): 'ok' | 'error' {
@@ -324,13 +379,18 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
         <TsaRecordFlags record={record} />
         <h3 className="trust-detail__title">{record.name}</h3>
       </div>
-      <p className="muted trust-source-note">{record.provider_name}</p>
+      <p className="muted trust-source-note" title={record.provider_name}>
+        {record.provider_name}
+      </p>
+      <IdentifierMatchNote fields={record.identifier_match} />
 
       <TrustDetailSection title="Resumo">
         <TrustKeyValueGrid>
           <div>
             <dt>Tipo de serviço</dt>
-            <dd className="mono">{record.service_type}</dd>
+            <dd className="mono trust-opaque" title={record.service_type}>
+              {record.service_type}
+            </dd>
           </div>
           <div>
             <dt>Estado desde</dt>
@@ -355,7 +415,7 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
         {record.service_supply_points.length ? (
           <ul className="trust-detail-list">
             {record.service_supply_points.map((point) => (
-              <li key={point} className="mono">
+              <li key={point} className="mono trust-opaque" title={point}>
                 {point}
               </li>
             ))}
@@ -398,7 +458,9 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
           {record.identities.subject_names.length ? (
             <ul className="trust-detail-list">
               {record.identities.subject_names.map((name) => (
-                <li key={name}>{name}</li>
+                <li key={name} title={name}>
+                  {name}
+                </li>
               ))}
             </ul>
           ) : (
@@ -410,8 +472,8 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
           {record.identities.subject_key_ids.length ? (
             <ul className="trust-detail-list">
               {record.identities.subject_key_ids.map((ski) => (
-                <li key={ski} className="mono">
-                  {ski}
+                <li key={ski}>
+                  <IdentityValue value={ski} />
                 </li>
               ))}
             </ul>
@@ -715,15 +777,24 @@ function TsaToolingPanel() {
                               onClick={() => setParam('tsaRecord', record.id, false)}
                             >
                               <span className="trust-pick__head">
-                                <code className="mono trust-pick__code">
+                                <code
+                                  className="mono trust-pick__code"
+                                  title={record.provider_name}
+                                >
                                   {record.provider_name}
                                 </code>
-                                <span className="trust-pick__meta muted">
+                                <span
+                                  className="trust-pick__meta muted"
+                                  title={record.service_type}
+                                >
                                   {record.service_type}
                                 </span>
                               </span>
-                              <span className="trust-pick__name">{record.name}</span>
+                              <span className="trust-pick__name" title={record.name}>
+                                {record.name}
+                              </span>
                               <TsaRecordFlags record={record} />
+                              <IdentifierMatchNote fields={record.identifier_match} />
                             </button>
                           </li>
                         ))}
@@ -1085,11 +1156,18 @@ function ServicePick({
       onClick={onSelect}
     >
       <span className="trust-pick__head">
-        <code className="mono trust-pick__code">{service.provider_name}</code>
-        <span className="trust-pick__meta muted">{service.service_type}</span>
+        <code className="mono trust-pick__code" title={service.provider_name}>
+          {service.provider_name}
+        </code>
+        <span className="trust-pick__meta muted" title={service.service_type}>
+          {service.service_type}
+        </span>
       </span>
-      <span className="trust-pick__name">{service.name}</span>
+      <span className="trust-pick__name" title={service.name}>
+        {service.name}
+      </span>
       <ServiceFlags service={service} />
+      <IdentifierMatchNote fields={service.identifier_match} />
     </button>
   );
 }
@@ -1176,9 +1254,11 @@ function ProviderDetail({
 function ServiceDetail({
   id,
   onSelectProvider,
+  identifierMatch,
 }: {
   id: string;
   onSelectProvider: (id: string) => void;
+  identifierMatch?: TrustIdentifierMatchField[];
 }) {
   const t = useT();
   const detail = useTrustService(id);
@@ -1188,26 +1268,33 @@ function ServiceDetail({
   if (!detail.data) return null;
 
   const service = detail.data;
+  const matchFields = service.identifier_match ?? identifierMatch;
   return (
     <div className="trust-detail stack--tight">
       <div className="trust-detail__head">
         <ServiceStatusBadge status={service.status.kind} />
-        <h3 className="trust-detail__title">{service.name}</h3>
+        <h3 className="trust-detail__title" title={service.name}>
+          {service.name}
+        </h3>
       </div>
       <button
         type="button"
         className="trust-provider-link"
         onClick={() => onSelectProvider(service.provider_id)}
+        title={service.provider_name}
       >
         {service.provider_name}
       </button>
       <ServiceFlags service={service} />
+      <IdentifierMatchNote fields={matchFields} />
 
       <TrustDetailSection title="Resumo">
         <TrustKeyValueGrid>
           <div>
             <dt>{t('trust.service.type')}</dt>
-            <dd className="mono">{service.service_type}</dd>
+            <dd className="mono trust-opaque" title={service.service_type}>
+              {service.service_type}
+            </dd>
           </div>
           <div>
             <dt>{t('trust.service.statusUri')}</dt>
@@ -1240,7 +1327,7 @@ function ServiceDetail({
         {service.service_supply_points.length ? (
           <ul className="trust-detail-list">
             {service.service_supply_points.map((point) => (
-              <li key={point} className="mono">
+              <li key={point} className="mono trust-opaque" title={point}>
                 {point}
               </li>
             ))}
@@ -1281,7 +1368,9 @@ function ServiceDetail({
           {service.identities.subject_names.length ? (
             <ul className="trust-detail-list">
               {service.identities.subject_names.map((name) => (
-                <li key={name}>{name}</li>
+                <li key={name} title={name}>
+                  {name}
+                </li>
               ))}
             </ul>
           ) : (
@@ -1295,8 +1384,10 @@ function ServiceDetail({
               {service.digital_identities.slice(0, 8).map((identity) => (
                 <li key={`${identity.kind}-${identity.value}-${identity.sha256 ?? ''}`}>
                   <span className="trust-identity-list__kind">{identity.kind}</span>
-                  <code className="mono">{identity.value}</code>
-                  {identity.sha256 ? <span className="muted mono">{identity.sha256}</span> : null}
+                  <IdentityValue value={identity.value} />
+                  {identity.sha256 && identity.sha256 !== identity.value ? (
+                    <IdentityValue value={identity.sha256} />
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -1385,6 +1476,9 @@ function TrustCatalogExplorer() {
     trustSearchEnabled,
     typeFilter,
   ]);
+  const selectedServiceIdentifierMatch = trustSearch.data?.find(
+    (service) => service.id === selectedService,
+  )?.identifier_match;
 
   function setParam(name: string, value: string | null, replace = true) {
     setParams(
@@ -1561,7 +1655,11 @@ function TrustCatalogExplorer() {
 
         <div className="trust-explorer__detail">
           {selectedService ? (
-            <ServiceDetail id={selectedService} onSelectProvider={selectProvider} />
+            <ServiceDetail
+              id={selectedService}
+              onSelectProvider={selectProvider}
+              identifierMatch={selectedServiceIdentifierMatch}
+            />
           ) : selectedProvider ? (
             <ProviderDetail id={selectedProvider} onSelectService={selectService} />
           ) : (

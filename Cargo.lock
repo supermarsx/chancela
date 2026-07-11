@@ -798,6 +798,7 @@ name = "chancela-tsl"
 version = "0.1.0"
 dependencies = [
  "der",
+ "p256",
  "quick-xml",
  "reqwest",
  "rsa",

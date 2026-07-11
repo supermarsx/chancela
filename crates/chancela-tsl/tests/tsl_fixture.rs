@@ -31,11 +31,14 @@ const NOW: OffsetDateTime = datetime!(2026-07-06 12:00:00 UTC);
 const AFTER_NEXT_UPDATE: OffsetDateTime = datetime!(2026-08-01 00:00:00 UTC);
 
 const RSA_SHA256: &str = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+const ECDSA_SHA256: &str = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256";
 const C14N_10: &str = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315";
 const EXC_C14N_10: &str = "http://www.w3.org/2001/10/xml-exc-c14n#";
 const SHA256_DIGEST: &str = "http://www.w3.org/2001/04/xmlenc#sha256";
+const ENVELOPED_SIGNATURE_TRANSFORM: &str = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
 
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
+const OID_ECDSA_WITH_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
 const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
     0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
     0x00, 0x04, 0x20,
@@ -44,6 +47,12 @@ const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
 struct SignedFixture {
     xml: Vec<u8>,
     signature_value: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+enum EcdsaSignatureEncoding {
+    Raw,
+    Der,
 }
 
 fn fixture_dir() -> PathBuf {
@@ -101,13 +110,166 @@ fn signed_fixture() -> SignedFixture {
     }
 }
 
+fn signed_ecdsa_fixture(encoding: EcdsaSignatureEncoding) -> SignedFixture {
+    use p256::ecdsa::SigningKey;
+    use p256::ecdsa::signature::Signer;
+    use rsa::rand_core::OsRng;
+
+    let unsigned_xml = String::from_utf8(fixture_without_signature()).expect("fixture is UTF-8");
+    let key = SigningKey::random(&mut OsRng);
+    let spki = SubjectPublicKeyInfoOwned::from_key(*key.verifying_key()).expect("p256 spki");
+    let cert_der = build_p256_self_signed("TSL XML-DSig P-256 test signer", 10, spki);
+    let digest = Sha256::digest(unsigned_xml.as_bytes());
+    let signed_info = format!(
+        r#"<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="{EXC_C14N_10}"/><ds:SignatureMethod Algorithm="{ECDSA_SHA256}"/><ds:Reference URI=""><ds:DigestMethod Algorithm="{SHA256_DIGEST}"/><ds:DigestValue>{}</ds:DigestValue></ds:Reference></ds:SignedInfo>"#,
+        base64_standard(&digest)
+    );
+    let signature: p256::ecdsa::Signature = key.sign(signed_info.as_bytes());
+    let signature_value = match encoding {
+        EcdsaSignatureEncoding::Raw => signature.to_bytes().to_vec(),
+        EcdsaSignatureEncoding::Der => signature.to_der().as_bytes().to_vec(),
+    };
+    let signature = format!(
+        r#"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">{signed_info}<ds:SignatureValue>{}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>"#,
+        base64_standard(&signature_value),
+        base64_standard(&cert_der)
+    );
+    let insert_at = unsigned_xml
+        .find("</TrustServiceStatusList>")
+        .expect("fixture root close");
+    let xml = format!(
+        "{}{}{}",
+        &unsigned_xml[..insert_at],
+        signature,
+        &unsigned_xml[insert_at..]
+    );
+    SignedFixture {
+        xml: xml.into_bytes(),
+        signature_value,
+    }
+}
+
+fn signed_fragment_fixture() -> SignedFixture {
+    let unsigned_xml = String::from_utf8(fixture_without_signature()).expect("fixture is UTF-8");
+    let unsigned_xml = unsigned_xml.replacen(
+        "<TrustServiceStatusList",
+        r#"<TrustServiceStatusList Id="TSL-Fragment""#,
+        1,
+    );
+    let root_start = unsigned_xml
+        .find("<TrustServiceStatusList")
+        .expect("fixture root start");
+    let root_end = unsigned_xml[root_start..]
+        .find("</TrustServiceStatusList>")
+        .expect("fixture root end")
+        + root_start
+        + "</TrustServiceStatusList>".len();
+    let root_bytes = &unsigned_xml.as_bytes()[root_start..root_end];
+
+    let key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).expect("rsa keygen");
+    let spki =
+        SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(&key)).expect("rsa spki");
+    let cert_der = build_self_signed("TSL XML-DSig fragment test signer", 8, spki);
+    let digest = Sha256::digest(root_bytes);
+    let signed_info = format!(
+        r##"<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="{EXC_C14N_10}"/><ds:SignatureMethod Algorithm="{RSA_SHA256}"/><ds:Reference URI="#TSL-Fragment"><ds:Transforms><ds:Transform Algorithm="{ENVELOPED_SIGNATURE_TRANSFORM}"/></ds:Transforms><ds:DigestMethod Algorithm="{SHA256_DIGEST}"/><ds:DigestValue>{}</ds:DigestValue></ds:Reference></ds:SignedInfo>"##,
+        base64_standard(&digest)
+    );
+    let signed_info_hash: [u8; 32] = Sha256::digest(signed_info.as_bytes()).into();
+    let signature_value = sign_rsa_digest_info(&key, &signed_info_hash);
+    let signature = format!(
+        r#"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">{signed_info}<ds:SignatureValue>{}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>"#,
+        base64_standard(&signature_value),
+        base64_standard(&cert_der)
+    );
+    let insert_at = unsigned_xml
+        .find("</TrustServiceStatusList>")
+        .expect("fixture root close");
+    let xml = format!(
+        "{}{}{}",
+        &unsigned_xml[..insert_at],
+        signature,
+        &unsigned_xml[insert_at..]
+    );
+    SignedFixture {
+        xml: xml.into_bytes(),
+        signature_value,
+    }
+}
+
+fn signed_non_root_fragment_fixture() -> SignedFixture {
+    let unsigned_xml = String::from_utf8(fixture_without_signature()).expect("fixture is UTF-8");
+    let unsigned_xml = unsigned_xml.replacen(
+        "<SchemeInformation>",
+        r#"<SchemeInformation Id="Scheme-Only">"#,
+        1,
+    );
+    let target_start = unsigned_xml
+        .find(r#"<SchemeInformation Id="Scheme-Only">"#)
+        .expect("target start");
+    let target_end = unsigned_xml[target_start..]
+        .find("</SchemeInformation>")
+        .expect("target end")
+        + target_start
+        + "</SchemeInformation>".len();
+    let target_bytes = &unsigned_xml.as_bytes()[target_start..target_end];
+
+    let key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).expect("rsa keygen");
+    let spki =
+        SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(&key)).expect("rsa spki");
+    let cert_der = build_self_signed("TSL XML-DSig non-root fragment test signer", 9, spki);
+    let digest = Sha256::digest(target_bytes);
+    let signed_info = format!(
+        r##"<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="{EXC_C14N_10}"/><ds:SignatureMethod Algorithm="{RSA_SHA256}"/><ds:Reference URI="#Scheme-Only"><ds:DigestMethod Algorithm="{SHA256_DIGEST}"/><ds:DigestValue>{}</ds:DigestValue></ds:Reference></ds:SignedInfo>"##,
+        base64_standard(&digest)
+    );
+    let signed_info_hash: [u8; 32] = Sha256::digest(signed_info.as_bytes()).into();
+    let signature_value = sign_rsa_digest_info(&key, &signed_info_hash);
+    let signature = format!(
+        r#"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">{signed_info}<ds:SignatureValue>{}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>"#,
+        base64_standard(&signature_value),
+        base64_standard(&cert_der)
+    );
+    let insert_at = unsigned_xml
+        .find("</TrustServiceStatusList>")
+        .expect("fixture root close");
+    let xml = format!(
+        "{}{}{}",
+        &unsigned_xml[..insert_at],
+        signature,
+        &unsigned_xml[insert_at..]
+    );
+    SignedFixture {
+        xml: xml.into_bytes(),
+        signature_value,
+    }
+}
+
 fn build_self_signed(cn: &str, serial: u8, spki: SubjectPublicKeyInfoOwned) -> Vec<u8> {
-    let name = Name::from_str(&format!("CN={cn}")).expect("name");
-    let validity = Validity::from_now(StdDuration::from_secs(365 * 24 * 3600)).expect("validity");
     let sig_alg = AlgorithmIdentifierOwned {
         oid: OID_SHA256_WITH_RSA,
         parameters: Some(Any::null()),
     };
+    build_test_cert(cn, serial, spki, sig_alg, vec![0u8; 256])
+}
+
+fn build_p256_self_signed(cn: &str, serial: u8, spki: SubjectPublicKeyInfoOwned) -> Vec<u8> {
+    let sig_alg = AlgorithmIdentifierOwned {
+        oid: OID_ECDSA_WITH_SHA256,
+        parameters: None,
+    };
+    build_test_cert(cn, serial, spki, sig_alg, vec![0u8; 64])
+}
+
+fn build_test_cert(
+    cn: &str,
+    serial: u8,
+    spki: SubjectPublicKeyInfoOwned,
+    sig_alg: AlgorithmIdentifierOwned,
+    signature: Vec<u8>,
+) -> Vec<u8> {
+    let name = Name::from_str(&format!("CN={cn}")).expect("name");
+    let validity = Validity::from_now(StdDuration::from_secs(365 * 24 * 3600)).expect("validity");
     let cert = Certificate {
         tbs_certificate: TbsCertificate {
             version: Version::V3,
@@ -122,7 +284,7 @@ fn build_self_signed(cn: &str, serial: u8, spki: SubjectPublicKeyInfoOwned) -> V
             extensions: None,
         },
         signature_algorithm: sig_alg,
-        signature: BitString::from_bytes(&[0u8; 256]).expect("bitstring"),
+        signature: BitString::from_bytes(&signature).expect("bitstring"),
     };
     cert.to_der().expect("cert der")
 }
@@ -602,6 +764,40 @@ fn tsl_signature_validation_accepts_supported_fixture_shape_signed_by_embedded_c
 }
 
 #[test]
+fn tsl_signature_validation_accepts_p256_ecdsa_signed_by_embedded_cert() {
+    let signed = signed_ecdsa_fixture(EcdsaSignatureEncoding::Raw);
+    validate_tsl_signature(&signed.xml).expect("P-256 ECDSA XML-DSig shape verifies");
+}
+
+#[test]
+fn tsl_signature_validation_accepts_same_document_root_uri_fragment() {
+    let signed = signed_fragment_fixture();
+    validate_tsl_signature(&signed.xml).expect("root URI fragment XML-DSig shape verifies");
+}
+
+#[test]
+fn tsl_signature_validation_rejects_missing_same_document_uri_fragment_target() {
+    let xml = String::from_utf8(signed_fragment_fixture().xml)
+        .expect("signed fixture is UTF-8")
+        .replacen(r#" Id="TSL-Fragment""#, "", 1);
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("did not match")),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_validation_rejects_non_root_same_document_uri_fragment_target() {
+    let err = validate_tsl_signature(&signed_non_root_fragment_fixture().xml).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("TrustServiceStatusList root")),
+        "got {err:?}"
+    );
+}
+
+#[test]
 fn tsl_signature_validation_rejects_tampered_signed_info() {
     let xml = String::from_utf8(signed_fixture().xml)
         .expect("signed fixture is UTF-8")
@@ -631,6 +827,22 @@ fn tsl_signature_validation_rejects_tampered_referenced_content() {
 }
 
 #[test]
+fn tsl_signature_validation_rejects_tampered_same_document_uri_fragment_content() {
+    let xml = String::from_utf8(signed_fragment_fixture().xml)
+        .expect("signed fixture is UTF-8")
+        .replace(
+            "<SchemeTerritory>PT</SchemeTerritory>",
+            "<SchemeTerritory>ES</SchemeTerritory>",
+        );
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureDigestMismatch),
+        "got {err:?}"
+    );
+}
+
+#[test]
 fn tsl_signature_validation_rejects_tampered_signature_value() {
     let signed = signed_fixture();
     let mut bad_signature = signed.signature_value.clone();
@@ -645,6 +857,36 @@ fn tsl_signature_validation_rejects_tampered_signature_value() {
     let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
     assert!(
         matches!(err, TslError::SignatureVerificationFailed),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_validation_rejects_tampered_p256_ecdsa_signature_value() {
+    let signed = signed_ecdsa_fixture(EcdsaSignatureEncoding::Raw);
+    let mut bad_signature = signed.signature_value.clone();
+    bad_signature[0] ^= 0x01;
+    let xml = String::from_utf8(signed.xml)
+        .expect("signed fixture is UTF-8")
+        .replace(
+            &base64_standard(&signed.signature_value),
+            &base64_standard(&bad_signature),
+        );
+
+    let err = validate_tsl_signature(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureVerificationFailed),
+        "got {err:?}"
+    );
+}
+
+#[test]
+fn tsl_signature_validation_rejects_der_encoded_p256_ecdsa_signature_value() {
+    let signed = signed_ecdsa_fixture(EcdsaSignatureEncoding::Der);
+
+    let err = validate_tsl_signature(&signed.xml).unwrap_err();
+    assert!(
+        matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("raw r||s")),
         "got {err:?}"
     );
 }

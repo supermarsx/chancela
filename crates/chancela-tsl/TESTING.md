@@ -35,9 +35,10 @@ Every default test is fully offline and deterministic. They parse the bundled fi
 - **XML-DSig/TSL trust gate** (`tsl_fixture::tsl_signature_validation_*`,
   `tsl_fixture::client_downgrades_*`): missing signatures, malformed base64, unsupported
   canonicalization/signature algorithms, unsupported reference transforms, multiple references,
-  digest mismatches, tampered `SignedInfo`, tampered referenced content, and tampered
-  `SignatureValue` all fail closed. `TslClient` caches the parsed list for diagnostics but
-  downgrades `Granted` to `Unknown` when validation fails.
+  digest mismatches, RSA-SHA256 and raw P-256 ECDSA-SHA256 verification against the embedded
+  signer certificate, DER-encoded ECDSA rejection, tampered `SignedInfo`, tampered referenced
+  content, and tampered `SignatureValue` all fail closed. `TslClient` caches the parsed list for
+  diagnostics but downgrades `Granted` to `Unknown` when validation fails.
 - **Catalog edge fixture** (`fixtures/pt-tsl-sample.xml`): duplicate service names, accent-heavy
   operator/provider aliases, missing optional service names, malformed status dates, multiple TSA
   service types, withdrawn and revoked-like statuses, and service supply points.
@@ -73,9 +74,9 @@ catalog surfaces show it as advisory.
 This is **not** full legal/authenticated EU TSL validation yet. Remaining blockers include signer
 certificate trust anchoring to the EU LOTL or national scheme-operator trust anchor, certificate
 path/revocation/policy validation for the TSL signer, full XML canonicalization/transform
-processing, `URI="#id"` reference resolution, and ECDSA XML-DSig verification. Until those are
-implemented, a cryptographically valid XML-DSig only proves the document matches the embedded
-signer certificate's public key, not that the signer is legally trusted to publish the TSL.
+processing, and broader XML-DSig transform/reference shapes. The implemented RSA-SHA256 and
+P-256 ECDSA-SHA256 checks only prove the document matches the embedded signer certificate's public
+key, not that the signer is legally trusted to publish the TSL.
 
 ## Fixtures
 

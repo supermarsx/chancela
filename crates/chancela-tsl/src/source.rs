@@ -124,10 +124,16 @@ impl TslSource for BytesTslSource {
 ///   `X509Data`, `X509Certificate`.
 /// - Extracting the signer certificate (base64 DER from `<ds:X509Certificate>`).
 /// - Computing the digest of the referenced content. For `URI=""` (the whole document), the
-///   signed content is the document with the `<ds:Signature>` element removed.
+///   signed content is the document with the `<ds:Signature>` element removed. For a simple
+///   same-document fragment (`URI="#id"`), the signed content may be the
+///   `TrustServiceStatusList` root element with a unique matching `Id`/`ID`/`id`/`xml:id`
+///   attribute.
 /// - Rejecting unsupported explicit reference transforms. The enveloped-signature transform and
-///   C14N transform URIs are accepted only for the already-canonical, whole-document path.
-/// - Verifying an RSA-SHA256 signature value against the embedded signer certificate's public key.
+///   C14N transform URIs are accepted only for already-canonical whole-document and root-fragment
+///   paths.
+/// - Verifying an RSA-SHA256 or P-256 ECDSA-SHA256 signature value against the embedded signer
+///   certificate's public key. ECDSA XML-DSig values must be raw fixed-width `r||s` bytes; DER
+///   `ECDSA-Sig-Value` encodings are rejected.
 ///
 /// # What is NOT implemented (limitations documented)
 ///
@@ -141,17 +147,20 @@ impl TslSource for BytesTslSource {
 /// - **Signer trust anchoring.** The embedded signer certificate is parsed only to extract its
 ///   public key. The code does not yet validate that certificate against the EU LOTL, a national
 ///   scheme-operator trust anchor, revocation data, or certificate validity policy.
-/// - **Transform chains.** Only the enveloped-signature removal for `URI=""` is applied. Explicit
-///   C14N transform URIs are accepted as already-canonical no-ops; other transforms are rejected.
-/// - **Reference URI fragments.** `URI="#id"` is rejected; only whole-document `URI=""` references
-///   are supported.
+/// - **Transform chains.** Enveloped-signature removal is applied for `URI=""` and for supported
+///   root `URI="#id"` references when the reference explicitly carries the enveloped-signature
+///   transform. Explicit C14N transform URIs are accepted as already-canonical no-ops; other
+///   transforms are rejected.
+/// - **Reference URI fragments.** Only simple same-document fragments that resolve uniquely to the
+///   `TrustServiceStatusList` root are supported. External URIs, xpointer expressions, empty
+///   fragments, duplicate IDs, and non-root fragment targets are rejected fail-closed.
 /// - **Multiple references/signatures.** Rejected fail-closed; XML-DSig requires every reference to
 ///   be checked and this minimal verifier supports exactly one signature with one reference.
-/// - **ECDSA signatures.** ECDSA-SHA256 is recognized as a known URI but verification is not wired
-///   up yet, so it is rejected as unsupported.
+/// - **ECDSA scope.** Only P-256 ECDSA-SHA256 is supported, and only in XML-DSig's raw `r||s`
+///   signature-value form.
 ///
 /// For real-world Portuguese TSLs, the signature is typically a single enveloped signature over
-/// the whole document (`URI=""`) with exclusive C14N, RSA-SHA256.
+/// the whole document (`URI=""`) with exclusive C14N, RSA-SHA256 or P-256 ECDSA-SHA256.
 pub fn validate_tsl_signature(xml: &[u8]) -> Result<(), TslError> {
     let parsed = crate::xmldsig::parse_signature(xml)?;
     parsed.verify(xml)

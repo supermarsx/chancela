@@ -15,6 +15,7 @@ x509-cert = { workspace = true }
 der = { workspace = true }
 spki = { workspace = true }
 rsa = { workspace = true }
+p256 = { workspace = true }
 sha2 = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }

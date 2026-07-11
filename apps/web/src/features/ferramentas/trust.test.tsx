@@ -11,6 +11,7 @@ import type {
   TslServiceSummaryView,
   TslSummaryView,
   TsaCatalogView,
+  TrustIdentifierMatchField,
 } from '../../api/types';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -409,6 +410,98 @@ function tsaMatchesFixtureQuery(
   );
 }
 
+function pushIdentifierMatch(
+  fields: TrustIdentifierMatchField[],
+  field: TrustIdentifierMatchField,
+) {
+  if (!fields.includes(field)) fields.push(field);
+}
+
+function compactHexIdentifier(value: string): string | null {
+  const compact = value.replace(/[:\-\s]/g, '').toLowerCase();
+  if (!compact) return null;
+  return /^[0-9a-f]+$/.test(compact) ? compact : null;
+}
+
+function serviceIdentifierMatch(
+  service: TslServiceSummaryView,
+  identifier: string | null,
+): TrustIdentifierMatchField[] | undefined {
+  const trimmed = identifier?.trim();
+  if (!trimmed) return undefined;
+  const compact = compactHexIdentifier(trimmed);
+  const detail = SERVICE_DETAILS[service.id];
+  if (compact?.length === 64) {
+    return detail?.digital_identities.some((identity) => identity.sha256?.toLowerCase() === compact)
+      ? ['certificate_sha256']
+      : undefined;
+  }
+  if (compact?.length === 40) {
+    return service.identities.subject_key_ids.some((ski) => ski.toLowerCase() === compact)
+      ? ['subject_key_id']
+      : undefined;
+  }
+  if (compact) return undefined;
+
+  const fields: TrustIdentifierMatchField[] = [];
+  if (fixtureIncludes(service.identities.subject_names, trimmed)) {
+    pushIdentifierMatch(fields, 'subject_name');
+  }
+  if (fixtureIncludes([service.provider_name], trimmed)) pushIdentifierMatch(fields, 'provider');
+  if (fixtureIncludes([service.name, service.service_type], trimmed)) {
+    pushIdentifierMatch(fields, 'service');
+  }
+  if (fixtureIncludes(service.service_supply_points, trimmed)) {
+    pushIdentifierMatch(fields, 'supply_point');
+  }
+  return fields.length ? fields : undefined;
+}
+
+function withServiceIdentifierMatch(
+  service: TslServiceSummaryView,
+  params: URLSearchParams,
+): TslServiceSummaryView {
+  const identifier_match = serviceIdentifierMatch(service, params.get('identifier'));
+  return identifier_match ? { ...service, identifier_match } : service;
+}
+
+function tsaIdentifierMatch(
+  record: TsaCatalogView['records'][number],
+  identifier: string | null,
+): TrustIdentifierMatchField[] | undefined {
+  const trimmed = identifier?.trim();
+  if (!trimmed) return undefined;
+  const compact = compactHexIdentifier(trimmed);
+  if (compact?.length === 40) {
+    return record.identities.subject_key_ids.some((ski) => ski.toLowerCase() === compact)
+      ? ['subject_key_id']
+      : undefined;
+  }
+  if (compact?.length === 64) return undefined;
+  if (compact) return undefined;
+
+  const fields: TrustIdentifierMatchField[] = [];
+  if (fixtureIncludes(record.identities.subject_names, trimmed)) {
+    pushIdentifierMatch(fields, 'subject_name');
+  }
+  if (fixtureIncludes([record.provider_name], trimmed)) pushIdentifierMatch(fields, 'provider');
+  if (fixtureIncludes([record.name, record.service_type], trimmed)) {
+    pushIdentifierMatch(fields, 'service');
+  }
+  if (fixtureIncludes(record.service_supply_points, trimmed)) {
+    pushIdentifierMatch(fields, 'supply_point');
+  }
+  return fields.length ? fields : undefined;
+}
+
+function withTsaIdentifierMatch(
+  record: TsaCatalogView['records'][number],
+  params: URLSearchParams,
+): TsaCatalogView['records'][number] {
+  const identifier_match = tsaIdentifierMatch(record, params.get('identifier'));
+  return identifier_match ? { ...record, identifier_match } : record;
+}
+
 function requestMatching(
   fetchMock: ReturnType<typeof vi.fn>,
   path: string,
@@ -441,9 +534,9 @@ function trustFetch(): typeof fetch {
       return Promise.resolve(
         jsonResponse(
           hasTrustQuery(parsed.searchParams)
-            ? TSA_CATALOG.records.filter((record) =>
-                tsaMatchesFixtureQuery(record, parsed.searchParams),
-              )
+            ? TSA_CATALOG.records
+                .filter((record) => tsaMatchesFixtureQuery(record, parsed.searchParams))
+                .map((record) => withTsaIdentifierMatch(record, parsed.searchParams))
             : TSA_CATALOG,
         ),
       );
@@ -465,6 +558,7 @@ function trustFetch(): typeof fetch {
             ? CATALOG.providers
                 .flatMap((provider) => provider.services)
                 .filter((service) => serviceMatchesFixtureQuery(service, parsed.searchParams))
+                .map((service) => withServiceIdentifierMatch(service, parsed.searchParams))
             : CATALOG,
         ),
       );
@@ -605,6 +699,8 @@ describe('Ferramentas — TSL trust catalog', () => {
   });
 
   it('passes identifier lookups to the TSL catalog endpoint and renders matching services', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const fetchMock = vi.fn(trustFetch());
     vi.stubGlobal('fetch', fetchMock);
     renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
@@ -628,8 +724,76 @@ describe('Ferramentas — TSL trust catalog', () => {
         }),
       ).toBe(true),
     );
-    expect(await screen.findByRole('button', { name: /MULTICERT Qualified CA/i })).toBeTruthy();
+    const matchText = 'Matched by technical catalog identifier only: certificate SHA-256';
+    const serviceRow = await screen.findByRole('button', { name: /MULTICERT Qualified CA/i });
+    expect(within(serviceRow).getByText(matchText)).toBeTruthy();
+    fireEvent.click(serviceRow);
+
+    await screen.findByText('Identidades digitais');
+    const identityGroups = await screen.findAllByRole('group', { name: 'Identidades' });
+    const identities = identityGroups.find((group) =>
+      within(group).queryByText('Identidades digitais'),
+    );
+    expect(identities).toBeTruthy();
+    expect(screen.getAllByText(matchText).length).toBeGreaterThanOrEqual(2);
+    const digestValue = within(identities!).getByTitle(certificateSha256);
+    expect(digestValue.classList.contains('digest__value')).toBe(true);
+    expect(digestValue.textContent).toBe('bbbbbbbb…bbbbbbbb');
+    const timeoutSpy = vi.spyOn(window, 'setTimeout').mockReturnValue(0);
+    fireEvent.click(within(identities!).getByRole('button', { name: /copiar/i }));
+    expect(writeText).toHaveBeenCalledWith(certificateSha256);
+    await Promise.resolve();
+    timeoutSpy.mockRestore();
+    expect(document.body.textContent).not.toMatch(
+      /legal validity|external validation|provider approval|qualified-status|validade legal|validação externa|prestador aprovado|aprovação do prestador/i,
+    );
     await waitFor(() => expect(screen.queryByText('AMA Legacy CA')).toBeNull());
+  });
+
+  it('renders TSA identifier-match explanations and copies full SKI values', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const fetchMock = vi.fn(trustFetch());
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<TrustCatalogPage />, ['/ferramentas?tool=trust']);
+
+    await screen.findByRole('group', { name: 'Resumo TSA' });
+    const ski = TSA_CATALOG.records[0].identities.subject_key_ids[0];
+    fireEvent.change(screen.getByLabelText('Procurar registos TSA por identificador técnico'), {
+      target: { value: ski },
+    });
+
+    await waitFor(() =>
+      expect(
+        requestMatching(fetchMock, '/v1/trust/tsa', {
+          identifier: ski,
+        }),
+      ).toBe(true),
+    );
+    const matchText = 'Matched by technical catalog identifier only: subject key ID';
+    const recordRow = await screen.findByRole('button', {
+      name: /Qualified Timestamping Authority/i,
+    });
+    expect(within(recordRow).getByText(matchText)).toBeTruthy();
+    fireEvent.click(recordRow);
+
+    const identityGroups = await screen.findAllByRole('group', { name: 'Identidades' });
+    const identities = identityGroups.find((group) =>
+      within(group).queryByText('Identificadores SKI'),
+    );
+    expect(identities).toBeTruthy();
+    expect(screen.getAllByText(matchText).length).toBeGreaterThanOrEqual(2);
+    const skiValue = within(identities!).getByTitle(ski);
+    expect(skiValue.classList.contains('digest__value')).toBe(true);
+    expect(skiValue.textContent).toBe('91b78a44…4d8528a6');
+    const timeoutSpy = vi.spyOn(window, 'setTimeout').mockReturnValue(0);
+    fireEvent.click(within(identities!).getByRole('button', { name: /copiar/i }));
+    expect(writeText).toHaveBeenCalledWith(ski);
+    await Promise.resolve();
+    timeoutSpy.mockRestore();
+    expect(document.body.textContent).not.toMatch(
+      /legal validity|external validation|provider approval|qualified-status|validade legal|validação externa|prestador aprovado|aprovação do prestador/i,
+    );
   });
 
   it('passes identifier lookups to TSA search and shows the empty state for no matches', async () => {

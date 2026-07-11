@@ -6,7 +6,7 @@
 //! XML-DSig structure to verify the signature value against the signer certificate's public key,
 //! without pulling in a full XML-DSig library or implementing every canonicalization transform.
 
-use der::Decode;
+use der::{Decode, Encode};
 use sha2::Digest;
 
 use crate::error::TslError;
@@ -144,7 +144,8 @@ impl ParsedSignature {
         }
 
         // 4. Resolve and digest the referenced content.
-        let signed_content = resolve_referenced_content(xml, &reference.uri)?;
+        let signed_content =
+            resolve_referenced_content(xml, &reference.uri, &reference.transforms)?;
         let digest = sha2::Sha256::digest(&signed_content);
         if digest.as_slice() != reference.digest_value.as_slice() {
             return Err(TslError::SignatureDigestMismatch);
@@ -396,21 +397,160 @@ fn local_name(raw: &[u8]) -> String {
 ///
 /// - `URI=""` (empty) → the entire document with the `<ds:Signature>` element removed (enveloped
 ///   signature).
-/// - `URI="#id"` → the element with `Id="id"` (not yet implemented; returns an error).
-fn resolve_referenced_content(xml: &[u8], uri: &str) -> Result<Vec<u8>, TslError> {
+/// - `URI="#id"` → the document root element carrying `Id`, `ID`, `id`, or `xml:id` equal to
+///   `id`. Non-root fragment targets are rejected because they do not authenticate the whole TSL.
+fn resolve_referenced_content(
+    xml: &[u8],
+    uri: &str,
+    transforms: &[String],
+) -> Result<Vec<u8>, TslError> {
     if uri.is_empty() {
         // Enveloped signature: return the document with the <ds:Signature> element stripped.
         Ok(strip_signature_element(xml))
     } else if let Some(id) = uri.strip_prefix('#') {
-        // Referenced element by Id — not implemented for the minimal path.
-        Err(TslError::SignatureStructure(format!(
-            "URI fragment references (#{id}) are not supported by the minimal verifier"
-        )))
+        if id.is_empty() {
+            return Err(TslError::SignatureStructure(
+                "empty Reference URI fragment".to_owned(),
+            ));
+        }
+        let target = find_unique_id_element(xml, id)?;
+        if !target.is_document_root || target.local_name != "TrustServiceStatusList" {
+            return Err(TslError::SignatureStructure(format!(
+                "Reference URI fragment (#{id}) does not identify the TrustServiceStatusList root"
+            )));
+        }
+
+        let mut content = target.bytes;
+        if transforms
+            .iter()
+            .any(|transform| transform == ENVELOPED_SIGNATURE_TRANSFORM)
+        {
+            content = strip_signature_element(&content);
+        }
+        Ok(content)
     } else {
         Err(TslError::SignatureStructure(format!(
             "unsupported Reference URI: {uri}"
         )))
     }
+}
+
+#[derive(Debug)]
+struct ReferencedElement {
+    bytes: Vec<u8>,
+    local_name: String,
+    is_document_root: bool,
+}
+
+fn find_unique_id_element(xml: &[u8], id: &str) -> Result<ReferencedElement, TslError> {
+    use quick_xml::events::Event;
+
+    let mut reader = quick_xml::Reader::from_reader(xml);
+    reader.config_mut().trim_text(false);
+
+    let mut buf = Vec::new();
+    let mut element_depth = 0usize;
+    let mut matched_count = 0usize;
+    let mut first_match: Option<ReferencedElement> = None;
+    let mut active_match: Option<(usize, usize, String, bool)> = None;
+
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Start(e) => {
+                let is_document_root = element_depth == 0;
+                let local = local_name(e.name().as_ref());
+                let event_end = reader.buffer_position() as usize;
+                let event_start = find_event_start(xml, event_end)?;
+                let is_match = element_has_id(&e, id);
+
+                if let Some((depth, _, _, _)) = active_match.as_mut() {
+                    *depth += 1;
+                }
+
+                if is_match {
+                    matched_count += 1;
+                    if active_match.is_none() && first_match.is_none() {
+                        active_match = Some((1, event_start, local.clone(), is_document_root));
+                    }
+                }
+
+                element_depth = element_depth.saturating_add(1);
+            }
+            Event::Empty(e) => {
+                let is_document_root = element_depth == 0;
+                if element_has_id(&e, id) {
+                    matched_count += 1;
+                    if first_match.is_none() {
+                        let event_end = reader.buffer_position() as usize;
+                        let event_start = find_event_start(xml, event_end)?;
+                        first_match = Some(ReferencedElement {
+                            bytes: xml[event_start..event_end].to_vec(),
+                            local_name: local_name(e.name().as_ref()),
+                            is_document_root,
+                        });
+                    }
+                }
+            }
+            Event::End(_) => {
+                element_depth = element_depth.saturating_sub(1);
+                if let Some((depth, start, local_name, is_document_root)) = active_match.as_mut() {
+                    *depth = depth.saturating_sub(1);
+                    if *depth == 0 {
+                        let start = *start;
+                        let local_name = local_name.clone();
+                        let is_document_root = *is_document_root;
+                        let event_end = reader.buffer_position() as usize;
+                        if first_match.is_none() {
+                            first_match = Some(ReferencedElement {
+                                bytes: xml[start..event_end].to_vec(),
+                                local_name,
+                                is_document_root,
+                            });
+                        }
+                        active_match = None;
+                    }
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    match matched_count {
+        0 => Err(TslError::SignatureStructure(format!(
+            "Reference URI fragment (#{id}) did not match an ID-bearing element"
+        ))),
+        1 => first_match.ok_or_else(|| {
+            TslError::SignatureStructure(format!(
+                "Reference URI fragment (#{id}) did not resolve to a complete element"
+            ))
+        }),
+        count => Err(TslError::SignatureStructure(format!(
+            "Reference URI fragment (#{id}) matched multiple ID-bearing elements: {count}"
+        ))),
+    }
+}
+
+fn element_has_id(e: &quick_xml::events::BytesStart<'_>, expected: &str) -> bool {
+    e.attributes().any(|attr| {
+        let Ok(attr) = attr else {
+            return false;
+        };
+        if !matches!(local_name(attr.key.as_ref()).as_str(), "Id" | "ID" | "id") {
+            return false;
+        }
+        String::from_utf8_lossy(&attr.value) == expected
+    })
+}
+
+fn find_event_start(xml: &[u8], event_end: usize) -> Result<usize, TslError> {
+    xml[..event_end]
+        .iter()
+        .rposition(|b| *b == b'<')
+        .ok_or_else(|| {
+            TslError::SignatureStructure("could not locate XML element start".to_owned())
+        })
 }
 
 /// Remove the `<ds:Signature>...</ds:Signature>` subtree from `xml` bytes, returning a new
@@ -484,9 +624,7 @@ fn verify_signature_value(
 
     match signature_method {
         RSA_SHA256 => verify_rsa_sha256(&cert, signature, signed_info),
-        ECDSA_SHA256 => Err(TslError::SignatureUnsupportedAlgorithm(format!(
-            "ECDSA-SHA256 TSL signature verification not yet wired up: {signature_method}"
-        ))),
+        ECDSA_SHA256 => verify_ecdsa_sha256(&cert, signature, signed_info),
         other => Err(TslError::SignatureUnsupportedAlgorithm(format!(
             "signature method: {other}"
         ))),
@@ -521,6 +659,39 @@ fn verify_rsa_sha256(
 
     public_key
         .verify(Pkcs1v15Sign::new_unprefixed(), &digest_info, signature)
+        .map_err(|_| TslError::SignatureVerificationFailed)
+}
+
+/// Verify a P-256 ECDSA-SHA256 XML-DSig signature. XML-DSig carries ECDSA signatures as the
+/// fixed-width raw `r || s` value; DER `ECDSA-Sig-Value` encodings are rejected here.
+fn verify_ecdsa_sha256(
+    cert: &x509_cert::Certificate,
+    signature: &[u8],
+    signed_info: &[u8],
+) -> Result<(), TslError> {
+    use p256::ecdsa::signature::Verifier;
+    use p256::ecdsa::{Signature, VerifyingKey};
+    use p256::pkcs8::DecodePublicKey;
+
+    if signature.len() != 64 {
+        return Err(TslError::SignatureStructure(format!(
+            "ECDSA-SHA256 XML-DSig signature value must be raw r||s (64 bytes), got {} bytes",
+            signature.len()
+        )));
+    }
+
+    let spki_der = cert
+        .tbs_certificate
+        .subject_public_key_info
+        .to_der()
+        .map_err(|_| TslError::SignatureVerificationFailed)?;
+    let verifying_key = VerifyingKey::from_public_key_der(&spki_der)
+        .map_err(|_| TslError::SignatureVerificationFailed)?;
+    let sig =
+        Signature::from_slice(signature).map_err(|_| TslError::SignatureVerificationFailed)?;
+
+    verifying_key
+        .verify(signed_info, &sig)
         .map_err(|_| TslError::SignatureVerificationFailed)
 }
 

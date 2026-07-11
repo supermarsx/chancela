@@ -179,6 +179,8 @@ pub struct TslServiceSummaryView {
     pub service_supply_points: Vec<String>,
     pub history_count: usize,
     pub identities: TslIdentitySummaryView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identifier_match: Option<Vec<IdentifierMatchField>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -338,6 +340,8 @@ pub struct TsaRecordView {
     pub service_supply_points: Vec<String>,
     pub history_count: usize,
     pub identities: TslIdentitySummaryView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identifier_match: Option<Vec<IdentifierMatchField>>,
     pub analysis: TsaRecordAnalysisView,
 }
 
@@ -405,6 +409,18 @@ enum IdentifierFilterKind {
     SubjectKeyId,
     Text,
     Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IdentifierMatchField {
+    CertificateSha256,
+    SubjectKeyId,
+    SubjectName,
+    Provider,
+    Service,
+    SupplyPoint,
+    Catalog,
 }
 
 enum HexLikeInput {
@@ -1060,6 +1076,7 @@ fn service_summary(
         service_supply_points: service.service_supply_points.clone(),
         history_count: service.history.len(),
         identities: identity_summary(service),
+        identifier_match: None,
     }
 }
 
@@ -1106,16 +1123,19 @@ fn filter_services(
         ));
         for (service_index, service) in provider.services.iter().enumerate() {
             let service_text = fold(&service_search_text(service));
-            if service_matches_filters(service, &list_text, &provider_text, &service_text, filters)
+            if let Some(identifier_match) =
+                service_matches_filters(service, &list_text, &provider_text, &service_text, filters)
             {
-                out.push(service_summary(
+                let mut summary = service_summary(
                     &provider_id,
                     &provider.name,
                     service_index,
                     service,
                     now,
                     signature_valid,
-                ));
+                );
+                summary.identifier_match = identifier_match;
+                out.push(summary);
                 if out.len() >= limit {
                     return out;
                 }
@@ -1334,6 +1354,7 @@ fn tsa_record(
         service_supply_points: service.service_supply_points.clone(),
         history_count: service.history.len(),
         identities: identity_summary(service),
+        identifier_match: None,
         analysis: tsa_record_analysis(service, signature_valid, granted, effective),
     }
 }
@@ -1378,15 +1399,19 @@ fn filter_tsa_records(
             .filter(|(_, s)| is_tsa_service(s))
         {
             let service_text = fold(&service_search_text(service));
-            if service_matches_filters(service, "", &provider_text, &service_text, filters) {
-                out.push(tsa_record(
+            if let Some(identifier_match) =
+                service_matches_filters(service, "", &provider_text, &service_text, filters)
+            {
+                let mut record = tsa_record(
                     &provider_id,
                     &provider.name,
                     service_index,
                     service,
                     now,
                     signature_valid,
-                ));
+                );
+                record.identifier_match = identifier_match;
+                out.push(record);
                 if out.len() >= limit {
                     return out;
                 }
@@ -1402,20 +1427,24 @@ fn service_matches_filters(
     provider_text: &str,
     service_text: &str,
     filters: &ServiceFilters,
-) -> bool {
+) -> Option<Option<Vec<IdentifierMatchField>>> {
     if let Some(search) = &filters.search {
         let matches_search = matches_folded(list_text, search)
             || matches_folded(provider_text, search)
             || matches_folded(service_text, search);
         if !matches_search {
-            return false;
+            return None;
         }
     }
-    if let Some(identifier) = &filters.identifier {
-        if !identity_matches_filter(service, list_text, provider_text, service_text, identifier) {
-            return false;
+    let identifier_match = if let Some(identifier) = &filters.identifier {
+        let fields = identity_match_fields(service, list_text, provider_text, identifier);
+        if fields.is_empty() {
+            return None;
         }
-    }
+        Some(fields)
+    } else {
+        None
+    };
     if let Some(service_type) = &filters.service_type {
         let current_type = fold(&service.service_type);
         let history_types = service
@@ -1427,50 +1456,123 @@ fn service_matches_filters(
         if !matches_folded(&current_type, service_type)
             && !matches_folded(&fold(&history_types), service_type)
         {
-            return false;
+            return None;
         }
     }
     if let Some(status) = &filters.status {
         if !status_matches_filter(&service.status, status) {
-            return false;
+            return None;
         }
     }
     if let Some(history) = &filters.history {
         if !history_matches_filter(service, history) {
-            return false;
+            return None;
         }
     }
     if let Some(supply_point) = &filters.supply_point {
         if !supply_point_matches_filter(service, supply_point) {
-            return false;
+            return None;
         }
     }
-    true
+    Some(identifier_match)
 }
 
-fn identity_matches_filter(
+fn identity_match_fields(
     service: &TrustService,
     list_text: &str,
     provider_text: &str,
-    service_text: &str,
     filter: &IdentifierFilter,
-) -> bool {
+) -> Vec<IdentifierMatchField> {
     match filter.kind {
-        IdentifierFilterKind::Unknown => false,
-        IdentifierFilterKind::CertificateSha256 => service.digital_identities.iter().any(|id| {
-            matches!(id, DigitalIdentity::Certificate(der) if cert_fingerprint(der) == filter.value)
-        }),
-        IdentifierFilterKind::SubjectKeyId => service.digital_identities.iter().any(|id| {
-            matches!(id, DigitalIdentity::SubjectKeyId(ski) if hex_bytes(ski) == filter.value)
-        }),
+        IdentifierFilterKind::Unknown => Vec::new(),
+        IdentifierFilterKind::CertificateSha256 => {
+            if service.digital_identities.iter().any(|id| {
+                matches!(id, DigitalIdentity::Certificate(der) if cert_fingerprint(der) == filter.value)
+            }) {
+                vec![IdentifierMatchField::CertificateSha256]
+            } else {
+                Vec::new()
+            }
+        }
+        IdentifierFilterKind::SubjectKeyId => {
+            if service.digital_identities.iter().any(|id| {
+                matches!(id, DigitalIdentity::SubjectKeyId(ski) if hex_bytes(ski) == filter.value)
+            }) {
+                vec![IdentifierMatchField::SubjectKeyId]
+            } else {
+                Vec::new()
+            }
+        }
         IdentifierFilterKind::Text => {
-            service.digital_identities.iter().any(|id| {
-                matches!(id, DigitalIdentity::SubjectName(name) if matches_folded(&fold(name), &filter.value))
-            }) || matches_folded(list_text, &filter.value)
-                || matches_folded(provider_text, &filter.value)
-                || matches_folded(service_text, &filter.value)
+            let mut fields = Vec::new();
+            if subject_name_matches_filter(service, &filter.value) {
+                push_identifier_match(&mut fields, IdentifierMatchField::SubjectName);
+            }
+            if matches_folded(provider_text, &filter.value) {
+                push_identifier_match(&mut fields, IdentifierMatchField::Provider);
+            }
+            if service_text_matches_identifier(service, &filter.value) {
+                push_identifier_match(&mut fields, IdentifierMatchField::Service);
+            }
+            if supply_point_text_matches_identifier(service, &filter.value) {
+                push_identifier_match(&mut fields, IdentifierMatchField::SupplyPoint);
+            }
+            if matches_folded(list_text, &filter.value) {
+                push_identifier_match(&mut fields, IdentifierMatchField::Catalog);
+            }
+            fields
         }
     }
+}
+
+fn push_identifier_match(fields: &mut Vec<IdentifierMatchField>, field: IdentifierMatchField) {
+    if !fields.contains(&field) {
+        fields.push(field);
+    }
+}
+
+fn subject_name_matches_filter(service: &TrustService, filter: &str) -> bool {
+    service.digital_identities.iter().any(|id| {
+        matches!(id, DigitalIdentity::SubjectName(name) if matches_folded(&fold(name), filter))
+    }) || service.history.iter().any(|history| {
+        history.digital_identities.iter().any(|id| {
+            matches!(id, DigitalIdentity::SubjectName(name) if matches_folded(&fold(name), filter))
+        })
+    })
+}
+
+fn service_text_matches_identifier(service: &TrustService, filter: &str) -> bool {
+    let current = fold(&format!(
+        "{} {} {}",
+        service.name.as_str(),
+        localized_text_values(&service.names),
+        service.service_type.as_str()
+    ));
+    if matches_folded(&current, filter) {
+        return true;
+    }
+    service.history.iter().any(|history| {
+        matches_folded(
+            &fold(&format!(
+                "{} {} {}",
+                history.name.as_str(),
+                localized_text_values(&history.names),
+                history.service_type.as_str()
+            )),
+            filter,
+        )
+    })
+}
+
+fn supply_point_text_matches_identifier(service: &TrustService, filter: &str) -> bool {
+    let current = fold(&service.service_supply_points.join(" "));
+    if matches_folded(&current, filter) {
+        return true;
+    }
+    service
+        .history
+        .iter()
+        .any(|history| matches_folded(&fold(&history.service_supply_points.join(" ")), filter))
 }
 
 fn status_matches_filter(status: &ServiceStatus, filter: &str) -> bool {
@@ -2199,6 +2301,9 @@ mod tests {
         assert!(hits[0].provider_name.contains("MULTICERT"));
         assert!(hits[0].qualified_for_esignatures);
         assert!(!hits[0].trusted_for_esignatures);
+        assert!(hits[0].identifier_match.is_none());
+        let serialized_hit = serde_json::to_value(&hits[0]).expect("summary serializes");
+        assert!(serialized_hit.get("identifier_match").is_none());
 
         let history_hits = search_services(&loaded.list, "legacy", 10, NOW, false);
         assert_eq!(history_hits.len(), 1);
@@ -2375,6 +2480,20 @@ mod tests {
             fingerprint_hits[0].name,
             "MULTICERT CA para Assinatura Qualificada"
         );
+        assert_eq!(
+            fingerprint_hits[0].identifier_match,
+            Some(vec![IdentifierMatchField::CertificateSha256])
+        );
+        let fingerprint_json =
+            serde_json::to_value(&fingerprint_hits[0]).expect("fingerprint hit serializes");
+        assert_eq!(
+            fingerprint_json
+                .get("identifier_match")
+                .and_then(|value| value.as_array())
+                .and_then(|fields| fields.first())
+                .and_then(|field| field.as_str()),
+            Some("certificate_sha256")
+        );
 
         let ski_hits = filter_services(
             &loaded.list,
@@ -2387,6 +2506,10 @@ mod tests {
             false,
         );
         assert_eq!(ski_hits.len(), 1);
+        assert_eq!(
+            ski_hits[0].identifier_match,
+            Some(vec![IdentifierMatchField::SubjectKeyId])
+        );
 
         let subject_hits = filter_services(
             &loaded.list,
@@ -2399,6 +2522,12 @@ mod tests {
             false,
         );
         assert_eq!(subject_hits.len(), 1);
+        assert!(
+            subject_hits[0]
+                .identifier_match
+                .as_ref()
+                .is_some_and(|fields| fields.contains(&IdentifierMatchField::SubjectName))
+        );
 
         let provider_hint_hits = filter_services(
             &loaded.list,
@@ -2411,6 +2540,11 @@ mod tests {
             false,
         );
         assert!(!provider_hint_hits.is_empty());
+        assert!(provider_hint_hits.iter().any(|hit| {
+            hit.identifier_match
+                .as_ref()
+                .is_some_and(|fields| fields.contains(&IdentifierMatchField::Provider))
+        }));
 
         let partial = filter_services(
             &loaded.list,
@@ -2616,6 +2750,10 @@ mod tests {
         );
         assert_eq!(identifier_hits.len(), 1);
         assert!(identifier_hits[0].qualified_timestamp_service);
+        assert_eq!(
+            identifier_hits[0].identifier_match,
+            Some(vec![IdentifierMatchField::SubjectKeyId])
+        );
         let supply_point_identifier_hits = filter_tsa_records(
             &loaded.list,
             &ServiceFilters {
@@ -2627,8 +2765,19 @@ mod tests {
             false,
         );
         assert_eq!(supply_point_identifier_hits.len(), 2);
+        assert!(supply_point_identifier_hits.iter().all(|record| {
+            record
+                .identifier_match
+                .as_ref()
+                .is_some_and(|fields| fields.contains(&IdentifierMatchField::SupplyPoint))
+        }));
         let accent_hits = search_tsa_records(&loaded.list, "ancora sao tome", 10, NOW, false);
         assert_eq!(accent_hits.len(), 2);
+        assert!(
+            accent_hits
+                .iter()
+                .all(|record| record.identifier_match.is_none())
+        );
         let revoked_hits = search_tsa_records(&loaded.list, "supervisionrevoked", 10, NOW, false);
         assert_eq!(revoked_hits.len(), 1);
         assert_eq!(revoked_hits[0].status.kind, "Other");
