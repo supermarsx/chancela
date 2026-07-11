@@ -2990,7 +2990,7 @@ export const ptBR: Catalog = {
   'externalInvite.toast.declined': 'Declinação registada.',
   'externalInvite.tracking.title': 'Acompanhamento apenas',
   'externalInvite.tracking.body':
-    'Este ecrã regista só a resposta ao convite externo. A aceitação é um reconhecimento de acompanhamento, não assina o PDF e não conclui assinatura qualificada.',
+    'Este ecrã regista a resposta ao convite externo e, quando aplicável, preserva um PDF já assinado fora da Chancela como evidência técnica. Não reclama validação de prestador, qualificação, validade legal, conclusão da ata ou validação em lista de confiança.',
   'externalInvite.field.entity': 'Entidade',
   'externalInvite.field.book': 'Livro',
   'externalInvite.field.act': 'Ata',
@@ -3015,6 +3015,28 @@ export const ptBR: Catalog = {
     'Este convite permite ver os metadados do ato, mas não há cópia de trabalho disponível para pré-visualização.',
   'externalInvite.alreadyAnswered':
     'Resposta já registada para este convite. Este estado não é assinatura qualificada.',
+  'externalInvite.technical.title': 'Resultado técnico',
+  'externalInvite.technical.envelope': 'Envelope',
+  'externalInvite.technical.slot': 'Slot',
+  'externalInvite.technical.slotStatus': 'Estado do slot',
+  'externalInvite.technical.blocked.title': 'Atualização técnica do slot bloqueada',
+  'externalInvite.technical.artifact.title': 'Artefacto técnico preservado',
+  'externalInvite.technical.evidenceLevel': 'Nível de evidência observado',
+  'externalInvite.technical.scope': 'Âmbito declarado',
+  'externalInvite.technical.digest': 'SHA-256 do PDF assinado',
+  'externalInvite.technical.timestamp': 'Selo temporal observado',
+  'externalInvite.technical.qualificationClaimed': 'Qualificação reclamada',
+  'externalInvite.technical.legalStatusClaimed': 'Estado legal reclamado',
+  'externalInvite.upload.guardrail.title': 'Carregamento de evidência técnica',
+  'externalInvite.upload.guardrail.body':
+    'Carregue apenas o PDF já assinado fora da Chancela. Este fluxo preserva evidência técnica e não reclama validação de prestador, qualificação, validade legal, conclusão da ata ou validação em lista de confiança.',
+  'externalInvite.upload.file.label': 'PDF assinado',
+  'externalInvite.upload.file.hint':
+    'O ficheiro é enviado com a aceitação do convite e preservado pelo backend como evidência técnica.',
+  'externalInvite.upload.file.tooLarge': 'O PDF assinado pode ter no máximo {max}.',
+  'externalInvite.upload.ack':
+    'Reconheço que este carregamento preserva apenas evidência técnica e não reclama validação de prestador, qualificação, validade legal, conclusão da ata ou validação em lista de confiança.',
+  'externalInvite.upload.submit': 'Carregar PDF e aceitar',
   'externalInvite.registering': 'A registar...',
   'externalInvite.accept': 'Aceitar acompanhamento',
   'externalInvite.decline': 'Declinar',

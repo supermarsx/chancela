@@ -9,6 +9,13 @@ import { ptPT } from './locales/pt-PT';
 import { enUS } from './locales/en-US';
 import { enGB } from './locales/en-GB';
 import { deDE } from './locales/de-DE';
+import { daDK } from './locales/da-DK';
+import { esES } from './locales/es-ES';
+import { fiFI } from './locales/fi-FI';
+import { frFR } from './locales/fr-FR';
+import { itIT } from './locales/it-IT';
+import { nlNL } from './locales/nl-NL';
+import { plPL } from './locales/pl-PL';
 import { svFI } from './locales/sv-FI';
 import { svSE } from './locales/sv-SE';
 import { interpolate } from './interpolate';
@@ -79,6 +86,74 @@ describe('catalog completeness matrix', () => {
       );
       expect(catalog['signing.pkcs12.file.label']).not.toBe(ptPT['signing.pkcs12.file.label']);
       expect(catalog['signing.pkcs12.notice']).not.toContain('ficheiro PFX');
+    }
+  });
+
+  it('keeps external invite signed-PDF evidence copy localized outside source Portuguese', () => {
+    const keys = [
+      'externalInvite.tracking.title',
+      'externalInvite.tracking.body',
+      'externalInvite.alreadyAnswered',
+      'externalInvite.technical.title',
+      'externalInvite.technical.slotStatus',
+      'externalInvite.technical.blocked.title',
+      'externalInvite.technical.artifact.title',
+      'externalInvite.technical.evidenceLevel',
+      'externalInvite.technical.scope',
+      'externalInvite.technical.digest',
+      'externalInvite.technical.timestamp',
+      'externalInvite.technical.qualificationClaimed',
+      'externalInvite.technical.legalStatusClaimed',
+      'externalInvite.upload.guardrail.title',
+      'externalInvite.upload.guardrail.body',
+      'externalInvite.upload.file.label',
+      'externalInvite.upload.file.hint',
+      'externalInvite.upload.file.tooLarge',
+      'externalInvite.upload.ack',
+      'externalInvite.upload.submit',
+      'externalInvite.registering',
+      'externalInvite.accept',
+      'externalInvite.decline',
+      'signing.invites.workflow.slotStatus',
+    ] as const;
+    const portugueseSourcePhrases =
+      /Acompanhamento apenas|Resposta já registada|Este estado não é assinatura qualificada|Resultado técnico|Estado do slot|Atualização técnica|Artefacto técnico|Nível de evidência|Âmbito declarado|Qualificação reclamada|Estado legal reclamado|PDF assinado|Selo temporal|Carregamento de evidência|Carregue apenas|O ficheiro é enviado|pode ter no máximo|Reconheço que este carregamento|Carregar PDF|A registar|Aceitar acompanhamento|Declinar/;
+
+    expect(enUS['externalInvite.tracking.title']).toBe('Tracking only');
+    expect(enUS['externalInvite.technical.slotStatus']).toBe('Slot status');
+    expect(enUS['externalInvite.technical.scope']).toBe('Declared scope');
+    expect(enUS['externalInvite.technical.qualificationClaimed']).toBe('Qualification claimed');
+    expect(enUS['externalInvite.upload.file.label']).toBe('Signed PDF');
+    expect(enUS['externalInvite.upload.file.tooLarge']).toBe(
+      'The signed PDF can be at most {max}.',
+    );
+    expect(enUS['externalInvite.upload.submit']).toBe('Upload PDF and accept');
+    expect(enUS['externalInvite.decline']).toBe('Decline');
+    expect(enGB['externalInvite.technical.digest']).toBe('Signed PDF SHA-256');
+    expect(deDE['externalInvite.tracking.title']).toBe('Nur Nachverfolgung');
+    expect(deDE['externalInvite.upload.file.label']).toBe('Signiertes PDF');
+    expect(deDE['externalInvite.upload.submit']).toBe('PDF hochladen und annehmen');
+    expect(deDE['externalInvite.technical.digest']).toBe('SHA-256 des signierten PDF');
+
+    const nonPortugueseCatalogs = [
+      ['da-DK', daDK],
+      ['de-DE', deDE],
+      ['en-GB', enGB],
+      ['en-US', enUS],
+      ['es-ES', esES],
+      ['fi-FI', fiFI],
+      ['fr-FR', frFR],
+      ['it-IT', itIT],
+      ['nl-NL', nlNL],
+      ['pl-PL', plPL],
+      ['sv-FI', svFI],
+      ['sv-SE', svSE],
+    ] as const;
+
+    for (const [locale, catalog] of nonPortugueseCatalogs) {
+      for (const key of keys) {
+        expect(catalog[key], `${locale} ${key}`).not.toMatch(portugueseSourcePhrases);
+      }
     }
   });
 

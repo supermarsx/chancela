@@ -2486,7 +2486,7 @@ export const plPL: Catalog = {
   'signing.envelopes.slot.status.revoked': 'Revogado',
   'signing.envelopes.slot.status.expired': 'Expirado',
   'signing.invites.workflow.externalEnvelope': 'Fluxo com envelope',
-  'signing.invites.workflow.slotStatus': 'Estado do slot: {status}',
+  'signing.invites.workflow.slotStatus': 'Slot status: {status}',
   'signing.invites.slot.label': 'Slot do envelope',
   'signing.invites.slot.hint':
     'Opcional. Selecionar um slot associa este convite ao envelope de fluxo.',
@@ -2983,9 +2983,9 @@ export const plPL: Catalog = {
   'externalInvite.loading': 'A validar convite...',
   'externalInvite.toast.accepted': 'Resposta aceite registada.',
   'externalInvite.toast.declined': 'Declinação registada.',
-  'externalInvite.tracking.title': 'Acompanhamento apenas',
+  'externalInvite.tracking.title': 'Tracking only',
   'externalInvite.tracking.body':
-    'Este ecrã regista só a resposta ao convite externo. A aceitação é um reconhecimento de acompanhamento, não assina o PDF e não conclui assinatura qualificada.',
+    'This screen records the external invite response and, when applicable, preserves a PDF already signed outside Chancela as technical evidence. It does not claim provider validation, qualification, legal validity, act completion, or trust-list validation.',
   'externalInvite.field.entity': 'Entidade',
   'externalInvite.field.book': 'Livro',
   'externalInvite.field.act': 'Ata',
@@ -3009,10 +3009,32 @@ export const plPL: Catalog = {
   'externalInvite.documentUnavailable.body':
     'Este convite permite ver os metadados do ato, mas não há cópia de trabalho disponível para pré-visualização.',
   'externalInvite.alreadyAnswered':
-    'Resposta já registada para este convite. Este estado não é assinatura qualificada.',
-  'externalInvite.registering': 'A registar...',
-  'externalInvite.accept': 'Aceitar acompanhamento',
-  'externalInvite.decline': 'Declinar',
+    'A response has already been recorded for this invite. This state is not a qualified signature.',
+  'externalInvite.technical.title': 'Technical result',
+  'externalInvite.technical.envelope': 'Envelope',
+  'externalInvite.technical.slot': 'Slot',
+  'externalInvite.technical.slotStatus': 'Slot status',
+  'externalInvite.technical.blocked.title': 'Technical slot update blocked',
+  'externalInvite.technical.artifact.title': 'Preserved technical artifact',
+  'externalInvite.technical.evidenceLevel': 'Observed evidence level',
+  'externalInvite.technical.scope': 'Declared scope',
+  'externalInvite.technical.digest': 'Signed PDF SHA-256',
+  'externalInvite.technical.timestamp': 'Observed timestamp',
+  'externalInvite.technical.qualificationClaimed': 'Qualification claimed',
+  'externalInvite.technical.legalStatusClaimed': 'Legal status claimed',
+  'externalInvite.upload.guardrail.title': 'Technical evidence upload',
+  'externalInvite.upload.guardrail.body':
+    'Upload only the PDF already signed outside Chancela. This flow preserves technical evidence and does not claim provider validation, qualification, legal validity, act completion, or trust-list validation.',
+  'externalInvite.upload.file.label': 'Signed PDF',
+  'externalInvite.upload.file.hint':
+    'The file is sent with the invite acceptance and preserved by the backend as technical evidence.',
+  'externalInvite.upload.file.tooLarge': 'The signed PDF can be at most {max}.',
+  'externalInvite.upload.ack':
+    'I acknowledge that this upload preserves only technical evidence and does not claim provider validation, qualification, legal validity, act completion, or trust-list validation.',
+  'externalInvite.upload.submit': 'Upload PDF and accept',
+  'externalInvite.registering': 'Registering...',
+  'externalInvite.accept': 'Accept tracking',
+  'externalInvite.decline': 'Decline',
   'settings.signing.providers.title': 'Modos de prestador configurados',
   'settings.signing.providers.hint':
     'Metadados não secretos. A interface não recolhe chaves privadas, PINs, passphrases PKCS#12 ou OTPs nesta página.',
