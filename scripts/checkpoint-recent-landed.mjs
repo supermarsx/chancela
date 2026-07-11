@@ -6173,8 +6173,78 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "does not sign or complete envelopes/slots",
-    "spec coverage external signer response tracking-only marker",
+    "can mark only the\n  linked external envelope slot signed when that slot has no identity\n  requirements",
+    "spec coverage external invite no-identity slot technical completion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "the normal envelope read/list completion summary then reflects\n  the technical slot state through `signed_required_slot_count` and blocking\n  slot IDs",
+    "spec coverage external invite completion summary marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Identity-required slots are not auto-signed from PDF upload alone\n  and return a bounded blocked reason",
+    "spec coverage external invite identity-required blocked marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Replay of the same signed evidence is\n  idempotent, with no duplicate signed documents, slot evidence, or update\n  events",
+    "spec coverage external invite replay idempotency marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "bounded in the web UI before file read and by\n  the matching backend body-limit envelope",
+    "spec coverage external invite upload size-bound marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "no provider calls, trust-list checks, QES/qualified status,\n  legal validity, provider completion, act finalization, or full envelope legal\n  completion is claimed",
+    "spec coverage external invite no provider/legal completion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Non-pt locales keep new external invite upload/result\n  keys localized without Portuguese source leakage through i18n guards",
+    "spec coverage external invite non-pt locale guard marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/official_signature_import.rs",
+    "async fn linked_external_invite_upload_marks_only_linked_slot_signed()",
+    "API linked external invite signed-PDF slot completion coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/official_signature_import.rs",
+    'assert_eq!(envelope["completion"]["signed_required_slot_count"], 1);',
+    "API linked external invite completion summary coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/official_signature_import.rs",
+    "async fn linked_external_invite_upload_does_not_auto_sign_identity_required_slot()",
+    "API linked external invite identity-required block coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/official_signature_import.rs",
+    '"signature.external_envelope.updated"',
+    "API linked external invite update-event idempotency marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/ExternalSignerInvitePage.test.tsx",
+    "rejects an oversized signed PDF before reading or submitting it",
+    "web external invite pre-read signed-PDF size guard coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/ExternalSignerInvitePage.tsx",
+    "Raw PDF bytes; the backend route has a larger JSON/base64 envelope limit for this cap",
+    "web external invite signed-PDF size cap boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "post(signature::respond_external_signer_invite).layer(DefaultBodyLimit::max(\n                signature::OFFICIAL_SIGNATURE_IMPORT_ENVELOPE_BYTES",
+    "API external invite respond backend body limit marker",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/i18n.test.ts",
+    "keeps external invite signed-PDF evidence copy localized outside source Portuguese",
+    "i18n external invite signed-PDF non-pt leakage guard coverage",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -6198,7 +6268,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Provider-backed signing, evidence capture,\n  document-gated completion",
+    "Provider-backed signing, document-gated legal completion, provider completion,\n  act finalization, full envelope legal completion, and qualified status remain\n  incomplete",
     "spec coverage external-signing provider completion caveat marker",
   );
   assertFileContains(

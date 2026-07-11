@@ -51,8 +51,11 @@ download route plus condominium absent-owner communication auto-generation,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
-discoverability, redacted external-validator report summary tools, validator
-fixtures, and the standalone desktop Cargo workspace.
+discoverability, redacted external-validator report summary tools, external
+invite signed-PDF technical evidence markers including linked no-identity slot
+completion, identity-required refusal, replay idempotency, upload body limits,
+i18n leakage guards, validator fixtures, and the standalone desktop Cargo
+workspace.
 
 It intentionally reuses existing test surfaces:
 
@@ -201,7 +204,11 @@ registry/legal-effect claims, dispatch-sent proof, dispatch completion,
 generated communication legal sufficiency, or legal effect for mutable draft acts created from
 accepted OCR drafts. The Arquivo markers prove bounded UI/API paging and
 filtered export behavior only; they do not prove persistent-store boot-time SQL
-paging or turn non-PDF/A exports into preserved evidence.
+paging or turn non-PDF/A exports into preserved evidence. The external invite
+signed-PDF markers prove act-scoped technical signed evidence and the linked
+no-identity external slot status path only; they do not prove provider calls,
+trust-list checks, QES/qualified status, legal validity, provider completion,
+act finalization, or full envelope legal completion.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 

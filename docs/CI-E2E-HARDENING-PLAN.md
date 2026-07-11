@@ -981,21 +981,35 @@ settingsDefaults.test.ts contracts.test.ts`.
   `external_signer_invites` coverage pins optional envelope/slot request fields,
   first sequential slot initiation, later sequential slot 409 refusal without
   token/storage, parallel slot initiation, public lookup redaction, and
-  accept-response tracking that leaves signature status unsigned. Focused web
+  accept-response tracking that leaves signature status unsigned. Linked invite
+  accept with a validated signed PDF now pins the technical evidence-only path:
+  it stores act-scoped signed-PDF evidence, can mark only the linked external
+  envelope slot signed when that slot has no identity requirements, updates the
+  normal envelope read/list completion summary (`signed_required_slot_count` and
+  blocking slot IDs), refuses identity-required slots with a bounded blocked
+  reason, and replays idempotently without duplicate signed documents, slot
+  evidence, or update events. The public invite upload path is bounded before
+  frontend file read and by the backend body-limit envelope. Focused web
   coverage in `SigningPanel.test.tsx`, `client.test.ts`, and
   `ExternalSigningWorkflowsPage.test.tsx` pins workflow-only envelope list/create
   UI, order policy and signer-slot payloads, optional linked-slot invite payloads
   (`external_envelope_id` / `external_slot_id`), tracking-only payloads when no
   slot is selected, safe sequential 409 messaging without raw backend/token-like
   detail after slot selection changes, and localized Ferramentas
-  `workflow: external_envelope` labels. The focused web command is
+  `workflow: external_envelope` labels. `ExternalSignerInvitePage.test.tsx` and
+  `i18n.test.ts` also pin that upload/result copy is technical evidence only and
+  that non-pt locale keys do not leak Portuguese source text. The focused web
+  command is
   `npm run test --workspace apps/web -- src/api/client.test.ts
   src/contracts/contracts.test.ts
+  src/features/signing/ExternalSignerInvitePage.test.tsx
   src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx
-  src/features/signing/SigningPanel.test.tsx`. This is invite/envelope tracking
-  only; it is not provider signing, PIN/OTP/passphrase collection, evidence
-  capture, slot signing, envelope completion UI, public token exposure, legal
-  completion, or qualified status.
+  src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`. This is
+  invite/envelope tracking plus linked no-identity-slot technical evidence
+  status only; it is not provider signing, PIN/OTP/passphrase collection,
+  provider calls, trust-list checks, QES/qualified status, legal validity,
+  provider completion, act finalization, full envelope legal completion, public
+  token exposure, or qualified status.
 - Current working-tree ASiC inspection/decompression checks: focused `cargo
   test -p chancela-api --test asic_signature_validation --locked` coverage pins
   `POST /v1/signature/asic/inspect`, base64 ASiC ZIP envelopes with optional

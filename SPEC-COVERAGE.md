@@ -233,12 +233,22 @@ Implementation checkpoints covered here:
   backend/token-like detail and clears the warning after slot selection changes.
   Create/list/public lookup expose redacted `external_envelope` workflow/slot
   metadata, and Ferramentas maps `workflow: external_envelope` to a localized
-  label in rows and token lookup. Invite accept/decline remains tracking-only
-  audit state; it does not sign or complete envelopes/slots, perform provider
-  signing, collect PIN/OTP/passphrases, capture evidence, expose public token
-  material, provide slot signing, provide envelope completion UI, or claim
-  legal/QES/qualified status. Provider-backed signing, evidence capture,
-  document-gated completion, legal completion, and qualified status remain
+  label in rows and token lookup. Linked invite accept with a validated signed
+  PDF upload stores act-scoped technical signed evidence and can mark only the
+  linked external envelope slot signed when that slot has no identity
+  requirements; the normal envelope read/list completion summary then reflects
+  the technical slot state through `signed_required_slot_count` and blocking
+  slot IDs. Identity-required slots are not auto-signed from PDF upload alone
+  and return a bounded blocked reason. Replay of the same signed evidence is
+  idempotent, with no duplicate signed documents, slot evidence, or update
+  events. Public invite upload is bounded in the web UI before file read and by
+  the matching backend body-limit envelope. UI upload/copy remains technical
+  evidence only: no provider calls, trust-list checks, QES/qualified status,
+  legal validity, provider completion, act finalization, or full envelope legal
+  completion is claimed. Non-pt locales keep new external invite upload/result
+  keys localized without Portuguese source leakage through i18n guards.
+  Provider-backed signing, document-gated legal completion, provider completion,
+  act finalization, full envelope legal completion, and qualified status remain
   incomplete.
 - Working tree keeps Signatures/Documents/CI **PARTIAL**: local PAdES DSS
   attach now accepts an optional caller-supplied `validation_time`, validates it
@@ -2308,8 +2318,10 @@ behavior, legal disposal, or legal-effect claims.
   lookup/respond endpoints expose only safe invite/act/document metadata
   plus redacted linked-envelope/slot metadata while the token is live, record accepted/declined
   acknowledgement events, and never return token material or canonical PDF/signed-PDF downloads. The
-  acknowledgement response remains tracking-only and does not sign or complete envelopes/slots or
-  claim legal/qualified status. A token-body-only public endpoint can return a non-canonical Markdown
+  acknowledgement response remains tracking-only unless the linked invite accept includes a validated
+  signed PDF for a no-identity-required external envelope slot; only that linked slot can be marked
+  signed as technical evidence, while broader envelope/legal completion and legal/qualified status
+  remain unclaimed. A token-body-only public endpoint can return a non-canonical Markdown
   working copy for sealed acts; it is explicitly non-evidentiary and not a qualified signature. The
   signing panel exposes create/list/revoke plus one-time token display, per-act workflow-only
   envelope list/create controls with order policy and signer slots, slot labels/statuses, identity
@@ -2320,9 +2332,17 @@ behavior, legal disposal, or legal-effect claims.
   as a signed PAdES PDF, checks it is bound to the sealed PDF bytes, stores the exact signed bytes
   through the signed-document path as `ExternalSignerHandoff` /
   `ExternalSignedPdfTechnicalEvidence`, and exposes `signed_artifact` to the token holder plus the
-  ordinary signature status/download endpoints. The status remains technical evidence only:
-  `trusted_list_status` stays null, qualified/legal status is not claimed, and
-  `require_qualified_for_seal` still keeps finalization non-qualified.
+  ordinary signature status/download endpoints. When the invite is linked to an external envelope
+  slot with no identity requirements, the upload can attach act-scoped technical signed evidence to
+  that slot and update normal envelope read/list summaries, including `signed_required_slot_count`
+  and blocking slot IDs. Identity-required slots are not auto-signed from PDF upload alone and return
+  a bounded blocked reason. Replays of the same evidence are idempotent and do not duplicate signed
+  documents, slot evidence, or update events. Public upload size is bounded before web file read and
+  by the matching backend body limit. The status remains technical evidence only:
+  `trusted_list_status` stays null, qualified/legal status is not claimed, no provider or trust-list
+  calls are made, no provider completion, act finalization, or full envelope legal completion is
+  claimed, and `require_qualified_for_seal` still keeps finalization non-qualified. External invite
+  upload/result copy is covered by i18n guards so non-pt locales do not leak Portuguese source text.
 - **External signing workflow tool:** Ferramentas now includes an External Signing tool at
   `/ferramentas?tool=external-signing` for operational tracking. It lists redacted invite records,
   summarizes response/status state, maps `workflow: external_envelope` to a localized external
