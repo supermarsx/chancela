@@ -31,6 +31,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 pub mod asic;
+pub mod asic_sign;
+pub mod asic_validate;
 pub mod cc;
 pub mod cmd_session;
 pub mod envelope;
@@ -44,12 +46,20 @@ pub mod soft_cert;
 pub mod validate;
 
 pub use asic::{
-    ASICE_CADES_SIGNATURE_PATH, ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_CADES_SIGNATURE_PATH,
-    ASICS_MIMETYPE, AsicBoundedProfile, AsicContainer, AsicContainerKind, AsicEContainer,
-    AsicEDataObject, AsicPayload, AsicProfileReport, AsicSContainer, AsicSignatureProfile,
-    build_asic_e_manifest, create_asic_e_container, create_asic_s_container,
-    extract_asic_container, extract_asic_e_container, extract_asic_s_container,
-    inspect_asic_profile, sha256_content_digest,
+    ASICE_ARCHIVE_MANIFEST_PATH, ASICE_ARCHIVE_TIMESTAMP_PATH, ASICE_CADES_SIGNATURE_PATH,
+    ASICE_MANIFEST_PATH, ASICE_MIMETYPE, ASICS_CADES_SIGNATURE_PATH, ASICS_MIMETYPE,
+    ASICS_XADES_SIGNATURE_PATH, AsicArchiveReference, AsicBoundedProfile, AsicContainer,
+    AsicContainerKind, AsicEContainer, AsicEDataObject, AsicPayload, AsicProfileReport,
+    AsicSContainer, AsicSignatureProfile, RFC3161_TIMESTAMP_MIME_TYPE, assemble_asic_e_container,
+    build_asic_archive_manifest, build_asic_e_manifest, create_asic_e_container,
+    create_asic_s_container, create_asic_s_xades_container, extract_asic_container,
+    extract_asic_e_container, extract_asic_s_container, inspect_asic_profile,
+    sha256_content_digest,
+};
+pub use asic_sign::{AsicEMultiSignRequest, sign_asic_e_multi, sign_asic_s_xades};
+pub use asic_validate::{
+    AsicArchiveTimestampValidation, AsicSignatureValidation, AsicValidationReport,
+    validate_asic_container,
 };
 pub use cc::{CcSignedPdf, sign_pdf_cc};
 pub use cmd_session::{
@@ -60,8 +70,10 @@ pub use envelope::{
 };
 pub use mock::MockProvider;
 pub use pipeline::{
-    TimestampProvider, attach_pdf_dss, attach_pdf_revocation_evidence, sign_asic_e, sign_asic_s,
-    sign_detached_cades, sign_pdf_pades, timestamp_pdf, timestamp_pdf_with_url,
+    PadesLtaExecution, PadesLtvRenewal, TimestampProvider, add_pdf_document_timestamp,
+    attach_pdf_dss, attach_pdf_lt, attach_pdf_revocation_evidence, execute_pdf_lta, renew_pdf_ltv,
+    sign_asic_e, sign_asic_s, sign_detached_cades, sign_pdf_pades, timestamp_pdf,
+    timestamp_pdf_with_url,
 };
 pub use policy::{StaticTrustPolicy, TrustPolicy, TslTrustPolicy};
 pub use provider::{CmdProvider, SignerProvider, SmartcardProvider};
@@ -85,6 +97,7 @@ pub use chancela_pades::{
     DssEvidence, DssReport, PreparedSignature, SignOptions, embed_signature, prepare_signature,
 };
 pub use chancela_tsa::{Timestamp, TsaClient};
+pub use chancela_xades::{XadesLevel, XadesValidationReport, validate_xades};
 
 /// The four signing families the product MUST natively support (SIG-01).
 ///
@@ -126,9 +139,12 @@ impl SigningFamily {
 }
 
 /// Advanced/Qualified Electronic Signature container formats the subsystem vocabulary recognises
-/// (SIG-20). PAdES, detached CAdES, bounded single-payload ASiC-S/CAdES containers, and bounded
-/// ASiC-E/CAdES manifest containers are implemented in this crate; XAdES is recognised explicitly
-/// but remains unavailable and returns [`SigningError::UnsupportedProfile`].
+/// (SIG-20). PAdES and detached CAdES are implemented directly; ASiC support spans ASiC-S/CAdES,
+/// ASiC-S/XAdES, and ASiC-E (CAdES + XAdES, multiple signatures, per-signature manifests, and an
+/// `ASiCArchiveManifest` archive timestamp) via [`crate::asic_sign`] / [`crate::asic_validate`].
+/// XAdES here is the detached XMLDSig/XAdES-B/T carried inside those ASiC containers; a bare
+/// (non-ASiC) XAdES document through [`validate_signature`](crate::validate_signature) is still a
+/// phase-2 seam and returns [`SigningError::UnsupportedProfile`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SignatureFormat {
@@ -461,6 +477,9 @@ pub enum SigningError {
     /// ASiC container creation/parsing/validation failed.
     #[error("ASiC container error: {0}")]
     Asic(String),
+    /// XAdES/XMLDSig assembly or validation failed (`chancela-xades`).
+    #[error("XAdES error: {0}")]
+    Xades(String),
     /// A recognised profile is deliberately unsupported; includes evidence and supported
     /// alternatives so callers can surface an actionable diagnostic without overclaiming support.
     #[error("unsupported signature profile: {0}")]

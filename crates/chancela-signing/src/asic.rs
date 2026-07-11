@@ -1,10 +1,16 @@
-//! Bounded ASiC evidence-container support.
+//! ASiC evidence-container support.
 //!
-//! This module implements the narrow ASiC shape this crate can truthfully support today:
-//! a single payload in an ASiC-S ZIP container plus one detached CAdES-B signature, or an
-//! ASiC-E/CAdES ZIP container where one ASiC manifest references multiple payload digests and one
-//! CAdES signature over that manifest. It does not implement XAdES signatures, timestamp
-//! manifests, archival timestamps, multiple ASiC-E signatures, or any legal qualification decision.
+//! This module owns the ZIP layout and manifest bytes for the ASiC containers this crate produces
+//! and reads. The *bounded* single-signature shapes — one ASiC-S payload plus one detached CAdES-B
+//! signature, or an ASiC-E/CAdES container with one `ASiCManifest` over one CAdES signature — are
+//! parsed strictly by [`extract_asic_container`] and classified by [`inspect_asic_profile`].
+//!
+//! The full ASiC surface builds on the same byte primitives: [`create_asic_s_xades_container`]
+//! (ASiC-S/XAdES), [`assemble_asic_e_container`] + [`build_asic_e_manifest`] (ASiC-E multi-signature
+//! with a per-signature `ASiCManifest`), and [`build_asic_archive_manifest`] (an ETSI EN 319 162
+//! `ASiCArchiveManifest` protected by an RFC 3161 archive timestamp). Signing orchestration lives in
+//! [`crate::asic_sign`] and the cryptographic validation surface in [`crate::asic_validate`]. None
+//! of it makes a legal qualification decision.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read, Write};
@@ -29,6 +35,20 @@ pub const ASICS_CADES_SIGNATURE_PATH: &str = "META-INF/signatures.p7s";
 pub const ASICE_MANIFEST_PATH: &str = "META-INF/ASiCManifest.xml";
 /// The ASiC-E detached CAdES signature member this implementation creates and validates.
 pub const ASICE_CADES_SIGNATURE_PATH: &str = "META-INF/signature001.p7s";
+/// The detached XAdES signature member for an ASiC-S/XAdES container.
+pub const ASICS_XADES_SIGNATURE_PATH: &str = "META-INF/signatures.xml";
+/// The ASiC-E archive manifest member (ETSI EN 319 162 archival/time-assertion manifest).
+///
+/// Note this is `ASiCArchiveManifest.xml`, *not* an `ASiCManifest*.xml`: the two are distinct
+/// members with distinct roles, so the archive manifest is deliberately not matched by the
+/// per-signature manifest detector.
+pub const ASICE_ARCHIVE_MANIFEST_PATH: &str = "META-INF/ASiCArchiveManifest.xml";
+/// The RFC 3161 archive-timestamp token member protecting [`ASICE_ARCHIVE_MANIFEST_PATH`].
+pub const ASICE_ARCHIVE_TIMESTAMP_PATH: &str = "META-INF/ASiCArchiveManifest.tst";
+/// The media type recorded on an archive manifest's `SigReference` to the RFC 3161 token.
+pub const RFC3161_TIMESTAMP_MIME_TYPE: &str = "application/vnd.etsi.timestamp-token";
+/// The media type recorded on a detached XAdES `SigReference`/member.
+pub const XADES_SIGNATURE_MIME_TYPE: &str = "application/vnd.etsi.asic-e+xml";
 /// Maximum declared or actual uncompressed size accepted for one ASiC ZIP member.
 pub const ASIC_ZIP_MEMBER_UNCOMPRESSED_MAX_BYTES: u64 = 16 * 1024 * 1024;
 /// Maximum total uncompressed size accepted across ASiC ZIP members.
@@ -557,6 +577,188 @@ pub fn create_asic_e_container(
     zip.finish()
         .map(|cursor| cursor.into_inner())
         .map_err(|e| zip_err("failed to finish ASiC-E ZIP container", e))
+}
+
+/// A reference an archive manifest covers: a container member (payload, signature, or manifest)
+/// protected by the archive timestamp.
+#[derive(Debug, Clone, Copy)]
+pub struct AsicArchiveReference<'a> {
+    /// The member path referenced by the archive manifest.
+    pub uri: &'a str,
+    /// The referenced member's bytes (hashed for `DigestValue`).
+    pub bytes: &'a [u8],
+    /// Optional media type recorded on the `DataObjectReference`.
+    pub mime_type: Option<&'a str>,
+}
+
+/// Create a bounded ASiC-S container carrying one payload and a detached XAdES signature over it.
+///
+/// The emitted ZIP uses the ASiC-S `mimetype` member first and uncompressed, then the payload, then
+/// [`ASICS_XADES_SIGNATURE_PATH`]. The XAdES document must reference the single payload by its
+/// member name (the caller builds it through [`crate::asic_sign::sign_asic_s_xades`]).
+pub fn create_asic_s_xades_container(
+    content_name: &str,
+    content: &[u8],
+    xades_signature_xml: &[u8],
+) -> Result<Vec<u8>, SigningError> {
+    validate_payload_name(content_name)?;
+    if xades_signature_xml.is_empty() {
+        return Err(asic_err("ASiC-S signatures.xml cannot be empty"));
+    }
+
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .last_modified_time(DateTime::default());
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+
+    zip.start_file(MIMETYPE_PATH, options)
+        .map_err(|e| zip_err("failed to start ASiC mimetype member", e))?;
+    zip.write_all(ASICS_MIMETYPE.as_bytes())
+        .map_err(|e| asic_err(format!("failed to write ASiC mimetype member: {e}")))?;
+
+    zip.start_file(content_name, options)
+        .map_err(|e| zip_err("failed to start ASiC payload member", e))?;
+    zip.write_all(content)
+        .map_err(|e| asic_err(format!("failed to write ASiC payload member: {e}")))?;
+
+    zip.start_file(ASICS_XADES_SIGNATURE_PATH, options)
+        .map_err(|e| zip_err("failed to start ASiC XAdES signature member", e))?;
+    zip.write_all(xades_signature_xml)
+        .map_err(|e| asic_err(format!("failed to write ASiC XAdES signature member: {e}")))?;
+
+    zip.finish()
+        .map(|cursor| cursor.into_inner())
+        .map_err(|e| zip_err("failed to finish ASiC-S/XAdES ZIP container", e))
+}
+
+/// Assemble a general ASiC-E container from payloads plus already-produced `META-INF` members
+/// (per-signature manifests, CAdES/XAdES signatures, archive manifest, and archive-timestamp token).
+///
+/// This is the multi-signature counterpart to [`create_asic_e_container`]: the caller has already
+/// built and signed every `META-INF` member (see [`crate::asic_sign::sign_asic_e_multi`]); this
+/// function only lays them out in a well-formed ZIP with the `mimetype` member first and stored.
+/// Member names are validated but their internal structure is the caller's responsibility.
+pub fn assemble_asic_e_container(
+    payloads: &[AsicPayload<'_>],
+    meta_inf_members: &[(&str, &[u8])],
+) -> Result<Vec<u8>, SigningError> {
+    validate_payloads(payloads)?;
+    if meta_inf_members.is_empty() {
+        return Err(asic_err(
+            "ASiC-E container requires at least one META-INF signature member",
+        ));
+    }
+    let mut seen = HashSet::new();
+    for (name, bytes) in meta_inf_members {
+        validate_member_name(name)?;
+        if !is_meta_inf_path(name) {
+            return Err(asic_err(format!(
+                "ASiC-E signature member {name} must live under META-INF/"
+            )));
+        }
+        if name.ends_with('/') {
+            return Err(asic_err(format!(
+                "ASiC-E META-INF member {name} must be a file"
+            )));
+        }
+        if !seen.insert(name.to_ascii_lowercase()) {
+            return Err(asic_err(format!("duplicate ASiC-E META-INF member {name}")));
+        }
+        if bytes.is_empty() {
+            return Err(asic_err(format!("ASiC-E META-INF member {name} is empty")));
+        }
+    }
+
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Stored)
+        .last_modified_time(DateTime::default());
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+
+    zip.start_file(MIMETYPE_PATH, options)
+        .map_err(|e| zip_err("failed to start ASiC mimetype member", e))?;
+    zip.write_all(ASICE_MIMETYPE.as_bytes())
+        .map_err(|e| asic_err(format!("failed to write ASiC mimetype member: {e}")))?;
+
+    for payload in payloads {
+        zip.start_file(payload.name, options)
+            .map_err(|e| zip_err("failed to start ASiC-E payload member", e))?;
+        zip.write_all(payload.bytes)
+            .map_err(|e| asic_err(format!("failed to write ASiC-E payload member: {e}")))?;
+    }
+
+    for (name, bytes) in meta_inf_members {
+        zip.start_file(*name, options)
+            .map_err(|e| zip_err("failed to start ASiC-E META-INF member", e))?;
+        zip.write_all(bytes)
+            .map_err(|e| asic_err(format!("failed to write ASiC-E META-INF member: {e}")))?;
+    }
+
+    zip.finish()
+        .map(|cursor| cursor.into_inner())
+        .map_err(|e| zip_err("failed to finish ASiC-E ZIP container", e))
+}
+
+/// Build the deterministic ASiCArchiveManifest bytes covering `references` and pointing at the
+/// RFC 3161 archive-timestamp token at `timestamp_path`.
+///
+/// The archive manifest records one `SigReference` to the timestamp token and one SHA-256
+/// `DataObjectReference` per covered member (payloads, per-signature manifests, and signatures).
+/// The archive timestamp is then taken over these exact manifest bytes.
+pub fn build_asic_archive_manifest(
+    timestamp_path: &str,
+    references: &[AsicArchiveReference<'_>],
+) -> Result<Vec<u8>, SigningError> {
+    validate_member_name(timestamp_path)?;
+    if !is_meta_inf_path(timestamp_path) || !timestamp_path.to_ascii_lowercase().ends_with(".tst") {
+        return Err(asic_err(format!(
+            "ASiC archive timestamp reference {timestamp_path} must be a META-INF/*.tst member"
+        )));
+    }
+    if references.is_empty() {
+        return Err(asic_err(
+            "ASiC archive manifest must reference at least one member",
+        ));
+    }
+
+    let mut seen = HashSet::new();
+    let mut xml = String::new();
+    xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.push_str(&format!(
+        "<asic:ASiCManifest xmlns:asic=\"{ASIC_NS}\" xmlns:ds=\"{DS_NS}\">\n"
+    ));
+    xml.push_str(&format!(
+        "  <asic:SigReference URI=\"{}\" MimeType=\"{}\"/>\n",
+        escape_xml_attr(timestamp_path),
+        RFC3161_TIMESTAMP_MIME_TYPE
+    ));
+    for reference in references {
+        validate_member_name(reference.uri)?;
+        if !seen.insert(reference.uri.to_ascii_lowercase()) {
+            return Err(asic_err(format!(
+                "duplicate ASiC archive manifest reference {}",
+                reference.uri
+            )));
+        }
+        let digest_b64 = BASE64_STANDARD.encode(sha256_content_digest(reference.bytes));
+        let mime = reference
+            .mime_type
+            .map(|mime_type| format!(" MimeType=\"{}\"", escape_xml_attr(mime_type)))
+            .unwrap_or_default();
+        xml.push_str(&format!(
+            "  <asic:DataObjectReference URI=\"{}\"{}>\n",
+            escape_xml_attr(reference.uri),
+            mime
+        ));
+        xml.push_str(&format!(
+            "    <ds:DigestMethod Algorithm=\"{SHA256_DIGEST_METHOD_URI}\"/>\n"
+        ));
+        xml.push_str(&format!(
+            "    <ds:DigestValue>{digest_b64}</ds:DigestValue>\n"
+        ));
+        xml.push_str("  </asic:DataObjectReference>\n");
+    }
+    xml.push_str("</asic:ASiCManifest>\n");
+    Ok(xml.into_bytes())
 }
 
 /// Parse and validate either bounded ASiC shape implemented by this crate.
@@ -1913,7 +2115,7 @@ fn validate_cades_signature_path(name: &str) -> Result<(), SigningError> {
     Ok(())
 }
 
-fn validate_member_name(name: &str) -> Result<(), SigningError> {
+pub(crate) fn validate_member_name(name: &str) -> Result<(), SigningError> {
     if name.is_empty() {
         return Err(asic_err("ASiC ZIP member name must not be empty"));
     }
@@ -1935,19 +2137,31 @@ fn validate_member_name(name: &str) -> Result<(), SigningError> {
     Ok(())
 }
 
-fn is_xades_signature_path(name: &str) -> bool {
+pub(crate) fn is_xades_signature_path(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower == "meta-inf/signature.xml"
         || lower == "meta-inf/signatures.xml"
-        || (lower.starts_with("meta-inf/signatures") && lower.ends_with(".xml"))
+        || (lower.starts_with("meta-inf/signature") && lower.ends_with(".xml"))
 }
 
-fn is_asic_manifest_path(name: &str) -> bool {
+pub(crate) fn is_asic_manifest_path(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.starts_with("meta-inf/asicmanifest") && lower.ends_with(".xml")
 }
 
-fn is_cades_signature_path(name: &str) -> bool {
+/// Whether `name` is an ASiCArchiveManifest member (`META-INF/ASiCArchiveManifest*.xml`).
+pub(crate) fn is_archive_manifest_path(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("meta-inf/asicarchivemanifest") && lower.ends_with(".xml")
+}
+
+/// Whether `name` is an RFC 3161 archive-timestamp token member (`META-INF/*.tst`).
+pub(crate) fn is_timestamp_token_path(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    is_meta_inf_path(name) && lower.ends_with(".tst")
+}
+
+pub(crate) fn is_cades_signature_path(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.starts_with("meta-inf/")
         && lower.ends_with(".p7s")
@@ -1957,7 +2171,7 @@ fn is_cades_signature_path(name: &str) -> bool {
             .unwrap_or(false)
 }
 
-fn is_meta_inf_path(name: &str) -> bool {
+pub(crate) fn is_meta_inf_path(name: &str) -> bool {
     name.to_ascii_lowercase().starts_with("meta-inf/")
 }
 

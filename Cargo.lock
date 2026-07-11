@@ -681,13 +681,15 @@ dependencies = [
 name = "chancela-scap"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chancela-cades",
- "chancela-xades",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.18",
  "time",
+ "zeroize",
 ]
 
 [[package]]
@@ -719,12 +721,15 @@ dependencies = [
  "chancela-smartcard",
  "chancela-tsa",
  "chancela-tsl",
+ "chancela-xades",
+ "cms",
  "der",
  "p12",
  "p256",
  "quick-xml",
  "rand_core 0.6.4",
  "reqwest",
+ "roxmltree",
  "rsa",
  "serde",
  "serde_json",
@@ -736,6 +741,7 @@ dependencies = [
  "uuid",
  "x509-cert",
  "x509-ocsp",
+ "x509-tsp",
  "zeroize",
  "zip",
 ]
@@ -834,12 +840,16 @@ dependencies = [
  "chancela-cades",
  "chancela-tsa",
  "der",
+ "p256",
  "quick-xml",
  "roxmltree",
+ "rsa",
  "serde_json",
  "sha2 0.10.9",
+ "spki",
  "thiserror 2.0.18",
  "time",
+ "x509-cert",
 ]
 
 [[package]]
