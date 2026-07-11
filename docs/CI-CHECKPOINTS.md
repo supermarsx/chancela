@@ -37,7 +37,8 @@ graph markers, PDF writer spacing and PDF/UA blocker-decomposition markers,
 archive timestamp append markers,
 paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
 creation plus focused paper-book OCR review browser workflow markers,
-retention duplicate review-only request guards and queued-review status surfacing,
+retention duplicate review-only request guards, queued-review status surfacing,
+and prior bounded execution projection,
 retained-export cleanup dry-run planning, forwarded platform-log sanitized
 accepted/denied/rejected/suppressed audit markers, post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
@@ -46,7 +47,7 @@ UI, dashboard guest recent-events redaction, Ferramentas external-validator
 metadata UI, raw-report byte download API, imported-document review receipt UI,
 trust identifier-match explanations, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
-download route,
+download route plus condominium absent-owner communication auto-generation,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
@@ -82,6 +83,9 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test local_pkcs12_signing --locked`
 - API bounded retention execution:
   `cargo test -p chancela-api --test privacy --locked retention_`
+  including due-candidate prior bounded archive/no-action projection, safe
+  internal evidence gating, non-mutating GET behavior, and canonical
+  `prior_execution.next_step` text.
 - API dashboard guest event redaction:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
@@ -90,9 +94,13 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
   `cargo test -p chancela-api --locked in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata`
+  plus
+  `cargo test -p chancela-server --test e2e_act_document_persistence --locked condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata`
   plus route-classification coverage for
   `/v1/documents/generated/{document_id}` as a gated `act.read` route while the
-  canonical `/v1/acts/{act_id}/document` endpoint remains the sealed Ata path.
+  canonical `/v1/acts/{act_id}/document` endpoint remains the sealed Ata path,
+  including automatic `condominio-comunicacao-ausentes/v1` generation after
+  condominium seal with absent attendees and pending dispatch evidence status.
 - API retained-export cleanup dry-run:
   `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
@@ -136,7 +144,8 @@ service/control desired-state markers, encrypted-build-default markers, external
 metadata API durability markers, the settings.read raw metadata and raw-report
 byte download
 route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
-retention due-candidate duplicate-review and queued-status UI markers,
+retention due-candidate duplicate-review, queued-status, prior-execution
+projection, and projected-row duplicate-action suppression UI markers,
 locale keys, and non-destructive payload assertions, Ferramentas
 panel/client/i18n markers including compact validator-report actions,
 imported-document review receipt markers for pending/reviewed states and
@@ -156,8 +165,9 @@ archive readability/ZK caveat markers, template `FamilyChannelMismatch` markers,
 MCP trust-catalog structured-filter and redacted external-validator summary
 markers, MCP draft-vs-signed comparison review prompt/resource/no-call/no-claim
 markers, dashboard guest `recent_events: []` redaction and no-permission-grant
-markers, generated-document by-id route, `act.read` gate, durable/in-memory, and
-canonical Ata preservation markers, live-provider assurance markers, validator manifest,
+markers, generated-document by-id route, `act.read` gate, durable/in-memory,
+canonical Ata preservation, absent-owner communication auto-generation, and
+pending dispatch evidence markers, live-provider assurance markers, validator manifest,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
 imported-document review notification/export browser E2E marker; Playwright
@@ -177,7 +187,8 @@ trust-list legal validity, provider approval, raw MCP report-byte exposure,
 auto-role reconciliation, permission grants, archive custody/decryption material,
 AI-01/full AI completion, MCP draft-signed legal/source/trust/external
 certification, generated-document signing/bundle/template/threshold/law/provider/
-registry/legal-effect claims, or legal effect for mutable draft acts created from
+registry/legal-effect claims, dispatch-sent proof, dispatch completion,
+generated communication legal sufficiency, or legal effect for mutable draft acts created from
 accepted OCR drafts.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.

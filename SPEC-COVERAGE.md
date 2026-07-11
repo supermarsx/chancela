@@ -114,7 +114,9 @@ for the unsigned/local-only trust posture plus production package
 manifest-required validation, plus MCP workflow provenance review prompt/resource
 guidance and draft-vs-signed comparison review aid, dashboard guest
 recent-events redaction, generated-document by-id download routing,
-settings.read-gated raw external-validator raw-report byte downloads,
+retention due-candidate prior bounded execution projection, automatic
+condominium absent-owner communication generation with pending dispatch
+evidence status, settings.read-gated raw external-validator raw-report byte downloads,
 imported-document review receipt rendering, and trust catalog identifier-match
 explanations, plus release clean-source provenance gating, seeded role-drift
 diagnostics, archive readability/ZK caveat metadata, template family/channel
@@ -405,8 +407,17 @@ Implementation checkpoints covered here:
   be downloaded by their own generated document id in durable and in-memory
   modes. The route inherits `act.read` from the owning act, and the canonical
   `/v1/acts/{act_id}/document` route remains the sealed Ata target for signing
-  and bundles. This is generated-document retrieval only: no signing, bundle,
-  template, threshold, law, provider, registry, or legal-effect claim is added.
+  and bundles. Sealing a condominium act with absent attendees now also
+  generates `condominio-comunicacao-ausentes/v1` automatically alongside the
+  Ata, leaves the canonical act document as the Ata, makes the communication
+  retrievable by generated document id in durable and in-memory modes, and emits
+  `document.generated` payload/header evidence with dispatch status
+  `required_pending`, `evidence_attached=false`, and
+  `dispatch_completed=false`, including server E2E re-checks after restart.
+  This is generated-document retrieval and pending-dispatch evidence only: no
+  signing, bundle, template, threshold, law, provider, registry, dispatch-sent
+  proof, dispatch completion, legal sufficiency, or legal-effect claim is
+  added.
 - Working tree keeps Documents/Archive/API/CI **PARTIAL**: `GET
   /v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by
   `book.export@Book`, returns a deterministic local
@@ -511,10 +522,16 @@ Implementation checkpoints covered here:
   duplicate guard, and add no extra execution record or ledger event.
   Due-candidate GET remains read-only while surfacing existing queued review
   status/id/time, and Settings shows queued review status/id/time instead of
-  posting again. This is non-destructive review/scanner UI evidence only: it
-  does not dispose, erase, delete, anonymize, redact, mutate legal holds or
-  retention policies, resolve candidates, approve legal disposal, or perform
-  legal completion.
+  posting again. Due-candidate reads can also project safe prior bounded
+  `executed` archive/no-action evidence for the same candidate and policy,
+  requiring internal bounded-executor evidence, acted targets, and false
+  destructive-disposal/full-erasure flags; the projection is read-only,
+  side-effect free, uses canonical bounded `prior_execution.next_step` text
+  instead of persisted free-form text, and Settings shows bounded evidence while
+  suppressing duplicate review actions only for projected rows. This is
+  non-destructive review/scanner UI evidence only: it does not dispose, erase,
+  delete, anonymize, redact, mutate legal holds or retention policies, resolve
+  candidates, approve legal disposal, or perform legal completion.
 - `5db121a` keeps Template Catalog/UX/CI **PARTIAL**: the Minutas catalog now
   keeps search/family/stage in a compact primary filter row, moves
   locale/channel/signature/rule-pack into a collapsed advanced details area, and
@@ -2163,11 +2180,18 @@ behavior, legal disposal, or legal-effect claims.
   requests for the same candidate/policy reuse the existing `awaiting_review` execution, including
   concurrent duplicate guards, without adding another execution record or ledger event; the
   due-candidate GET remains read-only and the UI shows queued review status/id/time instead of
-  posting again. This is retention register, dry-run, due-candidate scanner, review-request, and
-  execution-history evidence only: it still performs no deletion, anonymization, redaction
-  completion, archive disposal, destructive GDPR erasure, legal completion, legal-retention
-  certification, legal default scheduling, legal disposal approval, policy or legal-hold mutation,
-  candidate resolution, or disposal execution.
+  posting again. Due-candidate reads can also project prior safe bounded
+  `executed` archive/no-action evidence for the same candidate/policy without
+  writing records or audit events, only when the internal result keeps
+  `bounded_executor: true`, acted targets, and false destructive/full-erasure
+  flags; projected `prior_execution.next_step` is canonical bounded text, not
+  persisted free-form text, and the UI suppresses duplicate review actions only
+  for projected rows. This is retention register, dry-run, due-candidate
+  scanner, review-request, and execution-history evidence only: it still
+  performs no deletion, anonymization, redaction completion, archive disposal,
+  destructive GDPR erasure, legal completion, legal-retention certification,
+  legal default scheduling, legal disposal approval, policy or legal-hold
+  mutation, candidate resolution, or disposal execution.
 - **Persisted book legal hold:** `GET|PUT|DELETE /v1/books/{id}/legal-hold` stores book-level legal
   hold metadata (`reason`, `actor`, `set_at`) through the existing durable book aggregate and appends
   ledger events on set/clear. Archive packages automatically include active persisted holds in
@@ -2826,10 +2850,12 @@ behavior, legal disposal, or legal-effect claims.
   retention execution history, workflow blockers, required approvals, operator
   decisions, and audit evidence record requests, outcomes, and operator next
   steps for audit/review. Duplicate `review_only` requests reuse queued
-  `awaiting_review` evidence and queued-review status surfacing only; they are
-  not retention execution, candidate resolution, anonymization, redaction
-  completion, physical deletion, policy or legal-hold mutation, legal disposal
-  approval, or GDPR erasure.
+  `awaiting_review` evidence and queued-review status surfacing only. Projected
+  prior bounded archive/no-action executions on due-candidate rows are read-only
+  internal evidence projections gated by false destructive/full-erasure flags
+  and canonical bounded next-step text; they are not retention execution,
+  candidate resolution, anonymization, redaction completion, physical deletion,
+  policy or legal-hold mutation, legal disposal approval, or GDPR erasure.
 - Dashboard legal-hold, sealed-not-archived, and missing-attendance alerts are advisory operational
   next steps; they do not certify legal-hold handling, approve disposal, prove archival completion,
   prove attendance, or validate meeting legality.

@@ -168,6 +168,21 @@ const checks = [
     ],
   },
   {
+    name: "Server condominium absent-owner generated communication persistence test",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-server",
+        "--test",
+        "e2e_act_document_persistence",
+        "--locked",
+        "condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata",
+      ],
+    ],
+  },
+  {
     name: "API retained-export cleanup dry-run tests",
     command: [
       "cargo",
@@ -1565,7 +1580,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id\ndownload route",
+    "generated-document by-id\ndownload route plus condominium absent-owner communication auto-generation",
     "CI checkpoints generated-document by-id route lane marker",
   );
   assertFileContains(
@@ -1620,8 +1635,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id route, `act.read` gate, durable/in-memory, and\ncanonical Ata preservation markers",
+    "generated-document by-id route, `act.read` gate, durable/in-memory,\ncanonical Ata preservation, absent-owner communication auto-generation, and\npending dispatch evidence markers",
     "CI checkpoints static generated-document by-id marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata",
+    "CI checkpoints absent-owner communication server command marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -1650,8 +1670,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "retention duplicate review-only request guards and queued-review status surfacing",
+    "retention duplicate review-only request guards, queued-review status surfacing,\nand prior bounded execution projection",
     "CI checkpoints retention duplicate-review lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "retention due-candidate duplicate-review, queued-status, prior-execution\nprojection, and projected-row duplicate-action suppression UI markers",
+    "CI checkpoints retention prior projection static marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -2079,6 +2104,41 @@ function assertCheckpointMap() {
     "API retention due-candidates non-mutating GET coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "fn retention_prior_bounded_due_candidate_projection",
+    "API retention due-candidates prior bounded projection marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "fn retention_execution_record_is_safe_bounded_prior",
+    "API retention prior projection safe evidence gate marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/privacy.rs",
+    "RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP",
+    "API retention prior projection canonical archive next-step marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "retention_due_candidates_project_prior_bounded_execution_without_mutation",
+    "API retention due-candidates prior bounded archive projection coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "retention_due_candidates_ignore_unsafe_prior_bounded_execution_flags",
+    "API retention due-candidates unsafe prior projection refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "retention_due_candidates_project_prior_bounded_no_action_recorded_without_mutation",
+    "API retention due-candidates prior bounded no-action projection coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "prior execution next_step must not surface unsafe term",
+    "API retention prior projection canonical next-step safety marker",
+  );
+  assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
     "retention_due_candidates_surface_existing_review_without_mutation",
     "API retention due-candidates existing-review surfacing coverage",
@@ -2092,6 +2152,21 @@ function assertCheckpointMap() {
     "contracts/retention.due-candidates.json",
     '"full_erasure_completed": false',
     "retention due-candidates fixture false full-erasure marker",
+  );
+  assertFileContains(
+    "contracts/retention.due-candidates.json",
+    '"prior_execution": {',
+    "retention due-candidates fixture prior execution marker",
+  );
+  assertFileContains(
+    "contracts/retention.due-candidates.json",
+    '"bounded_executor": true',
+    "retention due-candidates fixture prior bounded executor marker",
+  );
+  assertFileContains(
+    "contracts/retention.due-candidates.json",
+    '"next_step": "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action."',
+    "retention due-candidates fixture canonical prior next-step marker",
   );
   assertFileContains(
     "contracts/retention.due-candidates.json",
@@ -2145,6 +2220,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Evidência delimitada existente",
+    "Settings retention due-candidate projected evidence action-suppression marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "prior.targets_acted_count",
+    "Settings retention due-candidate projected evidence target-count marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
     "{queuedReview.execution_status} · {queuedReview.id}",
     "Settings retention due-candidate queued-review id marker",
   );
@@ -2177,6 +2262,11 @@ function assertCheckpointMap() {
     "apps/web/src/features/settings/SettingsPage.test.tsx",
     "shows already queued review state for a due retention candidate without posting again",
     "Settings retention due-candidate queued-review no-POST coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "shows projected bounded execution and does not offer duplicate review",
+    "Settings retention due-candidate projected evidence no-POST coverage",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
@@ -3298,6 +3388,41 @@ function assertCheckpointMap() {
     "API generated-document canonical Ata route preservation marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/acts.rs",
+    "should_generate_condominium_absent_owner_communication",
+    "API condominium absent-owner seal hook marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/acts.rs",
+    "generate_condominium_absent_owner_communication",
+    "API condominium absent-owner communication generation call marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID",
+    "API condominium absent-owner communication template marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    'status: "required_pending"',
+    "API condominium absent-owner pending dispatch status marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "evidence_attached: false",
+    "API condominium absent-owner false dispatch evidence marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "dispatch_completed: false",
+    "API condominium absent-owner false dispatch completion marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "communication generated automatically; dispatch evidence is not attached",
+    "API condominium absent-owner no dispatch proof marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/lib.rs",
     "on_demand_generate_persists_a_chosen_document_and_emits_the_event",
     "API generated-document durable download coverage",
@@ -3316,6 +3441,26 @@ function assertCheckpointMap() {
     "crates/chancela-api/src/lib.rs",
     "The canonical Ata endpoint still serves the original sealed Ata for signing/bundles",
     "API generated-document canonical Ata remains sealed marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_act_document_persistence.rs",
+    "condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata",
+    "server condominium absent-owner communication auto-generation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_act_document_persistence.rs",
+    'Some("condominio-comunicacao-ausentes/v1")',
+    "server condominium absent-owner generated template coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_act_document_persistence.rs",
+    'Some("required_pending")',
+    "server condominium absent-owner pending dispatch header coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_act_document_persistence.rs",
+    "Ata + absent-owner communication document events after restart",
+    "server condominium absent-owner generated events restart coverage",
   );
   assertFileContains(
     "apps/web/src/features/entities/entities.test.tsx",
@@ -4833,7 +4978,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "no signing, bundle,\n  template, threshold, law, provider, registry, or legal-effect claim",
+    "condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata",
+    "CI/E2E hardening plan absent-owner communication server command marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "pending dispatch\n  evidence status, and restart persistence",
+    "CI/E2E hardening plan absent-owner pending dispatch persistence marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no signing, bundle, template, threshold,\n  law, provider, registry, dispatch-sent proof, dispatch completion, legal\n  sufficiency, or legal-effect claim",
     "CI/E2E hardening plan generated-document no-claim marker",
   );
   assertFileContains(
@@ -5273,6 +5428,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "Due-candidate reads can also project prior safe bounded `executed`\n  archive/no-action evidence",
+    "CI/E2E hardening plan retention prior projection marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "canonical bounded `prior_execution.next_step` text",
+    "CI/E2E hardening plan retention prior canonical next-step marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "candidate resolution is implemented",
     "CI/E2E hardening plan retention due-candidates no-resolution caveat marker",
   );
@@ -5633,7 +5798,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "no signing, bundle,\n  template, threshold, law, provider, registry, or legal-effect claim",
+    "generates `condominio-comunicacao-ausentes/v1` automatically alongside the\n  Ata",
+    "spec coverage condominium absent-owner auto-generation marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`required_pending`, `evidence_attached=false`, and\n  `dispatch_completed=false`",
+    "spec coverage condominium absent-owner pending dispatch marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "no\n  signing, bundle, template, threshold, law, provider, registry, dispatch-sent\n  proof, dispatch completion, legal sufficiency, or legal-effect claim",
     "spec coverage generated-document no-claim marker",
   );
   assertFileContains(
@@ -5773,7 +5948,22 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "resolve candidates, approve legal disposal",
+    "Due-candidate reads can also project safe prior bounded\n  `executed` archive/no-action evidence",
+    "spec coverage retention prior bounded projection marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "uses canonical bounded `prior_execution.next_step` text\n  instead of persisted free-form text",
+    "spec coverage retention prior projection canonical text marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Projected\n  prior bounded archive/no-action executions on due-candidate rows are read-only\n  internal evidence projections",
+    "spec coverage retention prior projection no-overclaim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "candidates, approve legal disposal",
     "spec coverage retention due-candidates no-resolution caveat marker",
   );
   assertFileContains(
