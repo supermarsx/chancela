@@ -21,7 +21,7 @@ mod common;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration as StdDuration;
 
@@ -48,6 +48,7 @@ use chancela_signing::{
     SignerProvider, SigningError, SmartcardProvider, StaticTrustPolicy, TrustPolicy,
     TrustedListStatus,
 };
+use chancela_smartcard::error::PinTriesLeft;
 use chancela_smartcard::token::{LABEL_AUTH_CERT, LABEL_SIGNATURE_CERT};
 use chancela_smartcard::{CertUsage, CryptoToken, MockToken, SmartcardError, TokenCertificate};
 use chancela_tsl::{DigitalIdentity, parse_tsl};
@@ -77,6 +78,14 @@ struct CcTestCard {
     signature_cert_der: Vec<u8>,
     auth_cert_der: Vec<u8>,
     issuer_cert_der: Vec<u8>,
+    /// t67-e8: when `Some`, the card requires exactly this in-app PIN — any other (or `None`) yields
+    /// [`SmartcardError::WrongPin`], so the API PIN-threading + wrong-PIN mapping is exercised while
+    /// a *correct* PIN still produces a real, validating signature.
+    expected_pin: Option<String>,
+    /// t67-e8: the PIN threaded to every `sign_digest_with_pin` call (shared across the cloned
+    /// per-request providers), so a test can assert the in-app PIN reached the card seam. The
+    /// recorded value never leaves the test — production code never surfaces it.
+    pin_log: Arc<Mutex<Vec<Option<String>>>>,
 }
 
 #[derive(Clone)]
@@ -95,6 +104,8 @@ impl CcTestCard {
             auth_cert_der: auth.cert_der,
             issuer_cert_der: issuer.cert_der,
             signature_key: signature.key,
+            expected_pin: None,
+            pin_log: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -107,7 +118,21 @@ impl CcTestCard {
             auth_cert_der: auth.cert_der,
             issuer_cert_der: issuer.cert_der,
             signature_key: signature.key,
+            expected_pin: None,
+            pin_log: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    /// Require exactly `pin` as the in-app PIN (t67-e8): a correct PIN signs for real, any other
+    /// yields [`SmartcardError::WrongPin`]. The shared PIN log is unaffected.
+    fn requiring_pin(mut self, pin: &str) -> Self {
+        self.expected_pin = Some(pin.to_owned());
+        self
+    }
+
+    /// The PINs threaded to the card so far (shared across the cloned per-request providers).
+    fn threaded_pins(&self) -> Vec<Option<String>> {
+        self.pin_log.lock().expect("pin log poisoned").clone()
     }
 
     fn algorithm(&self) -> SignatureAlgorithm {
@@ -160,6 +185,29 @@ impl CryptoToken for CcTestCard {
             cert.cert_der.clone(),
             Vec::new(),
         ))
+    }
+
+    fn sign_digest_with_pin(
+        &self,
+        cert: &TokenCertificate,
+        digest: &[u8; 32],
+        pin: Option<&str>,
+    ) -> Result<RawSignature, SmartcardError> {
+        // Record the threaded PIN (test-only observation) before any early return.
+        self.pin_log
+            .lock()
+            .expect("pin log poisoned")
+            .push(pin.map(str::to_owned));
+        // A required-PIN card rejects a wrong/absent PIN with the typed WrongPin the api classifies.
+        if let Some(expected) = &self.expected_pin
+            && pin != Some(expected.as_str())
+        {
+            return Err(SmartcardError::WrongPin {
+                tries_left: PinTriesLeft::Low,
+            });
+        }
+        // A correct (or unconstrained) PIN produces the same real signature as the NULL-PIN path.
+        self.sign_digest(cert, digest)
     }
 }
 
@@ -1942,4 +1990,195 @@ async fn cc_sign_provider_error_maps_to_honest_error() {
     );
 
     assert_no_signed_artifact_or_event(&state, &token_s, &act_id).await;
+}
+
+// --- t67-e8: in-app CC PIN ------------------------------------------------------------------------
+
+/// The in-app PIN happy path: a co-located CC signature with a correct in-app PIN threads the PIN to
+/// the card, produces a validating qualified signature, and leaves the PIN in **no** server artifact
+/// (redaction — plan §6).
+#[tokio::test]
+async fn cc_sign_with_in_app_pin_signs_and_redacts_pin() {
+    // A distinctive PIN that would be trivial to spot if it leaked into any artifact.
+    const PIN: &str = "824193";
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1().requiring_pin(PIN);
+    let observer = card.clone(); // shares the PIN log Arc with the per-request providers
+    let signature_cert_der = card.signature_cert_der.clone();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "capacity": "Administrador", "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cc sign with in-app PIN: {done}");
+    assert_eq!(done["family"], "CartaoDeCidadao");
+    assert_eq!(done["finalization"], "finalizado_qualificado");
+
+    // The in-app PIN was threaded through the signing seam to the card (and only that PIN).
+    assert_eq!(observer.threaded_pins(), vec![Some(PIN.to_owned())]);
+
+    // The produced PDF validates (SIG-24), signed by the card's SIGNATURE leaf.
+    let (status, signed_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let report = validate_pdf_signature(&signed_pdf).expect("signed PDF must validate");
+    assert!(report.covers_whole_file_except_contents);
+    assert_eq!(report.cades.signer_cert_der, signature_cert_der);
+
+    // REDACTION (plan §6): the PIN appears in NO server-visible artifact — not the sign response,
+    // not any ledger event, not the signature status view.
+    assert!(
+        !done.to_string().contains(PIN),
+        "PIN must not appear in the sign response: {done}"
+    );
+    let (_, events) = send(
+        &state,
+        get_req(&format!("/v1/ledger/events?scope=act:{act_id}"), &token),
+    )
+    .await;
+    assert!(
+        !events.to_string().contains(PIN),
+        "PIN must not appear in any ledger event: {events}"
+    );
+    let (_, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert!(
+        !view.to_string().contains(PIN),
+        "PIN must not appear in the signature status view: {view}"
+    );
+}
+
+/// A wrong in-app PIN is mapped to a structured `422` carrying `pin_status` + `tries_left`, with the
+/// PIN absent from every field of the error body, and leaves no artifact behind.
+#[tokio::test]
+async fn cc_sign_wrong_in_app_pin_maps_to_structured_422_without_leaking_pin() {
+    const CARD_PIN: &str = "824193";
+    const WRONG_PIN: &str = "000111";
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1().requiring_pin(CARD_PIN);
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "pin": WRONG_PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "wrong in-app PIN → structured 422: {err}"
+    );
+    assert_eq!(err["pin_status"], "wrong_pin");
+    assert_eq!(err["tries_left"], "low");
+    assert!(
+        err["error"].as_str().unwrap_or_default().contains("PIN"),
+        "honest PIN-incorrect message: {err}"
+    );
+    // Neither the presented wrong PIN nor the card's PIN may appear anywhere in the body.
+    let body = err.to_string();
+    assert!(
+        !body.contains(WRONG_PIN) && !body.contains(CARD_PIN),
+        "error body must not leak any PIN: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+/// A blocked card PIN is mapped to a structured `422` with `pin_status: "blocked"`, without leaking
+/// the presented PIN, and leaves no artifact behind.
+#[tokio::test]
+async fn cc_sign_blocked_in_app_pin_maps_to_structured_422() {
+    const PIN: &str = "000111";
+    let dir = TempDir::new();
+    // The shape-only MockToken with a blocked user PIN rejects the login before signing. A dummy
+    // issuer + granted policy isolate the failure to the PIN so the TSL gate passes first.
+    let mock = MockToken::cartao_de_cidadao_v1().with_blocked_pin();
+    let factory = provider_factory(mock, Some(vec![0u8; 4]));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "pin": PIN }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "blocked PIN → structured 422: {err}"
+    );
+    assert_eq!(err["pin_status"], "blocked");
+    assert!(
+        !err.to_string().contains(PIN),
+        "error body must not leak the presented PIN: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+/// A PIN supplied to a **non-co-located** server is refused by the co-location gate (409) before any
+/// PIN is read — the honest "requires the desktop app" message, no artifact.
+#[tokio::test]
+async fn cc_sign_with_pin_still_409_when_not_co_located() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1().requiring_pin("824193");
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, false);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "pin": "824193" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "not co-located → 409: {err}");
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("aplicação de secretária"),
+        "honest co-location message: {err}"
+    );
+    assert!(
+        !err.to_string().contains("824193"),
+        "the refused PIN must not appear in the body: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }

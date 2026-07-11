@@ -62,7 +62,7 @@ use chancela_signing::{
     RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider,
     TimestampTrustDecision, TimestampTrustPolicy, TimestampTrustReport, TrustPolicy,
     TrustedListStatus, TslTrustPolicy, attach_pdf_dss, attach_pdf_revocation_evidence, cmd_confirm,
-    cmd_initiate, sign_pdf_cc, sign_pdf_pades, validate_timestamp_trust,
+    cmd_initiate, sign_pdf_pades, validate_timestamp_trust,
 };
 use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError};
 use chancela_smartcard::Pkcs11Token;
@@ -1677,8 +1677,16 @@ pub(crate) fn local_signing_from_env() -> bool {
     }
 }
 
-/// Body of `POST /v1/acts/{id}/signature/cc/sign`. **Carries no secret** — the PIN is entered at the
-/// card reader, driven by the Autenticação.gov middleware, and never enters this process.
+/// Body of `POST /v1/acts/{id}/signature/cc/sign`.
+///
+/// **Secret discipline (t67-e8, plan §0.1/§6).** The optional [`Self::pin`] is a *transient in-app
+/// Cartão de Cidadão PIN*, accepted **only** on the co-located deployment (desktop embedded server /
+/// same-host reader — the co-location gate already 409s a remote server before any PIN is read). When
+/// present it is wrapped in a [`Zeroizing`] buffer the instant the handler runs, threaded by
+/// reference to `C_Login`, and dropped/zeroized on every path; when absent the classic
+/// protected-authentication path runs and the middleware owns the reader PIN dialog. This struct is
+/// **`Deserialize`-only** — no `Serialize`, no `Debug` — so the PIN can never be serialized back out,
+/// logged, or `Debug`-printed (mirrors the CMD `pin`/`otp` hardening in this file).
 #[derive(Deserialize)]
 pub struct CcSignRequest {
     /// The capacity in which the signer acts (optional, informational — mirrors the CMD body).
@@ -1687,6 +1695,12 @@ pub struct CcSignRequest {
     /// Actor override for attribution.
     #[serde(default)]
     pub actor: Option<String>,
+    /// The optional transient in-app Cartão de Cidadão PIN (co-location-gated). **Transient secret —
+    /// consumed by the single card login, never persisted/logged/echoed.** Deserialized into a plain
+    /// `String` and wrapped in [`Zeroizing`] immediately by the handler (the enclosing struct emits no
+    /// `Serialize`/`Debug`, so it cannot leak through this DTO). Absent = protected-auth at the reader.
+    #[serde(default)]
+    pub pin: Option<String>,
 }
 
 /// Response of a successful CC signature — the **same shape** as the CMD confirm response (t57-S3),
@@ -1887,6 +1901,11 @@ pub async fn sign_cc_signature(
         ));
     }
 
+    // Transient in-app PIN (co-location-gated above): wrap the moment it is read, thread by
+    // reference to the card login, and drop/zeroize when `run_cc_sign` returns. `None` keeps the
+    // classic protected-authentication path (the middleware owns the reader dialog). Never logged.
+    let pin = req.pin.filter(|p| !p.is_empty()).map(Zeroizing::new);
+
     let tsl_source = configured_tsl_source(&state).await?;
     // A fixed signing time (whole seconds), carried into both the /Sig dict and the signed record.
     let signing_time = OffsetDateTime::now_utc()
@@ -1908,90 +1927,42 @@ pub async fn sign_cc_signature(
     };
 
     // Drive the card on `spawn_blocking` — the PKCS#11/PC/SC FFI and the human-paced PIN entry at
-    // the reader both block, and must not stall the axum async runtime.
-    let cc = run_cc_sign(&state, tsl_source, unsigned.pdf_bytes, signing_time, opts).await?;
-    let final_pdf = finalize_signed_pdf(&state, cc.signed_pdf, &cc.signing_cert_der).await?;
-
-    // Resolve the ledger scope from the live act (re-checking presence).
-    let scope = {
-        let entities = state.entities.read().await;
-        let books = state.books.read().await;
-        let acts = state.acts.read().await;
-        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
-        let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
-        let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
-        format!("entity:{}/book:{}/act:{}", entity.id, act.book_id, act.id)
-    };
-
-    let digest: [u8; 32] = Sha256::digest(&final_pdf.bytes).into();
-    let signed_pdf_digest = crate::hex::hex(&digest);
-    let signed_at = OffsetDateTime::now_utc();
-    let trusted_list_status = cc.trusted_list_status.map(status_label);
-    let document_id = crate::documents::load_document(&state, act_id)
-        .await?
-        .map(|d| d.id)
-        .unwrap_or_default();
-    // Reuse t57-S3's F4 signed-document store row unchanged (family-agnostic columns).
-    let stored = StoredSignedDocument {
-        act_id,
-        document_id: document_id.clone(),
-        signed_pdf_digest: signed_pdf_digest.clone(),
-        signature_family: FAMILY_CC.to_owned(),
-        evidentiary_level: EVIDENTIARY_QUALIFIED.to_owned(),
-        trusted_list_status: trusted_list_status.clone(),
-        signer_cert_subject: subject_dn(&cc.signing_cert_der),
+    // the reader both block, and must not stall the axum async runtime. The transient PIN (if any)
+    // is consumed here and zeroized on return.
+    let cc = run_cc_sign(
+        &state,
+        tsl_source,
+        unsigned.pdf_bytes,
         signing_time,
-        signed_at,
-        signer_cert_der: cc.signing_cert_der.clone(),
-        timestamp_token_der: final_pdf.timestamp_token_der.clone(),
-        timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
-        signer_capacity_evidence_json,
-        signed_pdf_bytes: final_pdf.bytes,
-    };
+        opts,
+        pin,
+    )
+    .await?;
 
-    // Persist the signed variant + a chained `document.signed` event — one durable commit, the SAME
-    // event/store path CMD uses (t57-S3). No secret anywhere (CC has no PIN/OTP in-process).
-    let event_payload = json!({
-        "act_id": act_id.to_string(),
-        "document_id": document_id,
-        "signed_pdf_digest": signed_pdf_digest,
-        "family": FAMILY_CC,
-        "evidentiary_level": EVIDENTIARY_QUALIFIED,
-        "trusted_list_status": trusted_list_status,
-        "signer_capacity_evidence": signer_capacity_evidence_value(
-            stored.signer_capacity_evidence_json.as_deref()
-        ),
-        "profile": pades_profile(final_pdf.timestamp_token_der.is_some()),
-    });
-    let payload = serde_json::to_vec(&event_payload)?;
-    {
-        let mut ledger = state.ledger.write().await;
-        crate::try_append_event(
-            &mut ledger,
-            &actor,
-            &scope,
-            "document.signed",
-            None,
-            &payload,
-        )?;
-        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
-        state.attest_latest(&attestor, &ledger).await;
-    }
-    state
-        .signed_documents
-        .write()
-        .await
-        .insert(act_id, stored.clone());
+    // Finalize + persist + chain the `document.signed` event through the shared single-doc path
+    // (identical to the pre-t67 body; the batch endpoint reuses the same helper). No secret anywhere.
+    let persisted = persist_cc_signed_pdf(
+        &state,
+        &attestor,
+        &actor,
+        act_id,
+        cc.signed_pdf,
+        &cc.signing_cert_der,
+        cc.trusted_list_status,
+        signing_time,
+        signer_capacity_evidence_json,
+    )
+    .await?;
 
     Ok(Json(CcSignResponse {
-        document_id,
+        document_id: persisted.document_id,
         act_id: act_id.to_string(),
         family: FAMILY_CC,
         evidentiary_level: EVIDENTIARY_QUALIFIED,
-        trusted_list_status,
-        signed_at: rfc3339(signed_at),
-        signed_pdf_digest,
-        timestamp_token: final_pdf.report.has_signature_timestamp,
+        trusted_list_status: persisted.trusted_list_status,
+        signed_at: rfc3339(persisted.signed_at),
+        signed_pdf_digest: persisted.signed_pdf_digest,
+        timestamp_token: persisted.timestamp_token,
         finalization: "finalizado_qualificado",
         signer_capacity_evidence,
     }))
@@ -2288,7 +2259,7 @@ pub async fn append_archive_timestamp(
 }
 
 /// Drive the synchronous CC signature on `spawn_blocking`: build the trusted-list policy + the
-/// smartcard provider, then run [`sign_pdf_cc`]. The provider is the injected key-backed test
+/// smartcard provider, then run `sign_pdf_cc_with_pin`. The provider is the injected key-backed test
 /// provider (`cc_provider`), or the real co-located [`Pkcs11Token`]-backed [`SmartcardProvider`]
 /// (production). The provider is built and consumed **inside** the blocking task, so it never
 /// crosses a thread boundary.
@@ -2298,6 +2269,7 @@ async fn run_cc_sign(
     pdf: Vec<u8>,
     signing_time: OffsetDateTime,
     opts: SignOptions,
+    pin: Option<Zeroizing<String>>,
 ) -> Result<CcSignedPdf, ApiError> {
     let policy_factory = state.cmd_trust_policy.clone();
     let provider_factory = state.cc_provider.clone();
@@ -2307,17 +2279,78 @@ async fn run_cc_sign(
             Some(factory) => factory().map_err(map_cc_signing_error)?,
             None => Box::new(build_pkcs11_cc_provider()?),
         };
-        sign_pdf_cc(
+        // The transient PIN (borrowed, never copied) is presented to `C_Login` when `Some`; `None`
+        // is exactly the protected-authentication path. It is dropped/zeroized when this task ends.
+        chancela_signing::cc::sign_pdf_cc_with_pin(
             provider.as_ref(),
             &pdf,
             signing_time,
             &opts,
             Some(policy.as_mut()),
+            pin.as_ref(),
         )
         .map_err(map_cc_signing_error)
     })
     .await
     .map_err(|e| ApiError::Internal(format!("cc sign task failed: {e}")))?
+}
+
+/// One PDF to sign in an in-app CC batch: the source unsigned bytes, its owning act, its source
+/// document id, and the per-document [`SignOptions`]. Owned so the bytes outlive the borrowed
+/// [`BatchPdfDocument`] built inside the blocking batch task.
+pub(crate) struct CcBatchDocInput {
+    /// The owning act id (also the [`BatchPdfDocument::id`] correlation key, as a string). The source
+    /// document id is re-resolved at persist time (like the single-doc path), so it is not held here.
+    pub act_id: ActId,
+    /// The sealed unsigned PDF/A bytes to sign.
+    pub pdf: Vec<u8>,
+    /// PAdES options for this document.
+    pub options: SignOptions,
+    /// Declared signer-capacity evidence JSON for this document (batch-wide capacity, per-doc row).
+    pub signer_capacity_evidence_json: Option<String>,
+}
+
+/// Drive an **in-app Cartão de Cidadão batch** on `spawn_blocking`: build the trust policy + the CC
+/// provider **once**, then sign every document under one authentication via
+/// [`chancela_signing::sign_pdf_batch`] (t67-e6). The optional transient PIN is held in a single
+/// [`Zeroizing`] buffer and replayed to each card login, so the signer authenticates once
+/// ([`AuthMode::SingleAuth`]); it is dropped/zeroized when the task ends. The trusted-list gate runs
+/// once over the shared signer issuer and fails the whole batch closed if not `Granted`. No visible
+/// seal is placed here (seal options are e9's DTO work); every document uses the invisible widget.
+pub(crate) async fn run_cc_batch_sign(
+    state: &AppState,
+    tsl_source: Option<RuntimeTslSource>,
+    documents: Vec<CcBatchDocInput>,
+    signing_time: OffsetDateTime,
+    pin: Option<Zeroizing<String>>,
+) -> Result<chancela_signing::BatchReport, ApiError> {
+    let policy_factory = state.cmd_trust_policy.clone();
+    let provider_factory = state.cc_provider.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
+        let provider: Box<dyn SignerProvider> = match provider_factory {
+            Some(factory) => factory().map_err(map_cc_signing_error)?,
+            None => Box::new(build_pkcs11_cc_provider()?),
+        };
+        let batch_docs: Vec<chancela_signing::BatchPdfDocument<'_>> = documents
+            .iter()
+            .map(|doc| chancela_signing::BatchPdfDocument {
+                id: doc.act_id.to_string(),
+                pdf: &doc.pdf,
+                options: doc.options.clone(),
+                appearance: None,
+            })
+            .collect();
+        Ok::<_, ApiError>(chancela_signing::sign_pdf_batch(
+            provider.as_ref(),
+            &batch_docs,
+            signing_time,
+            Some(policy.as_mut()),
+            pin,
+        ))
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("cc batch sign task failed: {e}")))?
 }
 
 /// Build the real Cartão de Cidadão provider for the co-located desktop deployment: open the
@@ -2345,7 +2378,7 @@ fn build_pkcs11_cc_provider() -> Result<SmartcardProvider<Pkcs11Token>, ApiError
 /// messages, distinct from the internal PDF-structure (`Pades`) / CMS (`Cades`) errors. A provider
 /// failure (card absent, PIN cancelled/wrong, signature not activated, reader missing) is
 /// client-actionable → 422. No secret is ever echoed (the CC path holds none).
-fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiError {
+pub(crate) fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
     match e {
         S::UntrustedService { status } => ApiError::Unprocessable(format!(
@@ -2355,16 +2388,291 @@ fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiError {
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do Cartão de Cidadão".to_owned(),
         ),
-        // Where a card/PIN/activation/reader failure surfaces (distinct from Pades/Cades).
-        S::Provider(msg) => ApiError::Unprocessable(format!(
-            "não foi possível assinar com o Cartão de Cidadão (verifique o cartão, o leitor e o \
-             PIN): {msg}"
-        )),
+        // Where a card/PIN/activation/reader failure surfaces (distinct from Pades/Cades). A
+        // *rejected/blocked in-app PIN* is classified into a structured 4xx carrying the tries-left
+        // hint (never the PIN, never the raw provider string); any other provider fault stays a
+        // generic honest 422.
+        S::Provider(msg) => match classify_cc_pin_rejection(&msg) {
+            Some(rejection) => rejection.into_api_error(),
+            None => ApiError::Unprocessable(format!(
+                "não foi possível assinar com o Cartão de Cidadão (verifique o cartão, o leitor e o \
+                 PIN): {msg}"
+            )),
+        },
         S::Cades(msg) | S::Pades(msg) => {
             ApiError::Internal(format!("falha ao montar a assinatura: {msg}"))
         }
         other => ApiError::Upstream(format!("falha no serviço de assinatura: {other}")),
     }
+}
+
+/// A recognised in-app-PIN rejection surfaced by the card, classified from the **PIN-free**
+/// [`chancela_signing::SigningError::Provider`] message (t67-e8).
+///
+/// The knowledge that a login failed for a wrong/blocked PIN — and the best-effort remaining-attempt
+/// hint — is worth surfacing to the operator, but it must never carry the PIN itself or a raw
+/// provider string. `chancela-smartcard` flattens its typed `WrongPin { tries_left }` / `PinBlocked`
+/// into `Provider(_)` with a **guaranteed PIN-free** `Display` (plan §6; the api "resolves the finer
+/// distinction" per the `SmartcardProvider` seam comment); this reconstructs the machine-readable
+/// distinction from those stable markers. If the middleware ever changes its wording the classifier
+/// simply declines and the caller falls back to the generic honest 422 — never a silent leak.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CcPinRejection {
+    /// `"wrong_pin"` (an incorrect PIN was presented) or `"blocked"` (the card is locked).
+    pin_status: &'static str,
+    /// The best-effort remaining-attempt hint (`"low"`/`"final_try"`/`"locked"`/`"unknown"`), or
+    /// `None` when the card revealed nothing.
+    tries_left: Option<&'static str>,
+}
+
+impl CcPinRejection {
+    /// The honest, PIN-free Portuguese operator message for this rejection.
+    fn message(self) -> String {
+        match self.pin_status {
+            "blocked" => "O PIN do Cartão de Cidadão está bloqueado após demasiadas tentativas \
+                 incorretas; desbloqueie-o com o PUK na aplicação Autenticação.gov."
+                .to_owned(),
+            _ => {
+                let hint = match self.tries_left {
+                    Some("final_try") => " Resta uma tentativa antes de o cartão bloquear.",
+                    Some("locked") => " O cartão ficou bloqueado.",
+                    Some("low") => " Restam poucas tentativas antes de o cartão bloquear.",
+                    _ => "",
+                };
+                format!(
+                    "PIN do Cartão de Cidadão incorreto. Verifique o PIN e tente novamente.{hint}"
+                )
+            }
+        }
+    }
+
+    /// Render as the structured [`ApiError::PinRejected`] 4xx (carries `pin_status` + `tries_left`,
+    /// never the PIN).
+    fn into_api_error(self) -> ApiError {
+        ApiError::PinRejected {
+            message: self.message(),
+            pin_status: self.pin_status,
+            tries_left: self.tries_left,
+        }
+    }
+}
+
+/// Classify a PIN-free provider message into a [`CcPinRejection`], or `None` if it is not a
+/// recognised in-app-PIN rejection. Mirrors `chancela_smartcard::SmartcardError` /
+/// `chancela_smartcard::PinTriesLeft` `Display` (both guaranteed PIN-free) — the sole coupling point.
+pub(crate) fn classify_cc_pin_rejection(msg: &str) -> Option<CcPinRejection> {
+    if msg.contains("PIN blocked") {
+        return Some(CcPinRejection {
+            pin_status: "blocked",
+            tries_left: Some("locked"),
+        });
+    }
+    if msg.contains("incorrect PIN") {
+        let tries_left = if msg.contains("one attempt remains") {
+            Some("final_try")
+        } else if msg.contains("the card is now locked") {
+            Some("locked")
+        } else if msg.contains("few attempts remain") {
+            Some("low")
+        } else {
+            Some("unknown")
+        };
+        return Some(CcPinRejection {
+            pin_status: "wrong_pin",
+            tries_left,
+        });
+    }
+    None
+}
+
+/// The honest, **PIN-free** per-document failure message for a batch outcome (t67-e8). A rejected /
+/// blocked PIN yields its structured operator message; any other fault reuses the single-doc mapping
+/// but flattens to a string (a batch returns `200` with per-document results, not an HTTP error).
+pub(crate) fn cc_batch_doc_error_message(e: &chancela_signing::SigningError) -> String {
+    if let chancela_signing::SigningError::Provider(msg) = e
+        && let Some(rejection) = classify_cc_pin_rejection(msg)
+    {
+        return rejection.message();
+    }
+    match map_cc_signing_error(e.clone()) {
+        // A structured PIN rejection (already handled above) or any client-actionable 4xx: surface
+        // its honest message. Internal/upstream faults are summarised without leaking internals.
+        ApiError::PinRejected { message, .. }
+        | ApiError::Unprocessable(message)
+        | ApiError::Conflict(message) => message,
+        ApiError::Internal(_) => "falha ao montar a assinatura deste documento".to_owned(),
+        _ => "falha no serviço de assinatura para este documento".to_owned(),
+    }
+}
+
+/// Resolve one act for the in-app CC batch, enforcing the **same** preconditions as the single-doc
+/// CC path — the act exists, is sealed, has an unsigned document, and is not already signed — and
+/// build its per-document [`CcBatchDocInput`] (t67-e8). Returns `Err(honest, PIN-free per-document
+/// message)` on a precondition failure so the batch records it and continues with the rest, rather
+/// than aborting the whole batch (plan §2 per-document isolation). Never touches a secret.
+pub(crate) async fn resolve_cc_batch_doc(
+    state: &AppState,
+    act_id: ActId,
+    signing_time: OffsetDateTime,
+    capacity: Option<&str>,
+    signer_capacity_evidence_json: Option<String>,
+) -> Result<CcBatchDocInput, String> {
+    {
+        let acts = state.acts.read().await;
+        let act = acts
+            .get(&act_id)
+            .ok_or_else(|| "ato não encontrado".to_owned())?;
+        if act.ata_number.is_none() {
+            return Err(
+                "o ato ainda não foi selado; a assinatura qualificada é um passo \
+                 posterior ao selo"
+                    .to_owned(),
+            );
+        }
+    }
+    let unsigned = crate::documents::load_document(state, act_id)
+        .await
+        .map_err(|_| "não foi possível carregar o documento do ato".to_owned())?
+        .ok_or_else(|| "o ato selado não tem documento para assinar".to_owned())?;
+    if load_signed(state, act_id)
+        .await
+        .map_err(|_| "não foi possível verificar assinaturas existentes".to_owned())?
+        .is_some()
+    {
+        return Err("o ato já tem uma assinatura qualificada".to_owned());
+    }
+    let reason = match capacity {
+        Some(capacity) => format!("Assinatura qualificada da ata ({capacity})"),
+        None => "Assinatura qualificada da ata".to_owned(),
+    };
+    let options = SignOptions {
+        field_name: Some("Assinatura".to_owned()),
+        signing_time: Some(pdf_time(signing_time)),
+        reason: Some(reason),
+        location: None,
+        contact_info: None,
+    };
+    Ok(CcBatchDocInput {
+        act_id,
+        pdf: unsigned.pdf_bytes,
+        options,
+        signer_capacity_evidence_json,
+    })
+}
+
+/// The persisted facts of one completed Cartão de Cidadão signature (t67-e8), enough for both the
+/// single-doc response and one row of a batch result.
+pub(crate) struct PersistedCcSignature {
+    /// The source unsigned `documents` row id.
+    pub document_id: String,
+    /// Lowercase-hex sha-256 of the final signed PDF bytes.
+    pub signed_pdf_digest: String,
+    /// When the api completed the signature (UTC).
+    pub signed_at: OffsetDateTime,
+    /// The signer issuer's trusted-list status label at signing time, if a policy was consulted.
+    pub trusted_list_status: Option<String>,
+    /// Whether an RFC 3161 signature timestamp is present (B-T).
+    pub timestamp_token: bool,
+}
+
+/// Finalize (optional timestamp), persist the signed variant, and chain the `document.signed`
+/// event for one CC-signed PDF (t67-e8) — the exact single-doc path, shared by
+/// [`sign_cc_signature`] and the in-app CC batch endpoint so both stay byte-identical.
+///
+/// No secret is ever touched here: the card PIN was consumed inside the blocking sign task and is
+/// long gone; this operates only on the produced public artifact + certificate.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn persist_cc_signed_pdf(
+    state: &AppState,
+    attestor: &CurrentAttestor,
+    actor: &str,
+    act_id: ActId,
+    signed_pdf: Vec<u8>,
+    signing_cert_der: &[u8],
+    trusted_list_status: Option<TrustedListStatus>,
+    signing_time: OffsetDateTime,
+    signer_capacity_evidence_json: Option<String>,
+) -> Result<PersistedCcSignature, ApiError> {
+    let final_pdf = finalize_signed_pdf(state, signed_pdf, signing_cert_der).await?;
+
+    // Resolve the ledger scope from the live act (re-checking presence).
+    let scope = {
+        let entities = state.entities.read().await;
+        let books = state.books.read().await;
+        let acts = state.acts.read().await;
+        let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
+        let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
+        let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+        format!("entity:{}/book:{}/act:{}", entity.id, act.book_id, act.id)
+    };
+
+    let digest: [u8; 32] = Sha256::digest(&final_pdf.bytes).into();
+    let signed_pdf_digest = crate::hex::hex(&digest);
+    let signed_at = OffsetDateTime::now_utc();
+    let trusted_list_status = trusted_list_status.map(status_label);
+    let document_id = crate::documents::load_document(state, act_id)
+        .await?
+        .map(|d| d.id)
+        .unwrap_or_default();
+    // Reuse t57-S3's F4 signed-document store row unchanged (family-agnostic columns).
+    let stored = StoredSignedDocument {
+        act_id,
+        document_id: document_id.clone(),
+        signed_pdf_digest: signed_pdf_digest.clone(),
+        signature_family: FAMILY_CC.to_owned(),
+        evidentiary_level: EVIDENTIARY_QUALIFIED.to_owned(),
+        trusted_list_status: trusted_list_status.clone(),
+        signer_cert_subject: subject_dn(signing_cert_der),
+        signing_time,
+        signed_at,
+        signer_cert_der: signing_cert_der.to_vec(),
+        timestamp_token_der: final_pdf.timestamp_token_der.clone(),
+        timestamp_trust_report_json: final_pdf.timestamp_trust_report_json.clone(),
+        signer_capacity_evidence_json,
+        signed_pdf_bytes: final_pdf.bytes,
+    };
+
+    // Persist the signed variant + a chained `document.signed` event — one durable commit, the SAME
+    // event/store path CMD uses (t57-S3). No secret anywhere.
+    let event_payload = json!({
+        "act_id": act_id.to_string(),
+        "document_id": document_id,
+        "signed_pdf_digest": signed_pdf_digest,
+        "family": FAMILY_CC,
+        "evidentiary_level": EVIDENTIARY_QUALIFIED,
+        "trusted_list_status": trusted_list_status,
+        "signer_capacity_evidence": signer_capacity_evidence_value(
+            stored.signer_capacity_evidence_json.as_deref()
+        ),
+        "profile": pades_profile(final_pdf.timestamp_token_der.is_some()),
+    });
+    let payload = serde_json::to_vec(&event_payload)?;
+    {
+        let mut ledger = state.ledger.write().await;
+        crate::try_append_event(
+            &mut ledger,
+            actor,
+            &scope,
+            "document.signed",
+            None,
+            &payload,
+        )?;
+        state.persist_write_through(&mut ledger, 1, |tx| tx.upsert_signed_document(&stored))?;
+        state.attest_latest(attestor, &ledger).await;
+    }
+    state
+        .signed_documents
+        .write()
+        .await
+        .insert(act_id, stored.clone());
+
+    Ok(PersistedCcSignature {
+        document_id,
+        signed_pdf_digest,
+        signed_at,
+        trusted_list_status,
+        timestamp_token: final_pdf.report.has_signature_timestamp,
+    })
 }
 
 // =================================================================================================
@@ -4775,7 +5083,7 @@ fn optional_trimmed(value: Option<String>) -> Option<String> {
     })
 }
 
-fn signer_capacity_evidence_from_capacity(
+pub(crate) fn signer_capacity_evidence_from_capacity(
     capacity: Option<String>,
 ) -> Option<SignerCapacityEvidence> {
     optional_trimmed(capacity).map(|requested_provider_capacity| SignerCapacityEvidence {
@@ -4789,7 +5097,7 @@ fn signer_capacity_evidence_from_capacity(
     })
 }
 
-fn signer_capacity_evidence_json(
+pub(crate) fn signer_capacity_evidence_json(
     evidence: &Option<SignerCapacityEvidence>,
 ) -> Result<Option<String>, ApiError> {
     evidence
@@ -5357,7 +5665,9 @@ async fn configured_tsa_provider(state: &AppState) -> Result<Option<RuntimeTsaPr
     Ok(Some(provider))
 }
 
-async fn configured_tsl_source(state: &AppState) -> Result<Option<RuntimeTslSource>, ApiError> {
+pub(crate) async fn configured_tsl_source(
+    state: &AppState,
+) -> Result<Option<RuntimeTslSource>, ApiError> {
     let selection = state.settings.read().await.signing.runtime_tsl_selection();
     if let Some(error) = selection.selection_error {
         return Err(ApiError::Unprocessable(format!(
@@ -5619,7 +5929,7 @@ fn cmd_config_err(e: chancela_cmd::CmdError) -> ApiError {
 }
 
 /// The stable string label for a trusted-list status (used in payloads and views).
-fn status_label(status: TrustedListStatus) -> String {
+pub(crate) fn status_label(status: TrustedListStatus) -> String {
     match status {
         TrustedListStatus::Granted => "Granted".to_owned(),
         TrustedListStatus::Withdrawn => "Withdrawn".to_owned(),
@@ -5676,7 +5986,7 @@ fn pdf_time(t: OffsetDateTime) -> String {
 }
 
 /// RFC 3339 rendering of a timestamp (empty on the impossible format error).
-fn rfc3339(t: OffsetDateTime) -> String {
+pub(crate) fn rfc3339(t: OffsetDateTime) -> String {
     t.format(&Rfc3339).unwrap_or_default()
 }
 

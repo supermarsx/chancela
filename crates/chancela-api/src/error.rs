@@ -73,6 +73,20 @@ pub enum ApiError {
         /// The warnings awaiting acknowledgement.
         warnings: Vec<IssueView>,
     },
+    /// An in-app Cartão de Cidadão PIN was rejected or the card is blocked (422, t67-e8). Carries a
+    /// structured, machine-readable `pin_status` (`"wrong_pin"`/`"blocked"`) and a best-effort
+    /// `tries_left` hint alongside the base `error` message. **Never carries the PIN** — the message
+    /// and every field are reconstructed from the smartcard's guaranteed PIN-free error, so a wrong
+    /// PIN can never leak through the body. Additive + self-contained (no `contracts/**` fixture).
+    PinRejected {
+        /// Human-readable, PIN-free summary (mirrors the base `error` field).
+        message: String,
+        /// `"wrong_pin"` (an incorrect PIN was presented) or `"blocked"` (the card is locked).
+        pin_status: &'static str,
+        /// Best-effort remaining-attempt hint (`"low"`/`"final_try"`/`"locked"`/`"unknown"`), or
+        /// `None` when the card revealed nothing.
+        tries_left: Option<&'static str>,
+    },
     /// An unexpected internal failure, e.g. payload serialization (500). The string is a
     /// short, non-sensitive description safe to return to the caller.
     Internal(String),
@@ -110,12 +124,24 @@ struct ErrorWithPasswordFailures<'a> {
     failed_rules: &'a [crate::password_policy::PasswordRuleFailure],
 }
 
+/// Error body for a rejected/blocked in-app Cartão de Cidadão PIN (t67-e8). Additive: the base
+/// `error` field is preserved and PIN-free machine-readable fields are added alongside it. **Never
+/// carries the PIN.**
+#[derive(Serialize)]
+struct ErrorWithPinStatus<'a> {
+    error: &'a str,
+    pin_status: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tries_left: Option<&'a str>,
+}
+
 impl ApiError {
     fn status(&self) -> StatusCode {
         match self {
             ApiError::InvalidNipc(_)
             | ApiError::Unprocessable(_)
             | ApiError::PasswordPolicy { .. }
+            | ApiError::PinRejected { .. }
             | ApiError::ComplianceBlocked { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
@@ -144,6 +170,7 @@ impl ApiError {
             | ApiError::Upstream(msg) => msg.clone(),
             ApiError::ComplianceBlocked { message, .. }
             | ApiError::WarningsNotAcknowledged { message, .. }
+            | ApiError::PinRejected { message, .. }
             | ApiError::PasswordPolicy { message, .. } => message.clone(),
         }
     }
@@ -187,6 +214,19 @@ impl IntoResponse for ApiError {
                 Json(ErrorWithPasswordFailures {
                     error: message,
                     failed_rules: failures,
+                }),
+            )
+                .into_response(),
+            ApiError::PinRejected {
+                message,
+                pin_status,
+                tries_left,
+            } => (
+                status,
+                Json(ErrorWithPinStatus {
+                    error: message,
+                    pin_status,
+                    tries_left: *tries_left,
                 }),
             )
                 .into_response(),

@@ -81,6 +81,7 @@ mod attestation;
 mod authz;
 mod backup;
 mod backup_recovery;
+mod batch_signing;
 mod books;
 mod bundles;
 mod cae;
@@ -1309,6 +1310,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/acts/{id}/signature/cc/sign",
             post(signature::sign_cc_signature),
+        )
+        .route(
+            "/v1/signature/cc/batch-sign",
+            post(batch_signing::sign_cc_batch),
         )
         .route(
             "/v1/acts/{id}/signature/dss/attach",
