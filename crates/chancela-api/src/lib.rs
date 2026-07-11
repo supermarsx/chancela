@@ -5419,6 +5419,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed() {
+        use chancela_authz::{GUEST_ROLE_ID, LEITOR_ROLE_ID, RoleAssignment, Scope};
+
+        let state = fresh_state().await;
+        let owner_token = auth_token(&state).await;
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                put_json(
+                    "/v1/settings",
+                    json!({ "organization": { "name": "Dashboard Audit" } }),
+                ),
+                &owner_token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        let (status, owner_dashboard) = send_raw(
+            state.clone(),
+            with_session(get("/v1/dashboard"), &owner_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{owner_dashboard}");
+        let owner_events = owner_dashboard["recent_events"]
+            .as_array()
+            .expect("owner recent_events");
+        let owner_event = owner_events
+            .iter()
+            .find(|event| event["kind"] == "settings.updated")
+            .expect("owner sees the settings.updated ledger event");
+        assert_eq!(owner_event["actor"], "test.actor");
+        assert_eq!(owner_event["justification"], "settings updated");
+        assert_eq!(owner_event["scope"], "settings");
+
+        let reader_id = seed_user(
+            &state,
+            "reader.dashboard-events",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let reader_token = seed_session(&state, &reader_id.to_string()).await;
+        let (status, reader_dashboard) = send_raw(
+            state.clone(),
+            with_session(get("/v1/dashboard"), &reader_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{reader_dashboard}");
+        assert!(
+            reader_dashboard["recent_events"]
+                .as_array()
+                .expect("reader recent_events")
+                .iter()
+                .any(|event| event["kind"] == "settings.updated"),
+            "authorized non-guest reader should still see recent ledger events: {reader_dashboard}"
+        );
+
+        let guest_id = seed_user(
+            &state,
+            "guest.dashboard-events",
+            vec![RoleAssignment::new(GUEST_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let guest_token = seed_session(&state, &guest_id.to_string()).await;
+        let (status, ledger_body) = send_raw(
+            state.clone(),
+            with_session(get("/v1/ledger/events"), &guest_token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{ledger_body}");
+
+        let (status, guest_dashboard) =
+            send_raw(state, with_session(get("/v1/dashboard"), &guest_token)).await;
+        assert_eq!(status, StatusCode::OK, "{guest_dashboard}");
+        assert_eq!(guest_dashboard["recent_events"], json!([]));
+
+        let guest_body = serde_json::to_string(&guest_dashboard).expect("guest body serializes");
+        for field in [
+            "actor",
+            "justification",
+            "scope",
+            "payload_digest",
+            "prev_hash",
+            "hash",
+        ] {
+            let value = owner_event[field].as_str().expect(field);
+            assert!(
+                !guest_body.contains(value),
+                "guest dashboard leaked {field}={value}: {guest_body}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn settings_partial_document_fills_defaults() {
         // Only one nested field is supplied; every other field must default cleanly.
         let (status, stored) = send(

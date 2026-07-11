@@ -22,7 +22,7 @@ use crate::dto::{
     DashboardActStateCounts, DashboardAction, DashboardAlert, DashboardAlertTarget,
     DashboardCurrentWork, DashboardI18n, DashboardLawReference, DashboardOpenBook,
     DashboardReminder, DashboardResponse, DashboardTargetLinks, LedgerEventView, compute_expired,
-    format_date,
+    format_date, read_redaction_for_actor,
 };
 use crate::error::ApiError;
 use crate::settings::WorkflowReminderSettings;
@@ -36,6 +36,7 @@ pub async fn dashboard(
 ) -> Result<Json<DashboardResponse>, ApiError> {
     // RBAC (t64-E3): the dashboard aggregates act data → `act.read` at Global.
     require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
     let reminder_policy = state.settings.read().await.workflow.reminders.clone();
     // entities → books → acts → follow_ups → registry_extracts → ledger (read locks; the global order).
     let entities = state.entities.read().await;
@@ -89,7 +90,11 @@ pub async fn dashboard(
     // Last ten events in append order.
     let events = ledger.events();
     let start = events.len().saturating_sub(10);
-    let recent_events = events[start..].iter().map(LedgerEventView::from).collect();
+    let recent_events = if redaction.is_guest() {
+        Vec::new()
+    } else {
+        events[start..].iter().map(LedgerEventView::from).collect()
+    };
     let today = OffsetDateTime::now_utc().date();
     let current_work = dashboard_current_work(&entities, &books, &acts);
     let alerts = dashboard_alerts(
