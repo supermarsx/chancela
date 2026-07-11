@@ -63,6 +63,10 @@ use crate::external_validator_evidence::{
 /// (plan §1-D4 step 3 / §3.4). Self-describing: MIME type + PDF/A part+conformance.
 pub(crate) const PDFA_PROFILE: &str = "application/pdf; profile=PDF/A-2u";
 
+/// Post-act communication automatically generated for absent condominium owners after sealing.
+pub(crate) const CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID: &str =
+    "condominio-comunicacao-ausentes/v1";
+
 /// Decoded candidate byte cap for the first read-only document import validation slice.
 pub(crate) const DOCUMENT_IMPORT_VALIDATION_MAX_BYTES: usize = 16 * 1024 * 1024;
 
@@ -198,6 +202,16 @@ pub(crate) struct Generated {
     pub stored: StoredDocument,
     /// The `document.generated` event payload (`{act_id, template_id, pdf_digest, profile}`).
     pub event_payload: Value,
+}
+
+/// Honest status for generated communications whose dispatch proof is still outside this slice.
+#[derive(Clone, Copy, Serialize)]
+pub struct DispatchEvidenceStatusView {
+    pub status: &'static str,
+    pub required: bool,
+    pub evidence_attached: bool,
+    pub dispatch_completed: bool,
+    pub note: &'static str,
 }
 
 /// Render `spec` against `ctx`, write PDF/A-2u bytes, and assemble the [`Generated`] artifact
@@ -405,6 +419,62 @@ pub(crate) fn generate_for_act(
         act.id,
         OffsetDateTime::now_utc(),
     )?))
+}
+
+/// Generate a specific catalog template against a sealed act without going through the HTTP
+/// handler. Used by post-seal hooks and by the on-demand endpoint to share the same validation and
+/// render context.
+pub(crate) fn generate_for_act_template(
+    act: &Act,
+    book: &Book,
+    entity: &Entity,
+    template_id: &str,
+) -> Result<Generated, ApiError> {
+    let spec = registry().get(template_id).ok_or(ApiError::NotFound)?;
+    if spec.family != entity.family {
+        return Err(ApiError::Unprocessable(format!(
+            "template {:?} is for family {:?}, not this entity's family {:?}",
+            spec.id, spec.family, entity.family
+        )));
+    }
+    // Certidão / extrato-style post-act instruments certify a sealed ata. Refuse drafts honestly.
+    let certifies_a_seal = matches!(
+        spec.stage,
+        LifecycleStage::Certidao | LifecycleStage::Extrato
+    );
+    if certifies_a_seal && act.ata_number.is_none() {
+        return Err(ApiError::Unprocessable(format!(
+            "template {:?} certifies a sealed ata, but this act is not sealed",
+            spec.id
+        )));
+    }
+
+    let ctx = act_render_ctx(act, book, entity)?;
+    let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc())?;
+    if let Some(status) = dispatch_evidence_status_for_template(&made.stored.template_id) {
+        if let Some(obj) = made.event_payload.as_object_mut() {
+            obj.insert(
+                "dispatch_evidence_status".to_owned(),
+                serde_json::to_value(status)?,
+            );
+        }
+    }
+    Ok(made)
+}
+
+/// Generate the automatic absent-owner communication required for sealed condominium acts that
+/// record absent attendees. This only creates the communication document; no dispatch is claimed.
+pub(crate) fn generate_condominium_absent_owner_communication(
+    act: &Act,
+    book: &Book,
+    entity: &Entity,
+) -> Result<Generated, ApiError> {
+    generate_for_act_template(
+        act,
+        book,
+        entity,
+        CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
+    )
 }
 
 /// Generate the termo de abertura document for a freshly-opened book, or `None` if `family` has
@@ -2625,6 +2695,20 @@ pub struct GeneratedDocumentView {
     pub pdf_digest: String,
     pub profile: String,
     pub download: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dispatch_evidence_status: Option<DispatchEvidenceStatusView>,
+}
+
+fn dispatch_evidence_status_for_template(template_id: &str) -> Option<DispatchEvidenceStatusView> {
+    (template_id == CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID).then_some(
+        DispatchEvidenceStatusView {
+            status: "required_pending",
+            required: true,
+            evidence_attached: false,
+            dispatch_completed: false,
+            note: "communication generated automatically; dispatch evidence is not attached",
+        },
+    )
 }
 
 /// `POST /v1/acts/{id}/document/generate?template_id=<id>` — render a CHOSEN catalog template
@@ -2647,9 +2731,6 @@ pub async fn generate_document(
     let scope = scope_of_act(&state, ActId(id)).await;
     require_permission(&state, &actor, Permission::DocumentGenerate, scope).await?;
     let actor = actor.resolve("api");
-    // Unknown template id → 404 before touching any lock.
-    let spec = registry().get(&q.template_id).ok_or(ApiError::NotFound)?;
-
     // entities → books → acts → ledger. The act itself is not mutated, but the document row + event
     // are committed atomically, so the ledger write lock is taken after the read prefix.
     let entities = state.entities.read().await;
@@ -2660,28 +2741,9 @@ pub async fn generate_document(
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
 
-    if spec.family != entity.family {
-        return Err(ApiError::Unprocessable(format!(
-            "template {:?} is for family {:?}, not this entity's family {:?}",
-            spec.id, spec.family, entity.family
-        )));
-    }
-    // Certidão / extrato certify a SEALED ata — refuse honestly against an unsealed draft.
-    let certifies_a_seal = matches!(
-        spec.stage,
-        LifecycleStage::Certidao | LifecycleStage::Extrato
-    );
-    if certifies_a_seal && act.ata_number.is_none() {
-        return Err(ApiError::Unprocessable(format!(
-            "template {:?} certifies a sealed ata, but this act is not sealed",
-            spec.id
-        )));
-    }
-
-    let ctx = act_render_ctx(act, book, entity)?;
     // Render + write PDF/A before appending anything to the ledger, so a render/write failure returns
     // cleanly with no ledger mutation to roll back.
-    let made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc())?;
+    let made = generate_for_act_template(act, book, entity, &q.template_id)?;
 
     let mut ledger = state.ledger.write().await;
     let scope = format!("entity:{}/book:{}/act:{}", entity.id, act.book_id, act.id);
@@ -2698,34 +2760,13 @@ pub async fn generate_document(
     state.attest_latest(&attestor, &ledger).await;
     drop(ledger);
 
-    // Publish only a canonical Ata candidate under the owner id. In pure in-memory mode, also keep
-    // non-Ata generated rows addressable by document id without replacing that canonical owner slot.
-    if state.store.is_none() && spec.stage != LifecycleStage::Ata {
-        let mut documents = state.documents.write().await;
-        if let Some(mut key) = in_memory_generated_document_key(&made.stored) {
-            while documents
-                .get(&key)
-                .is_some_and(|doc| doc.id != made.stored.id)
-            {
-                key = ActId(Uuid::new_v4());
-            }
-            documents.insert(key, made.stored.clone());
-        }
-    }
-    if spec.stage == LifecycleStage::Ata {
-        let mut documents = state.documents.write().await;
-        let keep_existing_ata = documents
-            .get(&made.stored.act_id)
-            .is_some_and(|doc| is_ata_template(&doc.template_id));
-        if !keep_existing_ata {
-            documents.insert(made.stored.act_id, made.stored.clone());
-        }
-    }
+    publish_generated_document_read_model(&state, &made.stored).await;
 
     let document_id = made.stored.id.clone();
     let view = GeneratedDocumentView {
         id: document_id.clone(),
         act_id: made.stored.act_id.to_string(),
+        dispatch_evidence_status: dispatch_evidence_status_for_template(&made.stored.template_id),
         template_id: made.stored.template_id,
         pdf_digest: made.stored.pdf_digest,
         profile: made.stored.profile,
@@ -2751,17 +2792,33 @@ pub async fn get_generated_document_pdf(
     require_permission(&state, &actor, Permission::ActRead, scope).await?;
 
     let act_id = doc.act_id.to_string();
-    Response::builder()
+    let dispatch_status = dispatch_evidence_status_for_template(&doc.template_id);
+    let mut builder = Response::builder()
         .header(header::CONTENT_TYPE, "application/pdf")
         .header("x-chancela-document-id", doc.id)
         .header("x-chancela-act-id", act_id)
         .header("x-chancela-template-id", doc.template_id)
         .header("x-chancela-pdf-digest", doc.pdf_digest)
-        .header("x-chancela-profile", doc.profile)
-        .body(Body::from(doc.pdf_bytes))
-        .map_err(|e| {
-            ApiError::Internal(format!("failed to build generated document response: {e}"))
-        })
+        .header("x-chancela-profile", doc.profile);
+    if let Some(status) = dispatch_status {
+        builder = builder
+            .header("x-chancela-dispatch-evidence-status", status.status)
+            .header(
+                "x-chancela-dispatch-evidence-required",
+                status.required.to_string(),
+            )
+            .header(
+                "x-chancela-dispatch-evidence-attached",
+                status.evidence_attached.to_string(),
+            )
+            .header(
+                "x-chancela-dispatch-completed",
+                status.dispatch_completed.to_string(),
+            );
+    }
+    builder.body(Body::from(doc.pdf_bytes)).map_err(|e| {
+        ApiError::Internal(format!("failed to build generated document response: {e}"))
+    })
 }
 
 /// `GET /v1/acts/{id}/document` — the persisted PDF/A bytes (`application/pdf`); `404` until the
@@ -2797,6 +2854,34 @@ async fn load_document_by_id(
         .values()
         .find(|doc| doc.id == document_id)
         .cloned())
+}
+
+/// Publish a just-persisted generated document into the live read model. Durable states read by id
+/// from SQLite; pure in-memory states need an extra synthetic key so non-Ata outputs remain
+/// addressable without replacing the canonical Ata owner slot.
+pub(crate) async fn publish_generated_document_read_model(
+    state: &AppState,
+    stored: &StoredDocument,
+) {
+    let stage = registry().get(&stored.template_id).map(|spec| spec.stage);
+    if state.store.is_none() && stage != Some(LifecycleStage::Ata) {
+        let mut documents = state.documents.write().await;
+        if let Some(mut key) = in_memory_generated_document_key(stored) {
+            while documents.get(&key).is_some_and(|doc| doc.id != stored.id) {
+                key = ActId(Uuid::new_v4());
+            }
+            documents.insert(key, stored.clone());
+        }
+    }
+    if stage == Some(LifecycleStage::Ata) {
+        let mut documents = state.documents.write().await;
+        let keep_existing_ata = documents
+            .get(&stored.act_id)
+            .is_some_and(|doc| is_ata_template(&doc.template_id));
+        if !keep_existing_ata {
+            documents.insert(stored.act_id, stored.clone());
+        }
+    }
 }
 
 fn in_memory_generated_document_key(doc: &StoredDocument) -> Option<ActId> {
@@ -3877,7 +3962,7 @@ fn html_escape(value: &str) -> String {
     xml_escape(value)
 }
 
-fn is_ata_template(template_id: &str) -> bool {
+pub(crate) fn is_ata_template(template_id: &str) -> bool {
     registry()
         .get(template_id)
         .is_some_and(|spec| spec.stage == LifecycleStage::Ata)
@@ -5903,6 +5988,24 @@ mod tests {
             .expect("ata document");
         let ata_id = ata.stored.id.clone();
         let ata_digest = ata.stored.pdf_digest.clone();
+        let communication = generate_condominium_absent_owner_communication(&act, &book, &entity)
+            .expect("absent-owner communication generation ok");
+        assert_eq!(
+            communication.event_payload["dispatch_evidence_status"]["status"],
+            "required_pending"
+        );
+        assert_eq!(
+            communication.event_payload["dispatch_evidence_status"]["required"],
+            true
+        );
+        assert_eq!(
+            communication.event_payload["dispatch_evidence_status"]["evidence_attached"],
+            false
+        );
+        assert_eq!(
+            communication.event_payload["dispatch_evidence_status"]["dispatch_completed"],
+            false
+        );
 
         {
             let mut ledger = state.ledger.write().await;

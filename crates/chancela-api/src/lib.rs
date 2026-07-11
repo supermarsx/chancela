@@ -4913,6 +4913,265 @@ mod tests {
         assert_eq!(still_canonical_ata, canonical_ata);
     }
 
+    async fn draft_condominium_absent_owner_act(state: &AppState, book_id: &str) -> String {
+        let (_, act) = send(
+            state.clone(),
+            post_json(
+                "/v1/acts",
+                json!({ "book_id": book_id, "title": "Ata da assembleia", "channel": "Physical" }),
+            ),
+        )
+        .await;
+        let act_id = act["id"].as_str().expect("act id").to_owned();
+        let (status, _) = send(
+            state.clone(),
+            patch_json(
+                &format!("/v1/acts/{act_id}"),
+                json!({
+                    "meeting_date": "2026-03-30",
+                    "meeting_time": "10:00",
+                    "place": "Hall do prédio",
+                    "agenda": [{ "number": 1, "text": "Orçamento anual" }],
+                    "attendance_reference": "Folha de presenças",
+                    "deliberations": "Aprovado o orçamento anual.",
+                    "deliberation_items": [{
+                        "agenda_number": 1,
+                        "text": "Aprovado o orçamento anual.",
+                        "vote": { "type": "Recorded", "em_favor": 600, "contra": 0, "abstencoes": 0 },
+                        "statements": []
+                    }],
+                    "attendees": [
+                        {
+                            "name": "Fração A",
+                            "quality": "CondoOwner",
+                            "presence": "InPerson",
+                            "weight": { "Permilage": 600 }
+                        },
+                        {
+                            "name": "Fração B",
+                            "quality": "CondoOwner",
+                            "presence": "Absent",
+                            "weight": { "Permilage": 400 }
+                        }
+                    ]
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        advance_to_signing(state, &act_id).await;
+        act_id
+    }
+
+    fn generated_doc<'a>(docs: &'a [StoredDocument], template_id: &str) -> &'a StoredDocument {
+        docs.iter()
+            .find(|doc| doc.template_id == template_id)
+            .unwrap_or_else(|| panic!("{template_id} generated: {docs:?}"))
+    }
+
+    fn assert_pending_dispatch_headers(headers: &axum::http::HeaderMap) {
+        assert_eq!(
+            headers.get("x-chancela-dispatch-evidence-status").unwrap(),
+            "required_pending"
+        );
+        assert_eq!(
+            headers
+                .get("x-chancela-dispatch-evidence-required")
+                .unwrap(),
+            "true"
+        );
+        assert_eq!(
+            headers
+                .get("x-chancela-dispatch-evidence-attached")
+                .unwrap(),
+            "false"
+        );
+        assert_eq!(
+            headers.get("x-chancela-dispatch-completed").unwrap(),
+            "false"
+        );
+    }
+
+    #[tokio::test]
+    async fn condominium_absent_owner_communication_auto_generates_durably_after_seal() {
+        let tmp = TempDir::new();
+        let (state, _entity_id, book_id) =
+            entity_and_open_book_in_state(AppState::with_data_dir(tmp.dir.clone()), "Condominio")
+                .await;
+        let act_id = draft_condominium_absent_owner_act(&state, &book_id).await;
+
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
+        assert_eq!(
+            sealed["document"]["template_id"],
+            "condominio-ata-assembleia/v1"
+        );
+
+        let (status, _, canonical_ata) =
+            send_bytes(state.clone(), get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            sha256_hex_test(&canonical_ata),
+            sealed["document"]["pdf_digest"]
+                .as_str()
+                .expect("ata digest")
+        );
+
+        let act_uuid = ActId(Uuid::parse_str(&act_id).expect("act uuid"));
+        let docs = state
+            .store
+            .as_ref()
+            .expect("durable store")
+            .documents_for_act(act_uuid)
+            .expect("documents for act");
+        let communication = generated_doc(
+            &docs,
+            crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
+        );
+        assert_ne!(
+            communication.id,
+            sealed["document"]["id"].as_str().expect("ata document id")
+        );
+        assert_ne!(communication.pdf_digest, sha256_hex_test(&canonical_ata));
+
+        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let generated_events = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter(|e| {
+                e["kind"] == "document.generated"
+                    && e["scope"]
+                        .as_str()
+                        .is_some_and(|scope| scope.contains(&format!("/act:{act_id}")))
+            })
+            .count();
+        assert_eq!(
+            generated_events, 2,
+            "Ata + absent-owner communication document events: {events}"
+        );
+
+        let token = auth_token(&state).await;
+        let (status, headers, generated_bytes) = send_raw_bytes(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/documents/generated/{}", communication.id)),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_pending_dispatch_headers(&headers);
+        assert_eq!(sha256_hex_test(&generated_bytes), communication.pdf_digest);
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, _, restarted_ata) = send_bytes(
+            restarted.clone(),
+            get(&format!("/v1/acts/{act_id}/document")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(restarted_ata, canonical_ata);
+        let token = auth_token(&restarted).await;
+        let (status, headers, restarted_generated) = send_raw_bytes(
+            restarted,
+            with_session(
+                get(&format!("/v1/documents/generated/{}", communication.id)),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_pending_dispatch_headers(&headers);
+        assert_eq!(restarted_generated, generated_bytes);
+    }
+
+    #[tokio::test]
+    async fn condominium_absent_owner_communication_auto_generates_in_memory_without_replacing_ata()
+    {
+        let (state, _entity_id, book_id) = entity_and_open_book("Condominio").await;
+        assert!(state.store.is_none(), "regression must use no-store state");
+        let act_id = draft_condominium_absent_owner_act(&state, &book_id).await;
+
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
+        assert_eq!(
+            sealed["document"]["template_id"],
+            "condominio-ata-assembleia/v1"
+        );
+
+        let (status, _, canonical_ata) =
+            send_bytes(state.clone(), get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            sha256_hex_test(&canonical_ata),
+            sealed["document"]["pdf_digest"]
+                .as_str()
+                .expect("ata digest")
+        );
+
+        let docs: Vec<StoredDocument> = state
+            .documents
+            .read()
+            .await
+            .values()
+            .filter(|doc| doc.act_id.to_string() == act_id)
+            .cloned()
+            .collect();
+        let communication = generated_doc(
+            &docs,
+            crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
+        );
+        assert_ne!(
+            communication.id,
+            sealed["document"]["id"].as_str().expect("ata document id")
+        );
+        assert_ne!(communication.pdf_digest, sha256_hex_test(&canonical_ata));
+
+        let token = auth_token(&state).await;
+        let (status, headers, generated_bytes) = send_raw_bytes(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/documents/generated/{}", communication.id)),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_pending_dispatch_headers(&headers);
+        assert_eq!(sha256_hex_test(&generated_bytes), communication.pdf_digest);
+
+        let (status, _, still_canonical_ata) =
+            send_bytes(state.clone(), get(&format!("/v1/acts/{act_id}/document"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(still_canonical_ata, canonical_ata);
+
+        let (_, events) = send(state, get("/v1/ledger/events")).await;
+        let generated_events = events
+            .as_array()
+            .expect("events")
+            .iter()
+            .filter(|e| {
+                e["kind"] == "document.generated"
+                    && e["scope"]
+                        .as_str()
+                        .is_some_and(|scope| scope.contains(&format!("/act:{act_id}")))
+            })
+            .count();
+        assert_eq!(
+            generated_events, 2,
+            "Ata + absent-owner communication document events: {events}"
+        );
+    }
+
     #[tokio::test]
     async fn seal_template_id_override_selects_a_subtype_and_unknown_errors() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;

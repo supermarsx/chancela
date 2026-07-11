@@ -13,8 +13,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chancela_core::act::AiHumanVerificationStatus;
 use chancela_core::{
-    Act, ActError, ActId, ActState, Book, BookId, Entity, EntityFamily, EntityKind, Severity,
-    rule_pack_for, seal_act,
+    Act, ActError, ActId, ActState, Book, BookId, Entity, EntityFamily, EntityKind, PresenceMode,
+    Severity, rule_pack_for, seal_act,
 };
 use uuid::Uuid;
 
@@ -511,6 +511,14 @@ fn antecedence_advisory(
     })
 }
 
+fn should_generate_condominium_absent_owner_communication(act: &Act, entity: &Entity) -> bool {
+    entity.family == EntityFamily::Condominium
+        && act
+            .attendees
+            .iter()
+            .any(|attendee| attendee.presence == PresenceMode::Absent)
+}
+
 /// `POST /v1/acts/{id}/seal` — compliance-gated seal (WFL-20). On refusal the compliance
 /// variants return structured `issues`/`warnings` (contract §2.5).
 pub async fn seal_act_handler(
@@ -576,18 +584,40 @@ pub async fn seal_act_handler(
                     return Err(e);
                 }
             };
+            let mut generated_docs = Vec::new();
+            if let Some(made) = generated {
+                generated_docs.push(made);
+            }
+            if should_generate_condominium_absent_owner_communication(&act_next, entity) {
+                match crate::documents::generate_condominium_absent_owner_communication(
+                    &act_next, &book_next, entity,
+                ) {
+                    Ok(made) => generated_docs.push(made),
+                    Err(e) => {
+                        AppState::rollback_ledger_events(&mut ledger, 1);
+                        return Err(e);
+                    }
+                }
+            }
 
-            let document = match generated {
-                Some(made) => {
-                    // Bind the document into the tamper-evident chain (TPL-02 / §3.4) and persist
-                    // it with the sealed act + book counter in one commit (event_count = 2).
-                    let scope = format!(
-                        "entity:{}/book:{}/act:{}",
-                        entity.id, act_next.book_id, act_next.id
-                    );
+            let document = if generated_docs.is_empty() {
+                // No template bound for this family yet — persist the seal as before (1 event).
+                state.persist_write_through(&mut ledger, 1, |tx| {
+                    tx.upsert_book(&book_next)?;
+                    tx.upsert_act(&act_next)
+                })?;
+                None
+            } else {
+                // Bind all generated documents into the tamper-evident chain (TPL-02 / §3.4) and
+                // persist them with the sealed act + book counter in one commit.
+                let scope = format!(
+                    "entity:{}/book:{}/act:{}",
+                    entity.id, act_next.book_id, act_next.id
+                );
+                for (appended_doc_events, made) in generated_docs.iter().enumerate() {
                     let payload = serde_json::to_vec(&made.event_payload)?;
-                    // Validating append (t54); a rejection rolls back the just-appended `act.sealed`
-                    // (core) event so a failed seal leaves no trace (the seal transaction is atomic).
+                    // Validating append (t54); a rejection rolls back `act.sealed` and any document
+                    // events already appended in this seal attempt.
                     if let Err(e) = crate::try_append_event(
                         &mut ledger,
                         &actor,
@@ -596,34 +626,30 @@ pub async fn seal_act_handler(
                         None,
                         &payload,
                     ) {
-                        AppState::rollback_ledger_events(&mut ledger, 1);
+                        AppState::rollback_ledger_events(&mut ledger, 1 + appended_doc_events);
                         return Err(e);
                     }
-                    state.persist_write_through(&mut ledger, 2, |tx| {
-                        tx.upsert_book(&book_next)?;
-                        tx.upsert_act(&act_next)?;
-                        tx.upsert_document(&made.stored)
-                    })?;
-                    // Publish to the live document read model (GET source; store is durability).
-                    state
-                        .documents
-                        .write()
-                        .await
-                        .insert(act_next.id, made.stored.clone());
-                    Some(crate::dto::SealDocument {
-                        id: made.stored.id,
-                        pdf_digest: made.stored.pdf_digest,
-                        template_id: made.stored.template_id,
+                }
+                state.persist_write_through(&mut ledger, 1 + generated_docs.len(), |tx| {
+                    tx.upsert_book(&book_next)?;
+                    tx.upsert_act(&act_next)?;
+                    for made in &generated_docs {
+                        tx.upsert_document(&made.stored)?;
+                    }
+                    Ok(())
+                })?;
+                for made in &generated_docs {
+                    crate::documents::publish_generated_document_read_model(&state, &made.stored)
+                        .await;
+                }
+                generated_docs
+                    .iter()
+                    .find(|made| crate::documents::is_ata_template(&made.stored.template_id))
+                    .map(|made| crate::dto::SealDocument {
+                        id: made.stored.id.clone(),
+                        pdf_digest: made.stored.pdf_digest.clone(),
+                        template_id: made.stored.template_id.clone(),
                     })
-                }
-                None => {
-                    // No template bound for this family yet — persist the seal as before (1 event).
-                    state.persist_write_through(&mut ledger, 1, |tx| {
-                        tx.upsert_book(&book_next)?;
-                        tx.upsert_act(&act_next)
-                    })?;
-                    None
-                }
             };
 
             state.attest_latest(&attestor, &ledger).await;
