@@ -8,7 +8,7 @@
  * compliance-gated seal (§2.5) therefore keeps the CompliancePanel and dashboard
  * counts live without manual wiring.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type {
   CaeRevision,
@@ -143,6 +143,7 @@ export const keys = {
   templates: (family?: EntityFamily, stage?: LifecycleStage) =>
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
   ledger: (params: LedgerQueryParams) => ['ledger', params] as const,
+  ledgerPage: (params: LedgerQueryParams) => ['ledger', 'page', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
   ledgerIntegrity: ['ledger', 'integrity'] as const,
   ledgerRestorePreflight: ['ledger', 'restore', 'preflight'] as const,
@@ -1168,18 +1169,29 @@ export function useLedger(params: LedgerQueryParams = {}) {
   return useQuery({ queryKey: keys.ledger(params), queryFn: () => api.listLedger(params) });
 }
 
+export function useLedgerPages(params: LedgerQueryParams = {}) {
+  return useInfiniteQuery({
+    queryKey: keys.ledgerPage(params),
+    queryFn: ({ pageParam }) =>
+      api.listLedgerPage({ ...params, before_seq: pageParam ?? params.before_seq }),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more && lastPage.next_cursor ? lastPage.next_cursor : undefined,
+  });
+}
+
 export function useLedgerVerify() {
   return useQuery({ queryKey: keys.ledgerVerify, queryFn: () => api.verifyLedger() });
 }
 
 /**
- * Download the filtered ledger archive as PDF/A (`GET /v1/ledger/archive/document`, t67).
+ * Download the filtered ledger archive (`GET /v1/ledger/archive/document`, t67).
  * A mutation so the Arquivo action can expose pending state and toast errors like the
  * other document downloads.
  */
 export function useDownloadLedgerArchiveDocument() {
   return useMutation({
-    mutationFn: (params: LedgerArchiveDocumentParams) => api.fetchLedgerArchiveDocumentPdf(params),
+    mutationFn: (params: LedgerArchiveDocumentParams) => api.fetchLedgerArchiveDocument(params),
   });
 }
 

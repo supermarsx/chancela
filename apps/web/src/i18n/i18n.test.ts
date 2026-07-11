@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { ptPT } from './locales/pt-PT';
 import { enUS } from './locales/en-US';
+import { enGB } from './locales/en-GB';
 import { deDE } from './locales/de-DE';
 import { svFI } from './locales/sv-FI';
 import { svSE } from './locales/sv-SE';
@@ -78,6 +79,22 @@ describe('catalog completeness matrix', () => {
       );
       expect(catalog['signing.pkcs12.file.label']).not.toBe(ptPT['signing.pkcs12.file.label']);
       expect(catalog['signing.pkcs12.notice']).not.toContain('ficheiro PFX');
+    }
+  });
+
+  it('keeps archive filter and export copy localized outside source Portuguese', () => {
+    expect(enUS['ledger.filters.aria']).toBe('Search and filter archive');
+    expect(enUS['ledger.archive.format.pdfa']).toBe('Canonical PDF/A');
+    expect(enGB['ledger.filters.clear.aria']).toBe('Clear archive filters');
+    expect(deDE['ledger.archive.export']).toBe('Archiv exportieren');
+
+    for (const catalog of [enUS, enGB, deDE]) {
+      expect(catalog['ledger.filters.aria']).not.toBe(ptPT['ledger.filters.aria']);
+      expect(catalog['ledger.filters.advanced']).not.toBe(ptPT['ledger.filters.advanced']);
+      expect(catalog['ledger.filters.clear.aria']).not.toBe(ptPT['ledger.filters.clear.aria']);
+      expect(catalog['ledger.archive.export']).not.toBe(ptPT['ledger.archive.export']);
+      expect(catalog['ledger.archive.format.label']).not.toBe(ptPT['ledger.archive.format.label']);
+      expect(catalog['ledger.archive.format.txt']).not.toBe(ptPT['ledger.archive.format.txt']);
     }
   });
 

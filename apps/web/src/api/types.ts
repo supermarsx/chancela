@@ -1296,19 +1296,33 @@ export interface LedgerEventView {
   attestation: LedgerEventAttestation | null;
 }
 
-/** Query params for `GET /v1/ledger/events`. */
+export type LedgerOrder = 'desc' | 'asc';
+
+export type LedgerArchiveDocumentFormat = 'pdfa' | 'json' | 'txt' | 'csv' | 'html';
+
+/** Query params for `GET /v1/ledger/events` and the paged `/v1/ledger/events/page`. */
 export interface LedgerQueryParams {
   chain?: string;
   scope?: string;
-  limit?: number;
-}
-
-/** Query params for `GET /v1/ledger/archive/document`, which streams a PDF/A. */
-export interface LedgerArchiveDocumentParams extends LedgerQueryParams {
   kind?: string;
   actor?: string;
   from?: string;
   to?: string;
+  before_seq?: number;
+  limit?: number;
+  order?: LedgerOrder;
+}
+
+export interface LedgerEventsPage {
+  events: LedgerEventView[];
+  next_cursor: number | null;
+  has_more: boolean;
+  limit: number;
+}
+
+/** Query params for `GET /v1/ledger/archive/document`. */
+export interface LedgerArchiveDocumentParams extends LedgerQueryParams {
+  format?: LedgerArchiveDocumentFormat;
 }
 
 export interface LedgerVerify {

@@ -76,6 +76,7 @@ import type {
   LawSearchView,
   FollowUpView,
   LedgerArchiveDocumentParams,
+  LedgerEventsPage,
   LedgerEventView,
   LedgerQueryParams,
   LedgerVerify,
@@ -850,19 +851,42 @@ export const api = {
       `/v1/ledger/events${query({
         chain: params.chain,
         scope: params.scope,
+        kind: params.kind,
+        actor: params.actor,
+        from: params.from,
+        to: params.to,
+        before_seq: params.before_seq,
         limit: params.limit,
+        order: params.order,
       })}`,
     ),
-  fetchLedgerArchiveDocumentPdf: (params: LedgerArchiveDocumentParams = {}) =>
-    fetchBlob(
-      `/v1/ledger/archive/document${query({
+  listLedgerPage: (params: LedgerQueryParams = {}) =>
+    get<LedgerEventsPage>(
+      `/v1/ledger/events/page${query({
         chain: params.chain,
         scope: params.scope,
         kind: params.kind,
         actor: params.actor,
         from: params.from,
         to: params.to,
+        before_seq: params.before_seq,
         limit: params.limit,
+        order: params.order,
+      })}`,
+    ),
+  fetchLedgerArchiveDocument: (params: LedgerArchiveDocumentParams = {}) =>
+    fetchBlob(
+      `/v1/ledger/archive/document${query({
+        format: params.format,
+        chain: params.chain,
+        scope: params.scope,
+        kind: params.kind,
+        actor: params.actor,
+        from: params.from,
+        to: params.to,
+        before_seq: params.before_seq,
+        limit: params.limit,
+        order: params.order,
       })}`,
     ),
   verifyLedger: () => get<LedgerVerify>('/v1/ledger/verify'),

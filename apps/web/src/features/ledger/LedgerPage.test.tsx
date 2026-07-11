@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
-import type { LedgerEventView } from '../../api/types';
+import type { LedgerEventView, LedgerEventsPage } from '../../api/types';
 
 const saveFileMock = vi.hoisted(() => ({
   saveBlobAs: vi.fn(),
@@ -28,20 +28,36 @@ function blobText(blob: Blob): Promise<string> {
   });
 }
 
-const EVENT: LedgerEventView = {
-  id: 'event-1',
-  seq: 7,
-  actor: 'amelia.marques',
-  justification: null,
-  timestamp: '2026-07-07T10:15:30Z',
-  scope: 'act:7',
-  kind: 'act.sealed',
-  payload_digest: 'aa'.repeat(32),
-  prev_hash: '00'.repeat(32),
-  hash: 'bb'.repeat(32),
-  chains: ['global', 'book:book-123456789'],
-  attestation: null,
-};
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8');
+}
+
+function expectCssRule(css: string, selector: RegExp, declarations: string[]) {
+  const block = css.match(selector)?.[1] ?? '';
+  for (const declaration of declarations) expect(block).toContain(declaration);
+}
+
+function makeEvent(seq: number, patch: Partial<LedgerEventView> = {}): LedgerEventView {
+  return {
+    id: `event-${seq}`,
+    seq,
+    actor: 'amelia.marques',
+    justification: null,
+    timestamp: `2026-07-07T10:${String(seq % 60).padStart(2, '0')}:30Z`,
+    scope: `act:${seq}`,
+    kind: `event.${seq}`,
+    payload_digest: 'aa'.repeat(32),
+    prev_hash: '00'.repeat(32),
+    hash: String(seq % 10).repeat(64),
+    chains: ['global', 'book:book-123456789'],
+    attestation: null,
+    ...patch,
+  };
+}
 
 const INTEGRITY = {
   healthy: true,
@@ -49,7 +65,7 @@ const INTEGRITY = {
   global: {
     chain: 'global',
     genesis_kind: null,
-    length: 1,
+    length: 1000,
     head: 'bb'.repeat(32),
     verified: true,
     first_break: null,
@@ -58,7 +74,7 @@ const INTEGRITY = {
     {
       chain: 'book:book-123456789',
       genesis_kind: 'book.opened',
-      length: 1,
+      length: 1000,
       head: 'bb'.repeat(32),
       verified: true,
       first_break: null,
@@ -72,7 +88,17 @@ interface RecordedCall {
   method: string;
 }
 
-function stubLedgerFetch() {
+function page(events: LedgerEventView[], patch: Partial<LedgerEventsPage> = {}): LedgerEventsPage {
+  return {
+    events,
+    next_cursor: null,
+    has_more: false,
+    limit: 100,
+    ...patch,
+  };
+}
+
+function stubLedgerFetch(firstPage: LedgerEventsPage, olderPage = page([])) {
   const calls: RecordedCall[] = [];
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -80,16 +106,29 @@ function stubLedgerFetch() {
     calls.push({ url, method });
 
     if (url.includes('/v1/ledger/archive/document')) {
+      const format = new URL(`http://test${url}`).searchParams.get('format') ?? 'pdfa';
+      const contentType =
+        format === 'json'
+          ? 'application/json'
+          : format === 'txt'
+            ? 'text/plain; charset=utf-8'
+            : format === 'csv'
+              ? 'text/csv; charset=utf-8'
+              : format === 'html'
+                ? 'text/html; charset=utf-8'
+                : 'application/pdf';
       return Promise.resolve(
-        new Response('%PDF-archive', {
+        new Response(format === 'pdfa' ? '%PDF-archive' : `archive-${format}`, {
           status: 200,
-          headers: { 'Content-Type': 'application/pdf' },
+          headers: { 'Content-Type': contentType },
         }),
       );
     }
-    if (url.includes('/v1/ledger/events')) return Promise.resolve(jsonResponse([EVENT]));
+    if (url.includes('/v1/ledger/events/page')) {
+      return Promise.resolve(jsonResponse(url.includes('before_seq=') ? olderPage : firstPage));
+    }
     if (url.includes('/v1/ledger/verify')) {
-      return Promise.resolve(jsonResponse({ valid: true, length: 1 }));
+      return Promise.resolve(jsonResponse({ valid: true, length: 1000 }));
     }
     if (url.includes('/v1/ledger/integrity')) return Promise.resolve(jsonResponse(INTEGRITY));
     return Promise.reject(new Error(`no stub for ${url}`));
@@ -106,34 +145,116 @@ afterEach(() => {
 });
 
 describe('LedgerPage', () => {
-  it('filters the ledger feed by chain and shows chain membership', async () => {
-    const calls = stubLedgerFetch();
+  it('requests the first page newest-first and presents it in server order', async () => {
+    const calls = stubLedgerFetch(page([makeEvent(100), makeEvent(99)]));
     renderWithProviders(<LedgerPage />);
 
+    expect(await screen.findByText('event.100')).toBeTruthy();
+    const ledgerCall = calls.find((c) => c.url.includes('/v1/ledger/events/page'));
+    expect(ledgerCall?.url).toBe('/v1/ledger/events/page?limit=100&order=desc');
+
+    const rows = screen.getAllByRole('row');
+    expect(within(rows[1]).getByText('100')).toBeTruthy();
+    expect(within(rows[2]).getByText('99')).toBeTruthy();
+  });
+
+  it('loads older records with the server cursor instead of fetching every event', async () => {
+    const calls = stubLedgerFetch(
+      page([makeEvent(100)], { next_cursor: 99, has_more: true }),
+      page([makeEvent(99)]),
+    );
+    renderWithProviders(<LedgerPage />);
+
+    expect(await screen.findByText('event.100')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Carregar eventos mais antigos' }));
+
+    expect(await screen.findByText('event.99')).toBeTruthy();
+    expect(
+      calls.some((c) => c.url === '/v1/ledger/events/page?before_seq=99&limit=100&order=desc'),
+    ).toBe(true);
+  });
+
+  it('shows a bounded first page for a 1000-log archive and loads more by cursor', async () => {
+    const firstHundred = Array.from({ length: 100 }, (_, index) => makeEvent(1000 - index));
+    const calls = stubLedgerFetch(
+      page(firstHundred, { next_cursor: 900, has_more: true }),
+      page([makeEvent(900)]),
+    );
+    renderWithProviders(<LedgerPage />);
+
+    expect(await screen.findByText('event.1000')).toBeTruthy();
+    expect(screen.getByLabelText('100 eventos carregados; existem mais')).toBeTruthy();
+    expect(screen.queryByText('event.1')).toBeNull();
+    expect(screen.getAllByRole('row')).toHaveLength(101);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Carregar eventos mais antigos' }));
+    expect(await screen.findByText('event.900')).toBeTruthy();
+    expect(
+      calls.some((c) => c.url === '/v1/ledger/events/page?before_seq=900&limit=100&order=desc'),
+    ).toBe(true);
+  });
+
+  it('applies server-backed filters and exposes an icon-only clear button with a tooltip', async () => {
+    const calls = stubLedgerFetch(page([makeEvent(88, { kind: 'act.sealed' })]));
+    const { container } = renderWithProviders(<LedgerPage />);
+
     expect(await screen.findByText('act.sealed')).toBeTruthy();
-    expect(await screen.findByRole('option', { name: 'Livro book-123' })).toBeTruthy();
+    const searchRegion = screen.getByRole('search', { name: 'Pesquisar e filtrar arquivo' });
+    expect(searchRegion.classList.contains('ledger-filters')).toBe(true);
+
+    const clear = screen.getByRole('button', { name: 'Limpar filtros do arquivo' });
+    expect(clear.textContent?.trim()).toBe('');
+    expect((clear as HTMLButtonElement).disabled).toBe(true);
+    const tooltipId = clear.getAttribute('aria-describedby') ?? '';
+    expect(document.getElementById(tooltipId)?.textContent).toBe('Limpar filtros do arquivo');
 
     fireEvent.change(screen.getByLabelText('Filtrar por cadeia'), {
       target: { value: 'book:book-123456789' },
     });
+    fireEvent.change(screen.getByLabelText('Filtrar por âmbito'), {
+      target: { value: 'act:88' },
+    });
+    fireEvent.click(screen.getByText('Filtros avançados'));
+    fireEvent.change(screen.getByLabelText('Tipo de evento'), { target: { value: 'act.sealed' } });
+    fireEvent.change(screen.getByLabelText('Autor'), { target: { value: 'amelia.marques' } });
+    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-07-01' } });
+    fireEvent.change(screen.getByLabelText('Até'), { target: { value: '2026-07-31' } });
+    fireEvent.change(screen.getByLabelText('Eventos por página'), { target: { value: '50' } });
 
     await waitFor(() =>
-      expect(calls.some((c) => c.url === '/v1/ledger/events?chain=book%3Abook-123456789')).toBe(
-        true,
-      ),
+      expect(
+        calls.some(
+          (c) =>
+            c.url ===
+            '/v1/ledger/events/page?chain=book%3Abook-123456789&scope=act%3A88&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=50&order=desc',
+        ),
+      ).toBe(true),
     );
-    expect(await screen.findByText('Cadeias')).toBeTruthy();
-    expect(screen.getByText('book:book-123')).toBeTruthy();
+    expect((clear as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(clear);
+    await waitFor(() =>
+      expect((screen.getByLabelText('Filtrar por âmbito') as HTMLInputElement).value).toBe(''),
+    );
+    expect((screen.getByLabelText('Eventos por página') as HTMLSelectElement).value).toBe('100');
+
+    const advanced = container.querySelector(
+      'details.ledger-advanced-filters.filter-advanced',
+    ) as HTMLDetailsElement;
+    expect(advanced).toBeTruthy();
+    expect(
+      advanced.querySelector('.ledger-advanced-filters__body.filter-advanced__body'),
+    ).toBeTruthy();
   });
 
-  it('exports the current chain and scope filters through the save prompt helper', async () => {
+  it('exports the selected audit format with the current filters through the save helper', async () => {
     saveFileMock.saveBlobAs.mockResolvedValue({
       kind: 'browser-save',
-      filename: 'arquivo-book-book-123456789-act-7.pdf',
-      contentType: 'application/pdf',
-      bytes: 12,
+      filename: 'arquivo-book-book-123456789-act-88.txt',
+      contentType: 'text/plain;charset=utf-8',
+      bytes: 11,
     });
-    const calls = stubLedgerFetch();
+    const calls = stubLedgerFetch(page([makeEvent(88)]));
 
     renderWithProviders(<LedgerPage />);
 
@@ -142,9 +263,10 @@ describe('LedgerPage', () => {
       target: { value: 'book:book-123456789' },
     });
     fireEvent.change(screen.getByLabelText('Filtrar por âmbito'), {
-      target: { value: 'act:7' },
+      target: { value: 'act:88' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Exportar PDF/A' }));
+    fireEvent.change(screen.getByLabelText('Formato'), { target: { value: 'txt' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar arquivo' }));
 
     await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
     const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
@@ -153,20 +275,54 @@ describe('LedgerPage', () => {
       contentType: string;
       preferBrowserSavePicker: boolean;
     };
-    expect(saved.filename).toBe('arquivo-book-book-123456789-act-7.pdf');
-    expect(saved.contentType).toBe('application/pdf');
+    expect(saved.filename).toBe('arquivo-book-book-123456789-act-88.txt');
+    expect(saved.contentType).toBe('text/plain;charset=utf-8');
     expect(saved.preferBrowserSavePicker).toBe(true);
-    expect(saved.blob).toBeInstanceOf(Blob);
-    expect(saved.blob.type).toBe('application/pdf');
-    expect(await blobText(saved.blob)).toBe('%PDF-archive');
+    expect(await blobText(saved.blob)).toBe('archive-txt');
     expect(calls.find((c) => c.url.includes('/v1/ledger/archive/document'))?.url).toBe(
-      '/v1/ledger/archive/document?chain=book%3Abook-123456789&scope=act%3A7',
+      '/v1/ledger/archive/document?format=txt&chain=book%3Abook-123456789&scope=act%3A88&limit=100&order=desc',
     );
-    expect(saveFileMock.saveBlobResultMessage).toHaveBeenCalledWith({
-      kind: 'browser-save',
-      filename: 'arquivo-book-book-123456789-act-7.pdf',
-      contentType: 'application/pdf',
-      bytes: 12,
-    });
+    expect(screen.getByRole('option', { name: 'PDF/A canónico' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'JSON de intercâmbio' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'CSV de auditoria' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'HTML de auditoria' })).toBeTruthy();
+  });
+
+  it('shows a filtered empty state without losing the clear action', async () => {
+    stubLedgerFetch(page([]));
+    renderWithProviders(<LedgerPage />);
+
+    expect(await screen.findByText('Sem eventos')).toBeTruthy();
+    fireEvent.click(screen.getByText('Filtros avançados'));
+    fireEvent.change(screen.getByLabelText('Autor'), { target: { value: 'nobody' } });
+
+    expect(await screen.findByText('Sem resultados')).toBeTruthy();
+    expect(
+      screen.getByText('Altere a pesquisa ou os filtros para voltar a ver eventos.'),
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Limpar filtros do arquivo' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it('keeps ledger filters and export controls responsive', async () => {
+    const css = await themeCss();
+
+    expectCssRule(css, /\.ledger-filterbar__primary\s*\{([^}]*)\}/, [
+      'display: flex;',
+      'flex-wrap: wrap;',
+      'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.ledger-advanced-filters__body\s*\{([^}]*)\}/, [
+      'display: grid;',
+      'grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));',
+      'max-width: 100%;',
+    ]);
+    expectCssRule(css, /\.ledger-export-controls\s*\{([^}]*)\}/, [
+      'display: flex;',
+      'flex-wrap: wrap;',
+      'max-width: 100%;',
+    ]);
   });
 });

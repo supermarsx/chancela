@@ -398,6 +398,70 @@ describe('api client', () => {
     expect(blob.type).toBe('application/zip');
   });
 
+  it('serializes paged ledger filters for newest-first lazy loading', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        events: [],
+        next_cursor: 41,
+        has_more: true,
+        limit: 100,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.listLedgerPage({
+      chain: 'book:book-1',
+      scope: 'act:7',
+      kind: 'act.sealed',
+      actor: 'amelia.marques',
+      from: '2026-07-01',
+      to: '2026-07-31',
+      before_seq: 42,
+      limit: 100,
+      order: 'desc',
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/v1/ledger/events/page?chain=book%3Abook-1&scope=act%3A7&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&before_seq=42&limit=100&order=desc',
+    );
+  });
+
+  it('downloads ledger archive formats through the bounded format query', async () => {
+    for (const [format, contentType, body] of [
+      ['pdfa', 'application/pdf', '%PDF-archive'],
+      ['txt', 'text/plain; charset=utf-8', 'AUDIT EXPORT'],
+      ['json', 'application/json', '{"events":[]}'],
+      ['csv', 'text/csv; charset=utf-8', 'seq,kind\n1,act.sealed\n'],
+      ['html', 'text/html; charset=utf-8', '<!doctype html><h1>Audit export</h1>'],
+    ] as const) {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 200,
+          headers: { 'Content-Type': contentType },
+        }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      const blob = await api.fetchLedgerArchiveDocument({
+        format,
+        chain: 'book:book-1',
+        scope: 'act:7',
+        kind: 'act.sealed',
+        actor: 'amelia.marques',
+        from: '2026-07-01',
+        to: '2026-07-31',
+        limit: 100,
+        order: 'desc',
+      });
+
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        `/v1/ledger/archive/document?format=${format}&chain=book%3Abook-1&scope=act%3A7&kind=act.sealed&actor=amelia.marques&from=2026-07-01&to=2026-07-31&limit=100&order=desc`,
+      );
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe(contentType.replace('; ', ';'));
+    }
+  });
+
   it('downloads an act working-copy export as Markdown text plus a typed blob', async () => {
     const markdown = '# WORKING COPY - NON-EVIDENTIARY\n\nAta da AG anual\n';
     const fetchMock = vi.fn().mockResolvedValue(
