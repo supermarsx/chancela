@@ -5,8 +5,11 @@
 //! `/DocTimeStamp` imprint binding. They do not fetch revocation data, validate certificate/TSA
 //! trust, infer renewal deadlines, or claim PAdES-B-LT / B-LTA / legal LTV sufficiency.
 
-use crate::archive_timestamp::DocTimeStampReport;
-use crate::dss::DssReport;
+use crate::archive_timestamp::{
+    DocTimeStampReport, add_doc_timestamp_revision_with, inspect_doc_timestamps,
+};
+use crate::dss::{DssEvidence, DssReport, add_dss_revision_with_validation_time, inspect_dss};
+use crate::error::PadesError;
 
 /// Local-only planning report for preserving and renewing embedded validation evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -387,4 +390,75 @@ pub fn plan_multi_signature_ltv_renewal(
         policy,
         renewal_deadline,
     }
+}
+
+/// The technical evidence embedded by one executed LTV renewal round.
+///
+/// Unlike [`LtvRenewalPlan`] (which only *classifies* already-inspected evidence), this reports the
+/// evidence a call to [`execute_ltv_renewal`] actually appended. It is a truthful account of what
+/// was written — a fresh `/DSS` + `/VRI` revocation revision and a fresh `/DocTimeStamp` over it —
+/// not a profile or legal long-term-validation sufficiency claim. TSA signer/path trust and the
+/// semantic validity of the supplied revocation material remain higher-layer decisions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct LtvRenewalExecution {
+    /// Scope marker: only local technical evidence was embedded; no B-LT/B-LTA/legal LTV claim.
+    pub scope: LtvRenewalPlanScope,
+    /// DSS/VRI evidence present in the renewed document after the revocation revision was appended.
+    pub dss: DssReport,
+    /// `/DocTimeStamp` evidence present after the archive-timestamp revision was appended, including
+    /// each token's SHA-256 imprint validation against the revision it covers.
+    pub doc_timestamps: DocTimeStampReport,
+}
+
+impl LtvRenewalExecution {
+    /// Whether the renewal embedded fresh DSS revocation material.
+    pub fn embedded_dss_revocation_evidence(&self) -> bool {
+        self.dss.has_revocation_evidence()
+    }
+
+    /// Whether the renewal appended a `/DocTimeStamp` whose imprint binds the timestamped revision.
+    pub fn embedded_valid_document_timestamp(&self) -> bool {
+        self.doc_timestamps.present && self.doc_timestamps.all_imprints_valid()
+    }
+}
+
+/// Execute one LTV renewal round: append a fresh `/DSS` + `/VRI` revocation revision (with `/TU`
+/// validation-time metadata) and then a fresh `/DocTimeStamp` archive timestamp over that revision.
+///
+/// This is the *execution* counterpart of [`plan_ltv_renewal`]: it drives the plan's
+/// [`LtvRenewalPlanAction::EmbedDssRevocationEvidence`] →
+/// [`LtvRenewalPlanAction::RecordDssValidationTime`] → [`LtvRenewalPlanAction::AddDocumentTimestamp`]
+/// steps as real incremental revisions. `evidence` must be revocation material the caller has
+/// already fetched and validated (this crate is a leaf and does not fetch OCSP/CRL —
+/// `chancela-signing` supplies fetched-and-validated evidence). `produce_archive_timestamp` receives
+/// the SHA-256 `/ByteRange` digest of the appended DSS revision and must return an RFC 3161
+/// `TimeStampToken` DER attesting exactly that digest.
+///
+/// The returned [`LtvRenewalExecution`] reports the evidence actually embedded. It is not a legal
+/// sufficiency claim: whether the timestamping TSA is a currently-granted qualified TSA, and whether
+/// the revocation material is fresh enough for a given policy, remain the trust layer's decisions.
+pub fn execute_ltv_renewal<F, E>(
+    signed_pdf: &[u8],
+    evidence: &DssEvidence,
+    validation_time: &str,
+    produce_archive_timestamp: F,
+) -> Result<(Vec<u8>, LtvRenewalExecution), PadesError>
+where
+    F: FnOnce(&[u8; 32]) -> Result<Vec<u8>, E>,
+    E: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    let with_dss = add_dss_revision_with_validation_time(signed_pdf, evidence, validation_time)?;
+    let renewed = add_doc_timestamp_revision_with(&with_dss, produce_archive_timestamp)?;
+
+    let dss = inspect_dss(&renewed)?;
+    let doc_timestamps = inspect_doc_timestamps(&renewed)?;
+    Ok((
+        renewed,
+        LtvRenewalExecution {
+            scope: LtvRenewalPlanScope::LocalTechnicalEvidenceOnly,
+            dss,
+            doc_timestamps,
+        },
+    ))
 }

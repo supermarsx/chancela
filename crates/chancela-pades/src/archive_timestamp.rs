@@ -19,6 +19,11 @@ const ID_SIGNED_DATA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.1
 const ID_CT_TST_INFO: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.1.4");
 const ID_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.1");
 
+/// Bytes reserved for a produced `/DocTimeStamp` token inside its `/Contents` hex placeholder when
+/// the token is not known up front (the [`add_doc_timestamp_revision_with`] production path). A
+/// qualified RFC 3161 token that embeds the TSA certificate is a few KiB; 16 KiB leaves headroom.
+pub const MAX_DOC_TIMESTAMP_TOKEN_BYTES: usize = 16 * 1024;
+
 /// Technical report for embedded PAdES document timestamps.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -121,6 +126,78 @@ pub fn add_doc_timestamp_revision(
 ) -> Result<Vec<u8>, PadesError> {
     validate_token(timestamp_token_der)?;
 
+    // The token is known up front, so the placeholder is sized to it exactly.
+    let capacity = timestamp_token_der.len().max(1);
+    let placeholder = build_doc_timestamp_placeholder(pdf_bytes, capacity)?;
+    let mut out = placeholder.pdf;
+    let hex = pdf::to_hex(timestamp_token_der);
+    out[placeholder.hex_start..placeholder.hex_start + hex.len()].copy_from_slice(&hex);
+    Ok(out)
+}
+
+/// Produce and append a `/DocTimeStamp` archive timestamp over the resulting PDF revision (SIG-22).
+///
+/// This is the production counterpart of [`add_doc_timestamp_revision`]: instead of taking a
+/// pre-built token, it lays out a fixed-size (`MAX_DOC_TIMESTAMP_TOKEN_BYTES`) `/Contents`
+/// placeholder, computes the SHA-256 digest over the new revision's `/ByteRange` (everything except
+/// that placeholder), and hands it to `produce_token`, which must return an RFC 3161
+/// `TimeStampToken` DER whose message imprint attests exactly that digest — e.g. by asking a TSA to
+/// timestamp the digest. The returned token is embedded into the placeholder, so the resulting
+/// `/DocTimeStamp` validates in [`inspect_doc_timestamps`] / [`crate::validate_pdf_signature`].
+///
+/// This appends real archive-timestamp evidence over the document (the "A" in PAdES-B-LTA). It does
+/// not by itself validate TSA signer/path trust or the underlying revocation material — that trust
+/// evaluation, and any long-term/legal sufficiency claim, remains a higher-layer decision.
+pub fn add_doc_timestamp_revision_with<F, E>(
+    pdf_bytes: &[u8],
+    produce_token: F,
+) -> Result<Vec<u8>, PadesError>
+where
+    F: FnOnce(&[u8; 32]) -> Result<Vec<u8>, E>,
+    E: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    let placeholder = build_doc_timestamp_placeholder(pdf_bytes, MAX_DOC_TIMESTAMP_TOKEN_BYTES)?;
+    let token = produce_token(&placeholder.byterange_digest)
+        .map_err(|e| PadesError::Timestamp(e.into()))?;
+    validate_token(&token)?;
+    if token.len() > MAX_DOC_TIMESTAMP_TOKEN_BYTES {
+        return Err(PadesError::ContentsPlaceholderTooSmall {
+            produced: token.len(),
+            capacity: MAX_DOC_TIMESTAMP_TOKEN_BYTES,
+        });
+    }
+
+    let mut out = placeholder.pdf;
+    // Reset the whole reserved gap to '0' (the token may be shorter than the reservation), then
+    // write the token hex over the prefix. The gap is excluded from `/ByteRange`, so the digest the
+    // token attests is unaffected.
+    for b in &mut out[placeholder.hex_start..placeholder.gt] {
+        *b = b'0';
+    }
+    let hex = pdf::to_hex(&token);
+    out[placeholder.hex_start..placeholder.hex_start + hex.len()].copy_from_slice(&hex);
+    Ok(out)
+}
+
+/// A `/DocTimeStamp` incremental revision with a zero-filled `/Contents` placeholder of `capacity`
+/// bytes, its `/ByteRange` patched, and the digest an RFC 3161 token must attest already computed.
+struct DocTimeStampPlaceholder {
+    /// Full document bytes: original + incremental revision, `/Contents` still zero-filled.
+    pdf: Vec<u8>,
+    /// Index of the first hex character inside `/Contents <...>` (one past the `<`).
+    hex_start: usize,
+    /// Index of the closing `>` of the `/Contents` placeholder.
+    gt: usize,
+    /// SHA-256 over the bytes selected by `/ByteRange` (everything except the placeholder).
+    byterange_digest: [u8; 32],
+}
+
+/// Build the `/DocTimeStamp` incremental revision and reserve a `capacity`-byte `/Contents`
+/// placeholder, patching the `/ByteRange` and computing the digest the eventual token must cover.
+fn build_doc_timestamp_placeholder(
+    pdf_bytes: &[u8],
+    capacity: usize,
+) -> Result<DocTimeStampPlaceholder, PadesError> {
     let doc =
         lopdf::Document::load_mem(pdf_bytes).map_err(|e| PadesError::PdfParse(e.to_string()))?;
     let prev_startxref = pdf::last_startxref(pdf_bytes).ok_or(PadesError::MissingStartxref)?;
@@ -167,8 +244,7 @@ pub fn add_doc_timestamp_revision(
 
     let acroform_body = serialize_dict(&acroform)?;
     let field_body = doc_timestamp_field_body(timestamp_id)?;
-    let token_capacity = timestamp_token_der.len().max(1);
-    let sig_body = doc_timestamp_dict_template(token_capacity);
+    let sig_body = doc_timestamp_dict_template(capacity);
 
     let mut section = incremental_section(
         pdf_bytes.len(),
@@ -189,7 +265,7 @@ pub fn add_doc_timestamp_revision(
         .ok_or_else(|| PadesError::MalformedStructure("DocTimeStamp contents not found".into()))?
         + b"/Contents ".len();
     let hex_start = lt + 1;
-    let gt = hex_start + token_capacity * 2;
+    let gt = hex_start + capacity * 2;
     if out.get(gt) != Some(&b'>') {
         return Err(PadesError::MalformedStructure(
             "DocTimeStamp contents placeholder is malformed".into(),
@@ -203,9 +279,17 @@ pub fn add_doc_timestamp_revision(
     let br = format!("{lt:010} {range2_start:010} {range2_len:010}");
     out[br_marker..br_marker + br.len()].copy_from_slice(br.as_bytes());
 
-    let hex = pdf::to_hex(timestamp_token_der);
-    out[hex_start..hex_start + hex.len()].copy_from_slice(&hex);
-    Ok(out)
+    let mut hasher = Sha256::new();
+    hasher.update(&out[0..lt]);
+    hasher.update(&out[range2_start..range2_start + range2_len]);
+    let byterange_digest: [u8; 32] = hasher.finalize().into();
+
+    Ok(DocTimeStampPlaceholder {
+        pdf: out,
+        hex_start,
+        gt,
+        byterange_digest,
+    })
 }
 
 /// Inspect `/DocTimeStamp` dictionaries and hash their embedded token bytes.
