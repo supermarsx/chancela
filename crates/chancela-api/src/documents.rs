@@ -2706,6 +2706,7 @@ pub struct GeneratedDocumentView {
     pub template_id: String,
     pub pdf_digest: String,
     pub profile: String,
+    pub created_at: String,
     pub download: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispatch_evidence_status: Option<DispatchEvidenceStatusView>,
@@ -2858,7 +2859,6 @@ pub async fn generate_document(
     let act = acts.get(&ActId(id)).ok_or(ApiError::NotFound)?;
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
-    let absent_recipients = absent_owner_recipient_names(act);
 
     // Render + write PDF/A before appending anything to the ledger, so a render/write failure returns
     // cleanly with no ledger mutation to roll back.
@@ -2881,19 +2881,75 @@ pub async fn generate_document(
 
     publish_generated_document_read_model(&state, &made.stored).await;
 
-    let document_id = made.stored.id.clone();
-    let dispatch_evidence_status =
-        dispatch_evidence_status_for_template(&made.stored.template_id, &absent_recipients, &[]);
-    let view = GeneratedDocumentView {
-        id: document_id.clone(),
-        act_id: made.stored.act_id.to_string(),
-        dispatch_evidence_status,
-        template_id: made.stored.template_id,
-        pdf_digest: made.stored.pdf_digest,
-        profile: made.stored.profile,
-        download: format!("/v1/documents/generated/{document_id}"),
-    };
+    let view = generated_document_view(&state, made.stored).await?;
     Ok((StatusCode::CREATED, Json(view)).into_response())
+}
+
+/// `GET /v1/acts/{act_id}/documents/generated` — list persisted generated-document summaries
+/// for one act, including the absent-owner dispatch-evidence coverage status where applicable.
+pub async fn list_generated_documents_for_act(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<Vec<GeneratedDocumentView>>, ApiError> {
+    let act_id = ActId(id);
+    let scope = scope_of_act(&state, act_id).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
+    if !state.acts.read().await.contains_key(&act_id) {
+        return Err(ApiError::NotFound);
+    }
+
+    let docs = load_documents_for_act(&state, act_id).await?;
+    let mut views = Vec::with_capacity(docs.len());
+    for doc in docs {
+        views.push(generated_document_view(&state, doc).await?);
+    }
+    Ok(Json(views))
+}
+
+async fn load_documents_for_act(
+    state: &AppState,
+    act_id: ActId,
+) -> Result<Vec<StoredDocument>, ApiError> {
+    if let Some(store) = &state.store {
+        return store
+            .documents_for_act(act_id)
+            .map_err(|e| ApiError::Internal(format!("document store read failed: {e}")));
+    }
+
+    let mut docs = state
+        .documents
+        .read()
+        .await
+        .values()
+        .filter(|doc| doc.act_id == act_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    docs.sort_by(|a, b| {
+        a.created_at
+            .cmp(&b.created_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(docs)
+}
+
+async fn generated_document_view(
+    state: &AppState,
+    doc: StoredDocument,
+) -> Result<GeneratedDocumentView, ApiError> {
+    let dispatch_evidence_status =
+        dispatch_evidence_status_for_generated_document(state, &doc).await?;
+    let document_id = doc.id.clone();
+    Ok(GeneratedDocumentView {
+        id: document_id.clone(),
+        act_id: doc.act_id.to_string(),
+        template_id: doc.template_id,
+        pdf_digest: doc.pdf_digest,
+        profile: doc.profile,
+        created_at: doc.created_at.format(&Rfc3339).unwrap_or_default(),
+        download: format!("/v1/documents/generated/{document_id}"),
+        dispatch_evidence_status,
+    })
 }
 
 /// `GET /v1/documents/generated/{document_id}` — stream one generated document row by its own id.

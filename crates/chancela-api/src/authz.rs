@@ -350,6 +350,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/convening/dispatch", RouteClass::Gated), // POST act.edit@Book (t61-E1)
     ("/v1/acts/{id}/document/preview", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/generate", RouteClass::Gated), // POST document.generate@Book
+    ("/v1/acts/{act_id}/documents/generated", RouteClass::Gated), // GET act.read@Book
     ("/v1/documents/generated/{document_id}", RouteClass::Gated), // GET act.read@Book(document.act_id)
     (
         "/v1/documents/generated/{document_id}/dispatch-evidence",
@@ -652,6 +653,14 @@ mod tests {
     fn generated_document_download_route_is_classified_as_gated() {
         assert_eq!(
             classify("/v1/documents/generated/{document_id}"),
+            Some(RouteClass::Gated)
+        );
+    }
+
+    #[test]
+    fn act_generated_documents_route_is_classified_as_gated() {
+        assert_eq!(
+            classify("/v1/acts/{act_id}/documents/generated"),
             Some(RouteClass::Gated)
         );
     }

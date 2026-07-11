@@ -54,6 +54,10 @@ import type {
   NotificationTriageUpdateBody,
   NotificationTriageUpdateResponse,
   DocumentBundle,
+  GeneratedDocumentDispatchEvidenceList,
+  GeneratedDocumentDispatchEvidenceRequest,
+  GeneratedDocumentDispatchEvidenceResponse,
+  GeneratedDocumentView,
   ImportedDocumentView,
   ImportedDocumentReviewBody,
   ImportDocumentBody,
@@ -572,12 +576,28 @@ export const api = {
   // bundle is `404` until sealed (and for a sealed act whose family has no template).
   getActDocumentPreview: (id: string) => get<DocumentModel>(`/v1/acts/${id}/document/preview`),
   getActDocumentBundle: (id: string) => get<DocumentBundle>(`/v1/acts/${id}/document/bundle`),
+  listGeneratedDocuments: (actId: string) =>
+    get<GeneratedDocumentView[]>(`/v1/acts/${encodeURIComponent(actId)}/documents/generated`),
   listTemplates: (params: { family?: EntityFamily; stage?: LifecycleStage } = {}) =>
     get<TemplateSummary[]>(`/v1/templates${query(params)}`),
   // The persisted PDF/A bytes (`GET /v1/acts/{id}/document`, `application/pdf`). Fetched
   // as a Blob (not JSON) so it can be triggered as a download with an honest filename;
   // carries the session token like every other request. 404 until sealed.
   fetchActDocumentPdf: (id: string) => fetchBlob(`/v1/acts/${id}/document`),
+  fetchGeneratedDocumentPdf: (documentId: string) =>
+    fetchBlob(`/v1/documents/generated/${encodeURIComponent(documentId)}`),
+  getGeneratedDocumentDispatchEvidence: (documentId: string) =>
+    get<GeneratedDocumentDispatchEvidenceList>(
+      `/v1/documents/generated/${encodeURIComponent(documentId)}/dispatch-evidence`,
+    ),
+  recordGeneratedDocumentDispatchEvidence: (
+    documentId: string,
+    body: GeneratedDocumentDispatchEvidenceRequest,
+  ) =>
+    post<GeneratedDocumentDispatchEvidenceResponse>(
+      `/v1/documents/generated/${encodeURIComponent(documentId)}/dispatch-evidence`,
+      body,
+    ),
   // Working-copy export (`GET .../document/working-copy`, text/markdown by default;
   // `?format=txt|html|rtf|odt` for other review formats). Non-evidentiary and intentionally
   // separate from the persisted/signed PDF downloads.

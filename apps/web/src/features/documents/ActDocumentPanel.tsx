@@ -15,11 +15,18 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { DISPATCH_CHANNELS } from '../../api/types';
 import type {
   ActView,
+  DispatchChannel,
   DocumentImportValidationFinding,
   DocumentImportValidationReport,
   EntityFamily,
+  GeneratedDocumentDispatchEvidenceList,
+  GeneratedDocumentDispatchEvidenceRecord,
+  GeneratedDocumentDispatchEvidenceRequest,
+  GeneratedDocumentDispatchEvidenceStatus,
+  GeneratedDocumentView,
   ImportDocumentBody,
   ImportedDocumentReviewGuardrail,
   ImportedDocumentReviewPatchStatus,
@@ -39,6 +46,9 @@ import {
   useDownloadActDocument,
   useDownloadActDocumentOffice,
   useDownloadActDocumentWorkingCopy,
+  useGeneratedDocumentDispatchEvidence,
+  useGeneratedDocuments,
+  useRecordGeneratedDocumentDispatchEvidence,
   useReviewImportedDocument,
   keys,
 } from '../../api/hooks';
@@ -54,6 +64,7 @@ import {
   ErrorNote,
   Field,
   Icon,
+  Input,
   InlineWarning,
   Select,
   Skeleton,
@@ -187,6 +198,77 @@ const importedDocumentReviewOptions: {
     label: 'Rejeitado como evidência não canónica',
   },
 ];
+
+const ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID = 'condominio-comunicacao-ausentes/v1';
+const DISPATCH_EVIDENCE_NOTE_LIMIT = 2000;
+const EMPTY_GENERATED_RECIPIENTS: string[] = [];
+
+function generatedDispatchStatusLabel(
+  status: GeneratedDocumentDispatchEvidenceStatus | null | undefined,
+  t: TFunction,
+): string {
+  switch (status?.status) {
+    case 'required_pending':
+      return t('documents.generated.status.requiredPending');
+    case 'operator_evidence_partial':
+      return t('documents.generated.status.partial');
+    case 'operator_evidence_covered':
+      return t('documents.generated.status.covered');
+    default:
+      return t('documents.generated.status.notRequired');
+  }
+}
+
+function generatedDispatchStatusTone(
+  status: GeneratedDocumentDispatchEvidenceStatus | null | undefined,
+): 'neutral' | 'warn' | 'error' | 'ok' {
+  if (status?.status === 'operator_evidence_covered') return 'ok';
+  if (status?.status === 'required_pending' || status?.status === 'operator_evidence_partial') {
+    return 'warn';
+  }
+  return 'neutral';
+}
+
+function dispatchChannelLabel(channel: string | null | undefined, t: TFunction): string {
+  if (!channel) return t('documents.generated.evidence.notIndicated');
+  switch (channel) {
+    case 'RegisteredLetter':
+      return t('enum.dispatchChannel.RegisteredLetter');
+    case 'RegisteredLetterAR':
+      return t('enum.dispatchChannel.RegisteredLetterAR');
+    case 'Email':
+      return t('enum.dispatchChannel.Email');
+    case 'HandDelivery':
+      return t('enum.dispatchChannel.HandDelivery');
+    case 'Publication':
+      return t('enum.dispatchChannel.Publication');
+    case 'Portal':
+      return t('enum.dispatchChannel.Portal');
+    default:
+      return channel;
+  }
+}
+
+function localDateTimeInputValue(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+}
+
+function localDateTimeToRfc3339(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+}
+
+function trimOrNull(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function generatedDocumentDownloadName(document: GeneratedDocumentView): string {
+  return `generated-${slug(document.template_id)}-${slug(document.id)}.pdf`;
+}
 
 function importedReviewStatusLabel(status: unknown): string {
   switch (metadataText(status)) {
@@ -687,6 +769,389 @@ function ActDocumentMetadata({
   );
 }
 
+function GeneratedDispatchStatusSummary({
+  status,
+  t,
+}: {
+  status: GeneratedDocumentDispatchEvidenceStatus | null | undefined;
+  t: TFunction;
+}) {
+  const required = status?.required_recipients.length ?? 0;
+  const recorded = status?.recorded_recipients.length ?? 0;
+  return (
+    <div className="stack--tight" role="group" aria-label={t('documents.generated.status.aria')}>
+      <p className="card__label">{t('documents.generated.status.title')}</p>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>{t('documents.generated.status.label')}</dt>
+          <dd>
+            <Badge tone={generatedDispatchStatusTone(status)}>
+              {generatedDispatchStatusLabel(status, t)}
+            </Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.status.coverage')}</dt>
+          <dd>
+            {required > 0
+              ? t('documents.generated.status.coverageValue', {
+                  recorded: String(recorded),
+                  required: String(required),
+                })
+              : t('documents.generated.evidence.notIndicated')}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.status.evidenceAttached')}</dt>
+          <dd>{yesNo(Boolean(status?.evidence_attached), t)}</dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.status.dispatchCompleted')}</dt>
+          <dd className="mono">{String(Boolean(status?.dispatch_completed))}</dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.status.completionBasis')}</dt>
+          <dd className="mono">{status?.completion_basis ?? 'none'}</dd>
+        </div>
+      </dl>
+      <InlineWarning tone="info" title={t('documents.generated.noClaim.title')}>
+        {t('documents.generated.noClaim.body')}
+      </InlineWarning>
+    </div>
+  );
+}
+
+function GeneratedDispatchEvidenceRows({
+  evidence,
+  importList,
+  onSelectImport,
+  t,
+}: {
+  evidence: GeneratedDocumentDispatchEvidenceList | undefined;
+  importList: ImportedDocumentView[];
+  onSelectImport: (id: string) => void;
+  t: TFunction;
+}) {
+  const rows = evidence?.evidence ?? [];
+  if (rows.length === 0) {
+    return (
+      <EmptyState title={t('documents.generated.evidence.empty.title')}>
+        <p>{t('documents.generated.evidence.empty.body')}</p>
+      </EmptyState>
+    );
+  }
+
+  return (
+    <ul className="plain-list" aria-label={t('documents.generated.evidence.listAria')}>
+      {rows.map((row) => (
+        <GeneratedDispatchEvidenceRow
+          key={row.idempotency_key}
+          row={row}
+          importList={importList}
+          onSelectImport={onSelectImport}
+          t={t}
+        />
+      ))}
+    </ul>
+  );
+}
+
+function GeneratedDispatchEvidenceRow({
+  row,
+  importList,
+  onSelectImport,
+  t,
+}: {
+  row: GeneratedDocumentDispatchEvidenceRecord;
+  importList: ImportedDocumentView[];
+  onSelectImport: (id: string) => void;
+  t: TFunction;
+}) {
+  const imported =
+    row.imported_document_id != null
+      ? importList.find((document) => document.id === row.imported_document_id)
+      : undefined;
+  return (
+    <li className="chainrow">
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>{t('documents.generated.evidence.actor')}</dt>
+          <dd>{row.actor}</dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.evidence.recordedAt')}</dt>
+          <dd>
+            <time className="mono" dateTime={row.recorded_at}>
+              {row.recorded_at}
+            </time>
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.form.dispatchedAt')}</dt>
+          <dd>
+            <time className="mono" dateTime={row.dispatched_at}>
+              {row.dispatched_at}
+            </time>
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.form.channel')}</dt>
+          <dd>{dispatchChannelLabel(row.channel, t)}</dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.form.reference')}</dt>
+          <dd>
+            {row.reference ?? (
+              <span className="muted">{t('documents.generated.evidence.notIndicated')}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.form.evidenceReference')}</dt>
+          <dd>
+            {row.evidence_reference ?? (
+              <span className="muted">{t('documents.generated.evidence.notIndicated')}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.form.importedDocument')}</dt>
+          <dd>
+            {row.imported_document_id ? (
+              imported ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.FileText />}
+                  onClick={() => onSelectImport(row.imported_document_id as string)}
+                >
+                  {importedDisplayName(imported, t)}
+                </Button>
+              ) : (
+                <Truncate text={row.imported_document_id} mono />
+              )
+            ) : (
+              <span className="muted">{t('documents.generated.evidence.notIndicated')}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.form.recipients')}</dt>
+          <dd>
+            {row.recipients.length > 0
+              ? row.recipients.join(', ')
+              : t('documents.generated.evidence.notIndicated')}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.form.operatorNote')}</dt>
+          <dd>
+            {row.operator_note ?? (
+              <span className="muted">{t('documents.generated.evidence.notIndicated')}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('documents.generated.evidence.flags')}</dt>
+          <dd>
+            {t('documents.generated.evidence.flagsValue', {
+              sending: String(row.sending_performed_by_chancela),
+              delivery: String(row.delivery_confirmed),
+              sufficiency: String(row.legal_sufficiency_claimed),
+              notice: String(row.legal_notice_completion_claimed),
+              bytes: String(row.bytes_in_payload),
+            })}
+          </dd>
+        </div>
+      </dl>
+    </li>
+  );
+}
+
+function GeneratedDispatchEvidenceForm({
+  status,
+  importList,
+  dispatchedAt,
+  channel,
+  reference,
+  evidenceReference,
+  importedDocumentId,
+  recipients,
+  operatorNote,
+  isPending,
+  error,
+  scope,
+  onDispatchedAtChange,
+  onChannelChange,
+  onReferenceChange,
+  onEvidenceReferenceChange,
+  onImportedDocumentIdChange,
+  onRecipientsChange,
+  onOperatorNoteChange,
+  onSubmit,
+}: {
+  status: GeneratedDocumentDispatchEvidenceStatus | null | undefined;
+  importList: ImportedDocumentView[];
+  dispatchedAt: string;
+  channel: DispatchChannel | '';
+  reference: string;
+  evidenceReference: string;
+  importedDocumentId: string;
+  recipients: string[];
+  operatorNote: string;
+  isPending: boolean;
+  error: unknown;
+  scope: ReturnType<typeof scopeBook>;
+  onDispatchedAtChange: (value: string) => void;
+  onChannelChange: (value: DispatchChannel | '') => void;
+  onReferenceChange: (value: string) => void;
+  onEvidenceReferenceChange: (value: string) => void;
+  onImportedDocumentIdChange: (value: string) => void;
+  onRecipientsChange: (value: string[]) => void;
+  onOperatorNoteChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const t = useT();
+  const controlId = 'generated-dispatch-evidence';
+  const requiredRecipients = status?.required_recipients ?? [];
+  const hasLocator =
+    trimOrNull(reference) != null ||
+    trimOrNull(evidenceReference) != null ||
+    trimOrNull(importedDocumentId) != null;
+  const hasRecipients = requiredRecipients.length === 0 || recipients.length > 0;
+  const canSubmit = dispatchedAt.trim().length > 0 && hasLocator && hasRecipients && !isPending;
+  const channelOptions = [
+    { value: '', label: t('documents.generated.evidence.notIndicated') },
+    ...DISPATCH_CHANNELS.map((value) => ({
+      value,
+      label: dispatchChannelLabel(value, t),
+    })),
+  ];
+  const importOptions = [
+    { value: '', label: t('documents.generated.form.noImportedDocument') },
+    ...importList.map((document) => ({
+      value: document.id,
+      label: importedDisplayName(document, t),
+    })),
+  ];
+
+  return (
+    <form
+      className="form"
+      aria-label={t('documents.generated.form.aria')}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSubmit) onSubmit();
+      }}
+    >
+      <InlineWarning tone="info" title={t('documents.generated.form.noticeTitle')}>
+        {t('documents.generated.form.noticeBody')}
+      </InlineWarning>
+      <Field label={t('documents.generated.form.dispatchedAt')} htmlFor={`${controlId}-at`}>
+        <Input
+          id={`${controlId}-at`}
+          type="datetime-local"
+          value={dispatchedAt}
+          disabled={isPending}
+          onChange={(event) => onDispatchedAtChange(event.target.value)}
+        />
+      </Field>
+      <Field label={t('documents.generated.form.channel')} htmlFor={`${controlId}-channel`}>
+        <Select
+          id={`${controlId}-channel`}
+          value={channel}
+          options={channelOptions}
+          disabled={isPending}
+          onChange={(event) => onChannelChange(event.target.value as DispatchChannel | '')}
+        />
+      </Field>
+      <Field label={t('documents.generated.form.reference')} htmlFor={`${controlId}-reference`}>
+        <Input
+          id={`${controlId}-reference`}
+          value={reference}
+          disabled={isPending}
+          onChange={(event) => onReferenceChange(event.target.value)}
+        />
+      </Field>
+      <Field
+        label={t('documents.generated.form.evidenceReference')}
+        htmlFor={`${controlId}-evidence-reference`}
+      >
+        <Input
+          id={`${controlId}-evidence-reference`}
+          value={evidenceReference}
+          disabled={isPending}
+          onChange={(event) => onEvidenceReferenceChange(event.target.value)}
+        />
+      </Field>
+      <Field
+        label={t('documents.generated.form.importedDocument')}
+        htmlFor={`${controlId}-imported`}
+        hint={t('documents.generated.form.locatorHint')}
+      >
+        <Select
+          id={`${controlId}-imported`}
+          value={importedDocumentId}
+          options={importOptions}
+          disabled={isPending}
+          onChange={(event) => onImportedDocumentIdChange(event.target.value)}
+        />
+      </Field>
+      <div className="stack--tight">
+        <p className="field__label">{t('documents.generated.form.recipients')}</p>
+        {requiredRecipients.length > 0 ? (
+          requiredRecipients.map((recipient) => (
+            <label className="checkline" key={recipient}>
+              <input
+                type="checkbox"
+                checked={recipients.includes(recipient)}
+                disabled={isPending}
+                onChange={(event) => {
+                  onRecipientsChange(
+                    event.target.checked
+                      ? [...recipients, recipient]
+                      : recipients.filter((item) => item !== recipient),
+                  );
+                }}
+              />
+              {recipient}
+            </label>
+          ))
+        ) : (
+          <p className="field__hint">{t('documents.generated.evidence.notIndicated')}</p>
+        )}
+      </div>
+      <Field
+        label={t('documents.generated.form.operatorNote')}
+        htmlFor={`${controlId}-note`}
+        hint={`${operatorNote.length}/${DISPATCH_EVIDENCE_NOTE_LIMIT}`}
+      >
+        <TextArea
+          id={`${controlId}-note`}
+          rows={3}
+          maxLength={DISPATCH_EVIDENCE_NOTE_LIMIT}
+          value={operatorNote}
+          disabled={isPending}
+          onChange={(event) => onOperatorNoteChange(event.target.value)}
+        />
+      </Field>
+      {error ? <ErrorNote error={error} /> : null}
+      <GateButton
+        perm="document.generate"
+        scope={scope}
+        type="submit"
+        variant="secondary"
+        icon={<Icon.Pencil />}
+        disabled={!canSubmit}
+      >
+        {isPending
+          ? t('documents.generated.form.submitting')
+          : t('documents.generated.form.submit')}
+      </GateButton>
+    </form>
+  );
+}
+
 function ImportedDocumentDetails({
   document,
   error,
@@ -1020,11 +1485,22 @@ export function ActDocumentPanel({
   );
   const [reviewNote, setReviewNote] = useState('');
   const [reviewGuardrailsAcknowledged, setReviewGuardrailsAcknowledged] = useState(false);
+  const [selectedGeneratedDocumentId, setSelectedGeneratedDocumentId] = useState<string | null>(
+    null,
+  );
+  const [dispatchEvidenceAt, setDispatchEvidenceAt] = useState(localDateTimeInputValue);
+  const [dispatchEvidenceChannel, setDispatchEvidenceChannel] = useState<DispatchChannel | ''>('');
+  const [dispatchReference, setDispatchReference] = useState('');
+  const [dispatchEvidenceReference, setDispatchEvidenceReference] = useState('');
+  const [dispatchImportedDocumentId, setDispatchImportedDocumentId] = useState('');
+  const [dispatchRecipients, setDispatchRecipients] = useState<string[]>([]);
+  const [dispatchOperatorNote, setDispatchOperatorNote] = useState('');
 
   const sealed = act.state === 'Sealed' || act.state === 'Archived';
   const reviewScope = scopeBook(act.book_id);
   const preview = useActDocumentPreview(act.id, open);
   const bundle = useActDocumentBundle(act.id, sealed);
+  const generatedDocuments = useGeneratedDocuments(act.id, sealed);
   const download = useDownloadActDocument(act.id);
   const workingCopyMarkdownDownload = useDownloadActDocumentWorkingCopy(act.id);
   const workingCopyTextDownload = useDownloadActDocumentWorkingCopy(act.id, 'txt');
@@ -1033,6 +1509,7 @@ export function ActDocumentPanel({
   const workingCopyOdtDownload = useDownloadActDocumentWorkingCopy(act.id, 'odt');
   const officeDownload = useDownloadActDocumentOffice(act.id);
   const reviewImportedDocument = useReviewImportedDocument(act.id);
+  const recordGeneratedDispatchEvidence = useRecordGeneratedDocumentDispatchEvidence();
   const importedDocuments = useQuery({
     queryKey: keys.importedDocuments(act.id),
     queryFn: () => listImportedDocumentsForAct(act.id),
@@ -1055,8 +1532,24 @@ export function ActDocumentPanel({
   const importedDownload = useMutation({
     mutationFn: (document: ImportedDocumentView) => api.fetchImportedDocumentBytes(document.id),
   });
+  const generatedDownload = useMutation({
+    mutationFn: (document: GeneratedDocumentView) => api.fetchGeneratedDocumentPdf(document.id),
+  });
 
   const importList = importedDocuments.data ?? [];
+  const generatedCommunications = (generatedDocuments.data ?? []).filter(
+    (document) => document.template_id === ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
+  );
+  const selectedGeneratedDocument =
+    generatedCommunications.find((document) => document.id === selectedGeneratedDocumentId) ?? null;
+  const generatedEvidence = useGeneratedDocumentDispatchEvidence(selectedGeneratedDocument?.id);
+  const generatedDispatchStatus =
+    generatedEvidence.data?.dispatch_evidence_status ??
+    selectedGeneratedDocument?.dispatch_evidence_status ??
+    null;
+  const generatedRequiredRecipients =
+    generatedDispatchStatus?.required_recipients ?? EMPTY_GENERATED_RECIPIENTS;
+  const generatedRequiredRecipientsSignature = generatedRequiredRecipients.join('\u0000');
   const selectedImportFromList =
     importList.find((document) => document.id === selectedImportId) ?? null;
   const selectedImport = selectedImportedDocument.data ?? selectedImportFromList;
@@ -1071,6 +1564,35 @@ export function ActDocumentPanel({
     setReviewNote(metadataText(selectedImportReviewNote) ?? '');
     setReviewGuardrailsAcknowledged(false);
   }, [selectedImportReviewId, selectedImportReviewStatus, selectedImportReviewNote]);
+
+  useEffect(() => {
+    if (!sealed || generatedCommunications.length === 0) {
+      setSelectedGeneratedDocumentId(null);
+      return;
+    }
+    if (
+      selectedGeneratedDocumentId == null ||
+      !generatedCommunications.some((document) => document.id === selectedGeneratedDocumentId)
+    ) {
+      setSelectedGeneratedDocumentId(generatedCommunications[0].id);
+    }
+  }, [sealed, generatedCommunications, selectedGeneratedDocumentId]);
+
+  useEffect(() => {
+    setDispatchRecipients(generatedRequiredRecipients);
+  }, [
+    selectedGeneratedDocument?.id,
+    generatedRequiredRecipients,
+    generatedRequiredRecipientsSignature,
+  ]);
+
+  useEffect(() => {
+    setDispatchEvidenceChannel('');
+    setDispatchReference('');
+    setDispatchEvidenceReference('');
+    setDispatchImportedDocumentId('');
+    setDispatchOperatorNote('');
+  }, [selectedGeneratedDocument?.id]);
 
   function downloadBaseName() {
     const base = entityName ? `${slug(entityName)}-` : '';
@@ -1089,6 +1611,27 @@ export function ActDocumentPanel({
   function onDownload() {
     const filename = `${downloadBaseName()}.pdf`;
     download.mutate(undefined, {
+      onSuccess: async (blob) => {
+        try {
+          showSaveResult(
+            await saveBlobAs({
+              blob,
+              filename,
+              contentType: 'application/pdf',
+              preferBrowserSavePicker: true,
+            }),
+          );
+        } catch (e) {
+          toast.error(e);
+        }
+      },
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  function onDownloadGenerated(document: GeneratedDocumentView) {
+    const filename = `${downloadBaseName()}-${generatedDocumentDownloadName(document)}`;
+    generatedDownload.mutate(document, {
       onSuccess: async (blob) => {
         try {
           showSaveResult(
@@ -1233,6 +1776,33 @@ export function ActDocumentPanel({
     );
   }
 
+  function onRecordGeneratedDispatchEvidence() {
+    if (!selectedGeneratedDocument) return;
+    const body: GeneratedDocumentDispatchEvidenceRequest = {
+      actor: 'web-operator',
+      dispatched_at: localDateTimeToRfc3339(dispatchEvidenceAt),
+      channel: dispatchEvidenceChannel || null,
+      reference: trimOrNull(dispatchReference),
+      recipients: dispatchRecipients,
+      evidence_reference: trimOrNull(dispatchEvidenceReference),
+      imported_document_id: trimOrNull(dispatchImportedDocumentId),
+      operator_note: trimOrNull(dispatchOperatorNote),
+    };
+    recordGeneratedDispatchEvidence.mutate(
+      { documentId: selectedGeneratedDocument.id, body },
+      {
+        onSuccess: () => {
+          setDispatchReference('');
+          setDispatchEvidenceReference('');
+          setDispatchImportedDocumentId('');
+          setDispatchOperatorNote('');
+          toast.success(t('documents.generated.form.toast.success'));
+        },
+        onError: (error) => toast.error(error),
+      },
+    );
+  }
+
   return (
     <Card title={t('documents.title')}>
       <div className="stack--tight">
@@ -1339,6 +1909,149 @@ export function ActDocumentPanel({
               {t('documents.download.noneBody')}
             </InlineWarning>
           ) : null
+        ) : null}
+
+        {sealed ? (
+          <section className="stack--tight" aria-label={t('documents.generated.sectionAria')}>
+            <div className="section-head">
+              <div className="stack--tight">
+                <p className="card__label">{t('documents.generated.title')}</p>
+                <p className="field__hint">{t('documents.generated.notice')}</p>
+              </div>
+              <Badge tone="neutral">{t('documents.generated.noClaim.badge')}</Badge>
+            </div>
+
+            {generatedDocuments.isLoading ? (
+              <Skeleton height="5.5rem" />
+            ) : generatedDocuments.error ? (
+              <ErrorNote error={generatedDocuments.error} />
+            ) : generatedCommunications.length === 0 ? (
+              <EmptyState title={t('documents.generated.empty.title')}>
+                <p>{t('documents.generated.empty.body')}</p>
+              </EmptyState>
+            ) : (
+              <ul className="plain-list" aria-label={t('documents.generated.listAria')}>
+                {generatedCommunications.map((document) => {
+                  const selected = selectedGeneratedDocument?.id === document.id;
+                  const status =
+                    selected && generatedDispatchStatus
+                      ? generatedDispatchStatus
+                      : document.dispatch_evidence_status;
+                  return (
+                    <li className="chainrow" key={document.id} aria-current={selected || undefined}>
+                      <div className="section-head">
+                        <div className="stack--tight">
+                          <p className="row-wrap">
+                            <Badge tone={generatedDispatchStatusTone(status)}>
+                              {generatedDispatchStatusLabel(status, t)}
+                            </Badge>
+                            <Truncate text={document.template_id} mono />
+                          </p>
+                          <dl className="deflist deflist--tight">
+                            <div>
+                              <dt>{t('documents.metadata.document')}</dt>
+                              <dd>
+                                <Truncate text={document.id} mono />
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>{t('documents.metadata.template')}</dt>
+                              <dd>
+                                <Truncate text={document.template_id} mono />
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>{t('documents.metadata.profile')}</dt>
+                              <dd>{document.profile}</dd>
+                            </div>
+                            <div>
+                              <dt>{t('documents.metadata.generatedAt')}</dt>
+                              <dd>
+                                <time className="mono" dateTime={document.created_at}>
+                                  {document.created_at}
+                                </time>
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>{t('documents.digest.label')}</dt>
+                              <dd>
+                                <Digest value={document.pdf_digest} />
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>{t('documents.generated.downloadPath')}</dt>
+                              <dd>
+                                <Truncate text={document.download} mono />
+                              </dd>
+                            </div>
+                          </dl>
+                        </div>
+                        <div className="row-wrap">
+                          <Button
+                            type="button"
+                            variant={selected ? 'primary' : 'secondary'}
+                            icon={<Icon.FileText />}
+                            onClick={() => setSelectedGeneratedDocumentId(document.id)}
+                          >
+                            {t('documents.generated.viewEvidence')}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            icon={<Icon.Tray />}
+                            disabled={generatedDownload.isPending}
+                            onClick={() => onDownloadGenerated(document)}
+                          >
+                            {t('documents.generated.download')}
+                          </Button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {selectedGeneratedDocument ? (
+              <div className="stack--tight">
+                <GeneratedDispatchStatusSummary status={generatedDispatchStatus} t={t} />
+                {generatedEvidence.isLoading ? (
+                  <Skeleton height="5rem" />
+                ) : generatedEvidence.error ? (
+                  <ErrorNote error={generatedEvidence.error} />
+                ) : (
+                  <GeneratedDispatchEvidenceRows
+                    evidence={generatedEvidence.data}
+                    importList={importList}
+                    onSelectImport={setSelectedImportId}
+                    t={t}
+                  />
+                )}
+                <GeneratedDispatchEvidenceForm
+                  status={generatedDispatchStatus}
+                  importList={importList}
+                  dispatchedAt={dispatchEvidenceAt}
+                  channel={dispatchEvidenceChannel}
+                  reference={dispatchReference}
+                  evidenceReference={dispatchEvidenceReference}
+                  importedDocumentId={dispatchImportedDocumentId}
+                  recipients={dispatchRecipients}
+                  operatorNote={dispatchOperatorNote}
+                  isPending={recordGeneratedDispatchEvidence.isPending}
+                  error={recordGeneratedDispatchEvidence.error}
+                  scope={reviewScope}
+                  onDispatchedAtChange={setDispatchEvidenceAt}
+                  onChannelChange={setDispatchEvidenceChannel}
+                  onReferenceChange={setDispatchReference}
+                  onEvidenceReferenceChange={setDispatchEvidenceReference}
+                  onImportedDocumentIdChange={setDispatchImportedDocumentId}
+                  onRecipientsChange={setDispatchRecipients}
+                  onOperatorNoteChange={setDispatchOperatorNote}
+                  onSubmit={onRecordGeneratedDispatchEvidence}
+                />
+              </div>
+            ) : null}
+          </section>
         ) : null}
 
         <section className="stack--tight" aria-label={t('documents.import.sectionAria')}>

@@ -13,6 +13,8 @@ import type {
   ActView,
   DocumentBundle,
   DocumentImportValidationReport,
+  GeneratedDocumentDispatchEvidenceList,
+  GeneratedDocumentView,
   ImportedDocumentView,
 } from '../../api/types';
 
@@ -139,6 +141,56 @@ const importedDocument: ImportedDocumentView = {
   legal_notice:
     'Imported document preserved as non-canonical evidence only; it does not replace the generated PDF/A or signed PDF, and no legal validity, PDF/A conformance, or signature validity is claimed.',
   bytes_download: '/v1/documents/imported/import-1/bytes',
+};
+
+const absentOwnerCommunication: GeneratedDocumentView = {
+  id: 'generated-absent-1',
+  act_id: 'act-1',
+  template_id: 'condominio-comunicacao-ausentes/v1',
+  pdf_digest: 'f'.repeat(64),
+  profile: 'application/pdf; profile=PDF/A-2u',
+  created_at: '2026-07-11T09:15:00Z',
+  download: '/v1/documents/generated/generated-absent-1',
+  dispatch_evidence_status: {
+    status: 'operator_evidence_partial',
+    required: true,
+    evidence_attached: true,
+    dispatch_completed: false,
+    completion_basis: 'none',
+    required_recipients: ['Fração B', 'Fração C'],
+    recorded_recipients: ['Fração B'],
+    missing_recipients: ['Fração C'],
+    note: 'operator-recorded evidence only',
+  },
+};
+
+const absentOwnerEvidence: GeneratedDocumentDispatchEvidenceList = {
+  document_id: 'generated-absent-1',
+  act_id: 'act-1',
+  template_id: 'condominio-comunicacao-ausentes/v1',
+  dispatch_evidence_status: absentOwnerCommunication.dispatch_evidence_status!,
+  evidence: [
+    {
+      document_id: 'generated-absent-1',
+      idempotency_key: 'idem-1',
+      act_id: 'act-1',
+      template_id: 'condominio-comunicacao-ausentes/v1',
+      actor: 'amelia.marques',
+      dispatched_at: '2026-07-11T10:00:00Z',
+      channel: 'RegisteredLetter',
+      reference: 'RL-123',
+      evidence_reference: 'scan-page-4',
+      imported_document_id: 'import-1',
+      recipients: ['Fração B'],
+      operator_note: 'Envelope handed to postal desk.',
+      recorded_at: '2026-07-11T10:05:00Z',
+      sending_performed_by_chancela: false,
+      delivery_confirmed: false,
+      legal_sufficiency_claimed: false,
+      legal_notice_completion_claimed: false,
+      bytes_in_payload: false,
+    },
+  ],
 };
 
 const importedDocumentReviewNotice =
@@ -431,6 +483,7 @@ function blobText(blob: Blob): Promise<string> {
 }
 
 function emptyImports(url: string) {
+  if (url.includes('/v1/acts/') && url.includes('/documents/generated')) return json([]);
   if (url.includes('/v1/documents/imported')) return json([]);
   return null;
 }
@@ -907,6 +960,186 @@ describe('ActDocumentPanel — download only post-seal', () => {
 
     expect(await screen.findByText('Documento não gerado')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Descarregar PDF' })).toBeNull();
+  });
+});
+
+describe('ActDocumentPanel — generated absent-owner communications', () => {
+  const sealed: ActView = { ...baseAct, state: 'Sealed', ata_number: 1 };
+
+  it('renders generated communications, evidence rows, and no-claim copy', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/v1/acts/act-1/documents/generated')) {
+        return json([absentOwnerCommunication]);
+      }
+      if (
+        url.includes('/v1/documents/generated/generated-absent-1/dispatch-evidence') &&
+        init?.method !== 'POST'
+      ) {
+        return json(absentOwnerEvidence);
+      }
+      if (url.includes('/v1/documents/imported')) return json([importedDocument]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<ActDocumentPanel act={sealed} family="Condominium" />);
+
+    const list = await screen.findByRole('list', { name: 'Comunicações geradas' });
+    expect(within(list).getAllByText('condominio-comunicacao-ausentes/v1')).toHaveLength(2);
+    expect(within(list).getByText('operator_evidence_partial')).toBeTruthy();
+    expect(within(list).getByTitle('/v1/documents/generated/generated-absent-1')).toBeTruthy();
+
+    const status = await screen.findByRole('group', {
+      name: 'Estado da evidência de comunicação gerada',
+    });
+    expect(within(status).getByText('1/2 destinatários')).toBeTruthy();
+    expect(within(status).getByText('dispatch_completed')).toBeTruthy();
+    expect(within(status).getByText('false')).toBeTruthy();
+    expect(within(status).getByText('none')).toBeTruthy();
+    expect(
+      within(status).getByText(
+        'A Chancela não enviou, não confirmou entrega e não completou aviso legal; mostra apenas evidência registada pelo operador e cobertura de destinatários.',
+      ),
+    ).toBeTruthy();
+
+    const evidenceRows = await screen.findByRole('list', {
+      name: 'Linhas de evidência registadas',
+    });
+    expect(within(evidenceRows).getByText('amelia.marques')).toBeTruthy();
+    expect(within(evidenceRows).getByText('2026-07-11T10:05:00Z')).toBeTruthy();
+    expect(within(evidenceRows).getByText('2026-07-11T10:00:00Z')).toBeTruthy();
+    expect(within(evidenceRows).getByText('Carta registada')).toBeTruthy();
+    expect(within(evidenceRows).getByText('RL-123')).toBeTruthy();
+    expect(within(evidenceRows).getByText('scan-page-4')).toBeTruthy();
+    expect(
+      within(evidenceRows).getByRole('button', { name: 'supporting-evidence.pdf' }),
+    ).toBeTruthy();
+    expect(within(evidenceRows).getByText('Fração B')).toBeTruthy();
+    expect(within(evidenceRows).getByText('Envelope handed to postal desk.')).toBeTruthy();
+    expect(
+      within(evidenceRows).getByText(
+        'Envio pela Chancela=false; confirmação de entrega=false; suficiência legal=false; reivindicação de conclusão=false; bytes no payload=false.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Aviso legal válido')).toBeNull();
+  });
+
+  it('posts metadata-only evidence with selected recipients and a locator', async () => {
+    const pendingCommunication: GeneratedDocumentView = {
+      ...absentOwnerCommunication,
+      dispatch_evidence_status: {
+        ...absentOwnerCommunication.dispatch_evidence_status!,
+        status: 'required_pending',
+        evidence_attached: false,
+        recorded_recipients: [],
+        missing_recipients: ['Fração B', 'Fração C'],
+      },
+    };
+    const pendingEvidence: GeneratedDocumentDispatchEvidenceList = {
+      ...absentOwnerEvidence,
+      dispatch_evidence_status: pendingCommunication.dispatch_evidence_status!,
+      evidence: [],
+    };
+    const recordedBodies: unknown[] = [];
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/v1/acts/act-1/documents/generated')) return json([pendingCommunication]);
+      if (url.includes('/v1/documents/imported')) return json([importedDocument]);
+      if (url.includes('/v1/documents/generated/generated-absent-1/dispatch-evidence')) {
+        if (init?.method === 'POST') {
+          recordedBodies.push(JSON.parse(String(init.body)));
+          return json(
+            {
+              evidence: absentOwnerEvidence.evidence[0],
+              dispatch_evidence_status: absentOwnerCommunication.dispatch_evidence_status,
+            },
+            201,
+          );
+        }
+        return json(pendingEvidence);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<ActDocumentPanel act={sealed} family="Condominium" />);
+
+    const form = await screen.findByRole('form', {
+      name: 'Registar evidência da comunicação gerada',
+    });
+    const submit = within(form).getByRole('button', { name: 'Registar evidência' });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(within(form).getByLabelText('Data/hora registada'), {
+      target: { value: '2026-01-11T11:30' },
+    });
+    fireEvent.change(within(form).getByLabelText('Canal'), { target: { value: 'Email' } });
+    fireEvent.change(within(form).getByLabelText('Referência'), {
+      target: { value: 'email-outbox-77' },
+    });
+    fireEvent.change(within(form).getByLabelText('Documento importado'), {
+      target: { value: 'import-1' },
+    });
+    fireEvent.click(within(form).getByLabelText('Fração C'));
+    fireEvent.change(within(form).getByLabelText('Nota do operador'), {
+      target: { value: 'Operator-recorded evidence only.' },
+    });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(recordedBodies).toHaveLength(1));
+    expect(recordedBodies[0]).toEqual({
+      actor: 'web-operator',
+      dispatched_at: '2026-01-11T11:30:00.000Z',
+      channel: 'Email',
+      reference: 'email-outbox-77',
+      recipients: ['Fração B'],
+      evidence_reference: null,
+      imported_document_id: 'import-1',
+      operator_note: 'Operator-recorded evidence only.',
+    });
+  });
+
+  it('keeps evidence submit permission-gated', async () => {
+    let postCount = 0;
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/v1/acts/act-1/documents/generated')) {
+        return json([absentOwnerCommunication]);
+      }
+      if (url.includes('/v1/documents/imported')) return json([importedDocument]);
+      if (url.includes('/v1/documents/generated/generated-absent-1/dispatch-evidence')) {
+        if (init?.method === 'POST') {
+          postCount += 1;
+          return json(absentOwnerEvidence, 201);
+        }
+        return json(absentOwnerEvidence);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission !== 'document.generate')}
+      >
+        <ActDocumentPanel act={sealed} family="Condominium" />
+      </StaticPermissionsProvider>,
+    );
+
+    const form = await screen.findByRole('form', {
+      name: 'Registar evidência da comunicação gerada',
+    });
+    fireEvent.change(within(form).getByLabelText('Referência'), {
+      target: { value: 'RL-456' },
+    });
+    const submit = within(form).getByRole('button', { name: 'Registar evidência' });
+    expect(submit.getAttribute('data-gated')).toBe('true');
+    expect(submit.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(submit);
+    await waitFor(() => expect(postCount).toBe(0));
   });
 });
 

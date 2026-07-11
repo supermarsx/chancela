@@ -40,6 +40,8 @@ import type {
   UpdateExternalSigningEnvelopeBody,
   ExternalValidatorReportUploadRequest,
   FollowUpView,
+  GeneratedDocumentDispatchEvidenceRequest,
+  GeneratedDocumentDispatchEvidenceRecord,
   ImportedDocumentReviewBody,
   ImportedDocumentView,
   ImportFromRegistryBody,
@@ -134,6 +136,9 @@ export const keys = {
   actFollowUps: (id: string) => ['acts', id, 'follow-ups'] as const,
   actDocumentPreview: (id: string) => ['acts', id, 'document', 'preview'] as const,
   actDocumentBundle: (id: string) => ['acts', id, 'document', 'bundle'] as const,
+  generatedDocuments: (actId: string) => ['acts', actId, 'documents', 'generated'] as const,
+  generatedDocumentDispatchEvidence: (documentId: string) =>
+    ['documents', 'generated', documentId, 'dispatch-evidence'] as const,
   importedDocuments: (actId?: string) =>
     ['documents', 'imported', { actId: actId ?? null }] as const,
   importedDocument: (id: string) => ['documents', 'imported', id] as const,
@@ -831,6 +836,60 @@ export function useActDocumentBundle(id: string, enabled: boolean) {
     queryFn: () => api.getActDocumentBundle(id),
     enabled: enabled && !!id,
     retry: false,
+  });
+}
+
+export function useGeneratedDocuments(actId: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.generatedDocuments(actId),
+    queryFn: () => api.listGeneratedDocuments(actId),
+    enabled: enabled && !!actId,
+    retry: false,
+  });
+}
+
+export function useGeneratedDocumentDispatchEvidence(documentId: string | null | undefined) {
+  return useQuery({
+    queryKey: keys.generatedDocumentDispatchEvidence(documentId ?? ''),
+    queryFn: () => api.getGeneratedDocumentDispatchEvidence(documentId ?? ''),
+    enabled: !!documentId,
+    retry: false,
+  });
+}
+
+export function useRecordGeneratedDocumentDispatchEvidence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      documentId,
+      body,
+    }: {
+      documentId: string;
+      body: GeneratedDocumentDispatchEvidenceRequest;
+    }) => api.recordGeneratedDocumentDispatchEvidence(documentId, body),
+    onSuccess: (response) => {
+      const { act_id: actId, document_id: documentId } = response.evidence;
+      qc.setQueryData(keys.generatedDocumentDispatchEvidence(documentId), (current: unknown) => {
+        if (!current || typeof current !== 'object') return current;
+        const existing = current as {
+          evidence?: GeneratedDocumentDispatchEvidenceRecord[];
+        };
+        const rows = existing.evidence ?? [];
+        const alreadyPresent = rows.some(
+          (row) => row.idempotency_key === response.evidence.idempotency_key,
+        );
+        return {
+          ...existing,
+          dispatch_evidence_status: response.dispatch_evidence_status,
+          evidence: alreadyPresent ? rows : [...rows, response.evidence],
+        };
+      });
+      void qc.invalidateQueries({ queryKey: keys.generatedDocuments(actId) });
+      void qc.invalidateQueries({ queryKey: keys.generatedDocumentDispatchEvidence(documentId) });
+      void qc.invalidateQueries({ queryKey: keys.importedDocuments(actId) });
+      void qc.invalidateQueries({ queryKey: keys.actDocumentBundle(actId) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
   });
 }
 

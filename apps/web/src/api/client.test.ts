@@ -569,6 +569,113 @@ describe('api client', () => {
     );
   });
 
+  it('routes generated-document discovery, PDF download, and dispatch evidence bodies', async () => {
+    const generated = [
+      {
+        id: 'generated doc',
+        act_id: 'act 1',
+        template_id: 'condominio-comunicacao-ausentes/v1',
+        pdf_digest: 'a'.repeat(64),
+        profile: 'application/pdf; profile=PDF/A-2u',
+        created_at: '2026-07-11T10:00:00Z',
+        download: '/v1/documents/generated/generated%20doc',
+        dispatch_evidence_status: {
+          status: 'required_pending',
+          required: true,
+          evidence_attached: false,
+          dispatch_completed: false,
+          completion_basis: 'none',
+          required_recipients: ['Fração B'],
+          recorded_recipients: [],
+          missing_recipients: ['Fração B'],
+          note: 'operator-recorded evidence only',
+        },
+      },
+    ];
+    const evidence = {
+      document_id: 'generated doc',
+      act_id: 'act 1',
+      template_id: 'condominio-comunicacao-ausentes/v1',
+      dispatch_evidence_status: generated[0].dispatch_evidence_status,
+      evidence: [],
+    };
+    const recorded = {
+      evidence: {
+        document_id: 'generated doc',
+        idempotency_key: 'idem-1',
+        act_id: 'act 1',
+        template_id: 'condominio-comunicacao-ausentes/v1',
+        actor: 'web-operator',
+        dispatched_at: '2026-07-11T10:30:00Z',
+        channel: 'RegisteredLetter',
+        reference: 'RL-1',
+        evidence_reference: null,
+        imported_document_id: null,
+        recipients: ['Fração B'],
+        operator_note: null,
+        recorded_at: '2026-07-11T10:31:00Z',
+        sending_performed_by_chancela: false,
+        delivery_confirmed: false,
+        legal_sufficiency_claimed: false,
+        legal_notice_completion_claimed: false,
+        bytes_in_payload: false,
+      },
+      dispatch_evidence_status: {
+        ...generated[0].dispatch_evidence_status,
+        status: 'operator_evidence_covered',
+        evidence_attached: true,
+        recorded_recipients: ['Fração B'],
+        missing_recipients: [],
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(generated))
+      .mockResolvedValueOnce(
+        new Response(new Blob(['%PDF-generated'], { type: 'application/pdf' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/pdf' },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(evidence))
+      .mockResolvedValueOnce(jsonResponse(recorded, 201));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.listGeneratedDocuments('act 1');
+    await api.fetchGeneratedDocumentPdf('generated doc');
+    await api.getGeneratedDocumentDispatchEvidence('generated doc');
+    await api.recordGeneratedDocumentDispatchEvidence('generated doc', {
+      actor: 'web-operator',
+      dispatched_at: '2026-07-11T10:30:00Z',
+      channel: 'RegisteredLetter',
+      reference: 'RL-1',
+      recipients: ['Fração B'],
+      evidence_reference: null,
+      imported_document_id: null,
+      operator_note: null,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/acts/act%201/documents/generated');
+    expect(fetchMock.mock.calls[1][0]).toBe('/v1/documents/generated/generated%20doc');
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      '/v1/documents/generated/generated%20doc/dispatch-evidence',
+    );
+    expect(fetchMock.mock.calls[3][0]).toBe(
+      '/v1/documents/generated/generated%20doc/dispatch-evidence',
+    );
+    expect(fetchMock.mock.calls[3][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({
+      actor: 'web-operator',
+      dispatched_at: '2026-07-11T10:30:00Z',
+      channel: 'RegisteredLetter',
+      reference: 'RL-1',
+      recipients: ['Fração B'],
+      evidence_reference: null,
+      imported_document_id: null,
+      operator_note: null,
+    });
+  });
+
   it('creates, lists, and revokes external signer invites with redacted list data', async () => {
     const invite = {
       id: 'invite-1',

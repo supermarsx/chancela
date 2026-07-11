@@ -1215,6 +1215,10 @@ pub fn router(state: AppState) -> Router {
             post(documents::generate_document),
         )
         .route(
+            "/v1/acts/{act_id}/documents/generated",
+            get(documents::list_generated_documents_for_act),
+        )
+        .route(
             "/v1/documents/generated/{document_id}",
             get(documents::get_generated_document_pdf),
         )
@@ -5373,6 +5377,84 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_pending_dispatch_headers(&headers);
         assert_eq!(restarted_generated, generated_bytes);
+    }
+
+    #[tokio::test]
+    async fn generated_documents_for_act_discovers_absent_owner_communication_and_gates_read() {
+        let tmp = TempDir::new();
+        let (state, _entity_id, book_id) =
+            entity_and_open_book_in_state(AppState::with_data_dir(tmp.dir.clone()), "Condominio")
+                .await;
+        let act_id = draft_condominium_absent_owner_act(&state, &book_id).await;
+
+        let (status, sealed) = send(
+            state.clone(),
+            post_json(&format!("/v1/acts/{act_id}/seal"), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "condo seal: {sealed}");
+        let sealed_doc_id = sealed["document"]["id"]
+            .as_str()
+            .expect("sealed document id");
+        let route = format!("/v1/acts/{act_id}/documents/generated");
+
+        let (status, _) = send_raw(state.clone(), get(&route)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        let token = auth_token(&state).await;
+        let (status, docs) = send_raw(state.clone(), with_session(get(&route), &token)).await;
+        assert_eq!(status, StatusCode::OK, "generated documents: {docs}");
+        let rows = docs.as_array().expect("generated document list");
+        assert!(
+            rows.iter()
+                .any(|doc| doc["id"].as_str() == Some(sealed_doc_id)),
+            "canonical Ata summary is discoverable: {docs}"
+        );
+        let communication = rows
+            .iter()
+            .find(|doc| {
+                doc["template_id"].as_str()
+                    == Some(crate::documents::CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID)
+            })
+            .unwrap_or_else(|| panic!("absent-owner communication summary missing: {docs}"));
+        let generated_id = communication["id"]
+            .as_str()
+            .expect("communication document id");
+        assert_eq!(communication["act_id"], act_id);
+        assert_eq!(
+            communication["pdf_digest"].as_str().expect("digest").len(),
+            64
+        );
+        assert_eq!(communication["profile"], crate::documents::PDFA_PROFILE);
+        assert!(
+            communication["created_at"]
+                .as_str()
+                .is_some_and(|created_at| !created_at.is_empty())
+        );
+        assert_eq!(
+            communication["download"],
+            format!("/v1/documents/generated/{generated_id}")
+        );
+        assert_eq!(
+            communication["dispatch_evidence_status"]["status"],
+            "required_pending"
+        );
+        assert_eq!(
+            communication["dispatch_evidence_status"]["required_recipients"],
+            json!(["Fração B"])
+        );
+        assert_eq!(
+            communication["dispatch_evidence_status"]["dispatch_completed"],
+            false
+        );
+        assert_eq!(
+            communication["dispatch_evidence_status"]["completion_basis"],
+            "none"
+        );
+
+        let powerless = powerless_token(&state).await;
+        let (status, _) = send_raw(state, with_session(get(&route), &powerless)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

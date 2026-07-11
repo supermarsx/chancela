@@ -597,6 +597,77 @@ export interface SealDocument {
   template_id: string;
 }
 
+export type GeneratedDocumentDispatchEvidenceStatusCode =
+  'required_pending' | 'operator_evidence_partial' | 'operator_evidence_covered' | string;
+
+export interface GeneratedDocumentDispatchEvidenceStatus {
+  status: GeneratedDocumentDispatchEvidenceStatusCode;
+  required: boolean;
+  evidence_attached: boolean;
+  dispatch_completed: boolean;
+  completion_basis: string;
+  required_recipients: string[];
+  recorded_recipients: string[];
+  missing_recipients: string[];
+  note: string;
+}
+
+export interface GeneratedDocumentView {
+  id: string;
+  act_id: string;
+  template_id: string;
+  pdf_digest: string;
+  profile: string;
+  created_at: string;
+  download: string;
+  dispatch_evidence_status?: GeneratedDocumentDispatchEvidenceStatus | null;
+}
+
+export interface GeneratedDocumentDispatchEvidenceRequest {
+  actor: string;
+  dispatched_at: string;
+  channel?: DispatchChannel | null;
+  reference?: string | null;
+  recipients?: string[] | null;
+  evidence_reference?: string | null;
+  imported_document_id?: string | null;
+  operator_note?: string | null;
+}
+
+export interface GeneratedDocumentDispatchEvidenceRecord {
+  document_id: string;
+  idempotency_key: string;
+  act_id: string;
+  template_id: string;
+  actor: string;
+  dispatched_at: string;
+  channel: string | null;
+  reference: string | null;
+  evidence_reference: string | null;
+  imported_document_id: string | null;
+  recipients: string[];
+  operator_note: string | null;
+  recorded_at: string;
+  sending_performed_by_chancela: boolean;
+  delivery_confirmed: boolean;
+  legal_sufficiency_claimed: boolean;
+  legal_notice_completion_claimed: boolean;
+  bytes_in_payload: boolean;
+}
+
+export interface GeneratedDocumentDispatchEvidenceResponse {
+  evidence: GeneratedDocumentDispatchEvidenceRecord;
+  dispatch_evidence_status: GeneratedDocumentDispatchEvidenceStatus;
+}
+
+export interface GeneratedDocumentDispatchEvidenceList {
+  document_id: string;
+  act_id: string;
+  template_id: string;
+  dispatch_evidence_status: GeneratedDocumentDispatchEvidenceStatus;
+  evidence: GeneratedDocumentDispatchEvidenceRecord[];
+}
+
 // --- Generated documents (plan t48 §3.1–§3.3) -----------------------------------
 //
 // The render↔pdf seam, frozen in `chancela-core::document_model` (t48-e0). A
