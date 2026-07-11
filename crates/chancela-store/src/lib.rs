@@ -865,6 +865,64 @@ pub struct StoredDocument {
     pub pdf_bytes: Vec<u8>,
 }
 
+/// Metadata-only dispatch evidence recorded by an operator for a generated document. This table is
+/// for generated absent-owner communications only; it does not store bytes and does not mutate the
+/// canonical generated document or sealed act.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredGeneratedDocumentDispatchEvidence {
+    /// Generated document id (`documents.id`) this evidence concerns.
+    pub document_id: String,
+    /// Deterministic idempotency key scoped by `document_id`.
+    pub idempotency_key: String,
+    /// Owning act id, denormalized for status/readback queries and ledger payloads.
+    pub act_id: ActId,
+    /// Generated template id. For this slice it must be `condominio-comunicacao-ausentes/v1`.
+    pub template_id: String,
+    /// Resolved ledger actor that recorded the evidence.
+    pub actor: String,
+    /// Operator-recorded dispatch timestamp. This is not delivery confirmation.
+    pub dispatched_at: OffsetDateTime,
+    /// Optional operator-recorded channel.
+    pub channel: Option<String>,
+    /// Optional dispatch/reference locator, such as a registered-letter tracking number.
+    pub reference: Option<String>,
+    /// Optional retained evidence locator.
+    pub evidence_reference: Option<String>,
+    /// Optional linked non-canonical imported document evidence row.
+    pub imported_document_id: Option<String>,
+    /// Absent recipients covered by this evidence row.
+    pub recipients: Vec<String>,
+    /// Optional operator note, stored locally and deliberately excluded from ledger payloads.
+    pub operator_note: Option<String>,
+    /// When the API recorded this evidence row.
+    pub recorded_at: OffsetDateTime,
+}
+
+/// Result of idempotently recording generated-document dispatch evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GeneratedDocumentDispatchEvidenceUpsert {
+    /// The row was inserted by this transaction.
+    Inserted(StoredGeneratedDocumentDispatchEvidence),
+    /// The idempotency key already existed; this is the canonical stored row.
+    Existing(StoredGeneratedDocumentDispatchEvidence),
+}
+
+impl GeneratedDocumentDispatchEvidenceUpsert {
+    /// The canonical stored dispatch-evidence row after the idempotent write attempt.
+    #[must_use]
+    pub const fn evidence(&self) -> &StoredGeneratedDocumentDispatchEvidence {
+        match self {
+            Self::Inserted(evidence) | Self::Existing(evidence) => evidence,
+        }
+    }
+
+    /// Whether this transaction inserted the row.
+    #[must_use]
+    pub const fn inserted(&self) -> bool {
+        matches!(self, Self::Inserted(_))
+    }
+}
+
 /// Operator review state for a preserved, non-canonical imported document. These states describe
 /// only the preservation/review workflow; they do not imply OCR, conversion, PDF/A conformance, or
 /// legal acceptance.
@@ -1636,6 +1694,49 @@ impl Store {
             .transpose()
     }
 
+    /// Fetch all operator-recorded dispatch evidence rows for one generated document, oldest first.
+    pub fn generated_document_dispatch_evidence(
+        &self,
+        document_id: &str,
+    ) -> Result<Vec<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
+             channel, reference, evidence_reference, imported_document_id, recipients_json, \
+             operator_note, recorded_at \
+             FROM generated_document_dispatch_evidence \
+             WHERE document_id = ?1 ORDER BY recorded_at ASC, rowid ASC",
+        )?;
+        let rows = stmt.query_map(params![document_id], row_to_generated_dispatch_evidence)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
+    /// Fetch a generated-document dispatch evidence row by its deterministic idempotency key.
+    pub fn generated_document_dispatch_evidence_by_key(
+        &self,
+        document_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
+             channel, reference, evidence_reference, imported_document_id, recipients_json, \
+             operator_note, recorded_at \
+             FROM generated_document_dispatch_evidence \
+             WHERE document_id = ?1 AND idempotency_key = ?2",
+        )?;
+        stmt.query_row(
+            params![document_id, idempotency_key],
+            row_to_generated_dispatch_evidence,
+        )
+        .optional()?
+        .transpose()
+    }
+
     /// List imported, non-canonical document evidence metadata, newest first. When `act_id` is
     /// supplied, returns only imports linked to that act; otherwise returns the global feed.
     pub fn imported_documents(
@@ -2231,6 +2332,85 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Insert metadata-only dispatch evidence for a generated document, returning the canonical row.
+    ///
+    /// The `(document_id, idempotency_key)` primary key enforces exact-retry idempotency. A duplicate
+    /// key is not an error: the first row is retained and returned so callers can avoid appending a
+    /// second durable ledger event.
+    pub fn upsert_generated_document_dispatch_evidence(
+        &self,
+        evidence: &StoredGeneratedDocumentDispatchEvidence,
+    ) -> Result<GeneratedDocumentDispatchEvidenceUpsert, StoreError> {
+        let dispatched_at = evidence
+            .dispatched_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let recorded_at = evidence
+            .recorded_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let recipients_json = serde_json::to_string(&evidence.recipients)?;
+        let changed = self.txn.execute(
+            "INSERT OR IGNORE INTO generated_document_dispatch_evidence \
+             (document_id, idempotency_key, act_id, template_id, actor, dispatched_at, channel, \
+              reference, evidence_reference, imported_document_id, recipients_json, operator_note, \
+              recorded_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                evidence.document_id.as_str(),
+                evidence.idempotency_key.as_str(),
+                evidence.act_id.to_string(),
+                evidence.template_id.as_str(),
+                evidence.actor.as_str(),
+                dispatched_at.as_str(),
+                evidence.channel.as_deref(),
+                evidence.reference.as_deref(),
+                evidence.evidence_reference.as_deref(),
+                evidence.imported_document_id.as_deref(),
+                recipients_json.as_str(),
+                evidence.operator_note.as_deref(),
+                recorded_at.as_str(),
+            ],
+        )?;
+        let stored = self
+            .generated_document_dispatch_evidence_by_key(
+                &evidence.document_id,
+                &evidence.idempotency_key,
+            )?
+            .ok_or_else(|| {
+                StoreError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "generated document dispatch evidence insert did not return a row",
+                ))
+            })?;
+        Ok(if changed == 0 {
+            GeneratedDocumentDispatchEvidenceUpsert::Existing(stored)
+        } else {
+            GeneratedDocumentDispatchEvidenceUpsert::Inserted(stored)
+        })
+    }
+
+    /// Fetch a generated-document dispatch evidence row by key inside the current transaction.
+    pub fn generated_document_dispatch_evidence_by_key(
+        &self,
+        document_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
+        let mut stmt = self.txn.prepare(
+            "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
+             channel, reference, evidence_reference, imported_document_id, recipients_json, \
+             operator_note, recorded_at \
+             FROM generated_document_dispatch_evidence \
+             WHERE document_id = ?1 AND idempotency_key = ?2",
+        )?;
+        stmt.query_row(
+            params![document_id, idempotency_key],
+            row_to_generated_dispatch_evidence,
+        )
+        .optional()?
+        .transpose()
+    }
+
     /// Upsert a validated, non-canonical imported document (`imported_documents`, schema v5).
     /// Idempotent on the import id and intended to run in the same transaction as the
     /// `document.imported` ledger event. This never touches the canonical generated `documents` row
@@ -2722,6 +2902,44 @@ fn row_to_document(
             profile,
             created_at: parse_rfc3339(&created_at_raw)?,
             pdf_bytes,
+        })
+    })())
+}
+
+/// Map one `generated_document_dispatch_evidence` row to
+/// [`StoredGeneratedDocumentDispatchEvidence`].
+#[allow(clippy::type_complexity)]
+fn row_to_generated_dispatch_evidence(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredGeneratedDocumentDispatchEvidence, StoreError>> {
+    let document_id: String = row.get(0)?;
+    let idempotency_key: String = row.get(1)?;
+    let act_id_raw: String = row.get(2)?;
+    let template_id: String = row.get(3)?;
+    let actor: String = row.get(4)?;
+    let dispatched_at_raw: String = row.get(5)?;
+    let channel: Option<String> = row.get(6)?;
+    let reference: Option<String> = row.get(7)?;
+    let evidence_reference: Option<String> = row.get(8)?;
+    let imported_document_id: Option<String> = row.get(9)?;
+    let recipients_json: String = row.get(10)?;
+    let operator_note: Option<String> = row.get(11)?;
+    let recorded_at_raw: String = row.get(12)?;
+    Ok((|| {
+        Ok(StoredGeneratedDocumentDispatchEvidence {
+            document_id,
+            idempotency_key,
+            act_id: parse_uuid_newtype::<ActId>(&act_id_raw)?,
+            template_id,
+            actor,
+            dispatched_at: parse_rfc3339(&dispatched_at_raw)?,
+            channel,
+            reference,
+            evidence_reference,
+            imported_document_id,
+            recipients: serde_json::from_str(&recipients_json)?,
+            operator_note,
+            recorded_at: parse_rfc3339(&recorded_at_raw)?,
         })
     })())
 }

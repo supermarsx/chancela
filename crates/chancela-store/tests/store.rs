@@ -19,8 +19,9 @@ use chancela_core::{
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
-    PaperBookOcrConversionDossierUpsert, Store, StoreError, StoreKeyRotationStatus,
-    StoreOpenOptions, StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredImportedDocument,
+    GeneratedDocumentDispatchEvidenceUpsert, PaperBookOcrConversionDossierUpsert, Store,
+    StoreError, StoreKeyRotationStatus, StoreOpenOptions, StoredDocument, StoredFollowUp,
+    StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
     StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
     StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier, StoredPaperBookOcrDraft,
     StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
@@ -119,6 +120,28 @@ fn sample_document(id: &str, act_id: ActId, bytes: &[u8]) -> StoredDocument {
         profile: "csc/sq".to_string(),
         created_at: OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap(),
         pdf_bytes: bytes.to_vec(),
+    }
+}
+
+fn sample_generated_dispatch_evidence(
+    document_id: &str,
+    act_id: ActId,
+    idempotency_key: &str,
+) -> StoredGeneratedDocumentDispatchEvidence {
+    StoredGeneratedDocumentDispatchEvidence {
+        document_id: document_id.to_string(),
+        idempotency_key: idempotency_key.to_string(),
+        act_id,
+        template_id: "condominio-comunicacao-ausentes/v1".to_string(),
+        actor: "amelia.marques".to_string(),
+        dispatched_at: OffsetDateTime::from_unix_timestamp(1_780_000_100).unwrap(),
+        channel: Some("RegisteredLetter".to_string()),
+        reference: Some("RR123456789PT".to_string()),
+        evidence_reference: Some("archive:dispatch-proof-1".to_string()),
+        imported_document_id: Some("11111111-1111-4111-8111-111111111112".to_string()),
+        recipients: vec!["Fração B".to_string()],
+        operator_note: Some("operator-recorded postal locator only".to_string()),
+        recorded_at: OffsetDateTime::from_unix_timestamp(1_780_000_101).unwrap(),
     }
 }
 
@@ -1175,9 +1198,9 @@ fn schema_version_is_current() {
     // preserved paper-book imports landed as schema v8; paper-book OCR drafts landed as schema v9;
     // paper-book original numbering/linking metadata landed as schema v10; imported-document
     // operator review metadata landed as schema v11; paper-book OCR conversion dossiers landed as
-    // schema v12.
+    // schema v12; generated-document dispatch evidence landed as schema v13.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 12);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 13);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1188,7 +1211,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "12");
+    assert_eq!(stamped, "13");
     let ocr_draft_table: i64 = raw
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",
@@ -1230,6 +1253,14 @@ fn schema_version_is_current() {
         )
         .unwrap();
     assert_eq!(paper_linking_columns, 4);
+    let generated_dispatch_evidence_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'generated_document_dispatch_evidence'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(generated_dispatch_evidence_table, 1);
 }
 
 #[test]
@@ -1330,6 +1361,72 @@ fn upsert_document_is_idempotent_on_id() {
 }
 
 #[test]
+fn generated_document_dispatch_evidence_round_trips_idempotently_by_idempotency_key() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+
+    let entity = sample_entity("Condominio Encosto");
+    let book = Book::new(entity.id, BookKind::Condominio);
+    let act = Act::draft(book.id, "Ata n.o 1", MeetingChannel::Physical);
+    let mut doc = sample_document("dispatch-doc-1", act.id, FAKE_PDF);
+    doc.template_id = "condominio-comunicacao-ausentes/v1".to_string();
+    let evidence = sample_generated_dispatch_evidence(&doc.id, act.id, "idem-dispatch-1");
+
+    let first_insert = store
+        .persist_result(|tx| {
+            tx.upsert_entity(&entity)?;
+            tx.upsert_book(&book)?;
+            tx.upsert_act(&act)?;
+            tx.upsert_document(&doc)?;
+            tx.upsert_generated_document_dispatch_evidence(&evidence)
+        })
+        .expect("persist dispatch evidence");
+    assert_eq!(
+        first_insert,
+        GeneratedDocumentDispatchEvidenceUpsert::Inserted(evidence.clone())
+    );
+    assert!(first_insert.inserted());
+    assert_eq!(first_insert.evidence(), &evidence);
+
+    let rows = store
+        .generated_document_dispatch_evidence(&doc.id)
+        .expect("evidence list");
+    assert_eq!(rows, vec![evidence.clone()]);
+    let by_key = store
+        .generated_document_dispatch_evidence_by_key(&doc.id, &evidence.idempotency_key)
+        .expect("evidence by key")
+        .expect("evidence exists");
+    assert_eq!(by_key, evidence);
+
+    let mut duplicate = evidence.clone();
+    duplicate.recorded_at = OffsetDateTime::from_unix_timestamp(1_780_000_102).unwrap();
+    let duplicate_insert = store
+        .persist_result(|tx| tx.upsert_generated_document_dispatch_evidence(&duplicate))
+        .expect("duplicate dispatch evidence is idempotent");
+    assert_eq!(
+        duplicate_insert,
+        GeneratedDocumentDispatchEvidenceUpsert::Existing(evidence.clone()),
+        "duplicate idempotency-key insert returns the canonical stored row"
+    );
+    assert!(!duplicate_insert.inserted());
+    assert_eq!(duplicate_insert.evidence(), &evidence);
+    let rows_after_duplicate = store
+        .generated_document_dispatch_evidence(&doc.id)
+        .expect("evidence list after duplicate");
+    assert_eq!(
+        rows_after_duplicate,
+        vec![evidence.clone()],
+        "duplicate dispatch evidence must not create a second row"
+    );
+
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let reloaded = reopened
+        .generated_document_dispatch_evidence(&doc.id)
+        .expect("reloaded evidence");
+    assert_eq!(reloaded, rows);
+}
+
+#[test]
 fn an_older_schema_version_upgrades_forward_cleanly() {
     let dir = TempDir::new();
     let entity = sample_entity("Encosto Estrategico Lda");
@@ -1371,7 +1468,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "12", "stamp advanced forward");
+        assert_eq!(stamped, "13", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -1708,7 +1805,7 @@ fn older_paper_book_import_rows_gain_full_page_range_on_upgrade() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "12");
+    assert_eq!(stamped, "13");
 }
 
 #[test]

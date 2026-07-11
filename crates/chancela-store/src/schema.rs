@@ -53,7 +53,10 @@
 /// - **v12** — adds `paper_book_ocr_conversion_dossiers`: metadata-only, non-canonical dossiers
 ///   for accepted paper-book OCR drafts. They never store raw OCR text and never create acts,
 ///   documents, signed documents, archive packages, signatures, seals, PDF/A, or PDF/UA outputs.
-pub const SCHEMA_VERSION: i64 = 12;
+/// - **v13** — adds `generated_document_dispatch_evidence`: operator-recorded, metadata-only
+///   dispatch evidence for generated absent-owner communications. It never mutates `documents`,
+///   `acts`, or preserved PDF bytes, and never stores evidence bytes.
+pub const SCHEMA_VERSION: i64 = 13;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -323,6 +326,36 @@ pub const CREATE_IMPORTED_DOCUMENTS_ACT_IDX: &str =
 /// Index over `imported_documents.imported_at` — keeps the global list ordered without scanning.
 pub const CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_imported_documents_imported_at ON imported_documents (imported_at);";
 
+/// `generated_document_dispatch_evidence` — metadata-only operator dispatch evidence for generated
+/// absent-owner communications (schema v13).
+///
+/// These rows are deliberately separate from `documents` and `acts`: recording evidence must never
+/// rewrite a sealed act or the generated PDF/A bytes. The idempotency key is deterministic from the
+/// normalized request and scoped by generated document id, so exact retries can return the existing
+/// record without appending a second ledger event. The row stores only locators/metadata, never
+/// evidence bytes and never delivery/legal-sufficiency assertions.
+pub const CREATE_GENERATED_DOCUMENT_DISPATCH_EVIDENCE: &str = "\
+CREATE TABLE IF NOT EXISTS generated_document_dispatch_evidence (
+    document_id          TEXT NOT NULL,
+    idempotency_key      TEXT NOT NULL,
+    act_id               TEXT NOT NULL,
+    template_id          TEXT NOT NULL,
+    actor                TEXT NOT NULL,
+    dispatched_at        TEXT NOT NULL,
+    channel              TEXT,
+    reference            TEXT,
+    evidence_reference   TEXT,
+    imported_document_id TEXT,
+    recipients_json      TEXT NOT NULL,
+    operator_note        TEXT,
+    recorded_at          TEXT NOT NULL,
+    PRIMARY KEY (document_id, idempotency_key)
+) STRICT;";
+
+/// Index over `generated_document_dispatch_evidence.act_id` — supports act-scoped evidence/status
+/// reads without scanning every generated document's evidence rows.
+pub const CREATE_GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ACT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_generated_document_dispatch_evidence_act ON generated_document_dispatch_evidence (act_id);";
+
 /// `paper_book_imports` — preserved historical paper-book import packages (schema v8).
 ///
 /// This table retains the operator-supplied scan/package bytes with fixity and descriptive
@@ -476,6 +509,8 @@ pub const ALL: &[&str] = &[
     CREATE_IMPORTED_DOCUMENTS,
     CREATE_IMPORTED_DOCUMENTS_ACT_IDX,
     CREATE_IMPORTED_DOCUMENTS_IMPORTED_AT_IDX,
+    CREATE_GENERATED_DOCUMENT_DISPATCH_EVIDENCE,
+    CREATE_GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ACT_IDX,
     CREATE_PAPER_BOOK_IMPORTS,
     CREATE_PAPER_BOOK_IMPORTS_BOOK_REF_IDX,
     CREATE_PAPER_BOOK_IMPORTS_IMPORTED_AT_IDX,

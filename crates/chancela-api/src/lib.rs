@@ -27,6 +27,8 @@
 //! - `POST|GET /v1/documents/import[ed]`, `GET /v1/documents/imported/{id}[/bytes]`,
 //!   `PATCH /v1/documents/imported/{id}/review` — validated non-canonical imported document
 //!   evidence and operator review metadata.
+//! - `POST|GET /v1/documents/generated/{id}/dispatch-evidence` — operator-recorded,
+//!   metadata-only dispatch evidence for generated absent-owner communications.
 //! - `POST /v1/signature/pdf/validate` — read-only local technical PDF/PAdES evidence validation.
 //! - `POST /v1/signature/asic/inspect` — read-only local technical ASiC/CAdES profile inspection.
 //! - `POST /v1/acts/{id}/signature/archive-timestamp/append` — caller-supplied local
@@ -1215,6 +1217,11 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/documents/generated/{document_id}",
             get(documents::get_generated_document_pdf),
+        )
+        .route(
+            "/v1/documents/generated/{document_id}/dispatch-evidence",
+            get(documents::get_generated_document_dispatch_evidence)
+                .post(documents::record_generated_document_dispatch_evidence),
         )
         .route(
             "/v1/acts/{id}/document/working-copy",

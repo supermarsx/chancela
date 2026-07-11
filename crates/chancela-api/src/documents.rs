@@ -14,6 +14,7 @@
 //! `pdf_digest` (plan D3/§164). The stored row's own `created_at` timestamp is storage metadata
 //! and does not enter the document bytes.
 
+use std::collections::BTreeSet;
 use std::io::{Cursor, Write};
 use std::path::Component;
 use std::sync::LazyLock;
@@ -26,13 +27,13 @@ use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_core::{
-    Act, ActId, Block, Book, BookKind, Convening, DocumentModel, Entity, EntityFamily,
-    LifecycleStage, MeetingChannel, NumberingScheme, Run, SignaturePolicyHint, TermoDeAbertura,
-    TermoDeEncerramento,
+    Act, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel, DocumentModel, Entity,
+    EntityFamily, LifecycleStage, MeetingChannel, NumberingScheme, PresenceMode, Run,
+    SignaturePolicyHint, TermoDeAbertura, TermoDeEncerramento,
 };
 use chancela_store::{
-    StoredDocument, StoredImportedDocument, StoredImportedDocumentMeta,
-    StoredImportedDocumentReviewStatus, StoredSignedDocument,
+    StoredDocument, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
+    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredSignedDocument,
 };
 use chancela_templates::{Registry, TemplateLawReference, TemplateSpec};
 use serde::{Deserialize, Serialize};
@@ -109,6 +110,10 @@ const DOCUMENT_BUNDLE_VALIDATION_NOTICE: &str = "Technical bundle evidence repor
 not certify legal validity, PDF/A conformance, PDF/UA conformance, qualified-signature status, \
 DGLAB certification, or production long-term validation.";
 const MAX_IMPORTED_DOCUMENT_REVIEW_NOTE_CHARS: usize = 2_000;
+const MAX_DISPATCH_EVIDENCE_LOCATOR_CHARS: usize = 512;
+const MAX_DISPATCH_EVIDENCE_NOTE_CHARS: usize = 2_000;
+const ABSENT_OWNER_DISPATCH_EVIDENCE_EVENT_KIND: &str =
+    "absent_owner_communication.dispatch_evidence_recorded";
 
 /// The embedded template registry, loaded once. The assets are compile-time-validated by
 /// `chancela-templates` (build.rs embeds them; e1's tests prove the load), so a load failure is
@@ -205,13 +210,17 @@ pub(crate) struct Generated {
 }
 
 /// Honest status for generated communications whose dispatch proof is still outside this slice.
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct DispatchEvidenceStatusView {
-    pub status: &'static str,
+    pub status: String,
     pub required: bool,
     pub evidence_attached: bool,
     pub dispatch_completed: bool,
-    pub note: &'static str,
+    pub completion_basis: &'static str,
+    pub required_recipients: Vec<String>,
+    pub recorded_recipients: Vec<String>,
+    pub missing_recipients: Vec<String>,
+    pub note: String,
 }
 
 /// Render `spec` against `ctx`, write PDF/A-2u bytes, and assemble the [`Generated`] artifact
@@ -451,7 +460,10 @@ pub(crate) fn generate_for_act_template(
 
     let ctx = act_render_ctx(act, book, entity)?;
     let mut made = generate(spec, &ctx, act.id, OffsetDateTime::now_utc())?;
-    if let Some(status) = dispatch_evidence_status_for_template(&made.stored.template_id) {
+    let absent_recipients = absent_owner_recipient_names(act);
+    if let Some(status) =
+        dispatch_evidence_status_for_template(&made.stored.template_id, &absent_recipients, &[])
+    {
         if let Some(obj) = made.event_payload.as_object_mut() {
             obj.insert(
                 "dispatch_evidence_status".to_owned(),
@@ -2699,16 +2711,122 @@ pub struct GeneratedDocumentView {
     pub dispatch_evidence_status: Option<DispatchEvidenceStatusView>,
 }
 
-fn dispatch_evidence_status_for_template(template_id: &str) -> Option<DispatchEvidenceStatusView> {
-    (template_id == CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID).then_some(
-        DispatchEvidenceStatusView {
-            status: "required_pending",
-            required: true,
-            evidence_attached: false,
-            dispatch_completed: false,
-            note: "communication generated automatically; dispatch evidence is not attached",
+#[derive(Deserialize)]
+pub struct GeneratedDocumentDispatchEvidenceRequest {
+    pub actor: String,
+    pub dispatched_at: String,
+    pub channel: Option<DispatchChannel>,
+    pub reference: Option<String>,
+    pub recipients: Option<Vec<String>>,
+    pub evidence_reference: Option<String>,
+    pub imported_document_id: Option<String>,
+    pub operator_note: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct GeneratedDocumentDispatchEvidenceView {
+    pub document_id: String,
+    pub idempotency_key: String,
+    pub act_id: String,
+    pub template_id: String,
+    pub actor: String,
+    pub dispatched_at: String,
+    pub channel: Option<String>,
+    pub reference: Option<String>,
+    pub evidence_reference: Option<String>,
+    pub imported_document_id: Option<String>,
+    pub recipients: Vec<String>,
+    pub operator_note: Option<String>,
+    pub recorded_at: String,
+    pub sending_performed_by_chancela: bool,
+    pub delivery_confirmed: bool,
+    pub legal_sufficiency_claimed: bool,
+    pub legal_notice_completion_claimed: bool,
+    pub bytes_in_payload: bool,
+}
+
+#[derive(Serialize)]
+pub struct GeneratedDocumentDispatchEvidenceResponse {
+    pub evidence: GeneratedDocumentDispatchEvidenceView,
+    pub dispatch_evidence_status: DispatchEvidenceStatusView,
+}
+
+#[derive(Serialize)]
+pub struct GeneratedDocumentDispatchEvidenceListView {
+    pub document_id: String,
+    pub act_id: String,
+    pub template_id: String,
+    pub dispatch_evidence_status: DispatchEvidenceStatusView,
+    pub evidence: Vec<GeneratedDocumentDispatchEvidenceView>,
+}
+
+fn dispatch_evidence_status_for_template(
+    template_id: &str,
+    required_recipients: &[String],
+    recorded_recipients: &[String],
+) -> Option<DispatchEvidenceStatusView> {
+    if template_id != CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID {
+        return None;
+    }
+    let required_set: BTreeSet<&str> = required_recipients
+        .iter()
+        .map(String::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .collect();
+    let recorded_set: BTreeSet<&str> = recorded_recipients
+        .iter()
+        .map(String::as_str)
+        .filter(|name| required_set.contains(name))
+        .collect();
+    let recorded = required_recipients
+        .iter()
+        .filter(|name| recorded_set.contains(name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let missing = required_recipients
+        .iter()
+        .filter(|name| !recorded_set.contains(name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let evidence_attached = !recorded.is_empty();
+    let all_required_recipients_covered = !required_set.is_empty() && missing.is_empty();
+    Some(DispatchEvidenceStatusView {
+        status: if all_required_recipients_covered {
+            "operator_evidence_covered".to_owned()
+        } else if recorded.is_empty() {
+            "required_pending".to_owned()
+        } else {
+            "operator_evidence_partial".to_owned()
         },
-    )
+        required: !required_set.is_empty(),
+        evidence_attached,
+        dispatch_completed: false,
+        completion_basis: "none",
+        required_recipients: required_recipients.to_vec(),
+        recorded_recipients: recorded,
+        missing_recipients: missing,
+        note: if all_required_recipients_covered {
+            "operator-recorded dispatch evidence covers all absent recipients, but no sending, delivery, legal notice completion, or legal sufficiency is claimed".to_owned()
+        } else {
+            "communication generated automatically; operator-recorded dispatch evidence does not cover every required absent recipient".to_owned()
+        },
+    })
+}
+
+fn absent_owner_recipient_names(act: &Act) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    let mut recipients = Vec::new();
+    for attendee in &act.attendees {
+        if attendee.presence != PresenceMode::Absent {
+            continue;
+        }
+        let name = attendee.name.trim();
+        if name.is_empty() || !seen.insert(name.to_owned()) {
+            continue;
+        }
+        recipients.push(name.to_owned());
+    }
+    recipients
 }
 
 /// `POST /v1/acts/{id}/document/generate?template_id=<id>` — render a CHOSEN catalog template
@@ -2740,6 +2858,7 @@ pub async fn generate_document(
     let act = acts.get(&ActId(id)).ok_or(ApiError::NotFound)?;
     let book = books.get(&act.book_id).ok_or(ApiError::NotFound)?;
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
+    let absent_recipients = absent_owner_recipient_names(act);
 
     // Render + write PDF/A before appending anything to the ledger, so a render/write failure returns
     // cleanly with no ledger mutation to roll back.
@@ -2763,10 +2882,12 @@ pub async fn generate_document(
     publish_generated_document_read_model(&state, &made.stored).await;
 
     let document_id = made.stored.id.clone();
+    let dispatch_evidence_status =
+        dispatch_evidence_status_for_template(&made.stored.template_id, &absent_recipients, &[]);
     let view = GeneratedDocumentView {
         id: document_id.clone(),
         act_id: made.stored.act_id.to_string(),
-        dispatch_evidence_status: dispatch_evidence_status_for_template(&made.stored.template_id),
+        dispatch_evidence_status,
         template_id: made.stored.template_id,
         pdf_digest: made.stored.pdf_digest,
         profile: made.stored.profile,
@@ -2792,7 +2913,7 @@ pub async fn get_generated_document_pdf(
     require_permission(&state, &actor, Permission::ActRead, scope).await?;
 
     let act_id = doc.act_id.to_string();
-    let dispatch_status = dispatch_evidence_status_for_template(&doc.template_id);
+    let dispatch_status = dispatch_evidence_status_for_generated_document(&state, &doc).await?;
     let mut builder = Response::builder()
         .header(header::CONTENT_TYPE, "application/pdf")
         .header("x-chancela-document-id", doc.id)
@@ -2802,7 +2923,10 @@ pub async fn get_generated_document_pdf(
         .header("x-chancela-profile", doc.profile);
     if let Some(status) = dispatch_status {
         builder = builder
-            .header("x-chancela-dispatch-evidence-status", status.status)
+            .header(
+                "x-chancela-dispatch-evidence-status",
+                status.status.as_str(),
+            )
             .header(
                 "x-chancela-dispatch-evidence-required",
                 status.required.to_string(),
@@ -2819,6 +2943,477 @@ pub async fn get_generated_document_pdf(
     builder.body(Body::from(doc.pdf_bytes)).map_err(|e| {
         ApiError::Internal(format!("failed to build generated document response: {e}"))
     })
+}
+
+/// `POST /v1/documents/generated/{document_id}/dispatch-evidence` — record metadata-only operator
+/// evidence for a generated absent-owner condominium communication. This never sends anything,
+/// never confirms delivery, never completes legal notice, and never mutates sealed act/PDF bytes.
+pub async fn record_generated_document_dispatch_evidence(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path(document_id): Path<String>,
+    Json(req): Json<GeneratedDocumentDispatchEvidenceRequest>,
+) -> Result<Response, ApiError> {
+    let doc = load_document_by_id(&state, &document_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let scope = scope_of_act(&state, doc.act_id).await;
+    require_permission(&state, &actor, Permission::DocumentGenerate, scope).await?;
+    let context = absent_owner_dispatch_context_for_doc(&state, doc).await?;
+    ensure_book_open_for_dispatch_evidence(&context.book)?;
+    let Some(store) = &state.store else {
+        return Err(ApiError::Unprocessable(
+            "generated document dispatch evidence requires on-disk persistence".to_owned(),
+        ));
+    };
+
+    let request = normalize_generated_dispatch_evidence_request(req, &context.required_recipients)?;
+    if let Some(imported_document_id) = &request.imported_document_id {
+        validate_dispatch_evidence_import(store, imported_document_id, context.doc.act_id)?;
+    }
+    let resolved_actor = actor.resolve(&request.actor);
+    let idempotency_key =
+        generated_dispatch_evidence_idempotency_key(&context.doc, &resolved_actor, &request)?;
+
+    let evidence = StoredGeneratedDocumentDispatchEvidence {
+        document_id: context.doc.id.clone(),
+        idempotency_key,
+        act_id: context.doc.act_id,
+        template_id: context.doc.template_id.clone(),
+        actor: resolved_actor.clone(),
+        dispatched_at: request.dispatched_at,
+        channel: request.channel.clone(),
+        reference: request.reference.clone(),
+        evidence_reference: request.evidence_reference.clone(),
+        imported_document_id: request.imported_document_id.clone(),
+        recipients: request.recipients.clone(),
+        operator_note: request.operator_note.clone(),
+        recorded_at: OffsetDateTime::now_utc(),
+    };
+    let payload = serde_json::to_vec(&generated_dispatch_evidence_event_payload(
+        &context, &evidence,
+    ))?;
+    let event_scope = format!(
+        "entity:{}/book:{}/act:{}",
+        context.entity.id, context.book.id, context.act.id
+    );
+    let justification = format!(
+        "operator-recorded dispatch evidence for {} absent recipient(s)",
+        evidence.recipients.len()
+    );
+
+    let mut ledger = state.ledger.write().await;
+    if let Some(existing) = store
+        .generated_document_dispatch_evidence_by_key(&context.doc.id, &evidence.idempotency_key)
+        .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?
+    {
+        drop(ledger);
+        return generated_dispatch_evidence_response(StatusCode::OK, &context, store, &existing);
+    }
+    crate::try_append_event(
+        &mut ledger,
+        &resolved_actor,
+        &event_scope,
+        ABSENT_OWNER_DISPATCH_EVIDENCE_EVENT_KIND,
+        Some(&justification),
+        &payload,
+    )?;
+    let event = ledger
+        .events()
+        .last()
+        .expect("just-appended dispatch evidence event")
+        .clone();
+    let upsert = match store.persist_result(|tx| {
+        let upsert = tx.upsert_generated_document_dispatch_evidence(&evidence)?;
+        if upsert.inserted() {
+            tx.append_event(&event)?;
+        }
+        Ok(upsert)
+    }) {
+        Ok(upsert) => upsert,
+        Err(e) => {
+            AppState::rollback_ledger_events(&mut ledger, 1);
+            return Err(ApiError::Internal(format!(
+                "failed to persist generated document dispatch evidence: {e}"
+            )));
+        }
+    };
+    let response_status = if upsert.inserted() {
+        state.attest_latest(&attestor, &ledger).await;
+        StatusCode::CREATED
+    } else {
+        AppState::rollback_ledger_events(&mut ledger, 1);
+        StatusCode::OK
+    };
+    let stored_evidence = upsert.evidence().clone();
+    drop(ledger);
+
+    generated_dispatch_evidence_response(response_status, &context, store, &stored_evidence)
+}
+
+fn generated_dispatch_evidence_response(
+    status_code: StatusCode,
+    context: &AbsentOwnerDispatchContext,
+    store: &chancela_store::Store,
+    evidence: &StoredGeneratedDocumentDispatchEvidence,
+) -> Result<Response, ApiError> {
+    let rows = store
+        .generated_document_dispatch_evidence(&context.doc.id)
+        .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?;
+    let status = dispatch_evidence_status_from_rows(&context, &rows);
+    Ok((
+        status_code,
+        Json(GeneratedDocumentDispatchEvidenceResponse {
+            evidence: generated_dispatch_evidence_view(evidence),
+            dispatch_evidence_status: status,
+        }),
+    )
+        .into_response())
+}
+
+/// `GET /v1/documents/generated/{document_id}/dispatch-evidence` — read back metadata-only
+/// operator dispatch evidence and the derived absent-recipient coverage status.
+pub async fn get_generated_document_dispatch_evidence(
+    State(state): State<AppState>,
+    Path(document_id): Path<String>,
+    actor: CurrentActor,
+) -> Result<Json<GeneratedDocumentDispatchEvidenceListView>, ApiError> {
+    let doc = load_document_by_id(&state, &document_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let scope = scope_of_act(&state, doc.act_id).await;
+    require_permission(&state, &actor, Permission::ActRead, scope).await?;
+    let context = absent_owner_dispatch_context_for_doc(&state, doc).await?;
+    let rows = match &state.store {
+        Some(store) => store
+            .generated_document_dispatch_evidence(&context.doc.id)
+            .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?,
+        None => Vec::new(),
+    };
+    Ok(Json(GeneratedDocumentDispatchEvidenceListView {
+        document_id: context.doc.id.clone(),
+        act_id: context.doc.act_id.to_string(),
+        template_id: context.doc.template_id.clone(),
+        dispatch_evidence_status: dispatch_evidence_status_from_rows(&context, &rows),
+        evidence: rows.iter().map(generated_dispatch_evidence_view).collect(),
+    }))
+}
+
+struct AbsentOwnerDispatchContext {
+    doc: StoredDocument,
+    act: Act,
+    book: Book,
+    entity: Entity,
+    required_recipients: Vec<String>,
+}
+
+async fn absent_owner_dispatch_context_for_doc(
+    state: &AppState,
+    doc: StoredDocument,
+) -> Result<AbsentOwnerDispatchContext, ApiError> {
+    if doc.template_id != CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID {
+        return Err(ApiError::Unprocessable(
+            "dispatch evidence is only supported for condominio-comunicacao-ausentes/v1 generated documents"
+                .to_owned(),
+        ));
+    }
+    let act = state
+        .acts
+        .read()
+        .await
+        .get(&doc.act_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    let book = state
+        .books
+        .read()
+        .await
+        .get(&act.book_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    let entity = state
+        .entities
+        .read()
+        .await
+        .get(&book.entity_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    if entity.family != EntityFamily::Condominium {
+        return Err(ApiError::Unprocessable(
+            "absent-owner dispatch evidence requires a condominium act".to_owned(),
+        ));
+    }
+    if act.state != ActState::Sealed || act.ata_number.is_none() {
+        return Err(ApiError::Unprocessable(
+            "absent-owner dispatch evidence requires a sealed act".to_owned(),
+        ));
+    }
+    let required_recipients = absent_owner_recipient_names(&act);
+    if required_recipients.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "act has no absent attendees for absent-owner dispatch evidence".to_owned(),
+        ));
+    }
+    Ok(AbsentOwnerDispatchContext {
+        doc,
+        act,
+        book,
+        entity,
+        required_recipients,
+    })
+}
+
+async fn dispatch_evidence_status_for_generated_document(
+    state: &AppState,
+    doc: &StoredDocument,
+) -> Result<Option<DispatchEvidenceStatusView>, ApiError> {
+    if doc.template_id != CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID {
+        return Ok(None);
+    }
+    let context = absent_owner_dispatch_context_for_doc(state, doc.clone()).await?;
+    let rows = match &state.store {
+        Some(store) => store
+            .generated_document_dispatch_evidence(&doc.id)
+            .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?,
+        None => Vec::new(),
+    };
+    Ok(Some(dispatch_evidence_status_from_rows(&context, &rows)))
+}
+
+fn dispatch_evidence_status_from_rows(
+    context: &AbsentOwnerDispatchContext,
+    rows: &[StoredGeneratedDocumentDispatchEvidence],
+) -> DispatchEvidenceStatusView {
+    let recorded = rows
+        .iter()
+        .flat_map(|row| row.recipients.iter().cloned())
+        .collect::<Vec<_>>();
+    dispatch_evidence_status_for_template(
+        &context.doc.template_id,
+        &context.required_recipients,
+        &recorded,
+    )
+    .expect("absent-owner context uses the absent-owner template")
+}
+
+struct NormalizedGeneratedDispatchEvidenceRequest {
+    actor: String,
+    dispatched_at: OffsetDateTime,
+    channel: Option<String>,
+    reference: Option<String>,
+    recipients: Vec<String>,
+    evidence_reference: Option<String>,
+    imported_document_id: Option<String>,
+    operator_note: Option<String>,
+}
+
+fn normalize_generated_dispatch_evidence_request(
+    req: GeneratedDocumentDispatchEvidenceRequest,
+    required_recipients: &[String],
+) -> Result<NormalizedGeneratedDispatchEvidenceRequest, ApiError> {
+    let actor = non_empty(Some(req.actor)).unwrap_or_else(|| "api".to_owned());
+    let dispatched_at_raw = req.dispatched_at.trim();
+    let dispatched_at = OffsetDateTime::parse(dispatched_at_raw, &Rfc3339).map_err(|e| {
+        ApiError::Unprocessable(format!("dispatched_at must be an RFC 3339 timestamp: {e}"))
+    })?;
+    let reference = optional_limited_text(
+        req.reference,
+        "reference",
+        MAX_DISPATCH_EVIDENCE_LOCATOR_CHARS,
+    )?;
+    let evidence_reference = optional_limited_text(
+        req.evidence_reference,
+        "evidence_reference",
+        MAX_DISPATCH_EVIDENCE_LOCATOR_CHARS,
+    )?;
+    let imported_document_id = optional_limited_text(
+        req.imported_document_id,
+        "imported_document_id",
+        MAX_DISPATCH_EVIDENCE_LOCATOR_CHARS,
+    )?
+    .map(|id| validate_import_id(&id))
+    .transpose()?;
+    if reference.is_none() && evidence_reference.is_none() && imported_document_id.is_none() {
+        return Err(ApiError::Unprocessable(
+            "dispatch evidence requires at least one locator: reference, evidence_reference, or imported_document_id"
+                .to_owned(),
+        ));
+    }
+    let operator_note = optional_limited_text(
+        req.operator_note,
+        "operator_note",
+        MAX_DISPATCH_EVIDENCE_NOTE_CHARS,
+    )?;
+    let recipients =
+        normalize_absent_owner_dispatch_recipients(req.recipients, required_recipients)?;
+    Ok(NormalizedGeneratedDispatchEvidenceRequest {
+        actor,
+        dispatched_at,
+        channel: req.channel.map(dispatch_channel_code),
+        reference,
+        recipients,
+        evidence_reference,
+        imported_document_id,
+        operator_note,
+    })
+}
+
+fn normalize_absent_owner_dispatch_recipients(
+    recipients: Option<Vec<String>>,
+    required_recipients: &[String],
+) -> Result<Vec<String>, ApiError> {
+    let required: BTreeSet<&str> = required_recipients.iter().map(String::as_str).collect();
+    let Some(recipients) = recipients else {
+        return Ok(required_recipients.to_vec());
+    };
+    if recipients.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "recipients must name at least one absent attendee".to_owned(),
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    let mut selected = Vec::new();
+    for raw in recipients {
+        let name = raw.trim();
+        if name.is_empty() {
+            return Err(ApiError::Unprocessable(
+                "recipients must not contain empty names".to_owned(),
+            ));
+        }
+        if !required.contains(name) {
+            return Err(ApiError::Unprocessable(format!(
+                "recipient {name:?} is not an absent attendee for this act"
+            )));
+        }
+        if !seen.insert(name.to_owned()) {
+            return Err(ApiError::Unprocessable(format!(
+                "recipient {name:?} is listed more than once"
+            )));
+        }
+        selected.push(name.to_owned());
+    }
+    Ok(selected)
+}
+
+fn validate_dispatch_evidence_import(
+    store: &chancela_store::Store,
+    imported_document_id: &str,
+    act_id: ActId,
+) -> Result<(), ApiError> {
+    let imported = store
+        .imported_document(imported_document_id)
+        .map_err(|e| ApiError::Internal(format!("imported document store read failed: {e}")))?
+        .ok_or_else(|| {
+            ApiError::Unprocessable(
+                "imported_document_id must reference an existing non-canonical imported document"
+                    .to_owned(),
+            )
+        })?;
+    if imported.meta.act_id != Some(act_id) {
+        return Err(ApiError::Unprocessable(
+            "imported_document_id must be linked to the same act as the generated document"
+                .to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn generated_dispatch_evidence_idempotency_key(
+    doc: &StoredDocument,
+    actor: &str,
+    request: &NormalizedGeneratedDispatchEvidenceRequest,
+) -> Result<String, ApiError> {
+    let dispatched_at = request
+        .dispatched_at
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+    let material = json!({
+        "schema": "generated_document_dispatch_evidence_idempotency/v1",
+        "document_id": &doc.id,
+        "act_id": doc.act_id.to_string(),
+        "template_id": &doc.template_id,
+        "actor": actor,
+        "dispatched_at": dispatched_at,
+        "channel": &request.channel,
+        "reference": &request.reference,
+        "recipients": &request.recipients,
+        "evidence_reference": &request.evidence_reference,
+        "imported_document_id": &request.imported_document_id,
+        "operator_note": &request.operator_note,
+    });
+    let digest: [u8; 32] = Sha256::digest(&serde_json::to_vec(&material)?).into();
+    Ok(crate::hex::hex(&digest))
+}
+
+fn generated_dispatch_evidence_event_payload(
+    context: &AbsentOwnerDispatchContext,
+    evidence: &StoredGeneratedDocumentDispatchEvidence,
+) -> Value {
+    json!({
+        "document_id": &evidence.document_id,
+        "act_id": evidence.act_id.to_string(),
+        "template_id": &evidence.template_id,
+        "idempotency_key": &evidence.idempotency_key,
+        "selected_absent_recipients": &evidence.recipients,
+        "required_absent_recipients": &context.required_recipients,
+        "metadata": {
+            "actor": &evidence.actor,
+            "dispatched_at": evidence.dispatched_at.format(&Rfc3339).unwrap_or_default(),
+            "channel": &evidence.channel,
+            "reference": &evidence.reference,
+            "evidence_reference": &evidence.evidence_reference,
+            "imported_document_id": &evidence.imported_document_id,
+            "operator_note_in_payload": false,
+        },
+        "sending_performed_by_chancela": false,
+        "delivery_confirmed": false,
+        "legal_sufficiency_claimed": false,
+        "legal_notice_completion_claimed": false,
+        "bytes_in_payload": false,
+    })
+}
+
+fn generated_dispatch_evidence_view(
+    evidence: &StoredGeneratedDocumentDispatchEvidence,
+) -> GeneratedDocumentDispatchEvidenceView {
+    GeneratedDocumentDispatchEvidenceView {
+        document_id: evidence.document_id.clone(),
+        idempotency_key: evidence.idempotency_key.clone(),
+        act_id: evidence.act_id.to_string(),
+        template_id: evidence.template_id.clone(),
+        actor: evidence.actor.clone(),
+        dispatched_at: evidence.dispatched_at.format(&Rfc3339).unwrap_or_default(),
+        channel: evidence.channel.clone(),
+        reference: evidence.reference.clone(),
+        evidence_reference: evidence.evidence_reference.clone(),
+        imported_document_id: evidence.imported_document_id.clone(),
+        recipients: evidence.recipients.clone(),
+        operator_note: evidence.operator_note.clone(),
+        recorded_at: evidence.recorded_at.format(&Rfc3339).unwrap_or_default(),
+        sending_performed_by_chancela: false,
+        delivery_confirmed: false,
+        legal_sufficiency_claimed: false,
+        legal_notice_completion_claimed: false,
+        bytes_in_payload: false,
+    }
+}
+
+fn dispatch_channel_code(channel: DispatchChannel) -> String {
+    serde_json::to_value(channel)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_else(|| format!("{channel:?}"))
+}
+
+fn ensure_book_open_for_dispatch_evidence(book: &Book) -> Result<(), ApiError> {
+    if book.is_open() {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(format!(
+        "book {} is {:?}; acts in a non-open book are read-only",
+        book.id, book.state
+    )))
 }
 
 /// `GET /v1/acts/{id}/document` — the persisted PDF/A bytes (`application/pdf`); `404` until the
@@ -4770,6 +5365,34 @@ mod tests {
         CurrentActor::from_session_username(Some(username))
     }
 
+    async fn seed_powerless_actor(state: &AppState) -> CurrentActor {
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+        }
+        let uid = UserId(Uuid::new_v4());
+        let username = format!("document.no-perms.{}", Uuid::new_v4());
+        let user = User {
+            id: uid,
+            username: username.clone(),
+            display_name: "Document No Perms".to_owned(),
+            email: None,
+            created_at: time::OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            active: true,
+            password_hash: None,
+            attestation_key: None,
+            secret_source: Default::default(),
+            recovery_hash: None,
+            role_assignments: vec![],
+        };
+        state.users.write().await.insert(uid, user);
+        CurrentActor::from_session_username(Some(username))
+    }
+
     fn sealed_csc_act(book: &Book) -> Act {
         let mut act = Act::draft(
             book.id,
@@ -6252,6 +6875,511 @@ mod tests {
                 .count()
                 >= 1,
             "document.generated event was appended for the communication"
+        );
+    }
+
+    async fn seed_absent_owner_dispatch_fixture(
+        state: &AppState,
+    ) -> (
+        CurrentActor,
+        Entity,
+        Book,
+        Act,
+        StoredDocument,
+        StoredDocument,
+    ) {
+        let actor = seed_owner(state).await;
+        let entity = entity_of(EntityKind::Condominio);
+        let mut book = Book::new(entity.id, BookKind::Condominio);
+        book.state = chancela_core::BookState::Open;
+        let mut act = sealed_csc_act(&book);
+        act.title = "Ata da assembleia de condóminos".to_owned();
+        act.attendees = vec![
+            Attendee {
+                name: "Fração A".to_owned(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(600)),
+            },
+            Attendee {
+                name: "Fração B".to_owned(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Absent,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(400)),
+            },
+        ];
+        let ata = generate_for_act(&act, &entity, None)
+            .expect("ata generation ok")
+            .expect("ata document")
+            .stored;
+        let communication = generate_condominium_absent_owner_communication(&act, &book, &entity)
+            .expect("communication generation ok")
+            .stored;
+
+        let events = {
+            let mut ledger = state.ledger.write().await;
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &entity.id.to_string(),
+                "entity.created",
+                None,
+                b"entity",
+            )
+            .expect("entity genesis");
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &format!("entity:{}/book:{}", entity.id, book.id),
+                "book.opened",
+                None,
+                b"book",
+            )
+            .expect("book genesis");
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &format!("entity:{}/book:{}/act:{}", entity.id, book.id, act.id),
+                "act.sealed",
+                None,
+                b"act",
+            )
+            .expect("act genesis");
+            ledger.events().to_vec()
+        };
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| {
+                for event in &events {
+                    tx.append_event(event)?;
+                }
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)?;
+                tx.upsert_document(&ata)?;
+                tx.upsert_document(&communication)
+            })
+            .expect("fixture persists");
+        state
+            .entities
+            .write()
+            .await
+            .insert(entity.id, entity.clone());
+        state.books.write().await.insert(book.id, book.clone());
+        state.acts.write().await.insert(act.id, act.clone());
+        (actor, entity, book, act, ata, communication)
+    }
+
+    fn absent_owner_dispatch_request(
+        recipients: Vec<&str>,
+    ) -> GeneratedDocumentDispatchEvidenceRequest {
+        GeneratedDocumentDispatchEvidenceRequest {
+            actor: "operator.fixture".to_owned(),
+            dispatched_at: "2026-04-01T10:00:00Z".to_owned(),
+            channel: Some(DispatchChannel::RegisteredLetter),
+            reference: Some("RR123456789PT".to_owned()),
+            recipients: Some(recipients.into_iter().map(str::to_owned).collect()),
+            evidence_reference: Some("archive:dispatch-proof-1".to_owned()),
+            imported_document_id: None,
+            operator_note: Some("Operator recorded an external postal locator only.".to_owned()),
+        }
+    }
+
+    async fn response_json(response: Response) -> Value {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        serde_json::from_slice(&bytes).expect("json body")
+    }
+
+    #[tokio::test]
+    async fn absent_owner_dispatch_evidence_records_status_idempotently_and_preserves_bytes() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, _entity, _book, act, ata, communication) =
+            seed_absent_owner_dispatch_fixture(&state).await;
+        let ledger_before = state.ledger.read().await.len();
+
+        let response = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(communication.id.clone()),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        )
+        .await
+        .expect("dispatch evidence recorded");
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = response_json(response).await;
+        assert_eq!(body["evidence"]["document_id"], communication.id);
+        assert_eq!(body["evidence"]["recipients"], json!(["Fração B"]));
+        assert_eq!(body["evidence"]["sending_performed_by_chancela"], false);
+        assert_eq!(body["evidence"]["delivery_confirmed"], false);
+        assert_eq!(body["evidence"]["legal_sufficiency_claimed"], false);
+        assert_eq!(body["evidence"]["legal_notice_completion_claimed"], false);
+        assert_eq!(body["evidence"]["bytes_in_payload"], false);
+        assert_eq!(
+            body["dispatch_evidence_status"]["status"],
+            "operator_evidence_covered"
+        );
+        assert_eq!(body["dispatch_evidence_status"]["evidence_attached"], true);
+        assert_eq!(
+            body["dispatch_evidence_status"]["dispatch_completed"],
+            false
+        );
+        assert_eq!(body["dispatch_evidence_status"]["completion_basis"], "none");
+
+        let ledger_after_first = state.ledger.read().await.len();
+        assert_eq!(ledger_after_first, ledger_before + 1);
+        assert_eq!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .filter(|event| event.kind == ABSENT_OWNER_DISPATCH_EVIDENCE_EVENT_KIND)
+                .count(),
+            1,
+            "one bounded dispatch evidence event is appended"
+        );
+
+        let pdf_response = get_generated_document_pdf(
+            State(state.clone()),
+            Path(communication.id.clone()),
+            actor.clone(),
+        )
+        .await
+        .expect("generated PDF response");
+        assert_eq!(
+            pdf_response
+                .headers()
+                .get("x-chancela-dispatch-evidence-status")
+                .and_then(|v| v.to_str().ok()),
+            Some("operator_evidence_covered")
+        );
+        assert_eq!(
+            pdf_response
+                .headers()
+                .get("x-chancela-dispatch-evidence-attached")
+                .and_then(|v| v.to_str().ok()),
+            Some("true")
+        );
+        assert_eq!(
+            pdf_response
+                .headers()
+                .get("x-chancela-dispatch-completed")
+                .and_then(|v| v.to_str().ok()),
+            Some("false")
+        );
+        let generated_bytes = axum::body::to_bytes(pdf_response.into_body(), usize::MAX)
+            .await
+            .expect("generated body");
+        assert_eq!(generated_bytes.as_ref(), communication.pdf_bytes.as_slice());
+
+        let canonical = load_document(&state, act.id)
+            .await
+            .expect("canonical load")
+            .expect("canonical ata");
+        assert_eq!(canonical.id, ata.id);
+        assert_eq!(canonical.pdf_bytes, ata.pdf_bytes);
+
+        let retry = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Path(communication.id.clone()),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        )
+        .await
+        .expect("exact retry returns existing");
+        assert_eq!(retry.status(), StatusCode::OK);
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_after_first,
+            "exact retry must not append a duplicate ledger event"
+        );
+        let rows = state
+            .store
+            .as_ref()
+            .expect("store")
+            .generated_document_dispatch_evidence(&communication.id)
+            .expect("evidence rows");
+        assert_eq!(rows.len(), 1);
+        let context = absent_owner_dispatch_context_for_doc(&state, communication)
+            .await
+            .expect("dispatch context");
+        let payload = generated_dispatch_evidence_event_payload(&context, &rows[0]);
+        assert_eq!(payload["sending_performed_by_chancela"], false);
+        assert_eq!(payload["delivery_confirmed"], false);
+        assert_eq!(payload["legal_sufficiency_claimed"], false);
+        assert_eq!(payload["legal_notice_completion_claimed"], false);
+        assert_eq!(payload["bytes_in_payload"], false);
+        assert_eq!(payload["metadata"]["operator_note_in_payload"], false);
+        assert!(
+            !payload
+                .to_string()
+                .contains("Operator recorded an external postal locator only."),
+            "operator note must not be serialized into the ledger payload: {payload}"
+        );
+    }
+
+    #[tokio::test]
+    async fn absent_owner_dispatch_evidence_concurrent_exact_retries_share_row_and_event() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, _entity, _book, _act, _ata, communication) =
+            seed_absent_owner_dispatch_fixture(&state).await;
+        let ledger_before = state.ledger.read().await.len();
+        let document_id = communication.id.clone();
+
+        let call1 = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(document_id.clone()),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        );
+        let call2 = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(document_id.clone()),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        );
+        let call3 = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(document_id.clone()),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        );
+        let call4 = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Path(document_id.clone()),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        );
+
+        let (r1, r2, r3, r4) = tokio::join!(call1, call2, call3, call4);
+        let responses = [r1, r2, r3, r4]
+            .into_iter()
+            .map(|response| response.expect("concurrent exact retry must not fail"))
+            .collect::<Vec<_>>();
+        let statuses = responses
+            .iter()
+            .map(|response| response.status())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            statuses
+                .iter()
+                .filter(|status| **status == StatusCode::CREATED)
+                .count(),
+            1,
+            "exact concurrent retries should have one creator: {statuses:?}"
+        );
+        assert_eq!(
+            statuses
+                .iter()
+                .filter(|status| **status == StatusCode::OK)
+                .count(),
+            3,
+            "exact concurrent retries should return existing rows after the first insert: {statuses:?}"
+        );
+        let ledger = state.ledger.read().await;
+        assert_eq!(
+            ledger.len(),
+            ledger_before + 1,
+            "concurrent exact retries must append one ledger event total"
+        );
+        assert_eq!(
+            ledger
+                .events()
+                .iter()
+                .filter(|event| event.kind == ABSENT_OWNER_DISPATCH_EVIDENCE_EVENT_KIND)
+                .count(),
+            1,
+            "concurrent exact retries must not duplicate durable dispatch evidence events"
+        );
+        drop(ledger);
+        let rows = state
+            .store
+            .as_ref()
+            .expect("store")
+            .generated_document_dispatch_evidence(&document_id)
+            .expect("evidence rows");
+        assert_eq!(
+            rows.len(),
+            1,
+            "concurrent exact retries must retain one dispatch evidence row"
+        );
+    }
+
+    #[tokio::test]
+    async fn absent_owner_dispatch_evidence_rejects_invalid_requests_without_mutation() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (actor, _entity, book, _act, ata, communication) =
+            seed_absent_owner_dispatch_fixture(&state).await;
+
+        let mut missing_locator = absent_owner_dispatch_request(vec!["Fração B"]);
+        missing_locator.reference = None;
+        missing_locator.evidence_reference = None;
+        let ledger_before = state.ledger.read().await.len();
+        let err = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(communication.id.clone()),
+            Json(missing_locator),
+        )
+        .await
+        .expect_err("missing locator rejected");
+        assert!(
+            matches!(err, ApiError::Unprocessable(message) if message.contains("at least one locator"))
+        );
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
+
+        let err = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(communication.id.clone()),
+            Json(absent_owner_dispatch_request(vec!["Fração A"])),
+        )
+        .await
+        .expect_err("non-absent recipient rejected");
+        assert!(
+            matches!(err, ApiError::Unprocessable(message) if message.contains("not an absent attendee"))
+        );
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
+
+        let err = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(ata.id.clone()),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        )
+        .await
+        .expect_err("wrong template rejected");
+        assert!(
+            matches!(err, ApiError::Unprocessable(message) if message.contains("condominio-comunicacao-ausentes"))
+        );
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
+
+        let imported_bytes = minimal_pdf();
+        let imported_digest: [u8; 32] = Sha256::digest(&imported_bytes).into();
+        let imported = StoredImportedDocument {
+            meta: StoredImportedDocumentMeta {
+                id: Uuid::new_v4().to_string(),
+                act_id: Some(ActId::new()),
+                filename: Some("wrong-act-proof.pdf".to_owned()),
+                declared_content_type: Some("application/pdf".to_owned()),
+                detected_content_type: "application/pdf".to_owned(),
+                sha256: crate::hex::hex(&imported_digest),
+                size_bytes: imported_bytes.len(),
+                imported_at: OffsetDateTime::now_utc(),
+                imported_by: "document.owner".to_owned(),
+                operator_review_status: StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+                operator_reviewed_at: None,
+                operator_reviewed_by: None,
+                operator_review_note: None,
+                operator_acknowledged_guardrail_ids: Vec::new(),
+            },
+            bytes: imported_bytes,
+        };
+        state
+            .store
+            .as_ref()
+            .expect("store")
+            .persist(|tx| tx.upsert_imported_document(&imported))
+            .expect("wrong-act import persists");
+        let mut wrong_import = absent_owner_dispatch_request(vec!["Fração B"]);
+        wrong_import.reference = None;
+        wrong_import.evidence_reference = None;
+        wrong_import.imported_document_id = Some(imported.meta.id.clone());
+        let err = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor.clone(),
+            CurrentAttestor::default(),
+            Path(communication.id.clone()),
+            Json(wrong_import),
+        )
+        .await
+        .expect_err("wrong-act import rejected");
+        assert!(matches!(err, ApiError::Unprocessable(message) if message.contains("same act")));
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
+
+        state
+            .books
+            .write()
+            .await
+            .get_mut(&book.id)
+            .expect("book in memory")
+            .state = chancela_core::BookState::Closed;
+        let err = record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            actor,
+            CurrentAttestor::default(),
+            Path(communication.id),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        )
+        .await
+        .expect_err("closed book rejected");
+        assert!(matches!(err, ApiError::Conflict(message) if message.contains("read-only")));
+        assert_eq!(state.ledger.read().await.len(), ledger_before);
+    }
+
+    #[tokio::test]
+    async fn absent_owner_dispatch_evidence_denies_before_validation_details() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let (_owner, _entity, _book, _act, ata, _communication) =
+            seed_absent_owner_dispatch_fixture(&state).await;
+        let powerless = seed_powerless_actor(&state).await;
+        let ledger_before = state.ledger.read().await.len();
+
+        let get_err = match get_generated_document_dispatch_evidence(
+            State(state.clone()),
+            Path(ata.id.clone()),
+            powerless.clone(),
+        )
+        .await
+        {
+            Ok(_) => panic!("GET should be denied before wrong-template validation"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(&get_err, ApiError::Forbidden(message) if message == crate::authz::FORBIDDEN),
+            "GET should return generic permission denial, not validation details: {get_err:?}"
+        );
+
+        let post_err = match record_generated_document_dispatch_evidence(
+            State(state.clone()),
+            powerless,
+            CurrentAttestor::default(),
+            Path(ata.id),
+            Json(absent_owner_dispatch_request(vec!["Fração B"])),
+        )
+        .await
+        {
+            Ok(_) => panic!("POST should be denied before wrong-template validation"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(&post_err, ApiError::Forbidden(message) if message == crate::authz::FORBIDDEN),
+            "POST should return generic permission denial, not validation details: {post_err:?}"
+        );
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_before,
+            "permission denial must not append ledger events"
         );
     }
 

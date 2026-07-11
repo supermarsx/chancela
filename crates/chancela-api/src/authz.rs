@@ -351,6 +351,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/document/preview", RouteClass::Gated), // GET act.read@Book
     ("/v1/acts/{id}/document/generate", RouteClass::Gated), // POST document.generate@Book
     ("/v1/documents/generated/{document_id}", RouteClass::Gated), // GET act.read@Book(document.act_id)
+    (
+        "/v1/documents/generated/{document_id}/dispatch-evidence",
+        RouteClass::Gated,
+    ), // GET act.read@Book(document.act_id) · POST document.generate@Book(document.act_id)
     ("/v1/acts/{id}/document", RouteClass::Gated),                // GET act.read@Book
     ("/v1/acts/{id}/document/working-copy", RouteClass::Gated),   // GET act.read@Book
     ("/v1/acts/{id}/document/office", RouteClass::Gated),         // GET act.read@Book
