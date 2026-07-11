@@ -45,7 +45,7 @@
     {
       "kind": "Paragraph",
       "items": "convening.recipients",
-      "template": "Destinatário: {{ name }}{% if reference %} — referência {{ reference }}{% endif %}{% if dispatched_at %}, expedido em {{ dispatched_at | long_date }}{% endif %}."
+      "template": "Destinatário: {{ name }}{% if channel %} — {% if channel == 'RegisteredLetterAR' %}carta registada com aviso de receção{% elif channel == 'RegisteredLetter' %}carta registada{% elif channel == 'Email' %}correio eletrónico{% elif channel == 'HandDelivery' %}entrega em mão{% elif channel == 'Publication' %}publicação{% elif channel == 'Portal' %}portal{% endif %}{% endif %}{% if reference %} — referência {{ reference }}{% endif %}{% if dispatched_at %}, expedido em {{ dispatched_at | long_date }}{% endif %}."
     },
     {
       "kind": "SignatureBlock",

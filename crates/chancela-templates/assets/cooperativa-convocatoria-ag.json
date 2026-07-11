@@ -39,6 +39,21 @@
       "template": "{% if convening.dispatch_date %}Expedida em {{ convening.dispatch_date | long_date }}{% if convening.channel %} por {% if convening.channel == 'RegisteredLetter' %}carta registada{% elif convening.channel == 'RegisteredLetterAR' %}carta registada com aviso de receção{% elif convening.channel == 'Email' %}correio eletrónico{% elif convening.channel == 'HandDelivery' %}entrega em mão{% elif convening.channel == 'Publication' %}publicação{% elif convening.channel == 'Portal' %}portal da cooperativa{% endif %}{% endif %}.{% endif %}"
     },
     {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Comprovativo de expedição"
+    },
+    {
+      "kind": "KeyValue",
+      "items": "convening.recipients",
+      "rows": [
+        { "key": "Destinatário", "value": "{{ name }}" },
+        { "key": "Meio de expedição", "value": "{% if channel == 'RegisteredLetterAR' %}Carta registada com aviso de receção{% elif channel == 'RegisteredLetter' %}Carta registada{% elif channel == 'Email' %}Correio eletrónico{% elif channel == 'HandDelivery' %}Entrega em mão{% elif channel == 'Publication' %}Publicação{% elif channel == 'Portal' %}Portal{% endif %}" },
+        { "key": "Referência", "value": "{{ reference }}" },
+        { "key": "Data de expedição", "value": "{{ dispatched_at | long_date }}" }
+      ]
+    },
+    {
       "kind": "Paragraph",
       "template": "{% if convening.second_call and convening.second_call.date %}Caso não se verifique o quórum necessário em primeira convocatória, a assembleia reúne em segunda convocatória no dia {{ convening.second_call.date | long_date }}{% if convening.second_call.time %}, pelas {{ convening.second_call.time }} horas{% endif %}{% if convening.second_call.reduced_quorum %}, podendo deliberar com qualquer número de cooperadores presentes ou representados{% endif %}.{% endif %}"
     },

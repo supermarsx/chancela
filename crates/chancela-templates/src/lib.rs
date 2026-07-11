@@ -914,6 +914,10 @@ mod tests {
         "locale",
     ];
 
+    const POST_ACT_SEALED_PROVENANCE_FIELDS: &[&str] = &["ata_number", "payload_digest"];
+    const POST_ACT_SEALED_PROVENANCE_REQUIREMENT: &str =
+        "post-act Certidao/Extrato templates must bind sealed-act provenance";
+
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct CatalogMetadataIssue {
         asset: String,
@@ -971,6 +975,10 @@ mod tests {
         IncompleteLawReference {
             citation: String,
             field: &'static str,
+        },
+        MissingSemanticBinding {
+            field: &'static str,
+            requirement: &'static str,
         },
     }
 
@@ -1084,6 +1092,11 @@ mod tests {
                     "{}.json ({template_id}): law reference `{citation}` has blank `{field}`",
                     self.asset
                 ),
+                CatalogMetadataIssueKind::MissingSemanticBinding { field, requirement } => write!(
+                    f,
+                    "{}.json ({template_id}): missing semantic binding `{field}` ({requirement})",
+                    self.asset
+                ),
             }
         }
     }
@@ -1134,7 +1147,11 @@ mod tests {
 
     fn expected_stage_for_template_id(template_id: &str) -> Option<LifecycleStage> {
         let stem = template_id_stem(template_id);
-        if stem.contains("-convocatoria") || stem.contains("-aviso-convocatoria") {
+        if stem.contains("-convocatoria")
+            || stem.contains("-aviso-convocatoria")
+            || stem.contains("-procuracao-representacao")
+            || stem.contains("-ponto-ordem-trabalhos")
+        {
             Some(LifecycleStage::Convocatoria)
         } else if stem.contains("-termo-abertura") {
             Some(LifecycleStage::TermoAbertura)
@@ -1181,6 +1198,125 @@ mod tests {
         } else {
             None
         }
+    }
+
+    fn requires_post_act_sealed_provenance(stage: LifecycleStage) -> bool {
+        matches!(stage, LifecycleStage::Certidao | LifecycleStage::Extrato)
+    }
+
+    fn block_templates_bind_field(blocks: &[BlockSpec], field: &str) -> bool {
+        blocks
+            .iter()
+            .any(|block| block_template_strings_bind_field(block, field))
+    }
+
+    fn block_template_strings_bind_field(block: &BlockSpec, field: &str) -> bool {
+        match block {
+            BlockSpec::Heading { template, .. } | BlockSpec::Paragraph { template, .. } => {
+                template_string_binds_field(template, field)
+            }
+            BlockSpec::KeyValue { rows, .. } => rows.iter().any(|row| {
+                template_string_binds_field(&row.key, field)
+                    || template_string_binds_field(&row.value, field)
+            }),
+            BlockSpec::VoteTable {
+                label,
+                unanimous_total,
+                ..
+            } => {
+                template_string_binds_field(label, field)
+                    || unanimous_total
+                        .as_deref()
+                        .is_some_and(|template| template_string_binds_field(template, field))
+            }
+            BlockSpec::SignatureBlock { role, name, .. } => {
+                template_string_binds_field(role, field) || template_string_binds_field(name, field)
+            }
+            BlockSpec::PageBreak | BlockSpec::Rule => false,
+        }
+    }
+
+    fn template_string_binds_field(template: &str, field: &str) -> bool {
+        let mut offset = 0;
+        while let Some(start) = template[offset..].find('{').map(|start| offset + start) {
+            let rest = &template[start..];
+            let Some((open_len, close)) = rest
+                .strip_prefix("{{")
+                .map(|_| (2, "}}"))
+                .or_else(|| rest.strip_prefix("{%").map(|_| (2, "%}")))
+            else {
+                offset = start + 1;
+                continue;
+            };
+
+            let code_start = start + open_len;
+            let Some(end) = template[code_start..]
+                .find(close)
+                .map(|end| code_start + end)
+            else {
+                break;
+            };
+            if template_code_binds_identifier(&template[code_start..end], field) {
+                return true;
+            }
+            offset = end + close.len();
+        }
+        false
+    }
+
+    fn template_code_binds_identifier(code: &str, field: &str) -> bool {
+        let mut chars = code.char_indices().peekable();
+        let mut quote = None;
+        while let Some((idx, ch)) = chars.next() {
+            if let Some(expected_quote) = quote {
+                if ch == '\\' {
+                    chars.next();
+                } else if ch == expected_quote {
+                    quote = None;
+                }
+                continue;
+            }
+
+            if ch == '"' || ch == '\'' {
+                quote = Some(ch);
+                continue;
+            }
+
+            if !is_template_identifier_start(ch) {
+                continue;
+            }
+
+            let start = idx;
+            let mut end = idx + ch.len_utf8();
+            while let Some(&(next_idx, next_ch)) = chars.peek() {
+                if !is_template_identifier_continue(next_ch) {
+                    break;
+                }
+                chars.next();
+                end = next_idx + next_ch.len_utf8();
+            }
+
+            if &code[start..end] == field && !is_attribute_lookup(code, start) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_template_identifier_start(ch: char) -> bool {
+        ch == '_' || ch.is_ascii_alphabetic()
+    }
+
+    fn is_template_identifier_continue(ch: char) -> bool {
+        ch == '_' || ch.is_ascii_alphanumeric()
+    }
+
+    fn is_attribute_lookup(code: &str, identifier_start: usize) -> bool {
+        code[..identifier_start]
+            .chars()
+            .rev()
+            .find(|ch| !ch.is_whitespace())
+            .is_some_and(|ch| ch == '.')
     }
 
     fn catalog_metadata_report(issues: &[CatalogMetadataIssue]) -> String {
@@ -1401,6 +1537,21 @@ mod tests {
                 ));
             }
 
+            if requires_post_act_sealed_provenance(spec.stage) {
+                for &field in POST_ACT_SEALED_PROVENANCE_FIELDS {
+                    if !block_templates_bind_field(&spec.blocks, field) {
+                        issues.push(metadata_issue(
+                            asset,
+                            Some(&spec.id),
+                            CatalogMetadataIssueKind::MissingSemanticBinding {
+                                field,
+                                requirement: POST_ACT_SEALED_PROVENANCE_REQUIREMENT,
+                            },
+                        ));
+                    }
+                }
+            }
+
             // These are structured discovery anchors for the API/template picker only; they do not
             // certify that the cited law text or legal analysis is complete or authoritative.
             if rule_pack_law_references(&spec.rule_pack_id).is_empty() {
@@ -1544,6 +1695,115 @@ mod tests {
     }
 
     #[test]
+    fn csc_quota_division_and_unification_templates_keep_pending_law_refs() {
+        let reg = load_registry().expect("registry loads");
+        for id in ["csc-ata-divisao-quotas/v1", "csc-ata-unificacao-quotas/v1"] {
+            let spec = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing template {id}"));
+            assert_eq!(spec.family, EntityFamily::CommercialCompany);
+            assert_eq!(spec.stage, LifecycleStage::Ata);
+            assert_eq!(
+                spec.channels,
+                vec![
+                    MeetingChannel::Physical,
+                    MeetingChannel::Hybrid,
+                    MeetingChannel::Telematic,
+                    MeetingChannel::WrittenResolution,
+                ]
+            );
+            assert_eq!(
+                spec.signature_policy,
+                SignaturePolicyHint::QualifiedPreferred
+            );
+            assert_eq!(spec.rule_pack_id, "csc-art63/v2");
+            assert_eq!(spec.locale, "pt-PT");
+            assert!(
+                spec.law_references
+                    .iter()
+                    .all(|r| r.verification == TemplateLawReferenceVerification::Pending)
+            );
+            assert!(spec.law_references.iter().any(|r| {
+                r.source == TemplateLawReferenceSource::RulePack
+                    && r.source_id == "csc"
+                    && r.article.as_deref() == Some("63")
+            }));
+            assert!(spec.law_references.iter().any(|r| {
+                r.source == TemplateLawReferenceSource::ThresholdRegistry
+                    && r.source_id == "csc"
+                    && r.article.is_none()
+                    && r.threshold_id.as_deref() == Some("csc.deliberacao.maioria_qualificada")
+                    && r.citation == "CSC arts. 250.º, 265.º e 386.º"
+            }));
+        }
+    }
+
+    #[test]
+    fn catalog_includes_csc_delegation_and_revocation_templates() {
+        let reg = load_registry().expect("registry loads");
+        let expected = [
+            (
+                "csc-ata-delegacao-poderes/v1",
+                "Delegar poderes nos termos da proposta escrita submetida à assembleia.",
+            ),
+            (
+                "csc-ata-revogacao-poderes/v1",
+                "Revogar poderes nos termos da proposta escrita submetida à assembleia.",
+            ),
+        ];
+
+        for (id, proposed_text) in expected {
+            let spec = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing template {id}"));
+            assert_eq!(spec.family, EntityFamily::CommercialCompany);
+            assert_eq!(spec.stage, LifecycleStage::Ata);
+            assert_eq!(
+                spec.channels,
+                vec![
+                    MeetingChannel::Physical,
+                    MeetingChannel::Hybrid,
+                    MeetingChannel::Telematic,
+                    MeetingChannel::WrittenResolution,
+                ]
+            );
+            assert_eq!(
+                spec.signature_policy,
+                SignaturePolicyHint::QualifiedPreferred
+            );
+            assert_eq!(spec.rule_pack_id, "csc-art63/v2");
+            assert_eq!(spec.locale, "pt-PT");
+            assert!(spec.law_references.iter().any(|r| {
+                r.source == TemplateLawReferenceSource::RulePack
+                    && r.source_id == "csc"
+                    && r.article.as_deref() == Some("63")
+            }));
+            assert!(spec.law_references.iter().all(|r| r.threshold_id.is_none()));
+
+            let mut ctx = coverage_ctx();
+            ctx["title"] = json!("Ata de poderes");
+            ctx["agenda"] = json!([{ "number": 1, "text": "Poderes societários." }]);
+            ctx["deliberation_items"] = json!([{
+                "agenda_number": 1,
+                "text": proposed_text,
+                "vote": "Unanimous",
+                "statements": []
+            }]);
+
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}"));
+            let text = doc_text(&doc);
+            assert!(
+                text.contains(proposed_text),
+                "{id}: proposed resolution text missing from render: {text}"
+            );
+            assert!(
+                !text.contains("[a definir:"),
+                "{id}: should not introduce unresolved threshold text: {text}"
+            );
+        }
+    }
+
+    #[test]
     fn condominium_template_references_rule_pack_and_threshold_law() {
         let reg = load_registry().expect("registry loads");
         let spec = reg
@@ -1613,6 +1873,24 @@ mod tests {
         assert!(
             issues.is_empty(),
             "catalog metadata validation failed:\n{}",
+            catalog_metadata_report(&issues)
+        );
+    }
+
+    #[test]
+    fn authored_post_act_templates_bind_sealed_act_provenance() {
+        let issues = validate_catalog_metadata(ASSET_FILES)
+            .into_iter()
+            .filter(|issue| {
+                matches!(
+                    issue.kind,
+                    CatalogMetadataIssueKind::MissingSemanticBinding { .. }
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            issues.is_empty(),
+            "post-act semantic validation failed:\n{}",
             catalog_metadata_report(&issues)
         );
     }
@@ -1688,6 +1966,74 @@ mod tests {
                     )
             }),
             "expected missing derived template law_references issue:\n{report}"
+        );
+    }
+
+    #[test]
+    fn catalog_metadata_validation_reports_post_act_missing_sealed_provenance_bindings() {
+        let missing_digest = r#"{"id":"assoc-certidao-ata/v1","family":"Association",
+            "stage":"Certidao","channels":[],"signature_policy":"ManualAttested",
+            "rule_pack_id":"assoc-cc/v1","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Certidão da ata n.º {{ ata_number }}."}]}"#;
+        let missing_both = r#"{"id":"assoc-extrato-ata/v1","family":"Association",
+            "stage":"Extrato","channels":[],"signature_policy":"ManualAttested",
+            "rule_pack_id":"assoc-cc/v1","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Extrato sem proveniência vinculada."}]}"#;
+        let ata_without_post_act_fields = r#"{"id":"assoc-ata-ga/v1","family":"Association",
+            "stage":"Ata","channels":[],"signature_policy":"ManualAttested",
+            "rule_pack_id":"assoc-cc/v1","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Ata sem campos de certidão."}]}"#;
+
+        let issues = validate_catalog_metadata(&[
+            ("assoc-certidao-ata", missing_digest),
+            ("assoc-extrato-ata", missing_both),
+            ("assoc-ata-ga", ata_without_post_act_fields),
+        ]);
+        let report = catalog_metadata_report(&issues);
+
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "assoc-certidao-ata"
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::MissingSemanticBinding { field, requirement }
+                            if *field == "payload_digest"
+                                && *requirement == POST_ACT_SEALED_PROVENANCE_REQUIREMENT
+                    )
+            }),
+            "expected missing post-act payload_digest binding:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "assoc-extrato-ata"
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::MissingSemanticBinding { field, .. }
+                            if *field == "ata_number"
+                    )
+            }),
+            "expected missing post-act ata_number binding:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "assoc-extrato-ata"
+                    && matches!(
+                        &issue.kind,
+                        CatalogMetadataIssueKind::MissingSemanticBinding { field, .. }
+                            if *field == "payload_digest"
+                    )
+            }),
+            "expected missing post-act payload_digest binding:\n{report}"
+        );
+        assert!(
+            !issues.iter().any(|issue| {
+                issue.asset == "assoc-ata-ga"
+                    && matches!(
+                        issue.kind,
+                        CatalogMetadataIssueKind::MissingSemanticBinding { .. }
+                    )
+            }),
+            "Ata-stage templates must not be subject to the post-act binding guard:\n{report}"
         );
     }
 
@@ -2087,6 +2433,8 @@ mod tests {
             },
             "ata_number": 1,
             "ata_count": 12,
+            "number": 1,
+            "text": "Apreciação do relatório de gestão.",
             "reason": "LivroEsgotado",
             "meeting_date": "2026-07-08",
             "meeting_time": "15:00",
@@ -2132,6 +2480,19 @@ mod tests {
                 "channel": "Physical",
                 "second_call": { "date": "2026-07-15", "time": "15:30", "reduced_quorum": true },
                 "recipients": []
+            },
+            "represented": {
+                "name": "Bruno Cardoso",
+                "unit": "Fração B — 125‰"
+            },
+            "representative": {
+                "name": "Carla Neves",
+                "document": "CC 12345678"
+            },
+            "representation": {
+                "scope": "Participar, discutir e votar todos os pontos da ordem de trabalhos.",
+                "instructions": "Votar favoravelmente o ponto 1 e abster-se no ponto 2.",
+                "evidence_reference": "Procuração assinada e arquivada como Anexo R1."
             },
             "agenda": [],
             "attendees": [],
@@ -2186,6 +2547,309 @@ mod tests {
         s
     }
 
+    #[test]
+    fn catalog_includes_representation_instrument_for_every_supported_family() {
+        let reg = load_registry().expect("the full catalog loads");
+        let expected = [
+            (
+                "csc-procuracao-representacao/v1",
+                EntityFamily::CommercialCompany,
+            ),
+            (
+                "condominio-procuracao-representacao/v1",
+                EntityFamily::Condominium,
+            ),
+            (
+                "assoc-procuracao-representacao/v1",
+                EntityFamily::Association,
+            ),
+            (
+                "fundacao-procuracao-representacao/v1",
+                EntityFamily::Foundation,
+            ),
+            (
+                "cooperativa-procuracao-representacao/v1",
+                EntityFamily::Cooperative,
+            ),
+        ];
+
+        let mut ctx = coverage_ctx();
+        ctx["title"] = json!("Assembleia geral ordinária");
+        for (id, family) in expected {
+            let spec = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing template {id}"));
+            assert_eq!(spec.family, family, "{id}: wrong family");
+            assert_eq!(
+                spec.stage,
+                LifecycleStage::Convocatoria,
+                "{id}: wrong stage"
+            );
+            assert_eq!(
+                spec.channels,
+                vec![
+                    MeetingChannel::Physical,
+                    MeetingChannel::Hybrid,
+                    MeetingChannel::Telematic,
+                ],
+                "{id}: representation instruments should apply to meeting channels"
+            );
+            assert!(
+                !spec.law_references.is_empty(),
+                "{id}: expected family rule-pack law references"
+            );
+
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}"));
+            let text = doc_text(&doc);
+            assert!(
+                text.contains("Carla Neves") && text.contains("Bruno Cardoso"),
+                "{id}: rendered representation parties missing from text: {text}"
+            );
+            assert!(
+                text.contains("Referência de prova"),
+                "{id}: representation evidence reference row missing: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn catalog_includes_agenda_item_template_for_every_supported_family() {
+        let reg = load_registry().expect("the full catalog loads");
+        let expected = [
+            (
+                "csc-ponto-ordem-trabalhos/v1",
+                EntityFamily::CommercialCompany,
+                "csc-art63/v2",
+                SignaturePolicyHint::QualifiedPreferred,
+            ),
+            (
+                "condominio-ponto-ordem-trabalhos/v1",
+                EntityFamily::Condominium,
+                "condominio-dl268/v1",
+                SignaturePolicyHint::QualifiedOrHandwritten,
+            ),
+            (
+                "assoc-ponto-ordem-trabalhos/v1",
+                EntityFamily::Association,
+                "assoc-cc/v1",
+                SignaturePolicyHint::ManualAttested,
+            ),
+            (
+                "fundacao-ponto-ordem-trabalhos/v1",
+                EntityFamily::Foundation,
+                "fundacao-cc/v1",
+                SignaturePolicyHint::ManualAttested,
+            ),
+            (
+                "cooperativa-ponto-ordem-trabalhos/v1",
+                EntityFamily::Cooperative,
+                "cooperativa-ccoop/v1",
+                SignaturePolicyHint::ManualAttested,
+            ),
+        ];
+
+        let mut ctx = coverage_ctx();
+        ctx["title"] = json!("Convocatória de teste");
+        ctx["number"] = json!(7);
+        ctx["text"] = json!("Apreciação do plano de atividades.");
+
+        for (id, family, rule_pack_id, signature_policy) in expected {
+            let spec = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing template {id}"));
+            assert_eq!(spec.family, family, "{id}: wrong family");
+            assert_eq!(
+                spec.stage,
+                LifecycleStage::Convocatoria,
+                "{id}: wrong stage"
+            );
+            assert!(
+                spec.channels.is_empty(),
+                "{id}: standalone agenda item templates should not be channel-scoped"
+            );
+            assert_eq!(spec.rule_pack_id, rule_pack_id, "{id}: wrong rule pack");
+            assert_eq!(
+                spec.signature_policy, signature_policy,
+                "{id}: wrong signature policy"
+            );
+            assert!(
+                !spec.law_references.is_empty(),
+                "{id}: expected family rule-pack law references"
+            );
+
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}"));
+            let text = doc_text(&doc);
+            assert!(
+                text.contains("Ponto 7") && text.contains("Apreciação do plano de atividades."),
+                "{id}: rendered agenda item fields missing from text: {text}"
+            );
+            assert!(
+                text.contains("ordem de trabalhos"),
+                "{id}: agenda-item wording missing from text: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn catalog_includes_book_transport_term_for_every_supported_family() {
+        let reg = load_registry().expect("the full catalog loads");
+        let expected = [
+            ("csc-termo-transporte/v1", EntityFamily::CommercialCompany),
+            ("condominio-termo-transporte/v1", EntityFamily::Condominium),
+            ("assoc-termo-transporte/v1", EntityFamily::Association),
+            ("fundacao-termo-transporte/v1", EntityFamily::Foundation),
+            ("cooperativa-termo-transporte/v1", EntityFamily::Cooperative),
+        ];
+
+        let ctx = coverage_ctx();
+        for (id, family) in expected {
+            let spec = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing template {id}"));
+            assert_eq!(spec.family, family, "{id}: wrong family");
+            assert_eq!(
+                spec.stage,
+                LifecycleStage::TermoEncerramento,
+                "{id}: wrong stage"
+            );
+            assert!(
+                spec.channels.is_empty(),
+                "{id}: transport terms should not be channel-scoped"
+            );
+            assert!(
+                !spec.law_references.is_empty(),
+                "{id}: expected family rule-pack law references"
+            );
+
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}"));
+            let text = doc_text(&doc);
+            assert!(
+                text.contains("Termo de transporte do livro de atas"),
+                "{id}: rendered transport heading missing: {text}"
+            );
+            assert!(
+                text.contains("Livro n.º 1") && text.contains("continuação no livro sucessor"),
+                "{id}: rendered predecessor/continuation evidence missing: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn convocatoria_templates_render_dispatch_proof_for_every_notice_family() {
+        let reg = load_registry().expect("the full catalog loads");
+        let notice_ids = [
+            "csc-convocatoria-ag/v1",
+            "csc-convocatoria-gerencia/v1",
+            "condominio-aviso-convocatoria/v1",
+            "assoc-convocatoria-ga/v1",
+            "fundacao-convocatoria-orgao/v1",
+            "cooperativa-convocatoria-ag/v1",
+        ];
+
+        let mut ctx = coverage_ctx();
+        ctx["convening"]["recipients"] = json!([
+            {
+                "name": "Ana Rocha",
+                "channel": "RegisteredLetterAR",
+                "reference": "RR123456789PT",
+                "dispatched_at": "2026-06-10"
+            }
+        ]);
+
+        for id in notice_ids {
+            let spec = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing template {id}"));
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}"));
+            let text = doc_text(&doc);
+            let lower = text.to_lowercase();
+            assert!(
+                text.contains("Ana Rocha"),
+                "{id}: recipient missing: {text}"
+            );
+            assert!(
+                text.contains("RR123456789PT"),
+                "{id}: dispatch reference missing: {text}"
+            );
+            assert!(
+                text.contains("10 de junho de 2026"),
+                "{id}: dispatch date missing: {text}"
+            );
+            assert!(
+                lower.contains("carta registada com aviso de receção"),
+                "{id}: dispatch channel missing: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn attendance_list_templates_render_structured_attendees_for_every_supported_family() {
+        let reg = load_registry().expect("the full catalog loads");
+        let list_ids = [
+            "csc-lista-presencas/v1",
+            "condominio-lista-presencas/v1",
+            "assoc-lista-presencas/v1",
+            "fundacao-lista-presencas/v1",
+            "cooperativa-lista-presencas/v1",
+        ];
+
+        let mut ctx = coverage_ctx();
+        ctx["attendees"] = json!([
+            {
+                "name": "Ana Rocha",
+                "quality": "Member",
+                "presence": "InPerson",
+                "weight": { "Capital": 500000 }
+            },
+            {
+                "name": "Bruno Dias",
+                "quality": "Member",
+                "presence": "Represented",
+                "represented_by": "Carla Neves"
+            }
+        ]);
+
+        for id in list_ids {
+            let spec = reg
+                .get(id)
+                .unwrap_or_else(|| panic!("missing template {id}"));
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} failed to render: {e:?}"));
+            let text = doc_text(&doc);
+            assert!(
+                text.contains("Ana Rocha"),
+                "{id}: in-person attendee missing: {text}"
+            );
+            assert!(
+                text.contains("Bruno Dias") && text.contains("Carla Neves"),
+                "{id}: represented attendee/proxy missing: {text}"
+            );
+        }
+
+        let csc_text = doc_text(
+            &render(reg.get("csc-lista-presencas/v1").unwrap(), &ctx)
+                .expect("csc attendance list renders"),
+        );
+        assert!(
+            csc_text.contains("capital 500000"),
+            "csc attendance list must render capital weight: {csc_text}"
+        );
+
+        let mut condo_ctx = ctx;
+        condo_ctx["attendees"][0]["quality"] = json!("CondoOwner");
+        condo_ctx["attendees"][0]["weight"] = json!({ "Permilage": 125 });
+        let condo_text = doc_text(
+            &render(
+                reg.get("condominio-lista-presencas/v1").unwrap(),
+                &condo_ctx,
+            )
+            .expect("condominium attendance list renders"),
+        );
+        assert!(
+            condo_text.contains("permilagem 125"),
+            "condominium attendance list must render permilage weight: {condo_text}"
+        );
+    }
+
     /// The standing guard for the whole authored catalog: the full set embeds and deserializes
     /// (schema and duplicate-id clean via `load_registry`), every spec carries a valid
     /// family/stage/rule_pack, and every asset renders against the frozen fixture ctx without error,
@@ -2197,21 +2861,21 @@ mod tests {
         // Whole-catalog census — a dropped or duplicated asset changes these counts.
         assert_eq!(
             reg.specs().len(),
-            83,
-            "expected the full authored catalog (~83 templates)"
+            101,
+            "expected the full authored catalog (~101 templates)"
         );
         let per_family = |f: EntityFamily| reg.specs().iter().filter(|s| s.family == f).count();
-        assert_eq!(per_family(EntityFamily::CommercialCompany), 35, "csc count");
+        assert_eq!(per_family(EntityFamily::CommercialCompany), 41, "csc count");
         assert_eq!(
             per_family(EntityFamily::Condominium),
-            11,
+            14,
             "condominio count"
         );
-        assert_eq!(per_family(EntityFamily::Association), 15, "assoc count");
-        assert_eq!(per_family(EntityFamily::Foundation), 11, "fundacao count");
+        assert_eq!(per_family(EntityFamily::Association), 18, "assoc count");
+        assert_eq!(per_family(EntityFamily::Foundation), 14, "fundacao count");
         assert_eq!(
             per_family(EntityFamily::Cooperative),
-            11,
+            14,
             "cooperativa count"
         );
 

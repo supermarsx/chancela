@@ -40,10 +40,18 @@
       "template": "{% if convening.second_call.date %}Não se verificando quórum em primeira convocação, o órgão reunirá em segunda convocação no dia {{ convening.second_call.date | long_date }}{% if convening.second_call.time %}, pelas {{ convening.second_call.time }} horas{% endif %}{% if convening.second_call.reduced_quorum %}, deliberando validamente com qualquer número de membros presentes{% endif %}.{% endif %}"
     },
     {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Comprovativo de expedição"
+    },
+    {
       "kind": "KeyValue",
       "items": "convening.recipients",
       "rows": [
-        { "key": "Destinatário", "value": "{{ name }}{% if channel %} — {{ channel }}{% endif %}{% if reference %} ({{ reference }}){% endif %}" }
+        { "key": "Destinatário", "value": "{{ name }}" },
+        { "key": "Meio de expedição", "value": "{% if channel == 'RegisteredLetterAR' %}Carta registada com aviso de receção{% elif channel == 'RegisteredLetter' %}Carta registada{% elif channel == 'Email' %}Correio eletrónico{% elif channel == 'HandDelivery' %}Entrega em mão{% elif channel == 'Publication' %}Publicação{% elif channel == 'Portal' %}Portal{% endif %}" },
+        { "key": "Referência", "value": "{{ reference }}" },
+        { "key": "Data de expedição", "value": "{{ dispatched_at | long_date }}" }
       ]
     },
     { "kind": "Rule" },

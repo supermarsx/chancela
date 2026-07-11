@@ -1,0 +1,30 @@
+{
+  "id": "condominio-ponto-ordem-trabalhos/v1",
+  "family": "Condominium",
+  "stage": "Convocatoria",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Ponto da ordem de trabalhos" },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        { "key": "Condomínio", "value": "{{ entity.name }}" },
+        { "key": "NIPC", "value": "{{ entity.nipc }}" },
+        { "key": "Assembleia", "value": "{{ title }}" },
+        { "key": "Número do ponto", "value": "{{ number }}" },
+        { "key": "Texto do ponto", "value": "{{ text }}" }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Ponto {{ number }} — {{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Este registo autónomo identifica o ponto para preparação da ordem de trabalhos da assembleia indicada."
+    }
+  ]
+}

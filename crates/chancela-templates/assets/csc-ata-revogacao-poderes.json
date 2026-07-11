@@ -1,0 +1,134 @@
+{
+  "id": "csc-ata-revogacao-poderes/v1",
+  "family": "CommercialCompany",
+  "stage": "Ata",
+  "channels": [
+    "Physical",
+    "Hybrid",
+    "Telematic",
+    "WrittenResolution"
+  ],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Ata n.º {{ ata_number }}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "{{ title | default(\"Ata de revogação de poderes\") }}"
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Entidade",
+          "value": "{{ entity.name }}"
+        },
+        {
+          "key": "NIPC",
+          "value": "{{ entity.nipc }}"
+        },
+        {
+          "key": "Sede",
+          "value": "{{ entity.seat }}"
+        },
+        {
+          "key": "Data",
+          "value": "{{ meeting_date | long_date }}"
+        },
+        {
+          "key": "Hora",
+          "value": "{{ meeting_time }}"
+        },
+        {
+          "key": "Local",
+          "value": "{{ place }}"
+        },
+        {
+          "key": "Modo de reunião",
+          "value": "{{ channel | channel_label }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "No dia {{ meeting_date | long_date }}, pelas {{ meeting_time }} horas, em {{ place }}, reuniu a assembleia geral de {{ entity.name }}, NIPC {{ entity.nipc }}, para deliberar sobre a ordem de trabalhos abaixo transcrita, nos termos do artigo 63.º do Código das Sociedades Comerciais."
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Presidente da mesa",
+          "value": "{{ mesa.presidente }}"
+        },
+        {
+          "key": "Secretário(s)",
+          "value": "{{ mesa.secretarios | join(', ') }}"
+        }
+      ]
+    },
+    {
+      "kind": "KeyValue",
+      "rows": [
+        {
+          "key": "Sócios presentes",
+          "value": "{{ members_present }}"
+        },
+        {
+          "key": "Sócios representados",
+          "value": "{{ members_represented }}"
+        },
+        {
+          "key": "Referência à lista de presenças",
+          "value": "{{ attendance_reference }}"
+        }
+      ]
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if channel == 'Telematic' %}Para os efeitos do disposto no artigo 377.º do Código das Sociedades Comerciais, regista-se a seguinte prova da reunião telemática (autenticidade, segurança das comunicações e gravação do conteúdo e dos participantes): {{ telematic_evidence }}{% endif %}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Ordem de trabalhos"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "agenda",
+      "template": "{{ number }}. {{ text }}"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Texto proposto da deliberação"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Regista-se apenas o texto da proposta de deliberação sobre a revogação de poderes, conforme submetido à reunião."
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Nada mais havendo a tratar, foi encerrada a sessão, da qual se lavrou a presente ata que, depois de lida e aprovada, vai ser assinada."
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}
