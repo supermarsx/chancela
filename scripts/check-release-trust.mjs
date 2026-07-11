@@ -399,6 +399,9 @@ function validatePackageSummary(summary, { manifest, expectedMode }) {
     ["unsigned-dev", "production"],
     "release artifact.releaseTrust.mode",
   );
+  if ((mode === "production" || expectedMode === "production") && !manifest) {
+    fail("Production package validation requires --manifest");
+  }
   if (expectedMode && mode !== expectedMode) {
     fail(`release artifact.releaseTrust.mode must be ${expectedMode}, got ${mode}`);
   }
@@ -658,6 +661,274 @@ function expectFail(fn, expectedSubstring) {
   fail(`Expected failure containing "${expectedSubstring}"`);
 }
 
+function readRepoText(relativePath) {
+  const inputPath = path.join(repoRoot, relativePath);
+  try {
+    return fs.readFileSync(inputPath, "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  } catch (error) {
+    fail(`${relativePath}: unable to read workflow for static guard: ${error.message}`);
+  }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function requireTextIncludes(text, needle, message) {
+  if (!text.includes(needle)) fail(message);
+}
+
+function requireTextMatches(text, pattern, message) {
+  if (!pattern.test(text)) fail(message);
+}
+
+function requireTextNotMatches(text, pattern, message) {
+  if (pattern.test(text)) fail(message);
+}
+
+function requireJsonHeredoc(text, outputPath, label) {
+  const heredocPattern = new RegExp(
+    `cat\\s*>\\s*["']?${escapeRegExp(outputPath)}["']?\\s*<<\\s*(?<quote>['"]?)(?<marker>[A-Za-z_][A-Za-z0-9_]*)\\k<quote>[ \\t]*\\n(?<body>[\\s\\S]*?)\\n[ \\t]*\\k<marker>[ \\t]*(?:\\n|$)`,
+    "m",
+  );
+  const match = heredocPattern.exec(text);
+  if (!match?.groups?.body) {
+    fail(`${label} must write ${outputPath} with a static JSON heredoc`);
+  }
+
+  try {
+    return JSON.parse(match.groups.body.replace(/^\uFEFF/, ""));
+  } catch (error) {
+    fail(`${label} ${outputPath} heredoc must contain valid JSON: ${error.message}`);
+  }
+}
+
+function requireJsonPathValue(document, fieldPath, expected, label) {
+  const keys = fieldPath.split(".");
+  let current = document;
+
+  for (const [index, key] of keys.entries()) {
+    const currentPath = keys.slice(0, index).join(".") || "<root>";
+    if (!isRecord(current)) {
+      fail(`${label} must include object ${currentPath} before ${fieldPath}`);
+    }
+    if (!(key in current)) {
+      fail(`${label} must include ${fieldPath}`);
+    }
+    current = current[key];
+  }
+
+  if (current !== expected) {
+    fail(`${label} must keep ${fieldPath}=${expected}, got ${JSON.stringify(current)}`);
+  }
+}
+
+function workflowJobBlock(workflowText, workflowPath, jobName) {
+  const jobsMatch = /^jobs:\s*$/m.exec(workflowText);
+  if (!jobsMatch) fail(`${workflowPath}: missing top-level jobs block`);
+
+  const jobsText = workflowText.slice(jobsMatch.index);
+  const jobPattern = new RegExp(`^  ${escapeRegExp(jobName)}:\\s*(?:#.*)?$`, "m");
+  const jobMatch = jobPattern.exec(jobsText);
+  if (!jobMatch) fail(`${workflowPath}: missing jobs.${jobName} workflow guard target`);
+
+  const start = jobsMatch.index + jobMatch.index;
+  const afterJobHeader = workflowText.slice(start + jobMatch[0].length);
+  const nextJobMatch = /^\n  [A-Za-z0-9_-]+:\s*(?:#.*)?$/m.exec(afterJobHeader);
+  const end = nextJobMatch ? start + jobMatch[0].length + nextJobMatch.index : workflowText.length;
+  return workflowText.slice(start, end);
+}
+
+function requireWorkflowCommand(block, pattern, message) {
+  requireTextMatches(block, pattern, message);
+}
+
+function guardCiMetadataWorkflow(ciText) {
+  const metadataJob = workflowJobBlock(ciText, ".github/workflows/ci.yml", "metadata");
+
+  requireWorkflowCommand(
+    metadataJob,
+    /run:\s*node\s+scripts\/check-release-trust\.mjs\s+self-test\b/,
+    ".github/workflows/ci.yml jobs.metadata must run release trust validator self-test",
+  );
+  requireWorkflowCommand(
+    metadataJob,
+    /run:\s*node\s+scripts\/release-supply-chain\.mjs\s+self-test\b/,
+    ".github/workflows/ci.yml jobs.metadata must run SBOM package linkage self-test",
+  );
+  requireWorkflowCommand(
+    metadataJob,
+    /run:\s*node\s+scripts\/check-package-artifacts\.mjs\s+--fixture\s+--skip-dist\b/,
+    ".github/workflows/ci.yml jobs.metadata must run package provenance fixture checks",
+  );
+}
+
+function guardCiDockerWorkflow(ciText) {
+  const dockerJob = workflowJobBlock(ciText, ".github/workflows/ci.yml", "docker");
+  const dockerSigningStatus = requireJsonHeredoc(
+    dockerJob,
+    "dist/docker-security/chancela-server-signing-status.json",
+    ".github/workflows/ci.yml jobs.docker signing status",
+  );
+
+  requireTextIncludes(
+    dockerJob,
+    "uses: docker/build-push-action@v6",
+    ".github/workflows/ci.yml jobs.docker must build through docker/build-push-action",
+  );
+  requireTextMatches(
+    dockerJob,
+    /^\s+push:\s*false\s*$/m,
+    ".github/workflows/ci.yml jobs.docker must keep Docker push disabled",
+  );
+  requireTextMatches(
+    dockerJob,
+    /^\s+load:\s*true\s*$/m,
+    ".github/workflows/ci.yml jobs.docker must load the CI image locally",
+  );
+  requireTextMatches(
+    dockerJob,
+    /^\s+tags:\s*chancela-server:ci\s*$/m,
+    ".github/workflows/ci.yml jobs.docker must use the local chancela-server:ci image tag",
+  );
+  requireTextIncludes(
+    dockerJob,
+    "dist/docker-security/chancela-server-signing-status.json",
+    ".github/workflows/ci.yml jobs.docker must emit the Docker signing status artifact",
+  );
+  for (const [field, value] of [
+    ["imagePushed", "false"],
+    ["signingPerformed", "false"],
+    ["notarizationPerformed", "false"],
+    ["attestationPerformed", "false"],
+  ]) {
+    requireTextMatches(
+      dockerJob,
+      new RegExp(`"${field}"\\s*:\\s*${value}\\b`),
+      `.github/workflows/ci.yml jobs.docker signing status must keep ${field}=${value}`,
+    );
+  }
+  for (const [fieldPath, status] of [
+    ["releaseTrust.mode", "local-ci"],
+    ["releaseTrust.imagePublication.status", "not_pushed"],
+    ["releaseTrust.signing.status", "unsigned"],
+    ["releaseTrust.notarization.status", "not_applicable"],
+    ["releaseTrust.attestation.status", "not_attested"],
+  ]) {
+    requireJsonPathValue(
+      dockerSigningStatus,
+      fieldPath,
+      status,
+      ".github/workflows/ci.yml jobs.docker signing status",
+    );
+  }
+  requireWorkflowCommand(
+    dockerJob,
+    /node\s+scripts\/check-release-trust\.mjs\s+docker\s+--input\s+dist\/docker-security\/chancela-server-signing-status\.json\s+--expect-mode\s+local-ci\b/,
+    ".github/workflows/ci.yml jobs.docker must validate Docker trust metadata in local-ci mode",
+  );
+}
+
+function guardReleaseWorkflow(releaseText) {
+  const packageJob = workflowJobBlock(releaseText, ".github/workflows/release.yml", "package");
+
+  requireWorkflowCommand(
+    packageJob,
+    /run:\s*npm\s+run\s+test:package-integrity\b/,
+    ".github/workflows/release.yml jobs.package must run package artifact integrity checks",
+  );
+  requireTextMatches(
+    packageJob,
+    /releaseTrust\s*=\s*\[ordered\]@\{[\s\S]*?\bmode\s*=\s*'unsigned-dev'/,
+    ".github/workflows/release.yml jobs.package must emit releaseTrust.mode = unsigned-dev",
+  );
+  requireTextMatches(
+    packageJob,
+    /attestation\s*=\s*\[ordered\]@\{[\s\S]*?\bstatus\s*=\s*'not_attested'/,
+    ".github/workflows/release.yml jobs.package must mark package attestation not_attested",
+  );
+  requireWorkflowCommand(
+    packageJob,
+    /node\s+scripts\/check-release-trust\.mjs\s+package[\s\S]*--expect-mode\s+unsigned-dev\b/,
+    ".github/workflows/release.yml jobs.package must validate release trust metadata in unsigned-dev mode",
+  );
+  requireWorkflowCommand(
+    packageJob,
+    /node\s+scripts\/release-supply-chain\.mjs\s+sbom\s+--output\s+\$sbomPath\s+--package\s+'?\$\{\{\s*steps\.collect\.outputs\.package\s*\}\}'?/,
+    ".github/workflows/release.yml jobs.package must generate the SBOM with --package linkage",
+  );
+  requireWorkflowCommand(
+    packageJob,
+    /node\s+scripts\/release-supply-chain\.mjs\s+check\s+--input\s+\$sbomPath\s+--package\s+'?\$\{\{\s*steps\.collect\.outputs\.package\s*\}\}'?/,
+    ".github/workflows/release.yml jobs.package must check the SBOM with --package linkage",
+  );
+}
+
+function guardNoProductionReleaseClaims(workflowTexts) {
+  const combined = workflowTexts
+    .map(({ path: workflowPath, text }) => `\n# ${workflowPath}\n${text}`)
+    .join("\n");
+  const forbiddenPatterns = [
+    [
+      /\breleaseTrust\b[\s\S]{0,400}?\bmode\s*=\s*['"]production['"]/i,
+      "workflow releaseTrust metadata must not claim production mode",
+    ],
+    [
+      /\breleaseTrust\b[\s\S]{0,400}?\b["']mode["']\s*:\s*["']production["']/i,
+      "workflow releaseTrust metadata must not claim production mode",
+    ],
+    [
+      /\bstatus\s*=\s*['"](?:signed|notarized|attested|pushed)['"]/i,
+      "workflow trust metadata must not claim signed, notarized, attested, or pushed status",
+    ],
+    [
+      /\b["']status["']\s*:\s*["'](?:signed|notarized|attested|pushed)["']/i,
+      "workflow trust metadata must not claim signed, notarized, attested, or pushed status",
+    ],
+    [
+      /\b["'](?:imagePushed|signingPerformed|notarizationPerformed|attestationPerformed)["']\s*:\s*true\b/i,
+      "workflow Docker trust metadata must not claim push, signing, notarization, or attestation was performed",
+    ],
+    [
+      /^\s*(?:id-token|attestations):\s*write\s*$/im,
+      "workflow permissions must not enable OIDC signing or artifact attestations",
+    ],
+    [
+      /^\s*push:\s*true\s*$/im,
+      "workflow Docker build configuration must not enable registry push",
+    ],
+    [
+      /uses:\s*(?:docker\/login-action|actions\/attest-build-provenance|slsa-framework\/|sigstore\/)/i,
+      "workflow must not introduce registry login, signing, or attestation actions",
+    ],
+    [
+      /\b(?:docker\s+(?:login|push)|cosign\s+(?:sign|attest)|gh\s+attestation|notarytool|stapler|codesign|signtool|osslsigncode)\b/i,
+      "workflow must not introduce production signing, notarization, registry, or attestation commands",
+    ],
+    [
+      /\b(?:ghcr\.io|docker\.io|quay\.io|gcr\.io|pkg\.dev|ecr\.)\b/i,
+      "workflow must not introduce a production registry target",
+    ],
+  ];
+
+  for (const [pattern, message] of forbiddenPatterns) {
+    requireTextNotMatches(combined, pattern, message);
+  }
+}
+
+function guardWorkflowWiring() {
+  const ciText = readRepoText(".github/workflows/ci.yml");
+  const releaseText = readRepoText(".github/workflows/release.yml");
+
+  guardCiMetadataWorkflow(ciText);
+  guardCiDockerWorkflow(ciText);
+  guardReleaseWorkflow(releaseText);
+  guardNoProductionReleaseClaims([
+    { path: ".github/workflows/ci.yml", text: ciText },
+    { path: ".github/workflows/release.yml", text: releaseText },
+  ]);
+}
+
 function runSelfTest() {
   const { summary, manifest } = devPackageFixture();
   validatePackageSummary(summary, {
@@ -666,12 +937,75 @@ function runSelfTest() {
   });
   validateDockerStatus(localDockerFixture(), { expectedMode: "local-ci" });
   validateDockerStatus(productionDockerFixture(), { expectedMode: "production" });
+  guardWorkflowWiring();
+
+  expectFail(
+    () =>
+      requireJsonPathValue(
+        {
+          status: "unsigned",
+          releaseTrust: {
+            signing: {
+              reason: "Generic status fields must not satisfy nested Docker trust paths.",
+            },
+          },
+        },
+        "releaseTrust.signing.status",
+        "unsigned",
+        "self-test Docker signing status",
+      ),
+    "releaseTrust.signing.status",
+  );
 
   const productionUnsigned = structuredClone(summary);
   productionUnsigned.releaseTrust.mode = "production";
   expectFail(
     () => validatePackageSummary(productionUnsigned, { manifest, expectedMode: "production" }),
     "must be signed in production mode",
+  );
+
+  const productionWithoutManifest = structuredClone(summary);
+  productionWithoutManifest.releaseTrust.mode = "production";
+  productionWithoutManifest.releaseTrust.codeSigning = {
+    status: "signed",
+    signer: "Example Production Signer",
+    evidence: {
+      certificateSha256: "c".repeat(64),
+      workflowRunUrl: "https://github.com/example/chancela/actions/runs/123456789",
+    },
+  };
+  productionWithoutManifest.releaseTrust.attestation = {
+    status: "attested",
+    evidence: {
+      predicateType: "https://slsa.dev/provenance/v1",
+      digest: `sha256:${"d".repeat(64)}`,
+      workflowRunUrl: "https://github.com/example/chancela/actions/runs/123456789",
+    },
+  };
+  expectFail(
+    () =>
+      validatePackageSummary(productionWithoutManifest, {
+        manifest: undefined,
+      }),
+    "Production package validation requires --manifest",
+  );
+  expectFail(
+    () =>
+      validatePackageSummary(productionWithoutManifest, {
+        manifest: undefined,
+        expectedMode: "unsigned-dev",
+      }),
+    "Production package validation requires --manifest",
+  );
+
+  const expectedProductionWithoutManifest = structuredClone(summary);
+  expectFail(
+    () =>
+      validatePackageSummary(expectedProductionWithoutManifest, {
+        manifest: undefined,
+        expectedMode: "production",
+      }),
+    "Production package validation requires --manifest",
   );
 
   const missingEvidence = structuredClone(summary);

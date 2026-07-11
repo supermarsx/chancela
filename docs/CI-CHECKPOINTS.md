@@ -30,15 +30,23 @@ provider validity or authority approval.
 recently landed work that crosses Rust API tests, data key preflight guards,
 guardrail acknowledgements, written-resolution evidence status binding, trust
 parsing, declared signer-capacity evidence preservation, live-provider static
-assurance, MCP resource/prompt coverage, web fixtures, ASiC structural
-diagnostic markers, registry chronology graph markers, PDF writer spacing and
-PDF/UA blocker-decomposition markers, archive timestamp append markers,
+assurance, MCP resource/prompt coverage including workflow provenance review
+guidance, web fixtures, ASiC structural diagnostic markers, registry chronology
+graph markers, PDF writer spacing and PDF/UA blocker-decomposition markers,
+archive timestamp append markers,
 paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
 creation plus focused paper-book OCR review browser workflow markers,
+retention duplicate review-only request guards and queued-review status surfacing,
+retained-export cleanup dry-run planning, forwarded platform-log sanitized
+accepted/denied/rejected/suppressed audit markers, post-act template
+sealed-provenance lint, all-family standalone agenda-item templates,
 recovery/document/dashboard/notification
-UI, Ferramentas external-validator metadata UI and compact validator-report
-actions, template provenance UI, validator fixtures, and the standalone desktop
-Cargo workspace.
+UI, Ferramentas external-validator metadata UI, raw-report byte download API,
+imported-document review receipt UI, trust identifier-match explanations, and
+read-only local DGLAB interchange manifest API and BookDetail JSON-download
+markers,
+compact validator-report actions, template provenance UI, validator fixtures, and
+the standalone desktop Cargo workspace.
 
 It intentionally reuses existing test surfaces:
 
@@ -50,7 +58,14 @@ It intentionally reuses existing test surfaces:
   executed in browser jobs.
 - API archive package and `/DocTimeStamp` evidence:
   `cargo test -p chancela-api --test archive_package --locked`
-- API external-validator report metadata, including raw metadata download:
+  including the read-only local DGLAB interchange manifest endpoint and
+  `book.export@Book` gate.
+- Web BookDetail local DGLAB JSON download:
+  `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
+  including the direct `GET /v1/books/{id}/archive/local-dglab-interchange-manifest`
+  call, `.json` save behavior, and no ZIP/export/archive mutation.
+- API external-validator report metadata, including raw metadata and raw-report
+  byte downloads:
   `cargo test -p chancela-api --locked external_validator_report_metadata`
 - Live-provider assurance static gate:
   `npm run check:live-provider-assurance`
@@ -58,12 +73,16 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test local_pkcs12_signing --locked`
 - API bounded retention execution:
   `cargo test -p chancela-api --test privacy --locked retention_`
+- API retained-export cleanup dry-run:
+  `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
   `cargo test -p chancela-api --test data_key_ops --locked`
 - API official signed-PDF handoff guardrail acknowledgement:
   `cargo test -p chancela-api --test official_signature_import --locked official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
 - MCP resource/prompt coverage: `cargo test -p chancela-mcp --locked`
+- Template catalog metadata/semantic lint:
+  `cargo test -p chancela-templates --locked`
 - Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/settings/signing/templates/i18n/subnav
   matrix:
   `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/books/books.test.tsx src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/entities/entities.test.tsx src/features/ferramentas/ferramentas.test.tsx src/features/ferramentas/trust.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/settings/SettingsPage.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts src/ui/SubNav.test.tsx`
@@ -89,10 +108,24 @@ caller-supplied archive timestamp append API markers, dashboard current-work
 summary caps/hidden-count markers, registered-entity single-line table and
 filter no-overflow markers, books filter/table no-overflow markers, platform
 service/control desired-state markers, encrypted-build-default markers, external-validator
-metadata API durability markers, the settings.read raw metadata download
+metadata API durability markers, the settings.read raw metadata and raw-report
+byte download
 route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
+retention due-candidate duplicate-review and queued-status UI markers,
 locale keys, and non-destructive payload assertions, Ferramentas
 panel/client/i18n markers including compact validator-report actions,
+imported-document review receipt markers for pending/reviewed states and
+no-extra-route behavior, trust identifier-match explanation/copy-safe hash and
+SKI markers,
+retained-export `would_delete_*`/zero-`deleted_*` dry-run planning markers,
+preview-only Settings payload/no-files-removed markers, post-act
+`Certidao`/`Extrato` `ata_number`/`payload_digest` template lint markers,
+standalone agenda-item template IDs, rendering markers, and the 101-template
+census, CSC delegation/revocation template IDs/rendering markers, forwarded
+platform-log missing/invalid-bearer unaudited markers, authenticated
+RBAC-denied/rejected/malformed/suppressed sanitized audit markers, local DGLAB
+manifest route/permission/read-only/no-persisted-bytes/no-ZIP-member/no-ledger
+markers plus BookDetail JSON-save markers,
 live-provider assurance markers, validator manifest,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
@@ -100,10 +133,17 @@ imported-document review notification/export browser E2E marker; Playwright
 execution remains in the browser jobs so this recent-landed lane stays focused.
 Static markers are deletion/rename guards only; they do not certify legal
 validity, legal retention schedules or approvals, retention deletion or
-anonymization execution, GDPR erasure, PDF/UA, XAdES validation, ASiC trust/LTV
+anonymization/redaction execution, retention execution completion,
+GDPR erasure, template legal effect, DRE
+verification, verified law references, legal thresholds, external
+registry/provider behavior, signing-process behavior, official DGLAB export,
+government filing, DGLAB/legal-archive/PDF-A/PAdES/PDF-UA certification, PDF/UA,
+XAdES validation, ASiC trust/LTV
 or legal validity, production B-LT/B-LTA, SCAP verification, representative
-authority, live provider validity, canonical OCR conversion, or legal effect for
-mutable draft acts created from accepted OCR drafts.
+authority, live provider validity, canonical OCR conversion, imported-document
+legal acceptance, raw external-validator legal/trust/certification validation,
+trust-list legal validity, provider approval, or legal effect for mutable draft
+acts created from accepted OCR drafts.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 
@@ -124,18 +164,29 @@ The CI `supply-chain` job now generates and validates a CycloneDX dependency
 SBOM from the committed npm and Cargo lockfiles. It uploads that SBOM together
 with npm and Cargo vulnerability reports under `chancela-supply-chain-reports-*`.
 
-`node scripts/check-release-trust.mjs self-test` and
-`node scripts/check-package-artifacts.mjs --fixture --skip-dist` are part of
-the cheap CI metadata lane. `npm run check:encrypted-build-defaults` is also in
+`node scripts/check-release-trust.mjs self-test` statically verifies that the CI
+metadata lane keeps release-trust, SBOM package-linkage, and package provenance
+fixture checks; that the Docker job stays no-push/local-load with `local-ci`
+trust status and `--expect-mode local-ci`; and that the release workflow runs
+package integrity, emits `releaseTrust.mode = unsigned-dev` and
+`attestation.status = not_attested`, validates `--expect-mode unsigned-dev`, and
+runs SBOM package linkage. Production package validation now requires
+`--manifest` whenever either the package mode or expected mode is `production`;
+the self-test covers both signals independently. The Docker trust JSON checks
+preserve nested path context for
+`releaseTrust.imagePublication/signing/notarization/attestation.status`.
+`node scripts/check-package-artifacts.mjs --fixture --skip-dist` is also part of
+the cheap CI metadata lane. `npm run check:encrypted-build-defaults` remains in
 that lane; it statically checks that release package, Docker server, and desktop
 package builds opt into the existing `sqlcipher` feature while dev/test commands
 remain explicit plaintext/no-SQLCipher paths. Release packaging then validates
 each generated `*-release-artifact.json` plus package manifest in explicit
 `unsigned-dev` mode, including a source SHA cross-check against
 `manifest.sourceProvenance.commitSha`. Docker CI validates
-`chancela-server-signing-status.json` in explicit `local-ci` mode. Switch those
-checks to `production` only when signing, notarization, registry publication,
-and attestation evidence are actually generated.
+`chancela-server-signing-status.json` in explicit `local-ci` mode. This is
+static workflow assurance only; switch those checks to `production` only when
+signing, notarization, registry publication, and attestation evidence are
+actually generated.
 
 After `npm run package`, run `npm run test:package-integrity` to validate the
 generated `dist/chancela-*.tar.gz` archive and staged package directory. The

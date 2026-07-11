@@ -1,8 +1,24 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-10 from the current CI configuration and head `2c88b90`. This
-plan is the build and test operating checklist for driving Chancela toward
-release confidence.
+Updated 2026-07-11 from the current CI configuration and head `3e72e08`, plus
+the current working-tree coverage notes for the bounded PAdES DSS
+validation-time, PDF/UA v6 structural-depth, retention due-candidate review
+request plus duplicate-review guard/status surfacing, recovery-drill custody
+receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI,
+CSC quota/delegation/revocation and standalone agenda-item template parity,
+retained-export cleanup dry-run planning, post-act template sealed-provenance lint,
+external-signing workflow-only envelope UI, workflow reminder policy, and
+structured platform-log forwarded-ingest/failure-audit slices, plus data-status
+sidecar classification, read-only local DGLAB interchange manifest API
+scaffolding and BookDetail JSON download,
+richer Ata editor AI statement-source provenance rendering, explicit external-validator raw
+report upload UI guardrails, the raw external-validator raw-report byte download
+API, the MCP workflow provenance review aid, imported-document review receipt UI,
+trust catalog identifier-match explanations, plus local ASiC inspection endpoint
+and ASiC ZIP decompression-bound coverage, plus release workflow static
+assurance for the unsigned/local-only trust posture and production-package
+manifest-required validation. This plan is the build and
+test operating checklist for driving Chancela toward release confidence.
 
 ## Goals
 
@@ -52,6 +68,11 @@ release confidence.
 - The Docker lane applies OCI image labels and uploads image inspect metadata,
   report-only Syft/Trivy artifacts, and an explicit JSON status saying the local
   CI image was not pushed, signed, or attested.
+- The release-trust self-test statically verifies workflow wiring for the
+  unsigned/local-only trust posture: metadata checks, Docker no-push/local-load
+  `local-ci` status, package `unsigned-dev` / `not_attested` metadata, and SBOM
+  package linkage. This is static assurance only, not signing, notarization,
+  registry publishing, Docker attestation, or a production trust claim.
 - Package/release artifacts carry manifests and checksums where configured, but
   current release packages are not signed or notarized.
 - Windows desktop smoke runs on pushes to `main` or PRs labeled
@@ -70,13 +91,172 @@ release confidence.
   crash reports and retained exports plus SQLite logical usage estimates,
   including per-table logical payload entries surfaced in the web UI. Treat it
   as storage maintenance coverage, not legal data-lifecycle certification.
+  The retained-export action now uses export-only dry-run planning for the
+  Settings preview: `would_delete_*` counters are reported while `deleted_*`
+  counters stay zero, and the preview copy states that no files were removed.
+- Data-status filesystem classification now groups `platform-logs.json` as
+  `platform_logs` and `backup-recovery-drills.json` as
+  `backup_recovery_drills` while preserving durable permission/status behavior.
+  Treat this as telemetry classification only, not cleanup, retention execution,
+  deletion, legal custody proof, or data-lifecycle certification.
+- The current restore preflight slice is non-destructive evidence only: API/store
+  verify the archive manifest, every manifest-listed member digest, and ledger
+  integrity from an isolated snapshot, while the web UI exposes bounded
+  manifest/evidence before destructive restore. Treat these checks as restore
+  material screening, not restore execution, DR readiness, custody proof,
+  encryption proof, or legal archive certification.
+- The current backup recovery-drill slice records preflight-only receipts through
+  `POST`/`GET /v1/backup/recovery-drills`. The API calls the existing restore
+  preflight path, persists only bounded sidecar evidence (archive reference,
+  preflight ok/ready/encrypted, ledger verified, manifest counts/bytes/schema/
+  ledger length, optional operator notes/custody location), rejects true
+  overclaim flags, and the web action clears the transient passphrase while
+  preserving exact bytes on submit. Treat this as operator receipt evidence, not
+  live restore, DB swap, sidecar staging, ledger restore append, data deletion,
+  off-site custody proof, RPO/RTO certification, production backup policy, or
+  legal archive certification.
 - Release and package builds now opt into SQLCipher features by default where the
   supported package scripts and CI metadata require it. Treat this as encrypted
   build-default coverage, not proof of operator key custody, migration success,
   or deployed encrypted data at rest.
 - Platform operations expose API-owned structured status/control/logging
-  contracts. They do not prove real supervisor-backed start/stop/restart,
-  historical stdout/stderr tailing, or child-process log forwarding.
+  contracts plus `POST /v1/platform/logs/forwarded` for bounded structured
+  forwarded entries. The ingest route is gated by non-meta
+  `platform.logs.write@Global`, seeded freshly only to Owner and Platform
+  Administrator while API Client remains excluded by default, and older
+  customized Platform Administrator roles may need an explicit admin update
+  after upgrade because persisted non-Owner seeded roles are not forcibly
+  reconciled on load. It reuses the platform log ring, threshold/off
+  suppression, persistence/retention, and GET tail behavior. Accepted retained
+  forwarded entries append sanitized `platform.log.forwarded.accepted` ledger
+  events with retained log id/seq/timestamp, service_id, level, target, message
+  length/SHA-256, and context key count/serialized size when context is present;
+  raw message/context/stdout/stderr/body/secrets stay out of the ledger event.
+  Authenticated RBAC denial, malformed JSON, rejected structured payloads, and
+  threshold/global/service-off suppression append sanitized
+  `platform.log.forwarded.denied`, `.rejected`, or `.suppressed` route-outcome
+  audits, while missing or invalid bearer requests remain unaudited. Failure
+  audits carry no raw body, message, context keys, parse errors, stdout, stderr,
+  tokens, secrets, or user strings, and the accepted audit remains single.
+  Internal logging callers still ignore the returned `Option`. Treat it as
+  structured ingress plus bounded accepted/failure audit markers only:
+  no process lifecycle control, no stdout/stderr tailing/capture, no production
+  supervisor/SIEM/HA/observability guarantee, no generalized observability sink,
+  no log retention/deletion semantics, and no legal/compliance claim.
+- The current template slice expands the embedded catalog to 101 JSON assets
+  (101 total / 41 CSC) with standalone representation/proxy instruments,
+  `ponto-ordem-trabalhos/v1` Convocatoria standalone agenda-item templates, and
+  book-transport continuation terms for all supported families, including the
+  company carta de representacao boundary, plus
+  `csc-ata-divisao-quotas/v1` and `csc-ata-unificacao-quotas/v1` matching the
+  sibling CSC quota Ata channels, rule-pack, signature-policy hint, and majority
+  threshold marker, plus `csc-ata-delegacao-poderes/v1` and
+  `csc-ata-revogacao-poderes/v1` as proposed-resolution text only with no new
+  threshold marker. It also normalizes notice-template rendering of
+  TPL-20 dispatch proof fields from `convening.recipients` across all supported
+  families and pins all-family attendance-list rendering of structured attendee
+  and proxy evidence, including CSC capital and condominium permilagem markers.
+  Treat the focused `chancela-templates` tests and recent-landed static markers
+  as catalog consistency checks only, not legal review of template wording,
+  thresholds, law references, channel suitability, quota legal sufficiency,
+  delegation/revocation legal sufficiency or authority verification, dispatch or
+  attendance sufficiency, agenda-item legal sufficiency, registry submission,
+  signing-process effect, external registry/provider behavior, or book-transport
+  legal effect. The quota template law references remain Pending/non-authoritative;
+  no DRE verification, legally verified threshold value, external registry/provider,
+  signing-process, or new law-source claim is added.
+  Current post-act semantic lint also requires `Certidao`/`Extrato` authored
+  `BlockSpec` template references to sealed-act `ata_number` and
+  `payload_digest`; this is a test/build-time consistency guard only and does
+  not change asset wording or add legal-effect claims.
+- The current external-validator slice adds bounded digest-verified raw report
+  byte attachments to technical metadata capture/list/download, document-bundle
+  indexes, archive package evidence members, and the Ferramentas operator UI.
+  The UI keeps manual JSON metadata upload working, computes filename/type/size/
+  digest/provenance locally when a raw report file is selected, does not upload
+  on selection, and sends `raw_report.content_base64` plus `content_type`,
+  `size_bytes`, `sha256`, and safe `source_filename` only on explicit upload.
+  The follow-on raw-report byte API exposes `GET
+  /v1/external-validator-reports/{case_id}/{validator_family}/raw-report` to
+  `settings.read` actors only, returns retained raw bytes with attachment
+  headers, returns 404 for missing or manifest-only reports, and fails closed for
+  unsafe identities, malformed sidecars, and duplicate/ambiguous identities.
+  List/create remain redacted and the web UI does not render raw bytes.
+  Treat the API/archive/web tests and static markers as preservation/fixity
+  coverage only, not external-validator legal acceptance, certification,
+  PDF/UA/PAdES certification, compliance proof, live trust validation, or full
+  report replay.
+- The current MCP workflow provenance slice adds the static
+  `workflow_provenance_review_checklist` prompt and
+  `chancela://mcp/workflow-provenance-review` resource as offline review aids.
+  They accept no arguments, include no secrets, make no bridge/API/provider
+  calls, and keep legal-validity, source-certification, provider, trust,
+  external, archive-certification, and signature-qualification flags false. Treat
+  them as human review guidance only, not AI/MCP completion, source
+  certification, trust validation, or provider/legal assurance.
+- The current imported-document receipt slice derives a `Recibo de revisão`
+  panel from the existing imported-document view. Pending rows show no fake
+  receipt, while reviewed rows show status, reviewer, time, note, required and
+  acknowledged guardrails, plus no-claim rows for OCR, conversion, canonical
+  PDF/A replacement, signed artifact creation/validation, and legal acceptance.
+  Treat this as display of existing review metadata only: no new routes, schema,
+  mutations, downloads, OCR, conversion, canonical replacement, signed artifact,
+  or legal acceptance.
+- The current trust catalog identifier-match slice adds optional
+  `identifier_match` fields to identifier-filtered TSL/TSA rows and renders
+  technical match explanations in Ferramentas while preserving strict complete
+  SHA-256/SKI lookup behavior and full-value copy actions. Treat this as
+  technical catalog visibility only, not legal validity, certificate trust,
+  provider approval, external validation, qualified-status, or trust-list
+  certification.
+- The current local DGLAB interchange slice exposes read-only `GET
+  /v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by
+  `book.export@Book`, to derive a deterministic local
+  `LocalDglabInterchangeManifest` JSON scaffold from an existing internal
+  preservation `PackageManifest`. It keeps official-DGLAB/certification/approval/
+  legal-archive/destructive-disposal flags forced false. BookDetail adds a local
+  JSON save action that calls the same GET endpoint and saves `.json` metadata
+  without calling the package/export/archive mutation paths. Treat this as local
+  metadata scaffold coverage only: no official DGLAB export, government filing,
+  ZIP sidecar member, import flow, package validation change, persisted package
+  bytes, ledger event, disposal path, legal archival certification,
+  PDF/A/PAdES/PDF-UA certification, authority approval, or legal archive claim.
+- The current paper-book OCR conversion-dossier slice exposes the existing
+  API/store flow on BookDetail: accepted OCR drafts can create/list
+  non-canonical metadata-only dossiers, existing dossiers render without a
+  duplicate create affordance, creation is operator-triggered only for accepted
+  OCR drafts without a dossier, mutable draft-act creation remains separate,
+  no-claim flags/notices render, and raw OCR text is not shown from dossier
+  responses. Treat it as review metadata UI evidence only, with no automatic
+  POST and no canonical paper-book conversion, act/document/PDF/signature/seal/
+  archive creation, or legal-validity claim.
+- The current external signer linked-invite/UI slice lets operators list and
+  create workflow-only external-signing envelopes from SigningPanel, with order
+  policy, signer slots, slot labels/statuses, identity requirements, completion
+  summary, and the backend no-legal/no-qualified notice. Invite creation can
+  optionally link to an envelope slot, sends `external_envelope_id` /
+  `external_slot_id` only when selected, preserves the tracking-only payload
+  when unselected, and renders later sequential-slot 409s as safe operational
+  messages without raw backend/token-like detail, including after slot selection
+  changes. Ferramentas maps `workflow: external_envelope` to localized copy in
+  rows and token lookup. Treat this as operational tracking only, not provider
+  signing, PIN/OTP/passphrase collection, evidence capture, slot signing,
+  envelope completion UI, public token exposure, legal completion, or qualified
+  status.
+- The current ASiC inspection slice exposes `POST /v1/signature/asic/inspect`
+  for read-only local technical profile inspection of a base64 ASiC ZIP with
+  optional filename, declared size, and declared SHA-256. Focused API and
+  signing-crate tests pin fixity/base64/malformed-ZIP/unsafe-path validation,
+  profile shape, bounded profile, blockers, member paths, manifest diagnostics,
+  signature diagnostics, no-claim fields, local CAdES validation only for
+  blocker-free bounded ASiC-S/CAdES and ASiC-E/CAdES candidates, structured
+  ASiC-XAdES unsupported diagnostics with no XAdES validation, and actual
+  decompressed-size caps across payloads, manifests, CAdES signatures, XAdES
+  signatures, unsupported `META-INF`, and other non-directory members. Treat
+  this as local technical inspection only: no signing, storage, archive
+  mutation, live provider calls, TSA/TSL/OCSP/CRL fetching, trust anchoring,
+  XAdES validation, legal validity, QES, B-LT/B-LTA, eIDAS legal-effect, or
+  production ASiC compliance claim.
 
 ## Last Broad Local Verification Snapshot
 
@@ -218,9 +398,17 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - Global logging level `off` suppresses service log output even if stale
   per-service overrides remain stored; explicit service overrides take effect
   only when the global/area level allows logging.
+- `POST /v1/platform/logs/forwarded` accepts only `service_id`, non-`off`
+  `level`, `target`, `message`, and bounded optional `context`; rejects unknown
+  services, unknown fields, raw `stdout`/`stderr` fields, blank/oversized values
+  or context, and stream or secret-like context keys; writes accepted entries
+  only when global/service thresholds allow them; and appends sanitized ledger
+  events only for accepted retained entries.
 - Storage cleanup presents crash reports and retained exports as separate
   bounded maintenance rows, rejects unknown cleanup targets, and preserves
-  permission/usage diagnostics after a failed cleanup.
+  permission/usage diagnostics after a failed cleanup. Retained-export dry-run
+  preview reports `would_delete_*`, keeps `deleted_*` at zero, and must not
+  delete files or accept those policy fields for crash cleanup.
 - SQLCipher package defaults are checked statically, and plaintext development
   paths remain explicit so local tests do not silently claim production
   encrypted deployment.
@@ -267,6 +455,13 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - Arbitrary-PDF validation handles multiple signatures, missing ByteRange,
   mismatched DSS/VRI entries, future DocTimeStamp values, and tampered DSS-only
   evidence without turning local diagnostics into a qualified-signature decision.
+- ASiC inspection accepts only a bounded base64 ASiC ZIP envelope, checks
+  declared size/SHA-256, malformed ZIPs, and unsafe member paths, reports local
+  profile/member/manifest/signature diagnostics, runs CAdES validation only for
+  blocker-free bounded ASiC-S/CAdES or ASiC-E/CAdES candidates, keeps ASiC-XAdES
+  unsupported with `xades_validation_performed=false`, and enforces actual
+  decompressed-size limits without making live trust, legal, or production ASiC
+  compliance claims.
 
 ### Imports and Search
 
@@ -282,7 +477,13 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   malformed e-mail/contact fields, and per-entity conflict review before
   overwriting locally curated profile data.
 - MCP `draft_minutes` creates only draft act records, rejects missing/unknown
-  arguments before HTTP, and never treats generated text as legal minutes.
+  arguments before HTTP, injects deterministic `ai_provenance.statement_sources[]`
+  rows into MCP/API draft creation, and never treats generated text as legal
+  minutes. API persistence clamps unsafe statement-row human-verified,
+  authoritative-source, and legal-validity claims false, and the Ata editor AI
+  review panel renders grouped counts by `source_type`, row path/type/label/
+  status, conservative false/no-claim flags, and missing/null fallbacks as
+  review evidence only.
 - Core weighted-voting checks cover complete capital/permilage attendance
   metadata, mismatched aggregate tallies, partial-weight warnings, and
   unweighted fallback paths.
@@ -316,10 +517,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `2c88b90`
+## Focused Gate Snapshot Through `3e72e08`
 
 Historical focused checks from the active director loop, refreshed on
-2026-07-10 for current head `2c88b90`. This is not an exhaustive current
+2026-07-10 for current head `3e72e08`. This is not an exhaustive current
 green-run claim; browser, Docker, desktop, package signing/notarization, image
 signing/attestation, and live-provider limits above still apply.
 
@@ -417,6 +618,27 @@ settingsDefaults.test.ts contracts.test.ts`.
   chancela-api -- --check`, `cargo test -p chancela-api platform_ --locked`,
   `cargo check -p chancela-api --locked`, and `cargo clippy -p chancela-api
   --locked --all-targets -- -D warnings` passed.
+- Current working-tree structured platform-log ingestion checks: focused
+  `cargo test -p chancela-api --locked platform_logs_forwarded` coverage pins
+  `POST /v1/platform/logs/forwarded` route behavior, write-permission auth,
+  tail visibility, data-dir persistence/reload, global/service `off`
+  suppression without sidecar writes, and strict request validation for unknown
+  services, `off`, unknown fields, raw `stdout`/`stderr`, blank/oversized
+  values/context, and secret-like context keys, plus sanitized
+  `platform.log.forwarded.accepted` ledger events for accepted retained forwards
+  and sanitized `platform.log.forwarded.denied`, `.rejected`, and `.suppressed`
+  ledger audits for authenticated RBAC denial, rejected structured/malformed
+  payloads, and threshold/global/service-off suppression. Missing/invalid bearer
+  requests stay unaudited, accepted retained forwards still produce one accepted
+  audit, and the audit payloads avoid raw body/message/context keys/parse errors/
+  stdout/stderr/tokens/secrets/user strings. Focused `cargo test -p
+  chancela-authz --locked platform_log_write_is_seeded_only_to_owner_and_platform_admin`
+  coverage pins fresh seeded `platform.logs.write` defaults for Owner and
+  Platform Administrator only, excluding API Client. This remains a bounded API
+  log-tail ingress check only: no lifecycle control, stdout/stderr capture,
+  production supervisor/SIEM/HA/observability proof, generalized observability
+  sink, log retention/deletion semantics, or legal/compliance claim is
+  implemented.
 - Recent web focused checks through `3f19872`: books, notification popup/page,
   storage settings, ESLint, Prettier, `npm run check:spec-coverage`,
   `node --check scripts/checkpoint-recent-landed.mjs`, and `npm run
@@ -428,6 +650,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   Settings user create/edit email, Ata signatory email, and Data Management
   cleanup-row/retained-export target coverage are the focused UI checks for the
   latest web slices, alongside Prettier and ESLint.
+- Current working-tree retained-export cleanup dry-run checks: focused API/core
+  markers pin export dry-run `would_delete_files`, `would_delete_directories`,
+  and `would_delete_bytes` planning with `deleted_files`, `deleted_directories`,
+  and `deleted_bytes` all zero and retained files preserved. Focused Settings
+  Data Management markers pin the preview-only `{ target: "exports", dry_run:
+  true, minimum_age_days: 30, keep_latest: 5 }` payload and no-files-removed
+  result copy. Crash cleanup continues to reject export policy fields. This is
+  planning/preview coverage only, not GDPR erasure, legal disposal,
+  anonymization/redaction completion, retention execution, or a deletion claim.
 - Recent trust-source provider checks through `fa57352`: focused
   `SettingsPage.test.tsx` trust-source/TSA-provider coverage, i18n locale
   catalog validation, Prettier, and ESLint are the focused web checks for
@@ -436,10 +667,14 @@ settingsDefaults.test.ts contracts.test.ts`.
   trust tests pin the `trust-accepted-hash` wrapper, copyable truncated accepted
   TSA hash behavior, and labelled `Registos TSA` result grouping without making
   live trust-network calls.
-- Recent PDF accessibility checks through `fdb9376`: focused document tests pin
-  `accessibility_page_breaks_do_not_require_decorative_accounting` and the
-  `emits_decorative_artifact_block` boundary so page breaks no longer require
-  decorative artifact accounting while `pdf_ua_claimed` stays false.
+- Current working-tree PDF accessibility checks: focused document tests pin
+  accessibility report JSON version 6, structural-depth evidence, bounded local
+  topology facts, writer-owned decorative artifact accounting for the header
+  rule, explicit rules, vote-table rules, and signature lines, plus the
+  `accessibility_page_breaks_do_not_require_decorative_accounting` boundary so
+  page breaks stay excluded. `LimitedTaggedStructure` remains machine-visible
+  while `pdf_ua_claimed` stays false and no PDF/UA certification claim or
+  `pdfuaid` metadata is emitted.
 - Recent export-save checks through `ff1823a`: focused browser E2E pins
   `installCancelledBrowserSavePicker`, the visible `Guardar cancelado` result,
   preserved save-picker options, no browser-download fallback, and no mutation
@@ -462,6 +697,13 @@ settingsDefaults.test.ts contracts.test.ts`.
   `DataUsageConcern.kind`, contract tolerance, `sqlite_logical_table` fixture
   rows, `data-status-sqlite-table-list` / row DOM and CSS markers, plus
   prettier/eslint and scoped `git diff --check`.
+- Current working-tree data-status sidecar classification checks: focused API
+  markers pin `data_status_concern_classification_covers_known_roots` and
+  `/v1/data/status` filesystem concerns for `platform-logs.json` as
+  `platform_logs` and `backup-recovery-drills.json` as
+  `backup_recovery_drills`. These checks preserve durable permission/status
+  behavior and classify sidecar usage only; they do not add deletion, retention
+  execution, legal custody proof, or data-lifecycle certification.
 - Recent keyed PAdES VRI `/TU` checks through `76fc229`: worker validations
   passed `cargo fmt`, `cargo test -p chancela-pades`,
   `cargo test -p chancela-api pdf_signature`,
@@ -471,27 +713,331 @@ settingsDefaults.test.ts contracts.test.ts`.
   `has_vri_tu_for_key`, keyed API signature/PDF validation payloads, and
   multi-signature renewal planning for the specific VRI key without claiming
   production/legal PAdES-LT/LTA completion.
+- Current working-tree PAdES DSS validation-time checks: focused
+  `cc_signing` and `chancela-pades` tests pin caller-supplied
+  `validation_time` on local DSS attach, DSS VRI `/TU` emission from local
+  caller-supplied evidence, malformed-time rejection without digest or audit
+  mutation, and local renewal-plan movement to document timestamp and
+  `monitor_timestamp_renewal` states when bounded local inputs are present.
+  These are technical evidence markers only; they do not fetch live OCSP, CRL,
+  TSA, or TSL material and do not claim legal B-LT/B-LTA, production long-term
+  profile, QES, qualified status, or legal LTV.
 - Recent compact notification/entity filter checks through `2c88b90`: worker
   validations passed 20 notification tests, 4 export-save browser-gate Chromium
   tests, 21 entities tests, plus prettier/eslint/diff checks. These pin compact
   notification list rows, title-folded tags, bell badge z-index/pointer-events
   assertions, entity primary-filter nowrap desktop/mobile-wrap CSS, and
   advanced-filter no-overflow grid assertions.
-- Recent checkpoint metadata/static checks through `2c88b90` passed: `node
+- Recent compact template-filter checks through `5db121a`: focused Minutas
+  markers pin search/family/stage as compact primary controls, locale/channel/
+  signature/rule-pack as a collapsed advanced filter area, clear-filter behavior,
+  and no-overflow CSS declarations for the primary row, advanced grid, and action
+  button.
+- Current working-tree agenda-item template checks: focused
+  `cargo test -p chancela-templates --locked` coverage pins
+  `catalog_includes_agenda_item_template_for_every_supported_family`, the five
+  `ponto-ordem-trabalhos/v1` Convocatoria assets for CSC, condominium,
+  association, foundation, and cooperative families, channel-neutral metadata,
+  rule-pack/signature-policy hints, and the 101 total / 41 CSC catalog census.
+  The same lane still pins `csc-ata-divisao-quotas/v1` and
+  `csc-ata-unificacao-quotas/v1` quota parity plus the unresolved
+  `csc.deliberacao.maioria_qualificada` majority threshold marker, and
+  `csc-ata-delegacao-poderes/v1` / `csc-ata-revogacao-poderes/v1` proposed
+  resolution text without adding threshold markers. These are local catalog
+  parity/rendering checks only; law references remain Pending/non-authoritative
+  with no DRE verification, guessed threshold, authority verification,
+  registry submission, external registry/provider integration, signing-process
+  claim, legal sufficiency, or new law-source claim.
+- Current working-tree post-act template semantic-lint checks: focused
+  `cargo test -p chancela-templates --locked` coverage pins the authored
+  catalog guard that `Certidao` and `Extrato` `BlockSpec` template strings bind
+  sealed-act `ata_number` and `payload_digest`, plus a synthetic missing-binding
+  regression proving the guard applies only to post-act stages. This is
+  test/build-time catalog consistency only; no asset wording changes, DRE
+  verification, Verified law references, legal thresholds, or legal-effect
+  claims are implemented.
+- Recent compliance tooling checks through `3e72e08`: focused markers pin
+  structured book termo signatories with email and legacy string compatibility,
+  the Settings retention execution review queue and `/v1/privacy/retention-executions`
+  status filter, backend database-encryption key-source status with fail-closed
+  `hardware_derived_fallback`, and the PDF verifier UI for DSS/VRI `/TU`,
+  DocTimeStamp, local renewal evidence, and explicit no-live-trust/no-legal-claim
+  guardrails. These remain review/status/UI markers only; they do not claim
+  destructive retention execution, hardware-key custody, production SQLCipher
+  completion, live trust validation, PDF/UA, or legal validity.
+- Current working-tree retention due-candidate checks: API and Settings markers
+  pin read-only `GET /v1/privacy/retention-due-candidates` for closed-book
+  archive/document candidates selected from active retention policies, closing
+  date plus supported retention periods, legal-hold blockers, required approvals,
+  unsupported-period findings, and explicit false destructive/full-erasure flags.
+  Settings renders the candidates without creating execution, disposal, or
+  erasure records on page load, and now exposes an explicit candidate-row action
+  that posts a dry-run `execution_request` with forced/default `review_only`,
+  then refreshes due-candidate and execution-history queries after an execution
+  record. Duplicate `review_only` requests for the same candidate/policy,
+  including concurrent duplicates, reuse the existing `awaiting_review`
+  execution record and do not append another history record or ledger event.
+  Due-candidate GET remains read-only while surfacing existing queued review
+  status/id/time, and Settings shows that queued state instead of posting again.
+  This remains non-destructive scanner/review UI evidence only: no physical
+  deletion, anonymization, redaction completion, destructive GDPR erasure, legal
+  completion, legal disposal approval, disposal execution, legal-hold/policy
+  mutation, or candidate resolution is implemented.
+- Current working-tree AI provenance checks: MCP/API draft creation now carries
+  deterministic `ai_provenance.statement_sources[]` rows, the API persists those
+  rows while clamping unsafe row-level human-verified, authoritative-source, and
+  legal-validity claims false, and the Ata editor AI review panel renders
+  grouped provenance summary counts by `source_type`, statement-source row
+  path/type/label/status, conservative `human_verified`,
+  `authoritative_source_claimed`, and `legal_validity_claimed` flags, and
+  missing/null field fallbacks while keeping accept/reject unchanged. This
+  remains deterministic persistence/rendering coverage only: no live AI provider
+  calls, no model accuracy or AI quality assessment, no legal advice or
+  legal-validity claim, no source certification, no new provider/network or
+  non-stdio MCP behavior, no unreviewed finalization, no draft-vs-signed
+  comparison, and broader extraction/compare/summarize remains incomplete.
+- Current working-tree MCP workflow provenance review checks: focused
+  `cargo test -p chancela-mcp --locked` coverage pins the static
+  `workflow_provenance_review_checklist` prompt, the
+  `chancela://mcp/workflow-provenance-review` resource, offline/static
+  resource flags, no arguments, no bridge/API/provider calls, no secrets, review
+  category coverage, and false legal/source/provider/trust/external claim flags.
+  This is review guidance only: no AI or MCP completion claim, no legal validity,
+  no source certification, no provider assurance, no trust validation, and no
+  external validation.
+- Current working-tree external-validator raw-report checks: focused API,
+  archive-package, and web Ferramentas tests now pin bounded
+  `raw_report.content_base64` acceptance only when declared byte length and
+  SHA-256 match, fail-closed digest mismatch rejection, create/list response
+  redaction of embedded bytes, document-bundle evidence-index summaries, archive
+  package embedding of verified raw report files under the external-validator
+  evidence path, manual JSON metadata upload continuity, raw report file
+  selection with local filename/type/size/digest/provenance summary, no automatic
+  upload on selection, explicit submit payload fields (`content_base64`,
+  `content_type`, `size_bytes`, `sha256`, safe `source_filename`), backend
+  summary rendering, and raw byte/content redaction from the DOM. These are
+  technical preservation/fixity checks only, not legal validator acceptance,
+  trust-list validation, authority/legal validation, report replay
+  certification, external certification, PDF/UA/PAdES certification, compliance
+  proof, or provider approval.
+- Current working-tree raw external-validator report download checks: focused
+  API/static markers pin `GET
+  /v1/external-validator-reports/{case_id}/{validator_family}/raw-report`,
+  `settings.read` gating, retained raw byte output with attachment headers,
+  create/list redaction of `content_base64`, 404 for missing or manifest-only
+  reports, and fail-closed unsafe identity, malformed sidecar, and
+  duplicate/ambiguous identity behavior. There is no auto-upload, no UI raw
+  rendering, and no validator, legal, certification, trust, external-validation,
+  or provider-approval claim.
+- Current working-tree imported-document review receipt checks: focused
+  `npm run test --workspace apps/web -- src/features/documents/ActDocumentPanel.test.tsx`
+  coverage pins the derived `Recibo de revisão` group, pending `Sem recibo de
+  revisão` without fake reviewer/time/note/guardrail details, reviewed
+  status/reviewer/time/note plus required and acknowledged guardrails, explicit
+  no-claim rows for OCR/conversion/PDF-A replacement/signed artifact/legal
+  acceptance, and no accidental bytes/archive/signed-document/external-validator/
+  trust/OCR/conversion calls. This is existing-view review receipt rendering
+  only, with no new route, schema, mutation, download, OCR, conversion, signed
+  artifact, or legal acceptance behavior.
+- Current working-tree trust catalog identifier-match checks: focused
+  `cargo test -p chancela-api trust --locked` and `npm run test --workspace
+  apps/web -- src/features/ferramentas/trust.test.tsx` coverage pins optional
+  `identifier_match` on identifier-filtered TSL/TSA rows, omission without
+  identifier filters, strict complete SHA-256/SKI matching, no loose partial-hash
+  inference, technical-only match explanation copy, truncated display, and full
+  hash/SKI copy actions. These are catalog explanation checks only, not legal
+  validity, certificate trust, provider approval, external validation,
+  qualified-status, or trust-list certification.
+- Current working-tree local DGLAB interchange manifest API checks: focused
+  `archive_package` API tests plus `chancela-archive` markers pin read-only
+  `GET /v1/books/{id}/archive/local-dglab-interchange-manifest`,
+  `book.export@Book` gating, `LocalDglabInterchangeManifest`,
+  `chancela-local-dglab-interchange-manifest/v1`,
+  `build_local_dglab_interchange_manifest`, deterministic/sorted file entries,
+  `validate_local_dglab_interchange_manifest` source-manifest validation,
+  rejection of true official-DGLAB/certification/approval/legal-archive/
+  destructive-disposal flags, no ZIP member, no persisted package/manifest bytes,
+  and no ledger event. This is local scaffold JSON coverage only; no official
+  DGLAB export, government filing, UI, import flow, package validation change,
+  disposal execution, PDF/A/PAdES/PDF-UA certification, authority approval, or
+  legal archive claim is implemented.
+- Current working-tree paper-book OCR conversion-dossier checks: focused
+  `paper_import` and `npm run test --workspace apps/web --
+  src/features/books/books.test.tsx` coverage pins accepted matching draft
+  requirements, metadata-only response fields, idempotent duplicate creation
+  without another ledger event, raw OCR text redaction from responses, ledger
+  events, and dossier UI, false act/document/PDF-A/PDF-UA/signature/seal/legal
+  flags, existing-dossier rendering without duplicate creation, accepted-draft
+  gating, operator-only creation with no automatic POST, separate mutable
+  draft-act creation, and no document/signature/seal/archive endpoint calls from
+  the dossier UI. This is metadata-only review UI coverage; no canonical
+  paper-book conversion, act/document/PDF/signature/seal/archive creation, or
+  legal-validity claim is implemented.
+- Current working-tree external-signing envelope UI checks: focused
+  `external_signer_invites` coverage pins optional envelope/slot request fields,
+  first sequential slot initiation, later sequential slot 409 refusal without
+  token/storage, parallel slot initiation, public lookup redaction, and
+  accept-response tracking that leaves signature status unsigned. Focused web
+  coverage in `SigningPanel.test.tsx`, `client.test.ts`, and
+  `ExternalSigningWorkflowsPage.test.tsx` pins workflow-only envelope list/create
+  UI, order policy and signer-slot payloads, optional linked-slot invite payloads
+  (`external_envelope_id` / `external_slot_id`), tracking-only payloads when no
+  slot is selected, safe sequential 409 messaging without raw backend/token-like
+  detail after slot selection changes, and localized Ferramentas
+  `workflow: external_envelope` labels. The focused web command is
+  `npm run test --workspace apps/web -- src/api/client.test.ts
+  src/contracts/contracts.test.ts
+  src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx
+  src/features/signing/SigningPanel.test.tsx`. This is invite/envelope tracking
+  only; it is not provider signing, PIN/OTP/passphrase collection, evidence
+  capture, slot signing, envelope completion UI, public token exposure, legal
+  completion, or qualified status.
+- Current working-tree ASiC inspection/decompression checks: focused `cargo
+  test -p chancela-api --test asic_signature_validation --locked` coverage pins
+  `POST /v1/signature/asic/inspect`, base64 ASiC ZIP envelopes with optional
+  filename/declared size/declared SHA-256, fixity/base64/malformed-ZIP/
+  unsafe-path refusals, profile shape, bounded profile, blockers, member paths,
+  manifest diagnostics, signature diagnostics, no-claim fields, local CAdES
+  validation only for blocker-free bounded ASiC-S/CAdES and ASiC-E/CAdES
+  candidates, and structured ASiC-XAdES unsupported diagnostics with
+  `xades_validation_performed=false`. Focused `cargo test -p chancela-signing
+  --test roundtrip --locked asic_` coverage pins actual decompressed-size
+  accounting for payloads, manifests, CAdES signatures, XAdES signatures,
+  unsupported `META-INF`, and other non-directory members, including
+  underdeclared entries that must still produce inspection blockers. This is
+  local technical inspection only: no signing, storage, archive mutation, live
+  provider calls, TSA/TSL/OCSP/CRL fetching, trust anchoring, XAdES validation,
+  legal validity, QES, B-LT/B-LTA, eIDAS legal-effect, or production ASiC
+  compliance claim is implemented.
+- Current working-tree TSL XML-DSig checks: focused `chancela-tsl` coverage now
+  pins bounded P-256 ECDSA-SHA256 verification only against the embedded signer
+  certificate and only for XML-DSig's fixed-width raw `r||s` signature value,
+  with DER ECDSA encodings rejected. This remains technical trust-list parsing
+  evidence only; it is not real C14N, signer trust anchoring, certificate
+  path/revocation/policy validation, broad ECDSA support, legal trust
+  certification, multiple-reference support, or transform-chain support.
+- Current working-tree backup recovery-drill receipt checks: focused
+  `backup_recovery_drill` API coverage pins `POST`/`GET
+  /v1/backup/recovery-drills`, restore-preflight-only execution, durable
+  `backup-recovery-drills.json` persistence, bounded manifest evidence,
+  passphrase/hash/member-name/app-version redaction, no live DB rewrite, no
+  sidecar replacement, no `ledger.restored` append, and 422 refusal for true
+  overclaim flags. Web/contract coverage pins the receipt fixture, nullable
+  manifest handling, exact transient passphrase submit/clear behavior, the
+  explicit operator-triggered drill action, and no calls to either live restore
+  or the separate restore-preflight modal route from the Data Management drill
+  action. Contract coverage now treats `operator_notes` / `custody_location` as
+  optional receipt keys, matching the API wire contract and fixing the optional
+  key build check without making those fields required. This remains custody
+  receipt evidence only; no destructive restore
+  success, live DB swap, sidecar staging, ledger restore append, data deletion,
+  off-site custody proof, RPO/RTO certification, production backup policy, or
+  legal archive certification is implemented or proven.
+- Current working-tree workflow reminder policy checks: focused `cargo test -p
+  chancela-api --locked reminder_` coverage pins `workflow.reminders` defaults
+  (enabled, dashboard limit 5, due-soon 45 days, attendance lookahead 45 days,
+  all sources enabled), dashboard policy application to the existing
+  profile-calendar, act-follow-up, and attendance-hygiene advisory reminder
+  families, `enabled=false` suppression of reminder output without removing
+  other dashboard current-work data, per-source suppression limited to the
+  matching local reminder family, numeric limit/window behavior, and absolute
+  calendar-day reminder status across year boundaries. Focused
+  `settingsDefaults.test.ts` and `SettingsPage.test.tsx` coverage pins the web
+  defaults and compact Gestão controls for the master switch, limit, due-soon
+  window, attendance lookahead, and three source toggles. This remains local
+  advisory policy coverage only: no new legal-calendar rules, law-source
+  authority, threshold verification, external delivery/email/ICS/CalDAV/webhook,
+  workflow completion, attendance proof, compliance gate, or legal sufficiency
+  claim is implemented.
+- Current working-tree release workflow static-guard checks: `node
+  scripts/check-release-trust.mjs self-test` pins the CI metadata lane
+  release-trust self-test, SBOM package-linkage self-test, and package
+  provenance fixture checks; the Docker no-push/local-load job with `local-ci`
+  trust status, `--expect-mode local-ci`, and nested
+  `releaseTrust.imagePublication/signing/notarization/attestation.status`
+  context; and the release package job's package integrity check,
+  `releaseTrust.mode = unsigned-dev`, `attestation.status = not_attested`,
+  `--expect-mode unsigned-dev`, and SBOM package linkage. Production package
+  validation also requires `--manifest` when either package mode or expected mode
+  is `production`, with self-tests covering those signals independently. This is
+  static workflow/package metadata assurance only; it does not add signing,
+  notarization, attestation, registry publishing, or production trust claims.
+- Current checkpoint metadata/static checks through `3e72e08` plus working-tree
+  bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
   test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs\CI-E2E-HARDENING-PLAN.md
-  scripts\checkpoint-recent-landed.mjs`. These pin the spec snapshot,
+  docs\CI-CHECKPOINTS.md scripts\checkpoint-recent-landed.mjs
+  scripts\check-release-trust.mjs`. These pin the spec snapshot,
   hardening-plan head, PDF table-structure semantics, export save-prompt
   routing, dashboard dates tab, notification footer icon-only action, and
   clarified platform operations UI, user/signatory email capture, and compact
-  Data Management cleanup controls, plus SettingsPage/i18n trust-source
+  Data Management cleanup controls, retained-export dry-run planning with
+  `would_delete_*`/zero-`deleted_*` counters and preview-only no-files-removed
+  Settings payload markers, plus SettingsPage/i18n trust-source
   provider markers, trust-accepted-hash/Registos TSA grouping, decorative
   page-break accounting, export-save cancellation, dashboard desktop-six
   density, SQLite logical table payload markers, browser dynamic-import gate
   markers, web SQLite table-usage rows, keyed VRI `/TU` evidence markers,
   compact notification/bell badge assertions, and entity filter nowrap/mobile
-  wrap markers.
+  wrap markers, compact template filter markers, structured book termo signatory
+  markers, retention execution review-queue markers, backend database-encryption
+  key-source/hardware-fallback markers, and PDF verifier DSS/VRI `/TU` plus
+  local-renewal/legal-boundary markers, plus raw external-validator report
+  attachment parser, size-bound, redaction, archive-package, document-bundle, web
+  contract markers, and Ferramentas file-selection/no-auto-upload/explicit-submit/
+  summary-only/no-claim UI markers, raw-report byte download route, settings.read,
+  attachment-header, 404, fail-closed, and redaction markers, plus MCP workflow
+  provenance review prompt/resource offline/no-call/no-claim markers, imported-document
+  review receipt pending/reviewed/no-extra-route markers, trust catalog
+  identifier-match explanation/copy-safe strict lookup markers, plus local DGLAB
+  interchange manifest API route, book.export gate, schema, builder,
+  deterministic sorted file entries, source validation, false-claim-flag
+  rejection, and metadata-only/no-ZIP-member/no-persisted-bytes/no-ledger/
+  no-certification markers, plus
+  deterministic AI statement-source persistence, clamp, grouped source-type
+  counts, path/type/label/status rows, false/no-claim flags, missing/null
+  fallback, and unchanged accept/reject review markers, plus TSL P-256
+  ECDSA-SHA256 raw
+  `r||s` XML-DSig acceptance/rejection markers, plus read-only retention
+  due-candidate API, contract, Settings render, unsupported-period, non-mutating
+  page-load, review-only dry-run `execution_request`, query refresh, no
+  policy/legal-hold/disposal/erasure mutation, duplicate review-only reuse,
+  concurrent duplicate guard, queued review status/id/time UI surfacing, and
+  false destructive/full-erasure markers, plus PAdES DSS caller validation-time, malformed-time refusal, VRI
+  `/TU`, document-timestamp local renewal planning, and monitor-state markers,
+  plus PDF accessibility JSON version 6, structural-depth evidence, bounded
+  topology self-check, `LimitedTaggedStructure`, no-PDF/UA/no-`pdfuaid`
+  markers, plus all-family agenda-item template IDs/counts/rendering markers,
+  CSC quota template IDs/Pending-law-reference markers, CSC
+  delegation/revocation template IDs/rendering/no-new-threshold markers, and
+  post-act `Certidao`/`Extrato` sealed-provenance semantic lint markers,
+  plus metadata-only
+  paper-book OCR conversion-dossier route/store/redaction/idempotency and
+  BookDetail UI accepted-draft/existing-dossier/no-automatic-POST/no-endpoint
+  guardrail markers,
+  and external signer linked-invite sequential/parallel slot-policy,
+  workflow-only envelope list/create UI, safe sequential 409 rendering, and
+  tracking-only response markers, release workflow unsigned/local-only static
+  guard and production-package manifest-required markers, plus ASiC inspect route/base64/fixity/
+  malformed-ZIP/unsafe-path checks, bounded profile/member/manifest/signature
+  diagnostics, local CAdES-only bounded validation, ASiC-XAdES unsupported
+  no-XAdES-validation markers, no-claim fields, and actual decompressed-size
+  blocker markers for underdeclared payload/signature/unsupported-META-INF
+  members, plus backup recovery-drill route, contract,
+  optional receipt-key tolerance, bounded-manifest receipt, overclaim-refusal,
+  no-restore/no-DB-swap, no sidecar staging, no ledger append, exact-passphrase
+  submit/clear, nullable-manifest, and custody/legal-certification false-flag
+  markers, plus workflow reminder policy/default/UI/dashboard/source-toggle and
+  year-boundary status markers, plus platform forwarded-log route,
+  `platform.logs.write` seed-default, missing/invalid-bearer unaudited,
+  validation,
+  global/service-off suppression, data-dir persistence/reload, no-stdout/stderr,
+  accepted-retained `platform.log.forwarded.accepted` ledger-audit, sanitized
+  RBAC-denied/rejected/suppressed audit markers, payload
+  digest/length/context-summary, and redaction markers for auth/off/invalid
+  paths, plus data-status `platform_logs` /
+  `backup_recovery_drills` filesystem classification markers.
 
 Full workspace format/clippy should be rerun before commit. The prior
 `paper_import.rs` compile blocker, retention dead-code warning set, TSL `record`
