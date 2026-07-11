@@ -8608,7 +8608,15 @@ input[type='radio']:disabled {
   white-space: nowrap;
 }
 
-.data-status-cleanup > .btn {
+.data-status-cleanup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.data-status-cleanup__actions > .btn {
   justify-self: end;
   white-space: nowrap;
 }
@@ -8636,8 +8644,12 @@ input[type='radio']:disabled {
     white-space: normal;
   }
 
-  .data-status-cleanup > .btn {
+  .data-status-cleanup__actions {
     justify-self: stretch;
+  }
+
+  .data-status-cleanup__actions > .btn {
+    flex: 1 1 12rem;
   }
 
   .data-status-sqlite-table-row {

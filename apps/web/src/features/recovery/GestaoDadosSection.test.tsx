@@ -537,9 +537,35 @@ describe('GestaoDadosSection', () => {
     );
   });
 
-  it('previews retained export cleanup without changing the crash cleanup target', async () => {
-    const calls = installFetch([durableStatus, durableStatus], (url) => {
+  it('previews retained export cleanup before explicit confirmed execution', async () => {
+    const cleanedStatus: DataStatusResponse = {
+      ...durableStatus,
+      usage: {
+        ...durableStatus.usage,
+        filesystem: durableStatus.usage.filesystem.map((concern) =>
+          concern.id === 'exports'
+            ? { ...concern, bytes: 0, file_count: 0, directory_count: 0 }
+            : concern,
+        ),
+      },
+    };
+    const calls = installFetch([durableStatus, durableStatus, cleanedStatus], (url, init) => {
       if (url.includes('/v1/data/cleanup')) {
+        const body = JSON.parse((init?.body as string) ?? '{}');
+        if (body.dry_run === false) {
+          return jsonResponse({
+            target: 'exports',
+            data_dir: 'F:\\ChancelaData',
+            dry_run: false,
+            deleted_bytes: 512,
+            deleted_files: 2,
+            deleted_directories: 1,
+            would_delete_bytes: 0,
+            would_delete_files: 0,
+            would_delete_directories: 0,
+            skipped: [],
+          });
+        }
         return jsonResponse({
           target: 'exports',
           data_dir: 'F:\\ChancelaData',
@@ -562,7 +588,7 @@ describe('GestaoDadosSection', () => {
       .closest('section')!;
     const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
     expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
-      'Pré-visualiza exportações retidas com pelo menos 30 dias',
+      'Pré-visualiza ficheiros de exportação locais retidos com pelo menos 30 dias',
     );
     expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
       'Nenhum ficheiro é removido nesta ação',
@@ -570,26 +596,63 @@ describe('GestaoDadosSection', () => {
     expect(exportsRow.querySelector('.data-status-cleanup__metric')?.textContent).toContain(
       '2 ficheiros',
     );
-    expect(within(exportsRow).queryByRole('button', { name: 'Limpar exportações' })).toBeNull();
+    const executeBeforePreview = within(exportsRow).getByRole('button', {
+      name: 'Limpar ficheiros retidos',
+    }) as HTMLButtonElement;
+    expect(executeBeforePreview.disabled).toBe(true);
 
-    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar exportações' }));
+    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar limpeza' }));
 
     await waitFor(() => expect(calls.some((c) => c.url.includes('/v1/data/cleanup'))).toBe(true));
-    const cleanupCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
-    expect(cleanupCall.method).toBe('POST');
-    expect(JSON.parse(cleanupCall.body as string)).toEqual({
+    const previewCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
+    expect(previewCall.method).toBe('POST');
+    expect(JSON.parse(previewCall.body as string)).toEqual({
       target: 'exports',
       dry_run: true,
       minimum_age_days: 30,
       keep_latest: 5,
     });
-    expect(await screen.findByText('Pré-visualização de exportações')).toBeTruthy();
-    expect(screen.getByText(/2 ficheiros e 1 pastas seriam elegíveis/)).toBeTruthy();
+    expect(
+      await screen.findByText('Pré-visualização da limpeza de exportações retidas'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/2 ficheiros e 1 pastas seriam removidos numa limpeza confirmada/),
+    ).toBeTruthy();
     expect(screen.getByText(/Nenhum ficheiro foi removido/)).toBeTruthy();
+    expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
+      'Não é apagamento legal',
+    );
     await waitFor(() =>
       expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
     );
     expect(screen.getByText('Relatórios de falha')).toBeTruthy();
+
+    const executeAfterPreview = within(exportsRow).getByRole('button', {
+      name: 'Limpar ficheiros retidos',
+    }) as HTMLButtonElement;
+    expect(executeAfterPreview.disabled).toBe(false);
+    fireEvent.click(executeAfterPreview);
+    const confirmBtns = screen.getAllByRole('button', { name: 'Limpar ficheiros retidos' });
+    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/cleanup'))).toHaveLength(2),
+    );
+    const executeCall = calls.filter((c) => c.url.includes('/v1/data/cleanup'))[1];
+    expect(executeCall.method).toBe('POST');
+    expect(JSON.parse(executeCall.body as string)).toEqual({
+      target: 'exports',
+      dry_run: false,
+      minimum_age_days: 30,
+      keep_latest: 5,
+    });
+    expect(await screen.findByText('Limpeza de exportações retidas concluída')).toBeTruthy();
+    const result = screen.getByText(/2 ficheiros e 1 pastas de exportações locais retidas/);
+    expect(result.textContent).toContain('foram removidos');
+    expect(result.textContent).not.toMatch(/apagamento legal|RGPD|descarte|eliminação de arquivo/i);
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(3),
+    );
   });
 
   it('viewing and refreshing the data tab do not PUT settings or call platform logs', async () => {

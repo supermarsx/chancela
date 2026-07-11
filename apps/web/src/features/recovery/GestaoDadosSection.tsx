@@ -78,13 +78,23 @@ const EXPORT_CLEANUP_PREVIEW_BODY = {
   minimum_age_days: EXPORT_CLEANUP_MINIMUM_AGE_DAYS,
   keep_latest: EXPORT_CLEANUP_KEEP_LATEST,
 };
+const EXPORT_CLEANUP_EXECUTION_BODY = {
+  ...EXPORT_CLEANUP_PREVIEW_BODY,
+  dry_run: false,
+};
 const EXPORT_CLEANUP_PREVIEW_DESCRIPTION =
-  `Pré-visualiza exportações retidas com pelo menos ${EXPORT_CLEANUP_MINIMUM_AGE_DAYS} dias, ` +
-  `preservando as ${EXPORT_CLEANUP_KEEP_LATEST} mais recentes. Nenhum ficheiro é removido nesta ação.`;
-const EXPORT_CLEANUP_PREVIEW_BUTTON = 'Pré-visualizar exportações';
+  `Pré-visualiza ficheiros de exportação locais retidos com pelo menos ${EXPORT_CLEANUP_MINIMUM_AGE_DAYS} dias, ` +
+  `preservando os ${EXPORT_CLEANUP_KEEP_LATEST} mais recentes. Nenhum ficheiro é removido nesta ação.`;
+const EXPORT_CLEANUP_CONFIRM_DESCRIPTION =
+  'Limpa apenas ficheiros de exportação locais retidos que a pré-visualização marcou como elegíveis. Não é apagamento legal, conclusão RGPD, eliminação de arquivo ou certificação de descarte.';
+const EXPORT_CLEANUP_PREVIEW_BUTTON = 'Pré-visualizar limpeza';
 const EXPORT_CLEANUP_PREVIEW_PENDING = 'A pré-visualizar…';
 const EXPORT_CLEANUP_PREVIEW_DONE = 'Pré-visualização pronta.';
-const EXPORT_CLEANUP_PREVIEW_TITLE = 'Pré-visualização de exportações';
+const EXPORT_CLEANUP_PREVIEW_TITLE = 'Pré-visualização da limpeza de exportações retidas';
+const EXPORT_CLEANUP_EXECUTION_BUTTON = 'Limpar ficheiros retidos';
+const EXPORT_CLEANUP_EXECUTION_PENDING = 'A limpar ficheiros retidos…';
+const EXPORT_CLEANUP_EXECUTION_TITLE = 'Limpeza de exportações retidas concluída';
+const EXPORT_CLEANUP_EXECUTION_DONE = 'Limpeza de ficheiros retidos concluída.';
 
 type CleanupConfig = {
   target: DataCleanupTarget;
@@ -250,7 +260,14 @@ function cleanupSummary(result: DataCleanupResult, t: TFunction, locale: string)
     const files = new Intl.NumberFormat(locale).format(result.would_delete_files ?? 0);
     const directories = new Intl.NumberFormat(locale).format(result.would_delete_directories ?? 0);
     const bytes = formatBytes(result.would_delete_bytes ?? 0, locale);
-    return `Pré-visualização: ${files} ficheiros e ${directories} pastas seriam elegíveis, totalizando ${bytes}. Nenhum ficheiro foi removido.`;
+    return `Pré-visualização: ${files} ficheiros e ${directories} pastas seriam removidos numa limpeza confirmada, totalizando ${bytes}. Nenhum ficheiro foi removido.`;
+  }
+
+  if (result.target === 'exports') {
+    const files = new Intl.NumberFormat(locale).format(result.deleted_files);
+    const directories = new Intl.NumberFormat(locale).format(result.deleted_directories);
+    const bytes = formatBytes(result.deleted_bytes, locale);
+    return `Limpeza executada: ${files} ficheiros e ${directories} pastas de exportações locais retidas foram removidos, libertando ${bytes}.`;
   }
 
   return t('data.status.cleanup.result', {
@@ -791,6 +808,7 @@ function DataStatusPanel() {
   const dataPath = data?.data_dir.path ?? null;
   const [cleanupTarget, setCleanupTarget] = useState<DataCleanupTarget | null>(null);
   const [lastCleanup, setLastCleanup] = useState<DataCleanupResult | null>(null);
+  const [exportCleanupPreview, setExportCleanupPreview] = useState<DataCleanupResult | null>(null);
   const [previewingExports, setPreviewingExports] = useState(false);
   const [currentKey, setCurrentKey] = useState('');
   const [replacementKey, setReplacementKey] = useState('');
@@ -804,6 +822,9 @@ function DataStatusPanel() {
   const [lastPreflight, setLastPreflight] = useState<DataKeyRotationPreflight | null>(null);
   const [lastExecution, setLastExecution] = useState<DataKeyRotationExecution | null>(null);
   const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
+  const hasExportCleanupPreview = Boolean(
+    exportCleanupPreview?.target === 'exports' && exportCleanupPreview.dry_run,
+  );
   const permissions = data ? permissionSummary(data.permissions, t) : null;
   const canClean = Boolean(
     dataPath &&
@@ -814,9 +835,11 @@ function DataStatusPanel() {
 
   async function previewExportsCleanup() {
     setPreviewingExports(true);
+    setExportCleanupPreview(null);
     try {
       const result = await cleanup.mutateAsync(EXPORT_CLEANUP_PREVIEW_BODY);
       setLastCleanup(result);
+      setExportCleanupPreview(result);
       toast.success(EXPORT_CLEANUP_PREVIEW_DONE);
     } catch (err) {
       toast.error(err);
@@ -1223,6 +1246,11 @@ function DataStatusPanel() {
                       <span className="data-status-cleanup__description">
                         {isExportsPreview ? EXPORT_CLEANUP_PREVIEW_DESCRIPTION : t(target.body)}
                       </span>
+                      {isExportsPreview && hasExportCleanupPreview ? (
+                        <span className="data-status-cleanup__description">
+                          {EXPORT_CLEANUP_CONFIRM_DESCRIPTION}
+                        </span>
+                      ) : null}
                     </div>
                     <p className="data-status-cleanup__metric">
                       <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
@@ -1235,29 +1263,46 @@ function DataStatusPanel() {
                         })}
                       </span>
                     </p>
-                    <GateButton
-                      perm="settings.manage"
-                      type="button"
-                      variant="secondary"
-                      className={isExportsPreview ? undefined : 'btn--danger'}
-                      icon={isExportsPreview ? <Icon.Search /> : <Icon.Trash />}
-                      disabled={!canClean || cleanup.isPending}
-                      onClick={() => {
-                        if (isExportsPreview) {
-                          void previewExportsCleanup();
-                          return;
-                        }
-                        setCleanupTarget(target.target);
-                      }}
-                    >
-                      {isTargetPending
-                        ? isExportsPreview
-                          ? EXPORT_CLEANUP_PREVIEW_PENDING
-                          : t('data.status.cleanup.pending')
-                        : isExportsPreview
-                          ? EXPORT_CLEANUP_PREVIEW_BUTTON
-                          : t(target.button)}
-                    </GateButton>
+                    <div className="data-status-cleanup__actions">
+                      <GateButton
+                        perm="settings.manage"
+                        type="button"
+                        variant="secondary"
+                        className={isExportsPreview ? undefined : 'btn--danger'}
+                        icon={isExportsPreview ? <Icon.Search /> : <Icon.Trash />}
+                        disabled={!canClean || cleanup.isPending}
+                        onClick={() => {
+                          if (isExportsPreview) {
+                            void previewExportsCleanup();
+                            return;
+                          }
+                          setCleanupTarget(target.target);
+                        }}
+                      >
+                        {isTargetPending
+                          ? isExportsPreview
+                            ? EXPORT_CLEANUP_PREVIEW_PENDING
+                            : t('data.status.cleanup.pending')
+                          : isExportsPreview
+                            ? EXPORT_CLEANUP_PREVIEW_BUTTON
+                            : t(target.button)}
+                      </GateButton>
+                      {isExportsPreview ? (
+                        <GateButton
+                          perm="settings.manage"
+                          type="button"
+                          variant="secondary"
+                          className="btn--danger"
+                          icon={<Icon.Trash />}
+                          disabled={!canClean || cleanup.isPending || !hasExportCleanupPreview}
+                          onClick={() => setCleanupTarget('exports')}
+                        >
+                          {cleanup.isPending && cleanupTarget === 'exports'
+                            ? EXPORT_CLEANUP_EXECUTION_PENDING
+                            : EXPORT_CLEANUP_EXECUTION_BUTTON}
+                        </GateButton>
+                      ) : null}
+                    </div>
                   </li>
                 );
               })}
@@ -1268,7 +1313,9 @@ function DataStatusPanel() {
                 title={
                   lastCleanup.dry_run
                     ? EXPORT_CLEANUP_PREVIEW_TITLE
-                    : t('data.status.cleanup.doneTitle')
+                    : lastCleanup.target === 'exports'
+                      ? EXPORT_CLEANUP_EXECUTION_TITLE
+                      : t('data.status.cleanup.doneTitle')
                 }
               >
                 <p>{cleanupSummary(lastCleanup, t, locale)}</p>
@@ -1406,15 +1453,41 @@ function DataStatusPanel() {
         onClose={() => setCleanupTarget(null)}
         title={activeCleanup ? t(activeCleanup.title) : ''}
         danger
-        intro={activeCleanup ? t(activeCleanup.confirm) : ''}
-        confirmLabel={activeCleanup ? t(activeCleanup.button) : ''}
-        pendingLabel={t('data.status.cleanup.pending')}
+        intro={
+          activeCleanup?.target === 'exports'
+            ? EXPORT_CLEANUP_CONFIRM_DESCRIPTION
+            : activeCleanup
+              ? t(activeCleanup.confirm)
+              : ''
+        }
+        confirmLabel={
+          activeCleanup?.target === 'exports'
+            ? EXPORT_CLEANUP_EXECUTION_BUTTON
+            : activeCleanup
+              ? t(activeCleanup.button)
+              : ''
+        }
+        pendingLabel={
+          activeCleanup?.target === 'exports'
+            ? EXPORT_CLEANUP_EXECUTION_PENDING
+            : t('data.status.cleanup.pending')
+        }
         pending={cleanup.isPending}
+        canConfirm={activeCleanup?.target !== 'exports' || hasExportCleanupPreview}
         onConfirm={async () => {
           if (!activeCleanup) return;
-          const result = await cleanup.mutateAsync({ target: activeCleanup.target });
+          const result = await cleanup.mutateAsync(
+            activeCleanup.target === 'exports'
+              ? EXPORT_CLEANUP_EXECUTION_BODY
+              : { target: activeCleanup.target },
+          );
           setLastCleanup(result);
-          toast.success(t('data.status.cleanup.done'));
+          if (activeCleanup.target === 'exports') {
+            setExportCleanupPreview(null);
+            toast.success(EXPORT_CLEANUP_EXECUTION_DONE);
+          } else {
+            toast.success(t('data.status.cleanup.done'));
+          }
         }}
       />
     </Card>
