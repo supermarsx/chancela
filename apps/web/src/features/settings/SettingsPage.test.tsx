@@ -2522,6 +2522,65 @@ describe('SettingsPage', () => {
     ).toBe(false);
   });
 
+  it('shows projected bounded execution and does not offer duplicate review', async () => {
+    const report = cloneJson(
+      RETENTION_DUE_CANDIDATES_REPORT,
+    ) as RetentionDueCandidatesReportMetadata & {
+      candidates: Array<Record<string, unknown>>;
+    };
+    report.candidates[0].prior_execution = {
+      execution_id: 'retention-exec-projected-archive',
+      execution_status: 'executed',
+      outcome: 'bounded_archive_recorded',
+      requested_at: '2026-07-09T13:50:00Z',
+      executed_at: '2026-07-09T13:50:00Z',
+      bounded_executor: true,
+      targets_acted_count: 1,
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      next_step:
+        'Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.',
+    };
+
+    const { fn, calls } = privacyFetch(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      report,
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    const candidateRow = (await within(candidatesPanel!).findByText('archive-doc-1')).closest('tr');
+    expect(candidateRow).toBeTruthy();
+    expect(within(candidateRow!).getAllByText('Evidência delimitada registada').length).toBe(1);
+    expect(within(candidateRow!).getAllByText('Evidência delimitada existente').length).toBe(1);
+    expect(within(candidateRow!).getByText(/executed · bounded_archive_recorded/)).toBeTruthy();
+    expect(
+      within(candidateRow!).getByText(/Execução retention-exec-projected-archive/),
+    ).toBeTruthy();
+    expect(
+      within(candidateRow!).getByText(/prior\.destructive_disposal_completed:\s*false/),
+    ).toBeTruthy();
+    expect(within(candidateRow!).getByText(/prior\.full_erasure_completed:\s*false/)).toBeTruthy();
+    expect(
+      within(candidateRow!).queryByRole('button', { name: 'Pedir revisão de evidência' }),
+    ).toBeNull();
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'POST' && call.url.endsWith('/v1/privacy/retention-policies/dry-run'),
+      ),
+    ).toBe(false);
+  });
+
   it('records a review-only request from a due retention candidate row', async () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);

@@ -35,6 +35,18 @@
       "would_execute": false,
       "destructive_disposal_completed": false,
       "full_erasure_completed": false,
+      "prior_execution": {
+        "execution_id": "retention-exec-bounded-archive-1",
+        "execution_status": "executed",
+        "outcome": "bounded_archive_recorded",
+        "requested_at": "2026-07-09T13:50:00Z",
+        "executed_at": "2026-07-09T13:50:00Z",
+        "bounded_executor": true,
+        "targets_acted_count": 1,
+        "destructive_disposal_completed": false,
+        "full_erasure_completed": false,
+        "next_step": "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action."
+      },
       "next_step": "Review evidence only; no deletion or anonymization is performed."
     },
     {

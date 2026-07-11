@@ -2863,6 +2863,19 @@ export type RetentionDueCandidateFinding =
     }
   | string;
 
+export interface RetentionDueCandidatePriorExecution {
+  execution_id: string;
+  execution_status: RetentionExecutionStatus;
+  outcome: RetentionExecutionOutcome;
+  requested_at: string;
+  executed_at?: string;
+  bounded_executor: boolean;
+  targets_acted_count: number;
+  destructive_disposal_completed: boolean;
+  full_erasure_completed: boolean;
+  next_step: string;
+}
+
 export interface RetentionDueCandidate {
   candidate_id: string;
   scope: string;
@@ -2888,6 +2901,7 @@ export interface RetentionDueCandidate {
   would_execute: false;
   destructive_disposal_completed: false;
   full_erasure_completed: false;
+  prior_execution?: RetentionDueCandidatePriorExecution;
   next_step: string;
 }
 

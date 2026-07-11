@@ -163,6 +163,7 @@ import {
   type Settings,
   type RetentionDueCandidate,
   type RetentionDueCandidateFinding,
+  type RetentionDueCandidatePriorExecution,
   type RetentionDueCandidatesReport,
   type RetentionPolicyView,
   type RetentionExecutionApproval,
@@ -794,6 +795,72 @@ function assertRetentionDueCandidateFinding(
   return finding;
 }
 
+const RETENTION_DUE_CANDIDATE_PRIOR_NEXT_STEPS = {
+  bounded_archive_recorded:
+    'Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.',
+  bounded_no_action_recorded:
+    'Prior bounded no-action evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.',
+} as const;
+
+const RETENTION_DUE_CANDIDATE_PRIOR_UNSAFE_NEXT_STEP_TERMS = [
+  'deletion',
+  'anonymization',
+  'legal disposal',
+  'dispatch',
+  'full erasure',
+  'completed',
+] as const;
+
+function assertRetentionDueCandidatePriorExecution(
+  obj: unknown,
+  label: string,
+): RetentionDueCandidatePriorExecution {
+  const priorExecution = assertExactKeys<RetentionDueCandidatePriorExecution>(
+    obj,
+    {
+      execution_id: true,
+      execution_status: true,
+      outcome: true,
+      requested_at: true,
+      bounded_executor: true,
+      targets_acted_count: true,
+      destructive_disposal_completed: true,
+      full_erasure_completed: true,
+      next_step: true,
+    },
+    label,
+    ['executed_at'],
+  );
+  expect(
+    priorExecution.execution_id.length,
+    `${label}.execution_id should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(priorExecution.execution_status, `${label}.status`).toBe('executed');
+  inEnum(
+    ['bounded_archive_recorded', 'bounded_no_action_recorded'],
+    priorExecution.outcome,
+    `${label}.outcome`,
+  );
+  assertTimestamp(priorExecution.requested_at, `${label}.requested_at`);
+  if (priorExecution.executed_at !== undefined) {
+    assertTimestamp(priorExecution.executed_at, `${label}.executed_at`);
+  }
+  expect(priorExecution.bounded_executor, `${label}.bounded_executor`).toBe(true);
+  expect(typeof priorExecution.targets_acted_count, `${label}.targets_acted_count`).toBe('number');
+  expect(priorExecution.destructive_disposal_completed, `${label}.destructive flag`).toBe(false);
+  expect(priorExecution.full_erasure_completed, `${label}.erasure flag`).toBe(false);
+  expect(priorExecution.next_step, `${label}.next_step should be canonical`).toBe(
+    RETENTION_DUE_CANDIDATE_PRIOR_NEXT_STEPS[
+      priorExecution.outcome as keyof typeof RETENTION_DUE_CANDIDATE_PRIOR_NEXT_STEPS
+    ],
+  );
+  const normalizedNextStep = priorExecution.next_step.toLowerCase();
+  RETENTION_DUE_CANDIDATE_PRIOR_UNSAFE_NEXT_STEP_TERMS.forEach((term) => {
+    expect(normalizedNextStep, `${label}.next_step should not include ${term}`).not.toContain(term);
+  });
+  return priorExecution;
+}
+
 function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueCandidate {
   const candidate = assertExactKeys<RetentionDueCandidate>(
     obj,
@@ -825,6 +892,7 @@ function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueC
       next_step: true,
     },
     label,
+    ['prior_execution'],
   );
   expect(
     candidate.candidate_id.length,
@@ -876,6 +944,12 @@ function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueC
   expect(candidate.full_erasure_completed, `${label}.full_erasure_completed is pinned false`).toBe(
     false,
   );
+  if (candidate.prior_execution !== undefined) {
+    assertRetentionDueCandidatePriorExecution(
+      candidate.prior_execution,
+      `${label}.prior_execution`,
+    );
+  }
   expect(candidate.next_step.length, `${label}.next_step should be non-empty`).toBeGreaterThan(0);
   return candidate;
 }
@@ -1113,9 +1187,7 @@ function assertRetentionExecutionResult(obj: unknown, label: string): RetentionE
     label,
     ['executed_at', 'executed_by'],
   );
-  expect(typeof result.bounded_executor, `${label}.bounded_executor should be boolean`).toBe(
-    'boolean',
-  );
+  expect(result.bounded_executor, `${label}.bounded_executor should be true`).toBe(true);
   expect(Array.isArray(result.targets_considered), `${label}.targets_considered`).toBe(true);
   result.targets_considered.forEach((target, i) =>
     assertRetentionExecutionTargetEvidence(target, `${label}.targets_considered[${i}]`),
@@ -1131,13 +1203,12 @@ function assertRetentionExecutionResult(obj: unknown, label: string): RetentionE
   expect(Array.isArray(result.reason_codes), `${label}.reason_codes`).toBe(true);
   expect(result.next_step.length, `${label}.next_step should be non-empty`).toBeGreaterThan(0);
   expect(
-    typeof result.destructive_disposal_completed,
-    `${label}.destructive_disposal_completed should be boolean`,
-  ).toBe('boolean');
-  expect(
-    typeof result.full_erasure_completed,
-    `${label}.full_erasure_completed should be boolean`,
-  ).toBe('boolean');
+    result.destructive_disposal_completed,
+    `${label}.destructive_disposal_completed should be false`,
+  ).toBe(false);
+  expect(result.full_erasure_completed, `${label}.full_erasure_completed should be false`).toBe(
+    false,
+  );
   result.blocker_metadata.forEach((blocker, i) =>
     assertRetentionExecutionBlockerMetadata(blocker, `${label}.blocker_metadata[${i}]`),
   );

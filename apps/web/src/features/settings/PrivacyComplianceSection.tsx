@@ -2066,6 +2066,7 @@ function RetentionDueCandidatesPanel({
           >
             {candidates.map((candidate) => {
               const queuedReview = retentionQueuedReviewForCandidate(candidate, executionRecords);
+              const priorExecution = candidate.prior_execution;
               return (
                 <tr key={candidate.candidate_id}>
                   <td>
@@ -2099,6 +2100,24 @@ function RetentionDueCandidatesPanel({
                         {candidate.status} · {candidate.outcome}
                       </span>
                       <span className="muted">{candidate.next_step}</span>
+                      {priorExecution ? (
+                        <>
+                          <Badge tone="ok">Evidência delimitada registada</Badge>
+                          <span>
+                            {priorExecution.execution_status} · {priorExecution.outcome}
+                          </span>
+                          <span className="muted">
+                            Execução {priorExecution.execution_id} · pedido em{' '}
+                            {formatDateTime(priorExecution.requested_at)}
+                          </span>
+                          {priorExecution.executed_at ? (
+                            <span className="muted">
+                              Executado em {formatDateTime(priorExecution.executed_at)}
+                            </span>
+                          ) : null}
+                          <span className="muted">{priorExecution.next_step}</span>
+                        </>
+                      ) : null}
                     </div>
                   </td>
                   <td>
@@ -2154,12 +2173,29 @@ function RetentionDueCandidatesPanel({
                       <span>
                         full_erasure_completed: {String(candidate.full_erasure_completed)}
                       </span>
+                      {priorExecution ? (
+                        <>
+                          <span>
+                            prior.destructive_disposal_completed:{' '}
+                            {String(priorExecution.destructive_disposal_completed)}
+                          </span>
+                          <span>
+                            prior.full_erasure_completed:{' '}
+                            {String(priorExecution.full_erasure_completed)}
+                          </span>
+                          <span>
+                            prior.targets_acted_count: {priorExecution.targets_acted_count}
+                          </span>
+                        </>
+                      ) : null}
                       <span className="muted">Apenas revisão de evidência.</span>
                     </div>
                   </td>
                   <td>
                     <div className="stack--tight">
-                      {queuedReview ? (
+                      {priorExecution ? (
+                        <Badge tone="ok">Evidência delimitada existente</Badge>
+                      ) : queuedReview ? (
                         <Badge tone="warn">Revisão já na fila</Badge>
                       ) : (
                         <Button
@@ -2174,7 +2210,16 @@ function RetentionDueCandidatesPanel({
                             : 'Pedir revisão de evidência'}
                         </Button>
                       )}
-                      {queuedReview ? (
+                      {priorExecution ? (
+                        <>
+                          <span className="muted">
+                            {priorExecution.execution_status} · {priorExecution.execution_id}
+                          </span>
+                          <span className="muted">
+                            Não é criado pedido duplicado; a varredura é somente leitura.
+                          </span>
+                        </>
+                      ) : queuedReview ? (
                         <>
                           <span className="muted">
                             {queuedReview.execution_status} · {queuedReview.id}

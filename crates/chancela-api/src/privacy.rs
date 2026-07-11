@@ -42,6 +42,9 @@ const RETENTION_POLICY_UPDATED_KIND: &str = "privacy.retention.policy.updated";
 const RETENTION_EXECUTION_REQUESTED_KIND: &str = "privacy.retention.execution.requested";
 const ARCHIVE_RETENTION_POLICY_SCOPE: &str = "book_archive";
 const ARCHIVE_RETENTION_POLICY_CATEGORY: &str = "documents";
+const RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP: &str = "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
+const RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP: &str = "Prior bounded no-action evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
+const RETENTION_PRIOR_BOUNDED_GENERIC_NEXT_STEP: &str = "Prior bounded retention evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
 pub(crate) const PROCESSORS_FILE: &str = "privacy-processors.json";
 pub(crate) const DPIAS_FILE: &str = "privacy-dpias.json";
 pub(crate) const BREACH_PLAYBOOKS_FILE: &str = "privacy-breach-playbooks.json";
@@ -1399,6 +1402,23 @@ pub struct RetentionDueCandidate {
     pub outcome: String,
     pub status: String,
     pub would_execute: bool,
+    pub destructive_disposal_completed: bool,
+    pub full_erasure_completed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prior_execution: Option<RetentionDueCandidatePriorExecution>,
+    pub next_step: String,
+}
+
+#[derive(Serialize)]
+pub struct RetentionDueCandidatePriorExecution {
+    pub execution_id: String,
+    pub execution_status: String,
+    pub outcome: String,
+    pub requested_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executed_at: Option<String>,
+    pub bounded_executor: bool,
+    pub targets_acted_count: usize,
     pub destructive_disposal_completed: bool,
     pub full_erasure_completed: bool,
     pub next_step: String,
@@ -3102,6 +3122,11 @@ fn retention_due_candidate_for_book_policy(
             review_request,
         )
     });
+    let prior_execution = retention_prior_bounded_due_candidate_projection(
+        &candidate,
+        policy,
+        prior_execution_records,
+    );
     let book_hold_blocker = book
         .legal_hold
         .as_ref()
@@ -3218,6 +3243,7 @@ fn retention_due_candidate_for_book_policy(
         would_execute: false,
         destructive_disposal_completed: false,
         full_erasure_completed: false,
+        prior_execution,
         next_step,
     })
 }
@@ -4095,23 +4121,88 @@ fn retention_prior_bounded_execution(
     requested_policy: &RetentionExecutionRequestedPolicy,
     prior_execution_records: &HashMap<String, RetentionExecutionRecord>,
 ) -> Option<String> {
-    let requested_policy_id = requested_policy.id.as_deref()?;
+    retention_prior_bounded_execution_record(
+        candidate,
+        requested_policy.id.as_deref()?,
+        prior_execution_records,
+    )
+    .map(|record| record.id.clone())
+}
+
+fn retention_prior_bounded_due_candidate_projection(
+    candidate: &RetentionDryRunCandidate,
+    policy: &RetentionPolicyRecord,
+    prior_execution_records: &HashMap<String, RetentionExecutionRecord>,
+) -> Option<RetentionDueCandidatePriorExecution> {
+    retention_prior_bounded_execution_record(
+        candidate,
+        &policy.id.to_string(),
+        prior_execution_records,
+    )
+    .map(|record| RetentionDueCandidatePriorExecution {
+        execution_id: record.id.clone(),
+        execution_status: retention_execution_status_wire(record.execution_status).to_owned(),
+        outcome: retention_execution_outcome_wire(record.outcome).to_owned(),
+        requested_at: record.requested_at.clone(),
+        executed_at: record.execution_result.executed_at.clone(),
+        bounded_executor: record.execution_result.bounded_executor,
+        targets_acted_count: record.execution_result.targets_acted.len(),
+        destructive_disposal_completed: record.execution_result.destructive_disposal_completed,
+        full_erasure_completed: record.execution_result.full_erasure_completed,
+        next_step: retention_prior_bounded_due_candidate_next_step(record.outcome).to_owned(),
+    })
+}
+
+fn retention_prior_bounded_due_candidate_next_step(
+    outcome: RetentionExecutionOutcome,
+) -> &'static str {
+    match outcome {
+        RetentionExecutionOutcome::BoundedArchiveRecorded => {
+            RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP
+        }
+        RetentionExecutionOutcome::BoundedNoActionRecorded => {
+            RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP
+        }
+        _ => RETENTION_PRIOR_BOUNDED_GENERIC_NEXT_STEP,
+    }
+}
+
+fn retention_prior_bounded_execution_record<'a>(
+    candidate: &RetentionDryRunCandidate,
+    requested_policy_id: &str,
+    prior_execution_records: &'a HashMap<String, RetentionExecutionRecord>,
+) -> Option<&'a RetentionExecutionRecord> {
     prior_execution_records
         .values()
         .filter(|record| {
-            record.candidate.scope == candidate.scope
-                && record.candidate.category == candidate.category
-                && record.candidate.record_id == candidate.record_id
-                && record.requested_policy.id.as_deref() == Some(requested_policy_id)
-                && matches!(
-                    record.outcome,
-                    RetentionExecutionOutcome::BoundedArchiveRecorded
-                        | RetentionExecutionOutcome::BoundedNoActionRecorded
-                )
-                && !record.execution_result.targets_acted.is_empty()
+            retention_prior_execution_matches_candidate(record, candidate, requested_policy_id)
+                && retention_execution_record_is_safe_bounded_prior(record)
         })
         .min_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)))
-        .map(|record| record.id.clone())
+}
+
+fn retention_prior_execution_matches_candidate(
+    record: &RetentionExecutionRecord,
+    candidate: &RetentionDryRunCandidate,
+    requested_policy_id: &str,
+) -> bool {
+    record.candidate.scope == candidate.scope
+        && record.candidate.category == candidate.category
+        && record.candidate.record_id == candidate.record_id
+        && record.requested_policy.id.as_deref() == Some(requested_policy_id)
+}
+
+fn retention_execution_record_is_safe_bounded_prior(record: &RetentionExecutionRecord) -> bool {
+    record.execution_status == RetentionExecutionStatus::Executed
+        && matches!(
+            record.outcome,
+            RetentionExecutionOutcome::BoundedArchiveRecorded
+                | RetentionExecutionOutcome::BoundedNoActionRecorded
+        )
+        && record.execution_result.bounded_executor
+        && !record.execution_result.destructive_disposal_completed
+        && !record.execution_result.full_erasure_completed
+        && !record.execution_result.targets_acted.is_empty()
 }
 
 fn retention_existing_awaiting_review_execution(

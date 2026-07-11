@@ -25,6 +25,8 @@ const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json";
 const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
 const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions.json";
+const RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP: &str = "Prior bounded archive evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
+const RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP: &str = "Prior bounded no-action evidence is available for review; this due-candidate scan is read-only and requires separate governance approval before any operational action.";
 
 struct TempDir {
     dir: PathBuf,
@@ -2534,6 +2536,361 @@ async fn retention_due_candidates_surface_existing_review_without_mutation() {
     assert_eq!(candidate["would_execute"], json!(false));
     assert_eq!(candidate["destructive_disposal_completed"], json!(false));
     assert_eq!(candidate["full_erasure_completed"], json!(false));
+
+    assert_eq!(
+        state.retention_execution_records.read().await.len(),
+        execution_count_before,
+        "GET must not write another retention execution record"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before,
+        "GET must not append audit events"
+    );
+    assert_eq!(
+        *state.books.read().await,
+        books_before,
+        "GET must not mutate books"
+    );
+}
+
+#[tokio::test]
+async fn retention_due_candidates_project_prior_bounded_execution_without_mutation() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "archive policy create: {created}"
+    );
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let (status, execution) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies/dry-run",
+                json!({
+                    "scope": "book_archive",
+                    "category": "documents",
+                    "record_id": book_id,
+                    "execution_request": {
+                        "requested_policy_id": policy_id,
+                        "execution_mode": "execute_supported",
+                        "operator_notes": "Record bounded archive evidence for the closed book."
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bounded execution: {execution}");
+    let execution_record = &execution["execution_record"];
+    let execution_id = execution_record["id"]
+        .as_str()
+        .expect("execution id")
+        .to_owned();
+    assert_eq!(
+        execution_record["outcome"],
+        json!("bounded_archive_recorded")
+    );
+    assert_eq!(execution_record["execution_status"], json!("executed"));
+    assert_eq!(
+        execution_record["execution_result"]["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        execution_record["execution_result"]["full_erasure_completed"],
+        json!(false)
+    );
+
+    {
+        let mut records = state.retention_execution_records.write().await;
+        let record = records
+            .get_mut(&execution_id)
+            .expect("persisted execution record");
+        record.execution_result.next_step =
+            "Legal disposal completed: source document deletion, anonymization, dispatch, and full erasure completed."
+                .to_owned();
+    }
+
+    let execution_count_before = state.retention_execution_records.read().await.len();
+    let ledger_count_before = state.ledger.read().await.events().len();
+    let books_before = state.books.read().await.clone();
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["candidate_count"], json!(1));
+    let candidate = &body["candidates"][0];
+    assert_eq!(candidate["record_id"], json!(book_id));
+    assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(candidate["would_execute"], json!(false));
+    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
+    assert_eq!(candidate["full_erasure_completed"], json!(false));
+
+    let prior_execution = &candidate["prior_execution"];
+    assert_eq!(prior_execution["execution_id"], json!(execution_id));
+    assert_eq!(prior_execution["execution_status"], json!("executed"));
+    assert_eq!(
+        prior_execution["outcome"],
+        json!("bounded_archive_recorded")
+    );
+    assert_eq!(
+        prior_execution["requested_at"],
+        execution_record["requested_at"]
+    );
+    assert_eq!(
+        prior_execution["executed_at"],
+        execution_record["execution_result"]["executed_at"]
+    );
+    assert_eq!(prior_execution["bounded_executor"], json!(true));
+    assert_eq!(prior_execution["targets_acted_count"], json!(1));
+    assert_eq!(
+        prior_execution["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(prior_execution["full_erasure_completed"], json!(false));
+    let prior_next_step = prior_execution["next_step"]
+        .as_str()
+        .expect("prior execution next step");
+    assert_eq!(prior_next_step, RETENTION_PRIOR_BOUNDED_ARCHIVE_NEXT_STEP);
+    for unsafe_term in [
+        "deletion",
+        "anonymization",
+        "legal disposal",
+        "dispatch",
+        "full erasure",
+        "completed",
+    ] {
+        assert!(
+            !prior_next_step.to_lowercase().contains(unsafe_term),
+            "prior execution next_step must not surface unsafe term {unsafe_term:?}: {prior_next_step}"
+        );
+    }
+
+    assert_ne!(
+        prior_next_step,
+        "Legal disposal completed: source document deletion, anonymization, dispatch, and full erasure completed."
+    );
+
+    assert_eq!(
+        state.retention_execution_records.read().await.len(),
+        execution_count_before,
+        "GET must not write another retention execution record"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before,
+        "GET must not append audit events"
+    );
+    assert_eq!(
+        *state.books.read().await,
+        books_before,
+        "GET must not mutate books"
+    );
+}
+
+#[tokio::test]
+async fn retention_due_candidates_ignore_unsafe_prior_bounded_execution_flags() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "archive policy create: {created}"
+    );
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let (status, execution) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies/dry-run",
+                json!({
+                    "scope": "book_archive",
+                    "category": "documents",
+                    "record_id": book_id,
+                    "execution_request": {
+                        "requested_policy_id": policy_id,
+                        "execution_mode": "execute_supported",
+                        "operator_notes": "Record bounded archive evidence for the closed book."
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bounded execution: {execution}");
+    let execution_id = execution["execution_record"]["id"]
+        .as_str()
+        .expect("execution id")
+        .to_owned();
+
+    {
+        let mut records = state.retention_execution_records.write().await;
+        let record = records
+            .get_mut(&execution_id)
+            .expect("persisted execution record");
+        record.execution_result.bounded_executor = false;
+        record.execution_result.destructive_disposal_completed = true;
+        record.execution_result.full_erasure_completed = true;
+    }
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["candidate_count"], json!(1));
+    let candidate = &body["candidates"][0];
+    assert_eq!(candidate["record_id"], json!(book_id));
+    assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(candidate["would_execute"], json!(false));
+    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
+    assert_eq!(candidate["full_erasure_completed"], json!(false));
+    assert!(
+        !candidate
+            .as_object()
+            .expect("candidate object")
+            .contains_key("prior_execution"),
+        "unsafe persisted execution flags must not be projected"
+    );
+}
+
+#[tokio::test]
+async fn retention_due_candidates_project_prior_bounded_no_action_recorded_without_mutation() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("no_action", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "no-action policy create: {created}"
+    );
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let (status, execution) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies/dry-run",
+                json!({
+                    "scope": "book_archive",
+                    "category": "documents",
+                    "record_id": book_id,
+                    "execution_request": {
+                        "requested_policy_id": policy_id,
+                        "execution_mode": "execute_supported",
+                        "operator_notes": "Record bounded no-action evidence for the closed book."
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "bounded no action: {execution}");
+    let execution_record = &execution["execution_record"];
+    let execution_id = execution_record["id"]
+        .as_str()
+        .expect("execution id")
+        .to_owned();
+    assert_eq!(
+        execution_record["outcome"],
+        json!("bounded_no_action_recorded")
+    );
+    assert_eq!(execution_record["execution_status"], json!("executed"));
+    assert_eq!(
+        execution_record["execution_result"]["bounded_executor"],
+        json!(true)
+    );
+    assert_eq!(
+        execution_record["execution_result"]["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        execution_record["execution_result"]["full_erasure_completed"],
+        json!(false)
+    );
+
+    let execution_count_before = state.retention_execution_records.read().await.len();
+    let ledger_count_before = state.ledger.read().await.events().len();
+    let books_before = state.books.read().await.clone();
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["candidate_count"], json!(1));
+    let candidate = &body["candidates"][0];
+    assert_eq!(candidate["record_id"], json!(book_id));
+    assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(candidate["would_execute"], json!(false));
+    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
+    assert_eq!(candidate["full_erasure_completed"], json!(false));
+
+    let prior_execution = &candidate["prior_execution"];
+    assert_eq!(prior_execution["execution_id"], json!(execution_id));
+    assert_eq!(prior_execution["execution_status"], json!("executed"));
+    assert_eq!(
+        prior_execution["outcome"],
+        json!("bounded_no_action_recorded")
+    );
+    assert_eq!(prior_execution["bounded_executor"], json!(true));
+    assert_eq!(prior_execution["targets_acted_count"], json!(1));
+    assert_eq!(
+        prior_execution["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(prior_execution["full_erasure_completed"], json!(false));
+    assert_eq!(
+        prior_execution["next_step"],
+        json!(RETENTION_PRIOR_BOUNDED_NO_ACTION_NEXT_STEP)
+    );
 
     assert_eq!(
         state.retention_execution_records.read().await.len(),
