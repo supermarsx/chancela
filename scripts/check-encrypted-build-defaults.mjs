@@ -74,7 +74,20 @@ function checkDesktopBuild() {
   assertContains(noBundle, "tauri build --no-bundle", "desktop build:no-bundle");
   assertContains(noBundle, "--features sqlcipher", "desktop build:no-bundle");
 
-  assertNotContains(script(pkg, "dev", "desktop package.json"), "sqlcipher", "desktop dev script");
+  const dev = script(pkg, "dev", "desktop package.json");
+  const devPlaintext = script(pkg, "dev:plaintext", "desktop package.json");
+  const devSqlcipher = script(pkg, "dev:sqlcipher", "desktop package.json");
+  assertContains(dev, "npm run dev:plaintext", "desktop dev script");
+  assertContains(
+    devPlaintext,
+    "CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB",
+    "desktop dev:plaintext script",
+  );
+  assertContains(devPlaintext, "tauri", "desktop dev:plaintext script");
+  assertContains(devPlaintext, "dev", "desktop dev:plaintext script");
+  assertNotContains(devPlaintext, "sqlcipher", "desktop dev:plaintext script");
+  assertContains(devSqlcipher, "tauri dev", "desktop dev:sqlcipher script");
+  assertContains(devSqlcipher, "--features sqlcipher", "desktop dev:sqlcipher script");
   assertNotContains(
     script(pkg, "test:rust", "desktop package.json"),
     "sqlcipher",

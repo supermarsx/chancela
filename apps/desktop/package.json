@@ -5,7 +5,9 @@
   "description": "Chancela desktop app shell (Tauri v2). Intentionally NOT part of the repo-root npm workspaces or Cargo workspace — install and run it from this directory.",
   "scripts": {
     "tauri": "tauri",
-    "dev": "tauri dev",
+    "dev": "npm run dev:plaintext",
+    "dev:plaintext": "node -e \"const c=require('child_process');const env={...process.env,CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB:'1'};const r=c.spawnSync('tauri',['dev'],{stdio:'inherit',shell:process.platform==='win32',env});process.exit(r.status??1)\"",
+    "dev:sqlcipher": "tauri dev --features sqlcipher",
     "build": "tauri build --features sqlcipher",
     "build:no-bundle": "tauri build --no-bundle --features sqlcipher",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",

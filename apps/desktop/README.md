@@ -62,15 +62,17 @@ From **this directory** (`apps/desktop`):
 
 ```bash
 npm install     # installs @tauri-apps/cli (first time only)
-npm run dev     # = tauri dev
+npm run dev     # = npm run dev:plaintext
 ```
 
-`npm run dev` intentionally keeps the no-SQLCipher local-development build. To run that path
-against durable plaintext storage, set `CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB=1` for the dev
-process. To exercise encrypted desktop dev instead, run `npm run tauri -- dev --features
-sqlcipher`; Windows uses the current-user DPAPI protected key file, while other platforms
-need an explicit `CHANCELA_DB_KEY_FILE` or `CHANCELA_DB_KEY` until they have an OS-backed key
-provider.
+`npm run dev` is the explicit local-development plaintext path: it sets
+`CHANCELA_DESKTOP_ALLOW_PLAINTEXT_DB=1` only for the `tauri dev` child process. This keeps
+the no-SQLCipher build runnable on developer machines that do not have the native SQLCipher
+toolchain ready, while production/package builds still use `--features sqlcipher`.
+
+To exercise encrypted desktop dev, run `npm run dev:sqlcipher`. Windows uses the
+current-user DPAPI protected key file, while other platforms need an explicit
+`CHANCELA_DB_KEY_FILE` or `CHANCELA_DB_KEY` until they have an OS-backed key provider.
 
 `tauri dev`'s `beforeDevCommand` starts the web dev server for you by running,
 from the repo root, `npm run dev --workspace apps/web` (Vite on
