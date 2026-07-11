@@ -79,12 +79,14 @@ import type {
   LedgerEventView,
   LedgerQueryParams,
   LedgerVerify,
+  LocalDglabInterchangeManifest,
   OpenBookBody,
   PaperBookImportReport,
   PaperBookImportPreservationReport,
   PaperBookImportPreserveBody,
   PaperBookImportView,
   PaperBookImportValidateBody,
+  PaperBookOcrConversionDossierView,
   PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftCreateBody,
   PaperBookOcrDraftReviewBody,
@@ -115,6 +117,7 @@ import type {
   PatchProcessorRecordBody,
   PatchRetentionPolicyBody,
   RetentionDryRunBody,
+  RetentionDueCandidatesReport,
   RetentionDryRunReport,
   RetentionExecutionRecord,
   RetentionExecutionStatus,
@@ -132,9 +135,12 @@ import type {
   OfficialSignatureImportResult,
   CreateExternalSignerInviteBody,
   CreateExternalSignerInviteResult,
+  CreateExternalSigningEnvelopeBody,
   ExternalSignerInviteDecision,
   ExternalSignerInvitePublicView,
   ExternalSignerInviteView,
+  ExternalSigningEnvelopeView,
+  ExternalValidatorReportUploadRequest,
   ExternalValidatorReportsResponse,
   ExternalValidatorReportUploadResponse,
   SignatureProviderView,
@@ -183,6 +189,11 @@ import type {
   ReanchorResult,
   RestoreBody,
   RestoreOutcomeView,
+  RestorePreflightBody,
+  RestorePreflightView,
+  BackupRecoveryDrillBody,
+  BackupRecoveryDrillList,
+  BackupRecoveryDrillReceipt,
   BackupManifest,
   ImportOutcomeView,
   CollisionPolicy,
@@ -529,6 +540,10 @@ export const api = {
   // Internal Chancela preservation package (`GET .../archive/package`, application/zip).
   // Read-only and not a DGLAB-specific export; offered as a direct browser download.
   fetchBookArchivePackage: (id: string) => fetchBlob(`/v1/books/${id}/archive/package`),
+  // Metadata-only local DGLAB interchange scaffold (`GET .../local-dglab-interchange-manifest`).
+  // Read-only JSON derived from the internal package manifest; not an official DGLAB export.
+  getBookLocalDglabInterchangeManifest: (id: string) =>
+    get<LocalDglabInterchangeManifest>(`/v1/books/${id}/archive/local-dglab-interchange-manifest`),
 
   // Acts (§2.5)
   getAct: (id: string) => get<ActView>(`/v1/acts/${id}`),
@@ -625,6 +640,10 @@ export const api = {
       `/v1/acts/${id}/signature/remote/${encodeURIComponent(provider)}/confirm`,
       body,
     ),
+  listExternalSigningEnvelopes: (id: string) =>
+    get<ExternalSigningEnvelopeView[]>(`/v1/acts/${id}/external-signing/envelopes`),
+  createExternalSigningEnvelope: (id: string, body: CreateExternalSigningEnvelopeBody) =>
+    post<ExternalSigningEnvelopeView>(`/v1/acts/${id}/external-signing/envelopes`, body),
   listExternalSignerInvites: (id: string) =>
     get<ExternalSignerInviteView[]>(`/v1/acts/${id}/signature/external-invites`),
   createExternalSignerInvite: (id: string, body: CreateExternalSignerInviteBody) =>
@@ -646,11 +665,13 @@ export const api = {
     post<PdfSignatureValidationResponse>('/v1/signature/pdf/validate', body),
   listExternalValidatorReports: () =>
     get<ExternalValidatorReportsResponse>('/v1/external-validator-reports'),
-  uploadExternalValidatorReport: (rawJson: string) =>
-    postRawJsonText<ExternalValidatorReportUploadResponse>(
-      '/v1/external-validator-reports',
-      rawJson,
-    ),
+  uploadExternalValidatorReport: (body: ExternalValidatorReportUploadRequest) =>
+    typeof body === 'string'
+      ? postRawJsonText<ExternalValidatorReportUploadResponse>(
+          '/v1/external-validator-reports',
+          body,
+        )
+      : post<ExternalValidatorReportUploadResponse>('/v1/external-validator-reports', body),
 
   // Registry — certidão permanente (§2.7). The `code` in each body is a secret; it is
   // sent transiently in the request and never returned (provenance is masked).
@@ -760,6 +781,8 @@ export const api = {
     patch<RetentionPolicyView>(`/v1/privacy/retention-policies/${id}`, body),
   dryRunRetentionPolicy: (body: RetentionDryRunBody) =>
     post<RetentionDryRunReport>('/v1/privacy/retention-policies/dry-run', body),
+  listRetentionDueCandidates: () =>
+    get<RetentionDueCandidatesReport>('/v1/privacy/retention-due-candidates'),
   listRetentionExecutions: (status?: RetentionExecutionStatus) =>
     get<RetentionExecutionRecord[]>(`/v1/privacy/retention-executions${query({ status })}`),
   // Sign-in secret + attestation-key management (t29 §4). All echo the updated UserView.
@@ -849,8 +872,13 @@ export const api = {
   ledgerIntegrity: () => get<IntegrityReportView>('/v1/ledger/integrity'),
   reanchorLedger: (body: ReanchorBody) =>
     post<ReanchorResult>('/v1/ledger/recovery/reanchor', body),
+  restoreLedgerPreflight: (body: RestorePreflightBody) =>
+    post<RestorePreflightView>('/v1/ledger/recovery/restore/preflight', body),
   restoreLedger: (body: RestoreBody) =>
     post<RestoreOutcomeView>('/v1/ledger/recovery/restore', body),
+  createBackupRecoveryDrill: (body: BackupRecoveryDrillBody) =>
+    post<BackupRecoveryDrillReceipt>('/v1/backup/recovery-drills', body),
+  listBackupRecoveryDrills: () => get<BackupRecoveryDrillList>('/v1/backup/recovery-drills'),
   // Take a hot backup and return its manifest (`POST /v1/backup`, contract §3.2, t30). No
   // body; gated by `data.backup`@Global. 422 when the instance has no on-disk persistence
   // (in-memory mode). Server-response-modelled — no backup UI drives this yet.
@@ -901,6 +929,16 @@ export const api = {
       `/v1/books/paper-import/${encodeURIComponent(importId)}/ocr-drafts/${encodeURIComponent(
         draftId,
       )}/canonical-draft`,
+    ),
+  listPaperBookOcrConversionDossiers: (id: string) =>
+    get<PaperBookOcrConversionDossierView[]>(
+      `/v1/books/paper-import/${encodeURIComponent(id)}/conversion-dossiers`,
+    ),
+  createPaperBookOcrConversionDossier: (importId: string, draftId: string) =>
+    post<PaperBookOcrConversionDossierView>(
+      `/v1/books/paper-import/${encodeURIComponent(importId)}/ocr-drafts/${encodeURIComponent(
+        draftId,
+      )}/conversion-dossier`,
     ),
   fetchPaperBookImportBytes: (id: string) =>
     fetchBlob(`/v1/books/paper-import/${encodeURIComponent(id)}/bytes`),

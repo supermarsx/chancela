@@ -28,10 +28,14 @@
 //!   `PATCH /v1/documents/imported/{id}/review` — validated non-canonical imported document
 //!   evidence and operator review metadata.
 //! - `POST /v1/signature/pdf/validate` — read-only local technical PDF/PAdES evidence validation.
+//! - `POST /v1/signature/asic/inspect` — read-only local technical ASiC/CAdES profile inspection.
 //! - `POST /v1/acts/{id}/signature/archive-timestamp/append` — caller-supplied local
 //!   `/DocTimeStamp` technical evidence append; no production/legal B-LTA claim.
 //! - `GET /v1/ledger/events`, `GET /v1/ledger/verify` — the audit feed and chain probe (§2.6).
 //! - `GET /v1/ledger/archive/document` — on-demand PDF/A archive export.
+//! - `GET /v1/books/{id}/archive/local-dglab-interchange-manifest` — read-only local DGLAB
+//!   interchange manifest scaffold derived from the internal preservation manifest; no official
+//!   DGLAB/legal-archive certification claim.
 //! - `GET /v1/dashboard` — WFL-40 counts and recent events (§2.7).
 //! - `GET|PUT /v1/settings` — the typed, versioned application settings document (§2.8).
 //! - `GET /v1/platform/services`, `POST /v1/platform/services/{id}/actions/{action}` —
@@ -53,6 +57,7 @@
 //!   ledger-audited create/update transitions.
 //! - `GET|POST /v1/privacy/retention-policies`, `PATCH /v1/privacy/retention-policies/{id}`,
 //!   `POST /v1/privacy/retention-policies/dry-run`,
+//!   `GET /v1/privacy/retention-due-candidates`,
 //!   `GET /v1/privacy/retention-executions` — bounded retention policy register,
 //!   non-destructive applicability reporting, and recorded execution-request evidence.
 //!
@@ -69,9 +74,11 @@ mod acts;
 mod apikeys;
 mod archive_package;
 mod arquivo;
+mod asic_signature_validation;
 mod attestation;
 mod authz;
 mod backup;
+mod backup_recovery;
 mod books;
 mod bundles;
 mod cae;
@@ -141,6 +148,7 @@ pub use authz::{
     Authorizer, authorizer, require_permission, require_permission_with, scope_of_act,
     scope_of_book, scope_of_entity,
 };
+pub use backup_recovery::{BackupRecoveryDrillManifestEvidence, BackupRecoveryDrillReceipt};
 pub use database::{
     AppStateInitError, DB_KEY_ENV, DB_KEY_FILE_ENV, DB_KEY_SOURCE_ENV, DatabaseEncryptionConfig,
     DatabaseEncryptionConfigError, DatabaseEncryptionKeySource,
@@ -274,6 +282,9 @@ pub struct AppState {
     /// `privacy-retention-executions.json`; records are non-destructive and ledger-audited.
     pub retention_execution_records:
         Arc<RwLock<HashMap<String, privacy::RetentionExecutionRecord>>>,
+    /// Non-destructive backup recovery drill/custody receipts. File-backed states load and write
+    /// these through `backup-recovery-drills.json`; the receipt route calls restore preflight only.
+    pub backup_recovery_drill_receipts: Arc<RwLock<Vec<BackupRecoveryDrillReceipt>>>,
     /// Per-actor notification triage for dashboard-derived notification ids. File-backed states load
     /// and write this through `notification-triage.json`; the dashboard generation itself is unchanged.
     pub notification_triage: Arc<RwLock<notifications::NotificationTriageTable>>,
@@ -289,6 +300,8 @@ pub struct AppState {
     pub retention_policies_path: Option<Arc<PathBuf>>,
     /// Where `privacy-retention-executions.json` is persisted, or `None` for in-memory evidence.
     pub retention_execution_records_path: Option<Arc<PathBuf>>,
+    /// Where `backup-recovery-drills.json` is persisted, or `None` for in-memory receipts.
+    pub backup_recovery_drill_receipts_path: Option<Arc<PathBuf>>,
     /// Where `notification-triage.json` is persisted, or `None` for in-memory triage.
     pub notification_triage_path: Option<Arc<PathBuf>>,
     /// Where `users.json` is persisted, or `None` for in-memory profiles. Mirrors `persist_path`.
@@ -373,7 +386,8 @@ pub struct AppState {
     /// `signed_documents` table, with the read endpoints falling back to the store on a miss.
     pub signed_documents: Arc<RwLock<HashMap<ActId, StoredSignedDocument>>>,
     /// Runtime-supplied external-validator technical metadata JSON attachments. These are validated
-    /// at indexing time and matched only by observed canonical/signed PDF SHA-256; invalid,
+    /// at indexing time and matched only by observed canonical/signed PDF SHA-256. Optional raw
+    /// technical report bytes are preserved only when their declared digest and size match; invalid,
     /// overclaiming, duplicate-path, or non-JSON entries are ignored.
     pub external_validator_report_metadata: Arc<RwLock<Vec<Vec<u8>>>>,
     /// Where external-validator technical metadata sidecars are persisted, or `None` for pure
@@ -559,6 +573,13 @@ impl AppState {
         let loaded_retention_execution_records =
             privacy::load_retention_execution_records(&retention_execution_records_path)
                 .unwrap_or_default();
+        let backup_recovery_drill_receipts_path =
+            dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE);
+        let loaded_backup_recovery_drill_receipts =
+            backup_recovery::load_backup_recovery_drill_receipts(
+                &backup_recovery_drill_receipts_path,
+            )
+            .unwrap_or_default();
         let notification_triage_path = dir.join(notifications::NOTIFICATION_TRIAGE_FILE);
         let loaded_notification_triage =
             notifications::load_notification_triage(&notification_triage_path).unwrap_or_default();
@@ -605,6 +626,12 @@ impl AppState {
             retention_policies_path: Some(Arc::new(retention_policies_path)),
             retention_execution_records: Arc::new(RwLock::new(loaded_retention_execution_records)),
             retention_execution_records_path: Some(Arc::new(retention_execution_records_path)),
+            backup_recovery_drill_receipts: Arc::new(RwLock::new(
+                loaded_backup_recovery_drill_receipts,
+            )),
+            backup_recovery_drill_receipts_path: Some(Arc::new(
+                backup_recovery_drill_receipts_path,
+            )),
             notification_triage: Arc::new(RwLock::new(loaded_notification_triage)),
             notification_triage_path: Some(Arc::new(notification_triage_path)),
             api_keys: Arc::new(RwLock::new(loaded_api_keys)),
@@ -812,6 +839,7 @@ impl AppState {
                 dir.join(crate::privacy::TRANSFER_CONTROLS_FILE),
                 dir.join(crate::privacy::RETENTION_POLICIES_FILE),
                 dir.join(crate::privacy::RETENTION_EXECUTIONS_FILE),
+                dir.join(crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
                 dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
                 dir.join(crate::apikeys::API_KEYS_FILE),
                 dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
@@ -891,6 +919,11 @@ impl AppState {
                     &dir.join(privacy::RETENTION_EXECUTIONS_FILE),
                 )
                 .unwrap_or_default();
+            *self.backup_recovery_drill_receipts.write().await =
+                backup_recovery::load_backup_recovery_drill_receipts(
+                    &dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
+                )
+                .unwrap_or_default();
             *self.notification_triage.write().await = notifications::load_notification_triage(
                 &dir.join(notifications::NOTIFICATION_TRIAGE_FILE),
             )
@@ -943,6 +976,7 @@ impl AppState {
         self.dpia_records.write().await.clear();
         self.retention_policies.write().await.clear();
         self.retention_execution_records.write().await.clear();
+        self.backup_recovery_drill_receipts.write().await.clear();
         self.notification_triage.write().await.clear();
         self.sessions.write().await.clear();
         self.attestations.write().await.clear();
@@ -1116,6 +1150,14 @@ pub fn router(state: AppState) -> Router {
             post(paper_import::create_act_draft_from_accepted_paper_book_ocr_draft),
         )
         .route(
+            "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/conversion-dossier",
+            post(paper_import::create_paper_book_ocr_conversion_dossier),
+        )
+        .route(
+            "/v1/books/paper-import/{id}/conversion-dossiers",
+            get(paper_import::list_paper_book_ocr_conversion_dossiers),
+        )
+        .route(
             "/v1/books/paper-import/{id}/bytes",
             get(paper_import::get_paper_book_import_bytes),
         )
@@ -1128,6 +1170,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/books/{id}/archive/package",
             get(archive_package::export_book_archive_package),
+        )
+        .route(
+            "/v1/books/{id}/archive/local-dglab-interchange-manifest",
+            get(archive_package::get_book_local_dglab_interchange_manifest),
         )
         .route(
             "/v1/books/{id}/archive/disposal",
@@ -1211,7 +1257,7 @@ pub fn router(state: AppState) -> Router {
             get(external_validator_evidence::list_external_validator_report_metadata).post(
                 post(external_validator_evidence::create_external_validator_report_metadata).layer(
                     DefaultBodyLimit::max(
-                        external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES,
+                        external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_UPLOAD_MAX_BYTES,
                     ),
                 ),
             ),
@@ -1221,9 +1267,19 @@ pub fn router(state: AppState) -> Router {
             get(external_validator_evidence::download_external_validator_report_metadata),
         )
         .route(
+            "/v1/external-validator-reports/{case_id}/{validator_family}/raw-report",
+            get(external_validator_evidence::download_external_validator_raw_report_bytes),
+        )
+        .route(
             "/v1/signature/pdf/validate",
             post(pdf_signature_validation::validate_pdf_signature).layer(DefaultBodyLimit::max(
                 pdf_signature_validation::PDF_SIGNATURE_VALIDATION_ENVELOPE_BYTES,
+            )),
+        )
+        .route(
+            "/v1/signature/asic/inspect",
+            post(asic_signature_validation::inspect_asic_signature).layer(DefaultBodyLimit::max(
+                asic_signature_validation::ASIC_SIGNATURE_INSPECTION_ENVELOPE_BYTES,
             )),
         )
         .route(
@@ -1328,6 +1384,15 @@ pub fn router(state: AppState) -> Router {
             post(recovery::reanchor_ledger),
         )
         .route("/v1/ledger/recovery/restore", post(recovery::restore_store))
+        .route(
+            "/v1/ledger/recovery/restore/preflight",
+            post(recovery::restore_store_preflight),
+        )
+        .route(
+            "/v1/backup/recovery-drills",
+            get(backup_recovery::list_backup_recovery_drills)
+                .post(backup_recovery::create_backup_recovery_drill),
+        )
         .route("/v1/books/{id}/export", post(bundles::export_book))
         .route("/v1/books/import", post(bundles::import_book))
         .route("/v1/books/{id}/start-over", post(bundles::start_over_book))
@@ -1359,6 +1424,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/platform/services", get(platform_ops::list_services))
         .route("/v1/platform/logs", get(platform_logs::list_logs))
+        .route(
+            "/v1/platform/logs/forwarded",
+            post(platform_logs::ingest_forwarded_log),
+        )
         .route(
             "/v1/platform/services/{id}/actions/{action}",
             post(platform_ops::control_service),
@@ -1459,6 +1528,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/privacy/retention-policies/dry-run",
             post(privacy::retention_policy_dry_run),
+        )
+        .route(
+            "/v1/privacy/retention-due-candidates",
+            get(privacy::list_retention_due_candidates),
         )
         .route(
             "/v1/privacy/retention-executions",
@@ -1571,6 +1644,8 @@ fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
     }
     path == "/v1/ledger/recovery/reanchor"
         || path == "/v1/ledger/recovery/restore"
+        || path == "/v1/ledger/recovery/restore/preflight"
+        || path == "/v1/backup/recovery-drills"
         || path == "/v1/data/reset"
         || path == "/v1/data/start-over"
         || path == "/v1/data/key-rotation/preflight"
@@ -1773,6 +1848,8 @@ mod tests {
     use super::*;
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD as B64;
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
     use tower::ServiceExt; // for `oneshot`
@@ -1924,6 +2001,37 @@ mod tests {
         .into_bytes()
     }
 
+    fn external_validator_metadata_with_raw_report_bytes(
+        case_id: &str,
+        family: &str,
+        document_sha256: &str,
+    ) -> (Vec<u8>, Vec<u8>, String) {
+        let raw_report =
+            br#"{"report_kind":"external_validator_raw_report","status":"technical"}"#.to_vec();
+        let raw_report_sha256 = sha256_hex_test(&raw_report);
+        let mut metadata: Value = serde_json::from_slice(&external_validator_metadata_bytes(
+            case_id,
+            family,
+            document_sha256,
+        ))
+        .expect("fixture JSON");
+        metadata["raw_report"] = json!({
+            "content_type": "application/json",
+            "sha256": raw_report_sha256,
+            "bytes": raw_report.len(),
+            "source_filename": format!("{family}-raw.json"),
+            "suggested_path": format!(
+                "evidence/external-validators/{case_id}-{family}-raw-report.json"
+            ),
+            "content_base64": B64.encode(&raw_report)
+        });
+        (
+            metadata.to_string().into_bytes(),
+            raw_report,
+            raw_report_sha256,
+        )
+    }
+
     fn post_external_validator_metadata(bytes: Vec<u8>) -> Request<Body> {
         Request::builder()
             .method("POST")
@@ -2062,6 +2170,279 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn external_validator_report_metadata_accepts_verified_raw_report_attachment() {
+        let tmp = TempDir::new();
+        let first = AppState::with_data_dir(tmp.dir.clone());
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let (metadata, raw_report, raw_report_sha256) =
+            external_validator_metadata_with_raw_report_bytes(
+                "api-raw",
+                "eu-dss",
+                &document_sha256,
+            );
+
+        let (status, created) = send(
+            first.clone(),
+            post_external_validator_metadata(metadata.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        assert_eq!(created["storage"], "data_dir");
+        assert_eq!(
+            created["report"]["raw_report"]["preservation_status"],
+            "raw_report_attached"
+        );
+        assert_eq!(
+            created["report"]["raw_report"]["path"],
+            "evidence/external-validators/api-raw-eu-dss-raw-report.json"
+        );
+        assert_eq!(created["report"]["raw_report"]["sha256"], raw_report_sha256);
+        assert_eq!(
+            created["report"]["raw_report"]["size_bytes"],
+            raw_report.len()
+        );
+        assert!(
+            !created.to_string().contains("content_base64"),
+            "listing response must not expose embedded raw report bytes"
+        );
+
+        let sidecar = tmp
+            .dir
+            .join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR)
+            .join("api-raw-eu-dss.json");
+        assert_eq!(
+            std::fs::read(&sidecar).expect("external-validator sidecar"),
+            metadata
+        );
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, listed) = send(restarted.clone(), get("/v1/external-validator-reports")).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed["count"], 1);
+        assert_eq!(
+            listed["reports"][0]["raw_report"]["preservation_status"],
+            "raw_report_attached"
+        );
+        assert_eq!(
+            listed["reports"][0]["raw_report"]["path"],
+            "evidence/external-validators/api-raw-eu-dss-raw-report.json"
+        );
+        assert!(
+            !listed.to_string().contains("content_base64"),
+            "list response must not expose embedded raw report bytes"
+        );
+
+        let raw_entries = restarted.external_validator_report_metadata.read().await;
+        let attachments =
+            external_validator_evidence::matching_attachments(&raw_entries, vec![document_sha256]);
+        assert_eq!(attachments.len(), 1);
+        let raw = attachments[0]
+            .raw_report
+            .as_ref()
+            .expect("raw report summary");
+        assert_eq!(raw.bytes.as_deref(), Some(raw_report.as_slice()));
+        assert_eq!(raw.sha256, raw_report_sha256);
+    }
+
+    #[tokio::test]
+    async fn external_validator_raw_report_downloads_retained_bytes_after_reload() {
+        let tmp = TempDir::new();
+        let first = AppState::with_data_dir(tmp.dir.clone());
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let (metadata, raw_report, _raw_report_sha256) =
+            external_validator_metadata_with_raw_report_bytes(
+                "api-raw-download",
+                "eu-dss",
+                &document_sha256,
+            );
+
+        let (status, created) = send(
+            first.clone(),
+            post_external_validator_metadata(metadata.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        assert!(
+            !created.to_string().contains("content_base64"),
+            "create response must not expose embedded raw report bytes"
+        );
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, listed) = send(restarted.clone(), get("/v1/external-validator-reports")).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed["count"], 1);
+        assert!(
+            !listed.to_string().contains("content_base64"),
+            "list response must not expose embedded raw report bytes"
+        );
+
+        let token = auth_token(&restarted).await;
+        let (status, headers, downloaded) = send_raw_bytes(
+            restarted,
+            with_session(
+                get("/v1/external-validator-reports/api-raw-download/eu-dss/raw-report"),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json")
+        );
+        assert_eq!(
+            headers
+                .get("content-disposition")
+                .and_then(|value| value.to_str().ok()),
+            Some("attachment; filename=\"api-raw-download-eu-dss-raw-report.json\"")
+        );
+        assert_eq!(downloaded, raw_report);
+        assert!(!contains_subslice(&downloaded, b"content_base64"));
+    }
+
+    #[tokio::test]
+    async fn external_validator_raw_report_download_requires_settings_read() {
+        use chancela_authz::{GUEST_ROLE_ID, LEITOR_ROLE_ID, RoleAssignment, Scope};
+
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let (metadata, raw_report, _raw_report_sha256) =
+            external_validator_metadata_with_raw_report_bytes(
+                "api-raw-authz",
+                "eu-dss",
+                &document_sha256,
+            );
+
+        let (status, body) = send(state.clone(), post_external_validator_metadata(metadata)).await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+
+        let reader_id = seed_user(
+            &state,
+            "reader.raw-external-validator",
+            vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let reader_token = seed_session(&state, &reader_id.to_string()).await;
+        let raw_uri = "/v1/external-validator-reports/api-raw-authz/eu-dss/raw-report";
+        let (status, _headers, downloaded) =
+            send_raw_bytes(state.clone(), with_session(get(raw_uri), &reader_token)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(downloaded, raw_report);
+
+        let guest_id = seed_user(
+            &state,
+            "guest.raw-external-validator",
+            vec![RoleAssignment::new(GUEST_ROLE_ID, Scope::Global)],
+        )
+        .await;
+        let guest_token = seed_session(&state, &guest_id.to_string()).await;
+        let (status, _headers, denied) =
+            send_raw_bytes(state.clone(), with_session(get(raw_uri), &guest_token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_ne!(denied, raw_report);
+
+        let (status, _headers, denied) = send_raw_bytes(state, get(raw_uri)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_ne!(denied, raw_report);
+    }
+
+    #[tokio::test]
+    async fn external_validator_raw_report_manifest_only_returns_404() {
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let metadata =
+            external_validator_metadata_bytes("api-raw-manifest-only", "eu-dss", &document_sha256);
+
+        let (status, created) =
+            send(state.clone(), post_external_validator_metadata(metadata)).await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        assert_eq!(
+            created["report"]["raw_report"]["preservation_status"],
+            "raw_report_manifest_only"
+        );
+
+        let (status, body) = send(
+            state,
+            get("/v1/external-validator-reports/api-raw-manifest-only/eu-dss/raw-report"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+        assert_eq!(body["error"], "resource not found");
+        assert!(!body.to_string().contains("content_base64"));
+        assert!(
+            !body
+                .to_string()
+                .contains("technical_validator_evidence_only")
+        );
+    }
+
+    #[tokio::test]
+    async fn external_validator_raw_report_download_fail_closed_cases() {
+        let state = AppState::default();
+        let (status, body) = send(
+            state,
+            get("/v1/external-validator-reports/api.unsafe/eu-dss/raw-report"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+
+        let tmp = TempDir::new();
+        let sidecar_dir = tmp
+            .dir
+            .join(external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR);
+        std::fs::create_dir_all(&sidecar_dir).expect("sidecar dir");
+        std::fs::write(
+            sidecar_dir.join("api-raw-malformed-eu-dss.json"),
+            b"{not valid json",
+        )
+        .expect("malformed sidecar");
+        let malformed_state = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(
+            malformed_state,
+            get("/v1/external-validator-reports/api-raw-malformed/eu-dss/raw-report"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("technical metadata sidecar"),
+            "{body}"
+        );
+        assert!(!body.to_string().contains("not valid json"));
+
+        let duplicate_state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let (metadata, _raw_report, _raw_report_sha256) =
+            external_validator_metadata_with_raw_report_bytes(
+                "api-raw-duplicate",
+                "eu-dss",
+                &document_sha256,
+            );
+        {
+            let mut raw_entries = duplicate_state
+                .external_validator_report_metadata
+                .write()
+                .await;
+            raw_entries.push(metadata.clone());
+            raw_entries.push(metadata);
+        }
+        let (status, body) = send(
+            duplicate_state,
+            get("/v1/external-validator-reports/api-raw-duplicate/eu-dss/raw-report"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(
+            body["error"].as_str().expect("error").contains("ambiguous"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
     async fn external_validator_report_metadata_api_rejects_legal_overclaim() {
         let state = AppState::default();
         let document_sha256 = sha256_hex_test(b"document bytes");
@@ -2072,6 +2453,35 @@ mod tests {
         ))
         .expect("fixture JSON");
         value["legal_validity_claimed"] = json!(true);
+
+        let (status, body) = send(
+            state,
+            post_external_validator_metadata(value.to_string().into_bytes()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error")
+                .contains("external-validator metadata"),
+            "{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_validator_report_metadata_api_rejects_raw_report_digest_mismatch() {
+        let state = AppState::default();
+        let document_sha256 = sha256_hex_test(b"document bytes");
+        let (metadata, _raw_report, _raw_sha256) =
+            external_validator_metadata_with_raw_report_bytes(
+                "api-raw-mismatch",
+                "eu-dss",
+                &document_sha256,
+            );
+        let mut value: Value = serde_json::from_slice(&metadata).expect("fixture JSON");
+        value["raw_report"]["sha256"] =
+            json!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 
         let (status, body) = send(
             state,
@@ -2329,6 +2739,14 @@ mod tests {
         req.headers_mut().insert(
             "x-chancela-session",
             token.parse().expect("valid header value"),
+        );
+        req
+    }
+
+    fn with_bearer(mut req: Request<Body>, key: &str) -> Request<Body> {
+        req.headers_mut().insert(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {key}").parse().expect("valid header value"),
         );
         req
     }
@@ -2886,7 +3304,27 @@ mod tests {
                     "ai_provenance": {
                         "source": "mcp",
                         "tool": "draft_act",
-                        "statement_source": "operator instruction"
+                        "statement_source": "operator instruction",
+                        "statement_sources": [
+                            {
+                                "path": "/draft",
+                                "source_type": "ai_suggestion",
+                                "source_label": "draft_act",
+                                "human_verified": true,
+                                "human_verification_status": "accepted_by_human",
+                                "authoritative_source_claimed": true,
+                                "legal_validity_claimed": true
+                            },
+                            {
+                                "path": "/draft/title",
+                                "source_type": "caller_supplied",
+                                "source_label": "arguments.title",
+                                "human_verified": true,
+                                "human_verification_status": "accepted_by_human",
+                                "authoritative_source_claimed": true,
+                                "legal_validity_claimed": true
+                            }
+                        ]
                     }
                 }),
             ),
@@ -2894,6 +3332,34 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(act["ai_provenance"]["source"], "mcp");
+        let statement_sources = act["ai_provenance"]["statement_sources"]
+            .as_array()
+            .expect("statement sources returned");
+        assert_eq!(statement_sources.len(), 2);
+        assert!(
+            statement_sources
+                .iter()
+                .any(|source| source["path"] == "/draft"
+                    && source["source_type"] == "ai_suggestion"
+                    && source["source_label"] == "draft_act"
+                    && source["human_verified"] == false
+                    && source["human_verification_status"] == "pending_human_verification"
+                    && source["authoritative_source_claimed"] == false
+                    && source["legal_validity_claimed"] == false),
+            "{act}"
+        );
+        assert!(
+            statement_sources
+                .iter()
+                .any(|source| source["path"] == "/draft/title"
+                    && source["source_type"] == "caller_supplied"
+                    && source["source_label"] == "arguments.title"
+                    && source["human_verified"] == false
+                    && source["human_verification_status"] == "pending_human_verification"
+                    && source["authoritative_source_claimed"] == false
+                    && source["legal_validity_claimed"] == false),
+            "{act}"
+        );
         assert_eq!(
             act["ai_provenance"]["human_verification"]["status"],
             "pending_human_verification"
@@ -3990,6 +4456,10 @@ mod tests {
             "evidence/external-validators/{case_id}-{validator_family}.json"
         );
         assert_eq!(
+            report["evidence_index"]["external_validator_reports"]["raw_report_path_pattern"],
+            "evidence/external-validators/{case_id}-{validator_family}-raw-report.{extension}"
+        );
+        assert_eq!(
             report["evidence_index"]["external_validator_reports"]["bundle_attachment_status"],
             "no_external_validator_report_metadata_attached"
         );
@@ -4093,7 +4563,14 @@ mod tests {
                 "validator_family": "eu-dss",
                 "archive_path": "evidence/external-validators/bundle-runtime-eu-dss.json",
                 "content_type": "application/json",
-                "sha256": metadata_sha256
+                "sha256": metadata_sha256,
+                "raw_report": {
+                    "preservation_status": "raw_report_manifest_only",
+                    "content_type": "application/json",
+                    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    "size_bytes": 2,
+                    "source_filename": "eu-dss.json"
+                }
             }])
         );
     }
@@ -5349,6 +5826,680 @@ mod tests {
         )
         .await
         .expect("platform log seed");
+    }
+
+    async fn platform_logs_api_key(
+        state: &AppState,
+        permission: chancela_authz::Permission,
+    ) -> String {
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                "/v1/api-keys",
+                json!({
+                    "name": format!("platform-log-{permission}"),
+                    "grant": {
+                        "kind": "permissions",
+                        "permissions": [permission.as_str()],
+                        "scope": { "kind": "global" }
+                    }
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "API key created: {body}");
+        body["secret"].as_str().expect("secret").to_owned()
+    }
+
+    fn valid_forwarded_platform_log_body() -> Value {
+        json!({
+            "service_id": "api",
+            "level": "info",
+            "target": "platform.forwarded.test",
+            "message": "forwarded structured event",
+            "context": {
+                "pid": 4242,
+                "supervisor": "test-harness"
+            }
+        })
+    }
+
+    const FORWARDED_LOG_TEST_ROUTE: &str = "/v1/platform/logs/forwarded";
+    const MALFORMED_FORWARDED_LOG_BODY: &str = r#"{"service_id":"api","level":"info","target":"platform.forwarded.malformed","message":"raw malformed forwarded body","context":{"token":"secret-material"}"#;
+
+    fn post_malformed_forwarded_platform_log() -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(FORWARDED_LOG_TEST_ROUTE)
+            .header("content-type", "application/json")
+            .body(Body::from(MALFORMED_FORWARDED_LOG_BODY))
+            .expect("request builds")
+    }
+
+    fn assert_no_malformed_forwarded_raw_material(dump: &str, label: &str) {
+        for needle in [
+            MALFORMED_FORWARDED_LOG_BODY,
+            "raw malformed forwarded body",
+            "platform.forwarded.malformed",
+            "secret-material",
+            "token",
+            "EOF",
+        ] {
+            assert!(
+                !dump.contains(needle),
+                "{label} must not expose raw malformed JSON material or parser detail: {dump}"
+            );
+        }
+    }
+
+    fn audit_payload_digest<T: serde::Serialize>(payload: &T) -> String {
+        crate::hex::hex(&chancela_ledger::digest(
+            &serde_json::to_vec(payload).expect("audit payload serializes"),
+        ))
+    }
+
+    #[derive(serde::Serialize)]
+    struct ExpectedForwardedPlatformLogAcceptedAuditPayload<'a> {
+        log_id: &'a str,
+        log_seq: u64,
+        log_timestamp: &'a str,
+        service_id: &'a str,
+        level: PlatformLogLevel,
+        target: &'a str,
+        message_len_bytes: usize,
+        message_sha256: String,
+        context_key_count: usize,
+        context_serialized_size_bytes: usize,
+    }
+
+    #[derive(serde::Serialize)]
+    struct ExpectedForwardedPlatformLogRouteOutcomeAuditPayload<'a> {
+        route: &'a str,
+        outcome: &'a str,
+    }
+
+    #[derive(serde::Serialize)]
+    struct ExpectedForwardedPlatformLogRejectedAuditPayload<'a> {
+        route: &'a str,
+        outcome: &'a str,
+        reason_code: &'a str,
+    }
+
+    #[derive(serde::Serialize)]
+    struct ExpectedForwardedPlatformLogSuppressedAuditPayload<'a> {
+        route: &'a str,
+        outcome: &'a str,
+        reason_code: &'a str,
+        service_id: &'a str,
+        level: PlatformLogLevel,
+        target: &'a str,
+        message_len_bytes: usize,
+        message_sha256: String,
+        context_key_count: usize,
+        context_serialized_size_bytes: usize,
+    }
+
+    fn forwarded_log_audit_digest(log: &Value) -> String {
+        let message = log["message"].as_str().expect("log message");
+        let context = log.get("context").filter(|value| !value.is_null());
+        let payload = ExpectedForwardedPlatformLogAcceptedAuditPayload {
+            log_id: log["id"].as_str().expect("log id"),
+            log_seq: log["seq"].as_u64().expect("log seq"),
+            log_timestamp: log["timestamp"].as_str().expect("log timestamp"),
+            service_id: log["service_id"].as_str().expect("log service_id"),
+            level: PlatformLogLevel::Info,
+            target: log["target"].as_str().expect("log target"),
+            message_len_bytes: message.len(),
+            message_sha256: sha256_hex_test(message.as_bytes()),
+            context_key_count: context.map(context_key_count_test).unwrap_or(0),
+            context_serialized_size_bytes: context
+                .map(|value| serde_json::to_vec(value).expect("context serializes").len())
+                .unwrap_or(0),
+        };
+        audit_payload_digest(&payload)
+    }
+
+    fn forwarded_log_denied_audit_digest() -> String {
+        audit_payload_digest(&ExpectedForwardedPlatformLogRouteOutcomeAuditPayload {
+            route: FORWARDED_LOG_TEST_ROUTE,
+            outcome: "rbac_denied",
+        })
+    }
+
+    fn forwarded_log_rejected_audit_digest(reason_code: &str) -> String {
+        audit_payload_digest(&ExpectedForwardedPlatformLogRejectedAuditPayload {
+            route: FORWARDED_LOG_TEST_ROUTE,
+            outcome: "rejected",
+            reason_code,
+        })
+    }
+
+    fn forwarded_log_suppressed_audit_digest(body: &Value) -> String {
+        let message = body["message"].as_str().expect("forwarded message");
+        let context = body.get("context").filter(|value| !value.is_null());
+        let payload = ExpectedForwardedPlatformLogSuppressedAuditPayload {
+            route: FORWARDED_LOG_TEST_ROUTE,
+            outcome: "suppressed",
+            reason_code: "threshold_suppressed",
+            service_id: body["service_id"].as_str().expect("service id"),
+            level: PlatformLogLevel::Error,
+            target: body["target"].as_str().expect("target"),
+            message_len_bytes: message.len(),
+            message_sha256: sha256_hex_test(message.as_bytes()),
+            context_key_count: context.map(context_key_count_test).unwrap_or(0),
+            context_serialized_size_bytes: context
+                .map(|value| serde_json::to_vec(value).expect("context serializes").len())
+                .unwrap_or(0),
+        };
+        audit_payload_digest(&payload)
+    }
+
+    fn context_key_count_test(value: &Value) -> usize {
+        match value {
+            Value::Object(map) => {
+                map.len() + map.values().map(context_key_count_test).sum::<usize>()
+            }
+            Value::Array(items) => items.iter().map(context_key_count_test).sum(),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_post_with_write_api_key_appears_in_tail() {
+        let state = AppState::default();
+        let key =
+            platform_logs_api_key(&state, chancela_authz::Permission::PlatformLogsWrite).await;
+
+        let (status, body) = send_raw(
+            state.clone(),
+            with_bearer(
+                post_json(
+                    "/v1/platform/logs/forwarded",
+                    valid_forwarded_platform_log_body(),
+                ),
+                &key,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "forwarded response: {body}");
+        assert_eq!(body["accepted"], true);
+
+        let (status, tail) = send(
+            state.clone(),
+            get("/v1/platform/logs?service_id=api&tail=10"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "tail response: {tail}");
+        let logs = tail["logs"].as_array().expect("logs array");
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["service_id"], "api");
+        assert_eq!(logs[0]["level"], "info");
+        assert_eq!(logs[0]["target"], "platform.forwarded.test");
+        assert_eq!(logs[0]["message"], "forwarded structured event");
+        assert_eq!(
+            logs[0]["context"],
+            json!({ "pid": 4242, "supervisor": "test-harness" })
+        );
+
+        let (status, events) = send(state.clone(), get("/v1/ledger/events?limit=1000")).await;
+        assert_eq!(status, StatusCode::OK, "ledger response: {events}");
+        let forwarded_events = events
+            .as_array()
+            .expect("ledger events")
+            .iter()
+            .filter(|event| {
+                event["kind"]
+                    .as_str()
+                    .is_some_and(|kind| kind.starts_with("platform.log.forwarded."))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            forwarded_events.len(),
+            1,
+            "retained forwarded log should append exactly one forwarded audit event: {events}"
+        );
+        let event = events
+            .as_array()
+            .expect("ledger events")
+            .iter()
+            .find(|event| event["kind"] == "platform.log.forwarded.accepted")
+            .expect("forwarded accepted audit event");
+        assert_eq!(event["scope"], "platform");
+        assert_eq!(event["justification"], "forwarded platform log accepted");
+        assert_eq!(
+            event["payload_digest"],
+            forwarded_log_audit_digest(&logs[0])
+        );
+        let event_dump = event.to_string();
+        assert!(
+            !event_dump.contains("forwarded structured event")
+                && !event_dump.contains("test-harness")
+                && !event_dump.contains("supervisor"),
+            "ledger event must not expose raw message or context: {event}"
+        );
+
+        let (status, verify) = send(state, get("/v1/ledger/verify")).await;
+        assert_eq!(status, StatusCode::OK, "verify response: {verify}");
+        assert_eq!(verify["valid"], true);
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_missing_bearer_writes_nothing() {
+        let state = AppState::default();
+        let ledger_len_before = state.ledger.read().await.len();
+
+        let (status, _) = send_raw(
+            state.clone(),
+            post_json(
+                "/v1/platform/logs/forwarded",
+                valid_forwarded_platform_log_body(),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_len_before,
+            "missing bearer must not append ledger events"
+        );
+        let (status, tail) = send(state.clone(), get("/v1/platform/logs?tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(tail["logs"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_malformed_json_with_owner_auth_audits_sanitized_rejection_without_tail_or_sidecar()
+     {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let token = auth_token(&state).await;
+        let ledger_len_before = state.ledger.read().await.len();
+
+        let (status, err) = send_raw(
+            state.clone(),
+            with_session(post_malformed_forwarded_platform_log(), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{err}");
+        assert_eq!(
+            err["error"],
+            "forwarded platform log request body is malformed JSON"
+        );
+        assert_no_malformed_forwarded_raw_material(&err.to_string(), "malformed JSON response");
+
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_len_before + 1,
+            "authenticated malformed JSON should append one sanitized rejected audit event"
+        );
+        let (status, tail) = send(state.clone(), get("/v1/platform/logs?tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(tail["logs"], json!([]));
+        assert!(
+            !tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE).exists(),
+            "rejected malformed forwarded log must not create platform log sidecar"
+        );
+
+        let (status, events) = send(state, get("/v1/ledger/events?limit=1000")).await;
+        assert_eq!(status, StatusCode::OK, "ledger response: {events}");
+        let forwarded_events = events
+            .as_array()
+            .expect("ledger events")
+            .iter()
+            .filter(|event| {
+                event["kind"]
+                    .as_str()
+                    .is_some_and(|kind| kind.starts_with("platform.log.forwarded."))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(forwarded_events.len(), 1, "{events}");
+        let event = forwarded_events[0];
+        assert_eq!(event["kind"], "platform.log.forwarded.rejected");
+        assert_eq!(event["scope"], "platform");
+        assert_eq!(event["justification"], "forwarded platform log rejected");
+        assert_eq!(
+            event["payload_digest"],
+            forwarded_log_rejected_audit_digest("malformed_json")
+        );
+        assert_no_malformed_forwarded_raw_material(&event.to_string(), "malformed JSON audit");
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_malformed_json_missing_or_invalid_bearer_writes_no_audit() {
+        let state = AppState::default();
+        let ledger_len_before = state.ledger.read().await.len();
+
+        let cases = vec![
+            ("missing bearer", post_malformed_forwarded_platform_log()),
+            (
+                "invalid bearer",
+                with_bearer(post_malformed_forwarded_platform_log(), "not-a-real-key"),
+            ),
+        ];
+        for (label, req) in cases {
+            let (status, err) = send_raw(state.clone(), req).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{label}: {err}");
+            assert_no_malformed_forwarded_raw_material(
+                &err.to_string(),
+                &format!("{label} response"),
+            );
+        }
+
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_len_before,
+            "missing or invalid bearer must not append malformed JSON audit events"
+        );
+        let (status, tail) = send(state, get("/v1/platform/logs?tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(tail["logs"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_malformed_json_authenticated_rbac_denied_gets_only_route_outcome_audit()
+     {
+        let state = AppState::default();
+        let read_key =
+            platform_logs_api_key(&state, chancela_authz::Permission::SettingsRead).await;
+        let ledger_len_before = state.ledger.read().await.len();
+
+        let (status, err) = send_raw(
+            state.clone(),
+            with_bearer(post_malformed_forwarded_platform_log(), &read_key),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{err}");
+        assert_no_malformed_forwarded_raw_material(&err.to_string(), "RBAC denial response");
+
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_len_before + 1,
+            "authenticated RBAC denial should append one sanitized audit event"
+        );
+        let (status, tail) = send(state.clone(), get("/v1/platform/logs?tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(tail["logs"], json!([]));
+
+        let (status, events) = send(state, get("/v1/ledger/events?limit=1000")).await;
+        assert_eq!(status, StatusCode::OK, "ledger response: {events}");
+        let forwarded_events = events
+            .as_array()
+            .expect("ledger events")
+            .iter()
+            .filter(|event| {
+                event["kind"]
+                    .as_str()
+                    .is_some_and(|kind| kind.starts_with("platform.log.forwarded."))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(forwarded_events.len(), 1, "{events}");
+        let event = forwarded_events[0];
+        assert_eq!(event["kind"], "platform.log.forwarded.denied");
+        assert_eq!(event["scope"], "platform");
+        assert_eq!(event["justification"], "forwarded platform log denied");
+        assert_eq!(event["payload_digest"], forwarded_log_denied_audit_digest());
+        assert_no_malformed_forwarded_raw_material(&event.to_string(), "RBAC denial audit");
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_authenticated_rbac_denied_gets_route_outcome_audit() {
+        let state = AppState::default();
+        let read_key =
+            platform_logs_api_key(&state, chancela_authz::Permission::SettingsRead).await;
+        let ledger_len_before = state.ledger.read().await.len();
+
+        let (status, _) = send_raw(
+            state.clone(),
+            with_bearer(
+                post_json(
+                    "/v1/platform/logs/forwarded",
+                    valid_forwarded_platform_log_body(),
+                ),
+                &read_key,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_len_before + 1,
+            "authenticated RBAC denial should append one sanitized audit event"
+        );
+        let (status, tail) = send(state.clone(), get("/v1/platform/logs?tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(tail["logs"], json!([]));
+
+        let (status, events) = send(state.clone(), get("/v1/ledger/events?limit=1000")).await;
+        assert_eq!(status, StatusCode::OK, "ledger response: {events}");
+        let event = events
+            .as_array()
+            .expect("ledger events")
+            .iter()
+            .find(|event| event["kind"] == "platform.log.forwarded.denied")
+            .expect("forwarded denied audit event");
+        assert_eq!(event["scope"], "platform");
+        assert_eq!(event["justification"], "forwarded platform log denied");
+        assert_eq!(event["payload_digest"], forwarded_log_denied_audit_digest());
+        let event_dump = event.to_string();
+        assert!(
+            !event_dump.contains("forwarded structured event")
+                && !event_dump.contains("test-harness")
+                && !event_dump.contains("supervisor"),
+            "denied audit must not expose forwarded payload: {event}"
+        );
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_global_and_service_off_suppress_without_sidecar() {
+        for label in ["global off", "service override off"] {
+            let tmp = TempDir::new();
+            let state = AppState::with_data_dir(tmp.dir.clone());
+            {
+                let mut settings = state.settings.write().await;
+                match label {
+                    "global off" => {
+                        settings.platform.logging.global = PlatformLogLevel::Off;
+                        settings.platform.logging.api = PlatformLogLevel::Trace;
+                        settings
+                            .platform
+                            .logging
+                            .service_overrides
+                            .insert("api".to_owned(), PlatformLogLevel::Trace);
+                    }
+                    "service override off" => {
+                        settings.platform.logging.global = PlatformLogLevel::Trace;
+                        settings.platform.logging.api = PlatformLogLevel::Trace;
+                        settings
+                            .platform
+                            .logging
+                            .service_overrides
+                            .insert("api".to_owned(), PlatformLogLevel::Off);
+                    }
+                    _ => unreachable!("known platform log suppression scenario"),
+                }
+            }
+            let key =
+                platform_logs_api_key(&state, chancela_authz::Permission::PlatformLogsWrite).await;
+            let ledger_len_before = state.ledger.read().await.len();
+            let forwarded = json!({
+                "service_id": "api",
+                "level": "error",
+                "target": "platform.forwarded.suppressed",
+                "message": format!("suppressed by {label}")
+            });
+
+            let (status, body) = send_raw(
+                state.clone(),
+                with_bearer(
+                    post_json("/v1/platform/logs/forwarded", forwarded.clone()),
+                    &key,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::ACCEPTED, "{label}: {body}");
+
+            assert_eq!(
+                state.ledger.read().await.len(),
+                ledger_len_before + 1,
+                "{label}: suppressed forwarded log should append one audit event"
+            );
+            let (status, tail) = send(
+                state.clone(),
+                get("/v1/platform/logs?service_id=api&tail=10"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{label}: {tail}");
+            assert_eq!(tail["logs"], json!([]), "{label}");
+            assert!(
+                !tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE).exists(),
+                "{label}: suppressed forwarded log should not create platform log sidecar"
+            );
+
+            let (status, events) = send(state, get("/v1/ledger/events?limit=1000")).await;
+            assert_eq!(status, StatusCode::OK, "{label}: {events}");
+            let event = events
+                .as_array()
+                .expect("ledger events")
+                .iter()
+                .find(|event| event["kind"] == "platform.log.forwarded.suppressed")
+                .expect("forwarded suppressed audit event");
+            assert_eq!(event["scope"], "platform", "{label}");
+            assert_eq!(
+                event["justification"], "forwarded platform log suppressed",
+                "{label}"
+            );
+            assert_eq!(
+                event["payload_digest"],
+                forwarded_log_suppressed_audit_digest(&forwarded),
+                "{label}"
+            );
+            let event_dump = event.to_string();
+            assert!(
+                !event_dump.contains("suppressed by")
+                    && !event_dump.contains("platform.forwarded.suppressed"),
+                "{label}: suppressed audit must not expose raw message or target: {event}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_data_dir_post_persists_and_reloads() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let key =
+            platform_logs_api_key(&state, chancela_authz::Permission::PlatformLogsWrite).await;
+
+        let (status, body) = send_raw(
+            state,
+            with_bearer(
+                post_json(
+                    "/v1/platform/logs/forwarded",
+                    json!({
+                        "service_id": "mcp_stdio",
+                        "level": "warn",
+                        "target": "platform.forwarded.durable",
+                        "message": "durable forwarded event",
+                        "context": { "attempt": 1 }
+                    }),
+                ),
+                &key,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "forwarded response: {body}");
+        assert!(
+            tmp.dir.join(platform_logs::PLATFORM_LOGS_FILE).is_file(),
+            "platform log sidecar written by POST"
+        );
+
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let (status, tail) = send(
+            restarted,
+            get("/v1/platform/logs?service_id=mcp_stdio&level=warn&tail=10"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "tail response: {tail}");
+        let logs = tail["logs"].as_array().expect("logs array");
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0]["message"], "durable forwarded event");
+        assert_eq!(logs[0]["context"], json!({ "attempt": 1 }));
+    }
+
+    #[tokio::test]
+    async fn platform_logs_forwarded_rejects_invalid_structured_payloads() {
+        let state = AppState::default();
+        let key =
+            platform_logs_api_key(&state, chancela_authz::Permission::PlatformLogsWrite).await;
+        let ledger_len_before = state.ledger.read().await.len();
+        let cases = vec![
+            ("stream field", "unsupported_field", {
+                let mut body = valid_forwarded_platform_log_body();
+                body["stdout"] = json!("raw stdout must not be accepted");
+                body["stderr"] = json!("raw stderr must not be accepted");
+                body
+            }),
+            ("secret-like context key", "unsupported_context_key", {
+                let mut body = valid_forwarded_platform_log_body();
+                body["context"] = json!({ "api_key": "redacted" });
+                body
+            }),
+        ];
+
+        for (label, _reason_code, body) in &cases {
+            let (status, err) = send_raw(
+                state.clone(),
+                with_bearer(post_json("/v1/platform/logs/forwarded", body.clone()), &key),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{label}: {err}");
+            let err_dump = err.to_string();
+            assert!(
+                !err_dump.contains("raw stdout must not be accepted")
+                    && !err_dump.contains("raw stderr must not be accepted")
+                    && !err_dump.contains("api_key")
+                    && !err_dump.contains("redacted"),
+                "{label}: error response must not echo raw payload material: {err}"
+            );
+        }
+
+        assert_eq!(
+            state.ledger.read().await.len(),
+            ledger_len_before + cases.len(),
+            "invalid forwarded logs should append one sanitized rejected event each"
+        );
+        let (status, tail) = send(state.clone(), get("/v1/platform/logs?tail=10")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(tail["logs"], json!([]));
+
+        let (status, events) = send(state, get("/v1/ledger/events?limit=1000")).await;
+        assert_eq!(status, StatusCode::OK, "ledger response: {events}");
+        let rejected_events = events
+            .as_array()
+            .expect("ledger events")
+            .iter()
+            .filter(|event| event["kind"] == "platform.log.forwarded.rejected")
+            .collect::<Vec<_>>();
+        assert_eq!(rejected_events.len(), cases.len(), "{events}");
+        for event in rejected_events {
+            assert_eq!(event["scope"], "platform");
+            assert_eq!(event["justification"], "forwarded platform log rejected");
+            let digest = event["payload_digest"].as_str().expect("payload digest");
+            assert!(
+                cases.iter().any(|(_, reason_code, _)| digest
+                    == forwarded_log_rejected_audit_digest(reason_code)),
+                "unexpected rejected audit payload digest: {event}"
+            );
+            let event_dump = event.to_string();
+            assert!(
+                !event_dump.contains("raw stdout must not be accepted")
+                    && !event_dump.contains("raw stderr must not be accepted")
+                    && !event_dump.contains("api_key")
+                    && !event_dump.contains("redacted"),
+                "rejected audit must not expose raw payload material: {event}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -8659,6 +9810,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn restore_preflight_accepts_encrypted_backup_without_mutating_state() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let _ = seal_one(&state).await;
+        let settings = tmp.dir.join(crate::settings::SETTINGS_FILE);
+        std::fs::write(&settings, br#"{"schema_version":1}"#).expect("settings sidecar");
+
+        let (_, manifest) = send(
+            state.clone(),
+            post_json(
+                "/v1/backup",
+                json!({ "passphrase": "correct horse battery staple" }),
+            ),
+        )
+        .await;
+        let archive = manifest["path"].as_str().expect("path").to_owned();
+
+        {
+            let mut ledger = state.ledger.write().await;
+            ledger.append("api", "settings", "settings.changed", None, b"after backup");
+            state
+                .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+                .expect("persist post-backup event");
+        }
+        std::fs::write(
+            &settings,
+            br#"{"schema_version":1,"appearance":{"theme":"dark"}}"#,
+        )
+        .expect("mutate settings sidecar");
+        let live_len = state.store.as_ref().unwrap().load().unwrap().ledger.len();
+
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                "/v1/ledger/recovery/restore/preflight",
+                json!({
+                    "archive": archive,
+                    "passphrase": "correct horse battery staple"
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "preflight response: {body}");
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["ready"], true);
+        assert_eq!(body["encrypted"], true);
+        assert_eq!(body["ledger_verified"], true);
+        assert_eq!(body["manifest"]["path"], "manifest.json");
+        assert_eq!(body["manifest"]["schema"], "chancela-backup-manifest/v1");
+        assert_eq!(body["manifest"]["version"], 1);
+        assert!(body["manifest"]["member_count"].as_u64().unwrap() >= 1);
+        assert!(body["manifest"]["db_member_present"].as_bool().unwrap());
+        assert_eq!(body["errors"].as_array().unwrap().len(), 0);
+        assert!(
+            !body.to_string().contains("sha256"),
+            "preflight response must not expose member hashes: {body}"
+        );
+
+        assert_eq!(
+            std::fs::read(&settings).unwrap(),
+            br#"{"schema_version":1,"appearance":{"theme":"dark"}}"#,
+            "preflight does not replace sidecars"
+        );
+        let loaded = state.store.as_ref().unwrap().load().unwrap();
+        assert_eq!(loaded.ledger.len(), live_len, "preflight does not swap DB");
+        assert!(
+            loaded
+                .ledger
+                .events()
+                .iter()
+                .any(|e| e.kind == "settings.changed"),
+            "live post-backup event remains"
+        );
+        assert!(
+            !loaded
+                .ledger
+                .events()
+                .iter()
+                .any(|e| e.kind == "ledger.restored"),
+            "preflight does not append restore events"
+        );
+    }
+
+    #[tokio::test]
     async fn backup_in_memory_is_422() {
         let (status, body) = send(AppState::default(), post_json("/v1/backup", json!({}))).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -8762,6 +9997,17 @@ mod tests {
             br#"{"schema_version":1}"#,
         )
         .expect("settings sidecar");
+        std::fs::write(
+            tmp.dir.join(crate::platform_logs::PLATFORM_LOGS_FILE),
+            br#"[]"#,
+        )
+        .expect("platform logs sidecar");
+        std::fs::write(
+            tmp.dir
+                .join(crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
+            br#"[]"#,
+        )
+        .expect("backup recovery drill receipts sidecar");
         let laws = tmp.dir.join(crate::law::LAWS_DIR);
         std::fs::create_dir_all(&laws).expect("laws dir");
         std::fs::write(laws.join("dl-1-2026.pdf"), b"law").expect("law file");
@@ -8805,6 +10051,29 @@ mod tests {
         assert_eq!(settings["basis"], "filesystem");
         assert_eq!(settings["file_count"], 1);
         assert!(settings["bytes"].as_u64().expect("settings bytes") > 0);
+
+        let platform_logs = data_status_filesystem_concern(&body, "platform_logs");
+        assert_eq!(platform_logs["basis"], "filesystem");
+        assert_eq!(platform_logs["file_count"], 1);
+        assert!(
+            platform_logs["relative_roots"]
+                .as_array()
+                .expect("platform log roots")
+                .iter()
+                .any(|root| root == crate::platform_logs::PLATFORM_LOGS_FILE)
+        );
+
+        let backup_recovery_drills =
+            data_status_filesystem_concern(&body, "backup_recovery_drills");
+        assert_eq!(backup_recovery_drills["basis"], "filesystem");
+        assert_eq!(backup_recovery_drills["file_count"], 1);
+        assert!(
+            backup_recovery_drills["relative_roots"]
+                .as_array()
+                .expect("backup recovery drill roots")
+                .iter()
+                .any(|root| root == crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE)
+        );
 
         let laws = data_status_filesystem_concern(&body, "laws");
         assert_eq!(laws["file_count"], 1);
@@ -10469,7 +11738,7 @@ mod tests {
         // The frozen verb catalog is introspectable by any session.
         let (status, cat) = send(state.clone(), get("/v1/permissions")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(cat["permissions"].as_array().expect("verbs").len(), 37);
+        assert_eq!(cat["permissions"].as_array().expect("verbs").len(), 38);
 
         // Rename + narrow the permission-set.
         let (status, patched) = send(

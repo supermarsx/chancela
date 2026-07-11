@@ -563,6 +563,104 @@ describe('api client', () => {
     expect(revoked.status).toBe('revoked');
   });
 
+  it('creates and lists external signing envelopes and sends linked invite fields', async () => {
+    const envelope = {
+      id: 'env-1',
+      act_id: 'act-1',
+      order_policy: 'sequential',
+      slots: [
+        {
+          id: 'slot-1',
+          signer_label: 'Bruno Dias',
+          contact_hint: 'bruno@example.test',
+          identity_requirements: ['contact_control'],
+          required: true,
+          status: 'pending',
+          evidence: [],
+        },
+      ],
+      completed: false,
+      completion: {
+        completed: false,
+        required_slot_count: 1,
+        signed_required_slot_count: 0,
+        blocking_required_slot_ids: ['slot-1'],
+      },
+      notice:
+        'External signing envelope workflow only; no legal, qualified-signature, or certificate-level claim is made.',
+    };
+    const invite = {
+      id: 'invite-1',
+      act_id: 'act-1',
+      recipient_name: 'Bruno Dias',
+      recipient_email: 'bruno@example.test',
+      purpose: 'Assinar a ata',
+      status: 'pending',
+      workflow: 'external_envelope',
+      external_envelope: {
+        id: 'env-1',
+        slot_id: 'slot-1',
+        order_policy: 'sequential',
+        slot_status: 'initiated',
+      },
+      token_hint: 'cxi_abcd...123456',
+      created_at: '2026-07-06T10:00:00Z',
+      created_by: 'amelia.marques',
+      expires_at: '2026-07-08T10:00:00Z',
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse([envelope]))
+      .mockResolvedValueOnce(jsonResponse(envelope, 201))
+      .mockResolvedValueOnce(jsonResponse({ invite, token: 'cxi_fulltoken' }, 201));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const listed = await api.listExternalSigningEnvelopes('act-1');
+    const created = await api.createExternalSigningEnvelope('act-1', {
+      order_policy: 'sequential',
+      slots: [
+        {
+          signer_label: 'Bruno Dias',
+          contact_hint: 'bruno@example.test',
+          identity_requirements: ['contact_control'],
+          required: true,
+        },
+      ],
+    });
+    const linkedInvite = await api.createExternalSignerInvite('act-1', {
+      recipient_name: 'Bruno Dias',
+      recipient_email: 'bruno@example.test',
+      external_envelope_id: 'env-1',
+      external_slot_id: 'slot-1',
+      expires_at: '2026-07-08T10:00:00Z',
+      purpose: 'Assinar a ata',
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/v1/acts/act-1/external-signing/envelopes');
+    expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
+    expect(fetchMock.mock.calls[1][0]).toBe('/v1/acts/act-1/external-signing/envelopes');
+    expect(fetchMock.mock.calls[1][1]?.method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({
+      order_policy: 'sequential',
+      slots: [
+        {
+          signer_label: 'Bruno Dias',
+          contact_hint: 'bruno@example.test',
+          identity_requirements: ['contact_control'],
+          required: true,
+        },
+      ],
+    });
+    expect(fetchMock.mock.calls[2][0]).toBe('/v1/acts/act-1/signature/external-invites');
+    expect(JSON.parse(fetchMock.mock.calls[2][1]?.body as string)).toMatchObject({
+      external_envelope_id: 'env-1',
+      external_slot_id: 'slot-1',
+    });
+    expect(listed[0].slots[0].status).toBe('pending');
+    expect(created.order_policy).toBe('sequential');
+    expect(linkedInvite.invite.external_envelope?.slot_status).toBe('initiated');
+  });
+
   it('looks up and responds to an external signer invite with the token in JSON only', async () => {
     const envelope = {
       invite_id: 'invite-1',

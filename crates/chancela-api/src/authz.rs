@@ -317,9 +317,21 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/canonical-draft",
         RouteClass::Gated,
     ), // POST act.draft@Book (accepted OCR draft to mutable act draft)
+    (
+        "/v1/books/paper-import/{id}/ocr-drafts/{draft_id}/conversion-dossier",
+        RouteClass::Gated,
+    ), // POST book.import@Global (metadata-only accepted OCR dossier)
+    (
+        "/v1/books/paper-import/{id}/conversion-dossiers",
+        RouteClass::Gated,
+    ), // GET book.import@Global (metadata-only OCR dossier list)
     ("/v1/books/paper-import/{id}/bytes", RouteClass::Gated), // GET book.import@Global (package bytes)
     ("/v1/books/{id}/legal-hold", RouteClass::Gated),         // GET/PUT/DELETE book.export@Book
     ("/v1/books/{id}/archive/package", RouteClass::Gated),    // GET book.export@Book
+    (
+        "/v1/books/{id}/archive/local-dglab-interchange-manifest",
+        RouteClass::Gated,
+    ), // GET book.export@Book (read-only local manifest)
     ("/v1/books/{id}/archive/disposal", RouteClass::Gated), // GET/POST book.export@Book (dry-run only)
     ("/v1/books/{id}/export", RouteClass::Gated),           // POST book.export@Book
     ("/v1/books/import", RouteClass::Gated),                // POST book.import@Global
@@ -353,7 +365,12 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/external-validator-reports/{case_id}/{validator_family}",
         RouteClass::Gated,
     ), // GET settings.read@Global
+    (
+        "/v1/external-validator-reports/{case_id}/{validator_family}/raw-report",
+        RouteClass::Gated,
+    ), // GET settings.read@Global
     ("/v1/signature/pdf/validate", RouteClass::Gated), // POST act.read@Global (read-only technical PDF/PAdES validation)
+    ("/v1/signature/asic/inspect", RouteClass::Gated), // POST act.read@Global (read-only technical ASiC/CAdES inspection)
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cc/sign", RouteClass::Gated), // POST signing.perform@Book (co-located)
@@ -405,6 +422,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/ledger/attestations/{seq}", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/recovery/reanchor", RouteClass::Gated), // POST ledger.recover@Global + step-up
     ("/v1/ledger/recovery/restore", RouteClass::Gated), // POST ledger.recover@Global + step-up
+    ("/v1/ledger/recovery/restore/preflight", RouteClass::Gated), // POST ledger.recover@Global + step-up preflight
     // --- Data management ------------------------------------------------------------------------
     ("/v1/data/reset", RouteClass::Gated), // POST data.wipe@Global + step-up
     ("/v1/data/status", RouteClass::Gated), // GET settings.read@Global
@@ -413,9 +431,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/data/key-rotation/preflight", RouteClass::Gated), // POST settings.manage@Global (read-only)
     ("/v1/data/start-over", RouteClass::Gated),             // POST data.start_over@Global + step-up
     ("/v1/backup", RouteClass::Gated),                      // POST data.backup@Global
-    ("/v1/dashboard", RouteClass::Gated),                   // GET act.read@Global
-    ("/v1/notifications/triage", RouteClass::Gated),        // GET act.read@Global
-    ("/v1/notifications/triage/{id}", RouteClass::Gated),   // PATCH act.read@Global
+    ("/v1/backup/recovery-drills", RouteClass::Gated), // GET/POST ledger.recover@Global (preflight-only receipt)
+    ("/v1/dashboard", RouteClass::Gated),              // GET act.read@Global
+    ("/v1/notifications/triage", RouteClass::Gated),   // GET act.read@Global
+    ("/v1/notifications/triage/{id}", RouteClass::Gated), // PATCH act.read@Global
     // --- Settings -------------------------------------------------------------------------------
     ("/v1/settings", RouteClass::Gated), // GET settings.read@Global · PUT settings.manage@Global
     ("/v1/platform/services", RouteClass::Gated), // GET settings.read@Global
@@ -424,6 +443,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // POST settings.manage@Global
     ("/v1/platform/logs", RouteClass::Gated), // GET settings.read@Global
+    ("/v1/platform/logs/forwarded", RouteClass::Gated), // POST platform.logs.write@Global
     // --- Reference: CAE + law -------------------------------------------------------------------
     ("/v1/cae", RouteClass::Gated),          // GET cae.read@Global
     ("/v1/cae/refresh", RouteClass::Gated),  // POST cae.refresh@Global
@@ -469,6 +489,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/privacy/transfer-controls/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies", RouteClass::Gated), // GET/POST user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies/dry-run", RouteClass::Gated), // POST user.manage|settings.manage@Global, non-destructive
+    ("/v1/privacy/retention-due-candidates", RouteClass::Gated), // GET user.manage|settings.manage@Global, read-only scanner
     ("/v1/privacy/retention-executions", RouteClass::Gated), // GET user.manage|settings.manage@Global
     ("/v1/privacy/retention-policies/{id}", RouteClass::Gated), // PATCH user.manage|settings.manage@Global
     // --- API keys -------------------------------------------------------------------------------
@@ -622,9 +643,21 @@ mod tests {
     }
 
     #[test]
+    fn local_dglab_interchange_manifest_route_is_classified_as_gated() {
+        assert_eq!(
+            classify("/v1/books/{id}/archive/local-dglab-interchange-manifest"),
+            Some(RouteClass::Gated)
+        );
+    }
+
+    #[test]
     fn external_validator_report_download_route_is_classified_as_gated() {
         assert_eq!(
             classify("/v1/external-validator-reports/{case_id}/{validator_family}"),
+            Some(RouteClass::Gated)
+        );
+        assert_eq!(
+            classify("/v1/external-validator-reports/{case_id}/{validator_family}/raw-report"),
             Some(RouteClass::Gated)
         );
     }

@@ -31,9 +31,7 @@ function setScrollMetrics(
 }
 
 function expectTooltip(control: HTMLElement, label: string) {
-  const tooltipIds = (control.getAttribute('aria-describedby') ?? '')
-    .split(/\s+/)
-    .filter(Boolean);
+  const tooltipIds = (control.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
   const tooltip = tooltipIds
     .map((id) => document.getElementById(id))
     .find((node) => node?.getAttribute('role') === 'tooltip' && node.textContent === label);

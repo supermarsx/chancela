@@ -64,6 +64,8 @@ import {
   type AppearanceSettings,
   type BackupFile,
   type BackupManifest,
+  type BackupRecoveryDrillManifestEvidence,
+  type BackupRecoveryDrillReceipt,
   type BookView,
   type BreachPlaybookEvidenceReceipt,
   type BreachPlaybookView,
@@ -159,6 +161,9 @@ import {
   type SessionRoster,
   type SessionView,
   type Settings,
+  type RetentionDueCandidate,
+  type RetentionDueCandidateFinding,
+  type RetentionDueCandidatesReport,
   type RetentionPolicyView,
   type RetentionExecutionApproval,
   type RetentionExecutionBlockerMetadata,
@@ -206,6 +211,9 @@ import {
   type UserDsrExportUser,
   type UserDsrRoleAssignment,
   type UserView,
+  type WorkflowReminderSettings,
+  type WorkflowReminderSourceSettings,
+  type WorkflowSettings,
 } from '../api/types';
 
 // --- Fixture loading -----------------------------------------------------------
@@ -764,6 +772,137 @@ function assertRetentionPolicy(obj: unknown, label: string): RetentionPolicyView
   expect(record.created_by.length, `${label}.created_by should be non-empty`).toBeGreaterThan(0);
   expect(record.updated_by.length, `${label}.updated_by should be non-empty`).toBeGreaterThan(0);
   return record;
+}
+
+function assertRetentionDueCandidateFinding(
+  obj: unknown,
+  label: string,
+): RetentionDueCandidateFinding {
+  if (typeof obj === 'string') {
+    expect(obj.length, `${label} should be non-empty`).toBeGreaterThan(0);
+    return obj;
+  }
+  const finding = assertExactKeys<Exclude<RetentionDueCandidateFinding, string>>(obj, {}, label, [
+    'code',
+    'message',
+    'severity',
+  ]);
+  expect(
+    Boolean(finding.code || finding.message || finding.severity),
+    `${label} should include at least one field`,
+  ).toBe(true);
+  return finding;
+}
+
+function assertRetentionDueCandidate(obj: unknown, label: string): RetentionDueCandidate {
+  const candidate = assertExactKeys<RetentionDueCandidate>(
+    obj,
+    {
+      candidate_id: true,
+      scope: true,
+      category: true,
+      record_id: true,
+      book_id: true,
+      entity_id: true,
+      closing_date: true,
+      due_date: true,
+      overdue: true,
+      policy_id: true,
+      policy_name: true,
+      schedule_id: true,
+      retention_period: true,
+      disposal_action: true,
+      destructive_action: true,
+      legal_hold_blockers: true,
+      required_approvals: true,
+      blockers: true,
+      findings: true,
+      outcome: true,
+      status: true,
+      would_execute: true,
+      destructive_disposal_completed: true,
+      full_erasure_completed: true,
+      next_step: true,
+    },
+    label,
+  );
+  expect(
+    candidate.candidate_id.length,
+    `${label}.candidate_id should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(candidate.scope.length, `${label}.scope should be non-empty`).toBeGreaterThan(0);
+  expect(candidate.category.length, `${label}.category should be non-empty`).toBeGreaterThan(0);
+  expect(candidate.record_id.length, `${label}.record_id should be non-empty`).toBeGreaterThan(0);
+  expect(candidate.book_id.length, `${label}.book_id should be non-empty`).toBeGreaterThan(0);
+  expect(candidate.entity_id.length, `${label}.entity_id should be non-empty`).toBeGreaterThan(0);
+  expect(
+    candidate.closing_date.length,
+    `${label}.closing_date should be non-empty`,
+  ).toBeGreaterThan(0);
+  if (candidate.due_date !== null) {
+    expect(candidate.due_date.length, `${label}.due_date should be non-empty`).toBeGreaterThan(0);
+  }
+  expect(typeof candidate.overdue, `${label}.overdue should be boolean`).toBe('boolean');
+  expect(candidate.policy_id.length, `${label}.policy_id should be non-empty`).toBeGreaterThan(0);
+  expect(candidate.policy_name.length, `${label}.policy_name should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  expect(candidate.schedule_id.length, `${label}.schedule_id should be non-empty`).toBeGreaterThan(
+    0,
+  );
+  expect(
+    candidate.retention_period.length,
+    `${label}.retention_period should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(
+    candidate.disposal_action.length,
+    `${label}.disposal_action should be non-empty`,
+  ).toBeGreaterThan(0);
+  expect(typeof candidate.destructive_action, `${label}.destructive_action`).toBe('boolean');
+  expect(Array.isArray(candidate.legal_hold_blockers), `${label}.legal_hold_blockers`).toBe(true);
+  expect(Array.isArray(candidate.required_approvals), `${label}.required_approvals`).toBe(true);
+  expect(Array.isArray(candidate.blockers), `${label}.blockers`).toBe(true);
+  expect(Array.isArray(candidate.findings), `${label}.findings`).toBe(true);
+  candidate.findings.forEach((finding, i) =>
+    assertRetentionDueCandidateFinding(finding, `${label}.findings[${i}]`),
+  );
+  expect(candidate.outcome.length, `${label}.outcome should be non-empty`).toBeGreaterThan(0);
+  expect(candidate.status.length, `${label}.status should be non-empty`).toBeGreaterThan(0);
+  expect(candidate.would_execute, `${label}.would_execute is pinned false`).toBe(false);
+  expect(
+    candidate.destructive_disposal_completed,
+    `${label}.destructive_disposal_completed is pinned false`,
+  ).toBe(false);
+  expect(candidate.full_erasure_completed, `${label}.full_erasure_completed is pinned false`).toBe(
+    false,
+  );
+  expect(candidate.next_step.length, `${label}.next_step should be non-empty`).toBeGreaterThan(0);
+  return candidate;
+}
+
+function assertRetentionDueCandidatesReport(
+  obj: unknown,
+  label: string,
+): RetentionDueCandidatesReport {
+  const report = assertExactKeys<RetentionDueCandidatesReport>(
+    obj,
+    {
+      generated_at: true,
+      scope: true,
+      category: true,
+      candidate_count: true,
+      candidates: true,
+    },
+    label,
+  );
+  assertTimestamp(report.generated_at, `${label}.generated_at`);
+  expect(report.scope, `${label}.scope`).toBe('book_archive');
+  expect(report.category, `${label}.category`).toBe('documents');
+  expect(report.candidate_count, `${label}.candidate_count`).toBe(report.candidates.length);
+  report.candidates.forEach((candidate, i) =>
+    assertRetentionDueCandidate(candidate, `${label}.candidates[${i}]`),
+  );
+  return report;
 }
 
 function assertRetentionExecutionRequestedPolicy(
@@ -2292,6 +2431,7 @@ describe('contract fixtures parse through the real client', () => {
         documents: true,
         catalog: true,
         signing: true,
+        workflow: true,
         platform: true,
         appearance: true,
         ui: true,
@@ -2471,6 +2611,53 @@ describe('contract fixtures parse through the real client', () => {
       expect(typeof row.local_only).toBe('boolean');
       expect(typeof row.note).toBe('string');
     }
+    const workflow = assertExactKeys<WorkflowSettings>(
+      settings.workflow,
+      { reminders: true },
+      'Settings.workflow',
+    );
+    const reminders = assertExactKeys<WorkflowReminderSettings>(
+      workflow.reminders,
+      {
+        enabled: true,
+        dashboard_limit: true,
+        due_soon_days: true,
+        attendance_lookahead_days: true,
+        sources: true,
+      },
+      'Settings.workflow.reminders',
+    );
+    expect(typeof reminders.enabled, 'Settings.workflow.reminders.enabled').toBe('boolean');
+    expect(
+      Number.isInteger(reminders.dashboard_limit),
+      'Settings.workflow.reminders.dashboard_limit should be an integer',
+    ).toBe(true);
+    expect(reminders.dashboard_limit).toBeGreaterThanOrEqual(0);
+    expect(reminders.dashboard_limit).toBeLessThanOrEqual(50);
+    expect(
+      Number.isInteger(reminders.due_soon_days),
+      'Settings.workflow.reminders.due_soon_days should be an integer',
+    ).toBe(true);
+    expect(reminders.due_soon_days).toBeGreaterThanOrEqual(0);
+    expect(reminders.due_soon_days).toBeLessThanOrEqual(365);
+    expect(
+      Number.isInteger(reminders.attendance_lookahead_days),
+      'Settings.workflow.reminders.attendance_lookahead_days should be an integer',
+    ).toBe(true);
+    expect(reminders.attendance_lookahead_days).toBeGreaterThanOrEqual(0);
+    expect(reminders.attendance_lookahead_days).toBeLessThanOrEqual(365);
+    const sources = assertExactKeys<WorkflowReminderSourceSettings>(
+      reminders.sources,
+      {
+        profile_calendar: true,
+        act_follow_ups: true,
+        attendance_hygiene: true,
+      },
+      'Settings.workflow.reminders.sources',
+    );
+    expect(typeof sources.profile_calendar).toBe('boolean');
+    expect(typeof sources.act_follow_ups).toBe('boolean');
+    expect(typeof sources.attendance_hygiene).toBe('boolean');
     const appearance = assertExactKeys<AppearanceSettings>(
       settings.appearance,
       { theme: true, leather_texture: true, texture_intensity: true, button_texture: true },
@@ -3657,6 +3844,74 @@ describe('contract fixtures parse through the real client', () => {
     }
   });
 
+  it('backup.recovery-drill.json → BackupRecoveryDrillReceipt (POST /v1/backup/recovery-drills)', async () => {
+    stubFetch(fixture('backup.recovery-drill.json'), 201);
+    const receipt: BackupRecoveryDrillReceipt = await api.createBackupRecoveryDrill({
+      archive: 'chancela-backup-20260710T103000Z.zip',
+      passphrase: 'transient-test-key',
+    });
+    assertExactKeys<BackupRecoveryDrillReceipt>(
+      receipt,
+      {
+        id: true,
+        created_at: true,
+        archive: true,
+        preflight_ok: true,
+        preflight_ready: true,
+        encrypted: true,
+        ledger_verified: true,
+        manifest: true,
+        restore_executed: true,
+        live_db_swapped: true,
+        sidecars_staged: true,
+        ledger_restored_appended: true,
+        data_deleted: true,
+        offsite_custody_proven: true,
+        legal_archive_certified: true,
+      },
+      'BackupRecoveryDrillReceipt',
+      ['operator_notes', 'custody_location'],
+    );
+    expect(receipt.id).not.toHaveLength(0);
+    assertTimestamp(receipt.created_at, 'BackupRecoveryDrillReceipt.created_at');
+    expect(receipt.archive).not.toHaveLength(0);
+    expect(typeof receipt.preflight_ok).toBe('boolean');
+    expect(typeof receipt.preflight_ready).toBe('boolean');
+    if (receipt.encrypted !== null) expect(typeof receipt.encrypted).toBe('boolean');
+    expect(typeof receipt.ledger_verified).toBe('boolean');
+    const evidence = assertExactKeys<BackupRecoveryDrillManifestEvidence>(
+      receipt.manifest,
+      {
+        schema: true,
+        version: true,
+        store_schema_version: true,
+        ledger_length: true,
+        ledger_verified: true,
+        member_count: true,
+        sidecar_member_count: true,
+        db_member_present: true,
+        total_member_bytes: true,
+      },
+      'BackupRecoveryDrillReceipt.manifest',
+    );
+    expect(evidence.schema).toBe('chancela-backup-manifest/v1');
+    expect(typeof evidence.version).toBe('number');
+    expect(typeof evidence.store_schema_version).toBe('number');
+    expect(typeof evidence.ledger_length).toBe('number');
+    expect(typeof evidence.ledger_verified).toBe('boolean');
+    expect(typeof evidence.member_count).toBe('number');
+    expect(typeof evidence.sidecar_member_count).toBe('number');
+    expect(typeof evidence.db_member_present).toBe('boolean');
+    expect(typeof evidence.total_member_bytes).toBe('number');
+    expect(receipt.restore_executed).toBe(false);
+    expect(receipt.live_db_swapped).toBe(false);
+    expect(receipt.sidecars_staged).toBe(false);
+    expect(receipt.ledger_restored_appended).toBe(false);
+    expect(receipt.data_deleted).toBe(false);
+    expect(receipt.offsite_custody_proven).toBe(false);
+    expect(receipt.legal_archive_certified).toBe(false);
+  });
+
   it('data.status.json → DataStatusResponse (GET /v1/data/status)', async () => {
     stubFetch(fixture('data.status.json'));
     const status: DataStatusResponse = await api.dataStatus();
@@ -4007,6 +4262,14 @@ describe('contract fixtures parse through the real client', () => {
     expect(policy.active).toBe(true);
   });
 
+  it('retention.due-candidates.json → RetentionDueCandidatesReport (GET /v1/privacy/retention-due-candidates)', async () => {
+    stubFetch(fixture('retention.due-candidates.json'));
+    const report: RetentionDueCandidatesReport = await api.listRetentionDueCandidates();
+    assertRetentionDueCandidatesReport(report, 'RetentionDueCandidatesReport');
+    expect(report.candidates.length).toBeGreaterThan(0);
+    expect(report.candidates[0].would_execute).toBe(false);
+  });
+
   it('retention.executions.json → RetentionExecutionRecord[] (GET /v1/privacy/retention-executions)', async () => {
     stubFetch(fixture('retention.executions.json'));
     const executions: RetentionExecutionRecord[] = await api.listRetentionExecutions();
@@ -4210,6 +4473,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'law.article.json',
       'law.search.json',
       'backup.manifest.json',
+      'backup.recovery-drill.json',
       'data.status.json',
       'user.json',
       'session.json',
@@ -4222,6 +4486,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'privacy.breach-playbooks.json',
       'privacy.transfer-controls.json',
       'retention.policies.json',
+      'retention.due-candidates.json',
       'retention.executions.json',
       'paper-book.import.json',
       'paper-book.ocr-draft.json',

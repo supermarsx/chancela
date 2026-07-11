@@ -302,6 +302,80 @@ export interface BookLegalHoldView {
   set_at: string | null;
 }
 
+export type ArchivePackageFileRole =
+  'pdf_a' | 'signing_report' | 'evidence_report' | 'metadata' | 'other' | string;
+
+export type ArchivePreservationLevel = 'BitLevel' | 'Managed' | string;
+
+export interface ArchiveFileChecksum {
+  algorithm: string;
+  hex_digest: string;
+}
+
+export interface LocalDglabInterchangeProducerMetadata {
+  name: string;
+  system: string;
+}
+
+export interface LocalDglabInterchangeClassificationMetadata {
+  scheme: string | null;
+  code: string | null;
+  title: string | null;
+  sensitivity: string | null;
+}
+
+export interface LocalDglabInterchangeRightsMetadata {
+  holder: string | null;
+  license: string | null;
+  access_note: string | null;
+}
+
+export interface LocalDglabInterchangeRetentionInstructions {
+  schedule_id: string | null;
+  review_after: string | null;
+  legal_hold: boolean;
+}
+
+export interface LocalDglabInterchangeFileFixitySummary {
+  algorithm: string;
+  file_count: number;
+  total_byte_len: number;
+}
+
+export interface LocalDglabInterchangeFileEntry {
+  path: string;
+  role: ArchivePackageFileRole;
+  content_type: string;
+  byte_len: number;
+  checksum: ArchiveFileChecksum;
+  act_id: string | null;
+  document_id: string | null;
+}
+
+/** `GET /v1/books/{id}/archive/local-dglab-interchange-manifest` JSON scaffold. */
+export interface LocalDglabInterchangeManifest {
+  schema: 'chancela-local-dglab-interchange-manifest/v1' | string;
+  profile: 'chancela-local-dglab-interchange-manifest/v1' | string;
+  package_id: string;
+  source_manifest_path: string;
+  official_dglab_interchange: false;
+  dglab_certification_claimed: false;
+  external_dglab_approval_obtained: false;
+  legal_archive_certified: false;
+  destructive_disposal_performed: false;
+  producer: LocalDglabInterchangeProducerMetadata;
+  package_type: string;
+  package_version: string;
+  preservation_level: ArchivePreservationLevel;
+  local_classification: LocalDglabInterchangeClassificationMetadata;
+  rights: LocalDglabInterchangeRightsMetadata;
+  languages: string[];
+  retention: LocalDglabInterchangeRetentionInstructions;
+  file_fixity_summary: LocalDglabInterchangeFileFixitySummary;
+  evidence_index_path: string | null;
+  files: LocalDglabInterchangeFileEntry[];
+}
+
 /** `PUT /v1/books/{id}/legal-hold` body. `actor` is optional; session attribution wins. */
 export interface SetBookLegalHoldBody {
   reason: string;
@@ -413,10 +487,21 @@ export interface AiHumanVerificationView {
   note: string | null;
 }
 
+export interface AiStatementSourceView {
+  path: string;
+  source_type: string;
+  source_label: string;
+  human_verified: boolean;
+  human_verification_status: AiHumanVerificationStatus;
+  authoritative_source_claimed: boolean;
+  legal_validity_claimed: boolean;
+}
+
 export interface AiProvenanceView {
   source: string;
   tool: string | null;
   statement_source: string | null;
+  statement_sources?: AiStatementSourceView[];
   human_verification: AiHumanVerificationView;
 }
 
@@ -921,6 +1006,33 @@ export interface PdfSignatureValidationResponse {
 
 // --- External validator technical report metadata ------------------------------
 
+/** Raw external-validator report fixity summary. Bytes are never listed inline. */
+export interface ExternalValidatorRawReportSummary {
+  preservation_status: 'raw_report_attached' | 'raw_report_manifest_only' | string;
+  path?: string | null;
+  suggested_path?: string | null;
+  content_type: string;
+  sha256: string;
+  size_bytes: number;
+  source_filename?: string | null;
+}
+
+/** Raw-report bytes attached to an operator-supplied technical metadata report. */
+export interface ExternalValidatorRawReportUpload {
+  content_base64: string;
+  content_type: string;
+  sha256: string;
+  size_bytes: number;
+  source_filename?: string | null;
+}
+
+/** `POST /v1/external-validator-reports` JSON document with optional raw report bytes. */
+export type ExternalValidatorReportUploadBody = Record<string, unknown> & {
+  raw_report?: ExternalValidatorRawReportUpload;
+};
+
+export type ExternalValidatorReportUploadRequest = string | ExternalValidatorReportUploadBody;
+
 /** Redacted metadata summary for a stored external-validator JSON report. */
 export interface ExternalValidatorReportSummary {
   case_id: string | null;
@@ -934,6 +1046,7 @@ export interface ExternalValidatorReportSummary {
   digest?: string | null;
   size_bytes?: number | null;
   stored_at?: string | null;
+  raw_report?: ExternalValidatorRawReportSummary | null;
   [key: string]: unknown;
 }
 
@@ -1712,6 +1825,15 @@ export interface TslProviderAnalysisView {
   duplicate_service_names: string[];
 }
 
+export type TrustIdentifierMatchField =
+  | 'certificate_sha256'
+  | 'subject_key_id'
+  | 'subject_name'
+  | 'provider'
+  | 'service'
+  | 'supply_point'
+  | 'catalog';
+
 export interface TslServiceSummaryView {
   id: string;
   provider_id: string;
@@ -1728,6 +1850,7 @@ export interface TslServiceSummaryView {
   service_supply_points: string[];
   history_count: number;
   identities: TslIdentitySummaryView;
+  identifier_match?: TrustIdentifierMatchField[];
 }
 
 export interface TslProviderView {
@@ -1879,6 +2002,7 @@ export interface TsaRecordView {
   service_supply_points: string[];
   history_count: number;
   identities: TslIdentitySummaryView;
+  identifier_match?: TrustIdentifierMatchField[];
   analysis: TsaRecordAnalysisView;
 }
 
@@ -2671,13 +2795,6 @@ export interface PatchRetentionPolicyBody {
   notes?: string;
 }
 
-/** Body of `POST /v1/privacy/retention-policies/dry-run`. */
-export interface RetentionDryRunBody {
-  scope: string;
-  category: string;
-  record_id?: string;
-}
-
 export interface RetentionDryRunCandidate {
   scope: string;
   category: string;
@@ -2700,6 +2817,79 @@ export interface RetentionDryRunMatch {
 }
 
 export type RetentionExecutionIntent = 'review_only' | 'execute_supported';
+
+export interface RetentionExecutionEvidenceBody {
+  label: string;
+  value: string;
+}
+
+export interface RetentionExecutionApprovalBody {
+  approval_reference: string;
+  policy_id: string;
+  disposal_action: RetentionDisposalAction;
+  approved_by: string;
+  approved_at?: string;
+}
+
+export interface RetentionExecutionRequestBody {
+  requested_policy_id?: string;
+  execution_mode?: RetentionExecutionIntent;
+  operator_notes?: string;
+  evidence?: RetentionExecutionEvidenceBody[];
+  approval?: RetentionExecutionApprovalBody;
+}
+
+/** Body of `POST /v1/privacy/retention-policies/dry-run`. */
+export interface RetentionDryRunBody {
+  scope: string;
+  category: string;
+  record_id?: string;
+  execution_request?: RetentionExecutionRequestBody;
+}
+
+export type RetentionDueCandidateFinding =
+  | {
+      code?: string;
+      message?: string;
+      severity?: string;
+    }
+  | string;
+
+export interface RetentionDueCandidate {
+  candidate_id: string;
+  scope: string;
+  category: string;
+  record_id: string;
+  book_id: string;
+  entity_id: string;
+  closing_date: string;
+  due_date: string | null;
+  overdue: boolean;
+  policy_id: string;
+  policy_name: string;
+  schedule_id: string;
+  retention_period: string;
+  disposal_action: string;
+  destructive_action: boolean;
+  legal_hold_blockers: unknown[];
+  required_approvals: unknown[];
+  blockers: unknown[];
+  findings: RetentionDueCandidateFinding[];
+  outcome: string;
+  status: string;
+  would_execute: false;
+  destructive_disposal_completed: false;
+  full_erasure_completed: false;
+  next_step: string;
+}
+
+export interface RetentionDueCandidatesReport {
+  generated_at: string;
+  scope: 'book_archive';
+  category: 'documents';
+  candidate_count: number;
+  candidates: RetentionDueCandidate[];
+}
 
 export type RetentionOperatorReviewDecision = 'review_required' | 'blocked' | 'execution_recorded';
 
@@ -3065,6 +3255,17 @@ export interface AiProvenanceInput {
   source: string;
   tool?: string | null;
   statement_source?: string | null;
+  statement_sources?: AiStatementSourceInput[];
+}
+
+export interface AiStatementSourceInput {
+  path: string;
+  source_type: string;
+  source_label: string;
+  human_verified?: boolean;
+  human_verification_status?: AiHumanVerificationStatus;
+  authoritative_source_claimed?: boolean;
+  legal_validity_claimed?: boolean;
 }
 
 export interface UpdateActBody {
@@ -3191,6 +3392,24 @@ export interface RegistryAutoUpdateSettings {
   max_backoff_minutes: number;
   max_attempts_per_run: number;
   entity_defaults: RegistryAutoUpdateEntityDefaults;
+}
+
+export interface WorkflowReminderSourceSettings {
+  profile_calendar: boolean;
+  act_follow_ups: boolean;
+  attendance_hygiene: boolean;
+}
+
+export interface WorkflowReminderSettings {
+  enabled: boolean;
+  dashboard_limit: number;
+  due_soon_days: number;
+  attendance_lookahead_days: number;
+  sources: WorkflowReminderSourceSettings;
+}
+
+export interface WorkflowSettings {
+  reminders: WorkflowReminderSettings;
 }
 
 export type RegistryAutoUpdateStatus =
@@ -3908,9 +4127,74 @@ export interface CreateExternalSignerInviteBody {
   recipient_name: string;
   recipient_email: string;
   provider_hint?: string;
+  external_envelope_id?: string;
+  external_slot_id?: string;
   expires_at: string;
   purpose: string;
   actor?: string;
+}
+
+export type ExternalSigningOrderPolicy = 'parallel' | 'sequential';
+export type ExternalSignerIdentityRequirement =
+  | 'contact_control'
+  | 'provider_identity_assertion'
+  | 'government_id_check'
+  | 'representative_capacity';
+export type ExternalSignerSlotStatus =
+  'pending' | 'initiated' | 'signed' | 'declined' | 'revoked' | 'expired';
+
+export interface CreateExternalSigningEnvelopeSlotBody {
+  signer_label: string;
+  contact_hint?: string;
+  identity_requirements?: ExternalSignerIdentityRequirement[];
+  required?: boolean;
+}
+
+export interface CreateExternalSigningEnvelopeBody {
+  order_policy?: ExternalSigningOrderPolicy;
+  slots: CreateExternalSigningEnvelopeSlotBody[];
+  actor?: string;
+}
+
+export interface ExternalSigningEnvelopeEvidenceView {
+  label: string;
+  reference: string;
+  identity_requirement?: ExternalSignerIdentityRequirement;
+  digest?: string;
+}
+
+export interface ExternalSigningEnvelopeSlotView {
+  id: string;
+  signer_label: string;
+  contact_hint?: string;
+  identity_requirements?: ExternalSignerIdentityRequirement[];
+  required: boolean;
+  status: ExternalSignerSlotStatus;
+  evidence: ExternalSigningEnvelopeEvidenceView[];
+}
+
+export interface ExternalSigningEnvelopeCompletionSummaryView {
+  completed: boolean;
+  required_slot_count: number;
+  signed_required_slot_count: number;
+  blocking_required_slot_ids: string[];
+}
+
+export interface ExternalSigningEnvelopeView {
+  id: string;
+  act_id: string;
+  order_policy: ExternalSigningOrderPolicy;
+  slots: ExternalSigningEnvelopeSlotView[];
+  completed: boolean;
+  completion: ExternalSigningEnvelopeCompletionSummaryView;
+  notice: string;
+}
+
+export interface ExternalSignerInviteEnvelopeView {
+  id: string;
+  slot_id: string;
+  order_policy?: ExternalSigningOrderPolicy;
+  slot_status?: ExternalSignerSlotStatus;
 }
 
 /** Public invite metadata. The plaintext token and token hash are never listed. */
@@ -3923,6 +4207,7 @@ export interface ExternalSignerInviteView {
   purpose: string;
   status: ExternalSignerInviteStatus;
   workflow: string;
+  external_envelope?: ExternalSignerInviteEnvelopeView;
   token_hint: string;
   created_at: string;
   created_by: string;
@@ -3978,6 +4263,7 @@ export interface ExternalSignerInvitePublicView {
   purpose: string;
   status: ExternalSignerInviteStatus;
   workflow: string;
+  external_envelope?: ExternalSignerInviteEnvelopeView;
   created_at: string;
   expires_at: string;
   responded_at?: string;
@@ -4066,6 +4352,7 @@ export interface Settings {
   signing: SigningSettings;
   platform: PlatformSettings;
   registry_auto_update: RegistryAutoUpdateSettings;
+  workflow: WorkflowSettings;
   appearance: AppearanceSettings;
   ui: UiSettings;
   onboarding: OnboardingSettings;
@@ -4199,6 +4486,19 @@ export const DEFAULT_SETTINGS: Settings = {
     max_attempts_per_run: 10,
     entity_defaults: { enabled: false, enabled_profiles: [] },
   },
+  workflow: {
+    reminders: {
+      enabled: true,
+      dashboard_limit: 5,
+      due_soon_days: 45,
+      attendance_lookahead_days: 45,
+      sources: {
+        profile_calendar: true,
+        act_follow_ups: true,
+        attendance_hygiene: true,
+      },
+    },
+  },
   appearance: {
     theme: 'system',
     leather_texture: true,
@@ -4313,6 +4613,41 @@ export interface RestoreBody {
   actor?: string;
 }
 
+/** `POST /v1/ledger/recovery/restore/preflight` request. `passphrase` is transient. */
+export interface RestorePreflightBody {
+  archive: string;
+  passphrase?: string;
+  actor?: string;
+}
+
+/** Secret-free manifest summary returned by restore preflight. */
+export interface RestorePreflightManifest {
+  path: string;
+  schema: number | string | null;
+  version: number | string | null;
+  app_version: string | null;
+  store_schema_version: number | null;
+  ledger_length: number;
+  ledger_verified: boolean;
+  member_count: number;
+  sidecar_member_count: number;
+  db_member_present: boolean;
+  total_member_bytes: number;
+}
+
+/** Non-mutating restore readiness report. No archive hashes or key material are rendered. */
+export interface RestorePreflightView {
+  ok: boolean;
+  ready: boolean;
+  encrypted: boolean;
+  archive: string;
+  manifest: RestorePreflightManifest;
+  ledger_verified: boolean;
+  findings: string[];
+  errors: string[];
+  next_step: string;
+}
+
 /** `POST /v1/ledger/recovery/restore` response — whole-store restore outcome. */
 export interface RestoreOutcomeView {
   restored_from: string;
@@ -4320,6 +4655,62 @@ export interface RestoreOutcomeView {
   ledger_head: string | null;
   chain_verified: boolean;
   integrity: IntegrityReportView;
+}
+
+/** Secret-free manifest evidence persisted in a non-destructive backup recovery drill receipt. */
+export interface BackupRecoveryDrillManifestEvidence {
+  schema: string;
+  version: number;
+  store_schema_version: number;
+  ledger_length: number;
+  ledger_verified: boolean;
+  member_count: number;
+  sidecar_member_count: number;
+  db_member_present: boolean;
+  total_member_bytes: number;
+}
+
+/** `POST /v1/backup/recovery-drills` request. `passphrase` is transient and never persisted. */
+export interface BackupRecoveryDrillBody {
+  archive: string;
+  passphrase?: string;
+  operator_notes?: string;
+  custody_location?: string;
+  restore_executed?: boolean;
+  live_db_swapped?: boolean;
+  sidecars_staged?: boolean;
+  ledger_restored_appended?: boolean;
+  data_deleted?: boolean;
+  offsite_custody_proven?: boolean;
+  legal_archive_certified?: boolean;
+}
+
+/** Bounded custody receipt for a preflight-only backup recovery drill. */
+export interface BackupRecoveryDrillReceipt {
+  id: string;
+  created_at: string;
+  archive: string;
+  preflight_ok: boolean;
+  preflight_ready: boolean;
+  encrypted: boolean | null;
+  ledger_verified: boolean;
+  manifest: BackupRecoveryDrillManifestEvidence | null;
+  operator_notes?: string;
+  custody_location?: string;
+  restore_executed: false;
+  live_db_swapped: false;
+  sidecars_staged: false;
+  ledger_restored_appended: false;
+  data_deleted: false;
+  offsite_custody_proven: false;
+  legal_archive_certified: false;
+}
+
+/** `GET /v1/backup/recovery-drills` response. */
+export interface BackupRecoveryDrillList {
+  receipts: BackupRecoveryDrillReceipt[];
+  durable: boolean;
+  max_receipts: number;
 }
 
 // --- Hot backup (§3.2, plan t30) ------------------------------------------------
@@ -4668,6 +5059,37 @@ export interface PaperBookOcrDraftCanonicalDraftResponse {
   legal_notice: string;
 }
 
+/** `POST /v1/books/paper-import/{id}/ocr-drafts/{draft_id}/conversion-dossier` result. */
+export interface PaperBookOcrConversionDossierView {
+  dossier_id: string;
+  import_id: string;
+  draft_id: string;
+  source_text_digest: string | null;
+  source_page_spans: PaperBookOcrDraftPageSpanView[];
+  source_review_status: PaperBookOcrDraftReviewStatus;
+  source_reviewed_at: string | null;
+  source_reviewed_by: string | null;
+  created_at: string;
+  created_by: string;
+  dossier_notice: string;
+  metadata_only: boolean;
+  non_canonical: boolean;
+  act_created: boolean;
+  canonical_act_created: boolean;
+  canonical_minutes_claimed: boolean;
+  canonical_document_created: boolean;
+  signed_document_created: boolean;
+  archive_package_created: boolean;
+  pdfa_created: boolean;
+  pdfua_created: boolean;
+  signature_created: boolean;
+  seal_created: boolean;
+  legal_validity_claimed: boolean;
+  source_extracted_text_in_response: boolean;
+  source_extracted_text_in_ledger_event: boolean;
+  legal_notice: string;
+}
+
 /** `POST /v1/books/paper-import/{id}/ocr/run` local OCR outcome. */
 export interface PaperBookOcrRunView {
   import_id: string;
@@ -4833,15 +5255,22 @@ export type DataCleanupTarget = 'crash' | 'exports';
 /** `POST /v1/data/cleanup` request for non-domain storage maintenance. */
 export interface DataCleanupBody {
   target: DataCleanupTarget;
+  dry_run?: boolean;
+  minimum_age_days?: number;
+  keep_latest?: number;
 }
 
 /** `POST /v1/data/cleanup` response. */
 export interface DataCleanupResult {
   target: DataCleanupTarget;
   data_dir: string | null;
+  dry_run: boolean;
   deleted_bytes: number;
   deleted_files: number;
   deleted_directories: number;
+  would_delete_bytes: number;
+  would_delete_files: number;
+  would_delete_directories: number;
   skipped: string[];
 }
 

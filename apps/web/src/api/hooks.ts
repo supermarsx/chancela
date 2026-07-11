@@ -35,6 +35,9 @@ import type {
   CreateFollowUpBody,
   CreateExternalSignerInviteBody,
   ExternalSignerInviteView,
+  CreateExternalSigningEnvelopeBody,
+  ExternalSigningEnvelopeView,
+  ExternalValidatorReportUploadRequest,
   FollowUpView,
   ImportedDocumentReviewBody,
   ImportedDocumentView,
@@ -47,6 +50,7 @@ import type {
   PaperBookImportValidateBody,
   PaperBookImportPreserveBody,
   PaperBookImportView,
+  PaperBookOcrConversionDossierView,
   PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftCreateBody,
   PaperBookOcrDraftReviewBody,
@@ -73,8 +77,10 @@ import type {
   DataCleanupBody,
   DataKeyRotationExecuteBody,
   DataKeyRotationPreflightBody,
+  BackupRecoveryDrillBody,
   ReanchorBody,
   RestoreBody,
+  RestorePreflightBody,
   CollisionPolicy,
   StartOverBookBody,
   ResetDataBody,
@@ -120,6 +126,8 @@ export const keys = {
     ['books', 'paper-imports', { bookRef: bookRef ?? null }] as const,
   paperBookOcrDrafts: (importId: string) =>
     ['books', 'paper-imports', importId, 'ocr-drafts'] as const,
+  paperBookOcrConversionDossiers: (importId: string) =>
+    ['books', 'paper-imports', importId, 'conversion-dossiers'] as const,
   act: (id: string) => ['acts', id] as const,
   compliance: (id: string) => ['acts', id, 'compliance'] as const,
   actFollowUps: (id: string) => ['acts', id, 'follow-ups'] as const,
@@ -129,6 +137,7 @@ export const keys = {
     ['documents', 'imported', { actId: actId ?? null }] as const,
   importedDocument: (id: string) => ['documents', 'imported', id] as const,
   actSignature: (id: string) => ['acts', id, 'signature'] as const,
+  externalSigningEnvelopes: (id: string) => ['acts', id, 'external-signing', 'envelopes'] as const,
   externalSignerInvites: (id: string) => ['acts', id, 'signature', 'external-invites'] as const,
   signatureProviders: ['signature', 'providers'] as const,
   templates: (family?: EntityFamily, stage?: LifecycleStage) =>
@@ -136,7 +145,10 @@ export const keys = {
   ledger: (params: LedgerQueryParams) => ['ledger', params] as const,
   ledgerVerify: ['ledger', 'verify'] as const,
   ledgerIntegrity: ['ledger', 'integrity'] as const,
+  ledgerRestorePreflight: ['ledger', 'restore', 'preflight'] as const,
+  backupRecoveryDrills: ['backup', 'recovery-drills'] as const,
   dataStatus: ['data', 'status'] as const,
+  dataBackup: ['data', 'backup'] as const,
   dataKeyRotationPreflight: ['data', 'key-rotation', 'preflight'] as const,
   dataKeyRotationExecution: ['data', 'key-rotation', 'execution'] as const,
   dashboard: ['dashboard'] as const,
@@ -188,6 +200,7 @@ export const keys = {
   privacyBreachPlaybooks: ['privacy', 'breach-playbooks'] as const,
   privacyTransferControls: ['privacy', 'transfer-controls'] as const,
   privacyRetentionPolicies: ['privacy', 'retention-policies'] as const,
+  privacyRetentionDueCandidates: ['privacy', 'retention-due-candidates'] as const,
   privacyRetentionExecutions: (status: RetentionExecutionStatus | 'all' = 'all') =>
     ['privacy', 'retention-executions', status] as const,
 };
@@ -411,6 +424,14 @@ export function useDownloadBookArchivePackage(id: string) {
   return useMutation({ mutationFn: () => api.fetchBookArchivePackage(id) });
 }
 
+/**
+ * Download the metadata-only local DGLAB interchange manifest scaffold as JSON.
+ * Read-only: this GET must not create archive/package bytes or mutate ledger state.
+ */
+export function useDownloadBookLocalDglabInterchangeManifest(id: string) {
+  return useMutation({ mutationFn: () => api.getBookLocalDglabInterchangeManifest(id) });
+}
+
 export function usePaperBookImports(bookRef?: string) {
   return useQuery({
     queryKey: keys.paperBookImports(bookRef),
@@ -573,6 +594,46 @@ export function useCreatePaperBookOcrDraftActDraft(bookId?: string) {
   });
 }
 
+export function usePaperBookOcrConversionDossiers(importId: string) {
+  return useQuery({
+    queryKey: keys.paperBookOcrConversionDossiers(importId),
+    queryFn: () => api.listPaperBookOcrConversionDossiers(importId),
+    enabled: !!importId,
+    retry: false,
+  });
+}
+
+function upsertPaperBookOcrConversionDossier(
+  rows: PaperBookOcrConversionDossierView[] | undefined,
+  dossier: PaperBookOcrConversionDossierView,
+): PaperBookOcrConversionDossierView[] {
+  const current = rows ?? [];
+  const isSameDossier = (row: PaperBookOcrConversionDossierView) =>
+    row.dossier_id === dossier.dossier_id ||
+    (row.import_id === dossier.import_id && row.draft_id === dossier.draft_id);
+  return current.some(isSameDossier)
+    ? current.map((row) => (isSameDossier(row) ? dossier : row))
+    : [dossier, ...current];
+}
+
+export function useCreatePaperBookOcrConversionDossier() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ importId, draftId }: { importId: string; draftId: string }) =>
+      api.createPaperBookOcrConversionDossier(importId, draftId),
+    onSuccess: (dossier) => {
+      qc.setQueryData<PaperBookOcrConversionDossierView[]>(
+        keys.paperBookOcrConversionDossiers(dossier.import_id),
+        (rows) => upsertPaperBookOcrConversionDossier(rows, dossier),
+      );
+      void qc.invalidateQueries({
+        queryKey: keys.paperBookOcrConversionDossiers(dossier.import_id),
+      });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
 export function useDownloadPaperBookImport() {
   return useMutation({ mutationFn: (id: string) => api.fetchPaperBookImportBytes(id) });
 }
@@ -595,7 +656,8 @@ export function useExternalValidatorReports() {
 export function useUploadExternalValidatorReport() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (rawJson: string) => api.uploadExternalValidatorReport(rawJson),
+    mutationFn: (body: ExternalValidatorReportUploadRequest) =>
+      api.uploadExternalValidatorReport(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.externalValidatorReports });
     },
@@ -1014,6 +1076,41 @@ export function useExternalSignerInvites(id: string, enabled: boolean) {
 }
 
 /**
+ * Workflow-only external signing envelopes for one sealed act. The server response is redacted to
+ * ordered slot/status metadata and an explicit no-legal/no-qualified notice.
+ */
+export function useExternalSigningEnvelopes(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.externalSigningEnvelopes(id),
+    queryFn: () => api.listExternalSigningEnvelopes(id),
+    enabled: enabled && !!id,
+    retry: false,
+  });
+}
+
+/** Create one workflow-only external-signing envelope for a sealed act. */
+export function useCreateExternalSigningEnvelope(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateExternalSigningEnvelopeBody) =>
+      api.createExternalSigningEnvelope(id, body),
+    onSuccess: (envelope) => {
+      qc.setQueryData<ExternalSigningEnvelopeView[]>(
+        keys.externalSigningEnvelopes(id),
+        (current) => {
+          const rows = current ?? [];
+          return rows.some((row) => row.id === envelope.id)
+            ? rows.map((row) => (row.id === envelope.id ? envelope : row))
+            : [envelope, ...rows];
+        },
+      );
+      void qc.invalidateQueries({ queryKey: keys.externalSigningEnvelopes(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
  * Create an external signer invitation. The returned plaintext token is emitted exactly once by
  * the server; this mutation invalidates the redacted list rather than writing the token to it.
  */
@@ -1023,6 +1120,7 @@ export function useCreateExternalSignerInvite(id: string) {
     mutationFn: (body: CreateExternalSignerInviteBody) => api.createExternalSignerInvite(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.externalSignerInvites(id) });
+      void qc.invalidateQueries({ queryKey: keys.externalSigningEnvelopes(id) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -1106,6 +1204,18 @@ export function useDataStatus() {
   });
 }
 
+/** Hot whole-store backup (`POST /v1/backup`). Returns only the server manifest. */
+export function useCreateBackup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: keys.dataBackup,
+    mutationFn: () => api.backup(),
+    onSuccess: () => {
+      invalidateAfterRecovery(qc);
+    },
+  });
+}
+
 /** Bounded storage cleanup for maintenance-only concerns such as crash reports and exports. */
 export function useCleanDataStorage() {
   const qc = useQueryClient();
@@ -1173,6 +1283,32 @@ export function useRestoreLedger() {
   return useMutation({
     mutationFn: (body: RestoreBody) => api.restoreLedger(body),
     onSuccess: () => invalidateAfterRecovery(qc),
+  });
+}
+
+/**
+ * Read-only whole-store restore preflight. It verifies a selected archive and optional
+ * transient passphrase without executing restore or invalidating live recovery state.
+ */
+export function useRestoreLedgerPreflight() {
+  return useMutation({
+    mutationKey: keys.ledgerRestorePreflight,
+    mutationFn: (body: RestorePreflightBody) => api.restoreLedgerPreflight(body),
+  });
+}
+
+/**
+ * Non-destructive backup recovery drill receipt. The server runs restore preflight only and stores
+ * a bounded custody receipt; no live restore endpoint is called by this mutation.
+ */
+export function useCreateBackupRecoveryDrill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: keys.backupRecoveryDrills,
+    mutationFn: (body: BackupRecoveryDrillBody) => api.createBackupRecoveryDrill(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.backupRecoveryDrills });
+    },
   });
 }
 
@@ -2167,6 +2303,14 @@ export function usePrivacyRetentionExecutions(
   });
 }
 
+export function usePrivacyRetentionDueCandidates(enabled = true) {
+  return useQuery({
+    queryKey: keys.privacyRetentionDueCandidates,
+    queryFn: () => api.listRetentionDueCandidates(),
+    enabled,
+  });
+}
+
 export function useCreatePrivacyRetentionPolicy() {
   const qc = useQueryClient();
   return useMutation({
@@ -2198,8 +2342,14 @@ export function usePatchPrivacyRetentionPolicy() {
 }
 
 export function useDryRunPrivacyRetentionPolicy() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: RetentionDryRunBody) => api.dryRunRetentionPolicy(body),
+    onSuccess: (report) => {
+      if (!report.execution_record) return;
+      void qc.invalidateQueries({ queryKey: keys.privacyRetentionDueCandidates });
+      void qc.invalidateQueries({ queryKey: ['privacy', 'retention-executions'] });
+    },
   });
 }
 
