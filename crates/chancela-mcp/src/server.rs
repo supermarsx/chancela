@@ -33,6 +33,9 @@ pub const MCP_SPEC_09_COVERAGE_RESOURCE_URI: &str = "chancela://mcp/spec-09-cove
 /// Read-only MCP resource URI for static workflow provenance review guidance.
 pub const MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI: &str =
     "chancela://mcp/workflow-provenance-review";
+/// Read-only MCP resource URI for static draft-vs-signed comparison review guidance.
+pub const MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI: &str =
+    "chancela://mcp/draft-signed-comparison-review";
 
 const DRAFT_MINUTES_REVIEW_PROMPT_NAME: &str = "draft_minutes_human_review_checklist";
 const DRAFT_MINUTES_REVIEW_PROMPT_TITLE: &str = "Draft Minutes Human Review Checklist";
@@ -46,6 +49,10 @@ const PAPER_BOOK_OCR_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review prompt for 
 const WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME: &str = "workflow_provenance_review_checklist";
 const WORKFLOW_PROVENANCE_REVIEW_PROMPT_TITLE: &str = "Workflow Provenance Review Checklist";
 const WORKFLOW_PROVENANCE_REVIEW_PROMPT_DESCRIPTION: &str = "Static human-review prompt for workflow provenance evidence. Guidance only; no legal-validity, source-certification, provider, or trust claims.";
+const DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME: &str = "draft_signed_comparison_review_checklist";
+const DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_TITLE: &str =
+    "Draft-Signed Comparison Review Checklist";
+const DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_DESCRIPTION: &str = "Static human-review prompt for comparing draft identifiers with signed artifacts. Guidance only; no legal-validity, source-certification, external-validation, signature-qualification, provider, or trust claims.";
 
 const HUMAN_VERIFICATION_PENDING: &str = "pending_human_verification";
 const HUMAN_VERIFICATION_ACCEPTED: &str = "accepted_by_human";
@@ -86,6 +93,12 @@ const PROMPT_CATALOG: &[McpPrompt] = &[
         title: WORKFLOW_PROVENANCE_REVIEW_PROMPT_TITLE,
         description: WORKFLOW_PROVENANCE_REVIEW_PROMPT_DESCRIPTION,
         text: workflow_provenance_review_prompt_text,
+    },
+    McpPrompt {
+        name: DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME,
+        title: DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_TITLE,
+        description: DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_DESCRIPTION,
+        text: draft_signed_comparison_review_prompt_text,
     },
 ];
 
@@ -322,6 +335,17 @@ impl<T: HttpTransport> McpServer<T> {
                         "audience": ["user", "assistant"],
                         "priority": 0.65,
                     },
+                },
+                {
+                    "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                    "name": "draft_signed_comparison_review",
+                    "title": "Draft-Signed Comparison Review",
+                    "description": "Read-only static draft-vs-signed comparison review aid. Contains no secrets, performs no bridge or provider calls, and makes no legal-validity, source-certification, external-validation, signature-qualification, provider, or trust claims.",
+                    "mimeType": "application/json",
+                    "annotations": {
+                        "audience": ["user", "assistant"],
+                        "priority": 0.65,
+                    },
                 }
             ]
         })
@@ -348,11 +372,23 @@ impl<T: HttpTransport> McpServer<T> {
                 );
             }
         };
+        if uri == MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI
+            && (params.len() != 1 || !params.contains_key("uri"))
+        {
+            return JsonRpcResponse::error(
+                id,
+                codes::INVALID_PARAMS,
+                "draft-signed comparison resource accepts only uri",
+            );
+        }
         let payload = match uri {
             MCP_STATUS_RESOURCE_URI => self.status_resource_payload(),
             MCP_SPEC_09_COVERAGE_RESOURCE_URI => self.spec_09_coverage_resource_payload(),
             MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI => {
                 self.workflow_provenance_review_resource_payload()
+            }
+            MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI => {
+                self.draft_signed_comparison_review_resource_payload()
             }
             _ => {
                 return JsonRpcResponse::error_with_data(
@@ -462,6 +498,7 @@ impl<T: HttpTransport> McpServer<T> {
                             MCP_STATUS_RESOURCE_URI,
                             MCP_SPEC_09_COVERAGE_RESOURCE_URI,
                             MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                            MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
                         ],
                         "prompts": prompt_names,
                     },
@@ -497,9 +534,16 @@ impl<T: HttpTransport> McpServer<T> {
                 },
             },
             "mcp_review_aids": {
-                "resources": [MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI],
-                "prompts": [WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME],
+                "resources": [
+                    MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                    MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                ],
+                "prompts": [
+                    WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
+                    DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME,
+                ],
                 "purpose": "static_offline_human_review_guidance_only",
+                "ai_01_claimed": false,
                 "ai_02_claimed": false,
                 "full_ai_mcp_completion_claimed": false,
             },
@@ -509,6 +553,9 @@ impl<T: HttpTransport> McpServer<T> {
                 "resource_read_forwards_api_key": false,
                 "secrets_in_resource": false,
                 "legal_validity_claimed": false,
+                "source_certification_claimed": false,
+                "trust_claimed": false,
+                "external_validation_claimed": false,
                 "archive_certification_claimed": false,
                 "signature_qualification_claimed": false,
             },
@@ -610,6 +657,118 @@ impl<T: HttpTransport> McpServer<T> {
                 "Use only evidence supplied by the operator or explicitly retrieved through Chancela tools.",
                 "Do not claim legal validity, source certification, provider assurance, trust status, external verification, archive certification, or signature qualification.",
                 "Do not include credentials, API keys, secrets, or personal data that is not needed for the review.",
+                "Normal platform permissions, lifecycle gates, and human review remain required.",
+            ],
+        })
+    }
+
+    fn draft_signed_comparison_review_resource_payload(&self) -> Value {
+        json!({
+            "kind": "chancela_mcp_draft_signed_comparison_review",
+            "schema_version": 1,
+            "source": "static_mcp_review_aid",
+            "offline": true,
+            "static": true,
+            "local_json_only": true,
+            "arguments": [],
+            "bridge_calls": false,
+            "api_calls": false,
+            "provider_calls": false,
+            "secrets_in_resource": false,
+            "claims": {
+                "legal_validity": false,
+                "source_certification": false,
+                "provider": false,
+                "trust": false,
+                "external_validation": false,
+                "archive_certification": false,
+                "signature_qualification": false,
+            },
+            "comparison_categories": [
+                {
+                    "id": "draft_identifiers",
+                    "title": "Draft identifiers",
+                    "checkpoints": [
+                        "Record draft act id, entity id, book id, draft version, template id, source record ids, author or generator, created timestamp, and draft digest when supplied.",
+                        "Check that each draft identifier is tied to supplied platform evidence, a manifest entry, or an explicit reviewer note.",
+                        "Flag missing, ambiguous, duplicate, or conflicting draft identifiers before comparing content.",
+                    ],
+                },
+                {
+                    "id": "signed_artifact_identifiers",
+                    "title": "Signed artifact identifiers",
+                    "checkpoints": [
+                        "Record signed document id, artifact id or URI, signature bundle id, seal id, signed version, signature event id, manifest id, and signed artifact digest when supplied.",
+                        "Check that signed artifact identifiers point to the intended act, entity, book, and lifecycle event in the supplied evidence.",
+                        "Flag artifacts that cannot be tied back to the draft or approved version under review.",
+                    ],
+                },
+                {
+                    "id": "digest_comparison",
+                    "title": "Digest comparison",
+                    "checkpoints": [
+                        "Compare draft digest, canonical text digest, rendered artifact digest, signed artifact digest, manifest member digest, and ledger digest when supplied.",
+                        "Separate exact digest matches from expected rendering changes, missing digest evidence, and unresolved digest mismatches.",
+                        "Treat digest matches or mismatches as technical review signals only, not external validation or signature qualification.",
+                    ],
+                },
+                {
+                    "id": "text_comparison",
+                    "title": "Text comparison",
+                    "checkpoints": [
+                        "Compare normalized draft text with signed text for names, capacities, dates, amounts, article references, resolutions, tables, attachments, footnotes, and annex references.",
+                        "Classify differences as formatting only, expected rendering change, authorized content edit, uncertain change, or substantive mismatch.",
+                        "Preserve reviewer uncertainty when OCR, rendering, extraction, whitespace, or layout changes prevent a confident comparison.",
+                    ],
+                },
+                {
+                    "id": "version_lifecycle_comparison",
+                    "title": "Version and lifecycle comparison",
+                    "checkpoints": [
+                        "Compare draft version, approved version, rendered version, signed version, event ids, actors, timestamps, and lifecycle states from the supplied evidence.",
+                        "Check whether every content change after the draft has an explicit approval or correction record supplied for review.",
+                        "Flag skipped, reordered, duplicated, or unclear lifecycle transitions for human follow-up.",
+                    ],
+                },
+                {
+                    "id": "mismatch_triage",
+                    "title": "Mismatch triage",
+                    "checkpoints": [
+                        "Classify each mismatch as exact match, expected formatting change, authorized edit, unresolved mismatch, or blocking mismatch.",
+                        "Record the evidence references, affected field, reviewer rationale, owner, and next action for every unresolved or blocking mismatch.",
+                        "Do not advance a legal-validity, source-certification, trust, external-validation, or signature-qualification conclusion from this review aid.",
+                    ],
+                },
+                {
+                    "id": "human_review_notes",
+                    "title": "Human review notes",
+                    "checkpoints": [
+                        "Separate recorded facts from assumptions, suggested corrections, unresolved questions, and follow-up owners.",
+                        "Label suggested wording or correction notes as suggestions only until a responsible human verifies them through normal platform gates.",
+                        "Preserve a concise boundary note: static local JSON review aid, no arguments, no bridge calls, no API calls, no provider calls, no secrets, and no legal or trust claims.",
+                    ],
+                },
+            ],
+            "mismatch_triage": {
+                "labels": [
+                    "exact_match",
+                    "expected_formatting_change",
+                    "authorized_content_edit",
+                    "unresolved_mismatch",
+                    "blocking_mismatch",
+                ],
+                "required_notes": [
+                    "evidence_reference",
+                    "affected_identifier_or_text",
+                    "reviewer_rationale",
+                    "follow_up_owner",
+                    "next_action",
+                ],
+            },
+            "operator_boundaries": [
+                "Use only evidence supplied by the operator or explicitly retrieved through Chancela tools.",
+                "Do not include credentials, API keys, secrets, or personal data that is not needed for the review.",
+                "Do not claim legal validity, source certification, provider assurance, trust status, external validation, archive certification, or signature qualification.",
                 "Normal platform permissions, lifecycle gates, and human review remain required.",
             ],
         })
@@ -871,6 +1030,32 @@ Return a concise workflow provenance review with these sections:
 - Signature/archive technical evidence gaps
 - Human review notes and follow-up questions
 - Boundary reminder: human review aid only, no legal validity, no source certification, no hidden provider call"#
+}
+
+fn draft_signed_comparison_review_prompt_text() -> &'static str {
+    r#"You are helping a human reviewer compare a Chancela draft with a signed artifact.
+
+Use this checklist as static offline review guidance only. It accepts no arguments, uses only evidence the human reviewer supplies or explicitly retrieves through Chancela tools, and makes no bridge, API, registry, signature, archive, trust, legal, external-validation, or provider call. There is no hidden provider call. Do not claim legal validity, source certification, signature qualification, provider assurance, trust-list status, external validation, or that a signed artifact is correct.
+
+Review checklist:
+1. Draft identifiers: record draft act id, entity id, book id, draft version, template id, source record ids, author or generator, created timestamp, and draft digest when supplied.
+2. Signed artifact identifiers: record signed document id, artifact id or URI, signature bundle id, seal id, signed version, signature event id, manifest id, and signed artifact digest when supplied.
+3. Digest comparison: compare draft digest, canonical text digest, rendered artifact digest, signed artifact digest, manifest member digest, and ledger digest. Separate exact matches, expected rendering changes, missing digest evidence, and unresolved digest mismatches.
+4. Text comparison: compare names, capacities, dates, amounts, article references, resolutions, tables, attachments, footnotes, annex references, and any content that could change meaning.
+5. Version comparison: compare draft, approved, rendered, and signed versions with event ids, actors, timestamps, and lifecycle states.
+6. Mismatch triage: classify each difference as exact match, expected formatting change, authorized content edit, unresolved mismatch, or blocking mismatch.
+7. Human-review notes: record evidence references, affected fields, reviewer rationale, follow-up owner, next action, and unresolved questions.
+
+Return a concise draft-vs-signed comparison review with these sections:
+- Evidence reviewed
+- Draft identifiers
+- Signed artifact identifiers
+- Digest comparison
+- Text comparison
+- Version and lifecycle comparison
+- Mismatch triage
+- Human review notes and follow-up questions
+- Boundary reminder: human review aid only, no legal validity, no source certification, no external validation, no signature qualification, no hidden provider call"#
 }
 
 fn tool_text_result(text: &str, is_error: bool) -> Value {
@@ -1512,6 +1697,16 @@ mod tests {
             json!(WORKFLOW_PROVENANCE_REVIEW_PROMPT_DESCRIPTION)
         );
         assert_eq!(workflow_provenance["arguments"], json!([]));
+        let draft_signed = by_name(DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME);
+        assert_eq!(
+            draft_signed["title"],
+            json!(DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_TITLE)
+        );
+        assert_eq!(
+            draft_signed["description"],
+            json!(DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_DESCRIPTION)
+        );
+        assert_eq!(draft_signed["arguments"], json!([]));
         let encoded = serde_json::to_string(&result).unwrap();
         assert!(!encoded.contains("chk_ab12cd_secretsecret"));
         assert!(!encoded.contains("secretsecret"));
@@ -1672,6 +1867,50 @@ mod tests {
     }
 
     #[test]
+    fn prompts_get_returns_draft_signed_comparison_review_without_http_or_secret() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "prompts/get",
+                51,
+                json!({ "name": DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        assert_eq!(
+            result["description"],
+            json!(DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_DESCRIPTION)
+        );
+        let messages = result["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], json!("user"));
+        assert_eq!(messages[0]["content"]["type"], json!("text"));
+        let text = messages[0]["content"]["text"].as_str().unwrap();
+        for needle in [
+            "draft",
+            "signed artifact",
+            "Digest comparison",
+            "Text comparison",
+            "Version comparison",
+            "Mismatch triage",
+            "Human-review notes",
+            "no legal validity",
+            "no source certification",
+            "no external validation",
+            "no signature qualification",
+            "no hidden provider call",
+        ] {
+            assert!(
+                text.contains(needle),
+                "prompt should contain {needle:?}: {text}"
+            );
+        }
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn prompts_get_rejects_invalid_prompt_params_without_http() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
 
@@ -1711,6 +1950,20 @@ mod tests {
         assert_eq!(error.code, codes::INVALID_PARAMS);
         assert!(error.message.contains("does not accept arguments"));
 
+        let draft_signed_arguments = server
+            .handle(&req(
+                "prompts/get",
+                52,
+                json!({
+                    "name": DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME,
+                    "arguments": { "draft_id": "act_draft_123" }
+                }),
+            ))
+            .unwrap();
+        let error = draft_signed_arguments.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("does not accept arguments"));
+
         assert!(server.bridge_recorded().is_empty());
     }
 
@@ -1722,7 +1975,7 @@ mod tests {
             .unwrap();
         let result = resp.result.unwrap();
         let resources = result["resources"].as_array().unwrap();
-        assert_eq!(resources.len(), 3);
+        assert_eq!(resources.len(), 4);
         let by_uri = |uri: &str| {
             resources
                 .iter()
@@ -1745,6 +1998,12 @@ mod tests {
         assert_eq!(workflow_provenance["mimeType"], json!("application/json"));
         assert_eq!(
             workflow_provenance["annotations"]["audience"],
+            json!(["user", "assistant"])
+        );
+        let draft_signed = by_uri(MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI);
+        assert_eq!(draft_signed["mimeType"], json!("application/json"));
+        assert_eq!(
+            draft_signed["annotations"]["audience"],
             json!(["user", "assistant"])
         );
         assert!(server.bridge_recorded().is_empty());
@@ -1870,6 +2129,107 @@ mod tests {
     }
 
     #[test]
+    fn resources_read_draft_signed_comparison_review_returns_static_categories_without_http_or_secret()
+     {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                53,
+                json!({ "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let contents = result["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(
+            contents[0]["uri"],
+            json!(MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI)
+        );
+        assert_eq!(contents[0]["mimeType"], json!("application/json"));
+        let text = contents[0]["text"].as_str().unwrap();
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+
+        let review: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            review["kind"],
+            json!("chancela_mcp_draft_signed_comparison_review")
+        );
+        assert_eq!(review["offline"], json!(true));
+        assert_eq!(review["static"], json!(true));
+        assert_eq!(review["local_json_only"], json!(true));
+        assert_eq!(review["arguments"], json!([]));
+        assert_eq!(review["bridge_calls"], json!(false));
+        assert_eq!(review["api_calls"], json!(false));
+        assert_eq!(review["provider_calls"], json!(false));
+        assert_eq!(review["secrets_in_resource"], json!(false));
+        assert_eq!(review["claims"]["legal_validity"], json!(false));
+        assert_eq!(review["claims"]["source_certification"], json!(false));
+        assert_eq!(review["claims"]["provider"], json!(false));
+        assert_eq!(review["claims"]["trust"], json!(false));
+        assert_eq!(review["claims"]["external_validation"], json!(false));
+        assert_eq!(review["claims"]["signature_qualification"], json!(false));
+
+        let categories = review["comparison_categories"].as_array().unwrap();
+        let category_ids = categories
+            .iter()
+            .map(|category| category["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for expected in [
+            "draft_identifiers",
+            "signed_artifact_identifiers",
+            "digest_comparison",
+            "text_comparison",
+            "version_lifecycle_comparison",
+            "mismatch_triage",
+            "human_review_notes",
+        ] {
+            assert!(
+                category_ids.contains(&expected),
+                "resource should include category {expected:?}: {review}"
+            );
+        }
+        assert_eq!(
+            review["mismatch_triage"]["labels"],
+            json!([
+                "exact_match",
+                "expected_formatting_change",
+                "authorized_content_edit",
+                "unresolved_mismatch",
+                "blocking_mismatch"
+            ])
+        );
+        for category in categories {
+            assert!(!category["checkpoints"].as_array().unwrap().is_empty());
+        }
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
+    fn resources_read_draft_signed_comparison_review_rejects_arguments_and_extra_params() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+
+        for params in [
+            json!({
+                "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                "arguments": {}
+            }),
+            json!({
+                "uri": MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI,
+                "cursor": "ignored"
+            }),
+        ] {
+            let resp = server.handle(&req("resources/read", 54, params)).unwrap();
+            let error = resp.error.unwrap();
+            assert_eq!(error.code, codes::INVALID_PARAMS);
+            assert!(error.message.contains("accepts only uri"));
+        }
+
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn resources_read_spec_09_coverage_returns_boundaries_without_http_or_secret() {
         let cfg = McpConfig {
             enabled_tools: EnabledTools::List(vec![
@@ -1909,6 +2269,13 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
+                .any(|id| id.as_str() == Some("AI-01"))
+        );
+        assert!(
+            !coverage["spec"]["covered_here"]
+                .as_array()
+                .unwrap()
+                .iter()
                 .any(|id| id.as_str() == Some("AI-02"))
         );
         assert_eq!(coverage["coverage"]["AI-10"]["status"], json!("partial"));
@@ -1917,7 +2284,8 @@ mod tests {
             json!([
                 MCP_STATUS_RESOURCE_URI,
                 MCP_SPEC_09_COVERAGE_RESOURCE_URI,
-                MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI
+                MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI
             ])
         );
         assert!(
@@ -1927,14 +2295,28 @@ mod tests {
                 .iter()
                 .any(|name| name.as_str() == Some(COMPLIANCE_PACK_GAP_REVIEW_PROMPT_NAME))
         );
+        assert!(
+            coverage["coverage"]["AI-10"]["covered_locally"]["prompts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name.as_str() == Some(DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME))
+        );
         assert_eq!(
             coverage["mcp_review_aids"]["resources"],
-            json!([MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI])
+            json!([
+                MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                MCP_DRAFT_SIGNED_COMPARISON_REVIEW_RESOURCE_URI
+            ])
         );
         assert_eq!(
             coverage["mcp_review_aids"]["prompts"],
-            json!([WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME])
+            json!([
+                WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
+                DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME
+            ])
         );
+        assert_eq!(coverage["mcp_review_aids"]["ai_01_claimed"], json!(false));
         assert_eq!(coverage["mcp_review_aids"]["ai_02_claimed"], json!(false));
         assert_eq!(
             coverage["mcp_review_aids"]["full_ai_mcp_completion_claimed"],
@@ -1974,6 +2356,19 @@ mod tests {
         );
         assert_eq!(
             coverage["review_boundaries"]["legal_validity_claimed"],
+            json!(false)
+        );
+        assert_eq!(
+            coverage["review_boundaries"]["source_certification_claimed"],
+            json!(false)
+        );
+        assert_eq!(coverage["review_boundaries"]["trust_claimed"], json!(false));
+        assert_eq!(
+            coverage["review_boundaries"]["external_validation_claimed"],
+            json!(false)
+        );
+        assert_eq!(
+            coverage["review_boundaries"]["signature_qualification_claimed"],
             json!(false)
         );
         assert!(server.bridge_recorded().is_empty());
