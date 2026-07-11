@@ -1,0 +1,20 @@
+[package]
+name = "chancela-scap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "AMA SCAP (Sistema de Certificação de Atributos Profissionais) client: attribute-provider listing, attribute fetch, and professional-attribute-qualified signatures (spec 04, t67 §1.2)."
+
+[dependencies]
+# Consumes the xades/cades signature seam for the professional-attribute signature; must NOT be
+# depended on by them (no cycle). Mock transport is the default; real preprod/prod is config-gated.
+chancela-xades = { workspace = true }
+chancela-cades = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }

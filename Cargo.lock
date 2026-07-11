@@ -677,6 +677,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-scap"
+version = "0.1.0"
+dependencies = [
+ "chancela-cades",
+ "chancela-xades",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+]
+
+[[package]]
 name = "chancela-server"
 version = "0.1.0"
 dependencies = [
@@ -810,6 +823,22 @@ dependencies = [
  "time",
  "tokio",
  "x509-cert",
+]
+
+[[package]]
+name = "chancela-xades"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chancela-cades",
+ "chancela-tsa",
+ "der",
+ "quick-xml",
+ "roxmltree",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "time",
 ]
 
 [[package]]
@@ -2895,6 +2924,15 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "roxmltree"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1964b10c76125c36f8afe190065a4bf9a87bf324842c05701330bba9f1cacbb"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

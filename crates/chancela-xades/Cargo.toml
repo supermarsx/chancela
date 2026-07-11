@@ -1,0 +1,25 @@
+[package]
+name = "chancela-xades"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "XMLDSig + XAdES (B/T/LT/LTA) over the RawSignature seam, incl. in-crate exclusive XML canonicalization (spec 04, SIG)."
+
+[dependencies]
+# Leaf crate: consumes the RawSignature/alg contract + TSA, but must NOT depend on
+# chancela-signing (mirrors the chancela-csc no-cycle rule; see .orchestration/plans/t67.md §1.1).
+chancela-cades = { workspace = true }
+chancela-tsa = { workspace = true }
+roxmltree = { workspace = true }
+quick-xml = { workspace = true }
+sha2 = { workspace = true }
+der = { workspace = true }
+base64 = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

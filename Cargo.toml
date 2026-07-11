@@ -71,6 +71,12 @@ chancela-mcp = { path = "crates/chancela-mcp" }
 # store recovery + ledger + core public APIs (and chancela-api's `User` type for user provisioning).
 # Leaf binary crate; nothing depends on it. See .orchestration/logs/t72.md.
 chancela-cli = { path = "crates/chancela-cli" }
+# SDK-parity signing crates (t67). chancela-xades: XMLDSig + XAdES (B/T/LT/LTA) with in-crate
+# exclusive XML canonicalization over the RawSignature seam; leaf, must NOT depend on
+# chancela-signing (mirrors chancela-csc no-cycle rule). chancela-scap: AMA SCAP professional-
+# attribute client (mock transport default). See .orchestration/plans/t67.md §1.1/§1.2.
+chancela-xades = { path = "crates/chancela-xades" }
+chancela-scap = { path = "crates/chancela-scap" }
 
 # Third-party (conservative, declared once so every crate inherits identical versions).
 serde = { version = "1", features = ["derive"] }
@@ -123,6 +129,11 @@ roxmltree = "0.21"                                          # read-only XML pars
 # keep chrono+jiff+rayon (the rest of the default set) so datetime + parallelism still work.
 lopdf = { version = "0.43", default-features = false, features = ["chrono", "jiff", "rayon"] } # object-level PDF (PAdES sig dict built by us)
 base64 = "0.22"                                             # CMD wire fields, PEM
+# png (t67 §1.4): minimal PNG decoder for visible-seal raster embedding (e3 decodes PNG → a raw
+# FlateDecode PDF XObject; JPEG is stored as DCTDecode bytes with no decode). Pulls only
+# miniz_oxide/fdeflate/flate2/crc32fast/bitflags — NO ASN.1 crates, so it is safe vs the load-bearing
+# der-0.7 / cms-0.2 / x509-cert-0.2 pins (verified: those versions are unchanged in Cargo.lock).
+png = "0.17"
 # scraper (html5ever): malformed-HTML-tolerant DOM/text for the certidão permanente parser (t11).
 # Independent of the load-bearing der-0.7 pins; used only to get a clean DOM, extraction is
 # label-driven off the legally-stable Portuguese field names. Exact patch pinned below.
