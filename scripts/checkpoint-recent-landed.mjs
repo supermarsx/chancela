@@ -1735,12 +1735,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "retention duplicate review-only request guards, queued-review status surfacing,\nand prior bounded execution projection",
+    "retention duplicate review-only request guards, queued-review status surfacing,\nprior bounded execution projection, and eligible no-action bounded evidence UI",
     "CI checkpoints retention duplicate-review lane marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "retention due-candidate duplicate-review, queued-status, prior-execution\nprojection, and projected-row duplicate-action suppression UI markers",
+    "retention due-candidate duplicate-review, queued-status, prior-execution\nprojection, projected-row duplicate-action suppression, eligible no-action\n`execute_supported` UI markers, ineligible review-only/badge paths",
     "CI checkpoints retention prior projection static marker",
   );
   assertFileContains(
@@ -2265,13 +2265,73 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
-    "async function requestRetentionReview(candidate: RetentionDueCandidate)",
+    "async function requestRetentionReview(",
     "Settings retention due-candidate review request handler",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
-    "execution_mode: 'review_only'",
-    "Settings retention due-candidate forced review-only request marker",
+    "candidate: RetentionDueCandidate",
+    "Settings retention due-candidate review request candidate type marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "function retentionCandidateCanRecordNoActionEvidence",
+    "Settings retention due-candidate no-action eligibility helper",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "candidate.disposal_action === 'no_action'",
+    "Settings retention due-candidate no-action disposal gate",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "candidate.destructive_action === false",
+    "Settings retention due-candidate non-destructive gate",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "candidate.blockers.length === 0",
+    "Settings retention due-candidate blocker-free gate",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "candidate.legal_hold_blockers.length === 0",
+    "Settings retention due-candidate legal-hold-free gate",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "!queuedReview",
+    "Settings retention due-candidate queued-review exclusion gate",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "!candidate.prior_execution",
+    "Settings retention due-candidate prior-execution exclusion gate",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "onRequestReview(candidate, 'execute_supported')",
+    "Settings retention due-candidate execute-supported no-action action marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Registar evidência sem ação",
+    "Settings retention due-candidate bounded no-action evidence copy",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Regista apenas evidência delimitada de no-action; não aprova nem executa",
+    "Settings retention due-candidate bounded no-action caveat copy",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "executionMode: 'review_only' | 'execute_supported' = 'review_only'",
+    "Settings retention due-candidate default review-only mode marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "onRequestReview(candidate, 'review_only')",
+    "Settings retention due-candidate review-only action marker",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
@@ -2317,6 +2377,46 @@ function assertCheckpointMap() {
     "apps/web/src/features/settings/SettingsPage.test.tsx",
     "records a review-only request from a due retention candidate row",
     "Settings retention due-candidate review request coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "records bounded no-action evidence from an eligible due retention candidate row",
+    "Settings retention due-candidate bounded no-action evidence coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "keeps bounded no-action evidence unavailable for ineligible due retention candidates",
+    "Settings retention due-candidate ineligible no-action evidence coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "execution_mode: 'execute_supported'",
+    "Settings retention due-candidate execute-supported payload assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "requested_policy_id: 'retention-no-action'",
+    "Settings retention due-candidate no-action policy payload assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "within(candidateRow!).queryByText(/GDPR erasure|legal erasure|full erasure/i)",
+    "Settings retention due-candidate no erasure-copy assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "!call.body?.includes('full_erasure_completed')",
+    "Settings retention due-candidate no full-erasure payload assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "!call.body?.includes('legal_hold')",
+    "Settings retention due-candidate no legal-hold mutation payload assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "Boolean(call.body?.includes('execute_supported'))",
+    "Settings retention due-candidate execute-supported POST probe",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
@@ -5623,8 +5723,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "candidate resolution is implemented",
-    "CI/E2E hardening plan retention due-candidates no-resolution caveat marker",
+    "existing dry-run-backed `execute_supported` path only for eligible no-action\n  due-candidates",
+    "CI/E2E hardening plan retention eligible no-action execute-supported marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`execution_mode: \"execute_supported\"`; ineligible rows remain review-only",
+    "CI/E2E hardening plan retention execute-supported payload boundary marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "candidate\n  disposal is implemented",
+    "CI/E2E hardening plan retention due-candidates no-disposal caveat marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",

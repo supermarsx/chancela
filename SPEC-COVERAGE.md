@@ -2222,9 +2222,12 @@ behavior, legal disposal, or legal-effect claims.
   unsupported-period findings, and explicit `would_execute: false`,
   `destructive_disposal_completed: false`, and `full_erasure_completed: false` flags. Settings
   renders those candidates on page load without creating retention execution, disposal, or erasure
-  records, and an explicit row action can request review by posting a dry-run
-  `execution_request` with forced/default `review_only` and refreshing the due-candidate and
-  execution-history queries once the execution record is returned. Duplicate `review_only`
+  records. An eligible no-action row (`disposal_action: no_action`, non-destructive, no
+  blockers/legal holds, no queued review, and no prior execution) can record bounded no-action
+  evidence by posting only the dry-run endpoint, candidate/policy identifiers, and
+  `execution_mode: "execute_supported"`, then refreshing the due-candidate and execution-history
+  queries once the execution record is returned. Ineligible rows stay on the review-only,
+  disabled, queued-review, or existing-evidence badge path. Duplicate `review_only`
   requests for the same candidate/policy reuse the existing `awaiting_review` execution, including
   concurrent duplicate guards, without adding another execution record or ledger event; the
   due-candidate GET remains read-only and the UI shows queued review status/id/time instead of
@@ -2235,11 +2238,11 @@ behavior, legal disposal, or legal-effect claims.
   flags; projected `prior_execution.next_step` is canonical bounded text, not
   persisted free-form text, and the UI suppresses duplicate review actions only
   for projected rows. This is retention register, dry-run, due-candidate
-  scanner, review-request, and execution-history evidence only: it still
-  performs no deletion, anonymization, redaction completion, archive disposal,
-  destructive GDPR erasure, legal completion, legal-retention certification,
-  legal default scheduling, legal disposal approval, policy or legal-hold
-  mutation, candidate resolution, or disposal execution.
+  scanner, review-request, bounded no-action evidence, and execution-history evidence only: it
+  still performs no deletion, anonymization, redaction completion, archive disposal, destructive
+  GDPR erasure, full erasure, legal disposal completion, legal-retention certification, legal
+  default scheduling, legal disposal approval, policy or legal-hold mutation, candidate resolution,
+  or candidate disposal execution.
 - **Persisted book legal hold:** `GET|PUT|DELETE /v1/books/{id}/legal-hold` stores book-level legal
   hold metadata (`reason`, `actor`, `set_at`) through the existing durable book aggregate and appends
   ledger events on set/clear. Archive packages automatically include active persisted holds in

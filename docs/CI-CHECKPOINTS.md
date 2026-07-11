@@ -38,7 +38,7 @@ archive timestamp append markers,
 paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
 creation plus focused paper-book OCR review browser workflow markers,
 retention duplicate review-only request guards, queued-review status surfacing,
-and prior bounded execution projection,
+prior bounded execution projection, and eligible no-action bounded evidence UI,
 retained-export cleanup dry-run planning, forwarded platform-log sanitized
 accepted/denied/rejected/suppressed audit markers, post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
@@ -151,8 +151,9 @@ metadata API durability markers, the settings.read raw metadata and raw-report
 byte download
 route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
 retention due-candidate duplicate-review, queued-status, prior-execution
-projection, and projected-row duplicate-action suppression UI markers,
-locale keys, and non-destructive payload assertions, Ferramentas
+projection, projected-row duplicate-action suppression, eligible no-action
+`execute_supported` UI markers, ineligible review-only/badge paths, locale keys,
+and non-destructive payload assertions, Ferramentas
 panel/client/i18n markers including compact validator-report actions,
 imported-document review-depth/receipt markers for metadata-derived summaries,
 neutral missing-preservation copy, pending/reviewed states, no-claim OCR/
@@ -186,10 +187,11 @@ and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
 imported-document review notification/export browser E2E marker; Playwright
 execution remains in the browser jobs so this recent-landed lane stays focused.
-Static markers are deletion/rename guards only; they do not certify legal
-validity, legal retention schedules or approvals, retention deletion or
-anonymization/redaction execution, retention execution completion,
-GDPR erasure, template legal effect, DRE
+Static markers are deletion/rename guards only; the retention no-action markers
+pin bounded evidence UI copy and payload shape, not legal disposal completion.
+They do not certify legal validity, legal retention schedules or approvals,
+retention deletion or anonymization/redaction execution, retention execution
+completion, destructive GDPR erasure, full erasure, template legal effect, DRE
 verification, verified law references, legal thresholds, external
 registry/provider behavior, signing-process behavior, official DGLAB export,
 government filing, DGLAB/legal-archive/PDF-A/PAdES/PDF-UA certification, PDF/UA

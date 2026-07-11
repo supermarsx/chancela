@@ -848,11 +848,18 @@ settingsDefaults.test.ts contracts.test.ts`.
   audit, policy, or legal-hold mutation; projection requires bounded executor
   evidence, acted targets, and false destructive/full-erasure flags, uses
   canonical bounded `prior_execution.next_step` text, and Settings suppresses
-  duplicate review only for projected rows.
-  This remains non-destructive scanner/review UI evidence only: no physical
-  deletion, anonymization, redaction completion, destructive GDPR erasure, legal
-  completion, legal disposal approval, disposal execution, legal-hold/policy
-  mutation, or candidate resolution is implemented.
+  duplicate review only for projected rows. Settings can also initiate the
+  existing dry-run-backed `execute_supported` path only for eligible no-action
+  due-candidates: `disposal_action === no_action`, non-destructive, no blockers
+  or legal holds, no queued review, and no prior execution. That UI payload
+  remains scoped to the dry-run endpoint, candidate/policy identifiers, and
+  `execution_mode: "execute_supported"`; ineligible rows remain review-only,
+  disabled, queued-review, or existing-evidence badge paths.
+  This remains non-destructive scanner/review/bounded no-action evidence UI
+  only: no physical deletion, anonymization, redaction completion, destructive
+  GDPR erasure, full erasure, legal disposal completion, legal disposal
+  approval, disposal execution, legal-hold/policy mutation, or candidate
+  disposal is implemented.
 - Current working-tree AI provenance checks: MCP/API draft creation now carries
   deterministic `ai_provenance.statement_sources[]` rows, the API persists those
   rows while clamping unsafe row-level human-verified, authoritative-source, and
