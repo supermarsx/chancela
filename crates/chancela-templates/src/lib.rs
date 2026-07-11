@@ -966,6 +966,10 @@ mod tests {
             expected_channels: Vec<MeetingChannel>,
             actual_channels: Vec<MeetingChannel>,
         },
+        FamilyChannelMismatch {
+            family: EntityFamily,
+            channel: MeetingChannel,
+        },
         MissingRulePackLawReference {
             rule_pack_id: String,
         },
@@ -1077,6 +1081,11 @@ mod tests {
                     "{}.json ({template_id}): channels `{actual_channels:?}` do not match id-scoped channels `{expected_channels:?}`",
                     self.asset
                 ),
+                CatalogMetadataIssueKind::FamilyChannelMismatch { family, channel } => write!(
+                    f,
+                    "{}.json ({template_id}): channel `{channel:?}` is not allowed for template family `{family:?}`",
+                    self.asset
+                ),
                 CatalogMetadataIssueKind::MissingRulePackLawReference { rule_pack_id } => write!(
                     f,
                     "{}.json ({template_id}): rule_pack_id `{rule_pack_id}` has no local law-reference anchor",
@@ -1143,6 +1152,64 @@ mod tests {
                 SignaturePolicyHint::ManualAttested
             }
         }
+    }
+
+    fn allowed_channels_for_template_family(family: EntityFamily) -> &'static [MeetingChannel] {
+        match family {
+            EntityFamily::CommercialCompany => &[
+                MeetingChannel::Physical,
+                MeetingChannel::Hybrid,
+                MeetingChannel::Telematic,
+                MeetingChannel::WrittenResolution,
+            ],
+            EntityFamily::Condominium => &[
+                MeetingChannel::Physical,
+                MeetingChannel::Hybrid,
+                MeetingChannel::Telematic,
+            ],
+            EntityFamily::Association => &[
+                MeetingChannel::Physical,
+                MeetingChannel::Hybrid,
+                MeetingChannel::Telematic,
+                MeetingChannel::WrittenResolution,
+            ],
+            EntityFamily::Foundation => &[
+                MeetingChannel::Physical,
+                MeetingChannel::Hybrid,
+                MeetingChannel::Telematic,
+            ],
+            EntityFamily::Cooperative => &[
+                MeetingChannel::Physical,
+                MeetingChannel::Hybrid,
+                MeetingChannel::Telematic,
+                MeetingChannel::WrittenResolution,
+            ],
+        }
+    }
+
+    fn is_existing_authored_channel_compatibility(
+        template_id: &str,
+        family: EntityFamily,
+        channel: MeetingChannel,
+    ) -> bool {
+        // Current-catalog compatibility only: this preserves already-authored metadata while
+        // allowing the local validator to reject new family/channel drift.
+        matches!(
+            (template_id, family, channel),
+            (
+                "condominio-ata-assembleia/v1",
+                EntityFamily::Condominium,
+                MeetingChannel::WrittenResolution
+            ) | (
+                "fundacao-ata-ca/v1",
+                EntityFamily::Foundation,
+                MeetingChannel::WrittenResolution
+            ) | (
+                "fundacao-ata-orgao-fiscal/v1",
+                EntityFamily::Foundation,
+                MeetingChannel::WrittenResolution
+            )
+        )
     }
 
     fn expected_stage_for_template_id(template_id: &str) -> Option<LifecycleStage> {
@@ -1501,6 +1568,7 @@ mod tests {
 
             let mut seen_channels = Vec::new();
             let mut previous_channel = None;
+            let allowed_channels = allowed_channels_for_template_family(spec.family);
             for channel in &spec.channels {
                 if seen_channels.contains(channel) {
                     issues.push(metadata_issue(
@@ -1523,6 +1591,18 @@ mod tests {
                 }
                 seen_channels.push(*channel);
                 previous_channel = Some(*channel);
+                if !allowed_channels.contains(channel)
+                    && !is_existing_authored_channel_compatibility(&spec.id, spec.family, *channel)
+                {
+                    issues.push(metadata_issue(
+                        asset,
+                        Some(&spec.id),
+                        CatalogMetadataIssueKind::FamilyChannelMismatch {
+                            family: spec.family,
+                            channel: *channel,
+                        },
+                    ));
+                }
             }
             if let Some(expected_channels) = expected_channels_for_template_id(&spec.id)
                 && spec.channels != expected_channels
@@ -2065,6 +2145,10 @@ mod tests {
             "stage":"Reuniao","channels":["Physical"],"signature_policy":"QualifiedPreferred",
             "rule_pack_id":"csc-art63/v2","locale":"pt-PT",
             "blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
+        let wrong_family_channel = r#"{"id":"condominio-ata-extraordinaria/v1","family":"Condominium",
+            "stage":"Ata","channels":["WrittenResolution"],"signature_policy":"QualifiedOrHandwritten",
+            "rule_pack_id":"condominio-dl268/v1","locale":"pt-PT",
+            "blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
 
         let issues = validate_catalog_metadata(&[
             ("assoc-stem-fixture", stem_mismatch),
@@ -2074,6 +2158,7 @@ mod tests {
             ("csc-ata-ag", duplicate_channel),
             ("csc-ata-gerencia", out_of_order_channel),
             ("csc-registo-telematico", wrong_scoped_channel),
+            ("condominio-ata-extraordinaria", wrong_family_channel),
         ]);
         let report = catalog_metadata_report(&issues);
 
@@ -2159,6 +2244,36 @@ mod tests {
                     )
             }),
             "expected id-scoped channel issue:\n{report}"
+        );
+        assert!(
+            issues.iter().any(|issue| {
+                issue.asset == "condominio-ata-extraordinaria"
+                    && matches!(
+                        issue.kind,
+                        CatalogMetadataIssueKind::FamilyChannelMismatch {
+                            family: EntityFamily::Condominium,
+                            channel: MeetingChannel::WrittenResolution,
+                        }
+                    )
+            }),
+            "expected family/channel incompatibility issue:\n{report}"
+        );
+    }
+
+    #[test]
+    fn catalog_metadata_validation_allows_commercial_company_written_resolution() {
+        let commercial_company_written_resolution = r#"{"id":"csc-ata-ag/v1",
+            "family":"CommercialCompany","stage":"Ata","channels":["WrittenResolution"],
+            "signature_policy":"QualifiedPreferred","rule_pack_id":"csc-art63/v2",
+            "locale":"pt-PT","blocks":[{"kind":"Paragraph","template":"Conteúdo."}]}"#;
+
+        let issues =
+            validate_catalog_metadata(&[("csc-ata-ag", commercial_company_written_resolution)]);
+        let report = catalog_metadata_report(&issues);
+
+        assert!(
+            issues.is_empty(),
+            "commercial-company WrittenResolution should remain valid:\n{report}"
         );
     }
 
