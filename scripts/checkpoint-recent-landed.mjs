@@ -4583,8 +4583,63 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.test.tsx",
-    "exports the current chain and scope filters through the save prompt helper",
-    "ledger archive export save prompt coverage",
+    "exports the selected audit format with the current filters through the save helper",
+    "ledger archive filtered export format coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "shows a bounded first page for a 1000-log archive and loads more by cursor",
+    "ledger archive bounded first page coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "/v1/ledger/events/page?before_seq=900&limit=100&order=desc",
+    "ledger archive cursor load-more marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "applies server-backed filters and exposes an icon-only clear button with a tooltip",
+    "ledger archive filter and clear-control coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/ledger/LedgerPage.test.tsx",
+    "/v1/ledger/archive/document?format=txt&chain=book%3Abook-123456789&scope=act%3A88&limit=100&order=desc",
+    "ledger archive filtered export request marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "serializes paged ledger filters for newest-first lazy loading",
+    "ledger archive paged filter serialization coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "downloads ledger archive formats through the bounded format query",
+    "ledger archive interchange format coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "next_cursor: number | null;",
+    "ledger archive numeric cursor type marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "ledger_events_page_handles_thousand_event_chain_without_duplicates",
+    "ledger archive thousand-event cursor API coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "ledger_events_page_filters_by_chain_scope_kind_actor_and_date",
+    "ledger archive server-backed filter API coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "ledger_archive_document_limit_matches_paged_list_for_filtered_exports",
+    "ledger archive shared export/list limit coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "[(\"0\", 1_usize), (\"500\", 250_usize)]",
+    "ledger archive page limit normalization marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/LivrosIntegridadeSection.test.tsx",

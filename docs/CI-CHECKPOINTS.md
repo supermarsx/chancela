@@ -168,6 +168,11 @@ markers, dashboard guest `recent_events: []` redaction and no-permission-grant
 markers, generated-document by-id route, `act.read` gate, durable/in-memory,
 canonical Ata preservation, absent-owner communication auto-generation, and
 pending dispatch evidence markers, live-provider assurance markers, validator manifest,
+Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
+and load-more coverage, shared list/export filter and limit normalization
+markers, numeric `next_cursor` typing, Livro-style filters, icon-only
+clear-control markers, JSON/TXT/CSV/HTML export-format markers, and
+canonical-only PDF/A evidence boundaries,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
 imported-document review notification/export browser E2E marker; Playwright
@@ -189,7 +194,9 @@ AI-01/full AI completion, MCP draft-signed legal/source/trust/external
 certification, generated-document signing/bundle/template/threshold/law/provider/
 registry/legal-effect claims, dispatch-sent proof, dispatch completion,
 generated communication legal sufficiency, or legal effect for mutable draft acts created from
-accepted OCR drafts.
+accepted OCR drafts. The Arquivo markers prove bounded UI/API paging and
+filtered export behavior only; they do not prove persistent-store boot-time SQL
+paging or turn non-PDF/A exports into preserved evidence.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 

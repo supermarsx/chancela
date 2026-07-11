@@ -402,6 +402,22 @@ Implementation checkpoints covered here:
   Owner and `Leitor` sessions keep the recent ledger-event feed. Guest remains
   forbidden from `GET /v1/ledger/events`, and the slice adds no permission
   grants or broader privacy/anonymization completion claim.
+- Working tree keeps Data/Archive/UX/API/CI **PARTIAL**: the general Arquivo
+  page now reads ledger rows from additive `GET /v1/ledger/events/page` instead
+  of loading the whole bare-array feed, while `GET /v1/ledger/events` remains
+  bare-array compatible. The paged route is newest-first by default, returns a
+  numeric `next_cursor`/`before_seq` cursor, and normalizes page limits to
+  default 100, minimum 1, and maximum 250. Server-backed filters are shared by
+  the paged list and archive export for chain, scope/search, kind, actor, date
+  range, and page/export limit. The web Arquivo UI uses Livro-style filters,
+  an icon-only clear-filters button with tooltip/accessibility label, and an
+  export format selector for canonical PDF/A plus JSON, TXT, CSV, and HTML
+  audit/interchange exports using the active filters. API and web tests pin a
+  1000+ event first page, cursor load-more, numeric cursor typing, serialized
+  filters, shared list/export limit normalization, and filtered export formats.
+  This is bounded archive browsing/export UX and API coverage only: it does not
+  prove persistent-store boot-time SQL paging, make non-PDF/A exports preserved
+  evidence, or complete legal archive certification/compliance.
 - Working tree keeps Documents/Workflows/API/CI **PARTIAL**: on-demand generated
   post-act documents now return `/v1/documents/generated/{document_id}` and can
   be downloaded by their own generated document id in durable and in-memory

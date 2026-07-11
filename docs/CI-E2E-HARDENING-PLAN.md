@@ -450,8 +450,20 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - Dashboard recent feed is newest-first and capped at 10 rows.
 - Duplicate timestamps are ordered deterministically by sequence.
 - Metric cards remain stable with six cards on one desktop row.
+- General Arquivo uses additive `GET /v1/ledger/events/page` for newest-first
+  lazy loading with numeric `before_seq` cursor pagination, default page size
+  100, and normalized 1..250 limits, while `GET /v1/ledger/events` remains
+  bare-array compatible.
+- Ledger archive list/export share server-backed chain, scope/search, kind,
+  actor, date-range, and limit filters. The web UI keeps Livro-style filters,
+  an icon-only accessible clear-filters control, and export choices for
+  canonical PDF/A plus JSON/TXT/CSV/HTML audit/interchange formats. Only PDF/A
+  is the canonical preserved evidence export; the other formats are review or
+  interchange aids.
 - Ledger archive export preserves active filters and refuses unauthorized
-  downloads.
+  downloads. The current bounded tests prove first-page and cursor behavior for
+  1000+ in-memory log events; they do not prove persistent-store boot-time SQL
+  paging.
 - Export actions that create user-owned files open the desktop/browser save
   prompt when available, return a visible cancellation state when the user backs
   out, and fall back to a safe browser download only when direct save APIs are
@@ -1143,7 +1155,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   drift read-only manual-review markers, archive readability/ZK manifest-only
   caveat markers, template `FamilyChannelMismatch` compatibility markers, and
   MCP structured trust-catalog filter plus redacted external-validator summary
-  markers.
+  markers, plus Arquivo paged ledger route/default-limit/cursor markers,
+  1000+ event first-page/load-more tests, shared list/export filter and limit
+  normalization markers, numeric `next_cursor` typing, Livro-style filter and
+  icon-only clear-control markers, and JSON/TXT/CSV/HTML export-format markers
+  with canonical-only PDF/A evidence boundaries.
 
 Full workspace format/clippy should be rerun before commit. The prior
 `paper_import.rs` compile blocker, retention dead-code warning set, TSL `record`
