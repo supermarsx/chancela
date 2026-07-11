@@ -45,8 +45,11 @@ UI, Ferramentas external-validator metadata UI, raw-report byte download API,
 imported-document review receipt UI, trust identifier-match explanations, and
 read-only local DGLAB interchange manifest API and BookDetail JSON-download
 markers,
-compact validator-report actions, template provenance UI, validator fixtures, and
-the standalone desktop Cargo workspace.
+compact validator-report actions, template provenance UI, release clean-source
+provenance gating, seeded role drift diagnostics, archive readability/ZK caveat
+metadata, template family/channel rule guards, MCP trust-catalog filter
+discoverability, redacted external-validator report summary tools, validator
+fixtures, and the standalone desktop Cargo workspace.
 
 It intentionally reuses existing test surfaces:
 
@@ -60,6 +63,10 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test archive_package --locked`
   including the read-only local DGLAB interchange manifest endpoint and
   `book.export@Book` gate.
+- Archive readability/ZK caveat metadata:
+  `cargo test -p chancela-archive --locked readability_caveat`
+  including manifest-only defaults, old v1 conservative defaults, unknown-field
+  refusal, and false overclaim flags.
 - Web BookDetail local DGLAB JSON download:
   `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
   including the direct `GET /v1/books/{id}/archive/local-dglab-interchange-manifest`
@@ -77,6 +84,8 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
   `cargo test -p chancela-api --test data_key_ops --locked`
+- API seeded role drift diagnostic:
+  `cargo test -p chancela-api --locked customized_seeded_platform_admin_reports_missing_defaults_without_granting_them`
 - API official signed-PDF handoff guardrail acknowledgement:
   `cargo test -p chancela-api --test official_signature_import --locked official_import_requires_guardrail_acknowledgement_without_artifact_or_event`
 - TSL XML-DSig hardening: `cargo test -p chancela-tsl --locked`
@@ -126,7 +135,10 @@ platform-log missing/invalid-bearer unaudited markers, authenticated
 RBAC-denied/rejected/malformed/suppressed sanitized audit markers, local DGLAB
 manifest route/permission/read-only/no-persisted-bytes/no-ZIP-member/no-ledger
 markers plus BookDetail JSON-save markers,
-live-provider assurance markers, validator manifest,
+release clean-source provenance gate markers, seeded role drift API/UI markers,
+archive readability/ZK caveat markers, template `FamilyChannelMismatch` markers,
+MCP trust-catalog structured-filter and redacted external-validator summary
+markers, live-provider assurance markers, validator manifest,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
 imported-document review notification/export browser E2E marker; Playwright
@@ -142,8 +154,9 @@ XAdES validation, ASiC trust/LTV
 or legal validity, production B-LT/B-LTA, SCAP verification, representative
 authority, live provider validity, canonical OCR conversion, imported-document
 legal acceptance, raw external-validator legal/trust/certification validation,
-trust-list legal validity, provider approval, or legal effect for mutable draft
-acts created from accepted OCR drafts.
+trust-list legal validity, provider approval, raw MCP report-byte exposure,
+auto-role reconciliation, permission grants, archive custody/decryption material,
+or legal effect for mutable draft acts created from accepted OCR drafts.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 
@@ -176,12 +189,14 @@ the self-test covers both signals independently. The Docker trust JSON checks
 preserve nested path context for
 `releaseTrust.imagePublication/signing/notarization/attestation.status`.
 `node scripts/check-package-artifacts.mjs --fixture --skip-dist` is also part of
-the cheap CI metadata lane. `npm run check:encrypted-build-defaults` remains in
-that lane; it statically checks that release package, Docker server, and desktop
-package builds opt into the existing `sqlcipher` feature while dev/test commands
-remain explicit plaintext/no-SQLCipher paths. Release packaging then validates
-each generated `*-release-artifact.json` plus package manifest in explicit
-`unsigned-dev` mode, including a source SHA cross-check against
+the cheap CI metadata lane; its fixture coverage proves
+`--require-clean-source` rejects `dirty` and `unknown` source states. `npm run
+check:encrypted-build-defaults` remains in that lane; it statically checks that
+release package, Docker server, and desktop package builds opt into the existing
+`sqlcipher` feature while dev/test commands remain explicit plaintext/no-SQLCipher
+paths. Release packaging then validates each generated
+`*-release-artifact.json` plus package manifest in explicit `unsigned-dev` mode,
+including a source SHA cross-check against
 `manifest.sourceProvenance.commitSha`. Docker CI validates
 `chancela-server-signing-status.json` in explicit `local-ci` mode. This is
 static workflow assurance only; switch those checks to `production` only when

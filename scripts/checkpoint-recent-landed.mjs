@@ -1070,6 +1070,86 @@ function assertCheckpointMap() {
     "API external-validator raw report list response byte redaction coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/roles.rs",
+    "Read-only drift diagnostics for an editable seeded role",
+    "API seeded role drift read-only diagnostic marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/roles.rs",
+    "pub seeded_role_drift: Option<SeededRoleDriftView>",
+    "API seeded role drift response field marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/roles.rs",
+    "customized_seeded_platform_admin_reports_missing_defaults_without_granting_them",
+    "API seeded role drift no-auto-grant coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/rbac/FuncoesSection.tsx",
+    "drift.requires_manual_review",
+    "web RBAC seeded role drift manual-review marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/rbac/rbac.test.tsx",
+    "shows seeded role drift as a manual-review status",
+    "web RBAC seeded role drift coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-archive/src/lib.rs",
+    "pub readability_caveats: ReadabilityCaveatMetadata",
+    "archive readability caveat manifest field marker",
+  );
+  assertFileContains(
+    "crates/chancela-archive/src/lib.rs",
+    "readability_caveats_default_when_missing_from_v1_manifest",
+    "archive readability caveat old-v1 conservative default coverage",
+  );
+  assertFileContains(
+    "crates/chancela-archive/src/lib.rs",
+    "readability_caveats_reject_unknown_manifest_fields",
+    "archive readability caveat unknown-field refusal coverage",
+  );
+  assertFileContains(
+    "crates/chancela-archive/src/lib.rs",
+    "zk_removes_gdpr_obligations",
+    "archive ZK/GDPR caveat false-claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/lib.rs",
+    "FamilyChannelMismatch",
+    "template family/channel mismatch issue marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/lib.rs",
+    "is_existing_authored_channel_compatibility",
+    "template family/channel compatibility carve-out marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/lib.rs",
+    "expected family/channel incompatibility issue",
+    "template family/channel mismatch coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/registry.rs",
+    "service_type",
+    "MCP trust catalog structured service-type filter marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/registry.rs",
+    "list_external_validator_reports",
+    "MCP external-validator report summary tool marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/registry.rs",
+    "assert_eq!(tool.input_schema, closed_empty_schema())",
+    "MCP external-validator closed no-arg schema marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/registry.rs",
+    "external_validator_catalog_exposes_no_raw_report_route_or_payload_field",
+    "MCP external-validator no raw-report exposure coverage",
+  );
+  assertFileContains(
     "crates/chancela-doc/src/tests.rs",
     "paragraph_flow_emits_real_unicode_spaces",
     "PDF paragraph inter-word space mapping coverage",
@@ -1456,6 +1536,31 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "release clean-source\nprovenance gating",
+    "CI checkpoints release clean-source lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "seeded role drift diagnostics",
+    "CI checkpoints seeded role drift lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "archive readability/ZK caveat\nmetadata",
+    "CI checkpoints archive readability caveat lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "template family/channel rule guards",
+    "CI checkpoints template family/channel lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "MCP trust-catalog filter\ndiscoverability",
+    "CI checkpoints MCP trust catalog filter lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "including raw metadata and raw-report\n  byte downloads",
     "CI checkpoints external-validator raw metadata/raw-report command marker",
   );
@@ -1593,6 +1698,31 @@ function assertCheckpointMap() {
     "scripts/check-release-trust.mjs",
     ".github/workflows/release.yml jobs.package must check the SBOM with --package linkage",
     "release trust self-test release SBOM linkage marker",
+  );
+  assertFileContains(
+    "scripts/check-package-artifacts.mjs",
+    "--require-clean-source",
+    "package artifact clean-source flag marker",
+  );
+  assertFileContains(
+    "scripts/check-package-artifacts.mjs",
+    "sourceTreeState must be clean when --require-clean-source is set",
+    "package artifact clean-source dirty/unknown refusal marker",
+  );
+  assertFileContains(
+    ".github/workflows/release.yml",
+    "npm run test:package-integrity -- --require-clean-source",
+    "release workflow package integrity clean-source marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    ".github/workflows/release.yml jobs.package must run package artifact integrity checks with --require-clean-source",
+    "release trust self-test clean-source workflow marker",
+  );
+  assertFileContains(
+    "docs/CI-RELEASE-HARDENING.md",
+    "`--require-clean-source` rejects `dirty` and\n  `unknown` source tree states",
+    "CI release hardening clean-source fixture marker",
   );
   assertFileContains(
     "scripts/check-release-trust.mjs",
@@ -4754,23 +4884,63 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`releaseTrust.mode = unsigned-dev`, `attestation.status = not_attested`",
+    "`--require-clean-source`, `releaseTrust.mode = unsigned-dev`",
     "CI/E2E hardening plan release unsigned-dev attestation marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Production package\n  validation also requires `--manifest` when either package mode or expected mode",
+    "Production package validation also requires `--manifest` when\n  either package mode or expected mode",
     "CI/E2E hardening plan release production manifest-required marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "does not add signing,\n  notarization, attestation, registry publishing, or production trust claims",
+    "does not add signing, notarization, attestation,\n  registry publishing, reproducible-build proof, or production trust claims",
     "CI/E2E hardening plan release workflow static-only boundary marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "release workflow unsigned/local-only static\n  guard and production-package manifest-required markers",
+    "release workflow unsigned/local-only static\n  guard, clean-source provenance gate, and production-package manifest-required",
     "CI/E2E hardening plan checkpoint release static guard summary marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree seeded role drift diagnostic checks",
+    "CI/E2E hardening plan seeded role drift checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "does not auto-reconcile roles, grant permissions, or weaken authorization",
+    "CI/E2E hardening plan seeded role drift no-grant marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree archive readability/ZK caveat checks",
+    "CI/E2E hardening plan archive readability caveat checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no keys, decryption material, connectors, custody\n  proof",
+    "CI/E2E hardening plan archive caveat no-key/custody marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree template family/channel guard checks",
+    "CI/E2E hardening plan template family/channel checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no asset wording, legal threshold, provider behavior",
+    "CI/E2E hardening plan template family/channel no-wording marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree MCP discoverability checks",
+    "CI/E2E hardening plan MCP discoverability checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "contains no `raw-report`, `content_base64`, or\n  upload path/schema exposure",
+    "CI/E2E hardening plan MCP no raw-report exposure marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -4866,6 +5036,61 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "implementation snapshot `3e72e087b27aa22ef97d13e1dc003fb0a4c110ea`",
     "spec coverage current implementation snapshot marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "release clean-source provenance gating, seeded role-drift\ndiagnostics",
+    "spec coverage five-slice header marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Release clean-source provenance gate",
+    "spec coverage release clean-source bullet marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`manifest.sourceProvenance.sourceTreeState` is `dirty` or `unknown`",
+    "spec coverage release clean-source dirty/unknown marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Seeded role drift diagnostic",
+    "spec coverage seeded role drift bullet marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "auto-reconcile roles, grant permissions, or weaken authorization checks",
+    "spec coverage seeded role drift no-grant marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Archive readability/ZK caveat metadata",
+    "spec coverage archive readability caveat bullet marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "default old v1 manifests conservatively",
+    "spec coverage archive readability old-v1 default marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Template family/channel rule guard",
+    "spec coverage template family/channel bullet marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "test-only `FamilyChannelMismatch` issues",
+    "spec coverage template FamilyChannelMismatch marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "MCP discoverability updates",
+    "spec coverage MCP discoverability bullet marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`settings.read` tool with a closed no-arg schema",
+    "spec coverage MCP external-validator closed schema marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

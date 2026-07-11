@@ -114,7 +114,10 @@ for the unsigned/local-only trust posture plus production package
 manifest-required validation, plus MCP workflow provenance review prompt/resource
 guidance, settings.read-gated raw external-validator raw-report byte downloads,
 imported-document review receipt rendering, and trust catalog identifier-match
-explanations.
+explanations, plus release clean-source provenance gating, seeded role-drift
+diagnostics, archive readability/ZK caveat metadata, template family/channel
+rule guards, and MCP discoverability updates for trust-catalog filters and
+redacted external-validator report summaries.
 Earlier coverage text remains prior snapshot context. All top-level spec areas remain **PARTIAL**.
 This is an implementation and test coverage snapshot, not a legal certification,
 not production CMD approval, not DRE verification promotion, not full PDF/UA
@@ -1322,6 +1325,38 @@ completion, GDPR erasure, legal disposal, or legal-effect claims.
 
 ## Recent Coverage Added
 
+- **Release clean-source provenance gate:** `check-package-artifacts
+  --require-clean-source` now fails package manifests whose
+  `manifest.sourceProvenance.sourceTreeState` is `dirty` or `unknown`; the
+  release workflow runs package integrity with that flag; and the
+  release-trust self-test statically guards the release workflow wiring. This is
+  source-state release hygiene only, not signing, notarization, attestation,
+  registry publication, trust validation, or reproducible-build proof.
+- **Seeded role drift diagnostic:** `GET /v1/roles` now returns read-only
+  `seeded_role_drift.missing_default_permissions` and
+  `requires_manual_review` diagnostics for editable seeded roles whose persisted
+  permissions lag the current default seed. The RBAC UI renders a manual-review
+  warning and missing permission list. This reports drift only; it does not
+  auto-reconcile roles, grant permissions, or weaken authorization checks.
+- **Archive readability/ZK caveat metadata:** internal archive manifests now
+  carry manifest-only `readability_caveats`, reject unknown caveat fields, keep
+  all overclaim flags false, and default old v1 manifests conservatively when
+  the caveat block is absent. This metadata includes no keys, decryption
+  material, connectors, custody proof, ZK repository guarantee, GDPR shortcut,
+  external import verification, or legal archive certification.
+- **Template family/channel rule guard:** template metadata validation now emits
+  test-only `FamilyChannelMismatch` issues for family/channel drift, while
+  preserving narrow current-catalog compatibility carve-outs for existing
+  authored assets. This is local catalog regression coverage only; it does not
+  change asset wording, legal thresholds, providers, law references, or legal
+  effect.
+- **MCP discoverability updates:** `search_trust_catalog` now advertises
+  structured filters for search, identifier, service type, status, history,
+  supply point, and limit; `list_external_validator_reports` is a read-only
+  `settings.read` tool with a closed no-arg schema that returns the redacted
+  summary list route. MCP does not expose raw report routes,
+  `content_base64`, upload fields, provider calls, legal validation, trust
+  validation, or certification claims.
 - **Web hot-backup creation UI:** Data Management now offers a `Criar backup`
   action that calls `POST /v1/backup` only for durable-store instances and shows
   the returned manifest summary without echoing arbitrary backend fields, per-file
@@ -2651,7 +2686,8 @@ completion, GDPR erasure, legal disposal, or legal-effect claims.
   threshold metadata; they are not exhaustive, legally verified, or a substitute for reviewing the
   generated template wording.
 - Template catalog metadata validation is regression coverage for required fields, duplicate IDs,
-  family-binding drift, id/stage/channel consistency, law-reference anchors, and post-act
+  family-binding drift, family/channel compatibility, id/stage/channel
+  consistency, law-reference anchors, and post-act
   `Certidao`/`Extrato` references to sealed-act `ata_number` / `payload_digest`; it is not legal
   review of template wording, thresholds, channel permissibility, cited law, or legal effect.
 - The law citation resolver and corpus pin/copy UI preserve corpus verification status; copied
@@ -2659,6 +2695,9 @@ completion, GDPR erasure, legal disposal, or legal-effect claims.
 - Guest/minimal redaction hides selected read-response metadata for current entity, registry, book,
   act, and imported-document views; it is not full anonymization, destructive erasure, or
   certification of access-control/privacy policy completeness.
+- Seeded role drift diagnostics report missing default permissions for manual
+  review only. They do not auto-reconcile persisted editable roles, grant
+  permissions, bypass role-management checks, or loosen authorization.
 - Database key-ops status/preflight is a secret-free configuration/build/header classification and
   startup guard with web/API/CLI/store key-env/preflight/rekey evidence. The API/web execution path
   is limited to an already-open keyed SQLCipher store and refuses plaintext stores. It does not prove
@@ -2677,6 +2716,10 @@ completion, GDPR erasure, legal disposal, or legal-effect claims.
   data, prove off-site custody, certify RPO/RTO or production backup policy,
   prove backup encryption custody, establish disaster-recovery readiness, provide
   legal archive acceptance, or certify data-lifecycle compliance.
+- Archive readability/ZK caveat metadata is manifest-only conservative status.
+  It includes no decryption keys or materials, no connector/import proof, no
+  custody proof, no ZK repository guarantee, no GDPR-obligation removal, and no
+  legal archive certification.
 - Erasure DSR completion is bounded preflight evidence with immutable-ledger blockers,
   mutable-sidecar planning, and explicit false destructive/full-erasure flags. It is not GDPR
   erasure, anonymization, physical deletion, redaction execution, or full data-subject erasure.
@@ -2709,6 +2752,10 @@ completion, GDPR erasure, legal disposal, or legal-effect claims.
   responses stay redacted and the web UI does not render raw report bytes. They are not live
   trust-list decisions, legal validity conclusions, qualified signature validation, DGLAB
   certification, external-validation certification, provider approval, or authority acceptance.
+- MCP external-validator report discovery is limited to the redacted summary
+  list route with a closed no-argument schema. It does not expose raw report
+  downloads, `content_base64`, upload payloads, provider execution, legal
+  validation, trust validation, or certification claims.
 - The local DGLAB interchange manifest endpoint and BookDetail save action are
   read-only metadata-only JSON projections from an existing Chancela
   `PackageManifest`. They are not an official DGLAB interchange package/export,
@@ -2776,7 +2823,7 @@ completion, GDPR erasure, legal disposal, or legal-effect claims.
   written consent, quorum, vote threshold, participant identity, or legal
   acceptance.
 - SBOMs, SBOM package linkage, checksums, package manifests, source provenance metadata,
-  release-trust metadata validation, Docker signing-status metadata-anchor checks, and Docker OCI
+  clean-source provenance gates, release-trust metadata validation, Docker signing-status metadata-anchor checks, and Docker OCI
   metadata are not
   substitutes for package signing, notarization, Docker signing, attestation, registry-publication
   verification, or reproducible-build proof; package artifact integrity checks and metadata guards

@@ -956,12 +956,41 @@ settingsDefaults.test.ts contracts.test.ts`.
   trust status, `--expect-mode local-ci`, and nested
   `releaseTrust.imagePublication/signing/notarization/attestation.status`
   context; and the release package job's package integrity check,
-  `releaseTrust.mode = unsigned-dev`, `attestation.status = not_attested`,
-  `--expect-mode unsigned-dev`, and SBOM package linkage. Production package
-  validation also requires `--manifest` when either package mode or expected mode
-  is `production`, with self-tests covering those signals independently. This is
-  static workflow/package metadata assurance only; it does not add signing,
-  notarization, attestation, registry publishing, or production trust claims.
+  `--require-clean-source`, `releaseTrust.mode = unsigned-dev`,
+  `attestation.status = not_attested`, `--expect-mode unsigned-dev`, and SBOM
+  package linkage. Production package validation also requires `--manifest` when
+  either package mode or expected mode is `production`, with self-tests covering
+  those signals independently. `check-package-artifacts --require-clean-source`
+  fails `dirty` and `unknown` source states. This is static workflow/package
+  metadata assurance only; it does not add signing, notarization, attestation,
+  registry publishing, reproducible-build proof, or production trust claims.
+- Current working-tree seeded role drift diagnostic checks: focused
+  `chancela-api` coverage pins read-only
+  `seeded_role_drift.missing_default_permissions` and
+  `requires_manual_review` on editable seeded roles, while preserving the
+  customized persisted role permissions. Focused RBAC UI coverage renders the
+  manual-review warning and missing-permission list. This is diagnostic only; it
+  does not auto-reconcile roles, grant permissions, or weaken authorization.
+- Current working-tree archive readability/ZK caveat checks: focused
+  `chancela-archive` coverage pins manifest-only `readability_caveats`, old v1
+  conservative defaults when the caveat block is missing, rejection of unknown
+  caveat fields such as decryption/custody/import claims, and refusal of true
+  overclaim flags. This adds no keys, decryption material, connectors, custody
+  proof, ZK repository guarantee, GDPR shortcut, or legal archive claim.
+- Current working-tree template family/channel guard checks: focused
+  `chancela-templates` metadata validation pins `FamilyChannelMismatch` for
+  family/channel drift and keeps narrow current-catalog compatibility carve-outs
+  for already-authored assets. This is test-only catalog consistency coverage;
+  no asset wording, legal threshold, provider behavior, law-reference authority,
+  or legal effect changes are claimed.
+- Current working-tree MCP discoverability checks: focused `chancela-mcp`
+  coverage pins `search_trust_catalog` structured filter schema fields and the
+  read-only, `settings.read`, closed no-arg
+  `list_external_validator_reports` summary tool. The MCP catalog rejects raw
+  report/upload arguments and contains no `raw-report`, `content_base64`, or
+  upload path/schema exposure. This is discoverability and redacted summary
+  access only, not raw report download, provider execution, legal validation,
+  trust validation, or certification.
 - Current checkpoint metadata/static checks through `3e72e08` plus working-tree
   bounded slice markers passed: `node
   --check scripts/checkpoint-recent-landed.mjs`, `npm run
@@ -1019,7 +1048,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   and external signer linked-invite sequential/parallel slot-policy,
   workflow-only envelope list/create UI, safe sequential 409 rendering, and
   tracking-only response markers, release workflow unsigned/local-only static
-  guard and production-package manifest-required markers, plus ASiC inspect route/base64/fixity/
+  guard, clean-source provenance gate, and production-package manifest-required
+  markers, plus ASiC inspect route/base64/fixity/
   malformed-ZIP/unsafe-path checks, bounded profile/member/manifest/signature
   diagnostics, local CAdES-only bounded validation, ASiC-XAdES unsupported
   no-XAdES-validation markers, no-claim fields, and actual decompressed-size
@@ -1037,7 +1067,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   RBAC-denied/rejected/suppressed audit markers, payload
   digest/length/context-summary, and redaction markers for auth/off/invalid
   paths, plus data-status `platform_logs` /
-  `backup_recovery_drills` filesystem classification markers.
+  `backup_recovery_drills` filesystem classification markers, plus seeded role
+  drift read-only manual-review markers, archive readability/ZK manifest-only
+  caveat markers, template `FamilyChannelMismatch` compatibility markers, and
+  MCP structured trust-catalog filter plus redacted external-validator summary
+  markers.
 
 Full workspace format/clippy should be rerun before commit. The prior
 `paper_import.rs` compile blocker, retention dead-code warning set, TSL `record`
