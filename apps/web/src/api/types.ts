@@ -4192,6 +4192,25 @@ export interface CreateExternalSigningEnvelopeBody {
   actor?: string;
 }
 
+export interface UpdateExternalSigningEnvelopeEvidenceBody {
+  label: string;
+  reference: string;
+  identity_requirement?: ExternalSignerIdentityRequirement;
+  digest?: string;
+}
+
+export interface UpdateExternalSigningEnvelopeSlotBody {
+  id: string;
+  status: ExternalSignerSlotStatus;
+  evidence?: UpdateExternalSigningEnvelopeEvidenceBody[];
+}
+
+export interface UpdateExternalSigningEnvelopeBody {
+  slots?: UpdateExternalSigningEnvelopeSlotBody[];
+  complete?: boolean;
+  actor?: string;
+}
+
 export interface ExternalSigningEnvelopeEvidenceView {
   label: string;
   reference: string;

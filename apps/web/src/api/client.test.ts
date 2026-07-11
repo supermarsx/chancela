@@ -672,10 +672,27 @@ describe('api client', () => {
       created_by: 'amelia.marques',
       expires_at: '2026-07-08T10:00:00Z',
     };
+    const updatedEnvelope = {
+      ...envelope,
+      slots: [
+        {
+          ...envelope.slots[0],
+          status: 'signed',
+          evidence: [
+            {
+              label: 'Operator technical evidence',
+              reference: 'operator-log:slot-1',
+              digest: 'a'.repeat(64),
+            },
+          ],
+        },
+      ],
+    };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse([envelope]))
       .mockResolvedValueOnce(jsonResponse(envelope, 201))
+      .mockResolvedValueOnce(jsonResponse(updatedEnvelope))
       .mockResolvedValueOnce(jsonResponse({ invite, token: 'cxi_fulltoken' }, 201));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -688,6 +705,21 @@ describe('api client', () => {
           contact_hint: 'bruno@example.test',
           identity_requirements: ['contact_control'],
           required: true,
+        },
+      ],
+    });
+    const updated = await api.updateExternalSigningEnvelope('env-1', {
+      slots: [
+        {
+          id: 'slot-1',
+          status: 'signed',
+          evidence: [
+            {
+              label: 'Operator technical evidence',
+              reference: 'operator-log:slot-1',
+              digest: 'a'.repeat(64),
+            },
+          ],
         },
       ],
     });
@@ -715,13 +747,31 @@ describe('api client', () => {
         },
       ],
     });
-    expect(fetchMock.mock.calls[2][0]).toBe('/v1/acts/act-1/signature/external-invites');
-    expect(JSON.parse(fetchMock.mock.calls[2][1]?.body as string)).toMatchObject({
+    expect(fetchMock.mock.calls[2][0]).toBe('/v1/external-signing/envelopes/env-1');
+    expect(fetchMock.mock.calls[2][1]?.method).toBe('PATCH');
+    expect(JSON.parse(fetchMock.mock.calls[2][1]?.body as string)).toEqual({
+      slots: [
+        {
+          id: 'slot-1',
+          status: 'signed',
+          evidence: [
+            {
+              label: 'Operator technical evidence',
+              reference: 'operator-log:slot-1',
+              digest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            },
+          ],
+        },
+      ],
+    });
+    expect(fetchMock.mock.calls[3][0]).toBe('/v1/acts/act-1/signature/external-invites');
+    expect(JSON.parse(fetchMock.mock.calls[3][1]?.body as string)).toMatchObject({
       external_envelope_id: 'env-1',
       external_slot_id: 'slot-1',
     });
     expect(listed[0].slots[0].status).toBe('pending');
     expect(created.order_policy).toBe('sequential');
+    expect(updated.slots[0].status).toBe('signed');
     expect(linkedInvite.invite.external_envelope?.slot_status).toBe('initiated');
   });
 

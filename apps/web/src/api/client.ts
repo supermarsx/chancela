@@ -142,6 +142,7 @@ import type {
   ExternalSignerInviteRespondOptions,
   ExternalSignerInviteView,
   ExternalSigningEnvelopeView,
+  UpdateExternalSigningEnvelopeBody,
   ExternalValidatorReportUploadRequest,
   ExternalValidatorReportsResponse,
   ExternalValidatorReportUploadResponse,
@@ -646,6 +647,11 @@ export const api = {
     get<ExternalSigningEnvelopeView[]>(`/v1/acts/${id}/external-signing/envelopes`),
   createExternalSigningEnvelope: (id: string, body: CreateExternalSigningEnvelopeBody) =>
     post<ExternalSigningEnvelopeView>(`/v1/acts/${id}/external-signing/envelopes`, body),
+  updateExternalSigningEnvelope: (id: string, body: UpdateExternalSigningEnvelopeBody) =>
+    patch<ExternalSigningEnvelopeView>(
+      `/v1/external-signing/envelopes/${encodeURIComponent(id)}`,
+      body,
+    ),
   listExternalSignerInvites: (id: string) =>
     get<ExternalSignerInviteView[]>(`/v1/acts/${id}/signature/external-invites`),
   createExternalSignerInvite: (id: string, body: CreateExternalSignerInviteBody) =>

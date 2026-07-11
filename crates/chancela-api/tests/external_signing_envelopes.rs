@@ -268,6 +268,62 @@ async fn signed_status_without_evidence_is_rejected() {
 }
 
 #[tokio::test]
+async fn signed_slot_evidence_without_complete_stays_workflow_open() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.0.clone());
+    let token = bootstrap(&state).await;
+    let act_id = draft_act(&state, &token).await;
+    let envelope = create_envelope(&state, &token, &act_id).await;
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let required_slot = envelope["slots"][0]["id"].as_str().expect("slot id");
+
+    let (status, signed) = send(
+        &state,
+        json_req(
+            "PATCH",
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            &token,
+            json!({
+                "slots": [{
+                    "id": required_slot,
+                    "status": "signed",
+                    "evidence": [{
+                        "label": "operator technical evidence",
+                        "reference": "operator:event:chair-signed",
+                        "digest": "0707070707070707070707070707070707070707070707070707070707070707"
+                    }]
+                }]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "signed slot evidence: {signed}");
+    assert_eq!(signed["completed"], false);
+    assert_eq!(signed["slots"][0]["status"], "signed");
+    assert_eq!(
+        signed["slots"][0]["evidence"][0]["reference"],
+        "operator:event:chair-signed"
+    );
+    assert_eq!(signed["completion"]["signed_required_slot_count"], 1);
+    assert_eq!(
+        signed["completion"]["blocking_required_slot_ids"],
+        json!([])
+    );
+
+    let (status, read) = send(
+        &state,
+        get_req(
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "read envelope: {read}");
+    assert_eq!(read["completed"], false);
+    assert_eq!(read["completion"]["completed"], false);
+}
+
+#[tokio::test]
 async fn configured_identity_requirements_need_matching_evidence_before_signed() {
     let dir = TempDir::new();
     let state = AppState::with_data_dir(dir.0.clone());

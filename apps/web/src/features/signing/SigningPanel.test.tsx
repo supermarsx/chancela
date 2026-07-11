@@ -580,6 +580,11 @@ describe('SigningPanel — external signer invites', () => {
               reference: 'technical upload',
               digest: 'f'.repeat(64),
             },
+            {
+              label: 'Contact channel evidence',
+              reference: 'operator-log:contact-control',
+              identity_requirement: 'contact_control',
+            },
           ],
         },
       ],
@@ -610,6 +615,12 @@ describe('SigningPanel — external signer invites', () => {
     expect(screen.getByText('Concluído')).toBeTruthy();
     expect(screen.getByText('Nenhum')).toBeTruthy();
     expect(screen.getByText('Assinado')).toBeTruthy();
+    expect(screen.getByText('Signed PDF SHA-256')).toBeTruthy();
+    expect(screen.getByText('technical upload')).toBeTruthy();
+    expect(screen.getByTitle('f'.repeat(64))).toBeTruthy();
+    expect(screen.getByText('Contact channel evidence')).toBeTruthy();
+    expect(screen.getByText('operator-log:contact-control')).toBeTruthy();
+    expect(screen.getByText('Controlo do contacto')).toBeTruthy();
   });
 
   it('creates an external-signing envelope with order policy and signer slots', async () => {
@@ -662,6 +673,114 @@ describe('SigningPanel — external signer invites', () => {
         },
       ],
     });
+  });
+
+  it('submits identity-tagged slot evidence without completing the envelope', async () => {
+    const bodies: unknown[] = [];
+    const slot: ExternalSigningEnvelopeView['slots'][number] = {
+      ...externalEnvelope().slots[0],
+      identity_requirements: ['contact_control', 'provider_identity_assertion'],
+      evidence: [],
+    };
+    let envelopes: ExternalSigningEnvelopeView[] = [
+      externalEnvelope({
+        order_policy: 'parallel',
+        slots: [slot],
+        completion: {
+          completed: false,
+          required_slot_count: 1,
+          signed_required_slot_count: 0,
+          blocking_required_slot_ids: ['slot-1'],
+        },
+      }),
+    ];
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/external-signing/envelopes') && method === 'GET') {
+        return json(envelopes);
+      }
+      if (url.endsWith('/external-signing/envelopes/env-1') && method === 'PATCH') {
+        const body = JSON.parse(String(init?.body));
+        bodies.push(body);
+        const evidenceRows = body.slots[0].evidence;
+        envelopes = [
+          {
+            ...envelopes[0],
+            slots: [{ ...slot, status: 'signed', evidence: evidenceRows }],
+            completion: {
+              completed: false,
+              required_slot_count: 1,
+              signed_required_slot_count: 1,
+              blocking_required_slot_ids: [],
+            },
+          },
+        ];
+        return json(envelopes[0]);
+      }
+      if (url.endsWith('/signature/external-invites') && method === 'GET') return json([]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Registar evidência' }));
+    const submit = screen.getByRole('button', {
+      name: 'Registar evidência e marcar slot assinado',
+    }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Referência da evidência'), {
+      target: { value: 'operator-log:slot-1' },
+    });
+    fireEvent.change(screen.getByLabelText('Digest opcional'), {
+      target: { value: 'b'.repeat(64) },
+    });
+    fireEvent.change(screen.getByLabelText('Referência para Controlo do contacto'), {
+      target: { value: 'operator-log:contact-control' },
+    });
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(
+      screen.getByLabelText('Referência para Declaração de identidade do prestador'),
+      {
+        target: { value: 'operator-log:provider-identity' },
+      },
+    );
+    expect(submit.disabled).toBe(false);
+
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      slots: [
+        {
+          id: 'slot-1',
+          status: 'signed',
+          evidence: [
+            {
+              label: 'Evidência técnica do operador',
+              reference: 'operator-log:slot-1',
+              digest: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            },
+            {
+              label: 'Evidência técnica: Controlo do contacto',
+              reference: 'operator-log:contact-control',
+              identity_requirement: 'contact_control',
+            },
+            {
+              label: 'Evidência técnica: Declaração de identidade do prestador',
+              reference: 'operator-log:provider-identity',
+              identity_requirement: 'provider_identity_assertion',
+            },
+          ],
+        },
+      ],
+    });
+    expect(bodies[0]).not.toHaveProperty('complete');
   });
 
   it('creates an invite linked to a selected envelope slot', async () => {

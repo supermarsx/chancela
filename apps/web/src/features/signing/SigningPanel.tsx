@@ -59,6 +59,7 @@ import type {
   Settings,
   SignatureEvidenceStatus,
   SignatureFamily,
+  UpdateExternalSigningEnvelopeEvidenceBody,
 } from '../../api/types';
 import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
 import { ApiError } from '../../api/client';
@@ -80,6 +81,7 @@ import {
   useRemoteInitiateSignature,
   useRevokeExternalSignerInvite,
   useSignatureProviders,
+  useUpdateExternalSigningEnvelope,
 } from '../../api/hooks';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { GateButton, scopeBook, useCan, type CanScope } from '../session/permissions';
@@ -300,6 +302,18 @@ type InviteSlotOption = {
   status: ExternalSignerSlotStatus;
 };
 
+type SlotEvidenceFormState = {
+  label: string;
+  reference: string;
+  digest: string;
+  identityReferences: Partial<Record<ExternalSignerIdentityRequirement, string>>;
+};
+
+type RecordingSlot = {
+  envelopeId: string;
+  slotId: string;
+};
+
 function newEnvelopeSlotFormRow(): EnvelopeSlotFormRow {
   return {
     id: globalThis.crypto?.randomUUID?.() ?? String(Date.now() + Math.random()),
@@ -518,6 +532,67 @@ function slotIdentityRequirements(slot: ExternalSigningEnvelopeSlotView, t: TFun
     : t('signing.envelopes.identity.none');
 }
 
+function SlotEvidenceMetadata({ slot }: { slot: ExternalSigningEnvelopeSlotView }) {
+  const t = useT();
+  if (slot.evidence.length === 0) {
+    return <span className="muted">{t('signing.envelopes.evidence.none')}</span>;
+  }
+  return (
+    <ul className="plain-list">
+      {slot.evidence.map((evidence, index) => (
+        <li key={`${evidence.label}-${evidence.reference}-${index}`}>
+          <strong>{evidence.label}</strong>
+          <br />
+          <span className="mono">{evidence.reference}</span>
+          {evidence.digest ? (
+            <>
+              <br />
+              <Digest value={evidence.digest} copyable={false} />
+            </>
+          ) : null}
+          {evidence.identity_requirement ? (
+            <>
+              <br />
+              <Badge tone="neutral">
+                {identityRequirementLabel(evidence.identity_requirement, t)}
+              </Badge>
+            </>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function slotCanRecordTechnicalEvidence(slot: ExternalSigningEnvelopeSlotView): boolean {
+  return slot.status === 'pending' || slot.status === 'initiated';
+}
+
+function buildSlotEvidenceRows(
+  slot: ExternalSigningEnvelopeSlotView,
+  form: SlotEvidenceFormState,
+  t: TFunction,
+): UpdateExternalSigningEnvelopeEvidenceBody[] {
+  const digest = form.digest.trim();
+  const rows: UpdateExternalSigningEnvelopeEvidenceBody[] = [
+    {
+      label: form.label.trim(),
+      reference: form.reference.trim(),
+      ...(digest ? { digest } : {}),
+    },
+  ];
+  for (const requirement of slot.identity_requirements ?? []) {
+    rows.push({
+      label: t('signing.envelopes.evidence.identityLabel', {
+        requirement: identityRequirementLabel(requirement, t),
+      }),
+      reference: form.identityReferences[requirement]?.trim() ?? '',
+      identity_requirement: requirement,
+    });
+  }
+  return rows;
+}
+
 function inviteSlotOptions(envelopes: ExternalSigningEnvelopeView[], t: TFunction) {
   return envelopes.flatMap((envelope) =>
     envelope.slots
@@ -544,9 +619,17 @@ function ExternalSigningEnvelopesSection({ act }: { act: ActView }) {
   const canManage = can('signing.perform', bookScope);
   const envelopes = useExternalSigningEnvelopes(act.id, canManage);
   const create = useCreateExternalSigningEnvelope(act.id);
+  const updateEnvelope = useUpdateExternalSigningEnvelope(act.id);
   const [creating, setCreating] = useState(false);
   const [orderPolicy, setOrderPolicy] = useState<ExternalSigningOrderPolicy>('parallel');
   const [slots, setSlots] = useState<EnvelopeSlotFormRow[]>(() => [newEnvelopeSlotFormRow()]);
+  const [recordingSlot, setRecordingSlot] = useState<RecordingSlot | null>(null);
+  const [evidenceForm, setEvidenceForm] = useState<SlotEvidenceFormState>({
+    label: '',
+    reference: '',
+    digest: '',
+    identityReferences: {},
+  });
 
   if (!canManage) return null;
 
@@ -560,14 +643,54 @@ function ExternalSigningEnvelopesSection({ act }: { act: ActView }) {
     .filter((slot) => slot.signer_label.length > 0);
   const canSubmit = slotPayload.length > 0 && !create.isPending;
   const list = envelopes.data ?? [];
+  const selectedEnvelope = recordingSlot
+    ? list.find((envelope) => envelope.id === recordingSlot.envelopeId)
+    : undefined;
+  const selectedSlot = selectedEnvelope?.slots.find((slot) => slot.id === recordingSlot?.slotId);
+  const selectedIdentityRequirements = selectedSlot?.identity_requirements ?? [];
+  const selectedIdentityRequirementsComplete = selectedIdentityRequirements.every((requirement) =>
+    evidenceForm.identityReferences[requirement]?.trim(),
+  );
+  const selectedEvidenceRows = selectedSlot
+    ? buildSlotEvidenceRows(selectedSlot, evidenceForm, t)
+    : [];
+  const canSubmitEvidence =
+    Boolean(selectedSlot) &&
+    Boolean(selectedSlot && slotCanRecordTechnicalEvidence(selectedSlot)) &&
+    evidenceForm.label.trim().length > 0 &&
+    evidenceForm.reference.trim().length > 0 &&
+    selectedIdentityRequirementsComplete &&
+    !updateEnvelope.isPending;
 
   function resetForm() {
     setOrderPolicy('parallel');
     setSlots([newEnvelopeSlotFormRow()]);
   }
 
+  function resetEvidenceForm() {
+    setRecordingSlot(null);
+    setEvidenceForm({ label: '', reference: '', digest: '', identityReferences: {} });
+    updateEnvelope.reset();
+  }
+
   function updateSlot(id: string, patch: Partial<EnvelopeSlotFormRow>) {
     setSlots((current) => current.map((slot) => (slot.id === id ? { ...slot, ...patch } : slot)));
+  }
+
+  function openEvidenceForm(
+    envelope: ExternalSigningEnvelopeView,
+    slot: ExternalSigningEnvelopeSlotView,
+  ) {
+    setRecordingSlot({ envelopeId: envelope.id, slotId: slot.id });
+    setEvidenceForm({
+      label: t('signing.envelopes.evidence.defaultLabel'),
+      reference: '',
+      digest: '',
+      identityReferences: Object.fromEntries(
+        (slot.identity_requirements ?? []).map((requirement) => [requirement, '']),
+      ) as Partial<Record<ExternalSignerIdentityRequirement, string>>,
+    });
+    updateEnvelope.reset();
   }
 
   function onSubmit(e: React.FormEvent) {
@@ -581,6 +704,32 @@ function ExternalSigningEnvelopesSection({ act }: { act: ActView }) {
           setCreating(false);
           create.reset();
           toast.success(t('signing.envelopes.createdToast'));
+        },
+        onError: (err) => toast.error(err),
+      },
+    );
+  }
+
+  function onSubmitEvidence(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedEnvelope || !selectedSlot || !canSubmitEvidence) return;
+    updateEnvelope.mutate(
+      {
+        envelopeId: selectedEnvelope.id,
+        body: {
+          slots: [
+            {
+              id: selectedSlot.id,
+              status: 'signed',
+              evidence: selectedEvidenceRows,
+            },
+          ],
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success(t('signing.envelopes.evidence.recordedToast'));
+          resetEvidenceForm();
         },
         onError: (err) => toast.error(err),
       },
@@ -805,7 +954,9 @@ function ExternalSigningEnvelopesSection({ act }: { act: ActView }) {
                     <th>{t('signing.envelopes.table.signer')}</th>
                     <th>{t('signing.envelopes.table.status')}</th>
                     <th>{t('signing.envelopes.table.identity')}</th>
+                    <th>{t('signing.envelopes.table.evidence')}</th>
                     <th>{t('signing.envelopes.table.required')}</th>
+                    <th>{t('signing.envelopes.table.actions')}</th>
                   </tr>
                 }
               >
@@ -822,10 +973,143 @@ function ExternalSigningEnvelopesSection({ act }: { act: ActView }) {
                     </td>
                     <td>{slotStatusBadge(slot.status, t)}</td>
                     <td>{slotIdentityRequirements(slot, t)}</td>
+                    <td>
+                      <SlotEvidenceMetadata slot={slot} />
+                    </td>
                     <td>{slot.required ? t('common.yes') : t('common.no')}</td>
+                    <td>
+                      {slotCanRecordTechnicalEvidence(slot) ? (
+                        <GateButton
+                          perm="signing.perform"
+                          scope={bookScope}
+                          type="button"
+                          variant="secondary"
+                          icon={<Icon.FileText />}
+                          onClick={() => openEvidenceForm(envelope, slot)}
+                        >
+                          {t('signing.envelopes.evidence.record')}
+                        </GateButton>
+                      ) : (
+                        <span className="muted">{t('signing.envelopes.evidence.noAction')}</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </Table>
+              {selectedEnvelope?.id === envelope.id && selectedSlot ? (
+                <form className="form" onSubmit={onSubmitEvidence}>
+                  <InlineWarning tone="info" title={t('signing.envelopes.evidence.formTitle')}>
+                    {t('signing.envelopes.evidence.formNotice')}
+                  </InlineWarning>
+                  <div className="form__grid">
+                    <Field
+                      label={t('signing.envelopes.evidence.label')}
+                      htmlFor={`external-slot-${selectedSlot.id}-evidence-label`}
+                    >
+                      <Input
+                        id={`external-slot-${selectedSlot.id}-evidence-label`}
+                        value={evidenceForm.label}
+                        onChange={(event) =>
+                          setEvidenceForm((current) => ({
+                            ...current,
+                            label: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t('signing.envelopes.evidence.reference')}
+                      htmlFor={`external-slot-${selectedSlot.id}-evidence-reference`}
+                    >
+                      <Input
+                        id={`external-slot-${selectedSlot.id}-evidence-reference`}
+                        value={evidenceForm.reference}
+                        onChange={(event) =>
+                          setEvidenceForm((current) => ({
+                            ...current,
+                            reference: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t('signing.envelopes.evidence.digest')}
+                      htmlFor={`external-slot-${selectedSlot.id}-evidence-digest`}
+                    >
+                      <Input
+                        id={`external-slot-${selectedSlot.id}-evidence-digest`}
+                        value={evidenceForm.digest}
+                        onChange={(event) =>
+                          setEvidenceForm((current) => ({
+                            ...current,
+                            digest: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                  </div>
+                  {selectedIdentityRequirements.length ? (
+                    <div className="stack--tight">
+                      <p className="card__label">{t('signing.envelopes.evidence.identityTitle')}</p>
+                      {selectedIdentityRequirements.map((requirement) => (
+                        <Field
+                          key={requirement}
+                          label={t('signing.envelopes.evidence.identityReference', {
+                            requirement: identityRequirementLabel(requirement, t),
+                          })}
+                          htmlFor={`external-slot-${selectedSlot.id}-identity-${requirement}`}
+                          hint={t('signing.envelopes.evidence.identityHint')}
+                        >
+                          <Input
+                            id={`external-slot-${selectedSlot.id}-identity-${requirement}`}
+                            value={evidenceForm.identityReferences[requirement] ?? ''}
+                            onChange={(event) =>
+                              setEvidenceForm((current) => ({
+                                ...current,
+                                identityReferences: {
+                                  ...current.identityReferences,
+                                  [requirement]: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </Field>
+                      ))}
+                      {!selectedIdentityRequirementsComplete ? (
+                        <InlineWarning
+                          tone="warn"
+                          title={t('signing.envelopes.evidence.identityMissingTitle')}
+                        >
+                          {t('signing.envelopes.evidence.identityMissingBody')}
+                        </InlineWarning>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {updateEnvelope.error ? <ErrorNote error={updateEnvelope.error} /> : null}
+                  <div className="form__actions">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={updateEnvelope.isPending}
+                      onClick={resetEvidenceForm}
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                    <GateButton
+                      perm="signing.perform"
+                      scope={bookScope}
+                      type="submit"
+                      variant="primary"
+                      icon={<Icon.Check />}
+                      disabled={!canSubmitEvidence}
+                    >
+                      {updateEnvelope.isPending
+                        ? t('signing.envelopes.evidence.recording')
+                        : t('signing.envelopes.evidence.submit')}
+                    </GateButton>
+                  </div>
+                </form>
+              ) : null}
             </div>
           ))}
         </div>

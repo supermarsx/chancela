@@ -37,6 +37,7 @@ import type {
   ExternalSignerInviteView,
   CreateExternalSigningEnvelopeBody,
   ExternalSigningEnvelopeView,
+  UpdateExternalSigningEnvelopeBody,
   ExternalValidatorReportUploadRequest,
   FollowUpView,
   ImportedDocumentReviewBody,
@@ -1106,6 +1107,29 @@ export function useCreateExternalSigningEnvelope(id: string) {
         },
       );
       void qc.invalidateQueries({ queryKey: keys.externalSigningEnvelopes(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Update slot status/evidence for an external-signing envelope. */
+export function useUpdateExternalSigningEnvelope(actId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      envelopeId,
+      body,
+    }: {
+      envelopeId: string;
+      body: UpdateExternalSigningEnvelopeBody;
+    }) => api.updateExternalSigningEnvelope(envelopeId, body),
+    onSuccess: (envelope) => {
+      qc.setQueryData<ExternalSigningEnvelopeView[]>(
+        keys.externalSigningEnvelopes(actId),
+        (current) => current?.map((row) => (row.id === envelope.id ? envelope : row)) ?? [envelope],
+      );
+      void qc.invalidateQueries({ queryKey: keys.externalSigningEnvelopes(actId) });
+      void qc.invalidateQueries({ queryKey: keys.externalSignerInvites(actId) });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
