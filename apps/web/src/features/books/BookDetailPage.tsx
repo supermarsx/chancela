@@ -12,13 +12,16 @@ import {
   useBook,
   useBookActs,
   useBookLegalHold,
+  useCreatePaperBookOcrConversionDossier,
   useClearBookLegalHold,
   useCreatePaperBookOcrDraft,
   useCreatePaperBookOcrDraftActDraft,
   useDownloadBookArchivePackage,
+  useDownloadBookLocalDglabInterchangeManifest,
   useDownloadPaperBookImport,
   useEntity,
   useEnqueuePaperBookImportOcr,
+  usePaperBookOcrConversionDossiers,
   usePaperBookOcrDrafts,
   usePaperBookImports,
   usePreservePaperBookImport,
@@ -31,9 +34,11 @@ import { PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES } from '../../api/types';
 import type {
   BookView,
   BookTermoSignatory,
+  LocalDglabInterchangeManifest,
   PaperBookImportPreservationReport,
   PaperBookImportReport,
   PaperBookImportView,
+  PaperBookOcrConversionDossierView,
   PaperBookOcrDraftCanonicalDraftResponse,
   PaperBookOcrDraftReviewPatchStatus,
   PaperBookOcrDraftView,
@@ -74,6 +79,18 @@ import { GateButton, GateButtonLink, scopeBook } from '../session/permissions';
 
 function preservationPackageFilename(bookId: string): string {
   return `chancela-preservation-book-${bookId}.zip`;
+}
+
+const LOCAL_DGLAB_MANIFEST_CONTENT_TYPE = 'application/json';
+
+function localDglabInterchangeManifestFilename(bookId: string): string {
+  return `chancela-local-dglab-interchange-manifest-book-${bookId}.json`;
+}
+
+function localDglabInterchangeManifestBlob(manifest: LocalDglabInterchangeManifest): Blob {
+  return new Blob([`${JSON.stringify(manifest, null, 2)}\n`], {
+    type: LOCAL_DGLAB_MANIFEST_CONTENT_TYPE,
+  });
 }
 
 function formatBytes(value: number): string {
@@ -219,13 +236,28 @@ function paperBookOcrReviewTone(status: string): 'neutral' | 'warn' | 'ok' | 'er
 }
 
 function paperBookOcrPageSpansLabel(draft: PaperBookOcrDraftView): string {
-  return draft.page_spans
+  return paperBookOcrPageSpanListLabel(draft.page_spans);
+}
+
+function paperBookOcrPageSpanListLabel(
+  spans: Array<{ start_page: number; end_page: number }>,
+): string {
+  if (spans.length === 0) return '—';
+  return spans
     .map((span) =>
       span.start_page === span.end_page
         ? `p. ${span.start_page}`
         : `pp. ${span.start_page}-${span.end_page}`,
     )
     .join(', ');
+}
+
+function paperBookOcrDossierPageSpansLabel(dossier: PaperBookOcrConversionDossierView): string {
+  return paperBookOcrPageSpanListLabel(dossier.source_page_spans);
+}
+
+function noClaimLabel(value: boolean): string {
+  return value ? 'sim' : 'não';
 }
 
 function paperBookOcrTextPreview(draft: PaperBookOcrDraftView): string {
@@ -479,11 +511,155 @@ function PaperBookOcrDraftReviewForm({
   );
 }
 
+function PaperBookOcrConversionDossierPanel({
+  draft,
+  dossier,
+  loading,
+  error,
+  createPending,
+  createError,
+  onCreate,
+}: {
+  draft: PaperBookOcrDraftView;
+  dossier: PaperBookOcrConversionDossierView | undefined;
+  loading: boolean;
+  error: unknown;
+  createPending: boolean;
+  createError: unknown;
+  onCreate: (draft: PaperBookOcrDraftView) => void;
+}) {
+  if (dossier) {
+    return (
+      <section
+        className="stack--tight"
+        aria-label={`Dossier de conversão OCR ${dossier.dossier_id}`}
+      >
+        <div className="row-wrap">
+          <Badge tone="ok">Dossier já registado</Badge>
+          <Badge tone="warn">Só metadados</Badge>
+          <Badge tone="warn">Não canónico</Badge>
+        </div>
+        <InlineWarning tone="info" title="Dossier de conversão só de metadados">
+          <p>{dossier.dossier_notice}</p>
+          <p>{dossier.legal_notice}</p>
+        </InlineWarning>
+        <dl className="deflist deflist--tight">
+          <div>
+            <dt>Dossier</dt>
+            <dd>
+              <span className="mono">{dossier.dossier_id}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Digest da fonte OCR</dt>
+            <dd>
+              {dossier.source_text_digest ? (
+                <span className="mono">{dossier.source_text_digest}</span>
+              ) : (
+                '—'
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Páginas da fonte</dt>
+            <dd>{paperBookOcrDossierPageSpansLabel(dossier)}</dd>
+          </div>
+          <div>
+            <dt>Revisão de origem</dt>
+            <dd>
+              {paperBookOcrReviewStatusLabel(dossier.source_review_status)}
+              {dossier.source_reviewed_at ? (
+                <>
+                  {' '}
+                  em{' '}
+                  <time className="mono" dateTime={dossier.source_reviewed_at}>
+                    {dossier.source_reviewed_at}
+                  </time>{' '}
+                  por {dossier.source_reviewed_by ?? '—'}
+                </>
+              ) : null}
+            </dd>
+          </div>
+          <div>
+            <dt>Criado</dt>
+            <dd>
+              <time className="mono" dateTime={dossier.created_at}>
+                {dossier.created_at}
+              </time>{' '}
+              por {dossier.created_by}
+            </dd>
+          </div>
+          <div>
+            <dt>Limites do dossier</dt>
+            <dd>
+              Ata criada: {noClaimLabel(dossier.act_created)} · ata canónica criada:{' '}
+              {noClaimLabel(dossier.canonical_act_created)} · ata canónica reclamada:{' '}
+              {noClaimLabel(dossier.canonical_minutes_claimed)} · documento canónico:{' '}
+              {noClaimLabel(dossier.canonical_document_created)} · documento assinado:{' '}
+              {noClaimLabel(dossier.signed_document_created)} · pacote de arquivo:{' '}
+              {noClaimLabel(dossier.archive_package_created)} · PDF/A:{' '}
+              {noClaimLabel(dossier.pdfa_created)} · PDF/UA: {noClaimLabel(dossier.pdfua_created)} ·
+              assinatura: {noClaimLabel(dossier.signature_created)} · selo:{' '}
+              {noClaimLabel(dossier.seal_created)} · validade legal:{' '}
+              {noClaimLabel(dossier.legal_validity_claimed)}
+            </dd>
+          </div>
+          <div>
+            <dt>Texto OCR bruto</dt>
+            <dd>
+              Na resposta: {noClaimLabel(dossier.source_extracted_text_in_response)} · no evento de
+              ledger: {noClaimLabel(dossier.source_extracted_text_in_ledger_event)}
+            </dd>
+          </div>
+        </dl>
+      </section>
+    );
+  }
+
+  if (draft.review_status !== 'accepted') return null;
+
+  return (
+    <section
+      className="stack--tight"
+      aria-label={`Criar dossier de conversão OCR para ${draft.draft_id}`}
+    >
+      <InlineWarning tone="info" title="Dossier de conversão só de metadados">
+        Cria ou devolve um dossier só com metadados, digest e evidência de revisão do rascunho OCR
+        aceite. Não cria ata, documento, PDF/A, assinatura, selo, pacote de arquivo ou validade
+        legal.
+      </InlineWarning>
+      {loading ? (
+        <Skeleton height="3rem" />
+      ) : error ? (
+        <ErrorNote error={error} />
+      ) : (
+        <>
+          {createError ? <ErrorNote error={createError} /> : null}
+          <GateButton
+            perm="book.import"
+            type="button"
+            variant="secondary"
+            icon={<Icon.FileText />}
+            disabled={createPending}
+            onClick={() => onCreate(draft)}
+          >
+            {createPending
+              ? 'A criar dossier só de metadados'
+              : 'Criar dossier de conversão só de metadados'}
+          </GateButton>
+        </>
+      )}
+    </section>
+  );
+}
+
 function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   const toast = useToast();
   const drafts = usePaperBookOcrDrafts(row.import_id);
+  const dossiers = usePaperBookOcrConversionDossiers(row.import_id);
   const create = useCreatePaperBookOcrDraft();
   const createActDraft = useCreatePaperBookOcrDraftActDraft(row.book_ref);
+  const createDossier = useCreatePaperBookOcrConversionDossier();
   const [extractedText, setExtractedText] = useState('');
   const [textDigest, setTextDigest] = useState('');
   const [startPage, setStartPage] = useState('1');
@@ -558,6 +734,9 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   }
 
   const rows = drafts.data ?? [];
+  const dossierByDraftId = new Map(
+    (dossiers.data ?? []).map((dossier) => [dossier.draft_id, dossier]),
+  );
 
   function onCreateActDraft(draft: PaperBookOcrDraftView) {
     createActDraft.mutate(
@@ -569,6 +748,19 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
             'Rascunho de ata criado sem documento canónico, PDF/A, assinatura ou selo.',
           );
         },
+        onError: (e) => toast.error(e),
+      },
+    );
+  }
+
+  function onCreateDossier(draft: PaperBookOcrDraftView) {
+    createDossier.mutate(
+      { importId: row.import_id, draftId: draft.draft_id },
+      {
+        onSuccess: () =>
+          toast.success(
+            'Dossier de conversão só de metadados registado; não criou ata, documento, PDF/A, assinatura ou selo.',
+          ),
         onError: (e) => toast.error(e),
       },
     );
@@ -760,6 +952,15 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
                     </dd>
                   </div>
                 </dl>
+                <PaperBookOcrConversionDossierPanel
+                  draft={draft}
+                  dossier={dossierByDraftId.get(draft.draft_id)}
+                  loading={dossiers.isLoading}
+                  error={dossiers.error}
+                  createPending={createDossier.isPending}
+                  createError={createDossier.error}
+                  onCreate={onCreateDossier}
+                />
                 {draft.review_status === 'accepted' ? (
                   <div className="stack--tight">
                     <InlineWarning tone="info" title="Criar rascunho de ata">
@@ -1228,6 +1429,7 @@ export function BookDetailPage() {
   const book = useBook(id);
   const acts = useBookActs(id);
   const packageDownload = useDownloadBookArchivePackage(id);
+  const localDglabManifestDownload = useDownloadBookLocalDglabInterchangeManifest(id);
 
   if (book.isLoading) {
     return (
@@ -1276,6 +1478,27 @@ export function BookDetailPage() {
     });
   }
 
+  function onDownloadLocalDglabManifest() {
+    localDglabManifestDownload.mutate(undefined, {
+      onSuccess: async (manifest) => {
+        try {
+          showSaveResult(
+            await saveBlobAs({
+              blob: localDglabInterchangeManifestBlob(manifest),
+              filename: localDglabInterchangeManifestFilename(b.id),
+              contentType: LOCAL_DGLAB_MANIFEST_CONTENT_TYPE,
+              filters: [{ name: 'JSON', extensions: ['json'] }],
+              preferBrowserSavePicker: true,
+            }),
+          );
+        } catch (e) {
+          toast.error(e);
+        }
+      },
+      onError: (e) => toast.error(e),
+    });
+  }
+
   return (
     <div className="stack">
       <PageHeader
@@ -1291,21 +1514,42 @@ export function BookDetailPage() {
           </>
         }
         actions={
-          <GateButton
-            perm="book.export"
-            scope={scopeBook(b.id)}
-            type="button"
-            variant="secondary"
-            icon={<Icon.Archive />}
-            disabled={packageDownload.isPending}
-            onClick={onDownloadPackage}
-          >
-            {packageDownload.isPending
-              ? t('books.preservationPackage.downloading')
-              : t('books.preservationPackage.download')}
-          </GateButton>
+          <div className="row-wrap">
+            <GateButton
+              perm="book.export"
+              scope={scopeBook(b.id)}
+              type="button"
+              variant="secondary"
+              icon={<Icon.Archive />}
+              disabled={packageDownload.isPending}
+              onClick={onDownloadPackage}
+            >
+              {packageDownload.isPending
+                ? t('books.preservationPackage.downloading')
+                : t('books.preservationPackage.download')}
+            </GateButton>
+            <GateButton
+              perm="book.export"
+              scope={scopeBook(b.id)}
+              type="button"
+              variant="secondary"
+              icon={<Icon.FileText />}
+              disabled={localDglabManifestDownload.isPending}
+              onClick={onDownloadLocalDglabManifest}
+            >
+              {localDglabManifestDownload.isPending
+                ? 'A descarregar manifesto DGLAB local'
+                : 'Manifesto DGLAB local (metadados JSON)'}
+            </GateButton>
+          </div>
         }
       />
+
+      <InlineWarning tone="info" title="Manifesto DGLAB local: só metadados">
+        O manifesto DGLAB local é um scaffold JSON derivado do pacote interno. Não é exportação
+        oficial DGLAB, submissão governamental, certificação arquivística legal, certificação PDF/A,
+        PAdES ou PDF-UA, nem registo de descarte destrutivo.
+      </InlineWarning>
 
       <Card title={t('books.termoAbertura')}>
         <dl className="deflist">

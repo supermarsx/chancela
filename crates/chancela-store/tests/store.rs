@@ -19,11 +19,11 @@ use chancela_core::{
 use chancela_ledger::{Event, Ledger, LedgerError};
 use chancela_registry::{RegistryExtract, RegistryProvenance};
 use chancela_store::{
-    Store, StoreError, StoreKeyRotationStatus, StoreOpenOptions, StoredDocument, StoredFollowUp,
-    StoredFollowUpStatus, StoredImportedDocument, StoredImportedDocumentMeta,
-    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
-    StoredPaperBookOcrDraft, StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus,
-    StoredPaperBookOcrStatus,
+    PaperBookOcrConversionDossierUpsert, Store, StoreError, StoreKeyRotationStatus,
+    StoreOpenOptions, StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredImportedDocument,
+    StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus, StoredPaperBookImport,
+    StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier, StoredPaperBookOcrDraft,
+    StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
 };
 #[cfg(not(feature = "sqlcipher"))]
 use chancela_store::{StoreDatabaseFormat, StoreKeyConfigStatus, StoreKeyOpsPlan};
@@ -202,6 +202,24 @@ fn sample_paper_book_ocr_draft(draft_id: &str, import_id: &str) -> StoredPaperBo
         reviewed_by: None,
         review_note: None,
         superseded_by: None,
+    }
+}
+
+fn sample_paper_book_ocr_conversion_dossier(
+    dossier_id: &str,
+    draft: &StoredPaperBookOcrDraft,
+) -> StoredPaperBookOcrConversionDossier {
+    StoredPaperBookOcrConversionDossier {
+        dossier_id: dossier_id.to_string(),
+        import_id: draft.import_id.clone(),
+        draft_id: draft.draft_id.clone(),
+        source_text_digest: draft.text_digest.clone(),
+        source_page_spans: draft.page_spans.clone(),
+        source_review_status: StoredPaperBookOcrReviewStatus::Accepted,
+        source_reviewed_at: draft.reviewed_at,
+        source_reviewed_by: draft.reviewed_by.clone(),
+        created_at: OffsetDateTime::from_unix_timestamp(1_780_000_004).unwrap(),
+        created_by: "rui.secretario".to_string(),
     }
 }
 
@@ -1156,9 +1174,10 @@ fn schema_version_is_current() {
     // follow-ups landed as schema v6; signed timestamp-trust diagnostics landed as schema v7;
     // preserved paper-book imports landed as schema v8; paper-book OCR drafts landed as schema v9;
     // paper-book original numbering/linking metadata landed as schema v10; imported-document
-    // operator review metadata landed as schema v11.
+    // operator review metadata landed as schema v11; paper-book OCR conversion dossiers landed as
+    // schema v12.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 11);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 12);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1169,7 +1188,7 @@ fn schema_version_is_current() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "11");
+    assert_eq!(stamped, "12");
     let ocr_draft_table: i64 = raw
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_drafts'",
@@ -1186,6 +1205,22 @@ fn schema_version_is_current() {
         )
         .unwrap();
     assert_eq!(ocr_draft_import_index, 1);
+    let ocr_conversion_dossier_table: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'paper_book_ocr_conversion_dossiers'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_conversion_dossier_table, 1);
+    let ocr_conversion_dossier_unique_index: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_paper_book_ocr_conversion_dossiers_import_draft'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ocr_conversion_dossier_unique_index, 1);
     let paper_linking_columns: i64 = raw
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('paper_book_imports') \
@@ -1336,7 +1371,7 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stamped, "11", "stamp advanced forward");
+        assert_eq!(stamped, "12", "stamp advanced forward");
     }
     let loaded = store.load().expect("load after upgrade");
     assert_eq!(loaded.entities.get(&entity.id), Some(&entity));
@@ -1673,7 +1708,7 @@ fn older_paper_book_import_rows_gain_full_page_range_on_upgrade() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(stamped, "11");
+    assert_eq!(stamped, "12");
 }
 
 #[test]
@@ -1842,6 +1877,103 @@ fn paper_book_ocr_draft_round_trips_and_reviews_without_mutating_import() {
             .review_status,
         StoredPaperBookOcrReviewStatus::Accepted
     );
+}
+
+#[test]
+fn paper_book_ocr_conversion_dossier_round_trips_idempotent_metadata_only() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let import = sample_paper_book_import(
+        "33333333-3333-4333-8333-333333333338",
+        b"%PDF-1.7\nhistorical paper book scan package\n%%EOF",
+    );
+    let mut draft = sample_paper_book_ocr_draft(
+        "44444444-4444-4444-8444-444444444445",
+        &import.meta.import_id,
+    );
+    draft.review_status = StoredPaperBookOcrReviewStatus::Accepted;
+    draft.reviewed_at = Some(OffsetDateTime::from_unix_timestamp(1_780_000_003).unwrap());
+    draft.reviewed_by = Some("rui.secretario".to_string());
+    draft.review_note = Some("Checked against the scan.".to_string());
+    let dossier =
+        sample_paper_book_ocr_conversion_dossier("55555555-5555-4555-8555-555555555555", &draft);
+
+    let first_insert = store
+        .persist_result(|tx| {
+            tx.upsert_paper_book_import(&import)?;
+            tx.upsert_paper_book_ocr_draft(&draft)?;
+            tx.upsert_paper_book_ocr_conversion_dossier(&dossier)
+        })
+        .expect("persist accepted OCR conversion dossier");
+    assert_eq!(
+        first_insert,
+        PaperBookOcrConversionDossierUpsert::Inserted(dossier.clone())
+    );
+    assert!(first_insert.inserted());
+    assert_eq!(first_insert.dossier(), &dossier);
+
+    let by_pair = store
+        .paper_book_ocr_conversion_dossier_for_draft(&import.meta.import_id, &draft.draft_id)
+        .expect("read dossier by import/draft")
+        .expect("dossier present");
+    assert_eq!(by_pair, dossier);
+    assert_eq!(
+        by_pair.source_review_status,
+        StoredPaperBookOcrReviewStatus::Accepted
+    );
+    assert_eq!(by_pair.source_text_digest, draft.text_digest);
+    assert_eq!(by_pair.source_page_spans, draft.page_spans);
+
+    let listed = store
+        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+        .expect("list dossiers");
+    assert_eq!(listed, vec![dossier.clone()]);
+
+    let mut duplicate = dossier.clone();
+    duplicate.dossier_id = "66666666-6666-4666-8666-666666666666".to_string();
+    let duplicate_insert = store
+        .persist_result(|tx| tx.upsert_paper_book_ocr_conversion_dossier(&duplicate))
+        .expect("duplicate import/draft dossier is idempotent");
+    assert_eq!(
+        duplicate_insert,
+        PaperBookOcrConversionDossierUpsert::Existing(dossier.clone()),
+        "duplicate insert returns the canonical stored row, not the ignored generated row"
+    );
+    assert!(!duplicate_insert.inserted());
+    assert_eq!(duplicate_insert.dossier(), &dossier);
+    let listed_after_duplicate = store
+        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+        .expect("list after duplicate");
+    assert_eq!(
+        listed_after_duplicate,
+        vec![dossier.clone()],
+        "duplicate creation retains the original dossier row"
+    );
+
+    let mut non_accepted =
+        sample_paper_book_ocr_conversion_dossier("77777777-7777-4777-8777-777777777777", &draft);
+    non_accepted.draft_id = "88888888-8888-4888-8888-888888888888".to_string();
+    non_accepted.source_review_status = StoredPaperBookOcrReviewStatus::Unreviewed;
+    let err = store
+        .persist_result(|tx| tx.upsert_paper_book_ocr_conversion_dossier(&non_accepted))
+        .expect_err("non-accepted OCR draft snapshots cannot create dossiers");
+    assert!(
+        err.to_string().contains("accepted OCR draft"),
+        "error names accepted-review requirement: {err}"
+    );
+
+    let unchanged_import = store
+        .paper_book_import(&import.meta.import_id)
+        .expect("read import")
+        .expect("import present");
+    assert_eq!(unchanged_import, import);
+    drop(store);
+
+    let reopened = Store::open(dir.path()).expect("reopen");
+    let reopened_dossiers = reopened
+        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+        .expect("list reopened dossiers");
+    assert_eq!(reopened_dossiers, vec![dossier]);
 }
 
 #[test]

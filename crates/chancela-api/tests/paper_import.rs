@@ -413,6 +413,23 @@ async fn create_act_draft_from_ocr_draft(
     .await
 }
 
+async fn create_conversion_dossier_from_ocr_draft(
+    state: &AppState,
+    token: &str,
+    import_id: &str,
+    draft_id: &str,
+) -> (StatusCode, Value) {
+    send(
+        state,
+        json_req(
+            &format!("/v1/books/paper-import/{import_id}/ocr-drafts/{draft_id}/conversion-dossier"),
+            token,
+            json!({}),
+        ),
+    )
+    .await
+}
+
 async fn list_imports(state: &AppState, token: &str, query: &str) -> (StatusCode, Value) {
     send(
         state,
@@ -426,6 +443,21 @@ async fn list_ocr_drafts(state: &AppState, token: &str, import_id: &str) -> (Sta
         state,
         get_req(
             &format!("/v1/books/paper-import/{import_id}/ocr-drafts"),
+            token,
+        ),
+    )
+    .await
+}
+
+async fn list_conversion_dossiers(
+    state: &AppState,
+    token: &str,
+    import_id: &str,
+) -> (StatusCode, Value) {
+    send(
+        state,
+        get_req(
+            &format!("/v1/books/paper-import/{import_id}/conversion-dossiers"),
             token,
         ),
     )
@@ -1263,6 +1295,210 @@ async fn paper_book_import_ocr_draft_results_are_non_authoritative_and_reviewabl
         .expect("draft row");
     assert_eq!(stored_draft.import_id, import_id);
     assert_eq!(stored_draft.review_status.as_str(), "accepted");
+}
+
+#[tokio::test]
+async fn paper_book_ocr_conversion_dossier_requires_accepted_matching_draft_and_is_metadata_only() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let bytes = package_bytes();
+    let (status, created) = preserve(&state, &token, preserve_body(&bytes)).await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+    let ocr_text = "Deliberacao importada por OCR para dossier metadata-only.";
+    let digest = hex(&Sha256::digest(ocr_text));
+    let (status, draft) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "extracted_text": ocr_text,
+            "text_digest": digest,
+            "page_spans": [{ "start_page": 1, "end_page": 3 }],
+            "confidence": 0.92,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "draft: {draft}");
+    let draft_id = draft["draft_id"].as_str().expect("draft id");
+    let before_unaccepted = state.ledger.read().await.events().len();
+
+    let (status, body) =
+        create_conversion_dossier_from_ocr_draft(&state, &token, import_id, draft_id).await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "unaccepted draft refused: {body}"
+    );
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("accepted")),
+        "error names accepted-review requirement: {body}"
+    );
+    assert_eq!(state.ledger.read().await.events().len(), before_unaccepted);
+    let (status, empty_list) = list_conversion_dossiers(&state, &token, import_id).await;
+    assert_eq!(status, StatusCode::OK, "empty dossier list: {empty_list}");
+    assert!(empty_list.as_array().expect("empty list").is_empty());
+
+    let (status, reviewed) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        draft_id,
+        json!({ "review_status": "accepted", "review_note": "Checked against the scan." }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "accept draft: {reviewed}");
+
+    let (status, other_import) = preserve(&state, &token, preserve_body(&bytes)).await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "preserve other: {other_import}"
+    );
+    let other_import_id = other_import["import_id"].as_str().expect("other import id");
+    let before_mismatch = state.ledger.read().await.events().len();
+    let (status, body) =
+        create_conversion_dossier_from_ocr_draft(&state, &token, other_import_id, draft_id).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "mismatched import/draft refused: {body}"
+    );
+    assert_eq!(state.ledger.read().await.events().len(), before_mismatch);
+
+    let before_events = state.ledger.read().await.events().len();
+    let before_acts = state.acts.read().await.len();
+    let before_documents = state.documents.read().await.len();
+    let before_signed_documents = state.signed_documents.read().await.len();
+
+    let (status, dossier) =
+        create_conversion_dossier_from_ocr_draft(&state, &token, import_id, draft_id).await;
+
+    assert_eq!(status, StatusCode::CREATED, "dossier: {dossier}");
+    assert_eq!(dossier["import_id"], import_id);
+    assert_eq!(dossier["draft_id"], draft_id);
+    assert_eq!(dossier["source_text_digest"], digest);
+    assert_eq!(dossier["source_page_spans"][0]["start_page"], 1);
+    assert_eq!(dossier["source_page_spans"][0]["end_page"], 3);
+    assert_eq!(dossier["source_review_status"], "accepted");
+    assert!(dossier["source_reviewed_at"].as_str().is_some());
+    assert!(dossier["source_reviewed_by"].as_str().is_some());
+    assert_eq!(dossier["metadata_only"], true);
+    assert_eq!(dossier["non_canonical"], true);
+    assert_eq!(dossier["act_created"], false);
+    assert_eq!(dossier["canonical_minutes_claimed"], false);
+    assert_eq!(dossier["canonical_document_created"], false);
+    assert_eq!(dossier["signed_document_created"], false);
+    assert_eq!(dossier["archive_package_created"], false);
+    assert_eq!(dossier["pdfa_created"], false);
+    assert_eq!(dossier["pdfua_created"], false);
+    assert_eq!(dossier["signature_created"], false);
+    assert_eq!(dossier["seal_created"], false);
+    assert_eq!(dossier["legal_validity_claimed"], false);
+    assert_eq!(dossier["source_extracted_text_in_response"], false);
+    assert_eq!(dossier["source_extracted_text_in_ledger_event"], false);
+    assert!(
+        dossier["dossier_notice"]
+            .as_str()
+            .is_some_and(|notice| notice.contains("metadata-only")
+                && notice.contains("non-canonical")
+                && notice.contains("non-legal-validity-conferring")
+                && notice.contains("PDF/UA")),
+        "notice states dossier boundary: {dossier}"
+    );
+    assert!(
+        dossier.get("extracted_text").is_none(),
+        "dossier response must not include raw OCR text fields: {dossier}"
+    );
+    assert!(
+        !dossier.to_string().contains(ocr_text),
+        "dossier response must not include raw OCR text: {dossier}"
+    );
+
+    assert_eq!(state.acts.read().await.len(), before_acts);
+    assert_eq!(state.documents.read().await.len(), before_documents);
+    assert_eq!(
+        state.signed_documents.read().await.len(),
+        before_signed_documents
+    );
+    let ledger = state.ledger.read().await;
+    assert_eq!(
+        ledger.events().len(),
+        before_events + 1,
+        "dossier creation appends exactly one metadata event"
+    );
+    let event = ledger.events().last().expect("last event");
+    assert_eq!(
+        event.kind,
+        "paper_book_import.ocr_conversion_dossier_created"
+    );
+    let event_json = serde_json::to_value(event).expect("event serializes");
+    assert!(
+        event_json.get("payload").is_none(),
+        "ledger event stores a digest envelope, not OCR text: {event_json}"
+    );
+    assert!(
+        !event_json.to_string().contains(ocr_text),
+        "ledger event envelope must not include raw OCR text: {event_json}"
+    );
+    drop(ledger);
+
+    let dossier_id = dossier["dossier_id"].as_str().expect("dossier id");
+    let stored = state
+        .store
+        .as_ref()
+        .expect("store")
+        .paper_book_ocr_conversion_dossiers(import_id)
+        .expect("dossier list");
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].dossier_id, dossier_id);
+    assert_eq!(
+        stored[0].source_text_digest.as_deref(),
+        Some(digest.as_str())
+    );
+
+    let before_duplicate = state.ledger.read().await.events().len();
+    let (status, duplicate) =
+        create_conversion_dossier_from_ocr_draft(&state, &token, import_id, draft_id).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "duplicate is idempotent: {duplicate}"
+    );
+    assert_eq!(duplicate["dossier_id"], dossier_id);
+    assert_eq!(duplicate["created_at"], dossier["created_at"]);
+    assert_eq!(duplicate["created_by"], dossier["created_by"]);
+    let ledger = state.ledger.read().await;
+    assert_eq!(
+        ledger.events().len(),
+        before_duplicate,
+        "idempotent duplicate must not append another ledger event"
+    );
+    assert_eq!(
+        ledger
+            .events()
+            .iter()
+            .filter(|event| event.kind == "paper_book_import.ocr_conversion_dossier_created")
+            .count(),
+        1,
+        "duplicate insert must not create a second dossier-created ledger event"
+    );
+    drop(ledger);
+
+    let (status, listed) = list_conversion_dossiers(&state, &token, import_id).await;
+    assert_eq!(status, StatusCode::OK, "list dossiers: {listed}");
+    let rows = listed.as_array().expect("dossier list");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["dossier_id"], dossier_id);
+    assert_eq!(rows[0]["source_extracted_text_in_response"], false);
+    assert!(
+        !listed.to_string().contains(ocr_text),
+        "dossier list must not include raw OCR text: {listed}"
+    );
 }
 
 #[tokio::test]

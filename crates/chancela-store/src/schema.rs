@@ -50,7 +50,10 @@
 /// - **v11** — adds operator review metadata to `imported_documents`: a bounded non-canonical
 ///   review status plus reviewer/timestamp/note fields. These transitions never run OCR or
 ///   conversion and never claim legal acceptance.
-pub const SCHEMA_VERSION: i64 = 11;
+/// - **v12** — adds `paper_book_ocr_conversion_dossiers`: metadata-only, non-canonical dossiers
+///   for accepted paper-book OCR drafts. They never store raw OCR text and never create acts,
+///   documents, signed documents, archive packages, signatures, seals, PDF/A, or PDF/UA outputs.
+pub const SCHEMA_VERSION: i64 = 12;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -388,6 +391,30 @@ pub const CREATE_PAPER_BOOK_OCR_DRAFTS_IMPORT_IDX: &str = "CREATE INDEX IF NOT E
 
 pub const CREATE_PAPER_BOOK_OCR_DRAFTS_CREATED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_paper_book_ocr_drafts_created_at ON paper_book_ocr_drafts (created_at);";
 
+/// `paper_book_ocr_conversion_dossiers` — metadata-only dossier rows for accepted OCR drafts.
+///
+/// These rows are deliberately non-canonical and non-legal-validity-conferring. They bind one
+/// preserved paper-book import to one accepted OCR draft and retain only review/digest/page-span
+/// metadata. They do not store raw OCR extracted text and do not create canonical book/act,
+/// document, signed-document, archive-package, signature, seal, PDF/A, or PDF/UA outputs.
+pub const CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS: &str = "\
+CREATE TABLE IF NOT EXISTS paper_book_ocr_conversion_dossiers (
+    dossier_id             TEXT PRIMARY KEY,
+    import_id              TEXT NOT NULL,
+    draft_id               TEXT NOT NULL,
+    source_text_digest     TEXT,
+    source_page_spans_json TEXT NOT NULL,
+    source_review_status   TEXT NOT NULL,
+    source_reviewed_at     TEXT,
+    source_reviewed_by     TEXT,
+    created_at             TEXT NOT NULL,
+    created_by             TEXT NOT NULL
+) STRICT;";
+
+pub const CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS_IMPORT_DRAFT_IDX: &str = "CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_book_ocr_conversion_dossiers_import_draft ON paper_book_ocr_conversion_dossiers (import_id, draft_id);";
+
+pub const CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS_IMPORT_CREATED_AT_IDX: &str = "CREATE INDEX IF NOT EXISTS idx_paper_book_ocr_conversion_dossiers_import_created_at ON paper_book_ocr_conversion_dossiers (import_id, created_at);";
+
 /// `follow_ups` — first-class task/follow-up rows tied to an act. These deliberately live outside
 /// the sealed [`chancela_core::Act`] JSON so post-deliberation task management never mutates the
 /// frozen evidentiary payload.
@@ -455,6 +482,9 @@ pub const ALL: &[&str] = &[
     CREATE_PAPER_BOOK_OCR_DRAFTS,
     CREATE_PAPER_BOOK_OCR_DRAFTS_IMPORT_IDX,
     CREATE_PAPER_BOOK_OCR_DRAFTS_CREATED_AT_IDX,
+    CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS,
+    CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS_IMPORT_DRAFT_IDX,
+    CREATE_PAPER_BOOK_OCR_CONVERSION_DOSSIERS_IMPORT_CREATED_AT_IDX,
     CREATE_FOLLOW_UPS,
     CREATE_FOLLOW_UPS_ACT_IDX,
     CREATE_FOLLOW_UPS_STATUS_IDX,

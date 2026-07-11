@@ -18,8 +18,12 @@ const PDF_CONTENT_TYPE: &str = "application/pdf";
 const JSON_CONTENT_TYPE: &str = "application/json";
 pub const PRESERVATION_INTERCHANGE_PROFILE: &str =
     "chancela-internal-dglab-aligned-preservation-metadata/v1";
+pub const LOCAL_DGLAB_INTERCHANGE_MANIFEST_SCHEMA: &str =
+    "chancela-local-dglab-interchange-manifest/v1";
+pub const LOCAL_DGLAB_INTERCHANGE_MANIFEST_PROFILE: &str = LOCAL_DGLAB_INTERCHANGE_MANIFEST_SCHEMA;
 pub const DEFAULT_PACKAGE_TYPE: &str = "chancela-internal-preservation-package";
 pub const DEFAULT_PACKAGE_VERSION: &str = "1";
+const EVIDENCE_INDEX_PATH: &str = "evidence/index.json";
 const DEFAULT_PRODUCER_NAME: &str = "Chancela";
 const DEFAULT_PRODUCER_SYSTEM: &str = "chancela-archive";
 
@@ -316,6 +320,99 @@ pub struct PreservationInterchangeMetadata {
     pub rights: RightsMetadata,
     /// Language metadata mirrored from the manifest.
     pub languages: Vec<String>,
+}
+
+/// One file entry in the local DGLAB interchange manifest scaffold.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalDglabInterchangeFileEntry {
+    /// Path of the file within the source archive package.
+    pub path: String,
+    /// Role of this member in the source preservation package.
+    pub role: PackageFileRole,
+    /// IANA media type of the member.
+    pub content_type: String,
+    /// File size in bytes.
+    pub byte_len: u64,
+    /// SHA-256 fixity data from the source package manifest.
+    pub checksum: FileChecksum,
+    /// Act this file belongs to, if known by the source manifest.
+    pub act_id: Option<uuid::Uuid>,
+    /// Document this file belongs to, if known by the source manifest.
+    pub document_id: Option<uuid::Uuid>,
+}
+
+impl From<&PackageFile> for LocalDglabInterchangeFileEntry {
+    fn from(file: &PackageFile) -> Self {
+        Self {
+            path: file.path.clone(),
+            role: file.role,
+            content_type: file.content_type.clone(),
+            byte_len: file.byte_len,
+            checksum: file.checksum.clone(),
+            act_id: file.act_id,
+            document_id: file.document_id,
+        }
+    }
+}
+
+/// Deterministic file/fixity summary for the local DGLAB interchange scaffold.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalDglabInterchangeFileFixitySummary {
+    /// Fixity algorithm used for every declared package member.
+    pub algorithm: String,
+    /// Number of declared content members.
+    pub file_count: usize,
+    /// Sum of declared content-member byte lengths.
+    pub total_byte_len: u64,
+}
+
+/// Metadata-only local DGLAB/archive interchange scaffold.
+///
+/// This structure is built from an already validated [`PackageManifest`]. It is not written into
+/// the ZIP package and does not claim official DGLAB interchange status, DGLAB approval,
+/// legal-archive certification, or destructive disposal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalDglabInterchangeManifest {
+    /// Machine-readable schema identifier.
+    pub schema: String,
+    /// Local interchange profile identifier.
+    pub profile: String,
+    /// Stable id of the source package.
+    pub package_id: uuid::Uuid,
+    /// Path of the source Chancela package manifest.
+    pub source_manifest_path: String,
+    /// Must remain false: this is not an official DGLAB interchange package.
+    pub official_dglab_interchange: bool,
+    /// Must remain false: this does not claim DGLAB certification.
+    pub dglab_certification_claimed: bool,
+    /// Must remain false: no external DGLAB approval is claimed.
+    pub external_dglab_approval_obtained: bool,
+    /// Must remain false: this does not certify a legal archive.
+    pub legal_archive_certified: bool,
+    /// Must remain false: this metadata scaffold records no destructive disposal.
+    pub destructive_disposal_performed: bool,
+    /// Producer/operator and source-system metadata mirrored from the source manifest.
+    pub producer: ProducerMetadata,
+    /// Internal package type mirrored from the source manifest.
+    pub package_type: String,
+    /// Internal package type version mirrored from the source manifest.
+    pub package_version: String,
+    /// Targeted preservation level mirrored from the source manifest.
+    pub preservation_level: PreservationLevel,
+    /// Local classification placeholders mirrored from the source manifest.
+    pub local_classification: ClassificationMetadata,
+    /// Rights metadata mirrored from the source manifest.
+    pub rights: RightsMetadata,
+    /// BCP-47 language tags mirrored from the source manifest.
+    pub languages: Vec<String>,
+    /// Retention/legal-hold instructions mirrored from the source manifest.
+    pub retention: RetentionInstructions,
+    /// File/fixity summary over the source manifest file declarations.
+    pub file_fixity_summary: LocalDglabInterchangeFileFixitySummary,
+    /// Source archive evidence index path when the source package declares one.
+    pub evidence_index_path: Option<String>,
+    /// Source manifest file entries, sorted by package path.
+    pub files: Vec<LocalDglabInterchangeFileEntry>,
 }
 
 /// The manifest describing everything in an export package (DOC-20).
@@ -652,6 +749,216 @@ pub fn validate_package(package_bytes: &[u8]) -> Result<PackageManifest, Archive
     Ok(manifest)
 }
 
+/// Build a metadata-only local DGLAB/archive interchange scaffold.
+///
+/// The scaffold is derived from an already valid [`PackageManifest`] and does not create or alter
+/// ZIP/package bytes.
+pub fn build_local_dglab_interchange_manifest(
+    source: &PackageManifest,
+) -> Result<LocalDglabInterchangeManifest, ArchiveError> {
+    validate_manifest(source)?;
+
+    let files = local_dglab_file_entries(&source.files);
+    let manifest = LocalDglabInterchangeManifest {
+        schema: LOCAL_DGLAB_INTERCHANGE_MANIFEST_SCHEMA.to_owned(),
+        profile: LOCAL_DGLAB_INTERCHANGE_MANIFEST_PROFILE.to_owned(),
+        package_id: source.package_id,
+        source_manifest_path: MANIFEST_PATH.to_owned(),
+        official_dglab_interchange: false,
+        dglab_certification_claimed: false,
+        external_dglab_approval_obtained: false,
+        legal_archive_certified: false,
+        destructive_disposal_performed: false,
+        producer: source.preservation_interchange.producer.clone(),
+        package_type: source.preservation_interchange.package_type.clone(),
+        package_version: source.preservation_interchange.package_version.clone(),
+        preservation_level: source.preservation_level,
+        local_classification: source.preservation_interchange.classification.clone(),
+        rights: source.rights.clone(),
+        languages: source.languages.clone(),
+        retention: source.retention.clone(),
+        file_fixity_summary: LocalDglabInterchangeFileFixitySummary {
+            algorithm: SHA256.to_owned(),
+            file_count: files.len(),
+            total_byte_len: files.iter().map(|file| file.byte_len).sum(),
+        },
+        evidence_index_path: local_dglab_evidence_index_path(source),
+        files,
+    };
+    validate_local_dglab_interchange_manifest(&manifest, source)?;
+    Ok(manifest)
+}
+
+/// Validate a local DGLAB/archive interchange scaffold against its source manifest.
+pub fn validate_local_dglab_interchange_manifest(
+    manifest: &LocalDglabInterchangeManifest,
+    source: &PackageManifest,
+) -> Result<(), ArchiveError> {
+    validate_manifest(source)?;
+    validate_required_text("local_dglab_interchange.schema", &manifest.schema)?;
+    validate_required_text("local_dglab_interchange.profile", &manifest.profile)?;
+    if manifest.schema != LOCAL_DGLAB_INTERCHANGE_MANIFEST_SCHEMA {
+        return Err(ArchiveError::InvalidManifest(format!(
+            "local_dglab_interchange.schema must be {LOCAL_DGLAB_INTERCHANGE_MANIFEST_SCHEMA}"
+        )));
+    }
+    if manifest.profile != LOCAL_DGLAB_INTERCHANGE_MANIFEST_PROFILE {
+        return Err(ArchiveError::InvalidManifest(format!(
+            "local_dglab_interchange.profile must be {LOCAL_DGLAB_INTERCHANGE_MANIFEST_PROFILE}"
+        )));
+    }
+    validate_package_path(&manifest.source_manifest_path)?;
+    if manifest.source_manifest_path != MANIFEST_PATH {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.source_manifest_path must be manifest.json".to_owned(),
+        ));
+    }
+    validate_false_claim_flag(
+        "local_dglab_interchange.official_dglab_interchange",
+        manifest.official_dglab_interchange,
+    )?;
+    validate_false_claim_flag(
+        "local_dglab_interchange.dglab_certification_claimed",
+        manifest.dglab_certification_claimed,
+    )?;
+    validate_false_claim_flag(
+        "local_dglab_interchange.external_dglab_approval_obtained",
+        manifest.external_dglab_approval_obtained,
+    )?;
+    validate_false_claim_flag(
+        "local_dglab_interchange.legal_archive_certified",
+        manifest.legal_archive_certified,
+    )?;
+    validate_false_claim_flag(
+        "local_dglab_interchange.destructive_disposal_performed",
+        manifest.destructive_disposal_performed,
+    )?;
+    validate_required_text(
+        "local_dglab_interchange.producer.name",
+        &manifest.producer.name,
+    )?;
+    validate_required_text(
+        "local_dglab_interchange.producer.system",
+        &manifest.producer.system,
+    )?;
+    validate_required_text(
+        "local_dglab_interchange.package_type",
+        &manifest.package_type,
+    )?;
+    validate_required_text(
+        "local_dglab_interchange.package_version",
+        &manifest.package_version,
+    )?;
+    validate_classification(&manifest.local_classification)?;
+    validate_rights(&manifest.rights)?;
+    validate_languages(&manifest.languages)?;
+    validate_retention(&manifest.retention)?;
+    validate_required_text(
+        "local_dglab_interchange.file_fixity_summary.algorithm",
+        &manifest.file_fixity_summary.algorithm,
+    )?;
+
+    if manifest.package_id != source.package_id {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.package_id must match source package_id".to_owned(),
+        ));
+    }
+    if manifest.producer != source.preservation_interchange.producer {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.producer must match source preservation_interchange"
+                .to_owned(),
+        ));
+    }
+    if manifest.package_type != source.preservation_interchange.package_type {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.package_type must match source preservation_interchange"
+                .to_owned(),
+        ));
+    }
+    if manifest.package_version != source.preservation_interchange.package_version {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.package_version must match source preservation_interchange"
+                .to_owned(),
+        ));
+    }
+    if manifest.preservation_level != source.preservation_level {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.preservation_level must match source preservation_level"
+                .to_owned(),
+        ));
+    }
+    if manifest.local_classification != source.preservation_interchange.classification {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.local_classification must match source preservation_interchange"
+                .to_owned(),
+        ));
+    }
+    if manifest.rights != source.rights {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.rights must match source rights".to_owned(),
+        ));
+    }
+    if manifest.languages != source.languages {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.languages must match source languages".to_owned(),
+        ));
+    }
+    if manifest.retention != source.retention {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.retention must match source retention".to_owned(),
+        ));
+    }
+    if manifest.file_fixity_summary.algorithm != SHA256 {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.file_fixity_summary.algorithm must be sha256".to_owned(),
+        ));
+    }
+    if manifest.file_fixity_summary.file_count != source.files.len() {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.file_fixity_summary.file_count must match source files"
+                .to_owned(),
+        ));
+    }
+    let total_byte_len: u64 = source.files.iter().map(|file| file.byte_len).sum();
+    if manifest.file_fixity_summary.total_byte_len != total_byte_len {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.file_fixity_summary.total_byte_len must match source files"
+                .to_owned(),
+        ));
+    }
+    if manifest.file_fixity_summary.file_count != manifest.files.len() {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.file_fixity_summary.file_count must match file entries"
+                .to_owned(),
+        ));
+    }
+    let entry_total_byte_len: u64 = manifest.files.iter().map(|file| file.byte_len).sum();
+    if manifest.file_fixity_summary.total_byte_len != entry_total_byte_len {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.file_fixity_summary.total_byte_len must match file entries"
+                .to_owned(),
+        ));
+    }
+    if let Some(path) = &manifest.evidence_index_path {
+        validate_package_path(path)?;
+    }
+    if manifest.evidence_index_path != local_dglab_evidence_index_path(source) {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.evidence_index_path must match source files".to_owned(),
+        ));
+    }
+
+    validate_local_dglab_file_entries(&manifest.files)?;
+    let expected_files = local_dglab_file_entries(&source.files);
+    if manifest.files != expected_files {
+        return Err(ArchiveError::InvalidManifest(
+            "local_dglab_interchange.files must match source manifest files".to_owned(),
+        ));
+    }
+
+    Ok(())
+}
+
 /// Validate manifest-only invariants.
 pub fn validate_manifest(manifest: &PackageManifest) -> Result<(), ArchiveError> {
     let mut paths = BTreeSet::new();
@@ -766,6 +1073,73 @@ fn preservation_interchange_metadata(
         rights: input.rights,
         languages: input.languages,
     }
+}
+
+fn local_dglab_file_entries(files: &[PackageFile]) -> Vec<LocalDglabInterchangeFileEntry> {
+    files
+        .iter()
+        .map(LocalDglabInterchangeFileEntry::from)
+        .collect()
+}
+
+fn local_dglab_evidence_index_path(source: &PackageManifest) -> Option<String> {
+    source
+        .files
+        .iter()
+        .any(|file| file.path == EVIDENCE_INDEX_PATH)
+        .then(|| EVIDENCE_INDEX_PATH.to_owned())
+}
+
+fn validate_false_claim_flag(label: &str, value: bool) -> Result<(), ArchiveError> {
+    if value {
+        return Err(ArchiveError::InvalidManifest(format!(
+            "{label} must be false"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_local_dglab_file_entries(
+    files: &[LocalDglabInterchangeFileEntry],
+) -> Result<(), ArchiveError> {
+    let mut paths = BTreeSet::new();
+    let mut previous_path: Option<&str> = None;
+    for file in files {
+        validate_package_path(&file.path)?;
+        if file.path == MANIFEST_PATH {
+            return Err(ArchiveError::InvalidPath(file.path.clone()));
+        }
+        if let Some(previous) = previous_path
+            && previous > file.path.as_str()
+        {
+            return Err(ArchiveError::InvalidManifest(
+                "local_dglab_interchange.files must be sorted by package path".to_owned(),
+            ));
+        }
+        previous_path = Some(file.path.as_str());
+        if !paths.insert(file.path.as_str()) {
+            return Err(ArchiveError::DuplicatePath(file.path.clone()));
+        }
+        if file.content_type.trim().is_empty() {
+            return Err(ArchiveError::InvalidManifest(format!(
+                "content type is empty for local_dglab_interchange file {}",
+                file.path
+            )));
+        }
+        if file.checksum.algorithm != SHA256 {
+            return Err(ArchiveError::InvalidManifest(format!(
+                "unsupported local_dglab_interchange checksum algorithm {} for {}",
+                file.checksum.algorithm, file.path
+            )));
+        }
+        if !is_sha256_hex(&file.checksum.hex_digest) {
+            return Err(ArchiveError::InvalidManifest(format!(
+                "invalid local_dglab_interchange sha256 digest for {}",
+                file.path
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_interchange_metadata(manifest: &PackageManifest) -> Result<(), ArchiveError> {
@@ -1140,6 +1514,17 @@ mod tests {
         input
     }
 
+    fn sample_input_with_evidence_index() -> PackageBuildInput {
+        let mut input = sample_input();
+        input.files.push(PackageFileInput::new(
+            EVIDENCE_INDEX_PATH,
+            PackageFileRole::EvidenceReport,
+            JSON_CONTENT_TYPE,
+            br#"{"schema":"chancela-test-evidence-index/v1"}"#,
+        ));
+        input
+    }
+
     fn write_test_zip(members: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let opts = zip::write::SimpleFileOptions::default()
@@ -1253,6 +1638,185 @@ mod tests {
             metadata.fixity.total_byte_len,
             manifest.files.iter().map(|file| file.byte_len).sum::<u64>()
         );
+    }
+
+    #[test]
+    fn local_dglab_interchange_manifest_generation_is_deterministic() {
+        let package = build_archive_package(sample_input_with_evidence_index()).unwrap();
+        let package_bytes = package.bytes.clone();
+
+        let first = build_local_dglab_interchange_manifest(&package.manifest).unwrap();
+        let second = build_local_dglab_interchange_manifest(&package.manifest).unwrap();
+
+        assert_eq!(package.bytes, package_bytes);
+        assert_eq!(first, second);
+        assert_eq!(
+            serde_json::to_string_pretty(&first).unwrap(),
+            serde_json::to_string_pretty(&second).unwrap()
+        );
+        validate_local_dglab_interchange_manifest(&first, &package.manifest).unwrap();
+
+        assert_eq!(first.schema, LOCAL_DGLAB_INTERCHANGE_MANIFEST_SCHEMA);
+        assert_eq!(first.profile, LOCAL_DGLAB_INTERCHANGE_MANIFEST_PROFILE);
+        assert_eq!(first.package_id, package.manifest.package_id);
+        assert_eq!(first.source_manifest_path, MANIFEST_PATH);
+        assert!(!first.official_dglab_interchange);
+        assert!(!first.dglab_certification_claimed);
+        assert!(!first.external_dglab_approval_obtained);
+        assert!(!first.legal_archive_certified);
+        assert!(!first.destructive_disposal_performed);
+        assert_eq!(
+            first.producer,
+            package.manifest.preservation_interchange.producer
+        );
+        assert_eq!(
+            first.package_type,
+            package.manifest.preservation_interchange.package_type
+        );
+        assert_eq!(
+            first.package_version,
+            package.manifest.preservation_interchange.package_version
+        );
+        assert_eq!(
+            first.preservation_level,
+            package.manifest.preservation_level
+        );
+        assert_eq!(
+            first.local_classification,
+            package.manifest.preservation_interchange.classification
+        );
+        assert_eq!(first.rights, package.manifest.rights);
+        assert_eq!(first.languages, package.manifest.languages);
+        assert_eq!(first.retention, package.manifest.retention);
+        assert_eq!(first.file_fixity_summary.algorithm, SHA256);
+        assert_eq!(
+            first.file_fixity_summary.file_count,
+            package.manifest.files.len()
+        );
+        assert_eq!(
+            first.file_fixity_summary.total_byte_len,
+            package
+                .manifest
+                .files
+                .iter()
+                .map(|file| file.byte_len)
+                .sum::<u64>()
+        );
+        assert_eq!(
+            first.evidence_index_path.as_deref(),
+            Some(EVIDENCE_INDEX_PATH)
+        );
+        assert_eq!(first.files.len(), package.manifest.files.len());
+        for pair in first.files.windows(2) {
+            assert!(pair[0].path < pair[1].path);
+        }
+    }
+
+    #[test]
+    fn local_dglab_interchange_validator_rejects_any_true_claim_flag() {
+        let package = build_archive_package(sample_input()).unwrap();
+        let valid = build_local_dglab_interchange_manifest(&package.manifest).unwrap();
+        type ClaimFlagCase = (&'static str, fn(&mut LocalDglabInterchangeManifest));
+        let cases: [ClaimFlagCase; 5] = [
+            ("official_dglab_interchange", |manifest| {
+                manifest.official_dglab_interchange = true
+            }),
+            ("dglab_certification_claimed", |manifest| {
+                manifest.dglab_certification_claimed = true
+            }),
+            ("external_dglab_approval_obtained", |manifest| {
+                manifest.external_dglab_approval_obtained = true
+            }),
+            ("legal_archive_certified", |manifest| {
+                manifest.legal_archive_certified = true
+            }),
+            ("destructive_disposal_performed", |manifest| {
+                manifest.destructive_disposal_performed = true
+            }),
+        ];
+
+        for (flag, mutate) in cases {
+            let mut tampered = valid.clone();
+            mutate(&mut tampered);
+            assert!(
+                matches!(
+                    validate_local_dglab_interchange_manifest(&tampered, &package.manifest),
+                    Err(ArchiveError::InvalidManifest(message)) if message.contains(flag)
+                ),
+                "{flag} must be rejected when true"
+            );
+        }
+    }
+
+    #[test]
+    fn local_dglab_interchange_validator_rejects_mismatches_unsafe_paths_and_blanks() {
+        let package = build_archive_package(sample_input()).unwrap();
+        let valid = build_local_dglab_interchange_manifest(&package.manifest).unwrap();
+
+        let mut mismatched_package_id = valid.clone();
+        mismatched_package_id.package_id = id(99);
+        assert!(matches!(
+            validate_local_dglab_interchange_manifest(
+                &mismatched_package_id,
+                &package.manifest
+            ),
+            Err(ArchiveError::InvalidManifest(message)) if message.contains("package_id")
+        ));
+
+        let mut mismatched_file_count = valid.clone();
+        mismatched_file_count.file_fixity_summary.file_count += 1;
+        assert!(matches!(
+            validate_local_dglab_interchange_manifest(
+                &mismatched_file_count,
+                &package.manifest
+            ),
+            Err(ArchiveError::InvalidManifest(message)) if message.contains("file_count")
+        ));
+
+        let mut mismatched_total_bytes = valid.clone();
+        mismatched_total_bytes.file_fixity_summary.total_byte_len += 1;
+        assert!(matches!(
+            validate_local_dglab_interchange_manifest(
+                &mismatched_total_bytes,
+                &package.manifest
+            ),
+            Err(ArchiveError::InvalidManifest(message)) if message.contains("total_byte_len")
+        ));
+
+        let mut unsafe_source_path = valid.clone();
+        unsafe_source_path.source_manifest_path = "../manifest.json".to_owned();
+        assert_eq!(
+            validate_local_dglab_interchange_manifest(&unsafe_source_path, &package.manifest),
+            Err(ArchiveError::InvalidPath("../manifest.json".to_owned()))
+        );
+
+        let mut unsafe_file_path = valid.clone();
+        unsafe_file_path.files[0].path = "../escape.pdf".to_owned();
+        assert_eq!(
+            validate_local_dglab_interchange_manifest(&unsafe_file_path, &package.manifest),
+            Err(ArchiveError::InvalidPath("../escape.pdf".to_owned()))
+        );
+
+        let mut unsorted_files = valid.clone();
+        unsorted_files.files.reverse();
+        assert!(matches!(
+            validate_local_dglab_interchange_manifest(&unsorted_files, &package.manifest),
+            Err(ArchiveError::InvalidManifest(message)) if message.contains("sorted")
+        ));
+
+        let mut blank_profile = valid.clone();
+        blank_profile.profile = " ".to_owned();
+        assert!(matches!(
+            validate_local_dglab_interchange_manifest(&blank_profile, &package.manifest),
+            Err(ArchiveError::InvalidManifest(message)) if message.contains("profile")
+        ));
+
+        let mut blank_producer = valid.clone();
+        blank_producer.producer.name = " ".to_owned();
+        assert!(matches!(
+            validate_local_dglab_interchange_manifest(&blank_producer, &package.manifest),
+            Err(ArchiveError::InvalidManifest(message)) if message.contains("producer.name")
+        ));
     }
 
     #[test]

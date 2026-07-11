@@ -6,13 +6,17 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
+use std::path::Path;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
 use chancela_api::{AppState, router};
 use chancela_archive::{ArchiveError, PackageFileRole, PreservationLevel, validate_package};
+use chancela_authz::{LEITOR_ROLE_ID, RoleAssignment, Scope};
 use chancela_core::ActId;
 use chancela_signing::{
     DssEvidence, MockProvider, SignOptions, SignerProvider, SigningFamily, attach_pdf_dss,
@@ -263,6 +267,26 @@ async fn archive_package_bytes_at(state: &AppState, uri: &str, token: &str) -> V
     bytes
 }
 
+fn local_dglab_interchange_manifest_uri(book_id: &str) -> String {
+    format!("/v1/books/{book_id}/archive/local-dglab-interchange-manifest")
+}
+
+async fn local_dglab_interchange_manifest_bytes(
+    state: &AppState,
+    book_id: &str,
+    token: &str,
+) -> Vec<u8> {
+    let (status, content_type, bytes) = send_bytes(
+        state,
+        get_req(&local_dglab_interchange_manifest_uri(book_id), token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "local DGLAB manifest status");
+    assert_eq!(content_type, "application/json");
+    assert!(!bytes.is_empty(), "local DGLAB manifest has bytes");
+    bytes
+}
+
 fn zip_members(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).expect("zip readable");
     let mut out = BTreeMap::new();
@@ -394,6 +418,54 @@ fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn data_dir_paths(root: &Path) -> BTreeSet<String> {
+    fn visit(root: &Path, dir: &Path, out: &mut BTreeSet<String>) {
+        let mut entries = std::fs::read_dir(dir)
+            .unwrap_or_else(|e| panic!("read data dir {}: {e}", dir.display()))
+            .map(|entry| entry.expect("data dir entry").path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        for path in entries {
+            if path.is_dir() {
+                visit(root, &path, out);
+            } else if path.is_file() {
+                let rel = path
+                    .strip_prefix(root)
+                    .expect("path below root")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.insert(rel);
+            }
+        }
+    }
+
+    let mut out = BTreeSet::new();
+    visit(root, root, &mut out);
+    out
+}
+
+fn data_dir_contains_subslice(root: &Path, needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let mut entries = vec![root.to_owned()];
+    while let Some(path) = entries.pop() {
+        if path.is_dir() {
+            entries.extend(
+                std::fs::read_dir(&path)
+                    .unwrap_or_else(|e| panic!("read data dir {}: {e}", path.display()))
+                    .map(|entry| entry.expect("data dir entry").path()),
+            );
+        } else if path.is_file() {
+            let bytes = std::fs::read(&path).expect("data dir file bytes");
+            if bytes.windows(needle.len()).any(|window| window == needle) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn external_validator_metadata_value(case_id: &str, family: &str, document_sha256: &str) -> Value {
     json!({
         "schema": "chancela-external-validator-report-evidence/v1",
@@ -473,6 +545,32 @@ fn external_validator_metadata_bytes(
         .into_bytes()
 }
 
+fn external_validator_metadata_with_raw_report_bytes(
+    case_id: &str,
+    family: &str,
+    document_sha256: &str,
+) -> (Vec<u8>, Vec<u8>, String) {
+    let raw_report =
+        br#"{"report_kind":"external_validator_raw_report","status":"technical"}"#.to_vec();
+    let raw_report_sha256 = sha256_hex(&raw_report);
+    let mut metadata = external_validator_metadata_value(case_id, family, document_sha256);
+    metadata["raw_report"] = json!({
+        "content_type": "application/json",
+        "sha256": raw_report_sha256,
+        "bytes": raw_report.len(),
+        "source_filename": format!("{family}-raw.json"),
+        "suggested_path": format!(
+            "evidence/external-validators/{case_id}-{family}-raw-report.json"
+        ),
+        "content_base64": B64.encode(&raw_report)
+    });
+    (
+        metadata.to_string().into_bytes(),
+        raw_report,
+        raw_report_sha256,
+    )
+}
+
 fn parse_act_id(value: &str) -> ActId {
     ActId(Uuid::parse_str(value).expect("act uuid"))
 }
@@ -502,6 +600,46 @@ async fn ledger_events(state: &AppState, token: &str) -> Value {
     let (status, body) = send(state, get_req("/v1/ledger/events?limit=1000", token)).await;
     assert_eq!(status, StatusCode::OK, "ledger events: {body}");
     body
+}
+
+async fn reader_token_without_book_export(state: &AppState, owner_token: &str) -> String {
+    let (status, user) = send(
+        state,
+        json_req(
+            "POST",
+            "/v1/users",
+            owner_token,
+            json!({
+                "username": format!("archive.reader.{}", Uuid::new_v4()),
+                "display_name": "Archive Reader"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create reader: {user}");
+    let user_id = user["id"].as_str().expect("reader id");
+    {
+        let mut users = state.users.write().await;
+        let user = users
+            .get_mut(&chancela_api::UserId(
+                Uuid::parse_str(user_id).expect("reader uuid"),
+            ))
+            .expect("reader user exists");
+        user.role_assignments = vec![RoleAssignment::new(LEITOR_ROLE_ID, Scope::Global)];
+    }
+
+    let (status, session) = send(
+        state,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/session")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json!({ "user_id": user_id }).to_string()))
+            .expect("request builds"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "open reader session: {session}");
+    session["token"].as_str().expect("reader token").to_owned()
 }
 
 async fn close_book(state: &AppState, token: &str, book_id: &str) {
@@ -1381,6 +1519,10 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
         "evidence/external-validators/{case_id}-{validator_family}.json"
     );
     assert_eq!(
+        evidence_index["external_validator_reports"]["raw_report_path_pattern"],
+        "evidence/external-validators/{case_id}-{validator_family}-raw-report.{extension}"
+    );
+    assert_eq!(
         evidence_index["external_validator_reports"]["attachment_status"],
         "no_external_validator_report_metadata_attached"
     );
@@ -1426,6 +1568,113 @@ async fn archive_package_reports_unsigned_documents_without_placeholder() {
         !String::from_utf8_lossy(members.get(&evidence_path).expect("evidence bytes"))
             .contains("placeholder"),
         "report must not contain placeholder evidence"
+    );
+}
+
+#[tokio::test]
+async fn local_dglab_interchange_manifest_requires_book_export_permission() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let owner_token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &owner_token).await;
+    let reader_token = reader_token_without_book_export(&state, &owner_token).await;
+    let uri = local_dglab_interchange_manifest_uri(&sealed.book_id);
+
+    let (status, body) = send(&state, get_req(&uri, &reader_token)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "reader denied: {body}");
+
+    let (status, body) = send(&state, get_req(&uri, &owner_token)).await;
+    assert_eq!(status, StatusCode::OK, "owner allowed: {body}");
+    assert_eq!(
+        body["schema"],
+        "chancela-local-dglab-interchange-manifest/v1"
+    );
+}
+
+#[tokio::test]
+async fn local_dglab_interchange_manifest_is_deterministic_read_only_and_not_packaged() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+
+    let before_ledger = ledger_events(&state, &token).await;
+    let before_paths = data_dir_paths(&dir.0);
+    let first = local_dglab_interchange_manifest_bytes(&state, &sealed.book_id, &token).await;
+    let second = local_dglab_interchange_manifest_bytes(&state, &sealed.book_id, &token).await;
+    assert_eq!(first, second, "local DGLAB manifest JSON is deterministic");
+
+    let after_ledger = ledger_events(&state, &token).await;
+    let after_paths = data_dir_paths(&dir.0);
+    assert_eq!(
+        before_ledger, after_ledger,
+        "local DGLAB manifest endpoint must not append ledger events"
+    );
+    assert_eq!(
+        before_paths, after_paths,
+        "local DGLAB manifest endpoint must not create persisted package or manifest files"
+    );
+    assert!(
+        !data_dir_contains_subslice(&dir.0, &first),
+        "local DGLAB manifest endpoint must not persist returned manifest bytes"
+    );
+
+    let manifest: Value = serde_json::from_slice(&first).expect("local DGLAB manifest JSON");
+    assert_eq!(
+        manifest["schema"],
+        "chancela-local-dglab-interchange-manifest/v1"
+    );
+    assert_eq!(
+        manifest["profile"],
+        "chancela-local-dglab-interchange-manifest/v1"
+    );
+    assert_eq!(manifest["source_manifest_path"], "manifest.json");
+    assert_eq!(manifest["evidence_index_path"], "evidence/index.json");
+    for flag in [
+        "official_dglab_interchange",
+        "dglab_certification_claimed",
+        "external_dglab_approval_obtained",
+        "legal_archive_certified",
+        "destructive_disposal_performed",
+    ] {
+        assert_eq!(manifest[flag], false, "{flag} must remain false");
+    }
+    assert_eq!(manifest["retention"]["legal_hold"], false);
+
+    let files = manifest["files"].as_array().expect("manifest files");
+    assert!(
+        files
+            .iter()
+            .any(|file| file["path"] == "evidence/index.json"),
+        "source evidence index is declared in local DGLAB manifest: {manifest}"
+    );
+    assert_eq!(
+        manifest["file_fixity_summary"]["file_count"],
+        json!(files.len())
+    );
+    let total_byte_len: u64 = files
+        .iter()
+        .map(|file| file["byte_len"].as_u64().expect("file byte_len"))
+        .sum();
+    assert_eq!(
+        manifest["file_fixity_summary"]["total_byte_len"],
+        json!(total_byte_len)
+    );
+
+    let package = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    assert!(
+        !data_dir_contains_subslice(&dir.0, &package),
+        "local DGLAB manifest endpoint must not persist source package bytes"
+    );
+    let members = zip_members(&package);
+    assert!(
+        members.keys().all(|path| {
+            !path.contains("local-dglab")
+                && !path.contains("local_dglab")
+                && !path.contains("dglab-interchange")
+        }),
+        "local DGLAB manifest must not be a ZIP member: {:?}",
+        members.keys().collect::<Vec<_>>()
     );
 }
 
@@ -1481,6 +1730,10 @@ async fn archive_package_indexes_matching_external_validator_metadata_only() {
         "duplicate suggested paths are ignored"
     );
     assert!(
+        !members.contains_key("evidence/external-validators/runtime-valid-eu-dss-raw-report.json"),
+        "manifest-only raw validator report bytes are not packaged"
+    );
+    assert!(
         members.keys().all(|path| !path.contains("runtime-legal")
             && !path.contains("runtime-traversal")
             && !path.contains("runtime-bad-sha")),
@@ -1500,7 +1753,14 @@ async fn archive_package_indexes_matching_external_validator_metadata_only() {
             "validator_family": "eu-dss",
             "path": evidence_path,
             "content_type": "application/json",
-            "sha256": valid_sha256
+            "sha256": valid_sha256,
+            "raw_report": {
+                "preservation_status": "raw_report_manifest_only",
+                "content_type": "application/json",
+                "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "size_bytes": 2,
+                "source_filename": "eu-dss.json"
+            }
         }])
     );
     assert!(
@@ -1517,6 +1777,90 @@ async fn archive_package_indexes_matching_external_validator_metadata_only() {
     assert!(
         attachment["observed"].is_null(),
         "raw external validator reports are not packaged as structured findings"
+    );
+}
+
+#[tokio::test]
+async fn archive_package_embeds_matching_external_validator_raw_report_attachment() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+    let document = stored_document(&state, parse_act_id(&sealed.act_id), &sealed.document_id);
+    let document_sha256 = sha256_hex(&document.pdf_bytes);
+    let (metadata, raw_report, raw_report_sha256) =
+        external_validator_metadata_with_raw_report_bytes(
+            "runtime-raw",
+            "eu-dss",
+            &document_sha256,
+        );
+    let metadata_sha256 = sha256_hex(&metadata);
+
+    state
+        .external_validator_report_metadata
+        .write()
+        .await
+        .push(metadata.clone());
+
+    let package = archive_package_bytes(&state, &sealed.book_id, &token).await;
+    let manifest = validate_package(&package).expect("archive package validates");
+    let members = zip_members(&package);
+    let metadata_path = "evidence/external-validators/runtime-raw-eu-dss.json";
+    let raw_report_path = "evidence/external-validators/runtime-raw-eu-dss-raw-report.json";
+    assert_eq!(
+        members
+            .get(metadata_path)
+            .expect("validator metadata member"),
+        &metadata
+    );
+    assert_eq!(
+        members
+            .get(raw_report_path)
+            .expect("validator raw report member"),
+        &raw_report
+    );
+    assert!(
+        manifest.files.iter().any(|file| {
+            file.path == raw_report_path
+                && file.role == PackageFileRole::EvidenceReport
+                && file.content_type == "application/json"
+        }),
+        "raw report is declared as technical evidence: {manifest:?}"
+    );
+
+    let evidence_index = member_json(&members, "evidence/index.json");
+    assert_eq!(
+        evidence_index["external_validator_reports"]["attachments"],
+        json!([{
+            "case_id": "runtime-raw",
+            "validator_family": "eu-dss",
+            "path": metadata_path,
+            "content_type": "application/json",
+            "sha256": metadata_sha256,
+            "raw_report": {
+                "preservation_status": "raw_report_attached",
+                "path": raw_report_path,
+                "suggested_path": raw_report_path,
+                "content_type": "application/json",
+                "sha256": raw_report_sha256,
+                "size_bytes": raw_report.len(),
+                "source_filename": "eu-dss-raw.json"
+            }
+        }])
+    );
+    assert!(
+        !String::from_utf8_lossy(members.get("evidence/index.json").expect("index bytes"))
+            .contains("legal"),
+        "raw external validator report evidence stays technical scoped"
+    );
+    let raw_text = String::from_utf8_lossy(
+        members
+            .get(raw_report_path)
+            .expect("validator raw report member"),
+    );
+    assert!(
+        !raw_text.contains("validity") && !raw_text.contains("qualified"),
+        "fixture raw report member carries no legal-validity claim"
     );
 }
 

@@ -42,7 +42,9 @@ use argon2::Argon2;
 use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use chancela_core::{Act, ActId, Book, BookId, Entity, EntityId};
-use chancela_ledger::{ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError};
+use chancela_ledger::{
+    AppendError, ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError,
+};
 use chancela_registry::RegistryExtract;
 use rand_core::{OsRng, RngCore};
 use rusqlite::{OptionalExtension, params};
@@ -92,6 +94,9 @@ pub enum StoreError {
     /// Serializing a domain aggregate to / from its `json` column, or a manifest.
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
+    /// A ledger append failed while a store transaction was being prepared.
+    #[error("ledger append error: {0}")]
+    LedgerAppend(#[source] Box<AppendError>),
     /// Writing the hot-backup zip archive.
     #[error("backup archive error: {0}")]
     Zip(#[from] zip::result::ZipError),
@@ -163,6 +168,12 @@ pub enum StoreError {
         #[source]
         source: rusqlite::Error,
     },
+}
+
+impl From<AppendError> for StoreError {
+    fn from(error: AppendError) -> Self {
+        Self::LedgerAppend(Box::new(error))
+    }
 }
 
 /// A handle to the durable store. Cheap to clone (shares one connection via `Arc`) and lives in
@@ -1086,6 +1097,50 @@ pub struct StoredPaperBookOcrDraft {
     pub superseded_by: Option<String>,
 }
 
+/// Metadata-only conversion dossier for an accepted paper-book OCR draft.
+///
+/// This intentionally contains no raw OCR extracted text. It records only the accepted draft's
+/// digest/review/page-span metadata and never represents canonical minutes or a legal-validity
+/// claim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredPaperBookOcrConversionDossier {
+    pub dossier_id: String,
+    pub import_id: String,
+    pub draft_id: String,
+    pub source_text_digest: Option<String>,
+    pub source_page_spans: Vec<StoredPaperBookOcrPageSpan>,
+    pub source_review_status: StoredPaperBookOcrReviewStatus,
+    pub source_reviewed_at: Option<OffsetDateTime>,
+    pub source_reviewed_by: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub created_by: String,
+}
+
+/// Result of idempotently inserting a paper-book OCR conversion dossier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PaperBookOcrConversionDossierUpsert {
+    /// The row was inserted by this transaction.
+    Inserted(StoredPaperBookOcrConversionDossier),
+    /// A row for the same import/draft pair already existed; this is the canonical stored row.
+    Existing(StoredPaperBookOcrConversionDossier),
+}
+
+impl PaperBookOcrConversionDossierUpsert {
+    /// The canonical stored dossier row after the idempotent write attempt.
+    #[must_use]
+    pub const fn dossier(&self) -> &StoredPaperBookOcrConversionDossier {
+        match self {
+            Self::Inserted(dossier) | Self::Existing(dossier) => dossier,
+        }
+    }
+
+    /// Whether this transaction inserted the row.
+    #[must_use]
+    pub const fn inserted(&self) -> bool {
+        matches!(self, Self::Inserted(_))
+    }
+}
+
 /// Status of a persisted act follow-up. Serialized and stored with the contract's exact
 /// `Open`/`Completed` spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1742,6 +1797,48 @@ impl Store {
         Ok(out)
     }
 
+    /// Fetch the metadata-only OCR conversion dossier for one import/draft pair, if it exists.
+    pub fn paper_book_ocr_conversion_dossier_for_draft(
+        &self,
+        import_id: &str,
+        draft_id: &str,
+    ) -> Result<Option<StoredPaperBookOcrConversionDossier>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT dossier_id, import_id, draft_id, source_text_digest, \
+             source_page_spans_json, source_review_status, source_reviewed_at, \
+             source_reviewed_by, created_at, created_by \
+             FROM paper_book_ocr_conversion_dossiers WHERE import_id = ?1 AND draft_id = ?2",
+        )?;
+        stmt.query_row(
+            params![import_id, draft_id],
+            row_to_paper_book_ocr_conversion_dossier,
+        )
+        .optional()?
+        .transpose()
+    }
+
+    /// List metadata-only OCR conversion dossiers for a preserved paper-book import, newest first.
+    pub fn paper_book_ocr_conversion_dossiers(
+        &self,
+        import_id: &str,
+    ) -> Result<Vec<StoredPaperBookOcrConversionDossier>, StoreError> {
+        let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stmt = guard.prepare(
+            "SELECT dossier_id, import_id, draft_id, source_text_digest, \
+             source_page_spans_json, source_review_status, source_reviewed_at, \
+             source_reviewed_by, created_at, created_by \
+             FROM paper_book_ocr_conversion_dossiers \
+             WHERE import_id = ?1 ORDER BY created_at DESC, rowid DESC",
+        )?;
+        let rows = stmt.query_map(params![import_id], row_to_paper_book_ocr_conversion_dossier)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
     /// List follow-ups for an act, open items first, then oldest-created first.
     pub fn follow_ups_for_act(&self, act_id: ActId) -> Result<Vec<StoredFollowUp>, StoreError> {
         let guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
@@ -1856,15 +1953,26 @@ impl Store {
     where
         F: FnOnce(&Tx<'_>) -> Result<(), StoreError>,
     {
+        self.persist_result(f)
+    }
+
+    /// Run a single transaction and return the closure's value after commit.
+    ///
+    /// This has the same atomicity guarantees as [`Store::persist`], but allows idempotent writers
+    /// to report whether they inserted a row or observed an existing canonical row.
+    pub fn persist_result<T, F>(&self, f: F) -> Result<T, StoreError>
+    where
+        F: FnOnce(&Tx<'_>) -> Result<T, StoreError>,
+    {
         let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         // rusqlite's `Transaction` rolls back on drop by default, so any early return from `f`
         // (its `?`) or a mid-closure `Err` discards every statement already issued — nothing is
         // persisted unless the whole closure succeeds and we reach `commit`.
         let txn = guard.transaction()?;
         let tx = Tx { txn };
-        f(&tx)?;
+        let out = f(&tx)?;
         tx.txn.commit()?;
-        Ok(())
+        Ok(out)
     }
 
     /// Snapshot the database with `VACUUM INTO` (transactionally consistent, no downtime), bundle
@@ -2327,6 +2435,75 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Insert a metadata-only OCR conversion dossier for an accepted paper-book OCR draft.
+    ///
+    /// Duplicate import/draft creation is idempotent: the first row is retained and later attempts
+    /// for the same pair are ignored. This stores no raw OCR text and touches no canonical
+    /// book/act/document/signed-document/archive rows.
+    pub fn upsert_paper_book_ocr_conversion_dossier(
+        &self,
+        dossier: &StoredPaperBookOcrConversionDossier,
+    ) -> Result<PaperBookOcrConversionDossierUpsert, StoreError> {
+        if dossier.source_review_status != StoredPaperBookOcrReviewStatus::Accepted {
+            return Err(StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "paper-book OCR conversion dossier requires an accepted OCR draft",
+            )));
+        }
+        let source_page_spans_json = serde_json::to_string(&dossier.source_page_spans)?;
+        let source_reviewed_at = dossier.source_reviewed_at.map(|t| {
+            t.format(&Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+        });
+        let created_at = dossier
+            .created_at
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned());
+        let changed = self.txn.execute(
+            "INSERT OR IGNORE INTO paper_book_ocr_conversion_dossiers \
+             (dossier_id, import_id, draft_id, source_text_digest, source_page_spans_json, \
+              source_review_status, source_reviewed_at, source_reviewed_by, created_at, \
+              created_by) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                dossier.dossier_id.as_str(),
+                dossier.import_id.as_str(),
+                dossier.draft_id.as_str(),
+                dossier.source_text_digest.as_deref(),
+                source_page_spans_json.as_str(),
+                dossier.source_review_status.as_str(),
+                source_reviewed_at.as_deref(),
+                dossier.source_reviewed_by.as_deref(),
+                created_at.as_str(),
+                dossier.created_by.as_str(),
+            ],
+        )?;
+        let mut stmt = self.txn.prepare(
+            "SELECT dossier_id, import_id, draft_id, source_text_digest, \
+             source_page_spans_json, source_review_status, source_reviewed_at, \
+             source_reviewed_by, created_at, created_by \
+             FROM paper_book_ocr_conversion_dossiers WHERE import_id = ?1 AND draft_id = ?2",
+        )?;
+        let stored = stmt
+            .query_row(
+                params![dossier.import_id.as_str(), dossier.draft_id.as_str()],
+                row_to_paper_book_ocr_conversion_dossier,
+            )
+            .optional()?
+            .transpose()?
+            .ok_or_else(|| {
+                StoreError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "paper-book OCR conversion dossier insert was ignored but no canonical import/draft row exists",
+                ))
+            })?;
+        if changed > 0 {
+            Ok(PaperBookOcrConversionDossierUpsert::Inserted(stored))
+        } else {
+            Ok(PaperBookOcrConversionDossierUpsert::Existing(stored))
+        }
+    }
+
     /// Update the review status and reviewer metadata for a non-authoritative OCR draft result.
     pub fn review_paper_book_ocr_draft(
         &self,
@@ -2775,6 +2952,40 @@ fn row_to_paper_book_ocr_draft(
             reviewed_by,
             review_note,
             superseded_by,
+        })
+    })())
+}
+
+/// Map one `paper_book_ocr_conversion_dossiers` row to
+/// [`StoredPaperBookOcrConversionDossier`].
+fn row_to_paper_book_ocr_conversion_dossier(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredPaperBookOcrConversionDossier, StoreError>> {
+    let dossier_id: String = row.get(0)?;
+    let import_id: String = row.get(1)?;
+    let draft_id: String = row.get(2)?;
+    let source_text_digest: Option<String> = row.get(3)?;
+    let source_page_spans_json: String = row.get(4)?;
+    let source_review_status_raw: String = row.get(5)?;
+    let source_reviewed_at_raw: Option<String> = row.get(6)?;
+    let source_reviewed_by: Option<String> = row.get(7)?;
+    let created_at_raw: String = row.get(8)?;
+    let created_by: String = row.get(9)?;
+    Ok((|| {
+        Ok(StoredPaperBookOcrConversionDossier {
+            dossier_id,
+            import_id,
+            draft_id,
+            source_text_digest,
+            source_page_spans: serde_json::from_str(&source_page_spans_json)?,
+            source_review_status: StoredPaperBookOcrReviewStatus::parse(&source_review_status_raw)?,
+            source_reviewed_at: source_reviewed_at_raw
+                .as_deref()
+                .map(parse_rfc3339)
+                .transpose()?,
+            source_reviewed_by,
+            created_at: parse_rfc3339(&created_at_raw)?,
+            created_by,
         })
     })())
 }

@@ -23,7 +23,9 @@ import {
   type BookLegalHoldView,
   type BookView,
   type Entity,
+  type LocalDglabInterchangeManifest,
   type PaperBookImportView,
+  type PaperBookOcrConversionDossierView,
   type PaperBookOcrDraftView,
   type PaperBookOcrRunView,
 } from '../../api/types';
@@ -118,6 +120,9 @@ function bookDetailFetch(
     if (url === '/v1/books/book-1/acts') return Promise.resolve(jsonResponse([]));
     if (url === '/v1/entities/ent-1') return Promise.resolve(jsonResponse(ENTITY));
     if (url === '/v1/books/paper-import?book_ref=book-1') return Promise.resolve(jsonResponse([]));
+    if (method === 'GET' && /^\/v1\/books\/paper-import\/[^/]+\/conversion-dossiers$/.test(url)) {
+      return Promise.resolve(jsonResponse([]));
+    }
     if (url === '/v1/books/book-1/legal-hold') {
       return Promise.resolve(
         jsonResponse({ legal_hold: false, reason: null, actor: null, set_at: null }),
@@ -367,6 +372,53 @@ describe('BookDetailPage — preservation package download', () => {
     );
   }
 
+  function localDglabManifest(
+    overrides: Partial<LocalDglabInterchangeManifest> = {},
+  ): LocalDglabInterchangeManifest {
+    return {
+      schema: 'chancela-local-dglab-interchange-manifest/v1',
+      profile: 'chancela-local-dglab-interchange-manifest/v1',
+      package_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      source_manifest_path: 'manifest.json',
+      official_dglab_interchange: false,
+      dglab_certification_claimed: false,
+      external_dglab_approval_obtained: false,
+      legal_archive_certified: false,
+      destructive_disposal_performed: false,
+      producer: { name: 'Chancela', system: 'chancela-archive' },
+      package_type: 'chancela-internal-preservation-package',
+      package_version: '1',
+      preservation_level: 'Managed',
+      local_classification: {
+        scheme: null,
+        code: null,
+        title: null,
+        sensitivity: null,
+      },
+      rights: { holder: null, license: null, access_note: null },
+      languages: ['pt-PT'],
+      retention: { schedule_id: null, review_after: null, legal_hold: false },
+      file_fixity_summary: {
+        algorithm: 'sha256',
+        file_count: 1,
+        total_byte_len: 12,
+      },
+      evidence_index_path: 'evidence/index.json',
+      files: [
+        {
+          path: 'documents/doc-1.pdf',
+          role: 'pdf_a',
+          content_type: 'application/pdf',
+          byte_len: 12,
+          checksum: { algorithm: 'sha256', hex_digest: 'ab'.repeat(32) },
+          act_id: 'act-1',
+          document_id: 'doc-1',
+        },
+      ],
+      ...overrides,
+    };
+  }
+
   it('saves the Chancela internal preservation package through the shared helper', async () => {
     saveFileMock.saveBlobAs.mockResolvedValue({
       kind: 'browser-download',
@@ -413,12 +465,93 @@ describe('BookDetailPage — preservation package download', () => {
       contentType: 'application/zip',
       bytes: 8,
     });
-    expect(screen.queryByText(/DGLAB/i)).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Manifesto DGLAB local (metadados JSON)' }),
+    ).toBeTruthy();
     expect(
       await screen.findByText(
         'Transferência iniciada pelo navegador: chancela-preservation-book-book-1.zip. A pasta é definida pelo browser.',
       ),
     ).toBeTruthy();
+  });
+
+  it('downloads the local DGLAB interchange manifest as local metadata-only JSON', async () => {
+    const manifest = localDglabManifest();
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-download',
+      filename: 'chancela-local-dglab-interchange-manifest-book-book-1.json',
+      contentType: 'application/json',
+      bytes: 1234,
+    });
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/book-1/archive/local-dglab-interchange-manifest' && method === 'GET') {
+        return jsonResponse(manifest);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByText('Manifesto DGLAB local: só metadados')).toBeTruthy();
+    expect(screen.getByText(/scaffold JSON derivado do pacote interno/i)).toBeTruthy();
+    expect(screen.getByText(/Não é exportação oficial DGLAB/i)).toBeTruthy();
+    expect(screen.getByText(/submissão governamental/i)).toBeTruthy();
+    expect(screen.getByText(/certificação arquivística legal/i)).toBeTruthy();
+    await screen.findByText('Sem retenção legal');
+    await screen.findByText('Sem importações preservadas');
+
+    const beforeClick = calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Manifesto DGLAB local (metadados JSON)' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    expect(calls.slice(beforeClick)).toEqual([
+      {
+        url: '/v1/books/book-1/archive/local-dglab-interchange-manifest',
+        method: 'GET',
+        body: null,
+      },
+    ]);
+
+    const saved = saveFileMock.saveBlobAs.mock.calls[0][0] as {
+      blob: Blob;
+      filename: string;
+      contentType: string;
+      filters: { name: string; extensions: string[] }[];
+      preferBrowserSavePicker: boolean;
+    };
+    expect(saved.filename).toBe('chancela-local-dglab-interchange-manifest-book-book-1.json');
+    expect(saved.filename.endsWith('.json')).toBe(true);
+    expect(saved.filename.endsWith('.zip')).toBe(false);
+    expect(saved.contentType).toBe('application/json');
+    expect(saved.filters).toEqual([{ name: 'JSON', extensions: ['json'] }]);
+    expect(saved.preferBrowserSavePicker).toBe(true);
+    expect(saved.blob).toBeInstanceOf(Blob);
+    expect(saved.blob.type).toBe('application/json');
+
+    const savedJson = JSON.parse(await blobText(saved.blob)) as LocalDglabInterchangeManifest;
+    expect(savedJson.schema).toBe('chancela-local-dglab-interchange-manifest/v1');
+    expect(savedJson.official_dglab_interchange).toBe(false);
+    expect(savedJson.dglab_certification_claimed).toBe(false);
+    expect(savedJson.external_dglab_approval_obtained).toBe(false);
+    expect(savedJson.legal_archive_certified).toBe(false);
+    expect(savedJson.destructive_disposal_performed).toBe(false);
+    expect(savedJson.files[0].path).toBe('documents/doc-1.pdf');
+
+    expect(calls.some((call) => call.url === '/v1/books/book-1/archive/package')).toBe(false);
+    expect(calls.some((call) => call.url === '/v1/books/book-1/export')).toBe(false);
+    expect(
+      calls.some(
+        (call) =>
+          call.method !== 'GET' && /\/(document|signature|seal|archive)(\/|$)/.test(call.url),
+      ),
+    ).toBe(false);
+    expect(saveFileMock.saveBlobResultMessage).toHaveBeenCalledWith({
+      kind: 'browser-download',
+      filename: 'chancela-local-dglab-interchange-manifest-book-book-1.json',
+      contentType: 'application/json',
+      bytes: 1234,
+    });
   });
 
   it('toasts the server error and does not create a fake package download', async () => {
@@ -485,6 +618,109 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       </Routes>,
       ['/livros/book-1'],
     );
+  }
+
+  function preservedPaperImport(overrides: Partial<PaperBookImportView> = {}): PaperBookImportView {
+    return {
+      import_id: '88888888-8888-4888-8888-888888888888',
+      entity_ref: 'ent-1',
+      entity_name: 'Encosto Estratégico, Lda.',
+      entity_nipc: '503004642',
+      book_ref: 'book-1',
+      date_from: '1968-01-01',
+      date_to: '1971-12-31',
+      page_count: 240,
+      sha256: '88'.repeat(32),
+      size_bytes: 4096,
+      content_type: 'application/pdf',
+      source_filename: 'ag-dossier.pdf',
+      notes: null,
+      imported_at: '2026-07-10T10:00:00Z',
+      imported_by: 'paper.owner',
+      ocr_status: 'completed',
+      ocr_status_notice:
+        'OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.',
+      ocr_text_stored: false,
+      authoritative_text_claimed: false,
+      non_canonical: true,
+      legal_validity_claimed: false,
+      signature_validity_claimed: false,
+      qualified_signature_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      bytes_download: '/v1/books/paper-import/88888888-8888-4888-8888-888888888888/bytes',
+      ...overrides,
+    };
+  }
+
+  function ocrDraft(
+    importId: string,
+    overrides: Partial<PaperBookOcrDraftView> = {},
+  ): PaperBookOcrDraftView {
+    return {
+      draft_id: '99999999-9999-4999-8999-999999999999',
+      import_id: importId,
+      extracted_text: null,
+      text_digest: '99'.repeat(32),
+      page_spans: [{ start_page: 1, end_page: 3 }],
+      confidence: 0.91,
+      engine: { name: 'operator-supplied-ocr', version: '1.0' },
+      created_at: '2026-07-10T09:30:00Z',
+      created_by: 'paper.owner',
+      review_status: 'accepted',
+      reviewed_at: '2026-07-10T10:00:00Z',
+      reviewed_by: 'paper.reviewer',
+      review_note: 'Conferido contra o pacote preservado.',
+      superseded_by: null,
+      draft_notice:
+        'OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.',
+      non_canonical: true,
+      authoritative_text_claimed: false,
+      canonical_minutes_claimed: false,
+      canonical_act_created: false,
+      canonical_document_created: false,
+      signature_created: false,
+      legal_validity_claimed: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      ...overrides,
+    };
+  }
+
+  function conversionDossier(
+    importId: string,
+    draftId: string,
+    overrides: Partial<PaperBookOcrConversionDossierView> = {},
+  ): PaperBookOcrConversionDossierView {
+    return {
+      dossier_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      import_id: importId,
+      draft_id: draftId,
+      source_text_digest: '99'.repeat(32),
+      source_page_spans: [{ start_page: 1, end_page: 3 }],
+      source_review_status: 'accepted',
+      source_reviewed_at: '2026-07-10T10:00:00Z',
+      source_reviewed_by: 'paper.reviewer',
+      created_at: '2026-07-10T11:00:00Z',
+      created_by: 'paper.owner',
+      dossier_notice:
+        'This paper-book OCR conversion dossier is metadata-only, non-canonical, and non-legal-validity-conferring. It records accepted OCR draft review metadata only and does not create acts, documents, signed documents, archive packages, signatures, seals, PDF/A, or PDF/UA outputs.',
+      metadata_only: true,
+      non_canonical: true,
+      act_created: false,
+      canonical_act_created: false,
+      canonical_minutes_claimed: false,
+      canonical_document_created: false,
+      signed_document_created: false,
+      archive_package_created: false,
+      pdfa_created: false,
+      pdfua_created: false,
+      signature_created: false,
+      seal_created: false,
+      legal_validity_claimed: false,
+      source_extracted_text_in_response: false,
+      source_extracted_text_in_ledger_event: false,
+      legal_notice: 'Historical paper-book package preserved as non-canonical evidence only.',
+      ...overrides,
+    };
   }
 
   it('lists preserved paper-book import metadata and downloads retained package bytes', async () => {
@@ -838,6 +1074,153 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/selo: não/i)).toBeTruthy();
     expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('creates a metadata-only conversion dossier for an accepted OCR draft on operator action', async () => {
+    const preserved = preservedPaperImport();
+    const draft = ocrDraft(preserved.import_id);
+    const rawOcrText = 'raw OCR text from a malformed dossier response must stay hidden';
+    const createdDossier = conversionDossier(preserved.import_id, draft.draft_id);
+    let dossiers: PaperBookOcrConversionDossierView[] = [];
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse([preserved]);
+      }
+      if (url === `/v1/books/paper-import/${preserved.import_id}/ocr-drafts` && method === 'GET') {
+        return jsonResponse([draft]);
+      }
+      if (
+        url === `/v1/books/paper-import/${preserved.import_id}/conversion-dossiers` &&
+        method === 'GET'
+      ) {
+        return jsonResponse(dossiers);
+      }
+      if (
+        url ===
+          `/v1/books/paper-import/${preserved.import_id}/ocr-drafts/${draft.draft_id}/conversion-dossier` &&
+        method === 'POST'
+      ) {
+        dossiers = [createdDossier];
+        return jsonResponse({ ...createdDossier, extracted_text: rawOcrText }, 201);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    const create = await screen.findByRole('button', {
+      name: 'Criar dossier de conversão só de metadados',
+    });
+    expect(
+      calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
+    ).toBe(false);
+
+    fireEvent.click(create);
+
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        url: `/v1/books/paper-import/${preserved.import_id}/ocr-drafts/${draft.draft_id}/conversion-dossier`,
+        method: 'POST',
+        body: null,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        'Dossier de conversão só de metadados registado; não criou ata, documento, PDF/A, assinatura ou selo.',
+      ),
+    ).toBeTruthy();
+    expect(await screen.findByText('Dossier já registado')).toBeTruthy();
+    expect(screen.getByText(/metadata-only, non-canonical/i)).toBeTruthy();
+    expect(screen.getByText(/Ata criada: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/documento canónico: não/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/PDF\/A: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/selo: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Na resposta: não/i)).toBeTruthy();
+    expect(screen.queryByText(rawOcrText)).toBeNull();
+    expect(
+      calls.some((call) => /\/(document|signature|seal|archive\/package)(\/|$)/.test(call.url)),
+    ).toBe(false);
+  });
+
+  it('renders an existing conversion dossier without encouraging duplicate creation', async () => {
+    const preserved = preservedPaperImport({
+      import_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      bytes_download: '/v1/books/paper-import/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/bytes',
+    });
+    const draft = ocrDraft(preserved.import_id, {
+      draft_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      extracted_text: 'Texto OCR auxiliar visível apenas na área do rascunho.',
+    });
+    const dossier = conversionDossier(preserved.import_id, draft.draft_id, {
+      dossier_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    });
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse([preserved]);
+      }
+      if (url === `/v1/books/paper-import/${preserved.import_id}/ocr-drafts` && method === 'GET') {
+        return jsonResponse([draft]);
+      }
+      if (
+        url === `/v1/books/paper-import/${preserved.import_id}/conversion-dossiers` &&
+        method === 'GET'
+      ) {
+        return jsonResponse([dossier]);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByText('Dossier já registado')).toBeTruthy();
+    expect(screen.getByText('dddddddd-dddd-4ddd-8ddd-dddddddddddd')).toBeTruthy();
+    expect(screen.getByText(/Digest da fonte OCR/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Criar dossier de conversão/i })).toBeNull();
+    expect(
+      calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
+    ).toBe(false);
+  });
+
+  it('does not expose conversion dossier creation for non-accepted OCR drafts', async () => {
+    const preserved = preservedPaperImport({
+      import_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      bytes_download: '/v1/books/paper-import/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/bytes',
+    });
+    const draft = ocrDraft(preserved.import_id, {
+      draft_id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      review_status: 'unreviewed',
+      reviewed_at: null,
+      reviewed_by: null,
+      review_note: null,
+    });
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse([preserved]);
+      }
+      if (url === `/v1/books/paper-import/${preserved.import_id}/ocr-drafts` && method === 'GET') {
+        return jsonResponse([draft]);
+      }
+      if (
+        url === `/v1/books/paper-import/${preserved.import_id}/conversion-dossiers` &&
+        method === 'GET'
+      ) {
+        return jsonResponse([]);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect((await screen.findAllByText('Sem revisão OCR')).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /Criar dossier de conversão/i })).toBeNull();
+    expect(
+      calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
+    ).toBe(false);
   });
 
   it('runs local OCR for a preserved import and exposes the auxiliary non-canonical draft', async () => {

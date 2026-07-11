@@ -14,7 +14,8 @@ use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{Act, BookId, MeetingChannel};
 use chancela_store::{
-    StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrDraft,
+    PaperBookOcrConversionDossierUpsert, StoreError, StoredPaperBookImport,
+    StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier, StoredPaperBookOcrDraft,
     StoredPaperBookOcrPageSpan, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
 };
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,7 @@ const PAPER_BOOK_PRESERVATION_NOTICE: &str = "Historical paper-book package pres
 const PAPER_BOOK_OCR_STATUS_NOTICE: &str = "OCR status is operator-visible metadata only. Chancela has not extracted, verified, or stored authoritative OCR text for this preserved paper-book package.";
 const PAPER_BOOK_OCR_DRAFT_NOTICE: &str = "OCR draft results are non-authoritative review aids linked to preserved paper-book imports. They are not canonical minutes, legal text, or a legal-validity claim.";
 const PAPER_BOOK_OCR_DRAFT_TO_ACT_NOTICE: &str = "Accepted OCR draft text was copied into a new mutable draft act as a drafting aid only. No canonical document, PDF/A, signature, seal, or legal-validity acceptance was created.";
+const PAPER_BOOK_OCR_CONVERSION_DOSSIER_NOTICE: &str = "This paper-book OCR conversion dossier is metadata-only, non-canonical, and non-legal-validity-conferring. It records accepted OCR draft review metadata only and does not create acts, documents, signed documents, archive packages, signatures, seals, PDF/A, or PDF/UA outputs.";
 const MAX_NOTES_CHARS: usize = 2_000;
 const MAX_OCR_TEXT_CHARS: usize = 1_000_000;
 const MAX_OCR_REVIEW_NOTE_CHARS: usize = 2_000;
@@ -325,6 +327,37 @@ pub struct PaperBookOcrDraftCanonicalDraftResponse {
     pub signature_created: bool,
     pub seal_created: bool,
     pub legal_validity_claimed: bool,
+    pub legal_notice: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PaperBookOcrConversionDossierView {
+    pub dossier_id: String,
+    pub import_id: String,
+    pub draft_id: String,
+    pub source_text_digest: Option<String>,
+    pub source_page_spans: Vec<PaperBookOcrDraftPageSpanView>,
+    pub source_review_status: &'static str,
+    pub source_reviewed_at: Option<String>,
+    pub source_reviewed_by: Option<String>,
+    pub created_at: String,
+    pub created_by: String,
+    pub dossier_notice: &'static str,
+    pub metadata_only: bool,
+    pub non_canonical: bool,
+    pub act_created: bool,
+    pub canonical_act_created: bool,
+    pub canonical_minutes_claimed: bool,
+    pub canonical_document_created: bool,
+    pub signed_document_created: bool,
+    pub archive_package_created: bool,
+    pub pdfa_created: bool,
+    pub pdfua_created: bool,
+    pub signature_created: bool,
+    pub seal_created: bool,
+    pub legal_validity_claimed: bool,
+    pub source_extracted_text_in_response: bool,
+    pub source_extracted_text_in_ledger_event: bool,
     pub legal_notice: &'static str,
 }
 
@@ -1044,6 +1077,115 @@ pub async fn create_act_draft_from_accepted_paper_book_ocr_draft(
         paper_book_ocr_draft_canonical_draft_response(&import.meta, &draft, ActView::from(&act));
     acts.insert(act.id, act);
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+/// `POST /v1/books/paper-import/{id}/ocr-drafts/{draft_id}/conversion-dossier` - create a
+/// metadata-only, non-canonical dossier for an accepted OCR draft. This never creates acts,
+/// documents, signed documents, archive packages, signatures, seals, PDF/A, or PDF/UA outputs.
+pub async fn create_paper_book_ocr_conversion_dossier(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Path((id, draft_id)): Path<(String, String)>,
+) -> Result<(StatusCode, Json<PaperBookOcrConversionDossierView>), ApiError> {
+    let import = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    let draft_id = validate_import_id(&draft_id)?;
+    let Some(store) = &state.store else {
+        return Err(ApiError::Unprocessable(
+            "paper-book OCR conversion dossier storage requires on-disk persistence".to_owned(),
+        ));
+    };
+    let draft = store
+        .paper_book_ocr_draft(&draft_id)
+        .map_err(|e| ApiError::Internal(format!("paper-book OCR draft store read failed: {e}")))?
+        .ok_or(ApiError::NotFound)?;
+    if draft.import_id != import.meta.import_id {
+        return Err(ApiError::NotFound);
+    }
+    ensure_ocr_draft_can_create_conversion_dossier(&draft)?;
+
+    let created_by = actor.resolve("api");
+    let dossier = build_ocr_conversion_dossier(&draft, &created_by);
+    let mut ledger = state.ledger.write().await;
+    let scope = format!("paper-book-import:{}", import.meta.import_id);
+    let (upsert, projected_ledger) = store
+        .persist_result(|tx| {
+            let upsert = tx.upsert_paper_book_ocr_conversion_dossier(&dossier)?;
+            let projected_ledger = match &upsert {
+                PaperBookOcrConversionDossierUpsert::Inserted(stored) => {
+                    let payload =
+                        serde_json::to_vec(&paper_book_ocr_conversion_dossier_event_payload(
+                            stored,
+                        ))?;
+                    let mut projected = (*ledger).clone();
+                    let event = projected.try_append(
+                        &created_by,
+                        &scope,
+                        "paper_book_import.ocr_conversion_dossier_created",
+                        None,
+                        &payload,
+                    )?;
+                    tx.append_event(event)?;
+                    Some(projected)
+                }
+                PaperBookOcrConversionDossierUpsert::Existing(_) => None,
+            };
+            Ok((upsert, projected_ledger))
+        })
+        .map_err(|e| match e {
+            StoreError::LedgerAppend(ledger_error) => ApiError::Conflict(format!(
+                "appending paper_book_import.ocr_conversion_dossier_created would break a chain: {ledger_error}"
+            )),
+            other => ApiError::Internal(format!(
+                "failed to persist paper-book OCR conversion dossier to the durable store: {other}"
+            )),
+        })?;
+
+    match upsert {
+        PaperBookOcrConversionDossierUpsert::Inserted(stored) => {
+            let Some(projected_ledger) = projected_ledger else {
+                return Err(ApiError::Internal(
+                    "paper-book OCR conversion dossier insert committed without a ledger projection"
+                        .to_owned(),
+                ));
+            };
+            *ledger = projected_ledger;
+            state.attest_latest(&attestor, &ledger).await;
+            Ok((
+                StatusCode::CREATED,
+                Json(paper_book_ocr_conversion_dossier_view(&stored)),
+            ))
+        }
+        PaperBookOcrConversionDossierUpsert::Existing(stored) => Ok((
+            StatusCode::OK,
+            Json(paper_book_ocr_conversion_dossier_view(&stored)),
+        )),
+    }
+}
+
+/// `GET /v1/books/paper-import/{id}/conversion-dossiers` - list metadata-only conversion
+/// dossiers for a preserved paper-book import.
+pub async fn list_paper_book_ocr_conversion_dossiers(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<PaperBookOcrConversionDossierView>>, ApiError> {
+    let import = load_paper_book_import_for_actor(&state, &actor, &id).await?;
+    let Some(store) = &state.store else {
+        return Ok(Json(Vec::new()));
+    };
+    let rows = store
+        .paper_book_ocr_conversion_dossiers(&import.meta.import_id)
+        .map_err(|e| {
+            ApiError::Internal(format!(
+                "paper-book OCR conversion dossier store read failed: {e}"
+            ))
+        })?;
+    Ok(Json(
+        rows.iter()
+            .map(paper_book_ocr_conversion_dossier_view)
+            .collect(),
+    ))
 }
 
 /// `GET /v1/books/paper-import/{id}/bytes` - download the preserved non-canonical package bytes.
@@ -1925,6 +2067,62 @@ fn ensure_ocr_draft_can_create_act_draft(draft: &StoredPaperBookOcrDraft) -> Res
     Ok(())
 }
 
+fn ensure_ocr_draft_can_create_conversion_dossier(
+    draft: &StoredPaperBookOcrDraft,
+) -> Result<(), ApiError> {
+    match draft.review_status {
+        StoredPaperBookOcrReviewStatus::Accepted => {}
+        StoredPaperBookOcrReviewStatus::Unreviewed => {
+            return Err(ApiError::Conflict(
+                "OCR draft must be accepted before creating a conversion dossier".to_owned(),
+            ));
+        }
+        StoredPaperBookOcrReviewStatus::Rejected => {
+            return Err(ApiError::Conflict(
+                "rejected OCR drafts cannot create conversion dossiers".to_owned(),
+            ));
+        }
+        StoredPaperBookOcrReviewStatus::Superseded => {
+            return Err(ApiError::Conflict(
+                "superseded OCR drafts cannot create conversion dossiers".to_owned(),
+            ));
+        }
+    }
+    if draft.superseded_by.is_some() {
+        return Err(ApiError::Conflict(
+            "superseded OCR drafts cannot create conversion dossiers".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn build_ocr_conversion_dossier(
+    draft: &StoredPaperBookOcrDraft,
+    created_by: &str,
+) -> StoredPaperBookOcrConversionDossier {
+    StoredPaperBookOcrConversionDossier {
+        dossier_id: Uuid::new_v4().to_string(),
+        import_id: draft.import_id.clone(),
+        draft_id: draft.draft_id.clone(),
+        source_text_digest: ocr_draft_source_text_digest(draft),
+        source_page_spans: draft.page_spans.clone(),
+        source_review_status: draft.review_status,
+        source_reviewed_at: draft.reviewed_at,
+        source_reviewed_by: draft.reviewed_by.clone(),
+        created_at: OffsetDateTime::now_utc(),
+        created_by: created_by.to_owned(),
+    }
+}
+
+fn ocr_draft_source_text_digest(draft: &StoredPaperBookOcrDraft) -> Option<String> {
+    draft.text_digest.clone().or_else(|| {
+        draft.extracted_text.as_deref().map(|text| {
+            let digest: [u8; 32] = Sha256::digest(text.as_bytes()).into();
+            crate::hex::hex(&digest)
+        })
+    })
+}
+
 fn paper_book_ocr_draft_act_title(
     import: &StoredPaperBookImportMeta,
     draft: &StoredPaperBookOcrDraft,
@@ -2113,6 +2311,42 @@ fn paper_book_ocr_draft_to_act_event_payload(
     })
 }
 
+fn paper_book_ocr_conversion_dossier_event_payload(
+    dossier: &StoredPaperBookOcrConversionDossier,
+) -> serde_json::Value {
+    json!({
+        "dossier_id": dossier.dossier_id,
+        "import_id": dossier.import_id,
+        "draft_id": dossier.draft_id,
+        "source_text_digest": dossier.source_text_digest,
+        "source_page_spans": dossier.source_page_spans.iter().map(|span| json!({
+            "start_page": span.start_page,
+            "end_page": span.end_page,
+        })).collect::<Vec<_>>(),
+        "source_review_status": dossier.source_review_status.as_str(),
+        "source_reviewed_at": dossier.source_reviewed_at.map(|t| t.format(&Rfc3339).unwrap_or_default()),
+        "source_reviewed_by": dossier.source_reviewed_by,
+        "created_at": dossier.created_at.format(&Rfc3339).unwrap_or_default(),
+        "created_by": dossier.created_by,
+        "dossier_notice": PAPER_BOOK_OCR_CONVERSION_DOSSIER_NOTICE,
+        "metadata_only": true,
+        "non_canonical": true,
+        "act_created": false,
+        "canonical_act_created": false,
+        "canonical_minutes_claimed": false,
+        "canonical_document_created": false,
+        "signed_document_created": false,
+        "archive_package_created": false,
+        "pdfa_created": false,
+        "pdfua_created": false,
+        "signature_created": false,
+        "seal_created": false,
+        "legal_validity_claimed": false,
+        "source_extracted_text_in_response": false,
+        "source_extracted_text_in_ledger_event": false,
+    })
+}
+
 fn paper_book_ocr_status_event_payload(
     meta: &StoredPaperBookImportMeta,
     status: StoredPaperBookOcrStatus,
@@ -2192,6 +2426,49 @@ fn paper_book_ocr_draft_canonical_draft_response(
         signature_created: false,
         seal_created: false,
         legal_validity_claimed: false,
+        legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
+    }
+}
+
+fn paper_book_ocr_conversion_dossier_view(
+    dossier: &StoredPaperBookOcrConversionDossier,
+) -> PaperBookOcrConversionDossierView {
+    PaperBookOcrConversionDossierView {
+        dossier_id: dossier.dossier_id.clone(),
+        import_id: dossier.import_id.clone(),
+        draft_id: dossier.draft_id.clone(),
+        source_text_digest: dossier.source_text_digest.clone(),
+        source_page_spans: dossier
+            .source_page_spans
+            .iter()
+            .map(|span| PaperBookOcrDraftPageSpanView {
+                start_page: span.start_page,
+                end_page: span.end_page,
+            })
+            .collect(),
+        source_review_status: dossier.source_review_status.as_str(),
+        source_reviewed_at: dossier
+            .source_reviewed_at
+            .map(|t| t.format(&Rfc3339).unwrap_or_default()),
+        source_reviewed_by: dossier.source_reviewed_by.clone(),
+        created_at: dossier.created_at.format(&Rfc3339).unwrap_or_default(),
+        created_by: dossier.created_by.clone(),
+        dossier_notice: PAPER_BOOK_OCR_CONVERSION_DOSSIER_NOTICE,
+        metadata_only: true,
+        non_canonical: true,
+        act_created: false,
+        canonical_act_created: false,
+        canonical_minutes_claimed: false,
+        canonical_document_created: false,
+        signed_document_created: false,
+        archive_package_created: false,
+        pdfa_created: false,
+        pdfua_created: false,
+        signature_created: false,
+        seal_created: false,
+        legal_validity_claimed: false,
+        source_extracted_text_in_response: false,
+        source_extracted_text_in_ledger_event: false,
         legal_notice: PAPER_BOOK_PRESERVATION_NOTICE,
     }
 }

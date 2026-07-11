@@ -12,9 +12,10 @@ use axum::extract::{Path, Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::response::Response;
 use chancela_archive::{
-    PackageBuildInput, PackageFileInput, PackageFileRole, PreservationLevel, ProducerMetadata,
-    Provenance, ProvenanceSource, RetentionInstructions, RightsMetadata, build_archive_package,
-    validate_package,
+    ExportPackage, LocalDglabInterchangeManifest, PackageBuildInput, PackageFileInput,
+    PackageFileRole, PreservationLevel, ProducerMetadata, Provenance, ProvenanceSource,
+    RetentionInstructions, RightsMetadata, build_archive_package,
+    build_local_dglab_interchange_manifest, validate_package,
 };
 use chancela_authz::Permission;
 use chancela_core::{Act, ActId, ActState, BookId, BookState, LegalHold};
@@ -31,10 +32,11 @@ use crate::actor::CurrentAttestor;
 use crate::authz::{require_permission, scope_of_book};
 use crate::error::ApiError;
 use crate::external_validator_evidence::{
+    EXTERNAL_VALIDATOR_RAW_REPORT_ARCHIVE_PATH_PATTERN,
     EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN, EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
     EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND, EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
-    ExternalValidatorEvidenceAttachment, TECHNICAL_METADATA_ONLY, attachment_indexes,
-    matching_attachments,
+    ExternalValidatorEvidenceAttachment, ExternalValidatorRawReportAttachmentIndex,
+    TECHNICAL_METADATA_ONLY, attachment_indexes, matching_attachments,
 };
 use crate::privacy::{
     RetentionDisposalAction, RetentionPolicyId, RetentionPolicyRecord, RetentionPolicyStatus,
@@ -308,6 +310,7 @@ struct ExternalValidatorReportEvidenceIndex {
     metadata_schema: &'static str,
     indexed_path_prefix: &'static str,
     indexed_path_pattern: &'static str,
+    raw_report_path_pattern: &'static str,
     attachment_status: &'static str,
     status_scope: &'static str,
     attachments: Vec<ExternalValidatorReportEvidenceAttachmentIndex>,
@@ -320,6 +323,8 @@ struct ExternalValidatorReportEvidenceAttachmentIndex {
     path: String,
     content_type: String,
     sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    raw_report: Option<ExternalValidatorRawReportAttachmentIndex>,
 }
 
 #[derive(Serialize)]
@@ -566,6 +571,53 @@ pub async fn export_book_archive_package(
     )
     .await?;
 
+    let package = build_book_archive_package(&state, book_id, &query).await?;
+    let filename = format!("chancela-preservation-book-{id}.zip");
+    Response::builder()
+        .header(CONTENT_TYPE, ZIP_CONTENT_TYPE)
+        .header(
+            CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{filename}\""),
+        )
+        .body(Body::from(package.bytes))
+        .map_err(|e| ApiError::Internal(format!("failed to build archive package response: {e}")))
+}
+
+/// `GET /v1/books/{id}/archive/local-dglab-interchange-manifest` - derive the metadata-only local
+/// DGLAB interchange scaffold from the same internal preservation package manifest. This is
+/// read-only and does not persist package bytes or add a member to ZIP exports.
+pub async fn get_book_local_dglab_interchange_manifest(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<LocalDglabInterchangeManifest>, ApiError> {
+    let book_id = BookId(id);
+    require_permission(
+        &state,
+        &actor,
+        Permission::BookExport,
+        scope_of_book(book_id),
+    )
+    .await?;
+
+    let query = ExportArchivePackageQuery {
+        legal_hold: false,
+        legal_hold_reason: None,
+    };
+    let package = build_book_archive_package(&state, book_id, &query).await?;
+    let manifest = build_local_dglab_interchange_manifest(&package.manifest).map_err(|e| {
+        ApiError::Internal(format!(
+            "local DGLAB interchange manifest build failed: {e}"
+        ))
+    })?;
+    Ok(Json(manifest))
+}
+
+async fn build_book_archive_package(
+    state: &AppState,
+    book_id: BookId,
+    query: &ExportArchivePackageQuery,
+) -> Result<ExportPackage, ApiError> {
     let BookArchiveInventory {
         entity_id,
         entity_name,
@@ -573,14 +625,14 @@ pub async fn export_book_archive_package(
         book_acts,
         package_docs,
         ..
-    } = load_book_archive_inventory(&state, book_id).await?;
+    } = load_book_archive_inventory(state, book_id).await?;
     if package_docs.is_empty() {
         return Err(ApiError::Conflict(
             "o livro ainda não tem documentos PDF/A preservados para empacotar".to_owned(),
         ));
     }
     validate_archive_inventory(book_id, &package_docs)?;
-    let legal_hold = package_legal_hold(&query, persisted_legal_hold.as_ref())?;
+    let legal_hold = package_legal_hold(query, persisted_legal_hold.as_ref())?;
     let included_acts = book_acts
         .iter()
         .filter(|act| package_docs.iter().any(|doc| doc.act_id == Some(act.id)))
@@ -636,6 +688,16 @@ pub async fn export_book_archive_package(
             JSON_CONTENT_TYPE,
             attachment.bytes.clone(),
         ));
+        if let Some(raw_report) = &attachment.raw_report {
+            if let (Some(path), Some(bytes)) = (&raw_report.archive_path, &raw_report.bytes) {
+                files.push(PackageFileInput::new(
+                    path.clone(),
+                    PackageFileRole::EvidenceReport,
+                    raw_report.content_type.clone(),
+                    bytes.clone(),
+                ));
+            }
+        }
     }
     files.push(PackageFileInput::new(
         ARCHIVE_EVIDENCE_INDEX_PATH,
@@ -676,15 +738,7 @@ pub async fn export_book_archive_package(
         .map_err(|e| ApiError::Internal(format!("archive package build failed: {e}")))?;
     validate_package(&package.bytes)
         .map_err(|e| ApiError::Internal(format!("archive package self-validation failed: {e}")))?;
-    let filename = format!("chancela-preservation-book-{id}.zip");
-    Response::builder()
-        .header(CONTENT_TYPE, ZIP_CONTENT_TYPE)
-        .header(
-            CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{filename}\""),
-        )
-        .body(Body::from(package.bytes))
-        .map_err(|e| ApiError::Internal(format!("failed to build archive package response: {e}")))
+    Ok(package)
 }
 
 fn legal_hold_reason(query: &ExportArchivePackageQuery) -> Result<Option<String>, ApiError> {
@@ -1669,6 +1723,7 @@ fn external_validator_report_evidence_index(
                 path: attachment.path,
                 content_type: attachment.content_type,
                 sha256: attachment.sha256,
+                raw_report: attachment.raw_report,
             },
         )
         .collect::<Vec<_>>();
@@ -1682,6 +1737,7 @@ fn external_validator_report_evidence_index(
         metadata_schema: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
         indexed_path_prefix: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
         indexed_path_pattern: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN,
+        raw_report_path_pattern: EXTERNAL_VALIDATOR_RAW_REPORT_ARCHIVE_PATH_PATTERN,
         attachment_status,
         status_scope: TECHNICAL_METADATA_ONLY,
         attachments,
