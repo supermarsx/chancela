@@ -1,5 +1,9 @@
 import { useState, type ReactNode } from 'react';
-import type { ExternalValidatorReportSummary } from '../../api/types';
+import type {
+  ExternalValidatorRawReportSummary,
+  ExternalValidatorReportSummary,
+  ExternalValidatorReportUploadBody,
+} from '../../api/types';
 import { useExternalValidatorReports, useUploadExternalValidatorReport } from '../../api/hooks';
 import { saveBlobAs, saveBlobResultMessage } from '../../desktop/saveFile';
 import { useT, type TFunction } from '../../i18n';
@@ -19,6 +23,27 @@ import {
 } from '../../ui';
 import { GateButton } from '../session/permissions';
 
+const RAW_REPORT_MAX_BYTES = 2 * 1024 * 1024;
+const RAW_REPORT_ACCEPT =
+  'application/json,.json,application/pdf,.pdf,application/xml,text/xml,.xml,text/plain,.txt,application/octet-stream';
+const RAW_REPORT_CONTENT_TYPES = new Set([
+  'application/json',
+  'application/pdf',
+  'application/xml',
+  'text/xml',
+  'text/plain',
+  'application/octet-stream',
+]);
+
+interface RawReportSelection {
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  contentBase64: string;
+  sourceFilename: string | null;
+}
+
 function readFileAsText(file: File): Promise<string> {
   if (typeof file.text === 'function') return file.text();
   return new Promise((resolve, reject) => {
@@ -26,6 +51,43 @@ function readFileAsText(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result ?? ''));
     reader.onerror = () => reject(reader.error ?? new Error('file read failed'));
     reader.readAsText(file);
+  });
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function hex(bytes: ArrayBuffer): string {
+  return Array.from(new Uint8Array(bytes))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function sha256Hex(buffer: ArrayBuffer): Promise<string | null> {
+  if (!globalThis.crypto?.subtle) return null;
+  return hex(await globalThis.crypto.subtle.digest('SHA-256', buffer));
+}
+
+function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+  if (typeof file.arrayBuffer === 'function') return file.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('file read did not return bytes'));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('file read failed'));
+    reader.readAsArrayBuffer(file);
   });
 }
 
@@ -45,6 +107,31 @@ function formatBytes(value: number, t: TFunction): string {
 
 function textValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function normalizeRawReportContentType(value: string | undefined): string | null {
+  const mediaType = (value ?? '').split(';')[0].trim().toLowerCase();
+  return RAW_REPORT_CONTENT_TYPES.has(mediaType) ? mediaType : null;
+}
+
+function rawReportContentType(file: File): string {
+  const declared = normalizeRawReportContentType(file.type);
+  if (declared) return declared;
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.json')) return 'application/json';
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.xml')) return 'application/xml';
+  if (name.endsWith('.txt')) return 'text/plain';
+  return 'application/octet-stream';
+}
+
+function safeSourceFilename(value: string): string | null {
+  if (!value || value.length > 255 || value.includes('/') || value.includes('\\')) return null;
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (character !== ' ' && (code < 0x21 || code > 0x7e)) return null;
+  }
+  return value;
 }
 
 function reportCaseId(report: ExternalValidatorReportSummary): string | null {
@@ -99,6 +186,105 @@ function metadataSummaryFilename(report: ExternalValidatorReportSummary): string
 
 function displayText(value: string | null): ReactNode {
   return value ? <code className="mono">{value}</code> : '—';
+}
+
+function buildUploadRequest(
+  rawText: string,
+  rawReport: RawReportSelection | null,
+): string | ExternalValidatorReportUploadBody {
+  if (!rawReport) return rawText;
+  const parsed = JSON.parse(rawText) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new SyntaxError('external-validator metadata must be a JSON object');
+  }
+  return {
+    ...(parsed as Record<string, unknown>),
+    raw_report: {
+      content_base64: rawReport.contentBase64,
+      content_type: rawReport.contentType,
+      sha256: rawReport.sha256,
+      size_bytes: rawReport.sizeBytes,
+      ...(rawReport.sourceFilename ? { source_filename: rawReport.sourceFilename } : {}),
+    },
+  };
+}
+
+function RawReportLocalSummary({ report }: { report: RawReportSelection }) {
+  const t = useT();
+  return (
+    <div className="pdf-validator-report">
+      <p className="field__label">{t('externalValidatorReports.rawFile.summaryTitle')}</p>
+      <dl className="pdf-validator-kv">
+        <div>
+          <dt>{t('externalValidatorReports.rawFile.filename')}</dt>
+          <dd>{displayText(report.fileName)}</dd>
+        </div>
+        <div>
+          <dt>{t('externalValidatorReports.table.contentType')}</dt>
+          <dd>{displayText(report.contentType)}</dd>
+        </div>
+        <div>
+          <dt>{t('pdfValidator.field.size')}</dt>
+          <dd>{formatBytes(report.sizeBytes, t)}</dd>
+        </div>
+        <div>
+          <dt>{t('pdfValidator.field.sha256')}</dt>
+          <dd>
+            <Digest value={report.sha256} copyable={false} />
+          </dd>
+        </div>
+        <div>
+          <dt>{t('externalValidatorReports.rawFile.provenance')}</dt>
+          <dd>{t('externalValidatorReports.rawFile.provenance.local')}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+function RawReportBackendSummary({ rawReport }: { rawReport: ExternalValidatorRawReportSummary }) {
+  const t = useT();
+  const path = textValue(rawReport.path) ?? textValue(rawReport.suggested_path);
+  return (
+    <div className="pdf-validator-report">
+      <p className="field__label">{t('externalValidatorReports.rawReport.summaryTitle')}</p>
+      <dl className="pdf-validator-kv">
+        <div>
+          <dt>{t('externalValidatorReports.rawFile.provenance')}</dt>
+          <dd>
+            <Badge
+              tone={rawReport.preservation_status === 'raw_report_attached' ? 'ok' : 'neutral'}
+            >
+              {rawReport.preservation_status}
+            </Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>{t('externalValidatorReports.rawFile.filename')}</dt>
+          <dd>{displayText(textValue(rawReport.source_filename))}</dd>
+        </div>
+        <div>
+          <dt>{t('externalValidatorReports.table.contentType')}</dt>
+          <dd>{displayText(textValue(rawReport.content_type))}</dd>
+        </div>
+        <div>
+          <dt>{t('pdfValidator.field.size')}</dt>
+          <dd>{formatBytes(rawReport.size_bytes, t)}</dd>
+        </div>
+        <div>
+          <dt>{t('pdfValidator.field.sha256')}</dt>
+          <dd>
+            <Digest value={rawReport.sha256} copyable={false} />
+          </dd>
+        </div>
+        <div>
+          <dt>{t('externalValidatorReports.table.archivePath')}</dt>
+          <dd>{displayText(path)}</dd>
+        </div>
+      </dl>
+      <p className="muted">{t('externalValidatorReports.notice.noClaims')}</p>
+    </div>
+  );
 }
 
 function StorageSummary({
@@ -196,6 +382,7 @@ function ReportsTable({ reports }: { reports: ExternalValidatorReportSummary[] }
           <th>{t('externalValidatorReports.table.archivePath')}</th>
           <th>{t('externalValidatorReports.table.contentType')}</th>
           <th>{t('externalValidatorReports.table.digest')}</th>
+          <th>{t('externalValidatorReports.rawReport.table')}</th>
           <th>{t('externalValidatorReports.table.actions')}</th>
         </tr>
       }
@@ -212,6 +399,13 @@ function ReportsTable({ reports }: { reports: ExternalValidatorReportSummary[] }
             <td>{displayText(reportArchivePath(report))}</td>
             <td>{displayText(textValue(report.content_type))}</td>
             <td>{digest ? <Digest value={digest} copyable={false} /> : '—'}</td>
+            <td>
+              {report.raw_report ? (
+                <RawReportBackendSummary rawReport={report.raw_report} />
+              ) : (
+                <span className="muted">{t('externalValidatorReports.rawReport.none')}</span>
+              )}
+            </td>
             <td className="pdf-validator-actions-cell">
               <span className="muted">{t('externalValidatorReports.table.metadataOnly')}</span>
               <SummaryDownloadButton report={report} />
@@ -230,8 +424,12 @@ export function ExternalValidatorReportsPanel() {
   const upload = useUploadExternalValidatorReport();
   const [file, setFile] = useState<File | null>(null);
   const [rawText, setRawText] = useState<string | null>(null);
+  const [rawReportFile, setRawReportFile] = useState<File | null>(null);
+  const [rawReport, setRawReport] = useState<RawReportSelection | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [rawReportError, setRawReportError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const [readingRawReport, setReadingRawReport] = useState(false);
 
   async function selectFile(next: File | null) {
     setFile(next);
@@ -257,17 +455,68 @@ export function ExternalValidatorReportsPanel() {
     }
   }
 
-  function submitUpload() {
-    if (!rawText || clientError || reading || upload.isPending) return;
-    try {
-      JSON.parse(rawText);
-    } catch {
-      setClientError(t('externalValidatorReports.file.invalidJson'));
+  async function selectRawReportFile(next: File | null) {
+    setRawReportFile(next);
+    setRawReport(null);
+    setRawReportError(null);
+    upload.reset();
+    if (!next) return;
+    if (next.size <= 0) {
+      setRawReportError(t('externalValidatorReports.rawFile.empty'));
       return;
     }
-    upload.mutate(rawText, {
-      onSuccess: () => toast.success(t('externalValidatorReports.upload.success')),
-    });
+    if (next.size > RAW_REPORT_MAX_BYTES) {
+      setRawReportError(
+        t('externalValidatorReports.rawFile.tooLarge', {
+          max: formatBytes(RAW_REPORT_MAX_BYTES, t),
+        }),
+      );
+      return;
+    }
+
+    setReadingRawReport(true);
+    try {
+      const buffer = await readFileAsArrayBuffer(next);
+      const digest = await sha256Hex(buffer);
+      if (!digest) {
+        setRawReportError(t('externalValidatorReports.rawFile.digestUnavailable'));
+        return;
+      }
+      setRawReport({
+        fileName: next.name,
+        contentType: rawReportContentType(next),
+        sizeBytes: next.size,
+        sha256: digest,
+        contentBase64: arrayBufferToBase64(buffer),
+        sourceFilename: safeSourceFilename(next.name),
+      });
+    } catch {
+      setRawReportError(t('externalValidatorReports.rawFile.readError'));
+    } finally {
+      setReadingRawReport(false);
+    }
+  }
+
+  function submitUpload() {
+    if (
+      !rawText ||
+      clientError ||
+      rawReportError ||
+      reading ||
+      readingRawReport ||
+      upload.isPending ||
+      (rawReportFile && !rawReport)
+    ) {
+      return;
+    }
+    try {
+      const body = buildUploadRequest(rawText, rawReport);
+      upload.mutate(body, {
+        onSuccess: () => toast.success(t('externalValidatorReports.upload.success')),
+      });
+    } catch {
+      setClientError(t('externalValidatorReports.file.invalidJson'));
+    }
   }
 
   const data = reports.data;
@@ -277,6 +526,22 @@ export function ExternalValidatorReportsPanel() {
         size: formatBytes(file.size, t),
       })
     : t('externalValidatorReports.file.hint');
+  const rawReportHint = rawReportFile
+    ? t('externalValidatorReports.rawFile.selected', {
+        name: rawReportFile.name,
+        size: formatBytes(rawReportFile.size, t),
+      })
+    : t('externalValidatorReports.rawFile.hint', {
+        max: formatBytes(RAW_REPORT_MAX_BYTES, t),
+      });
+  const canUpload =
+    !!rawText &&
+    !clientError &&
+    !rawReportError &&
+    !reading &&
+    !readingRawReport &&
+    !upload.isPending &&
+    (!rawReportFile || !!rawReport);
 
   return (
     <Card
@@ -287,18 +552,21 @@ export function ExternalValidatorReportsPanel() {
           perm="settings.manage"
           variant="primary"
           icon={<Icon.Tray />}
-          disabled={!file || !rawText || !!clientError || reading || upload.isPending}
+          disabled={!canUpload}
           onClick={submitUpload}
         >
           {upload.isPending
             ? t('externalValidatorReports.action.pending')
-            : t('externalValidatorReports.action.upload')}
+            : rawReport
+              ? t('externalValidatorReports.action.uploadWithRaw')
+              : t('externalValidatorReports.action.upload')}
         </GateButton>
       }
     >
       <div className="pdf-validator stack">
         <InlineWarning tone="info" title={t('externalValidatorReports.notice.title')}>
-          {t('externalValidatorReports.notice.body')}
+          <p>{t('externalValidatorReports.notice.body')}</p>
+          <p>{t('externalValidatorReports.notice.noClaims')}</p>
         </InlineWarning>
 
         <div className="pdf-validator-upload">
@@ -322,6 +590,27 @@ export function ExternalValidatorReportsPanel() {
               <span>{file.name}</span>
               <span className="muted">{formatBytes(file.size, t)}</span>
             </div>
+          ) : null}
+        </div>
+
+        <div className="pdf-validator-upload">
+          <Field
+            label={t('externalValidatorReports.rawFile.label')}
+            htmlFor="external-validator-raw-report-file"
+            hint={rawReportHint}
+            error={rawReportError}
+          >
+            <input
+              id="external-validator-raw-report-file"
+              className="control"
+              type="file"
+              accept={RAW_REPORT_ACCEPT}
+              onChange={(e) => void selectRawReportFile(e.currentTarget.files?.[0] ?? null)}
+            />
+          </Field>
+          {rawReport ? <RawReportLocalSummary report={rawReport} /> : null}
+          {readingRawReport ? (
+            <p className="muted">{t('externalValidatorReports.rawFile.reading')}</p>
           ) : null}
         </div>
 

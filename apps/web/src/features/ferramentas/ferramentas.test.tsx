@@ -324,6 +324,21 @@ const EXTERNAL_VALIDATOR_REPORT: ExternalValidatorReportSummary = {
   size_bytes: 128,
 };
 
+const RAW_EXTERNAL_VALIDATOR_REPORT_TEXT = 'raw validator private report body';
+const RAW_EXTERNAL_VALIDATOR_REPORT_SHA256 = 'b'.repeat(64);
+
+const EXTERNAL_VALIDATOR_REPORT_WITH_RAW: ExternalValidatorReportSummary = {
+  ...EXTERNAL_VALIDATOR_REPORT,
+  raw_report: {
+    preservation_status: 'raw_report_attached',
+    path: 'evidence/external-validators/CASE-001-AMA-DSS-raw-report.pdf',
+    content_type: 'application/pdf',
+    sha256: RAW_EXTERNAL_VALIDATOR_REPORT_SHA256,
+    size_bytes: RAW_EXTERNAL_VALIDATOR_REPORT_TEXT.length,
+    source_filename: 'validator-output.pdf',
+  },
+};
+
 function pdfValidatorFetch(response: Response): typeof fetch {
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -664,6 +679,139 @@ describe('Ferramentas — external-validator reports panel', () => {
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
     expect(await screen.findByText('CASE-001')).toBeTruthy();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/cae'))).toBe(false);
+  });
+
+  it('selecting a raw report does not upload automatically', async () => {
+    const fetchMock = vi.fn(externalValidatorReportsFetch());
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const metadata = new File(['{"case_id":"CASE-001"}'], 'metadata.json', {
+      type: 'application/json',
+    });
+    const rawReport = new File([RAW_EXTERNAL_VALIDATOR_REPORT_TEXT], 'validator-output.pdf', {
+      type: 'application/pdf',
+    });
+
+    fireEvent.change(await screen.findByLabelText('JSON do validador externo'), {
+      target: { files: [metadata] },
+    });
+    fireEvent.change(screen.getByLabelText('Relatório bruto do validador externo'), {
+      target: { files: [rawReport] },
+    });
+
+    expect(await screen.findByText('Relatório bruto selecionado')).toBeTruthy();
+    expect(screen.getByText('validator-output.pdf')).toBeTruthy();
+    expect(screen.getByText('application/pdf')).toBeTruthy();
+    expect(screen.getByText('33 bytes')).toBeTruthy();
+    expect(screen.queryByText(RAW_EXTERNAL_VALIDATOR_REPORT_TEXT)).toBeNull();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).includes('/v1/external-validator-reports') &&
+          (init?.method ?? 'GET') === 'POST',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('submits selected raw report bytes through raw_report.content_base64 without rendering them', async () => {
+    const fetchMock = vi.fn(
+      externalValidatorReportsFetch({
+        afterUpload: {
+          ...EMPTY_EXTERNAL_VALIDATOR_REPORTS,
+          count: 1,
+          reports: [EXTERNAL_VALIDATOR_REPORT_WITH_RAW],
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    const metadata = new File(
+      ['{"case_id":"CASE-001","validator_family":"AMA DSS"}'],
+      'metadata.json',
+      {
+        type: 'application/json',
+      },
+    );
+    const rawReport = new File([RAW_EXTERNAL_VALIDATOR_REPORT_TEXT], 'validator-output.pdf', {
+      type: 'application/pdf',
+    });
+
+    fireEvent.change(await screen.findByLabelText('JSON do validador externo'), {
+      target: { files: [metadata] },
+    });
+    fireEvent.change(screen.getByLabelText('Relatório bruto do validador externo'), {
+      target: { files: [rawReport] },
+    });
+
+    expect(await screen.findByText('Relatório bruto selecionado')).toBeTruthy();
+    const uploadButton = await screen.findByRole('button', {
+      name: 'Carregar metadados e relatório bruto',
+    });
+    await waitFor(() => expect((uploadButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(uploadButton);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes('/v1/external-validator-reports') &&
+            (init?.method ?? 'GET') === 'POST',
+        ),
+      ).toBe(true),
+    );
+    const [, init] = fetchMock.mock.calls.find(
+      ([url, callInit]) =>
+        String(url).includes('/v1/external-validator-reports') &&
+        (callInit?.method ?? 'GET') === 'POST',
+    ) as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      case_id: string;
+      validator_family: string;
+      raw_report: {
+        content_base64: string;
+        content_type: string;
+        sha256: string;
+        size_bytes: number;
+        source_filename: string;
+      };
+    };
+    expect(body.case_id).toBe('CASE-001');
+    expect(body.validator_family).toBe('AMA DSS');
+    expect(body.raw_report.content_base64).toBe(btoa(RAW_EXTERNAL_VALIDATOR_REPORT_TEXT));
+    expect(body.raw_report.content_type).toBe('application/pdf');
+    expect(body.raw_report.size_bytes).toBe(RAW_EXTERNAL_VALIDATOR_REPORT_TEXT.length);
+    expect(body.raw_report.source_filename).toBe('validator-output.pdf');
+    expect(body.raw_report.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(screen.queryByText(RAW_EXTERNAL_VALIDATOR_REPORT_TEXT)).toBeNull();
+    expect(await screen.findByText('raw_report_attached')).toBeTruthy();
+    expect(screen.queryByText(RAW_EXTERNAL_VALIDATOR_REPORT_TEXT)).toBeNull();
+  });
+
+  it('renders backend raw report summary and no-claim notice without raw bytes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      externalValidatorReportsFetch({
+        list: {
+          ...EMPTY_EXTERNAL_VALIDATOR_REPORTS,
+          count: 1,
+          reports: [EXTERNAL_VALIDATOR_REPORT_WITH_RAW],
+        },
+      }),
+    );
+    renderWithProviders(<FerramentasPage />, ['/ferramentas?tool=pdf']);
+
+    expect(await screen.findByText('Resumo redigido do relatório bruto')).toBeTruthy();
+    expect(screen.getByText('raw_report_attached')).toBeTruthy();
+    expect(screen.getByText('validator-output.pdf')).toBeTruthy();
+    expect(screen.getByText('application/pdf')).toBeTruthy();
+    expect(screen.getByText('33 bytes')).toBeTruthy();
+    expect(screen.getByText('bbbbbbbb…bbbbbbbb')).toBeTruthy();
+    expect(
+      screen.getAllByText(/não declara validação legal, certificação externa/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(RAW_EXTERNAL_VALIDATOR_REPORT_TEXT)).toBeNull();
   });
 
   it('downloads a client-generated metadata summary, not raw report bytes', async () => {

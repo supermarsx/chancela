@@ -6,6 +6,8 @@ use axum::body::Bytes;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
 use serde::Serialize;
 use serde_json::Value;
@@ -20,8 +22,15 @@ pub const EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA: &str =
 pub const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX: &str = "evidence/external-validators/";
 pub const EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN: &str =
     "evidence/external-validators/{case_id}-{validator_family}.json";
+pub const EXTERNAL_VALIDATOR_RAW_REPORT_ARCHIVE_PATH_PATTERN: &str =
+    "evidence/external-validators/{case_id}-{validator_family}-raw-report.{extension}";
 pub const TECHNICAL_METADATA_ONLY: &str = "technical_metadata_only";
 pub const EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES: usize = 256 * 1024;
+pub const EXTERNAL_VALIDATOR_RAW_REPORT_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const EXTERNAL_VALIDATOR_REPORT_UPLOAD_MAX_BYTES: usize =
+    EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES
+        + (EXTERNAL_VALIDATOR_RAW_REPORT_MAX_BYTES * 4 / 3)
+        + 64 * 1024;
 pub(crate) const EXTERNAL_VALIDATOR_REPORT_METADATA_DIR: &str = "external-validator-reports";
 
 #[derive(Clone, Debug)]
@@ -32,6 +41,28 @@ pub struct ExternalValidatorEvidenceAttachment {
     pub content_type: String,
     pub sha256: String,
     pub bytes: Vec<u8>,
+    pub raw_report: Option<ExternalValidatorRawReportAttachment>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExternalValidatorRawReportAttachment {
+    pub archive_path: Option<String>,
+    pub suggested_path: Option<String>,
+    pub content_type: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+    pub source_filename: Option<String>,
+    pub bytes: Option<Vec<u8>>,
+}
+
+impl ExternalValidatorRawReportAttachment {
+    pub fn preservation_status(&self) -> &'static str {
+        if self.bytes.is_some() {
+            "raw_report_attached"
+        } else {
+            "raw_report_manifest_only"
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -41,6 +72,36 @@ pub struct ExternalValidatorEvidenceAttachmentIndex {
     pub path: String,
     pub content_type: String,
     pub sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_report: Option<ExternalValidatorRawReportAttachmentIndex>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ExternalValidatorRawReportAttachmentIndex {
+    pub preservation_status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_path: Option<String>,
+    pub content_type: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_filename: Option<String>,
+}
+
+impl From<&ExternalValidatorRawReportAttachment> for ExternalValidatorRawReportAttachmentIndex {
+    fn from(value: &ExternalValidatorRawReportAttachment) -> Self {
+        Self {
+            preservation_status: value.preservation_status(),
+            path: value.archive_path.clone(),
+            suggested_path: value.suggested_path.clone(),
+            content_type: value.content_type.clone(),
+            sha256: value.sha256.clone(),
+            size_bytes: value.size_bytes,
+            source_filename: value.source_filename.clone(),
+        }
+    }
 }
 
 impl From<&ExternalValidatorEvidenceAttachment> for ExternalValidatorEvidenceAttachmentIndex {
@@ -51,6 +112,7 @@ impl From<&ExternalValidatorEvidenceAttachment> for ExternalValidatorEvidenceAtt
             path: value.archive_path.clone(),
             content_type: value.content_type.clone(),
             sha256: value.sha256.clone(),
+            raw_report: value.raw_report.as_ref().map(Into::into),
         }
     }
 }
@@ -96,11 +158,15 @@ pub async fn download_external_validator_report_metadata(
     require_safe_report_identity(&case_id, &validator_family)?;
 
     let raw_entries = state.external_validator_report_metadata.read().await;
-    let bytes = raw_metadata_for_identity(&raw_entries, &case_id, &validator_family)?;
+    let attachment = attachment_for_identity(&raw_entries, &case_id, &validator_family)?;
     drop(raw_entries);
 
-    if let Some(bytes) = bytes {
-        return Ok(([(header::CONTENT_TYPE, "application/json")], bytes).into_response());
+    if let Some(attachment) = attachment {
+        return Ok((
+            [(header::CONTENT_TYPE, "application/json")],
+            attachment.bytes,
+        )
+            .into_response());
     }
 
     if state
@@ -117,6 +183,62 @@ pub async fn download_external_validator_report_metadata(
     }
 
     Err(ApiError::NotFound)
+}
+
+/// `GET /v1/external-validator-reports/{case_id}/{validator_family}/raw-report` - download
+/// retained raw external-validator report bytes only, when the metadata sidecar carried them.
+pub async fn download_external_validator_raw_report_bytes(
+    State(state): State<AppState>,
+    AxumPath((case_id, validator_family)): AxumPath<(String, String)>,
+    actor: CurrentActor,
+) -> Result<Response, ApiError> {
+    require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
+    require_safe_report_identity(&case_id, &validator_family)?;
+
+    let raw_entries = state.external_validator_report_metadata.read().await;
+    let attachment = attachment_for_identity(&raw_entries, &case_id, &validator_family)?;
+    drop(raw_entries);
+
+    let Some(attachment) = attachment else {
+        if state
+            .external_validator_report_metadata_dir
+            .as_ref()
+            .is_some_and(|dir| {
+                malformed_persisted_sidecar_for_identity(dir, &case_id, &validator_family)
+            })
+        {
+            return Err(ApiError::Unprocessable(
+                "invalid external-validator technical metadata sidecar for requested identity"
+                    .to_owned(),
+            ));
+        }
+
+        return Err(ApiError::NotFound);
+    };
+
+    let Some(raw_report) = attachment.raw_report else {
+        return Err(ApiError::NotFound);
+    };
+    let Some(bytes) = raw_report.bytes else {
+        return Err(ApiError::NotFound);
+    };
+    let filename = raw_report_download_filename(
+        &attachment.case_id,
+        &attachment.validator_family,
+        &raw_report.content_type,
+    )?;
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, raw_report.content_type),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            ),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 /// `POST /v1/external-validator-reports` - accept operator-supplied technical metadata only.
@@ -283,7 +405,7 @@ pub fn validate_external_validator_report_metadata(
     raw: &[u8],
 ) -> Result<ExternalValidatorEvidenceAttachment, String> {
     parse_attachment(raw).ok_or_else(|| {
-        "expected external_validator_report_metadata JSON with technical-only scope, legal_validity_claimed=false, safe suggested_path, and lowercase SHA-256 values".to_owned()
+        "expected external_validator_report_metadata JSON with technical-only scope, legal_validity_claimed=false, safe suggested_path, lowercase SHA-256 values, and optional raw_report fixity only".to_owned()
     })
 }
 
@@ -338,6 +460,12 @@ fn parse_attachment(raw: &[u8]) -> Option<ExternalValidatorEvidenceAttachment> {
     }
 
     validate_indexing(object.get("evidence_indexing")?)?;
+    let raw_report = parse_raw_report_for_attachment(
+        object.get("raw_report"),
+        object.get("report"),
+        &case_id,
+        &validator_family,
+    )?;
 
     Some(ExternalValidatorEvidenceAttachment {
         case_id,
@@ -346,7 +474,159 @@ fn parse_attachment(raw: &[u8]) -> Option<ExternalValidatorEvidenceAttachment> {
         content_type,
         sha256: sha256_hex(raw),
         bytes: raw.to_vec(),
+        raw_report,
     })
+}
+
+fn parse_raw_report_for_attachment(
+    raw_report: Option<&Value>,
+    report: Option<&Value>,
+    case_id: &str,
+    validator_family: &str,
+) -> Option<Option<ExternalValidatorRawReportAttachment>> {
+    if let Some(raw_report) = raw_report {
+        return parse_declared_raw_report(raw_report, case_id, validator_family).map(Some);
+    }
+    Some(report.and_then(report_manifest_from_report_object))
+}
+
+fn parse_declared_raw_report(
+    value: &Value,
+    case_id: &str,
+    validator_family: &str,
+) -> Option<ExternalValidatorRawReportAttachment> {
+    let object = value.as_object()?;
+    let content_type = normalized_raw_report_content_type(object.get("content_type")?.as_str()?)?;
+    let sha256 = object.get("sha256")?.as_str()?.to_owned();
+    if !is_sha256_hex(&sha256) {
+        return None;
+    }
+    let size_bytes = raw_report_size_bytes(object)?;
+    let source_filename = optional_safe_filename(object.get("source_filename"))?;
+    let expected_path =
+        external_validator_raw_report_archive_path(case_id, validator_family, &content_type)?;
+    let suggested_path = optional_text(object.get("suggested_path"))
+        .or_else(|| optional_text(object.get("archive_path")));
+    if let Some(path) = suggested_path.as_deref() {
+        if !valid_raw_report_archive_path(path, case_id, validator_family, &content_type) {
+            return None;
+        }
+    }
+    let bytes = match optional_text(object.get("content_base64")) {
+        Some(encoded) => {
+            let decoded = B64.decode(encoded).ok()?;
+            if decoded.len() > EXTERNAL_VALIDATOR_RAW_REPORT_MAX_BYTES {
+                return None;
+            }
+            if decoded.len() as u64 != size_bytes || sha256_hex(&decoded) != sha256 {
+                return None;
+            }
+            Some(decoded)
+        }
+        None => None,
+    };
+    let archive_path = bytes.as_ref().map(|_| expected_path.clone());
+    if bytes.is_some()
+        && suggested_path
+            .as_deref()
+            .is_some_and(|path| path != expected_path)
+    {
+        return None;
+    }
+
+    Some(ExternalValidatorRawReportAttachment {
+        archive_path,
+        suggested_path,
+        content_type,
+        sha256,
+        size_bytes,
+        source_filename,
+        bytes,
+    })
+}
+
+fn report_manifest_from_report_object(
+    value: &Value,
+) -> Option<ExternalValidatorRawReportAttachment> {
+    let object = value.as_object()?;
+    let content_type = normalized_raw_report_content_type(object.get("content_type")?.as_str()?)?;
+    let sha256 = object.get("sha256")?.as_str()?.to_owned();
+    if !is_sha256_hex(&sha256) {
+        return None;
+    }
+    let size_bytes = raw_report_size_bytes(object)?;
+    let source_filename = optional_safe_filename(object.get("source_filename"))?;
+    Some(ExternalValidatorRawReportAttachment {
+        archive_path: None,
+        suggested_path: None,
+        content_type,
+        sha256,
+        size_bytes,
+        source_filename,
+        bytes: None,
+    })
+}
+
+fn raw_report_size_bytes(object: &serde_json::Map<String, Value>) -> Option<u64> {
+    let bytes = object
+        .get("bytes")
+        .or_else(|| object.get("size_bytes"))?
+        .as_u64()?;
+    (bytes > 0).then_some(bytes)
+}
+
+fn optional_text(value: Option<&Value>) -> Option<String> {
+    value.and_then(Value::as_str).and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_owned())
+    })
+}
+
+fn optional_safe_filename(value: Option<&Value>) -> Option<Option<String>> {
+    let Some(filename) = optional_text(value) else {
+        return Some(None);
+    };
+    (is_safe_source_filename(&filename)).then_some(Some(filename))
+}
+
+fn is_safe_source_filename(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && !value.contains('\\')
+        && !value.contains('/')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+}
+
+fn normalized_raw_report_content_type(value: &str) -> Option<String> {
+    let media_type = value
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    matches!(
+        media_type.as_str(),
+        "application/json"
+            | "application/pdf"
+            | "application/xml"
+            | "text/xml"
+            | "text/plain"
+            | "application/octet-stream"
+    )
+    .then_some(media_type)
+}
+
+fn raw_report_extension(content_type: &str) -> Option<&'static str> {
+    match content_type {
+        "application/json" => Some("json"),
+        "application/pdf" => Some("pdf"),
+        "application/xml" | "text/xml" => Some("xml"),
+        "text/plain" => Some("txt"),
+        "application/octet-stream" => Some("bin"),
+        _ => None,
+    }
 }
 
 fn validate_scope(scope: &Value) -> Option<()> {
@@ -381,14 +661,40 @@ fn validate_indexing(indexing: &Value) -> Option<()> {
 
 fn valid_archive_path(path: &str, case_id: &str, validator_family: &str) -> bool {
     path == external_validator_report_archive_path(case_id, validator_family)
-        && !path.contains('\\')
-        && !path
-            .split('/')
-            .any(|part| part == "." || part == ".." || part.is_empty())
+        && is_safe_archive_path(path)
 }
 
 fn external_validator_report_archive_path(case_id: &str, validator_family: &str) -> String {
     format!("{EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX}{case_id}-{validator_family}.json")
+}
+
+fn valid_raw_report_archive_path(
+    path: &str,
+    case_id: &str,
+    validator_family: &str,
+    content_type: &str,
+) -> bool {
+    external_validator_raw_report_archive_path(case_id, validator_family, content_type)
+        .is_some_and(|expected| path == expected)
+        && is_safe_archive_path(path)
+}
+
+fn external_validator_raw_report_archive_path(
+    case_id: &str,
+    validator_family: &str,
+    content_type: &str,
+) -> Option<String> {
+    let extension = raw_report_extension(content_type)?;
+    Some(format!(
+        "{EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX}{case_id}-{validator_family}-raw-report.{extension}"
+    ))
+}
+
+fn is_safe_archive_path(path: &str) -> bool {
+    !path.contains('\\')
+        && !path
+            .split('/')
+            .any(|part| part == "." || part == ".." || part.is_empty())
 }
 
 fn is_safe_slug(value: &str) -> bool {
@@ -472,11 +778,11 @@ fn require_safe_report_identity(case_id: &str, validator_family: &str) -> Result
     }
 }
 
-fn raw_metadata_for_identity(
+fn attachment_for_identity(
     raw_entries: &[Vec<u8>],
     case_id: &str,
     validator_family: &str,
-) -> Result<Option<Vec<u8>>, ApiError> {
+) -> Result<Option<ExternalValidatorEvidenceAttachment>, ApiError> {
     let mut parsed = Vec::new();
     let mut identity_counts = BTreeMap::<(String, String), usize>::new();
     let mut path_counts = BTreeMap::<String, usize>::new();
@@ -526,7 +832,29 @@ fn raw_metadata_for_identity(
         ));
     }
 
-    Ok(Some(matches.pop().expect("one matching attachment").bytes))
+    Ok(Some(matches.pop().expect("one matching attachment")))
+}
+
+fn raw_report_download_filename(
+    case_id: &str,
+    validator_family: &str,
+    content_type: &str,
+) -> Result<String, ApiError> {
+    let extension = raw_report_extension(content_type).ok_or_else(|| {
+        ApiError::Unprocessable(
+            "invalid external-validator raw report content type for requested identity".to_owned(),
+        )
+    })?;
+    if is_safe_slug(case_id) && is_safe_slug(validator_family) {
+        Ok(format!(
+            "{case_id}-{validator_family}-raw-report.{extension}"
+        ))
+    } else {
+        Err(ApiError::Unprocessable(
+            "external-validator report identity must use safe case_id and validator_family slugs"
+                .to_owned(),
+        ))
+    }
 }
 
 fn require_json_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
@@ -557,12 +885,12 @@ fn require_json_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
 
 fn read_external_validator_metadata_sidecar(path: &Path) -> std::io::Result<Vec<u8>> {
     let metadata = std::fs::metadata(path)?;
-    if metadata.len() > EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES as u64 {
+    if metadata.len() > EXTERNAL_VALIDATOR_REPORT_UPLOAD_MAX_BYTES as u64 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
                 "sidecar exceeds {} bytes",
-                EXTERNAL_VALIDATOR_REPORT_METADATA_MAX_BYTES
+                EXTERNAL_VALIDATOR_REPORT_UPLOAD_MAX_BYTES
             ),
         ));
     }
