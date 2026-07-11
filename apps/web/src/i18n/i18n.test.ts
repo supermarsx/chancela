@@ -157,6 +157,73 @@ describe('catalog completeness matrix', () => {
     }
   });
 
+  it('keeps external-signing envelope evidence copy localized outside source Portuguese', () => {
+    const keys = [
+      'signing.envelopes.guardrail.title',
+      'signing.envelopes.guardrail.body',
+      'signing.envelopes.table.evidence',
+      'signing.envelopes.table.actions',
+      'signing.envelopes.evidence.none',
+      'signing.envelopes.evidence.record',
+      'signing.envelopes.evidence.noAction',
+      'signing.envelopes.evidence.formTitle',
+      'signing.envelopes.evidence.formNotice',
+      'signing.envelopes.evidence.defaultLabel',
+      'signing.envelopes.evidence.label',
+      'signing.envelopes.evidence.reference',
+      'signing.envelopes.evidence.digest',
+      'signing.envelopes.evidence.identityTitle',
+      'signing.envelopes.evidence.identityLabel',
+      'signing.envelopes.evidence.identityReference',
+      'signing.envelopes.evidence.identityHint',
+      'signing.envelopes.evidence.identityMissingTitle',
+      'signing.envelopes.evidence.identityMissingBody',
+      'signing.envelopes.evidence.submit',
+      'signing.envelopes.evidence.recording',
+      'signing.envelopes.evidence.recordedToast',
+      'signing.envelopes.identity.none',
+      'signing.envelopes.identity.contactControl',
+      'signing.envelopes.identity.providerIdentity',
+      'signing.envelopes.identity.governmentId',
+      'signing.envelopes.identity.representativeCapacity',
+    ] as const;
+    const portugueseSourcePhrases =
+      /Acompanhamento operacional|Envelopes e convites|evidência|Evidência|Registar|registar|registad[ao]|Sem ação|Ações|Etiqueta da evidência|Referência da evidência|Digest opcional|identidade incompleta|requisito de identidade|Adicione uma referência|marcar slot assinado|A registar|metadados técnicos|prestadores|assinatura qualificada|validação de confiança|estado legal|finalização da ata|conclusão do envelope|Sem requisito adicional|Controlo do contacto|Declaração de identidade do prestador|Verificação de documento oficial|Capacidade de representação/;
+
+    expect(enUS['signing.envelopes.evidence.formTitle']).toBe('Operator technical evidence');
+    expect(enGB['signing.envelopes.evidence.recording']).toBe('Recording…');
+    expect(deDE['signing.envelopes.evidence.formTitle']).toBe('Technischer Nachweis des Bedieners');
+    expect(svSE['signing.envelopes.evidence.record']).toBe('Registrera bevis');
+    expect(esES['signing.envelopes.identity.contactControl']).toBe('Control del contacto');
+    expect(deDE['signing.envelopes.identity.providerIdentity']).toBe(
+      'Identitätsbestätigung des Anbieters',
+    );
+    expect(svSE['signing.envelopes.identity.representativeCapacity']).toBe(
+      'Representationsbehörighet',
+    );
+
+    const nonPortugueseCatalogs = [
+      ['da-DK', daDK],
+      ['de-DE', deDE],
+      ['en-GB', enGB],
+      ['en-US', enUS],
+      ['es-ES', esES],
+      ['fi-FI', fiFI],
+      ['fr-FR', frFR],
+      ['it-IT', itIT],
+      ['nl-NL', nlNL],
+      ['pl-PL', plPL],
+      ['sv-FI', svFI],
+      ['sv-SE', svSE],
+    ] as const;
+
+    for (const [locale, catalog] of nonPortugueseCatalogs) {
+      for (const key of keys) {
+        expect(catalog[key], `${locale} ${key}`).not.toMatch(portugueseSourcePhrases);
+      }
+    }
+  });
+
   it('keeps archive filter and export copy localized outside source Portuguese', () => {
     expect(enUS['ledger.filters.aria']).toBe('Search and filter archive');
     expect(enUS['ledger.archive.format.pdfa']).toBe('Canonical PDF/A');
