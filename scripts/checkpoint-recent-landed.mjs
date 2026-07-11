@@ -129,6 +129,45 @@ const checks = [
     command: ["cargo", ["test", "-p", "chancela-api", "--locked", "reminder_"]],
   },
   {
+    name: "API dashboard guest event redaction test",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--locked",
+        "dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed",
+      ],
+    ],
+  },
+  {
+    name: "API generated document durable by-id download test",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--locked",
+        "on_demand_generate_persists_a_chosen_document_and_emits_the_event",
+      ],
+    ],
+  },
+  {
+    name: "API generated document in-memory by-id download test",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--locked",
+        "in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata",
+      ],
+    ],
+  },
+  {
     name: "API retained-export cleanup dry-run tests",
     command: [
       "cargo",
@@ -1516,8 +1555,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "MCP resource/prompt coverage including workflow provenance review\nguidance",
-    "CI checkpoints MCP workflow provenance lane marker",
+    "MCP resource/prompt coverage including workflow provenance review\nguidance and draft-vs-signed comparison review guidance",
+    "CI checkpoints MCP review-aids lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "dashboard guest recent-events redaction",
+    "CI checkpoints dashboard guest recent-events redaction lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "generated-document by-id\ndownload route",
+    "CI checkpoints generated-document by-id route lane marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -1561,6 +1610,21 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "MCP draft-vs-signed comparison review prompt/resource/no-call/no-claim\nmarkers",
+    "CI checkpoints static MCP draft-signed comparison marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "dashboard guest `recent_events: []` redaction and no-permission-grant\nmarkers",
+    "CI checkpoints static dashboard guest redaction marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "generated-document by-id route, `act.read` gate, durable/in-memory, and\ncanonical Ata preservation markers",
+    "CI checkpoints static generated-document by-id marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "including raw metadata and raw-report\n  byte downloads",
     "CI checkpoints external-validator raw metadata/raw-report command marker",
   );
@@ -1601,7 +1665,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "read-only local DGLAB interchange manifest API and BookDetail JSON-download\nmarkers",
+    "read-only local DGLAB interchange\nmanifest API and BookDetail JSON-download markers",
     "CI checkpoints local DGLAB API/BookDetail lane marker",
   );
   assertFileContains(
@@ -2646,6 +2710,61 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/server.rs",
+    "DRAFT_SIGNED_COMPARISON_REVIEW_PROMPT_NAME",
+    "MCP draft-signed comparison review prompt name marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "draft_signed_comparison_review_checklist",
+    "MCP draft-signed comparison review prompt catalog marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "chancela://mcp/draft-signed-comparison-review",
+    "MCP draft-signed comparison review resource URI marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "draft_signed_comparison_review_resource_payload",
+    "MCP draft-signed comparison review resource payload marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "prompts_get_returns_draft_signed_comparison_review_without_http_or_secret",
+    "MCP draft-signed comparison review prompt no-secret/no-call coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_draft_signed_comparison_review_returns_static_categories_without_http_or_secret",
+    "MCP draft-signed comparison review resource static coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    "resources_read_draft_signed_comparison_review_rejects_arguments_and_extra_params",
+    "MCP draft-signed comparison review resource rejects args coverage",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"local_json_only": true',
+    "MCP draft-signed comparison review local JSON marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"external_validation": false',
+    "MCP draft-signed comparison no external-validation claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"signature_qualification": false',
+    "MCP draft-signed comparison no signature-qualification claim marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
+    '"full_ai_mcp_completion_claimed": false',
+    "MCP spec coverage no full AI/MCP completion marker",
+  );
+  assertFileContains(
+    "crates/chancela-mcp/src/server.rs",
     "fn ai_draft_source_provenance",
     "MCP deterministic AI draft statement-source builder marker",
   );
@@ -2979,6 +3098,31 @@ function assertCheckpointMap() {
     "dashboard reminder absolute day-delta year-boundary coverage",
   );
   assertFileContains(
+    "crates/chancela-api/src/dashboard.rs",
+    "let recent_events = if redaction.is_guest()",
+    "dashboard guest recent-events redaction implementation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed",
+    "API dashboard guest recent-events redaction coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "authorized non-guest reader should still see recent ledger events",
+    "API dashboard Leitor recent-events preservation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    'with_session(get("/v1/ledger/events"), &guest_token)',
+    "API dashboard Guest still forbidden from ledger events marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    'assert_eq!(guest_dashboard["recent_events"], json!([]));',
+    "API dashboard Guest recent_events empty marker",
+  );
+  assertFileContains(
     "apps/web/src/features/dashboard/DashboardPage.test.tsx",
     "DashboardPage",
     "dashboard unit coverage",
@@ -3112,6 +3256,66 @@ function assertCheckpointMap() {
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
     "reviewCalls.filter((call) => isBlockedReviewReceiptEndpoint(call.url))).toEqual([])",
     "imported-document review receipt no extra routes coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/authz.rs",
+    '("/v1/documents/generated/{document_id}", RouteClass::Gated)',
+    "API generated-document by-id route classified gated marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/authz.rs",
+    "generated_document_download_route_is_classified_as_gated",
+    "API generated-document route classification coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    'download: format!("/v1/documents/generated/{document_id}")',
+    "API generated-document returned download route marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "pub async fn get_generated_document_pdf",
+    "API generated-document by-id handler marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "document_by_id(document_id)",
+    "API generated-document durable by-id lookup marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "fn in_memory_generated_document_key",
+    "API generated-document in-memory by-id lookup marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "by-id generated-document reads inherit `act.read` from the document's owning act",
+    "API generated-document act.read gate marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "helper preserves `/v1/acts/{id}/document` as the canonical sealed Ata target",
+    "API generated-document canonical Ata route preservation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "on_demand_generate_persists_a_chosen_document_and_emits_the_event",
+    "API generated-document durable download coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata",
+    "API generated-document in-memory download coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "on-demand document download must not point at the canonical Ata endpoint",
+    "API generated-document no canonical endpoint reuse marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "The canonical Ata endpoint still serves the original sealed Ata for signing/bundles",
+    "API generated-document canonical Ata remains sealed marker",
   );
   assertFileContains(
     "apps/web/src/features/entities/entities.test.tsx",
@@ -4579,6 +4783,61 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree MCP draft-vs-signed comparison review checks",
+    "CI/E2E hardening plan MCP draft-signed comparison checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`draft_signed_comparison_review_checklist` prompt",
+    "CI/E2E hardening plan MCP draft-signed comparison prompt marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`chancela://mcp/draft-signed-comparison-review` resource",
+    "CI/E2E hardening plan MCP draft-signed comparison resource marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "false AI-01/full\n  AI/MCP completion flags",
+    "CI/E2E hardening plan MCP draft-signed no completion marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree dashboard guest recent-events redaction checks",
+    "CI/E2E hardening plan dashboard guest redaction checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Guest refusal from\n  `/v1/ledger/events`",
+    "CI/E2E hardening plan dashboard Guest ledger refusal marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no permission grants",
+    "CI/E2E hardening plan dashboard no permission grant marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Current working-tree generated-document by-id download checks",
+    "CI/E2E hardening plan generated-document by-id checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`/v1/documents/generated/{document_id}`",
+    "CI/E2E hardening plan generated-document route marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "preservation of `/v1/acts/{act_id}/document` as the sealed Ata bytes",
+    "CI/E2E hardening plan generated-document canonical Ata marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no signing, bundle,\n  template, threshold, law, provider, registry, or legal-effect claim",
+    "CI/E2E hardening plan generated-document no-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "explicit external-validator raw\nreport upload UI guardrails",
     "CI/E2E hardening plan external-validator raw upload UI headline marker",
   );
@@ -4774,7 +5033,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "local ASiC inspection endpoint\nand ASiC ZIP decompression-bound coverage",
+    "plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage",
     "CI/E2E hardening plan ASiC header marker",
   );
   assertFileContains(
@@ -5324,6 +5583,61 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "static `draft_signed_comparison_review_checklist` prompt and read-only\n  `chancela://mcp/draft-signed-comparison-review` resource",
+    "spec coverage MCP draft-signed comparison prompt/resource marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "accepts only `uri` with\n  no arguments or extra params",
+    "spec coverage MCP draft-signed comparison rejects args marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`ai_01_claimed` and `full_ai_mcp_completion_claimed` false",
+    "spec coverage MCP draft-signed no AI completion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "not AI completion, MCP completion, automated\n  comparison, source certification",
+    "spec coverage MCP draft-signed no completion/comparison marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`GET /v1/dashboard`\n  now returns `recent_events: []` for guest/minimal redaction callers",
+    "spec coverage dashboard guest recent-events redaction marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Guest remains\n  forbidden from `GET /v1/ledger/events`",
+    "spec coverage dashboard Guest ledger forbidden marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "adds no permission\n  grants or broader privacy/anonymization completion claim",
+    "spec coverage dashboard no permission grant marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "on-demand generated\n  post-act documents now return `/v1/documents/generated/{document_id}`",
+    "spec coverage generated-document by-id route marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "durable and in-memory\n  modes",
+    "spec coverage generated-document durable/in-memory marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "canonical\n  `/v1/acts/{act_id}/document` route remains the sealed Ata target",
+    "spec coverage generated-document canonical Ata route marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "no signing, bundle,\n  template, threshold, law, provider, registry, or legal-effect claim",
+    "spec coverage generated-document no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "identifier-filtered\n  TSL/TSA catalog rows can now include optional `identifier_match` explanations",
     "spec coverage trust identifier-match checkpoint marker",
   );
@@ -5639,8 +5953,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "draft-vs-signed comparison, a complete provenance",
-    "spec coverage AI no draft-vs-signed comparison caveat marker",
+    "automated draft-vs-signed comparison execution, a\n  complete provenance experience",
+    "spec coverage AI no automated draft-vs-signed execution caveat marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

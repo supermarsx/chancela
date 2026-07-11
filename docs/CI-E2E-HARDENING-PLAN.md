@@ -13,9 +13,11 @@ sidecar classification, read-only local DGLAB interchange manifest API
 scaffolding and BookDetail JSON download,
 richer Ata editor AI statement-source provenance rendering, explicit external-validator raw
 report upload UI guardrails, the raw external-validator raw-report byte download
-API, the MCP workflow provenance review aid, imported-document review receipt UI,
-trust catalog identifier-match explanations, plus local ASiC inspection endpoint
-and ASiC ZIP decompression-bound coverage, plus release workflow static
+API, the MCP workflow provenance and draft-vs-signed comparison review aids,
+dashboard guest recent-events redaction, generated-document by-id download route,
+imported-document review receipt UI, trust catalog identifier-match explanations,
+plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
+plus release workflow static
 assurance for the unsigned/local-only trust posture and production-package
 manifest-required validation. This plan is the build and
 test operating checklist for driving Chancela toward release confidence.
@@ -194,6 +196,27 @@ test operating checklist for driving Chancela toward release confidence.
   external, archive-certification, and signature-qualification flags false. Treat
   them as human review guidance only, not AI/MCP completion, source
   certification, trust validation, or provider/legal assurance.
+- The current MCP draft-vs-signed comparison slice adds the static
+  `draft_signed_comparison_review_checklist` prompt and
+  `chancela://mcp/draft-signed-comparison-review` resource. The resource accepts
+  only `uri` with no args or extra params, contains local JSON only, exposes no
+  secrets, makes no bridge/API/provider calls, and keeps legal/source/provider/
+  trust/external-validation/archive-certification/signature-qualification flags
+  false. The spec-09 resource keeps AI-01 and full AI/MCP completion false.
+  Treat this as review guidance only, not automated comparison, legal validity,
+  source certification, trust validation, external validation, signature
+  qualification, provider assurance, or AI/MCP completion.
+- The current dashboard guest redaction slice returns `recent_events: []` from
+  `GET /v1/dashboard` for guest/minimal redaction callers, while Owner and
+  `Leitor` sessions keep recent events. Guest still lacks `GET /v1/ledger/events`.
+  Treat this as response redaction only: no permission grants, no broader
+  anonymization/redaction completion, and no access-control completeness claim.
+- The current generated-document by-id download slice returns
+  `/v1/documents/generated/{document_id}` for on-demand generated post-act docs,
+  gates the download through `act.read` on the owning act, and covers both
+  durable and in-memory modes while keeping `/v1/acts/{act_id}/document` as the
+  sealed Ata route. Treat this as retrieval plumbing only: no signing, bundle,
+  template, threshold, law, provider, registry, or legal-effect claim.
 - The current imported-document receipt slice derives a `Recibo de revisão`
   panel from the existing imported-document view. Pending rows show no fake
   receipt, while reviewed rows show status, reviewer, time, note, required and
@@ -794,8 +817,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   remains deterministic persistence/rendering coverage only: no live AI provider
   calls, no model accuracy or AI quality assessment, no legal advice or
   legal-validity claim, no source certification, no new provider/network or
-  non-stdio MCP behavior, no unreviewed finalization, no draft-vs-signed
-  comparison, and broader extraction/compare/summarize remains incomplete.
+  non-stdio MCP behavior, no unreviewed finalization, no automated
+  draft-vs-signed comparison execution, and broader extraction/compare/summarize
+  remains incomplete.
 - Current working-tree MCP workflow provenance review checks: focused
   `cargo test -p chancela-mcp --locked` coverage pins the static
   `workflow_provenance_review_checklist` prompt, the
@@ -805,6 +829,33 @@ settingsDefaults.test.ts contracts.test.ts`.
   This is review guidance only: no AI or MCP completion claim, no legal validity,
   no source certification, no provider assurance, no trust validation, and no
   external validation.
+- Current working-tree MCP draft-vs-signed comparison review checks: focused
+  `cargo test -p chancela-mcp --locked` coverage pins the static
+  `draft_signed_comparison_review_checklist` prompt, the
+  `chancela://mcp/draft-signed-comparison-review` resource, local-json/static
+  flags, no arguments or extra resource params, no bridge/API/provider calls, no
+  secrets, document-identifier, digest, text/version, mismatch-triage, and
+  human-review-note category coverage, false legal/source/provider/trust/
+  external-validation/signature-qualification claim flags, and false AI-01/full
+  AI/MCP completion flags in the spec-09 resource. This is review guidance only:
+  no automated comparison, no AI or MCP completion claim, no legal validity, no
+  source certification, no provider assurance, no trust validation, no external
+  validation, and no signature qualification.
+- Current working-tree dashboard guest recent-events redaction checks: focused
+  `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
+  coverage pins `recent_events: []` for guest/minimal dashboard readers, Owner
+  and `Leitor` recent-event visibility, and continued Guest refusal from
+  `/v1/ledger/events`. This is response redaction only: no permission grants,
+  full anonymization, destructive erasure, or policy-completeness claim.
+- Current working-tree generated-document by-id download checks: focused
+  `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
+  and
+  `cargo test -p chancela-api --locked in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata`
+  coverage pins `/v1/documents/generated/{document_id}`, route classification,
+  `act.read` gating by the owning act, durable and in-memory lookup, and
+  preservation of `/v1/acts/{act_id}/document` as the sealed Ata bytes. This is
+  generated-document retrieval only: no signing, bundle, template, threshold,
+  law, provider, registry, or legal-effect claim.
 - Current working-tree external-validator raw-report checks: focused API,
   archive-package, and web Ferramentas tests now pin bounded
   `raw_report.content_base64` acceptance only when declared byte length and
