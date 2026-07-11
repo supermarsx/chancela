@@ -1,0 +1,1 @@
+<a:Foo xmlns:a="http://A"><b:Bar xmlns:b="http://B">x</b:Bar></a:Foo>

@@ -32,4 +32,17 @@ pub mod validate;
 pub mod xades;
 pub mod xmldsig;
 
+pub use c14n::{
+    C14nAlgorithm, canonicalize_document, canonicalize_document_excluding_ids,
+    canonicalize_element_by_id,
+};
 pub use error::XadesError;
+pub use validate::{XadesValidationReport, validate_xades};
+pub use xades::{
+    AssembledXades, DetachedRef, EnvelopedDocument, EnvelopingObject, ObjectContent, PreparedXades,
+    SignaturePackaging, XadesContext, XadesLevel, XadesSignRequest, prepare_xades,
+};
+pub use xmldsig::{Reference, XmlDsigBuilder};
+
+#[cfg(test)]
+mod tests;

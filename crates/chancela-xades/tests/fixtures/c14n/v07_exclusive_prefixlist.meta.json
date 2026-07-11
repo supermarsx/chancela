@@ -1,0 +1,7 @@
+{
+  "algorithm": "exclusive",
+  "mode": "document",
+  "inclusive_prefixes": [
+    "b"
+  ]
+}

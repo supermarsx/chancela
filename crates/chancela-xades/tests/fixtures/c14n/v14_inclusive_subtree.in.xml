@@ -1,0 +1,1 @@
+<root xmlns:a="http://A" xmlns:b="http://B"><a:target Id="target"><a:child>x</a:child></a:target></root>

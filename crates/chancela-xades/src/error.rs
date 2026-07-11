@@ -15,4 +15,11 @@ pub enum XadesError {
     /// A signature or digest did not verify.
     #[error("verification error: {0}")]
     Verification(String),
+
+    /// A requested XAdES level or feature is defined but not yet implemented in this crate.
+    ///
+    /// Used for XAdES-LT/LTA (scheduled for later t67 slices) so callers get a typed, non-panicking
+    /// signal instead of a silent downgrade.
+    #[error("not yet supported: {0}")]
+    NotYetSupported(String),
 }
