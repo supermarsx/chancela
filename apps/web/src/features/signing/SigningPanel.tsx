@@ -48,7 +48,13 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type {
   ActView,
+  CreateExternalSignerInviteBody,
+  ExternalSignerIdentityRequirement,
   ExternalSignerInviteView,
+  ExternalSignerSlotStatus,
+  ExternalSigningEnvelopeSlotView,
+  ExternalSigningEnvelopeView,
+  ExternalSigningOrderPolicy,
   OfficialSignatureImportGuardrail,
   Settings,
   SignatureEvidenceStatus,
@@ -64,8 +70,10 @@ import {
   useCmdConfirmSignature,
   useCmdInitiateSignature,
   useCreateExternalSignerInvite,
+  useCreateExternalSigningEnvelope,
   useDownloadSignedDocument,
   useExternalSignerInvites,
+  useExternalSigningEnvelopes,
   useImportOfficialSignature,
   useLocalPkcs12SignSignature,
   useRemoteConfirmSignature,
@@ -88,6 +96,7 @@ import {
   Icon,
   InlineWarning,
   Input,
+  Select,
   Skeleton,
   Table,
   TextArea,
@@ -275,6 +284,32 @@ type Step =
   | { kind: 'pkcs12' }
   | { kind: 'officialImport' };
 
+type EnvelopeSlotFormRow = {
+  id: string;
+  signerLabel: string;
+  contactHint: string;
+  identityRequirement: '' | ExternalSignerIdentityRequirement;
+  required: boolean;
+};
+
+type InviteSlotOption = {
+  value: string;
+  envelopeId: string;
+  slotId: string;
+  label: string;
+  status: ExternalSignerSlotStatus;
+};
+
+function newEnvelopeSlotFormRow(): EnvelopeSlotFormRow {
+  return {
+    id: globalThis.crypto?.randomUUID?.() ?? String(Date.now() + Math.random()),
+    signerLabel: '',
+    contactHint: '',
+    identityRequirement: '',
+    required: true,
+  };
+}
+
 function SignatureEvidenceSummary({ evidence }: { evidence: SignatureEvidenceStatus }) {
   const t = useT();
   const longTerm = evidence.long_term_status.map((status) => longTermEvidenceLabel(status, t));
@@ -440,7 +475,363 @@ function inviteStatusBadge(invite: ExternalSignerInviteView, t: TFunction) {
 
 function workflowLabel(workflow: string, t: TFunction): string {
   if (workflow === 'tracking_only') return t('signing.invites.workflow.trackingOnly');
+  if (workflow === 'external_envelope') return t('signing.invites.workflow.externalEnvelope');
   return workflow;
+}
+
+function orderPolicyLabel(policy: ExternalSigningOrderPolicy, t: TFunction): string {
+  if (policy === 'sequential') return t('signing.envelopes.order.sequential');
+  return t('signing.envelopes.order.parallel');
+}
+
+function identityRequirementLabel(
+  requirement: ExternalSignerIdentityRequirement,
+  t: TFunction,
+): string {
+  if (requirement === 'contact_control') return t('signing.envelopes.identity.contactControl');
+  if (requirement === 'provider_identity_assertion')
+    return t('signing.envelopes.identity.providerIdentity');
+  if (requirement === 'government_id_check') return t('signing.envelopes.identity.governmentId');
+  return t('signing.envelopes.identity.representativeCapacity');
+}
+
+function slotStatusLabel(status: ExternalSignerSlotStatus, t: TFunction): string {
+  if (status === 'pending') return t('signing.envelopes.slot.status.pending');
+  if (status === 'initiated') return t('signing.envelopes.slot.status.initiated');
+  if (status === 'signed') return t('signing.envelopes.slot.status.signed');
+  if (status === 'declined') return t('signing.envelopes.slot.status.declined');
+  if (status === 'revoked') return t('signing.envelopes.slot.status.revoked');
+  return t('signing.envelopes.slot.status.expired');
+}
+
+function slotStatusBadge(status: ExternalSignerSlotStatus, t: TFunction) {
+  if (status === 'signed') return <Badge tone="ok">{slotStatusLabel(status, t)}</Badge>;
+  if (status === 'pending' || status === 'initiated')
+    return <Badge tone="accent">{slotStatusLabel(status, t)}</Badge>;
+  return <Badge tone="warn">{slotStatusLabel(status, t)}</Badge>;
+}
+
+function slotIdentityRequirements(slot: ExternalSigningEnvelopeSlotView, t: TFunction): string {
+  const requirements = slot.identity_requirements ?? [];
+  return requirements.length
+    ? requirements.map((requirement) => identityRequirementLabel(requirement, t)).join(', ')
+    : t('signing.envelopes.identity.none');
+}
+
+function inviteSlotOptions(envelopes: ExternalSigningEnvelopeView[], t: TFunction) {
+  return envelopes.flatMap((envelope) =>
+    envelope.slots
+      .filter((slot) => slot.status === 'pending')
+      .map<InviteSlotOption>((slot) => ({
+        value: `${envelope.id}:${slot.id}`,
+        envelopeId: envelope.id,
+        slotId: slot.id,
+        status: slot.status,
+        label: t('signing.invites.slot.option', {
+          signer: slot.signer_label,
+          order: orderPolicyLabel(envelope.order_policy, t),
+          status: slotStatusLabel(slot.status, t),
+        }),
+      })),
+  );
+}
+
+function ExternalSigningEnvelopesSection({ act }: { act: ActView }) {
+  const t = useT();
+  const toast = useToast();
+  const can = useCan();
+  const bookScope = scopeBook(act.book_id);
+  const canManage = can('signing.perform', bookScope);
+  const envelopes = useExternalSigningEnvelopes(act.id, canManage);
+  const create = useCreateExternalSigningEnvelope(act.id);
+  const [creating, setCreating] = useState(false);
+  const [orderPolicy, setOrderPolicy] = useState<ExternalSigningOrderPolicy>('parallel');
+  const [slots, setSlots] = useState<EnvelopeSlotFormRow[]>(() => [newEnvelopeSlotFormRow()]);
+
+  if (!canManage) return null;
+
+  const slotPayload = slots
+    .map((slot) => ({
+      signer_label: slot.signerLabel.trim(),
+      contact_hint: slot.contactHint.trim() || undefined,
+      identity_requirements: slot.identityRequirement ? [slot.identityRequirement] : undefined,
+      required: slot.required,
+    }))
+    .filter((slot) => slot.signer_label.length > 0);
+  const canSubmit = slotPayload.length > 0 && !create.isPending;
+  const list = envelopes.data ?? [];
+
+  function resetForm() {
+    setOrderPolicy('parallel');
+    setSlots([newEnvelopeSlotFormRow()]);
+  }
+
+  function updateSlot(id: string, patch: Partial<EnvelopeSlotFormRow>) {
+    setSlots((current) => current.map((slot) => (slot.id === id ? { ...slot, ...patch } : slot)));
+  }
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    create.mutate(
+      { order_policy: orderPolicy, slots: slotPayload },
+      {
+        onSuccess: () => {
+          resetForm();
+          setCreating(false);
+          create.reset();
+          toast.success(t('signing.envelopes.createdToast'));
+        },
+        onError: (err) => toast.error(err),
+      },
+    );
+  }
+
+  return (
+    <section className="stack--tight">
+      <div className="rowline">
+        <strong>{t('signing.envelopes.title')}</strong>
+        {!creating ? (
+          <GateButton
+            perm="signing.perform"
+            scope={bookScope}
+            type="button"
+            variant="secondary"
+            icon={<Icon.Plus />}
+            onClick={() => setCreating(true)}
+          >
+            {t('signing.envelopes.create')}
+          </GateButton>
+        ) : null}
+      </div>
+      <InlineWarning tone="info" title={t('signing.envelopes.guardrail.title')}>
+        {t('signing.envelopes.guardrail.body')}
+      </InlineWarning>
+
+      {creating ? (
+        <form className="form" onSubmit={onSubmit}>
+          <Field label={t('signing.envelopes.order.label')} htmlFor="external-envelope-order">
+            <Select
+              id="external-envelope-order"
+              value={orderPolicy}
+              onChange={(event) => setOrderPolicy(event.target.value as ExternalSigningOrderPolicy)}
+              options={[
+                { value: 'parallel', label: t('signing.envelopes.order.parallel') },
+                { value: 'sequential', label: t('signing.envelopes.order.sequential') },
+              ]}
+            />
+          </Field>
+          <div className="stack--tight">
+            <p className="card__label">{t('signing.envelopes.slots.label')}</p>
+            {slots.map((slot, index) => (
+              <div className="stack--tight" key={slot.id}>
+                <div className="form__grid">
+                  <Field
+                    label={t('signing.envelopes.slot.signerLabel', { index: index + 1 })}
+                    htmlFor={`external-envelope-slot-${slot.id}-label`}
+                  >
+                    <Input
+                      id={`external-envelope-slot-${slot.id}-label`}
+                      value={slot.signerLabel}
+                      onChange={(event) => updateSlot(slot.id, { signerLabel: event.target.value })}
+                    />
+                  </Field>
+                  <Field
+                    label={t('signing.envelopes.slot.contactHint')}
+                    htmlFor={`external-envelope-slot-${slot.id}-contact`}
+                  >
+                    <Input
+                      id={`external-envelope-slot-${slot.id}-contact`}
+                      value={slot.contactHint}
+                      placeholder={t('signing.envelopes.slot.contactHint.placeholder')}
+                      onChange={(event) => updateSlot(slot.id, { contactHint: event.target.value })}
+                    />
+                  </Field>
+                  <Field
+                    label={t('signing.envelopes.slot.identityRequirement')}
+                    htmlFor={`external-envelope-slot-${slot.id}-identity`}
+                  >
+                    <Select
+                      id={`external-envelope-slot-${slot.id}-identity`}
+                      value={slot.identityRequirement}
+                      onChange={(event) =>
+                        updateSlot(slot.id, {
+                          identityRequirement: event.target
+                            .value as EnvelopeSlotFormRow['identityRequirement'],
+                        })
+                      }
+                      options={[
+                        { value: '', label: t('signing.envelopes.identity.none') },
+                        {
+                          value: 'contact_control',
+                          label: t('signing.envelopes.identity.contactControl'),
+                        },
+                        {
+                          value: 'provider_identity_assertion',
+                          label: t('signing.envelopes.identity.providerIdentity'),
+                        },
+                        {
+                          value: 'government_id_check',
+                          label: t('signing.envelopes.identity.governmentId'),
+                        },
+                        {
+                          value: 'representative_capacity',
+                          label: t('signing.envelopes.identity.representativeCapacity'),
+                        },
+                      ]}
+                    />
+                  </Field>
+                </div>
+                <div className="rowline">
+                  <label
+                    className="checkline"
+                    htmlFor={`external-envelope-slot-${slot.id}-required`}
+                  >
+                    <input
+                      id={`external-envelope-slot-${slot.id}-required`}
+                      type="checkbox"
+                      checked={slot.required}
+                      onChange={(event) => updateSlot(slot.id, { required: event.target.checked })}
+                    />
+                    {t('signing.envelopes.slot.required')}
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.Trash />}
+                    disabled={slots.length === 1}
+                    onClick={() =>
+                      setSlots((current) => current.filter((row) => row.id !== slot.id))
+                    }
+                  >
+                    {t('common.remove')}
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Icon.Plus />}
+              onClick={() => setSlots((current) => [...current, newEnvelopeSlotFormRow()])}
+            >
+              {t('signing.envelopes.slot.add')}
+            </Button>
+          </div>
+          {create.error ? <ErrorNote error={create.error} /> : null}
+          <div className="form__actions">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={create.isPending}
+              onClick={() => {
+                setCreating(false);
+                resetForm();
+                create.reset();
+              }}
+            >
+              {t('common.cancel')}
+            </Button>
+            <GateButton
+              perm="signing.perform"
+              scope={bookScope}
+              type="submit"
+              variant="primary"
+              icon={<Icon.Plus />}
+              disabled={!canSubmit}
+            >
+              {create.isPending ? t('signing.envelopes.creating') : t('signing.envelopes.create')}
+            </GateButton>
+          </div>
+        </form>
+      ) : null}
+
+      {envelopes.isLoading ? (
+        <Skeleton height="4rem" />
+      ) : envelopes.error ? (
+        <ErrorNote error={envelopes.error} />
+      ) : list.length === 0 ? (
+        <EmptyState title={t('signing.envelopes.empty.title')}>
+          <p>{t('signing.envelopes.empty.body')}</p>
+        </EmptyState>
+      ) : (
+        <div className="stack--tight">
+          {list.map((envelope, index) => (
+            <div className="external-signing-envelope stack--tight" key={envelope.id}>
+              <div className="section-head">
+                <div>
+                  <p className="card__label">
+                    {t('signing.envelopes.envelopeTitle', { index: index + 1 })}
+                  </p>
+                  <p className="chainrow__meta">{orderPolicyLabel(envelope.order_policy, t)}</p>
+                </div>
+                <Badge tone={envelope.completed ? 'ok' : 'accent'}>
+                  {envelope.completed
+                    ? t('signing.envelopes.completed')
+                    : t('signing.envelopes.open')}
+                </Badge>
+              </div>
+              {envelope.notice ? (
+                <InlineWarning tone="info" title={t('signing.envelopes.notice.title')}>
+                  {envelope.notice}
+                </InlineWarning>
+              ) : null}
+              <dl className="deflist deflist--tight">
+                <div>
+                  <dt>{t('signing.envelopes.order.label')}</dt>
+                  <dd>{orderPolicyLabel(envelope.order_policy, t)}</dd>
+                </div>
+                <div>
+                  <dt>{t('signing.envelopes.completion')}</dt>
+                  <dd>
+                    {t('signing.envelopes.completion.summary', {
+                      signed: envelope.completion.signed_required_slot_count,
+                      required: envelope.completion.required_slot_count,
+                    })}
+                  </dd>
+                </div>
+                <div className="deflist__wide">
+                  <dt>{t('signing.envelopes.blockingSlots')}</dt>
+                  <dd>
+                    {envelope.completion.blocking_required_slot_ids.length
+                      ? envelope.completion.blocking_required_slot_ids.join(', ')
+                      : t('signing.envelopes.blockingSlots.none')}
+                  </dd>
+                </div>
+              </dl>
+              <Table
+                head={
+                  <tr>
+                    <th>{t('signing.envelopes.table.signer')}</th>
+                    <th>{t('signing.envelopes.table.status')}</th>
+                    <th>{t('signing.envelopes.table.identity')}</th>
+                    <th>{t('signing.envelopes.table.required')}</th>
+                  </tr>
+                }
+              >
+                {envelope.slots.map((slot) => (
+                  <tr key={slot.id}>
+                    <td>
+                      <strong>{slot.signer_label}</strong>
+                      {slot.contact_hint ? (
+                        <>
+                          <br />
+                          <span className="muted">{slot.contact_hint}</span>
+                        </>
+                      ) : null}
+                    </td>
+                    <td>{slotStatusBadge(slot.status, t)}</td>
+                    <td>{slotIdentityRequirements(slot, t)}</td>
+                    <td>{slot.required ? t('common.yes') : t('common.no')}</td>
+                  </tr>
+                ))}
+              </Table>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function ExternalInviteSecretPanel({ token, onDone }: { token: string; onDone: () => void }) {
@@ -525,7 +916,21 @@ function ExternalInviteRow({
         <span className="muted">{invite.recipient_email}</span>
       </td>
       <td>{inviteStatusBadge(invite, t)}</td>
-      <td>{workflowLabel(invite.workflow, t)}</td>
+      <td>
+        <span>{workflowLabel(invite.workflow, t)}</span>
+        {invite.external_envelope ? (
+          <>
+            <br />
+            <span className="muted">
+              {t('signing.invites.workflow.slotStatus', {
+                status: invite.external_envelope.slot_status
+                  ? slotStatusLabel(invite.external_envelope.slot_status, t)
+                  : t('signing.envelopes.slot.status.pending'),
+              })}
+            </span>
+          </>
+        ) : null}
+      </td>
       <td>
         <code className="mono">{invite.token_hint}</code>
       </td>
@@ -588,6 +993,7 @@ function ExternalSignerInvitesSection({
   const bookScope = scopeBook(act.book_id);
   const canManageInvites = can('signing.perform', bookScope);
   const invites = useExternalSignerInvites(act.id, canManageInvites);
+  const envelopes = useExternalSigningEnvelopes(act.id, canManageInvites);
   const create = useCreateExternalSignerInvite(act.id);
   const [creating, setCreating] = useState(false);
   const [issuedToken, setIssuedToken] = useState<string | null>(null);
@@ -596,6 +1002,9 @@ function ExternalSignerInvitesSection({
   const [providerHint, setProviderHint] = useState('');
   const [purpose, setPurpose] = useState(() => t('signing.invites.defaultPurpose'));
   const [expiresAt, setExpiresAt] = useState(() => defaultInviteExpiryInput());
+  const [selectedSlot, setSelectedSlot] = useState('');
+  const [linkedInviteError, setLinkedInviteError] = useState<string | null>(null);
+  const [suppressLinkedInviteMutationError, setSuppressLinkedInviteMutationError] = useState(false);
 
   if (!canManageInvites) {
     return (
@@ -618,30 +1027,52 @@ function ExternalSignerInvitesSection({
     setProviderHint('');
     setPurpose(t('signing.invites.defaultPurpose'));
     setExpiresAt(defaultInviteExpiryInput());
+    setSelectedSlot('');
+    setLinkedInviteError(null);
+    setSuppressLinkedInviteMutationError(false);
   }
+
+  const slotOptions = inviteSlotOptions(envelopes.data ?? [], t);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    create.mutate(
-      {
-        recipient_name: recipientName.trim(),
-        recipient_email: recipientEmail.trim(),
-        provider_hint: providerHint.trim() || undefined,
-        expires_at: dateTimeInputToIso(expiresAt),
-        purpose: purpose.trim(),
+    setLinkedInviteError(null);
+    setSuppressLinkedInviteMutationError(false);
+    create.reset();
+    const linkedSlot = slotOptions.find((option) => option.value === selectedSlot);
+    const body: CreateExternalSignerInviteBody = {
+      recipient_name: recipientName.trim(),
+      recipient_email: recipientEmail.trim(),
+      provider_hint: providerHint.trim() || undefined,
+      expires_at: dateTimeInputToIso(expiresAt),
+      purpose: purpose.trim(),
+    };
+    if (linkedSlot) {
+      body.external_envelope_id = linkedSlot.envelopeId;
+      body.external_slot_id = linkedSlot.slotId;
+    }
+    create.mutate(body, {
+      onSuccess: (result) => {
+        setIssuedToken(result.token);
+        setCreating(false);
+        resetForm();
+        create.reset();
+        toast.success(t('signing.invites.createdToast'));
       },
-      {
-        onSuccess: (result) => {
-          setIssuedToken(result.token);
-          setCreating(false);
-          resetForm();
+      onError: (err) => {
+        if (linkedSlot && err instanceof ApiError && err.status === 409) {
+          const message = t('signing.invites.slot.sequentialConflict');
+          setLinkedInviteError(message);
+          setSuppressLinkedInviteMutationError(true);
           create.reset();
-          toast.success(t('signing.invites.createdToast'));
-        },
-        onError: (err) => toast.error(err),
+          toast.error(message);
+          return;
+        }
+        setSuppressLinkedInviteMutationError(false);
+        toast.error(err);
       },
-    );
+    });
   }
 
   const list = invites.data ?? [];
@@ -705,6 +1136,29 @@ function ExternalSignerInvitesSection({
                 onChange={(e) => setExpiresAt(e.target.value)}
               />
             </Field>
+            <Field
+              label={t('signing.invites.slot.label')}
+              htmlFor="external-invite-slot"
+              hint={
+                slotOptions.length
+                  ? t('signing.invites.slot.hint')
+                  : t('signing.invites.slot.emptyHint')
+              }
+            >
+              <Select
+                id="external-invite-slot"
+                value={selectedSlot}
+                disabled={envelopes.isLoading || slotOptions.length === 0}
+                onChange={(event) => {
+                  setSelectedSlot(event.target.value);
+                  setLinkedInviteError(null);
+                }}
+                options={[
+                  { value: '', label: t('signing.invites.slot.trackingOnly') },
+                  ...slotOptions.map((option) => ({ value: option.value, label: option.label })),
+                ]}
+              />
+            </Field>
           </div>
           <Field label={t('signing.invites.purpose')} htmlFor="external-invite-purpose">
             <TextArea
@@ -714,7 +1168,13 @@ function ExternalSignerInvitesSection({
               onChange={(e) => setPurpose(e.target.value)}
             />
           </Field>
-          {create.error ? <ErrorNote error={create.error} /> : null}
+          {linkedInviteError ? (
+            <InlineWarning tone="warn" title={t('signing.invites.slot.conflictTitle')}>
+              {linkedInviteError}
+            </InlineWarning>
+          ) : create.error && !suppressLinkedInviteMutationError ? (
+            <ErrorNote error={create.error} />
+          ) : null}
           <div className="form__actions">
             <Button
               type="button"
@@ -722,6 +1182,8 @@ function ExternalSignerInvitesSection({
               disabled={create.isPending}
               onClick={() => {
                 setCreating(false);
+                setLinkedInviteError(null);
+                setSuppressLinkedInviteMutationError(false);
                 create.reset();
               }}
             >
@@ -1675,6 +2137,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
           </div>
         )}
         {data?.evidence ? <SignatureEvidenceSummary evidence={data.evidence} /> : null}
+        <ExternalSigningEnvelopesSection act={act} />
         <ExternalSignerInvitesSection act={act} formatDateTime={formatDateTime} />
       </div>
     </Card>

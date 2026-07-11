@@ -9,7 +9,12 @@ import { SigningPanel } from './SigningPanel';
 import { renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import { OFFICIAL_SIGNATURE_IMPORT_GUARDRAIL_IDS } from '../../api/types';
-import type { ActView, SignatureEvidenceStatus, SignatureStatusView } from '../../api/types';
+import type {
+  ActView,
+  ExternalSigningEnvelopeView,
+  SignatureEvidenceStatus,
+  SignatureStatusView,
+} from '../../api/types';
 
 const sealedAct: ActView = {
   id: 'act-1',
@@ -162,7 +167,48 @@ function json(body: unknown, status = 200): Promise<Response> {
 
 function emptyInviteList(url: string, method = 'GET'): Promise<Response> | null {
   if (url.includes('/signature/external-invites') && method === 'GET') return json([]);
+  if (url.includes('/external-signing/envelopes') && method === 'GET') return json([]);
   return null;
+}
+
+const envelopeNotice =
+  'External signing envelope workflow only; no legal, qualified-signature, or certificate-level claim is made.';
+
+function externalEnvelope(
+  overrides: Partial<ExternalSigningEnvelopeView> = {},
+): ExternalSigningEnvelopeView {
+  return {
+    id: 'env-1',
+    act_id: 'act-1',
+    order_policy: 'sequential',
+    slots: [
+      {
+        id: 'slot-1',
+        signer_label: 'Bruno Dias',
+        contact_hint: 'bruno@example.test',
+        identity_requirements: ['contact_control'],
+        required: true,
+        status: 'pending',
+        evidence: [],
+      },
+      {
+        id: 'slot-2',
+        signer_label: 'Carla Sousa',
+        required: true,
+        status: 'initiated',
+        evidence: [],
+      },
+    ],
+    completed: false,
+    completion: {
+      completed: false,
+      required_slot_count: 2,
+      signed_required_slot_count: 0,
+      blocking_required_slot_ids: ['slot-1', 'slot-2'],
+    },
+    notice: envelopeNotice,
+    ...overrides,
+  };
 }
 
 afterEach(() => {
@@ -430,6 +476,7 @@ describe('SigningPanel — external signer invites', () => {
       const method = init?.method ?? 'GET';
       if (url.endsWith('/signature/providers')) return json([]);
       if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/external-signing/envelopes') && method === 'GET') return json([]);
       if (url.endsWith('/signature/external-invites') && method === 'GET') {
         return json(invites);
       }
@@ -478,6 +525,8 @@ describe('SigningPanel — external signer invites', () => {
       provider_hint: 'manual-envelope',
       purpose: 'Assinar a ata como signatário externo',
     });
+    expect(bodies[0]).not.toHaveProperty('external_envelope_id');
+    expect(bodies[0]).not.toHaveProperty('external_slot_id');
 
     expect(await screen.findByText('Bruno Dias')).toBeTruthy();
     expect(screen.getByText('Acompanhamento apenas')).toBeTruthy();
@@ -487,6 +536,212 @@ describe('SigningPanel — external signer invites', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar revogação' }));
 
     await waitFor(() => expect(screen.getByText('Revogado')).toBeTruthy());
+  });
+
+  it('lists external-signing envelopes, slots, and the backend no-legal notice', async () => {
+    const envelope = externalEnvelope();
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/external-signing/envelopes') && method === 'GET') {
+        return json([envelope]);
+      }
+      if (url.endsWith('/signature/external-invites') && method === 'GET') return json([]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    expect(await screen.findByText('Envelopes de assinatura externa')).toBeTruthy();
+    expect(await screen.findByText(envelopeNotice)).toBeTruthy();
+    expect(screen.getByText('Bruno Dias')).toBeTruthy();
+    expect(screen.getByText('Carla Sousa')).toBeTruthy();
+    expect(screen.getAllByText('Sequencial').length).toBeGreaterThan(0);
+    expect(screen.getByText('Controlo do contacto')).toBeTruthy();
+    expect(screen.getAllByText('Pendente').length).toBeGreaterThan(0);
+    expect(screen.getByText('Iniciado')).toBeTruthy();
+  });
+
+  it('creates an external-signing envelope with order policy and signer slots', async () => {
+    let envelopes: ExternalSigningEnvelopeView[] = [];
+    const bodies: unknown[] = [];
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/signature/external-invites') && method === 'GET') return json([]);
+      if (url.endsWith('/external-signing/envelopes') && method === 'GET') {
+        return json(envelopes);
+      }
+      if (url.endsWith('/external-signing/envelopes') && method === 'POST') {
+        bodies.push(JSON.parse(String(init?.body)));
+        envelopes = [externalEnvelope({ slots: externalEnvelope().slots.slice(0, 1) })];
+        return json(envelopes[0], 201);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Criar envelope' }));
+    fireEvent.change(screen.getByLabelText('Política de ordem'), {
+      target: { value: 'sequential' },
+    });
+    fireEvent.change(screen.getByLabelText('Signatário do slot 1'), {
+      target: { value: 'Bruno Dias' },
+    });
+    fireEvent.change(screen.getByLabelText('Contacto ou referência'), {
+      target: { value: 'bruno@example.test' },
+    });
+    fireEvent.change(screen.getByLabelText('Requisito de identidade'), {
+      target: { value: 'contact_control' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar envelope' }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      order_policy: 'sequential',
+      slots: [
+        {
+          signer_label: 'Bruno Dias',
+          contact_hint: 'bruno@example.test',
+          identity_requirements: ['contact_control'],
+          required: true,
+        },
+      ],
+    });
+  });
+
+  it('creates an invite linked to a selected envelope slot', async () => {
+    const bodies: unknown[] = [];
+    const envelope = externalEnvelope({
+      order_policy: 'parallel',
+      slots: [externalEnvelope().slots[0]],
+      completion: {
+        completed: false,
+        required_slot_count: 1,
+        signed_required_slot_count: 0,
+        blocking_required_slot_ids: ['slot-1'],
+      },
+    });
+    const createdInvite = {
+      id: 'invite-1',
+      act_id: 'act-1',
+      recipient_name: 'Bruno Dias',
+      recipient_email: 'bruno@example.test',
+      purpose: 'Assinar a ata como signatário externo',
+      status: 'pending',
+      workflow: 'external_envelope',
+      external_envelope: {
+        id: 'env-1',
+        slot_id: 'slot-1',
+        order_policy: 'parallel',
+        slot_status: 'initiated',
+      },
+      token_hint: 'cxi_abcd...123456',
+      created_at: '2026-07-06T10:00:00Z',
+      created_by: 'amelia.marques',
+      expires_at: '2026-07-08T10:00:00Z',
+    };
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/external-signing/envelopes') && method === 'GET') return json([envelope]);
+      if (url.endsWith('/signature/external-invites') && method === 'GET') return json([]);
+      if (url.endsWith('/signature/external-invites') && method === 'POST') {
+        bodies.push(JSON.parse(String(init?.body)));
+        return json({ invite: createdInvite, token: 'cxi_fulltoken_1234567890' }, 201);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Criar convite' }));
+    fireEvent.change(screen.getByLabelText('Nome do signatário'), {
+      target: { value: 'Bruno Dias' },
+    });
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'bruno@example.test' },
+    });
+    fireEvent.change(screen.getByLabelText('Slot do envelope'), {
+      target: { value: 'env-1:slot-1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar convite' }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      recipient_name: 'Bruno Dias',
+      recipient_email: 'bruno@example.test',
+      external_envelope_id: 'env-1',
+      external_slot_id: 'slot-1',
+    });
+  });
+
+  it('shows a safe sequential-order conflict without leaking token material', async () => {
+    const bodies: unknown[] = [];
+    const envelope = externalEnvelope({
+      slots: [externalEnvelope().slots[0]],
+      completion: {
+        completed: false,
+        required_slot_count: 1,
+        signed_required_slot_count: 0,
+        blocking_required_slot_ids: ['slot-1'],
+      },
+    });
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/external-signing/envelopes') && method === 'GET') return json([envelope]);
+      if (url.endsWith('/signature/external-invites') && method === 'GET') return json([]);
+      if (url.endsWith('/signature/external-invites') && method === 'POST') {
+        bodies.push(JSON.parse(String(init?.body)));
+        return json({ error: 'blocked for cxi_should_not_render' }, 409);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Criar convite' }));
+    fireEvent.change(screen.getByLabelText('Nome do signatário'), {
+      target: { value: 'Bruno Dias' },
+    });
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'bruno@example.test' },
+    });
+    fireEvent.change(screen.getByLabelText('Slot do envelope'), {
+      target: { value: 'env-1:slot-1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar convite' }));
+
+    expect(await screen.findByText('Slot ainda não disponível')).toBeTruthy();
+    expect(screen.getAllByText(/slot obrigatório anterior em aberto/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/cxi_should_not_render/)).toBeNull();
+    expect(screen.queryByText(/Token do convite emitido uma vez/)).toBeNull();
+    expect(bodies[0]).toMatchObject({
+      external_envelope_id: 'env-1',
+      external_slot_id: 'slot-1',
+    });
+
+    fireEvent.change(screen.getByLabelText('Slot do envelope'), {
+      target: { value: '' },
+    });
+
+    await waitFor(() => expect(screen.queryByText('Slot ainda não disponível')).toBeNull());
+    expect(screen.queryByText(/cxi_should_not_render/)).toBeNull();
+    expect(screen.queryByText(/blocked for/)).toBeNull();
   });
 });
 

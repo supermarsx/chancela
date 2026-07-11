@@ -700,6 +700,23 @@ async fn sign_with_cc_timestamp_and_attach_dss(
     act_id: &str,
     signature_cert_der: &[u8],
 ) -> Value {
+    sign_with_cc_timestamp_and_attach_dss_with_validation_time(
+        state,
+        token,
+        act_id,
+        signature_cert_der,
+        None,
+    )
+    .await
+}
+
+async fn sign_with_cc_timestamp_and_attach_dss_with_validation_time(
+    state: &AppState,
+    token: &str,
+    act_id: &str,
+    signature_cert_der: &[u8],
+    validation_time: Option<&str>,
+) -> Value {
     let (status, done) = send(
         state,
         json_req(
@@ -713,17 +730,22 @@ async fn sign_with_cc_timestamp_and_attach_dss(
     assert_eq!(status, StatusCode::OK, "cc sign: {done}");
     assert_eq!(done["timestamp_token"], true);
 
+    let mut attach_body = json!({
+        "certificates": [B64.encode(signature_cert_der)],
+        "ocsp_responses": [B64.encode(OCSP_DER_FIXTURE)],
+        "crls": [B64.encode(CRL_DER_FIXTURE)],
+    });
+    if let Some(validation_time) = validation_time {
+        attach_body["validation_time"] = json!(validation_time);
+    }
+
     let (status, attached) = send(
         state,
         json_req(
             "POST",
             &format!("/v1/acts/{act_id}/signature/dss/attach"),
             token,
-            json!({
-                "certificates": [B64.encode(signature_cert_der)],
-                "ocsp_responses": [B64.encode(OCSP_DER_FIXTURE)],
-                "crls": [B64.encode(CRL_DER_FIXTURE)],
-            }),
+            attach_body,
         ),
     )
     .await;
@@ -1012,6 +1034,8 @@ async fn cc_dss_attach_api_persists_caller_supplied_local_technical_evidence() {
     assert!(evidence.get("legal_qualification").is_none());
     assert_eq!(evidence["dss"]["present"], true);
     assert_eq!(evidence["dss"]["vri_count"], 1);
+    assert_eq!(evidence["dss"]["vri_tu_count"], 0);
+    assert_eq!(evidence["dss"]["vri_tu_keys"], json!([]));
     assert_eq!(evidence["dss"]["certificate_count"], 1);
     assert_eq!(evidence["dss"]["ocsp_count"], 1);
     assert_eq!(evidence["dss"]["crl_count"], 1);
@@ -1032,6 +1056,15 @@ async fn cc_dss_attach_api_persists_caller_supplied_local_technical_evidence() {
         evidence["dss"]["crl_sha256"],
         json!([sha256_hex(CRL_DER_FIXTURE)])
     );
+    let plan = &evidence["local_technical_renewal_plan"];
+    assert_eq!(plan["dss_validation_time_present"], false);
+    assert_eq!(
+        plan["missing_inputs"],
+        json!(["dss_validation_time", "document_timestamp"])
+    );
+    assert_eq!(plan["next_action"], "record_dss_validation_time");
+    assert_eq!(plan["production_long_term_profile_claimed"], false);
+    assert_eq!(plan["legal_ltv_claimed"], false);
     let statuses = evidence["long_term_status"]
         .as_array()
         .expect("long_term_status array");
@@ -1102,6 +1135,163 @@ async fn cc_dss_attach_api_persists_caller_supplied_local_technical_evidence() {
 }
 
 #[tokio::test]
+async fn cc_dss_attach_api_accepts_validation_time_and_reports_tu_renewal_plan() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let signature_cert_der = card.signature_cert_der.clone();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let tsa = MockTsaServer::granted();
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.tsa_url = Some(tsa.url().to_owned());
+        settings.signing.tsl_url = None;
+    }
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let attached = sign_with_cc_timestamp_and_attach_dss_with_validation_time(
+        &state,
+        &token,
+        &act_id,
+        &signature_cert_der,
+        Some("2026-07-09T12:00:00Z"),
+    )
+    .await;
+
+    assert_eq!(attached["act_id"], act_id);
+    assert_eq!(attached["timestamp_token"], true);
+    assert_eq!(attached["evidentiary_level"], "B-LT-local");
+    assert_eq!(attached["production_b_lt_status"], "not_claimed");
+    assert_eq!(attached["legal_b_lt_claimed"], false);
+    assert_eq!(attached["status_scope"], "technical_evidence_only");
+
+    let evidence = &attached["evidence"];
+    assert_eq!(evidence["current_level"], "B-LT-local");
+    assert_eq!(evidence["dss_revocation_evidence_present"], true);
+    assert_eq!(evidence["local_b_lt_style_evidence_present"], true);
+    assert_eq!(evidence["production_b_lt_status"], "not_claimed");
+    assert_eq!(evidence["live_revocation_fetching"], false);
+    assert_eq!(evidence["legal_b_lt_claimed"], false);
+    assert_eq!(evidence["legal_b_lta_claimed"], false);
+    assert_eq!(evidence["status_scope"], "technical_evidence_only");
+    assert!(evidence.get("legal_qualification").is_none());
+    assert_eq!(evidence["dss"]["present"], true);
+    assert_eq!(evidence["dss"]["vri_count"], 1);
+    assert_eq!(evidence["dss"]["vri_tu_count"], 1);
+    assert_eq!(
+        evidence["dss"]["vri_tu_keys"]
+            .as_array()
+            .expect("VRI /TU keys")
+            .len(),
+        1
+    );
+    assert_eq!(evidence["dss"]["revocation_evidence_present"], true);
+
+    let plan = &evidence["local_technical_renewal_plan"];
+    assert_eq!(plan["dss_validation_time_present"], true);
+    assert_eq!(plan["doc_timestamp_present"], false);
+    assert_eq!(plan["missing_inputs"], json!(["document_timestamp"]));
+    assert_eq!(plan["next_action"], "add_document_timestamp");
+    assert_eq!(plan["all_local_planning_inputs_present"], false);
+    assert_eq!(plan["production_long_term_profile_claimed"], false);
+    assert_eq!(plan["legal_ltv_claimed"], false);
+
+    let (status, after_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let report = validate_pdf_signature(&after_pdf).expect("DSS /TU PDF validates");
+    assert_eq!(report.dss.vri_tu_count, 1);
+    assert!(report.dss.has_vri_tu());
+}
+
+#[tokio::test]
+async fn dss_attach_rejects_malformed_validation_time_without_digest_change_or_event() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let signature_cert_der = card.signature_cert_der.clone();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let tsa = MockTsaServer::granted();
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.tsa_url = Some(tsa.url().to_owned());
+        settings.signing.tsl_url = None;
+    }
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "capacity": "Administrador" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cc sign: {done}");
+    let before_digest = done["signed_pdf_digest"]
+        .as_str()
+        .expect("signed digest")
+        .to_owned();
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/dss/attach"),
+            &token,
+            json!({
+                "certificates": [B64.encode(&signature_cert_der)],
+                "ocsp_responses": [B64.encode(OCSP_DER_FIXTURE)],
+                "crls": [B64.encode(CRL_DER_FIXTURE)],
+                "validation_time": "not-a-time",
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "malformed DSS validation_time must be rejected: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .is_some_and(|msg| msg.contains("validation_time must be an RFC 3339 timestamp")),
+        "unexpected error: {err}"
+    );
+
+    let (status, after_pdf) = send_bytes(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/document/signed"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sha256_hex(&after_pdf), before_digest);
+    let stored_after = state
+        .signed_documents
+        .read()
+        .await
+        .get(&ActId(Uuid::parse_str(&act_id).unwrap()))
+        .cloned()
+        .expect("signed artifact still stored");
+    assert_eq!(stored_after.signed_pdf_digest, before_digest);
+    assert_eq!(
+        event_kind_count(&state, &token, &act_id, "document.signature.dss_attached").await,
+        0,
+        "rejected DSS attach must not append an event"
+    );
+}
+
+#[tokio::test]
 async fn dss_attach_requires_an_existing_signed_pdf() {
     let dir = TempDir::new();
     let state = state_at(&dir.0, None, true, true);
@@ -1142,7 +1332,14 @@ async fn archive_timestamp_append_api_persists_caller_supplied_local_technical_e
     }
     let (token, _uid) = bootstrap(&state).await;
     let act_id = seal_an_act(&state, &token).await;
-    sign_with_cc_timestamp_and_attach_dss(&state, &token, &act_id, &signature_cert_der).await;
+    sign_with_cc_timestamp_and_attach_dss_with_validation_time(
+        &state,
+        &token,
+        &act_id,
+        &signature_cert_der,
+        Some("2026-07-09T12:00:00Z"),
+    )
+    .await;
 
     let (status, before_pdf) = send_bytes(
         &state,
@@ -1198,6 +1395,16 @@ async fn archive_timestamp_append_api_persists_caller_supplied_local_technical_e
         evidence["doc_timestamp"]["validations"][0]["status"],
         "valid"
     );
+    let plan = &evidence["local_technical_renewal_plan"];
+    assert_eq!(plan["dss_validation_time_present"], true);
+    assert_eq!(plan["doc_timestamp_present"], true);
+    assert_eq!(plan["doc_timestamp_imprints_valid"], true);
+    assert_eq!(plan["missing_inputs"], json!([]));
+    assert_eq!(plan["next_action"], "monitor_timestamp_renewal");
+    assert_eq!(plan["has_local_evidence_gap"], false);
+    assert_eq!(plan["all_local_planning_inputs_present"], true);
+    assert_eq!(plan["production_long_term_profile_claimed"], false);
+    assert_eq!(plan["legal_ltv_claimed"], false);
     assert_eq!(
         appended["doc_timestamp"]["token_sha256"],
         json!([sha256_hex(&doc_timestamp_token)])

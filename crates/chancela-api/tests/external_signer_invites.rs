@@ -3,6 +3,7 @@ use axum::http::{HeaderMap, Request, StatusCode};
 use chancela_api::{AppState, router};
 use chancela_core::ActId;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 use tower::ServiceExt;
@@ -253,6 +254,77 @@ async fn create_invite(state: &AppState, token: &str, act_id: &str) -> Value {
     created
 }
 
+fn linked_invite_body(envelope_id: &str, slot_id: &str) -> Value {
+    let mut body = invite_body(future_expiry());
+    let object = body.as_object_mut().expect("invite body object");
+    object.insert("external_envelope_id".to_owned(), json!(envelope_id));
+    object.insert("external_slot_id".to_owned(), json!(slot_id));
+    body
+}
+
+async fn create_two_slot_envelope(
+    state: &AppState,
+    token: &str,
+    act_id: &str,
+    order_policy: &str,
+) -> Value {
+    let (status, envelope) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/external-signing/envelopes"),
+            token,
+            json!({
+                "order_policy": order_policy,
+                "slots": [
+                    { "signer_label": "Chair", "required": true },
+                    { "signer_label": "Secretary", "required": true }
+                ]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create envelope: {envelope}");
+    envelope
+}
+
+async fn read_envelope(state: &AppState, token: &str, envelope_id: &str) -> Value {
+    let (status, envelope) = send(
+        state,
+        empty_req(
+            "GET",
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "read envelope: {envelope}");
+    envelope
+}
+
+fn assert_no_legal_or_qualified_field_names(value: &Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                let key = key.to_ascii_lowercase();
+                assert!(
+                    !key.contains("legal")
+                        && !key.contains("qualified")
+                        && !key.contains("qualification"),
+                    "public lookup exposes legal/qualified field name `{key}`"
+                );
+                assert_no_legal_or_qualified_field_names(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                assert_no_legal_or_qualified_field_names(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[tokio::test]
 async fn create_returns_token_once_and_list_redacts_secret() {
     let dir = TempDir::new();
@@ -263,6 +335,11 @@ async fn create_returns_token_once_and_list_redacts_secret() {
     let created = create_invite(&state, &token, &act_id).await;
     let invite_id = created["invite"]["id"].as_str().expect("invite id");
     let secret = created["token"].as_str().expect("invite token");
+    assert_eq!(created["invite"]["workflow"], "tracking_only");
+    assert!(
+        created["invite"].get("external_envelope").is_none(),
+        "unlinked create response stays standalone tracking_only"
+    );
     assert!(secret.starts_with("cxi_"));
     assert!(
         secret.len() >= 68,
@@ -305,6 +382,182 @@ async fn create_returns_token_once_and_list_redacts_secret() {
         !list.to_string().contains(secret),
         "full invite token must not leak through list"
     );
+}
+
+#[tokio::test]
+async fn linked_invite_for_second_sequential_slot_conflicts_without_token() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.0.clone());
+    let token = bootstrap(&state).await;
+    let act_id = sealed_act(&state, &token).await;
+    let envelope = create_two_slot_envelope(&state, &token, &act_id, "sequential").await;
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let second_slot = envelope["slots"][1]["id"].as_str().expect("second slot");
+
+    let before_invites = state.external_signer_invites.read().await.len();
+    let (status, body) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/external-invites"),
+            &token,
+            linked_invite_body(envelope_id, second_slot),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "later sequential slot is blocked: {body}"
+    );
+    assert!(
+        body.get("token").is_none(),
+        "conflict must not return a token"
+    );
+    assert!(
+        !body.to_string().contains("cxi_"),
+        "conflict body must not contain an invite token"
+    );
+    assert_eq!(
+        state.external_signer_invites.read().await.len(),
+        before_invites,
+        "blocked linked invite is not stored"
+    );
+
+    let read = read_envelope(&state, &token, envelope_id).await;
+    assert_eq!(read["slots"][1]["status"], "pending");
+}
+
+#[tokio::test]
+async fn linked_invite_for_first_sequential_slot_succeeds_and_initiates_slot() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.0.clone());
+    let token = bootstrap(&state).await;
+    let act_id = sealed_act(&state, &token).await;
+    let envelope = create_two_slot_envelope(&state, &token, &act_id, "sequential").await;
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let first_slot = envelope["slots"][0]["id"].as_str().expect("first slot");
+
+    let (status, created) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/external-invites"),
+            &token,
+            linked_invite_body(envelope_id, first_slot),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "linked invite: {created}");
+    assert!(
+        created["token"]
+            .as_str()
+            .is_some_and(|token| token.starts_with("cxi_"))
+    );
+    assert_eq!(created["invite"]["workflow"], "external_envelope");
+    assert_eq!(created["invite"]["external_envelope"]["id"], envelope_id);
+    assert_eq!(
+        created["invite"]["external_envelope"]["slot_id"],
+        first_slot
+    );
+    assert_eq!(
+        created["invite"]["external_envelope"]["order_policy"],
+        "sequential"
+    );
+    assert_eq!(
+        created["invite"]["external_envelope"]["slot_status"],
+        "initiated"
+    );
+
+    let read = read_envelope(&state, &token, envelope_id).await;
+    assert_eq!(read["slots"][0]["status"], "initiated");
+    assert_eq!(read["slots"][1]["status"], "pending");
+}
+
+#[tokio::test]
+async fn linked_invite_envelope_persist_failure_rolls_back_slot_and_invite() {
+    let dir = TempDir::new();
+    let mut state = AppState::with_data_dir(dir.0.clone());
+    let token = bootstrap(&state).await;
+    let act_id = sealed_act(&state, &token).await;
+    let envelope = create_two_slot_envelope(&state, &token, &act_id, "parallel").await;
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let first_slot = envelope["slots"][0]["id"].as_str().expect("first slot");
+
+    state.external_signing_envelopes_path = Some(Arc::new(dir.0.clone()));
+    let before_invites = state.external_signer_invites.read().await.len();
+    let (status, body) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/external-invites"),
+            &token,
+            linked_invite_body(envelope_id, first_slot),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "forced envelope persistence failure: {body}"
+    );
+    assert!(
+        body.get("token").is_none(),
+        "failed linked create must not return a token"
+    );
+    assert!(
+        !body.to_string().contains("cxi_"),
+        "failed linked create must not leak an invite token"
+    );
+    assert_eq!(
+        state.external_signer_invites.read().await.len(),
+        before_invites,
+        "failed linked invite is removed"
+    );
+
+    let read = read_envelope(&state, &token, envelope_id).await;
+    assert_eq!(read["slots"][0]["status"], "pending");
+    assert_eq!(read["slots"][1]["status"], "pending");
+}
+
+#[tokio::test]
+async fn linked_invite_for_parallel_second_slot_succeeds() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.0.clone());
+    let token = bootstrap(&state).await;
+    let act_id = sealed_act(&state, &token).await;
+    let envelope = create_two_slot_envelope(&state, &token, &act_id, "parallel").await;
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let second_slot = envelope["slots"][1]["id"].as_str().expect("second slot");
+
+    let (status, created) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/external-invites"),
+            &token,
+            linked_invite_body(envelope_id, second_slot),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "parallel later slot can be invited: {created}"
+    );
+    assert_eq!(created["invite"]["workflow"], "external_envelope");
+    assert_eq!(
+        created["invite"]["external_envelope"]["slot_status"],
+        "initiated"
+    );
+
+    let read = read_envelope(&state, &token, envelope_id).await;
+    assert_eq!(read["slots"][0]["status"], "pending");
+    assert_eq!(read["slots"][1]["status"], "initiated");
 }
 
 #[tokio::test]
@@ -581,6 +834,67 @@ async fn public_lookup_reveals_safe_metadata_only_for_live_token() {
         StatusCode::NOT_FOUND,
         "expired token is unavailable"
     );
+}
+
+#[tokio::test]
+async fn public_lookup_for_linked_invite_redacts_secrets_and_legal_claim_fields() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.0.clone());
+    let session = bootstrap(&state).await;
+    let act_id = sealed_act(&state, &session).await;
+    let envelope = create_two_slot_envelope(&state, &session, &act_id, "parallel").await;
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let slot_id = envelope["slots"][1]["id"].as_str().expect("slot id");
+
+    let (status, created) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/external-invites"),
+            &session,
+            linked_invite_body(envelope_id, slot_id),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "linked invite: {created}");
+    let token = created["token"].as_str().expect("invite token");
+
+    let (status, envelope) = send(
+        &state,
+        public_json_req(
+            "POST",
+            "/v1/signature/external-invites/lookup",
+            json!({ "token": token }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "lookup linked token: {envelope}");
+    assert_eq!(envelope["workflow"], "external_envelope");
+    assert_eq!(envelope["status"], "pending");
+    assert_eq!(envelope["external_envelope"]["id"], envelope_id);
+    assert_eq!(envelope["external_envelope"]["slot_id"], slot_id);
+    assert_eq!(envelope["external_envelope"]["order_policy"], "parallel");
+    assert_eq!(envelope["external_envelope"]["slot_status"], "initiated");
+    assert_eq!(envelope["act"]["id"], act_id);
+
+    assert!(envelope.get("token").is_none(), "token is never echoed");
+    assert!(
+        envelope.get("token_hint").is_none(),
+        "redacted token is not public"
+    );
+    assert!(
+        envelope.get("token_sha256").is_none(),
+        "token hash is not public"
+    );
+    assert!(
+        envelope.get("recipient_email").is_none(),
+        "recipient email is not part of the public token view"
+    );
+    assert!(
+        !envelope.to_string().contains(token),
+        "lookup response must not contain the full token"
+    );
+    assert_no_legal_or_qualified_field_names(&envelope);
 }
 
 #[tokio::test]

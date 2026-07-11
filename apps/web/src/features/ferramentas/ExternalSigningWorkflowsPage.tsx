@@ -85,6 +85,7 @@ function statusBadge(status: ExternalSignerInviteStatus, t: TFunction) {
 
 function workflowLabel(workflow: string, t: TFunction): string {
   if (workflow === 'tracking_only') return t('signing.invites.workflow.trackingOnly');
+  if (workflow === 'external_envelope') return t('signing.invites.workflow.externalEnvelope');
   return workflow;
 }
 

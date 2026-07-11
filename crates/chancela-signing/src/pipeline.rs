@@ -180,6 +180,24 @@ pub fn attach_pdf_dss(
     Ok((out, report))
 }
 
+/// Append caller-supplied DSS/VRI evidence with caller-supplied validation-time metadata.
+///
+/// This only formats the already-validated API timestamp for the PAdES `/TU` writer. It does not
+/// fetch OCSP/CRL/TSA/trust data and does not claim legal B-LT sufficiency.
+pub fn attach_pdf_dss_with_validation_time(
+    signed_pdf: &[u8],
+    evidence: &DssEvidence,
+    validation_time: OffsetDateTime,
+) -> Result<(Vec<u8>, DssReport), SigningError> {
+    let validation_time = validation_time
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(|e| SigningError::Pades(format!("invalid DSS validation time: {e}")))?;
+    let out = add_dss_revision_with_validation_time(signed_pdf, evidence, &validation_time)
+        .map_err(pades_err)?;
+    let report = inspect_dss(&out).map_err(pades_err)?;
+    Ok((out, report))
+}
+
 /// Append validated CRL revocation evidence to a signed PAdES PDF.
 ///
 /// The supplied evidence must already have been validated by

@@ -56,6 +56,7 @@ use chancela_pades::{
     PreparedSignature, SignOptions, add_doc_timestamp_revision, add_signature_timestamp,
     embed_signature, prepare_signature,
 };
+use chancela_signing::pipeline::attach_pdf_dss_with_validation_time;
 use chancela_signing::{
     CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession, RemoteInitiate,
     RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider,
@@ -79,13 +80,16 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use chancela_authz::{Permission, Scope};
-use chancela_core::ActId;
+use chancela_core::{ActId, ExternalSignatureEnvelopeId, ExternalSignerSlotId};
 
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::actor::CurrentAttestor;
 use crate::authz::{require_permission, scope_of_act};
 use crate::error::ApiError;
+use crate::external_signing::{
+    EnvelopeView, ExternalSignerSlotStatusDto, ExternalSigningOrderPolicyDto,
+};
 use crate::settings::{RuntimeTsaProvider, RuntimeTslSource};
 
 /// The signing family this module produces (v1 is CMD-only; t57 ruling 2).
@@ -631,6 +635,10 @@ pub struct CreateExternalSignerInviteRequest {
     pub recipient_email: String,
     #[serde(default)]
     pub provider_hint: Option<String>,
+    #[serde(default)]
+    pub external_envelope_id: Option<Uuid>,
+    #[serde(default)]
+    pub external_slot_id: Option<Uuid>,
     /// RFC 3339 timestamp after which the invitation is expired.
     pub expires_at: String,
     /// Why this person is being asked to sign. Informational only; this endpoint does not complete a
@@ -661,6 +669,13 @@ pub enum ExternalSignerInviteDecision {
     Decline,
 }
 
+/// Optional link from an invite to one external signing envelope slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExternalSignerInviteEnvelopeLink {
+    pub envelope_id: ExternalSignatureEnvelopeId,
+    pub slot_id: ExternalSignerSlotId,
+}
+
 /// The stored invite record. It intentionally does not contain the plaintext invite token: only a
 /// SHA-256 hash and a short display hint are retained.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -680,6 +695,7 @@ pub struct ExternalSignerInviteRecord {
     pub revoked_by: Option<String>,
     pub response: Option<ExternalSignerInviteDecision>,
     pub responded_at: Option<OffsetDateTime>,
+    pub external_envelope: Option<ExternalSignerInviteEnvelopeLink>,
 }
 
 impl ExternalSignerInviteRecord {
@@ -700,6 +716,17 @@ impl ExternalSignerInviteRecord {
     }
 }
 
+/// Non-secret metadata for an invite linked to an external signing envelope slot.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExternalSignerInviteEnvelopeView {
+    pub id: String,
+    pub slot_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_policy: Option<ExternalSigningOrderPolicyDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slot_status: Option<ExternalSignerSlotStatusDto>,
+}
+
 /// Public invite view. No token secret or token hash is serialized.
 #[derive(Serialize)]
 pub struct ExternalSignerInviteView {
@@ -712,6 +739,8 @@ pub struct ExternalSignerInviteView {
     pub purpose: String,
     pub status: ExternalSignerInviteStatus,
     pub workflow: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_envelope: Option<ExternalSignerInviteEnvelopeView>,
     pub token_hint: String,
     pub created_at: String,
     pub created_by: String,
@@ -725,7 +754,11 @@ pub struct ExternalSignerInviteView {
 }
 
 impl ExternalSignerInviteView {
-    fn from_record(record: &ExternalSignerInviteRecord, now: OffsetDateTime) -> Self {
+    fn from_record(
+        record: &ExternalSignerInviteRecord,
+        now: OffsetDateTime,
+        external_envelope: Option<ExternalSignerInviteEnvelopeView>,
+    ) -> Self {
         ExternalSignerInviteView {
             id: record.id.to_string(),
             act_id: record.act_id.to_string(),
@@ -734,7 +767,8 @@ impl ExternalSignerInviteView {
             provider_hint: record.provider_hint.clone(),
             purpose: record.purpose.clone(),
             status: record.status_at(now),
-            workflow: "tracking_only",
+            workflow: external_invite_workflow(record),
+            external_envelope,
             token_hint: record.token_hint.clone(),
             created_at: rfc3339(record.created_at),
             created_by: record.created_by.clone(),
@@ -744,6 +778,75 @@ impl ExternalSignerInviteView {
             responded_at: record.responded_at.map(rfc3339),
         }
     }
+}
+
+fn external_invite_workflow(record: &ExternalSignerInviteRecord) -> &'static str {
+    if record.external_envelope.is_some() {
+        "external_envelope"
+    } else {
+        "tracking_only"
+    }
+}
+
+fn external_invite_requested_envelope_link(
+    envelope_id: Option<Uuid>,
+    slot_id: Option<Uuid>,
+) -> Result<Option<ExternalSignerInviteEnvelopeLink>, ApiError> {
+    match (envelope_id, slot_id) {
+        (None, None) => Ok(None),
+        (Some(envelope_id), Some(slot_id)) => Ok(Some(ExternalSignerInviteEnvelopeLink {
+            envelope_id: ExternalSignatureEnvelopeId(envelope_id),
+            slot_id: ExternalSignerSlotId(slot_id),
+        })),
+        _ => Err(ApiError::Unprocessable(
+            "external_envelope_id and external_slot_id must be supplied together".to_owned(),
+        )),
+    }
+}
+
+async fn external_invite_external_envelope_view(
+    state: &AppState,
+    record: &ExternalSignerInviteRecord,
+) -> Result<Option<ExternalSignerInviteEnvelopeView>, ApiError> {
+    let Some(link) = record.external_envelope else {
+        return Ok(None);
+    };
+
+    let envelopes = state.external_signing_envelopes.read().await;
+    let envelope = envelopes.get(&link.envelope_id).ok_or(ApiError::NotFound)?;
+    if envelope.act_id != record.act_id {
+        return Err(ApiError::NotFound);
+    }
+    let slot = envelope.slot(link.slot_id).ok_or(ApiError::NotFound)?;
+
+    Ok(Some(ExternalSignerInviteEnvelopeView {
+        id: link.envelope_id.to_string(),
+        slot_id: link.slot_id.to_string(),
+        order_policy: Some(envelope.order_policy.into()),
+        slot_status: Some(slot.status.into()),
+    }))
+}
+
+fn external_invite_external_envelope_view_from_envelope_view(
+    link: ExternalSignerInviteEnvelopeLink,
+    envelope: &EnvelopeView,
+) -> Result<ExternalSignerInviteEnvelopeView, ApiError> {
+    if envelope.id != link.envelope_id.to_string() {
+        return Err(ApiError::NotFound);
+    }
+    let slot_id = link.slot_id.to_string();
+    let slot = envelope
+        .slots
+        .iter()
+        .find(|slot| slot.id == slot_id)
+        .ok_or(ApiError::NotFound)?;
+
+    Ok(ExternalSignerInviteEnvelopeView {
+        id: envelope.id.clone(),
+        slot_id,
+        order_policy: Some(envelope.order_policy),
+        slot_status: Some(slot.status),
+    })
 }
 
 /// Create response. The plaintext token is returned exactly once here and is never listed.
@@ -847,6 +950,8 @@ pub struct ExternalSignerInvitePublicView {
     pub purpose: String,
     pub status: ExternalSignerInviteStatus,
     pub workflow: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_envelope: Option<ExternalSignerInviteEnvelopeView>,
     pub created_at: String,
     pub expires_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -900,6 +1005,20 @@ pub async fn create_external_signer_invite(
             "expires_at must be in the future".to_owned(),
         ));
     }
+    let external_envelope =
+        external_invite_requested_envelope_link(req.external_envelope_id, req.external_slot_id)?;
+    let prepared_external_slot = match external_envelope {
+        Some(link) => Some(
+            crate::external_signing::prepare_envelope_slot_for_external_invite(
+                &state,
+                act_id,
+                link.envelope_id,
+                link.slot_id,
+            )
+            .await?,
+        ),
+        None => None,
+    };
 
     let token = generate_invite_token();
     let record = ExternalSignerInviteRecord {
@@ -918,8 +1037,81 @@ pub async fn create_external_signer_invite(
         revoked_by: None,
         response: None,
         responded_at: None,
+        external_envelope,
     };
-    let view = ExternalSignerInviteView::from_record(&record, now);
+
+    if let Some(prepared_external_slot) = prepared_external_slot {
+        let link = external_envelope.expect("prepared slot requires an envelope link");
+        let view = ExternalSignerInviteView::from_record(
+            &record,
+            now,
+            Some(external_invite_external_envelope_view_from_envelope_view(
+                link,
+                prepared_external_slot.view(),
+            )?),
+        );
+
+        state
+            .external_signer_invites
+            .write()
+            .await
+            .insert(record.id, record.clone());
+
+        let committed_external_slot =
+            match crate::external_signing::commit_envelope_slot_for_external_invite(
+                &state,
+                prepared_external_slot,
+            )
+            .await
+            {
+                Ok(committed) => committed,
+                Err(err) => {
+                    state
+                        .external_signer_invites
+                        .write()
+                        .await
+                        .remove(&record.id);
+                    return Err(err);
+                }
+            };
+
+        if let Err(err) = record_linked_external_invite_created_events(
+            &state,
+            &actor_name,
+            &attestor,
+            &audit_scope,
+            committed_external_slot.view(),
+            &view,
+        )
+        .await
+        {
+            state
+                .external_signer_invites
+                .write()
+                .await
+                .remove(&record.id);
+            if let Err(rollback_err) = committed_external_slot.rollback(&state).await {
+                return Err(ApiError::Internal(format!(
+                    "linked external invite creation failed after slot initiation ({err:?}); rollback failed: {rollback_err:?}"
+                )));
+            }
+            return Err(err);
+        }
+
+        return Ok((
+            StatusCode::CREATED,
+            Json(CreateExternalSignerInviteResponse {
+                invite: view,
+                token,
+            }),
+        ));
+    }
+
+    let view = ExternalSignerInviteView::from_record(
+        &record,
+        now,
+        external_invite_external_envelope_view(&state, &record).await?,
+    );
     record_external_invite_event(
         &state,
         &actor_name,
@@ -958,14 +1150,22 @@ pub async fn list_external_signer_invites(
     ensure_act_exists(&state, act_id).await?;
 
     let now = OffsetDateTime::now_utc();
-    let mut views: Vec<_> = state
+    let records: Vec<_> = state
         .external_signer_invites
         .read()
         .await
         .values()
         .filter(|record| record.act_id == act_id)
-        .map(|record| ExternalSignerInviteView::from_record(record, now))
+        .cloned()
         .collect();
+    let mut views = Vec::with_capacity(records.len());
+    for record in &records {
+        views.push(ExternalSignerInviteView::from_record(
+            record,
+            now,
+            external_invite_external_envelope_view(&state, record).await?,
+        ));
+    }
     views.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
     Ok(Json(views))
 }
@@ -997,7 +1197,11 @@ pub async fn revoke_external_signer_invite(
         record.revoked_at = Some(now);
         record.revoked_by = Some(actor_name.clone());
     }
-    let view = ExternalSignerInviteView::from_record(&record, now);
+    let view = ExternalSignerInviteView::from_record(
+        &record,
+        now,
+        external_invite_external_envelope_view(&state, &record).await?,
+    );
     record_external_invite_event(
         &state,
         &actor_name,
@@ -1093,7 +1297,11 @@ pub async fn respond_external_signer_invite(
     record.responded_at = Some(now);
     let audit_scope = act_audit_scope(&state, record.act_id).await?;
     let actor_name = format!("external-signer:{}", record.id);
-    let view = ExternalSignerInviteView::from_record(&record, now);
+    let view = ExternalSignerInviteView::from_record(
+        &record,
+        now,
+        external_invite_external_envelope_view(&state, &record).await?,
+    );
     let kind = match req.decision {
         ExternalSignerInviteDecision::Accept => "signature.external_invite.accepted",
         ExternalSignerInviteDecision::Decline => "signature.external_invite.declined",
@@ -1496,6 +1704,9 @@ pub struct DssAttachRequest {
     pub ocsp_responses: Vec<String>,
     #[serde(default, alias = "crls_base64", alias = "crl_der_base64")]
     pub crls: Vec<String>,
+    /// Optional RFC 3339 validation time to write as local DSS VRI `/TU` metadata.
+    #[serde(default)]
+    pub validation_time: Option<String>,
     #[serde(default)]
     pub actor: Option<String>,
 }
@@ -1783,8 +1994,12 @@ pub async fn attach_dss_evidence(
 
     let evidence = dss_attach_evidence_from_request(req)?;
     let input_pdf = stored.signed_pdf_bytes.clone();
-    let (updated_pdf, _) = tokio::task::spawn_blocking(move || {
-        attach_pdf_dss(&input_pdf, &evidence).map_err(map_dss_attach_error)
+    let (updated_pdf, _) = tokio::task::spawn_blocking(move || match evidence.validation_time {
+        Some(validation_time) => {
+            attach_pdf_dss_with_validation_time(&input_pdf, &evidence.dss, validation_time)
+                .map_err(map_dss_attach_error)
+        }
+        None => attach_pdf_dss(&input_pdf, &evidence.dss).map_err(map_dss_attach_error),
     })
     .await
     .map_err(|e| ApiError::Internal(format!("DSS attach task failed: {e}")))??;
@@ -4027,6 +4242,47 @@ async fn record_external_invite_event(
     Ok(())
 }
 
+async fn record_linked_external_invite_created_events(
+    state: &AppState,
+    actor: &str,
+    attestor: &CurrentAttestor,
+    scope: &str,
+    envelope_view: &EnvelopeView,
+    invite_view: &ExternalSignerInviteView,
+) -> Result<(), ApiError> {
+    let envelope_payload = serde_json::to_vec(&json!({
+        "envelope_id": envelope_view.id,
+        "act_id": envelope_view.act_id,
+        "order_policy": envelope_view.order_policy,
+        "completed": envelope_view.completed,
+        "completion": envelope_view.completion,
+    }))?;
+    let invite_payload = serde_json::to_vec(invite_view)?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        actor,
+        scope,
+        "signature.external_envelope.updated",
+        None,
+        &envelope_payload,
+    )?;
+    if let Err(err) = crate::try_append_event(
+        &mut ledger,
+        actor,
+        scope,
+        "signature.external_invite.created",
+        None,
+        &invite_payload,
+    ) {
+        AppState::rollback_ledger_events(&mut ledger, 1);
+        return Err(err);
+    }
+    state.persist_write_through(&mut ledger, 2, |_| Ok(()))?;
+    state.attest_latest(attestor, &ledger).await;
+    Ok(())
+}
+
 async fn find_live_external_invite_by_token(
     state: &AppState,
     token: String,
@@ -4277,7 +4533,8 @@ async fn public_external_invite_view(
         provider_hint: record.provider_hint.clone(),
         purpose: record.purpose.clone(),
         status: record.status_at(now),
-        workflow: "tracking_only",
+        workflow: external_invite_workflow(record),
+        external_envelope: external_invite_external_envelope_view(state, record).await?,
         created_at: rfc3339(record.created_at),
         expires_at: rfc3339(record.expires_at),
         responded_at: record.responded_at.map(rfc3339),
@@ -5034,23 +5291,33 @@ fn map_timestamp_error(e: chancela_signing::SigningError) -> ApiError {
     ApiError::Unprocessable(format!("falha ao obter carimbo temporal qualificado: {e}"))
 }
 
+struct LocalDssAttachEvidence {
+    dss: chancela_signing::DssEvidence,
+    validation_time: Option<OffsetDateTime>,
+}
+
 fn dss_attach_evidence_from_request(
     req: DssAttachRequest,
-) -> Result<chancela_signing::DssEvidence, ApiError> {
-    let evidence = chancela_signing::DssEvidence {
+) -> Result<LocalDssAttachEvidence, ApiError> {
+    let dss = chancela_signing::DssEvidence {
         certificates: decode_der_base64_list("certificates", req.certificates)?,
         ocsp_responses: decode_der_base64_list("ocsp_responses", req.ocsp_responses)?,
         crls: decode_der_base64_list("crls", req.crls)?,
     };
-    if evidence.certificates.is_empty()
-        && evidence.ocsp_responses.is_empty()
-        && evidence.crls.is_empty()
-    {
+    if dss.certificates.is_empty() && dss.ocsp_responses.is_empty() && dss.crls.is_empty() {
         return Err(ApiError::Unprocessable(
             "forneça pelo menos um certificado, resposta OCSP ou CRL em DER/base64".to_owned(),
         ));
     }
-    Ok(evidence)
+    let validation_time = req
+        .validation_time
+        .as_deref()
+        .map(|raw| parse_rfc3339(raw, "validation_time"))
+        .transpose()?;
+    Ok(LocalDssAttachEvidence {
+        dss,
+        validation_time,
+    })
 }
 
 fn decode_single_der_base64(field: &str, value: &str) -> Result<Vec<u8>, ApiError> {
@@ -5914,6 +6181,7 @@ mod tests {
             revoked_by: None,
             response: None,
             responded_at: None,
+            external_envelope: None,
         };
         let act = ExternalSignerInviteActPublicView {
             id: act_id.to_string(),

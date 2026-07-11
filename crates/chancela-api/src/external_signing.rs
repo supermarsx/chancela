@@ -369,6 +369,117 @@ pub async fn patch_envelope(
     Ok(Json(view))
 }
 
+pub(crate) struct PreparedExternalInviteSlotInitiation {
+    envelope_id: ExternalSignatureEnvelopeId,
+    previous: ExternalSignatureEnvelope,
+    updated: ExternalSignatureEnvelope,
+    view: EnvelopeView,
+}
+
+impl PreparedExternalInviteSlotInitiation {
+    pub(crate) fn view(&self) -> &EnvelopeView {
+        &self.view
+    }
+}
+
+pub(crate) struct CommittedExternalInviteSlotInitiation {
+    envelope_id: ExternalSignatureEnvelopeId,
+    previous: ExternalSignatureEnvelope,
+    view: EnvelopeView,
+}
+
+impl CommittedExternalInviteSlotInitiation {
+    pub(crate) fn view(&self) -> &EnvelopeView {
+        &self.view
+    }
+
+    pub(crate) async fn rollback(self, state: &AppState) -> Result<(), ApiError> {
+        restore_envelope_snapshot(state, self.envelope_id, self.previous).await
+    }
+}
+
+pub(crate) async fn prepare_envelope_slot_for_external_invite(
+    state: &AppState,
+    act_id: ActId,
+    envelope_id: ExternalSignatureEnvelopeId,
+    slot_id: ExternalSignerSlotId,
+) -> Result<PreparedExternalInviteSlotInitiation, ApiError> {
+    let previous = find_envelope(state, envelope_id).await?;
+    if previous.act_id != act_id || previous.slot(slot_id).is_none() {
+        return Err(ApiError::NotFound);
+    }
+
+    let mut updated = previous.clone();
+    updated
+        .initiate_slot(slot_id)
+        .map_err(map_external_signing_error)?;
+    let view = EnvelopeView::from(&updated);
+
+    Ok(PreparedExternalInviteSlotInitiation {
+        envelope_id,
+        previous,
+        updated,
+        view,
+    })
+}
+
+pub(crate) async fn commit_envelope_slot_for_external_invite(
+    state: &AppState,
+    prepared: PreparedExternalInviteSlotInitiation,
+) -> Result<CommittedExternalInviteSlotInitiation, ApiError> {
+    let PreparedExternalInviteSlotInitiation {
+        envelope_id,
+        previous,
+        updated,
+        view,
+    } = prepared;
+
+    {
+        let mut envelopes = state.external_signing_envelopes.write().await;
+        match envelopes.get(&envelope_id) {
+            Some(current) if current == &previous => {
+                envelopes.insert(envelope_id, updated);
+            }
+            Some(_) => {
+                return Err(ApiError::Conflict(
+                    "external signing envelope changed while creating linked invite".to_owned(),
+                ));
+            }
+            None => return Err(ApiError::NotFound),
+        }
+    }
+
+    if let Err(err) = persist_envelopes(state).await {
+        if let Err(rollback_err) =
+            restore_envelope_snapshot(state, envelope_id, previous.clone()).await
+        {
+            eprintln!(
+                "warning: failed to roll back linked external invite slot initiation after persist error: {rollback_err:?}"
+            );
+        }
+        return Err(err);
+    }
+
+    Ok(CommittedExternalInviteSlotInitiation {
+        envelope_id,
+        previous,
+        view,
+    })
+}
+
+async fn restore_envelope_snapshot(
+    state: &AppState,
+    envelope_id: ExternalSignatureEnvelopeId,
+    envelope: ExternalSignatureEnvelope,
+) -> Result<(), ApiError> {
+    state
+        .external_signing_envelopes
+        .write()
+        .await
+        .insert(envelope_id, envelope);
+    persist_envelopes(state).await
+}
+
 pub(crate) fn load_envelopes(
     path: &FsPath,
 ) -> Option<HashMap<ExternalSignatureEnvelopeId, ExternalSignatureEnvelope>> {

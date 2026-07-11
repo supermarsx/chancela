@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 import {
   ExternalSigningWorkflowsPage,
@@ -125,7 +125,7 @@ const INVITES: Record<string, ExternalSignerInviteView[]> = {
   ],
   'act-2': [
     invite('invite-4', 'act-2', 'Rui Expired', 'expired'),
-    invite('invite-5', 'act-2', 'Sofia Revoked', 'revoked'),
+    { ...invite('invite-5', 'act-2', 'Sofia Revoked', 'revoked'), workflow: 'external_envelope' },
   ],
 };
 
@@ -146,7 +146,7 @@ function envelopeFixture(
     recipient_name: 'Maria Pending',
     purpose: 'Acompanhar assinatura externa',
     status,
-    workflow: 'tracking_only',
+    workflow: 'external_envelope',
     created_at: '2026-07-10T09:00:00Z',
     expires_at: '2026-07-12T12:00:00Z',
     notice: 'Tracking metadata only; no legal signing completion is claimed.',
@@ -193,6 +193,9 @@ describe('ExternalSigningWorkflowsPage', () => {
     for (const status of ['Pendente', 'Aceite', 'Declinado', 'Expirado', 'Revogado']) {
       expect(screen.getByText(status)).toBeTruthy();
     }
+    expect(screen.getAllByText('Acompanhamento apenas').length).toBeGreaterThanOrEqual(4);
+    expect(screen.getByText('Fluxo com envelope')).toBeTruthy();
+    expect(screen.queryByText('external_envelope')).toBeNull();
     expect(screen.getAllByText('Só acompanhamento técnico').length).toBeGreaterThanOrEqual(5);
     expect(screen.getAllByText('Token completo não guardado').length).toBeGreaterThanOrEqual(5);
     expect(screen.getByText(/não afirma validade legal/i)).toBeTruthy();
@@ -226,7 +229,11 @@ describe('ExternalSigningWorkflowsPage', () => {
     expect(openExternalMock).toHaveBeenCalledWith(expected);
 
     fireEvent.click(screen.getByRole('button', { name: 'Consultar envelope' }));
-    await screen.findByText('Envelope público');
+    const envelopeTitle = await screen.findByText('Envelope público');
+    const envelopeDetails = envelopeTitle.closest('.external-signing-envelope');
+    expect(envelopeDetails).not.toBeNull();
+    expect(within(envelopeDetails as HTMLElement).getByText('Fluxo com envelope')).toBeTruthy();
+    expect(within(envelopeDetails as HTMLElement).queryByText('external_envelope')).toBeNull();
     const lookup = requests.find((request) =>
       request.url.includes('/v1/signature/external-invites/lookup'),
     );
