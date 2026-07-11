@@ -1275,8 +1275,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
-    "\\\"version\\\":6",
-    "PDF accessibility report JSON v6 coverage",
+    "\\\"version\\\":7",
+    "PDF accessibility report JSON v7 coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -1305,28 +1305,43 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
+    "writer_owned_decorative_artifacts_accounted_for",
+    "PDF accessibility writer-owned decorative artifact accounting marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
     "layout:header-rule",
     "PDF accessibility header-rule decorative target coverage",
   );
   assertFileContains(
-    "crates/chancela-doc/src/tests.rs",
-    "vote-table-header-rule",
+    "crates/chancela-doc/src/accessibility.rs",
+    "vote-table-{position}-rule",
     "PDF accessibility vote-table rule decorative target coverage",
   );
   assertFileContains(
-    "crates/chancela-doc/src/tests.rs",
-    "block:5:rule",
+    "crates/chancela-doc/src/accessibility.rs",
+    "block:{index}:rule",
     "PDF accessibility explicit-rule decorative target coverage",
   );
   assertFileContains(
-    "crates/chancela-doc/src/tests.rs",
-    "signature-line:0",
+    "crates/chancela-doc/src/accessibility.rs",
+    "signature-line:{slot_index}",
     "PDF accessibility signature-line decorative target coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/accessibility.rs",
     "fn known_decorative_targets(doc: &DocumentModel) -> Vec<String>",
     "PDF accessibility known decorative target boundary",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/accessibility.rs",
+    "New caller-owned non-text block variants must update this accounting",
+    "PDF accessibility exhaustive DocumentBlock accounting marker",
+  );
+  assertFileContains(
+    "crates/chancela-doc/src/tests.rs",
+    "accessibility_non_text_accounting_covers_current_block_variants",
+    "PDF accessibility current DocumentBlock variant accounting coverage",
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
@@ -1370,8 +1385,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-doc/src/tests.rs",
+    "\\\"pdf_ua_blockers\\\":[\\\"limited_tagged_structure\\\"]",
+    "PDF accessibility reduced bounded blocker list marker",
+  );
+  assertFileDoesNotContain(
+    "crates/chancela-doc/src/tests.rs",
     "\\\"pdf_ua_blockers\\\":[\\\"no_alt_text_model\\\",\\\"limited_tagged_structure\\\"]",
-    "PDF accessibility bounded blocker list marker",
+    "PDF accessibility default fixture no-alt blocker removal marker",
   );
   assertFileContains(
     "crates/chancela-api/src/external_validator_evidence.rs",
@@ -4898,8 +4918,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "accessibility report JSON version 6, structural-depth evidence",
-    "CI/E2E hardening plan PDF accessibility v6 structural-depth marker",
+    "accessibility report JSON version 7, structural-depth evidence",
+    "CI/E2E hardening plan PDF accessibility v7 structural-depth marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`writer_owned_decorative_artifacts_accounted_for`",
+    "CI/E2E hardening plan PDF accessibility writer-owned decorative marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -6303,12 +6328,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "PDF accessibility report JSON\n  version 6 now includes structural-depth evidence",
-    "spec coverage PDF accessibility report v6 marker",
+    "PDF accessibility report JSON\n  version 7 now includes writer-owned decorative-artifact evidence",
+    "spec coverage PDF accessibility report v7 marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "`LimitedTaggedStructure` remains\n  machine-visible",
+    "default fixture no longer reports `no_alt_text_model`",
+    "spec coverage PDF accessibility default fixture no-alt blocker reduction marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`LimitedTaggedStructure` remains machine-visible",
     "spec coverage PDF/UA limited tagged structure caveat marker",
   );
   assertFileContains(

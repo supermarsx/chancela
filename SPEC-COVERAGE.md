@@ -251,16 +251,20 @@ Implementation checkpoints covered here:
   long-term profile, QES, qualified status, legal LTV, or trust-provider
   acceptance.
 - Working tree keeps Documents/CI **PARTIAL**: PDF accessibility report JSON
-  version 6 now includes structural-depth evidence and bounded topology facts
-  for the local tagged-PDF profile while retaining the version 5 writer-owned
-  decorative-artifact accounting for the fixed header rule, explicit horizontal
-  rules, vote-table header/footer rules, and signature blank lines. Page breaks
-  stay excluded from decorative-artifact accounting because they do not emit
-  writer-owned drawing artifacts. `LimitedTaggedStructure` remains
-  machine-visible, `pdf_ua_claimed` stays false, and generated PDFs still emit no
-  PDF/UA certification claim or `pdfuaid` metadata. This is local reporting and
-  bounded self-check evidence only, not PDF/UA conformance, external validator
-  certification, legal/reader acceptance, or complete accessibility delivery.
+  version 7 now includes writer-owned decorative-artifact evidence via
+  `writer_owned_decorative_artifacts_accounted_for`, plus structural-depth
+  evidence and bounded topology facts for the local tagged-PDF profile. The
+  default fixture no longer reports `no_alt_text_model` when only writer-owned
+  decorative rule artifacts are present and emitted as PDF artifacts. Page
+  breaks stay excluded from decorative-artifact accounting because they do not
+  emit writer-owned drawing artifacts, and exhaustive `DocumentBlock` accounting
+  prevents future caller-owned non-text variants from being silently ignored.
+  `LimitedTaggedStructure` remains machine-visible, `pdf_ua_claimed` stays
+  false, and generated PDFs still emit no PDF/UA certification claim or
+  `pdfuaid` metadata. This is local blocker reduction and bounded self-check
+  evidence only, not PDF/UA conformance, external validator certification,
+  signed-PDF accessibility certification, legal sufficiency, legal/reader
+  acceptance, or complete accessibility delivery.
 - Working tree keeps Data/Architecture/UX/Workflows/CI **PARTIAL**: Data
   Management now exposes a `data.backup`-gated hot-backup creation action backed
   by `POST /v1/backup`, posts no request body, disables itself when the instance
@@ -627,12 +631,17 @@ Implementation checkpoints covered here:
 - `fdb9376` keeps Documents/CI **PARTIAL**: PDF accessibility non-text
   accounting counts only blocks that the writer emits as decorative artifacts,
   including header rule, explicit rule, vote-table rule, and signature-line
-  targets, so page breaks no longer require decorative artifact entries.
-  Focused tests pin
-  `accessibility_page_breaks_do_not_require_decorative_accounting` and the
-  `emits_decorative_artifact_block` boundary. This is local accounting honesty
-  only, not full PDF/UA delivery, complete non-text modeling, external
-  validation, or legal document acceptance.
+  targets, so page breaks no longer require decorative artifact entries. The
+  current working-tree report version 7 records
+  `writer_owned_decorative_artifacts_accounted_for`; the default fixture no
+  longer reports `no_alt_text_model` for only writer-owned decorative artifacts,
+  and focused tests pin
+  `accessibility_page_breaks_do_not_require_decorative_accounting`,
+  `accessibility_non_text_accounting_covers_current_block_variants`, and the
+  `emits_decorative_artifact_block` boundary. This is local blocker reduction
+  and accounting honesty only, not full PDF/UA delivery, complete non-text
+  modeling, external validation, legal sufficiency, signed-PDF accessibility
+  certification, or legal document acceptance.
 - `c3d874b` keeps UX/Signatures/Trust/CI **PARTIAL**: the Ferramentas trust
   catalog now groups provider/service/TSA result lists with labelled result
   groups, keeps accepted TSA hashes in the dedicated `trust-accepted-hash`
@@ -2853,13 +2862,14 @@ behavior, legal disposal, or legal-effect claims.
   sidecar/import path, not package validation change, not persisted package
   bytes, not a ledger event, and not disposal execution.
 - Accessibility metadata, mapped inter-word spaces, PDF table-structure
-  semantics, decomposed PDF/UA blocker reports, version 6 structural-depth
-  evidence, bounded topology self-checks, bounded tagged structure,
-  `DisplayDocTitle`, `/Tabs /S`, and XMP consistency checks are not PDF/UA
-  delivery; the writer still keeps `pdf_ua_claimed: false`, keeps
-  `LimitedTaggedStructure` machine-visible, emits no `pdfuaid` metadata, and
-  reports local blocker facts rather than conformance, external-validator
-  certification, or legal/reader acceptance.
+  semantics, decomposed PDF/UA blocker reports, version 7 structural-depth and
+  writer-owned decorative-artifact evidence, bounded topology self-checks,
+  bounded tagged structure, `DisplayDocTitle`, `/Tabs /S`, and XMP consistency
+  checks are not PDF/UA delivery; the writer still keeps
+  `pdf_ua_claimed: false`, keeps `LimitedTaggedStructure` machine-visible, emits no `pdfuaid`
+  metadata, and reports local blocker-reduction facts rather than conformance,
+  validator evidence, signed-PDF accessibility certification, legal sufficiency,
+  external-validator certification, or legal/reader acceptance.
 - Privacy breach-playbook and transfer-control registers plus review receipts are operator
   tracking/control evidence; they do not execute incident response, perform authority/data-subject
   notification, approve or execute transfers, or certify GDPR compliance.
