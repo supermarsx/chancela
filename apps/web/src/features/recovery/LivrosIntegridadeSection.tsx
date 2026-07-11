@@ -20,6 +20,7 @@ import {
   useLedgerIntegrity,
   useReanchorLedger,
   useRestoreLedger,
+  useRestoreLedgerPreflight,
 } from '../../api/hooks';
 import type {
   BookView,
@@ -27,12 +28,14 @@ import type {
   CollisionPolicy,
   Entity,
   ImportOutcomeView,
+  RestorePreflightView,
 } from '../../api/types';
 import { useT } from '../../i18n';
 import { bookStateLabels } from '../../api/labels';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
+  Button,
   Card,
   ConfirmActionModal,
   Digest,
@@ -49,6 +52,147 @@ import {
 } from '../../ui';
 import { GateButton, scopeBook } from '../session/permissions';
 import { StartOverBookModal } from './StartOverBookModal';
+
+const MAX_PREFLIGHT_FINDINGS = 5;
+
+type RestorePreflightReportView = Omit<RestorePreflightView, 'manifest'> & {
+  manifest?: RestorePreflightView['manifest'] | null;
+};
+
+function redactSensitiveText(value: string): string {
+  return value.replace(/[a-f0-9]{32,}/gi, '[redigido]');
+}
+
+function RestorePreflightReport({
+  report,
+  error,
+}: {
+  report: RestorePreflightReportView | null;
+  error: unknown;
+}) {
+  const t = useT();
+
+  if (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      <InlineWarning tone="error" title={t('integrity.restore.preflight.errorTitle')}>
+        <p>{redactSensitiveText(message)}</p>
+      </InlineWarning>
+    );
+  }
+
+  if (!report) return null;
+
+  const allFindings = report.findings ?? [];
+  const allErrors = report.errors ?? [];
+  const findings = allFindings.slice(0, MAX_PREFLIGHT_FINDINGS);
+  const errors = allErrors.slice(0, MAX_PREFLIGHT_FINDINGS);
+  const hiddenFindings = Math.max(0, allFindings.length - findings.length);
+  const hiddenErrors = Math.max(0, allErrors.length - errors.length);
+  const manifest = report.manifest;
+  const missingManifest = !manifest;
+  const ready = report.ready && !missingManifest;
+  const tone = ready ? 'info' : allErrors.length > 0 || missingManifest ? 'error' : 'warn';
+  const status = ready ? 'ready' : report.ok && !missingManifest ? 'blocked' : 'error';
+
+  return (
+    <InlineWarning
+      tone={tone}
+      title={
+        ready
+          ? t('integrity.restore.preflight.readyTitle')
+          : t('integrity.restore.preflight.blockedTitle')
+      }
+    >
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>{t('integrity.restore.preflight.status')}</dt>
+          <dd>
+            <Badge tone={ready ? 'ok' : 'warn'}>{status}</Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>{t('integrity.restore.preflight.encrypted')}</dt>
+          <dd>{report.encrypted ? t('common.yes') : t('common.no')}</dd>
+        </div>
+        <div>
+          <dt>{t('integrity.restore.preflight.ledgerVerified')}</dt>
+          <dd>
+            {report.ledger_verified && manifest?.ledger_verified ? t('common.yes') : t('common.no')}
+          </dd>
+        </div>
+        {manifest ? (
+          <>
+            <div>
+              <dt>{t('integrity.restore.preflight.ledgerLength')}</dt>
+              <dd className="mono">{manifest.ledger_length}</dd>
+            </div>
+            <div>
+              <dt>{t('integrity.restore.preflight.memberCount')}</dt>
+              <dd className="mono">{manifest.member_count}</dd>
+            </div>
+            <div>
+              <dt>{t('integrity.restore.preflight.sidecarMemberCount')}</dt>
+              <dd className="mono">{manifest.sidecar_member_count}</dd>
+            </div>
+            <div>
+              <dt>{t('integrity.restore.preflight.dbMemberPresent')}</dt>
+              <dd>{manifest.db_member_present ? t('common.yes') : t('common.no')}</dd>
+            </div>
+            <div>
+              <dt>{t('integrity.restore.preflight.schemaVersion')}</dt>
+              <dd className="mono">{manifest.schema ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>{t('integrity.restore.preflight.storeSchemaVersion')}</dt>
+              <dd className="mono">{manifest.store_schema_version ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>{t('integrity.restore.preflight.totalMemberBytes')}</dt>
+              <dd className="mono">{manifest.total_member_bytes}</dd>
+            </div>
+          </>
+        ) : null}
+        <div>
+          <dt>{t('integrity.restore.preflight.nextStep')}</dt>
+          <dd>{redactSensitiveText(report.next_step)}</dd>
+        </div>
+      </dl>
+      <div className="stack--tight">
+        {errors.length > 0 ? (
+          <>
+            <h5>{t('integrity.restore.preflight.errors')}</h5>
+            <ul className="plain-list">
+              {errors.map((item, index) => (
+                <li key={`error-${index}`}>{redactSensitiveText(item)}</li>
+              ))}
+            </ul>
+            {hiddenErrors > 0 ? (
+              <p className="field__hint">
+                {t('integrity.restore.preflight.errors.more', { count: hiddenErrors })}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+        <h5>{t('integrity.restore.preflight.findings')}</h5>
+        {findings.length === 0 ? (
+          <p className="field__hint">{t('integrity.restore.preflight.findings.none')}</p>
+        ) : (
+          <ul className="plain-list">
+            {findings.map((finding, index) => (
+              <li key={`finding-${index}`}>{redactSensitiveText(finding)}</li>
+            ))}
+          </ul>
+        )}
+        {hiddenFindings > 0 ? (
+          <p className="field__hint">
+            {t('integrity.restore.preflight.findings.more', { count: hiddenFindings })}
+          </p>
+        ) : null}
+      </div>
+    </InlineWarning>
+  );
+}
 
 /** A friendly label for a canonical chain id (`global` | `application` | `company:…` | `book:…`). */
 function chainLabel(
@@ -155,12 +299,17 @@ export function LivrosIntegridadeSection() {
   const exportBook = useExportBook();
   const reanchor = useReanchorLedger();
   const restore = useRestoreLedger();
+  const restorePreflight = useRestoreLedgerPreflight();
 
   // Modal + field state for the two recovery paths and per-book start-over.
   const [reanchorOpen, setReanchorOpen] = useState(false);
   const [reanchorReason, setReanchorReason] = useState('');
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoreArchive, setRestoreArchive] = useState('');
+  const [restoreKey, setRestoreKey] = useState('');
+  const [restorePreflightReport, setRestorePreflightReport] = useState<RestorePreflightView | null>(
+    null,
+  );
   const [startOverBook, setStartOverBook] = useState<BookView | null>(null);
 
   // Import / per-book restore.
@@ -216,6 +365,23 @@ export function LivrosIntegridadeSection() {
     }
   }
 
+  async function onRestorePreflight() {
+    const archive = restoreArchive.trim();
+    if (!archive) return;
+    restorePreflight.reset();
+    setRestorePreflightReport(null);
+    try {
+      const passphrase = restoreKey;
+      const result = await restorePreflight.mutateAsync(
+        passphrase.trim().length > 0 ? { archive, passphrase } : { archive },
+      );
+      setRestorePreflightReport(result);
+      toast.success(t('integrity.restore.preflight.done'));
+    } finally {
+      setRestoreKey('');
+    }
+  }
+
   return (
     <div className="stack">
       {/* Integrity report ------------------------------------------------------- */}
@@ -265,6 +431,9 @@ export function LivrosIntegridadeSection() {
               icon={<Icon.Refresh />}
               onClick={() => {
                 setRestoreArchive('');
+                setRestoreKey('');
+                setRestorePreflightReport(null);
+                restorePreflight.reset();
                 setRestoreOpen(true);
               }}
             >
@@ -447,9 +616,46 @@ export function LivrosIntegridadeSection() {
             id="restore-archive"
             value={restoreArchive}
             placeholder={t('integrity.restore.archivePlaceholder')}
-            onChange={(e) => setRestoreArchive(e.target.value)}
+            onChange={(e) => {
+              setRestoreArchive(e.target.value);
+              setRestorePreflightReport(null);
+              restorePreflight.reset();
+            }}
           />
         </Field>
+        <Field
+          label={t('integrity.restore.keyLabel')}
+          htmlFor="restore-key"
+          hint={t('integrity.restore.keyHint')}
+        >
+          <Input
+            id="restore-key"
+            type="password"
+            value={restoreKey}
+            autoComplete="off"
+            placeholder={t('integrity.restore.keyPlaceholder')}
+            onChange={(e) => {
+              setRestoreKey(e.target.value);
+              setRestorePreflightReport(null);
+              restorePreflight.reset();
+            }}
+          />
+        </Field>
+        <p className="field__hint">{t('integrity.restore.preflight.secretHint')}</p>
+        <div className="row-wrap">
+          <Button
+            type="button"
+            variant="secondary"
+            icon={<Icon.Check />}
+            disabled={restoreArchive.trim().length === 0 || restorePreflight.isPending}
+            onClick={() => void onRestorePreflight()}
+          >
+            {restorePreflight.isPending
+              ? t('integrity.restore.preflight.pending')
+              : t('integrity.restore.preflight.submit')}
+          </Button>
+        </div>
+        <RestorePreflightReport report={restorePreflightReport} error={restorePreflight.error} />
       </ConfirmActionModal>
 
       {/* Per-book start-over modal --------------------------------------------- */}

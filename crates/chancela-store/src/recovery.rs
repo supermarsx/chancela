@@ -300,6 +300,56 @@ pub struct RestoreOutcome {
     pub chain_verified: bool,
 }
 
+/// Bounded, secret-free evidence produced by [`Store::restore_preflight`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestorePreflightOutcome {
+    /// Whether the archive, manifest members, and isolated snapshot ledger all verified.
+    pub ok: bool,
+    /// Alias for the UI: `true` only when execution restore can proceed with this material.
+    pub ready: bool,
+    /// Whether the supplied archive was an encrypted `.cbackup` envelope, if it could be read.
+    pub encrypted: Option<bool>,
+    /// The archive that was checked.
+    pub archive: PathBuf,
+    /// Parsed manifest evidence, if `manifest.json` was readable.
+    pub manifest: Option<RestorePreflightManifestEvidence>,
+    /// Whether the snapshot ledger verified from the isolated copy.
+    pub ledger_verified: bool,
+    /// Bounded positive evidence for operator display.
+    pub findings: Vec<String>,
+    /// Bounded errors for operator display; no secrets or member hashes.
+    pub errors: Vec<String>,
+    /// Human next step for the recovery UI.
+    pub next_step: String,
+}
+
+/// Secret-free manifest evidence for a restore preflight.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestorePreflightManifestEvidence {
+    /// Archive member path of the manifest.
+    pub path: String,
+    /// Stable display schema for this preflight evidence.
+    pub schema: String,
+    /// Version of this evidence schema.
+    pub version: u32,
+    /// Application version recorded by the backup manifest.
+    pub app_version: String,
+    /// Store schema version recorded by the backup manifest.
+    pub store_schema_version: i64,
+    /// Snapshot ledger length recorded by the backup manifest.
+    pub ledger_length: u64,
+    /// Snapshot ledger verification bit recorded by the backup manifest.
+    pub ledger_verified: bool,
+    /// Count of manifest-listed members (excluding `manifest.json`).
+    pub member_count: usize,
+    /// Count of manifest-listed non-database sidecar members.
+    pub sidecar_member_count: usize,
+    /// Whether the manifest listed the database snapshot member.
+    pub db_member_present: bool,
+    /// Sum of manifest-listed member byte sizes.
+    pub total_member_bytes: u64,
+}
+
 struct VerifiedRestoreZip<'a> {
     ledger: &'a mut Ledger,
     archive: &'a Path,
@@ -721,6 +771,60 @@ impl Store {
         Ok(stmt
             .query_row(params![import_id], |row| row.get::<_, Vec<u8>>(0))
             .optional()?)
+    }
+
+    /// **Non-mutating whole-store restore preflight**.
+    ///
+    /// Accepts the same archive/key mode as execution restore, verifies the zip structure,
+    /// `manifest.json`, every manifest-listed member digest, and the snapshot ledger from an
+    /// isolated copy of `chancela.db`. It does not swap the live DB, stage sidecars, append
+    /// `ledger.restored`, reload state, or mutate this store.
+    pub fn restore_preflight(
+        &self,
+        archive: &Path,
+        data_dir: &Path,
+        passphrase: Option<&str>,
+    ) -> Result<RestorePreflightOutcome, StoreError> {
+        let archive_bytes = std::fs::read(archive)?;
+        let encrypted = is_encrypted_backup(&archive_bytes);
+        let archive_bytes = if encrypted {
+            let Some(passphrase) = passphrase else {
+                return Ok(restore_preflight_failure(
+                    archive,
+                    Some(true),
+                    "encrypted backup requires an explicit passphrase",
+                ));
+            };
+            match decrypt_backup_envelope(&archive_bytes, passphrase) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    return Ok(restore_preflight_failure(
+                        archive,
+                        Some(true),
+                        &restore_preflight_error_message(e),
+                    ));
+                }
+            }
+        } else {
+            if passphrase.is_some() {
+                return Ok(restore_preflight_failure(
+                    archive,
+                    Some(false),
+                    "backup is not an encrypted Chancela envelope",
+                ));
+            }
+            archive_bytes
+        };
+
+        match verify_restore_preflight_zip(archive, data_dir, encrypted, &archive_bytes) {
+            Ok(outcome) => Ok(outcome),
+            Err(StoreError::BadBackup(msg)) => Ok(restore_preflight_failure(
+                archive,
+                Some(encrypted),
+                msg.as_str(),
+            )),
+            Err(e) => Err(e),
+        }
     }
 
     /// **Whole-store restore** from a full backup archive (§2.5) — verify-before-swap.
@@ -1699,6 +1803,149 @@ fn validate_backup_member_name(name: &str) -> Result<(), StoreError> {
         )));
     }
     Ok(())
+}
+
+fn verify_restore_preflight_zip(
+    archive: &Path,
+    data_dir: &Path,
+    encrypted: bool,
+    archive_bytes: &[u8],
+) -> Result<RestorePreflightOutcome, StoreError> {
+    let mut findings = Vec::new();
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes))
+        .map_err(|e| StoreError::BadBackup(format!("not a readable zip: {e}")))?;
+    findings.push("archive structure is readable".to_owned());
+
+    let manifest: BackupManifest = {
+        let mut m = zip
+            .by_name("manifest.json")
+            .map_err(|e| StoreError::BadBackup(format!("no manifest.json: {e}")))?;
+        let mut s = String::new();
+        m.read_to_string(&mut s)?;
+        serde_json::from_str(&s).map_err(|e| StoreError::BadBackup(format!("bad manifest: {e}")))?
+    };
+    findings.push("manifest.json parsed".to_owned());
+
+    let evidence = restore_preflight_manifest_evidence(&manifest);
+    let mut db_bytes = None;
+    for f in &manifest.files {
+        validate_backup_member_name(&f.name)?;
+        let mut member = zip
+            .by_name(&f.name)
+            .map_err(|_| StoreError::BadBackup(format!("archive missing member {}", f.name)))?;
+        let mut bytes = Vec::new();
+        member.read_to_end(&mut bytes)?;
+        if hex(&Sha256::digest(&bytes)) != f.sha256 {
+            return Err(StoreError::BadBackup(format!(
+                "member {} digest mismatch",
+                f.name
+            )));
+        }
+        if f.name == DB_FILE && db_bytes.replace(bytes).is_some() {
+            return Err(StoreError::BadBackup(format!(
+                "manifest lists duplicate member {}",
+                f.name
+            )));
+        }
+    }
+    findings.push(format!(
+        "{} manifest-listed member(s) verified",
+        evidence.member_count
+    ));
+
+    let db_bytes =
+        db_bytes.ok_or_else(|| StoreError::BadBackup(format!("archive has no {DB_FILE}")))?;
+    let verify_dir = data_dir.join(format!(".restore-preflight-{}", uuid::Uuid::new_v4()));
+    let result: Result<bool, StoreError> = (|| {
+        std::fs::create_dir_all(&verify_dir)?;
+        std::fs::write(verify_dir.join(DB_FILE), &db_bytes)?;
+        let verify_store = Store::open(&verify_dir).map_err(|e| {
+            StoreError::BadBackup(format!("snapshot database could not be opened: {e}"))
+        })?;
+        let loaded = verify_store.load().map_err(|e| {
+            StoreError::BadBackup(format!("snapshot database could not be loaded: {e}"))
+        })?;
+        let ledger_verified = loaded.integrity.healthy;
+        if ledger_verified {
+            findings.push("snapshot ledger verified from an isolated copy".to_owned());
+        }
+        Ok(ledger_verified)
+    })();
+    let _ = std::fs::remove_dir_all(&verify_dir);
+    let ledger_verified = result?;
+    if !ledger_verified {
+        return Ok(RestorePreflightOutcome {
+            ok: false,
+            ready: false,
+            encrypted: Some(encrypted),
+            archive: archive.to_path_buf(),
+            manifest: Some(evidence),
+            ledger_verified: false,
+            findings,
+            errors: vec![
+                "snapshot ledger does not verify; refusing to restore a broken backup".to_owned(),
+            ],
+            next_step: "choose another backup or repair the source archive before restoring"
+                .to_owned(),
+        });
+    }
+
+    Ok(RestorePreflightOutcome {
+        ok: true,
+        ready: true,
+        encrypted: Some(encrypted),
+        archive: archive.to_path_buf(),
+        manifest: Some(evidence),
+        ledger_verified: true,
+        findings,
+        errors: Vec::new(),
+        next_step: "restore can proceed".to_owned(),
+    })
+}
+
+fn restore_preflight_manifest_evidence(
+    manifest: &BackupManifest,
+) -> RestorePreflightManifestEvidence {
+    let member_count = manifest.files.len();
+    let db_member_present = manifest.files.iter().any(|f| f.name == DB_FILE);
+    RestorePreflightManifestEvidence {
+        path: "manifest.json".to_owned(),
+        schema: "chancela-backup-manifest/v1".to_owned(),
+        version: 1,
+        app_version: manifest.app_version.clone(),
+        store_schema_version: manifest.store_schema_version,
+        ledger_length: manifest.ledger_length,
+        ledger_verified: manifest.ledger_verified,
+        member_count,
+        sidecar_member_count: manifest.files.iter().filter(|f| f.name != DB_FILE).count(),
+        db_member_present,
+        total_member_bytes: manifest.files.iter().map(|f| f.bytes).sum(),
+    }
+}
+
+fn restore_preflight_failure(
+    archive: &Path,
+    encrypted: Option<bool>,
+    message: &str,
+) -> RestorePreflightOutcome {
+    RestorePreflightOutcome {
+        ok: false,
+        ready: false,
+        encrypted,
+        archive: archive.to_path_buf(),
+        manifest: None,
+        ledger_verified: false,
+        findings: Vec::new(),
+        errors: vec![message.to_owned()],
+        next_step: "fix the archive material or choose another backup before restoring".to_owned(),
+    }
+}
+
+fn restore_preflight_error_message(e: StoreError) -> String {
+    match e {
+        StoreError::BadBackup(msg) => msg,
+        other => other.to_string(),
+    }
 }
 
 fn stage_backup_sidecars(

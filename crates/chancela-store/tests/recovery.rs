@@ -597,6 +597,95 @@ fn whole_store_restore_verifies_before_swapping() {
 }
 
 #[test]
+fn restore_preflight_verifies_without_mutating_live_store_or_sidecars() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let (mut ledger, _entity, _book, _act) = seed(&store);
+
+    let settings = dir.path().join("settings.json");
+    std::fs::write(&settings, br#"{"theme":"backup"}"#).unwrap();
+    let backup = store
+        .backup(dir.path(), std::slice::from_ref(&settings))
+        .expect("backup");
+
+    let extra = ledger
+        .append("amelia.marques", "settings", "settings.changed", None, b"x")
+        .clone();
+    store.persist(|tx| tx.append_event(&extra)).unwrap();
+    std::fs::write(&settings, br#"{"theme":"live"}"#).unwrap();
+    let before = store.load().unwrap().ledger.len();
+
+    let preflight = store
+        .restore_preflight(Path::new(&backup.path), dir.path(), None)
+        .expect("preflight succeeds");
+    assert!(preflight.ok);
+    assert!(preflight.ready);
+    assert_eq!(preflight.encrypted, Some(false));
+    assert!(preflight.ledger_verified);
+    let manifest = preflight.manifest.expect("manifest evidence");
+    assert_eq!(manifest.path, "manifest.json");
+    assert_eq!(manifest.schema, "chancela-backup-manifest/v1");
+    assert_eq!(manifest.version, 1);
+    assert_eq!(manifest.ledger_length, 3);
+    assert_eq!(manifest.member_count, 2);
+    assert_eq!(manifest.sidecar_member_count, 1);
+    assert!(manifest.db_member_present);
+
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.ledger.len(), before, "preflight does not restore DB");
+    assert!(
+        loaded
+            .ledger
+            .events()
+            .iter()
+            .any(|e| e.kind == "settings.changed"),
+        "live post-backup event remains"
+    );
+    assert!(
+        !loaded
+            .ledger
+            .events()
+            .iter()
+            .any(|e| e.kind == "ledger.restored"),
+        "preflight does not append restore audit events"
+    );
+    assert_eq!(std::fs::read(&settings).unwrap(), br#"{"theme":"live"}"#);
+    assert!(
+        std::fs::read_dir(dir.path()).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".restore-preflight-")),
+        "isolated preflight directory is cleaned up"
+    );
+}
+
+#[test]
+fn restore_preflight_reports_bad_archive_as_evidence() {
+    let dir = TempDir::new();
+    let store = Store::open(dir.path()).expect("open");
+    let _ = seed(&store);
+    let bad_archive = dir.path().join("bad.zip");
+    std::fs::write(&bad_archive, b"not a zip").unwrap();
+
+    let preflight = store
+        .restore_preflight(&bad_archive, dir.path(), None)
+        .expect("bad archive is display evidence, not a store mutation error");
+    assert!(!preflight.ok);
+    assert!(!preflight.ready);
+    assert_eq!(preflight.encrypted, Some(false));
+    assert!(preflight.manifest.is_none());
+    assert!(
+        preflight
+            .errors
+            .iter()
+            .any(|e| e.contains("not a readable zip")),
+        "error identifies the archive problem: {preflight:?}"
+    );
+    assert_eq!(store.load().unwrap().ledger.len(), 3);
+}
+
+#[test]
 fn encrypted_backup_hides_zip_and_sqlite_and_restores_sidecars() {
     let dir = TempDir::new();
     let store = Store::open(dir.path()).expect("open");

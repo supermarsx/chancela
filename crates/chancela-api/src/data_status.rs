@@ -178,6 +178,9 @@ pub struct DataCleanupResponse {
     pub deleted_bytes: u64,
     pub deleted_files: u64,
     pub deleted_directories: u64,
+    pub would_delete_bytes: u64,
+    pub would_delete_files: u64,
+    pub would_delete_directories: u64,
     pub skipped: Vec<String>,
     pub data_dir: Option<String>,
 }
@@ -530,6 +533,9 @@ fn cleanup_data_dir(
         deleted_bytes: 0,
         deleted_files: 0,
         deleted_directories: 0,
+        would_delete_bytes: 0,
+        would_delete_files: 0,
+        would_delete_directories: 0,
         skipped: Vec::new(),
         data_dir: None,
     };
@@ -621,9 +627,9 @@ fn cleanup_concern_root(
     }
 
     if meta.is_dir() {
-        cleanup_directory_contents(base, root, policy, response);
+        let _ = cleanup_directory_contents(base, root, policy, response);
     } else if meta.is_file() {
-        cleanup_file(root, &meta, base, policy, response);
+        let _ = cleanup_file(root, &meta, base, policy, response);
     } else {
         response
             .skipped
@@ -636,7 +642,7 @@ fn cleanup_directory_contents(
     dir: &Path,
     policy: &CleanupPolicy,
     response: &mut DataCleanupResponse,
-) {
+) -> bool {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) => {
@@ -644,10 +650,11 @@ fn cleanup_directory_contents(
                 "{}: failed to read cleanup directory: {e}",
                 relative_display(base, dir)
             ));
-            return;
+            return false;
         }
     };
 
+    let mut all_entries_removed = true;
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
@@ -656,11 +663,15 @@ fn cleanup_directory_contents(
                     "{}: failed to read cleanup directory entry: {e}",
                     relative_display(base, dir)
                 ));
+                all_entries_removed = false;
                 continue;
             }
         };
-        cleanup_path(base, &entry.path(), policy, response);
+        if !cleanup_path(base, &entry.path(), policy, response) {
+            all_entries_removed = false;
+        }
     }
+    all_entries_removed
 }
 
 fn cleanup_path(
@@ -668,7 +679,7 @@ fn cleanup_path(
     path: &Path,
     policy: &CleanupPolicy,
     response: &mut DataCleanupResponse,
-) {
+) -> bool {
     let rel = relative_display(base, path);
     let meta = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
@@ -676,39 +687,49 @@ fn cleanup_path(
             response
                 .skipped
                 .push(format!("{rel}: failed to inspect cleanup target: {e}"));
-            return;
+            return false;
         }
     };
     if meta.file_type().is_symlink() {
         response
             .skipped
             .push(format!("{rel}: protected symlink cleanup target"));
-        return;
+        return false;
     }
     if let Err(reason) = validate_cleanup_target(base, path) {
         response.skipped.push(format!("{rel}: {reason}"));
-        return;
+        return false;
     }
 
     if meta.is_dir() {
-        cleanup_directory_contents(base, path, policy, response);
+        let contents_removed = cleanup_directory_contents(base, path, policy, response);
         if policy.dry_run {
-            return;
+            if contents_removed {
+                response.would_delete_directories =
+                    response.would_delete_directories.saturating_add(1);
+                return true;
+            }
+            return false;
         }
         match fs::remove_dir(path) {
             Ok(()) => {
                 response.deleted_directories = response.deleted_directories.saturating_add(1);
+                true
             }
-            Err(e) => response
-                .skipped
-                .push(format!("{rel}: failed to delete directory: {e}")),
+            Err(e) => {
+                response
+                    .skipped
+                    .push(format!("{rel}: failed to delete directory: {e}"));
+                false
+            }
         }
     } else if meta.is_file() {
-        cleanup_file(path, &meta, base, policy, response);
+        cleanup_file(path, &meta, base, policy, response)
     } else {
         response
             .skipped
             .push(format!("{rel}: unsupported filesystem entry type"));
+        false
     }
 }
 
@@ -718,26 +739,32 @@ fn cleanup_file(
     base: &Path,
     policy: &CleanupPolicy,
     response: &mut DataCleanupResponse,
-) {
+) -> bool {
     if !policy.should_delete_file(path, meta) {
-        return;
+        return false;
     }
     if policy.dry_run {
-        return;
+        response.would_delete_files = response.would_delete_files.saturating_add(1);
+        response.would_delete_bytes = response.would_delete_bytes.saturating_add(meta.len());
+        return true;
     }
-    delete_file(path, meta.len(), base, response);
+    delete_file(path, meta.len(), base, response)
 }
 
-fn delete_file(path: &Path, bytes: u64, base: &Path, response: &mut DataCleanupResponse) {
+fn delete_file(path: &Path, bytes: u64, base: &Path, response: &mut DataCleanupResponse) -> bool {
     let rel = relative_display(base, path);
     match fs::remove_file(path) {
         Ok(()) => {
             response.deleted_files = response.deleted_files.saturating_add(1);
             response.deleted_bytes = response.deleted_bytes.saturating_add(bytes);
+            true
         }
-        Err(e) => response
-            .skipped
-            .push(format!("{rel}: failed to delete file: {e}")),
+        Err(e) => {
+            response
+                .skipped
+                .push(format!("{rel}: failed to delete file: {e}"));
+            false
+        }
     }
 }
 
@@ -1582,6 +1609,16 @@ fn concern_for_root(root: &str) -> ConcernDef {
             label: "Notifications",
             basis: UsageBasis::Filesystem,
         },
+        crate::platform_logs::PLATFORM_LOGS_FILE => ConcernDef {
+            id: "platform_logs",
+            label: "Platform logs",
+            basis: UsageBasis::Filesystem,
+        },
+        crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE => ConcernDef {
+            id: "backup_recovery_drills",
+            label: "Backup recovery drill receipts",
+            basis: UsageBasis::Filesystem,
+        },
         crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE => ConcernDef {
             id: "external_signing",
             label: "External signing",
@@ -1733,6 +1770,16 @@ mod tests {
             .unwrap_or_else(|| panic!("missing SQLite logical usage entry {id}"))
     }
 
+    fn write_file_with_modified(path: &Path, contents: &[u8], modified: SystemTime) {
+        std::fs::write(path, contents).expect("write test file");
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .expect("open test file for timestamp update");
+        file.set_times(std::fs::FileTimes::new().set_modified(modified))
+            .expect("set test file modified timestamp");
+    }
+
     #[test]
     fn data_status_concern_classification_covers_known_roots() {
         assert_eq!(concern_for_root("chancela.db").id, "database");
@@ -1753,6 +1800,11 @@ mod tests {
         assert_eq!(
             concern_for_root("notification-triage.json").id,
             "notifications"
+        );
+        assert_eq!(concern_for_root("platform-logs.json").id, "platform_logs");
+        assert_eq!(
+            concern_for_root("backup-recovery-drills.json").id,
+            "backup_recovery_drills"
         );
         assert_eq!(
             concern_for_root("external-signing-envelopes.json").id,
@@ -1836,6 +1888,89 @@ mod tests {
         assert!(fallback.usage.sqlite_logical.is_empty());
         assert!(!fallback.permissions.sqlite_store_open.ok);
         assert!(fallback.permissions.sqlite_store_open.checked);
+    }
+
+    #[test]
+    fn exports_dry_run_reports_cleanup_plan_without_removing_files() {
+        let tmp = TempDir::new("exports-dry-run-plan");
+        let exports = tmp.dir.join("exports");
+        let nested = exports.join("old-bundles");
+        std::fs::create_dir_all(&nested).expect("exports dirs");
+
+        let now = SystemTime::now();
+        let old = now
+            .checked_sub(Duration::from_secs(3 * 24 * 60 * 60))
+            .expect("old timestamp");
+        let newer_old = old
+            .checked_add(Duration::from_secs(60))
+            .expect("newer old timestamp");
+        let recent = now
+            .checked_sub(Duration::from_secs(60))
+            .expect("recent timestamp");
+
+        let old_export = exports.join("old.zip");
+        let nested_old_export = nested.join("nested-old.zip");
+        let recent_export = exports.join("recent.zip");
+        let crash = tmp.dir.join("crash.log");
+        write_file_with_modified(&old_export, b"old-export", old);
+        write_file_with_modified(&nested_old_export, b"nested-old-export", newer_old);
+        write_file_with_modified(&recent_export, b"recent-export", recent);
+        std::fs::write(&crash, b"crash").expect("crash file");
+
+        let req = DataCleanupRequest {
+            target: "exports".to_owned(),
+            dry_run: Some(true),
+            minimum_age_days: Some(1),
+            keep_latest: Some(1),
+        };
+        let policy =
+            CleanupPolicy::from_request(CleanupTarget::Exports, &req).expect("exports policy");
+
+        let response =
+            cleanup_data_dir(tmp.dir.clone(), CleanupTarget::Exports, policy).expect("dry run");
+
+        assert_eq!(response.target, "exports");
+        assert!(response.dry_run);
+        assert_eq!(response.deleted_files, 0);
+        assert_eq!(response.deleted_directories, 0);
+        assert_eq!(response.deleted_bytes, 0);
+        assert_eq!(response.would_delete_files, 2);
+        assert_eq!(response.would_delete_directories, 1);
+        assert_eq!(
+            response.would_delete_bytes,
+            (b"old-export".len() + b"nested-old-export".len()) as u64
+        );
+        assert!(
+            response.skipped.is_empty(),
+            "unexpected skipped entries: {:?}",
+            response.skipped
+        );
+
+        assert!(old_export.is_file(), "old export preserved");
+        assert!(nested_old_export.is_file(), "nested old export preserved");
+        assert!(recent_export.is_file(), "recent export preserved");
+        assert!(nested.is_dir(), "would-delete directory preserved");
+        assert!(crash.is_file(), "crash file untouched");
+    }
+
+    #[test]
+    fn cleanup_policy_rejects_retained_export_fields_for_crash_target() {
+        let req = DataCleanupRequest {
+            target: "crash".to_owned(),
+            dry_run: Some(true),
+            minimum_age_days: Some(30),
+            keep_latest: Some(5),
+        };
+
+        let err = CleanupPolicy::from_request(CleanupTarget::Crash, &req)
+            .expect_err("crash policy fields should be rejected");
+
+        match err {
+            ApiError::Unprocessable(message) => {
+                assert!(message.contains("supported only for exports"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

@@ -210,17 +210,18 @@ afterEach(() => {
 });
 
 describe('GestaoDadosSection', () => {
-  it('offers the five distinct data-management operations', async () => {
+  it('offers backup creation plus the five distinct data-management operations', async () => {
     installFetch();
     renderWithProviders(<GestaoDadosSection />);
     for (const name of [
+      'Criar backup',
       'Repor interface',
       'Recomeçar',
       'Limpar dados',
       'Reposição de fábrica',
       'Reposição total',
     ]) {
-      expect(screen.getAllByRole('button', { name }).length).toBeGreaterThan(0);
+      expect((await screen.findAllByRole('button', { name })).length).toBeGreaterThan(0);
     }
     expect(await screen.findByText('Estado do armazenamento')).toBeTruthy();
   });
@@ -500,9 +501,13 @@ describe('GestaoDadosSection', () => {
         return jsonResponse({
           target: 'crash',
           data_dir: 'F:\\ChancelaData',
+          dry_run: false,
           deleted_bytes: 512,
           deleted_files: 1,
           deleted_directories: 1,
+          would_delete_bytes: 0,
+          would_delete_files: 0,
+          would_delete_directories: 0,
           skipped: [],
         });
       }
@@ -532,22 +537,19 @@ describe('GestaoDadosSection', () => {
     );
   });
 
-  it('cleans retained exports without changing the crash cleanup target', async () => {
-    const cleanedStatus: DataStatusResponse = {
-      ...durableStatus,
-      usage: {
-        ...durableStatus.usage,
-        filesystem: durableStatus.usage.filesystem.filter((concern) => concern.id !== 'exports'),
-      },
-    };
-    const calls = installFetch([durableStatus, cleanedStatus], (url) => {
+  it('previews retained export cleanup without changing the crash cleanup target', async () => {
+    const calls = installFetch([durableStatus, durableStatus], (url) => {
       if (url.includes('/v1/data/cleanup')) {
         return jsonResponse({
           target: 'exports',
           data_dir: 'F:\\ChancelaData',
-          deleted_bytes: 512,
-          deleted_files: 2,
-          deleted_directories: 1,
+          dry_run: true,
+          deleted_bytes: 0,
+          deleted_files: 0,
+          deleted_directories: 0,
+          would_delete_bytes: 512,
+          would_delete_files: 2,
+          would_delete_directories: 1,
           skipped: [],
         });
       }
@@ -560,21 +562,30 @@ describe('GestaoDadosSection', () => {
       .closest('section')!;
     const exportsRow = within(maintenanceSection).getByText('Exportações retidas').closest('li')!;
     expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
-      'Remove pacotes de exportação guardados pelo servidor',
+      'Pré-visualiza exportações retidas com pelo menos 30 dias',
+    );
+    expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
+      'Nenhum ficheiro é removido nesta ação',
     );
     expect(exportsRow.querySelector('.data-status-cleanup__metric')?.textContent).toContain(
       '2 ficheiros',
     );
+    expect(within(exportsRow).queryByRole('button', { name: 'Limpar exportações' })).toBeNull();
 
-    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Limpar exportações' }));
-    const confirmBtns = screen.getAllByRole('button', { name: 'Limpar exportações' });
-    fireEvent.click(confirmBtns[confirmBtns.length - 1]);
+    fireEvent.click(within(exportsRow).getByRole('button', { name: 'Pré-visualizar exportações' }));
 
     await waitFor(() => expect(calls.some((c) => c.url.includes('/v1/data/cleanup'))).toBe(true));
     const cleanupCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
     expect(cleanupCall.method).toBe('POST');
-    expect(JSON.parse(cleanupCall.body as string)).toEqual({ target: 'exports' });
-    expect(await screen.findByText(/Apagados 2 ficheiros e 1 pastas/)).toBeTruthy();
+    expect(JSON.parse(cleanupCall.body as string)).toEqual({
+      target: 'exports',
+      dry_run: true,
+      minimum_age_days: 30,
+      keep_latest: 5,
+    });
+    expect(await screen.findByText('Pré-visualização de exportações')).toBeTruthy();
+    expect(screen.getByText(/2 ficheiros e 1 pastas seriam elegíveis/)).toBeTruthy();
+    expect(screen.getByText(/Nenhum ficheiro foi removido/)).toBeTruthy();
     await waitFor(() =>
       expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
     );
@@ -594,6 +605,184 @@ describe('GestaoDadosSection', () => {
     expect(calls.every((c) => c.url.includes('/v1/data/status') && c.method === 'GET')).toBe(true);
     expect(calls.some((c) => c.url.includes('/v1/settings') && c.method === 'PUT')).toBe(false);
     expect(calls.some((c) => c.url.includes('/v1/platform/logs'))).toBe(false);
+  });
+
+  it('creates a hot backup from the storage panel and renders the non-secret manifest', async () => {
+    const backupPath = 'F:\\ChancelaData\\backups\\chancela-backup-20260710.zip';
+    const secretLikeField = 'server-secret-not-for-dom';
+    const calls = installFetch([durableStatus, durableStatus], (url) => {
+      if (url === '/v1/backup') {
+        return jsonResponse({
+          path: backupPath,
+          bytes: 4096,
+          created_at: '2026-07-10T10:30:00Z',
+          app_version: '0.1.0-test',
+          store_schema_version: 7,
+          ledger_length: 42,
+          ledger_head: 'a'.repeat(64),
+          ledger_verified: true,
+          secret_token: secretLikeField,
+          files: [
+            { name: 'backup-member-secret-name.sqlite', sha256: 'b'.repeat(64), bytes: 3072 },
+            { name: 'backup-settings-secret-name.json', sha256: 'c'.repeat(64), bytes: 1024 },
+          ],
+        });
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Criar backup' }));
+
+    await waitFor(() => expect(calls.some((c) => c.url === '/v1/backup')).toBe(true));
+    const backup = calls.find((c) => c.url === '/v1/backup')!;
+    expect(backup.method).toBe('POST');
+    expect(backup.body).toBeNull();
+    expect(await screen.findByText('Backup criado')).toBeTruthy();
+    expect(screen.getByText(backupPath)).toBeTruthy();
+    expect(screen.getAllByText('4 KB').length).toBeGreaterThan(0);
+    expect(screen.getByText('2 / 4 KB')).toBeTruthy();
+    expect(document.body.textContent).not.toContain(secretLikeField);
+    expect(document.body.textContent).not.toContain('0.1.0-test');
+    expect(document.body.textContent).not.toContain('backup-member-secret-name.sqlite');
+    expect(document.body.textContent).not.toContain('b'.repeat(64));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
+    );
+  });
+
+  it('surfaces backup creation failures without rendering arbitrary response fields', async () => {
+    const secretLikeField = 'backend-secret-not-for-dom';
+    const calls = installFetch([durableStatus], (url) => {
+      if (url === '/v1/backup') {
+        return jsonResponse(
+          {
+            error: 'backups require on-disk persistence',
+            secret_token: secretLikeField,
+          },
+          422,
+        );
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Criar backup' }));
+
+    await waitFor(() => expect(calls.some((c) => c.url === '/v1/backup')).toBe(true));
+    expect(await screen.findAllByText('backups require on-disk persistence')).toHaveLength(2);
+    expect(document.body.textContent).not.toContain(secretLikeField);
+  });
+
+  it('posts a preflight-only recovery drill receipt with exact passphrase, clears the key and renders bounded evidence', async () => {
+    const archive = 'F:\\ChancelaData\\backups\\chancela-backup-drill.cbackup';
+    const passphraseMaterial = 'drill-passphrase-not-for-dom';
+    const passphrase = `  ${passphraseMaterial}  `;
+    const hiddenSecret = 'server-secret-not-for-dom';
+    const hiddenHash = 'f'.repeat(64);
+    const calls = installFetch([durableStatus], (url, init) => {
+      if (url === '/v1/backup/recovery-drills') {
+        const body = JSON.parse((init?.body as string) ?? '{}');
+        expect(body).toEqual({
+          archive,
+          passphrase,
+          operator_notes: 'Quarterly drill only',
+          custody_location: 'Safe A / shelf 3',
+        });
+        return jsonResponse(
+          {
+            id: 'drill-1',
+            created_at: '2026-07-10T10:40:00Z',
+            archive,
+            preflight_ok: true,
+            preflight_ready: true,
+            encrypted: true,
+            ledger_verified: true,
+            manifest: {
+              schema: 'chancela-backup-manifest/v1',
+              version: 1,
+              app_version: 'internal-build-not-rendered',
+              store_schema_version: 7,
+              ledger_length: 42,
+              ledger_verified: true,
+              member_count: 3,
+              sidecar_member_count: 2,
+              db_member_present: true,
+              total_member_bytes: 4096,
+              member_name: 'secret-member-name.json',
+              sha256: hiddenHash,
+            },
+            operator_notes: 'Quarterly drill only',
+            custody_location: 'Safe A / shelf 3',
+            restore_executed: false,
+            live_db_swapped: false,
+            sidecars_staged: false,
+            ledger_restored_appended: false,
+            data_deleted: false,
+            offsite_custody_proven: false,
+            legal_archive_certified: false,
+            secret_token: hiddenSecret,
+          },
+          201,
+        );
+      }
+      if (url === '/v1/ledger/recovery/restore') {
+        return jsonResponse({ error: 'restore should not be called' }, 500);
+      }
+      return null;
+    });
+    renderWithProviders(<GestaoDadosSection />);
+
+    fireEvent.change(await screen.findByLabelText('Arquivo do backup para ensaio'), {
+      target: { value: archive },
+    });
+    const key = screen.getByLabelText('Chave do backup (opcional)') as HTMLInputElement;
+    fireEvent.change(key, { target: { value: passphrase } });
+    fireEvent.change(screen.getByLabelText('Local de custódia'), {
+      target: { value: 'Safe A / shelf 3' },
+    });
+    fireEvent.change(screen.getByLabelText('Notas do operador'), {
+      target: { value: 'Quarterly drill only' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Registar ensaio sem restauro' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.url === '/v1/backup/recovery-drills')).toBe(true),
+    );
+    const drill = calls.find((c) => c.url === '/v1/backup/recovery-drills')!;
+    expect(drill.method).toBe('POST');
+    expect(calls.some((c) => c.url === '/v1/ledger/recovery/restore')).toBe(false);
+    expect(calls.some((c) => c.url === '/v1/ledger/recovery/restore/preflight')).toBe(false);
+
+    expect(await screen.findByText('Recibo de ensaio registado')).toBeTruthy();
+    expect(screen.getByText(archive)).toBeTruthy();
+    expect(screen.getByText('chancela-backup-manifest/v1')).toBeTruthy();
+    expect(screen.getByText('Membros no arquivo')).toBeTruthy();
+    expect(screen.getByText('Membros sidecar')).toBeTruthy();
+    expect(screen.getByText('Custódia off-site comprovada')).toBeTruthy();
+    expect(screen.getByText('Certificação legal de arquivo')).toBeTruthy();
+    expect(screen.getByText('Custódia off-site comprovada').closest('div')?.textContent).toContain(
+      'Não',
+    );
+    expect(screen.getByText('Certificação legal de arquivo').closest('div')?.textContent).toContain(
+      'Não',
+    );
+    expect(key.value).toBe('');
+    expect(document.body.textContent).not.toContain(passphraseMaterial);
+    expect(document.body.textContent).not.toContain(hiddenSecret);
+    expect(document.body.textContent).not.toContain(hiddenHash);
+    expect(document.body.textContent).not.toContain('internal-build-not-rendered');
+    expect(document.body.textContent).not.toContain('secret-member-name.json');
+  });
+
+  it('disables backup creation when the instance is not using durable storage', async () => {
+    installFetch([inMemoryStatus]);
+    renderWithProviders(<GestaoDadosSection />);
+
+    expect(await screen.findByText('Sem pasta de dados configurada')).toBeTruthy();
+    const backupButton = screen.getByRole('button', { name: 'Criar backup' }) as HTMLButtonElement;
+    expect(backupButton.disabled).toBe(true);
+    expect(screen.getAllByText('Requer armazenamento durável em disco.').length).toBeGreaterThan(0);
   });
 
   it('gates the domain wipe on the exact phrase + step-up re-auth, then calls /v1/data/reset', async () => {

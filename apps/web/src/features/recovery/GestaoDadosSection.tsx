@@ -2,8 +2,9 @@
  * "Gestão de Dados" — the Configurações sub-tab for the destructive data-management
  * taxonomy (t54-E4, deliverable #2, §2.11).
  *
- * FIVE clearly-distinguished operations so the destructive ones are never mistaken for the
- * continue-operating ones:
+ * One backup action plus FIVE clearly-distinguished reset operations so the destructive ones
+ * are never mistaken for the continue-operating ones:
+ *  0. **Backup operacional** — hot durable-store backup; shows only manifest metadata.
  *  1. **Repor interface** — CLIENT-ONLY (clear localStorage + React Query cache + reload);
  *     single confirm, NO server call. The low-risk sibling.
  *  2. **Recomeçar instância** — whole-instance archive-then-fresh; the app keeps running
@@ -16,13 +17,15 @@
  *     skip only).
  *  5. **Reposição total** — factory reset PLUS a client-side clear + reboot in one action.
  *
- * Every server op routes the shared {@link ConfirmActionModal} (type-phrase + step-up
+ * Every destructive server op routes the shared {@link ConfirmActionModal} (type-phrase + step-up
  * re-auth + export-first); the server enforces the same gates. Nothing is silently destructive.
  */
 import { type FormEvent, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useCleanDataStorage,
+  useCreateBackupRecoveryDrill,
+  useCreateBackup,
   useDataKeyRotationExecution,
   useDataKeyRotationPreflight,
   useDataStatus,
@@ -31,6 +34,9 @@ import {
 } from '../../api/hooks';
 import {
   RESET_PHRASE,
+  type BackupRecoveryDrillBody,
+  type BackupRecoveryDrillReceipt,
+  type BackupManifest,
   type DataCleanupResult,
   type DataCleanupTarget,
   type DataKeyRotationExecuteBody,
@@ -63,6 +69,22 @@ import { GateButton } from '../session/permissions';
 import { resetFrontend } from './frontendReset';
 
 type Dialog = 'none' | 'frontend' | 'startover' | 'domain' | 'factory' | 'full';
+
+const EXPORT_CLEANUP_MINIMUM_AGE_DAYS = 30;
+const EXPORT_CLEANUP_KEEP_LATEST = 5;
+const EXPORT_CLEANUP_PREVIEW_BODY = {
+  target: 'exports' as const,
+  dry_run: true,
+  minimum_age_days: EXPORT_CLEANUP_MINIMUM_AGE_DAYS,
+  keep_latest: EXPORT_CLEANUP_KEEP_LATEST,
+};
+const EXPORT_CLEANUP_PREVIEW_DESCRIPTION =
+  `Pré-visualiza exportações retidas com pelo menos ${EXPORT_CLEANUP_MINIMUM_AGE_DAYS} dias, ` +
+  `preservando as ${EXPORT_CLEANUP_KEEP_LATEST} mais recentes. Nenhum ficheiro é removido nesta ação.`;
+const EXPORT_CLEANUP_PREVIEW_BUTTON = 'Pré-visualizar exportações';
+const EXPORT_CLEANUP_PREVIEW_PENDING = 'A pré-visualizar…';
+const EXPORT_CLEANUP_PREVIEW_DONE = 'Pré-visualização pronta.';
+const EXPORT_CLEANUP_PREVIEW_TITLE = 'Pré-visualização de exportações';
 
 type CleanupConfig = {
   target: DataCleanupTarget;
@@ -224,11 +246,27 @@ function usageForTarget(
 }
 
 function cleanupSummary(result: DataCleanupResult, t: TFunction, locale: string): string {
+  if (result.dry_run) {
+    const files = new Intl.NumberFormat(locale).format(result.would_delete_files ?? 0);
+    const directories = new Intl.NumberFormat(locale).format(result.would_delete_directories ?? 0);
+    const bytes = formatBytes(result.would_delete_bytes ?? 0, locale);
+    return `Pré-visualização: ${files} ficheiros e ${directories} pastas seriam elegíveis, totalizando ${bytes}. Nenhum ficheiro foi removido.`;
+  }
+
   return t('data.status.cleanup.result', {
     files: new Intl.NumberFormat(locale).format(result.deleted_files),
     directories: new Intl.NumberFormat(locale).format(result.deleted_directories),
     bytes: formatBytes(result.deleted_bytes, locale),
   });
+}
+
+function backupFileSummary(manifest: BackupManifest, locale: string): string {
+  const files = new Intl.NumberFormat(locale).format(manifest.files.length);
+  const bytes = formatBytes(
+    manifest.files.reduce((total, file) => total + file.bytes, 0),
+    locale,
+  );
+  return `${files} / ${bytes}`;
 }
 
 function buildKeyRotationPreflightBody(
@@ -244,6 +282,21 @@ function buildKeyRotationExecutionBody(replacementKey: string): DataKeyRotationE
   return { new_key: replacementKey };
 }
 
+function buildRecoveryDrillBody(
+  archive: string,
+  passphrase: string,
+  notes: string,
+  custodyLocation: string,
+): BackupRecoveryDrillBody {
+  const body: BackupRecoveryDrillBody = { archive: archive.trim() };
+  const note = notes.trim();
+  const custody = custodyLocation.trim();
+  if (passphrase.trim().length > 0) body.passphrase = passphrase;
+  if (note.length > 0) body.operator_notes = note;
+  if (custody.length > 0) body.custody_location = custody;
+  return body;
+}
+
 function StatusBadge({
   value,
   positive = true,
@@ -256,6 +309,128 @@ function StatusBadge({
   if (value === null) return <Badge>{'—'}</Badge>;
   const ok = positive ? value : !value;
   return <Badge tone={ok ? 'ok' : 'warn'}>{value ? t('common.yes') : t('common.no')}</Badge>;
+}
+
+function RecoveryDrillReceiptReport({
+  receipt,
+  t,
+  locale,
+}: {
+  receipt: BackupRecoveryDrillReceipt;
+  t: TFunction;
+  locale: string;
+}) {
+  const manifest = receipt.manifest;
+  const falseFlags: { label: string; value: boolean }[] = [
+    { label: 'Restauro executado', value: receipt.restore_executed },
+    { label: 'Base de dados trocada', value: receipt.live_db_swapped },
+    { label: 'Sidecars preparados', value: receipt.sidecars_staged },
+    { label: 'ledger.restored acrescentado', value: receipt.ledger_restored_appended },
+    { label: 'Dados apagados', value: receipt.data_deleted },
+    { label: 'Custódia off-site comprovada', value: receipt.offsite_custody_proven },
+    { label: 'Certificação legal de arquivo', value: receipt.legal_archive_certified },
+  ];
+  return (
+    <InlineWarning
+      tone={receipt.preflight_ready ? 'info' : 'warn'}
+      title="Recibo de ensaio registado"
+    >
+      <div className="stack--tight">
+        <dl className="deflist data-status-summary">
+          <div className="deflist__wide">
+            <dt>Arquivo verificado</dt>
+            <dd className="mono">{receipt.archive}</dd>
+          </div>
+          <div>
+            <dt>Registado em</dt>
+            <dd>{formatTimestamp(receipt.created_at, locale)}</dd>
+          </div>
+          <div>
+            <dt>Pré-validação OK</dt>
+            <dd>
+              <Badge tone={receipt.preflight_ok ? 'ok' : 'warn'}>
+                {receipt.preflight_ok ? t('common.yes') : t('common.no')}
+              </Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Pronto para restauro</dt>
+            <dd>
+              <Badge tone={receipt.preflight_ready ? 'ok' : 'warn'}>
+                {receipt.preflight_ready ? t('common.yes') : t('common.no')}
+              </Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Cifrado</dt>
+            <dd>{yesNo(receipt.encrypted, t)}</dd>
+          </div>
+          <div>
+            <dt>{t('data.status.ledgerVerified')}</dt>
+            <dd>{receipt.ledger_verified ? t('common.yes') : t('common.no')}</dd>
+          </div>
+          {manifest ? (
+            <>
+              <div>
+                <dt>{t('data.status.schemaVersion')}</dt>
+                <dd className="mono">{manifest.schema}</dd>
+              </div>
+              <div>
+                <dt>Esquema da base de dados</dt>
+                <dd className="mono">{manifest.store_schema_version}</dd>
+              </div>
+              <div>
+                <dt>{t('data.status.ledgerLength')}</dt>
+                <dd className="mono">{manifest.ledger_length}</dd>
+              </div>
+              <div>
+                <dt>Membros no arquivo</dt>
+                <dd className="mono">{manifest.member_count}</dd>
+              </div>
+              <div>
+                <dt>Membros sidecar</dt>
+                <dd className="mono">{manifest.sidecar_member_count}</dd>
+              </div>
+              <div>
+                <dt>Membro da base de dados presente</dt>
+                <dd>{manifest.db_member_present ? t('common.yes') : t('common.no')}</dd>
+              </div>
+              <div>
+                <dt>Total de bytes dos membros</dt>
+                <dd className="mono">{formatBytes(manifest.total_member_bytes, locale)}</dd>
+              </div>
+            </>
+          ) : null}
+          {receipt.custody_location ? (
+            <div className="deflist__wide">
+              <dt>Local de custódia indicado</dt>
+              <dd>{receipt.custody_location}</dd>
+            </div>
+          ) : null}
+          {receipt.operator_notes ? (
+            <div className="deflist__wide">
+              <dt>Notas do operador</dt>
+              <dd>{receipt.operator_notes}</dd>
+            </div>
+          ) : null}
+        </dl>
+
+        <div>
+          <h5>Limites do recibo</h5>
+          <dl className="deflist data-status-summary">
+            {falseFlags.map((flag) => (
+              <div key={flag.label}>
+                <dt>{flag.label}</dt>
+                <dd>
+                  <Badge tone="neutral">{flag.value ? t('common.yes') : t('common.no')}</Badge>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </div>
+    </InlineWarning>
+  );
 }
 
 function DataKeyRotationPreflightReport({
@@ -356,6 +531,58 @@ function DataKeyRotationPreflightReport({
           </dl>
         </div>
       </div>
+    </InlineWarning>
+  );
+}
+
+function BackupManifestReport({
+  manifest,
+  t,
+  locale,
+}: {
+  manifest: BackupManifest;
+  t: TFunction;
+  locale: string;
+}) {
+  return (
+    <InlineWarning
+      tone={manifest.ledger_verified ? 'info' : 'warn'}
+      title={t('data.status.backup.doneTitle')}
+    >
+      <dl className="deflist data-status-summary">
+        <div className="deflist__wide">
+          <dt>{t('data.status.backup.path')}</dt>
+          <dd className="mono">{manifest.path}</dd>
+        </div>
+        <div>
+          <dt>{t('data.status.backup.createdAt')}</dt>
+          <dd>{formatTimestamp(manifest.created_at, locale)}</dd>
+        </div>
+        <div>
+          <dt>{t('data.status.backup.size')}</dt>
+          <dd className="mono">{formatBytes(manifest.bytes, locale)}</dd>
+        </div>
+        <div>
+          <dt>{t('data.status.backup.files')}</dt>
+          <dd className="mono">{backupFileSummary(manifest, locale)}</dd>
+        </div>
+        <div>
+          <dt>{t('data.status.schemaVersion')}</dt>
+          <dd>{formatOptionalNumber(manifest.store_schema_version, locale)}</dd>
+        </div>
+        <div>
+          <dt>{t('data.status.ledgerLength')}</dt>
+          <dd>{formatOptionalNumber(manifest.ledger_length, locale)}</dd>
+        </div>
+        <div>
+          <dt>{t('data.status.ledgerVerified')}</dt>
+          <dd>
+            <Badge tone={manifest.ledger_verified ? 'ok' : 'warn'}>
+              {manifest.ledger_verified ? t('common.yes') : t('common.no')}
+            </Badge>
+          </dd>
+        </div>
+      </dl>
     </InlineWarning>
   );
 }
@@ -555,6 +782,8 @@ function DataStatusPanel() {
   const locale = useLocale();
   const toast = useToast();
   const status = useDataStatus();
+  const backup = useCreateBackup();
+  const recoveryDrill = useCreateBackupRecoveryDrill();
   const cleanup = useCleanDataStorage();
   const keyRotationPreflight = useDataKeyRotationPreflight();
   const keyRotationExecution = useDataKeyRotationExecution();
@@ -562,9 +791,16 @@ function DataStatusPanel() {
   const dataPath = data?.data_dir.path ?? null;
   const [cleanupTarget, setCleanupTarget] = useState<DataCleanupTarget | null>(null);
   const [lastCleanup, setLastCleanup] = useState<DataCleanupResult | null>(null);
+  const [previewingExports, setPreviewingExports] = useState(false);
   const [currentKey, setCurrentKey] = useState('');
   const [replacementKey, setReplacementKey] = useState('');
   const [executionKey, setExecutionKey] = useState('');
+  const [drillArchive, setDrillArchive] = useState('');
+  const [drillPassphrase, setDrillPassphrase] = useState('');
+  const [drillNotes, setDrillNotes] = useState('');
+  const [drillCustodyLocation, setDrillCustodyLocation] = useState('');
+  const [lastBackup, setLastBackup] = useState<BackupManifest | null>(null);
+  const [lastDrillReceipt, setLastDrillReceipt] = useState<BackupRecoveryDrillReceipt | null>(null);
   const [lastPreflight, setLastPreflight] = useState<DataKeyRotationPreflight | null>(null);
   const [lastExecution, setLastExecution] = useState<DataKeyRotationExecution | null>(null);
   const activeCleanup = CLEANUP_TARGETS.find((target) => target.target === cleanupTarget) ?? null;
@@ -575,6 +811,19 @@ function DataStatusPanel() {
     data?.data_dir.is_directory &&
     data?.permissions.delete_probe_file.ok,
   );
+
+  async function previewExportsCleanup() {
+    setPreviewingExports(true);
+    try {
+      const result = await cleanup.mutateAsync(EXPORT_CLEANUP_PREVIEW_BODY);
+      setLastCleanup(result);
+      toast.success(EXPORT_CLEANUP_PREVIEW_DONE);
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setPreviewingExports(false);
+    }
+  }
 
   async function copyPath() {
     if (!dataPath) return;
@@ -621,6 +870,40 @@ function DataStatusPanel() {
       toast.error(err);
     } finally {
       setExecutionKey('');
+    }
+  }
+
+  async function createBackup() {
+    backup.reset();
+    setLastBackup(null);
+    try {
+      const manifest = await backup.mutateAsync();
+      setLastBackup(manifest);
+      toast.success(t('data.status.backup.done'));
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+
+  async function submitRecoveryDrill(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = buildRecoveryDrillBody(
+      drillArchive,
+      drillPassphrase,
+      drillNotes,
+      drillCustodyLocation,
+    );
+    if (!body.archive) return;
+    recoveryDrill.reset();
+    setLastDrillReceipt(null);
+    try {
+      const receipt = await recoveryDrill.mutateAsync(body);
+      setLastDrillReceipt(receipt);
+      toast.success('Recibo de ensaio registado.');
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setDrillPassphrase('');
     }
   }
 
@@ -799,6 +1082,126 @@ function DataStatusPanel() {
             ) : null}
           </section>
 
+          <section className="data-status-section" aria-labelledby="data-status-backup">
+            <div className="data-status-section__head">
+              <div>
+                <h4 id="data-status-backup">{t('data.status.backup.title')}</h4>
+                <p className="data-status-section__hint">{t('data.status.backup.body')}</p>
+              </div>
+              <GateButton
+                perm="data.backup"
+                type="button"
+                variant="secondary"
+                icon={<Icon.Archive />}
+                disabled={!data.persistence.durable_store_open || backup.isPending}
+                onClick={() => void createBackup()}
+              >
+                {backup.isPending
+                  ? t('data.status.backup.pending')
+                  : t('data.status.backup.button')}
+              </GateButton>
+            </div>
+            {!data.persistence.durable_store_open ? (
+              <p className="field__hint">{t('data.status.backup.unavailable')}</p>
+            ) : null}
+            {backup.error ? <ErrorNote error={backup.error} /> : null}
+            {lastBackup ? (
+              <BackupManifestReport manifest={lastBackup} t={t} locale={locale} />
+            ) : null}
+          </section>
+
+          <section className="data-status-section" aria-labelledby="data-status-recovery-drill">
+            <div className="data-status-section__head">
+              <div>
+                <h4 id="data-status-recovery-drill">Ensaio de recuperação sem restauro</h4>
+                <p className="data-status-section__hint">
+                  Executa a pré-validação existente do backup e grava um recibo de custódia. Não
+                  restaura, não troca a base de dados e não prepara sidecars.
+                </p>
+              </div>
+            </div>
+            <form className="form" onSubmit={(event) => void submitRecoveryDrill(event)}>
+              <div className="data-status-usage-groups">
+                <Field
+                  label="Arquivo do backup para ensaio"
+                  htmlFor="backup-recovery-drill-archive"
+                  hint="Nome simples em backups/ ou caminho absoluto do arquivo a verificar."
+                >
+                  <Input
+                    id="backup-recovery-drill-archive"
+                    name="backup-recovery-drill-archive"
+                    value={drillArchive}
+                    placeholder="chancela-backup-….zip"
+                    onChange={(event) => setDrillArchive(event.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Chave do backup (opcional)"
+                  htmlFor="backup-recovery-drill-passphrase"
+                  hint="Usada só nesta pré-validação; não é guardada no recibo."
+                >
+                  <Input
+                    id="backup-recovery-drill-passphrase"
+                    name="backup-recovery-drill-passphrase"
+                    type="password"
+                    value={drillPassphrase}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    onChange={(event) => setDrillPassphrase(event.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field
+                label="Local de custódia"
+                htmlFor="backup-recovery-drill-custody"
+                hint="Local indicado pelo operador; isto não comprova custódia off-site."
+              >
+                <Input
+                  id="backup-recovery-drill-custody"
+                  name="backup-recovery-drill-custody"
+                  value={drillCustodyLocation}
+                  onChange={(event) => setDrillCustodyLocation(event.target.value)}
+                />
+              </Field>
+              <Field label="Notas do operador" htmlFor="backup-recovery-drill-notes">
+                <TextArea
+                  id="backup-recovery-drill-notes"
+                  name="backup-recovery-drill-notes"
+                  value={drillNotes}
+                  onChange={(event) => setDrillNotes(event.target.value)}
+                />
+              </Field>
+              {!data.persistence.durable_store_open ? (
+                <p className="field__hint">Requer armazenamento durável em disco.</p>
+              ) : null}
+              <p className="field__hint">
+                Ensaio explícito e iniciado pelo operador: sem restauro ao vivo, sem certificação
+                legal de arquivo, sem prova automática de RPO/RTO ou custódia off-site.
+              </p>
+              {recoveryDrill.error ? <ErrorNote error={recoveryDrill.error} /> : null}
+              <div className="form__actions">
+                <GateButton
+                  perm="ledger.recover"
+                  type="submit"
+                  variant="secondary"
+                  icon={<Icon.Search />}
+                  disabled={
+                    !data.persistence.durable_store_open ||
+                    recoveryDrill.isPending ||
+                    drillArchive.trim().length === 0
+                  }
+                >
+                  {recoveryDrill.isPending ? 'A registar ensaio…' : 'Registar ensaio sem restauro'}
+                </GateButton>
+              </div>
+            </form>
+            {lastDrillReceipt ? (
+              <RecoveryDrillReceiptReport receipt={lastDrillReceipt} t={t} locale={locale} />
+            ) : null}
+          </section>
+
           <section className="data-status-section" aria-labelledby="data-status-maintenance">
             <div className="data-status-section__head">
               <div>
@@ -809,11 +1212,17 @@ function DataStatusPanel() {
             <ul className="data-status-cleanups">
               {CLEANUP_TARGETS.map((target) => {
                 const usage = usageForTarget(data.usage.filesystem, target.target);
+                const isExportsPreview = target.target === 'exports';
+                const isTargetPending =
+                  cleanup.isPending &&
+                  (isExportsPreview ? previewingExports : cleanupTarget === target.target);
                 return (
                   <li key={target.target} className="data-status-cleanup">
                     <div className="data-status-cleanup__main">
                       <h5>{t(target.title)}</h5>
-                      <span className="data-status-cleanup__description">{t(target.body)}</span>
+                      <span className="data-status-cleanup__description">
+                        {isExportsPreview ? EXPORT_CLEANUP_PREVIEW_DESCRIPTION : t(target.body)}
+                      </span>
                     </div>
                     <p className="data-status-cleanup__metric">
                       <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
@@ -830,21 +1239,38 @@ function DataStatusPanel() {
                       perm="settings.manage"
                       type="button"
                       variant="secondary"
-                      className="btn--danger"
-                      icon={<Icon.Trash />}
+                      className={isExportsPreview ? undefined : 'btn--danger'}
+                      icon={isExportsPreview ? <Icon.Search /> : <Icon.Trash />}
                       disabled={!canClean || cleanup.isPending}
-                      onClick={() => setCleanupTarget(target.target)}
+                      onClick={() => {
+                        if (isExportsPreview) {
+                          void previewExportsCleanup();
+                          return;
+                        }
+                        setCleanupTarget(target.target);
+                      }}
                     >
-                      {cleanup.isPending && cleanupTarget === target.target
-                        ? t('data.status.cleanup.pending')
-                        : t(target.button)}
+                      {isTargetPending
+                        ? isExportsPreview
+                          ? EXPORT_CLEANUP_PREVIEW_PENDING
+                          : t('data.status.cleanup.pending')
+                        : isExportsPreview
+                          ? EXPORT_CLEANUP_PREVIEW_BUTTON
+                          : t(target.button)}
                     </GateButton>
                   </li>
                 );
               })}
             </ul>
             {lastCleanup ? (
-              <InlineWarning tone="info" title={t('data.status.cleanup.doneTitle')}>
+              <InlineWarning
+                tone="info"
+                title={
+                  lastCleanup.dry_run
+                    ? EXPORT_CLEANUP_PREVIEW_TITLE
+                    : t('data.status.cleanup.doneTitle')
+                }
+              >
                 <p>{cleanupSummary(lastCleanup, t, locale)}</p>
                 {lastCleanup.skipped.length > 0 ? (
                   <ul className="plain-list">

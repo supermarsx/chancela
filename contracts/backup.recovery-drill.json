@@ -1,0 +1,29 @@
+{
+  "id": "7a6b5c40-0000-4000-8000-000000000091",
+  "created_at": "2026-07-10T10:40:00Z",
+  "archive": "/data/backups/chancela-backup-20260710T103000Z.zip",
+  "preflight_ok": true,
+  "preflight_ready": true,
+  "encrypted": false,
+  "ledger_verified": true,
+  "manifest": {
+    "schema": "chancela-backup-manifest/v1",
+    "version": 1,
+    "store_schema_version": 12,
+    "ledger_length": 42,
+    "ledger_verified": true,
+    "member_count": 3,
+    "sidecar_member_count": 2,
+    "db_member_present": true,
+    "total_member_bytes": 12288
+  },
+  "operator_notes": "Quarterly recovery drill. Preflight only; no live restore was executed.",
+  "custody_location": "Evidence safe A / shelf 3",
+  "restore_executed": false,
+  "live_db_swapped": false,
+  "sidecars_staged": false,
+  "ledger_restored_appended": false,
+  "data_deleted": false,
+  "offsite_custody_proven": false,
+  "legal_archive_certified": false
+}

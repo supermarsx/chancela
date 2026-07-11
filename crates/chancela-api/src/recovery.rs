@@ -20,11 +20,15 @@
 //! - `POST /v1/ledger/recovery/restore` `{ archive }` → [`RestoreOutcomeView`]. `archive` is an
 //!   absolute path or a bare name resolved under `<data_dir>/backups/`. A backup that does not
 //!   verify BEFORE the swap is refused with `422` and the live store is untouched.
+//! - `POST /v1/ledger/recovery/restore/preflight` `{ archive, passphrase? }` →
+//!   [`RestorePreflightOutcomeView`]. Same archive/key mode as restore, but read-only: no DB swap,
+//!   no sidecar staging, no `ledger.restored`, no reload.
 
 use axum::Json;
 use axum::extract::State;
 use chancela_ledger::{ChainBreak, ChainStatus, IntegrityReport, ReanchorError, ReanchorRecord};
 use chancela_store::StoreError;
+use chancela_store::recovery::{RestorePreflightManifestEvidence, RestorePreflightOutcome};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -309,6 +313,96 @@ pub struct RestoreOutcomeView {
     pub integrity: IntegrityReportView,
 }
 
+/// Response of a non-mutating restore preflight.
+#[derive(Serialize)]
+pub struct RestorePreflightOutcomeView {
+    pub ok: bool,
+    pub ready: bool,
+    pub encrypted: Option<bool>,
+    pub archive: String,
+    pub manifest: Option<RestorePreflightManifestView>,
+    pub ledger_verified: bool,
+    pub findings: Vec<String>,
+    pub errors: Vec<String>,
+    pub next_step: String,
+}
+
+/// Secret-free manifest evidence for the recovery UI.
+#[derive(Serialize)]
+pub struct RestorePreflightManifestView {
+    pub path: String,
+    pub schema: String,
+    pub version: u32,
+    pub app_version: String,
+    pub store_schema_version: i64,
+    pub ledger_length: u64,
+    pub ledger_verified: bool,
+    pub member_count: usize,
+    pub sidecar_member_count: usize,
+    pub db_member_present: bool,
+    pub total_member_bytes: u64,
+}
+
+impl From<RestorePreflightManifestEvidence> for RestorePreflightManifestView {
+    fn from(m: RestorePreflightManifestEvidence) -> Self {
+        RestorePreflightManifestView {
+            path: m.path,
+            schema: m.schema,
+            version: m.version,
+            app_version: m.app_version,
+            store_schema_version: m.store_schema_version,
+            ledger_length: m.ledger_length,
+            ledger_verified: m.ledger_verified,
+            member_count: m.member_count,
+            sidecar_member_count: m.sidecar_member_count,
+            db_member_present: m.db_member_present,
+            total_member_bytes: m.total_member_bytes,
+        }
+    }
+}
+
+impl From<RestorePreflightOutcome> for RestorePreflightOutcomeView {
+    fn from(o: RestorePreflightOutcome) -> Self {
+        RestorePreflightOutcomeView {
+            ok: o.ok,
+            ready: o.ready,
+            encrypted: o.encrypted,
+            archive: o.archive.to_string_lossy().into_owned(),
+            manifest: o.manifest.map(RestorePreflightManifestView::from),
+            ledger_verified: o.ledger_verified,
+            findings: o.findings,
+            errors: o.errors,
+            next_step: o.next_step,
+        }
+    }
+}
+
+/// `POST /v1/ledger/recovery/restore/preflight` — read-only verification of a full backup before
+/// restore. Uses the same archive/passphrase mode and `ledger.recover` gate as execution restore,
+/// but never swaps the live DB, stages sidecars, appends restore events, reloads memory, or mutates
+/// API/store state.
+pub async fn restore_store_preflight(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Json(req): Json<RestoreRequest>,
+) -> Result<Json<RestorePreflightOutcomeView>, ApiError> {
+    require_permission(&state, &actor, Permission::LedgerRecover, Scope::Global).await?;
+    let Some(store) = state.store.clone() else {
+        return Err(ApiError::Unprocessable(
+            "pré-validação de restauro requer persistência em disco".to_owned(),
+        ));
+    };
+    let data_dir = state
+        .data_dir()
+        .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
+    let archive = resolve_restore_archive(&data_dir, &req.archive)?;
+
+    let outcome = store
+        .restore_preflight(&archive, &data_dir, req.passphrase.as_deref())
+        .map_err(map_store_error)?;
+    Ok(Json(RestorePreflightOutcomeView::from(outcome)))
+}
+
 /// `POST /v1/ledger/recovery/restore` — whole-store restore from a full backup (§2.5), verify-
 /// before-swap. Never rewrites history: it verifies every member digest AND that the snapshot's
 /// ledger verifies `Ok` BEFORE an atomic db swap; a bad backup is refused (`422`) and the live store
@@ -331,16 +425,7 @@ pub async fn restore_store(
         .data_dir()
         .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
 
-    // Resolve the archive: an existing path as-is, else a bare name under <data_dir>/backups/.
-    let raw = std::path::PathBuf::from(&req.archive);
-    let archive = if raw.exists() {
-        raw
-    } else {
-        data_dir.join("backups").join(&req.archive)
-    };
-    if !archive.exists() {
-        return Err(ApiError::NotFound);
-    }
+    let archive = resolve_restore_archive(&data_dir, &req.archive)?;
     let sidecars = state.instance_sidecars();
     let passphrase = req.passphrase;
 
@@ -377,6 +462,23 @@ pub async fn restore_store(
         chain_verified: outcome.chain_verified,
         integrity,
     }))
+}
+
+fn resolve_restore_archive(
+    data_dir: &std::path::Path,
+    archive: &str,
+) -> Result<std::path::PathBuf, ApiError> {
+    // Resolve the archive: an existing path as-is, else a bare name under <data_dir>/backups/.
+    let raw = std::path::PathBuf::from(archive);
+    let archive = if raw.exists() {
+        raw
+    } else {
+        data_dir.join("backups").join(archive)
+    };
+    if !archive.exists() {
+        return Err(ApiError::NotFound);
+    }
+    Ok(archive)
 }
 
 /// Map a recovery [`StoreError`] to its HTTP status (shared by restore/import/reset/start-over).
