@@ -1,8 +1,8 @@
-//! The full ASiC validation surface: open a container, classify it, enumerate every signature, and
-//! verify each one cryptographically against the content it binds.
+//! The local ASiC validation surface: open a container, classify it, enumerate every recognised
+//! signature, and verify each one cryptographically against the content it binds.
 //!
 //! This is the read side of [`crate::asic_sign`]. It handles both the bounded single-signature
-//! shapes and the full multi-signature ones:
+//! shapes and the multi-signature containers produced by this crate:
 //!
 //! - **CAdES** (`chancela-cades`): an ASiC-S/CAdES signature covers the single payload digest; an
 //!   ASiC-E/CAdES signature covers its own `ASiCManifest`, whose `DataObjectReference` digests are
@@ -99,7 +99,7 @@ pub struct AsicArchiveTimestampValidation {
     pub failure_reasons: Vec<String>,
 }
 
-/// A full ASiC container validation report.
+/// A technical/local ASiC container validation report.
 ///
 /// This is a technical cryptographic report only; it makes no legal qualification or
 /// probative-value claim.

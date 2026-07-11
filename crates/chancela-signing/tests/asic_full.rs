@@ -1,7 +1,8 @@
-//! Full-ASiC end-to-end tests (t67-e7): ASiC-S/CAdES, ASiC-S/XAdES, and ASiC-E multi-signature
+//! Local ASiC integration tests (t67-e7): ASiC-S/CAdES, ASiC-S/XAdES, and ASiC-E multi-signature
 //! containers mixing CAdES and XAdES over one payload set, with a per-signature `ASiCManifest` and
-//! an `ASiCArchiveManifest` archive timestamp — all driven through the real signing seam and read
-//! back through [`validate_asic_container`].
+//! an `ASiCArchiveManifest` archive timestamp. They exercise the real signing seam and the local
+//! [`validate_asic_container`] report, without claiming complete ASiC/XAdES conformance, trust
+//! status, or legal qualification.
 //!
 //! Signers mint ephemeral RSA-2048 / P-256 keys and self-signed certificates (no private keys are
 //! checked in, plan §6), wrapped as [`MockProvider`] so the digest flows through the crate exactly

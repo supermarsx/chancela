@@ -5,12 +5,13 @@
 //! signature, or an ASiC-E/CAdES container with one `ASiCManifest` over one CAdES signature — are
 //! parsed strictly by [`extract_asic_container`] and classified by [`inspect_asic_profile`].
 //!
-//! The full ASiC surface builds on the same byte primitives: [`create_asic_s_xades_container`]
-//! (ASiC-S/XAdES), [`assemble_asic_e_container`] + [`build_asic_e_manifest`] (ASiC-E multi-signature
-//! with a per-signature `ASiCManifest`), and [`build_asic_archive_manifest`] (an ETSI EN 319 162
-//! `ASiCArchiveManifest` protected by an RFC 3161 archive timestamp). Signing orchestration lives in
-//! [`crate::asic_sign`] and the cryptographic validation surface in [`crate::asic_validate`]. None
-//! of it makes a legal qualification decision.
+//! The expanded local ASiC surface builds on the same byte primitives:
+//! [`create_asic_s_xades_container`] (ASiC-S/XAdES), [`assemble_asic_e_container`] +
+//! [`build_asic_e_manifest`] (ASiC-E multi-signature with a per-signature `ASiCManifest`), and
+//! [`build_asic_archive_manifest`] (an `ASiCArchiveManifest` protected by an RFC 3161 archive
+//! timestamp). Signing orchestration lives in [`crate::asic_sign`] and the cryptographic validation
+//! surface in [`crate::asic_validate`]. None of it makes a full ETSI-conformance, trust, legal
+//! qualification, or probative-value decision.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read, Write};

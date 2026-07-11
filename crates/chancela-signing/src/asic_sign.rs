@@ -1,4 +1,4 @@
-//! Provider-driven ASiC signing: the full ASiC-S / ASiC-E lanes with CAdES and XAdES signatures,
+//! Provider-driven local ASiC signing: ASiC-S / ASiC-E lanes with CAdES and XAdES signatures,
 //! multiple signers over one payload set, and an optional RFC 3161 archive manifest.
 //!
 //! These functions sit above [`crate::asic`] (which owns the container bytes and manifests) and the
@@ -7,7 +7,9 @@
 //! exposes its digest, the provider signs it exactly like a CAdES signed-attributes digest, and
 //! [`chancela_xades::PreparedXades::assemble`] wraps the returned [`RawSignature`]. The XAdES
 //! signature algorithm is inferred from the signer certificate's public key so `prepare_xades` can
-//! declare the matching `SignatureMethod` before signing.
+//! declare the matching `SignatureMethod` before signing. These helpers assemble technical
+//! containers and signature bytes only; they do not claim complete ASiC/XAdES conformance, trust
+//! status, or legal qualification.
 
 use der::Decode;
 use time::OffsetDateTime;

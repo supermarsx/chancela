@@ -14,7 +14,7 @@ chancela-cmd = { workspace = true }
 chancela-tsl = { workspace = true }
 chancela-tsa = { workspace = true }
 chancela-pades = { workspace = true }
-# XMLDSig + XAdES (B/T) over the shared RawSignature seam; consumed by the full ASiC lanes
+# XMLDSig + XAdES (B/T) over the shared RawSignature seam; consumed by the local ASiC lanes
 # (ASiC-S/XAdES, ASiC-E multi-signature). Public API only — no cycle (xades is a leaf, t67 §1.1).
 chancela-xades = { workspace = true }
 # CSPRNG (rand_core::OsRng) for PROD CMD field encryption via chancela-cmd's

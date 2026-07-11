@@ -146,12 +146,14 @@ impl SigningFamily {
 }
 
 /// Advanced/Qualified Electronic Signature container formats the subsystem vocabulary recognises
-/// (SIG-20). PAdES and detached CAdES are implemented directly; ASiC support spans ASiC-S/CAdES,
-/// ASiC-S/XAdES, and ASiC-E (CAdES + XAdES, multiple signatures, per-signature manifests, and an
-/// `ASiCArchiveManifest` archive timestamp) via [`crate::asic_sign`] / [`crate::asic_validate`].
-/// XAdES here is the detached XMLDSig/XAdES-B/T carried inside those ASiC containers; a bare
-/// (non-ASiC) XAdES document through [`validate_signature`](crate::validate_signature) is still a
-/// phase-2 seam and returns [`SigningError::UnsupportedProfile`].
+/// (SIG-20). PAdES and detached CAdES are implemented directly; local ASiC helpers cover
+/// ASiC-S/CAdES, ASiC-S/XAdES, and ASiC-E technical containers (CAdES + XAdES, multiple signatures,
+/// per-signature manifests, and an `ASiCArchiveManifest` archive timestamp) via
+/// [`crate::asic_sign`] / [`crate::asic_validate`]. XAdES here is the detached XMLDSig/XAdES-B/T
+/// carried inside those ASiC containers; a bare (non-ASiC) XAdES document through
+/// [`validate_signature`](crate::validate_signature) is still a phase-2 seam and returns
+/// [`SigningError::UnsupportedProfile`]. None of this vocabulary decides complete ASiC/XAdES
+/// conformance, trust status, or legal qualification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SignatureFormat {
