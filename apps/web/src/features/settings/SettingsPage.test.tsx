@@ -1119,7 +1119,7 @@ function privacyFetch(
     evidence_receipts: [...record.evidence_receipts],
   }));
   let retentionPolicies = initialRetentionPolicies.map((record) => ({ ...record }));
-  const retentionDueCandidatesReport = cloneJson(initialRetentionDueCandidatesReport);
+  let retentionDueCandidatesReport = cloneJson(initialRetentionDueCandidatesReport);
   let retentionExecutions = initialRetentionExecutions.map((record) => cloneJson(record));
 
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -1268,12 +1268,19 @@ function privacyFetch(
         const requestedPolicy = retentionPolicies.find(
           (policy) => policy.id === body.execution_request?.requested_policy_id,
         );
+        const isSupportedNoActionRequest =
+          body.execution_request.execution_mode === 'execute_supported' &&
+          requestedPolicy?.disposal_action === 'no_action';
         const executionRecord = cloneJson(RETENTION_EXECUTION_AWAITING);
         executionRecord.id = `retention-exec-requested-${retentionExecutions.length + 1}`;
         executionRecord.requested_at = '2026-07-09T14:05:00Z';
         executionRecord.execution_intent = body.execution_request.execution_mode ?? 'review_only';
-        executionRecord.execution_status = 'awaiting_review';
-        executionRecord.operator_review_decision = 'review_required';
+        executionRecord.execution_status = isSupportedNoActionRequest
+          ? 'executed'
+          : 'awaiting_review';
+        executionRecord.operator_review_decision = isSupportedNoActionRequest
+          ? 'execution_recorded'
+          : 'review_required';
         executionRecord.candidate = {
           scope: body.scope,
           category: body.category,
@@ -1287,7 +1294,7 @@ function privacyFetch(
           category: body.category,
           schedule_id: requestedPolicy?.schedule_id,
           retention_period: requestedPolicy?.retention_period,
-          disposal_action: 'review',
+          disposal_action: isSupportedNoActionRequest ? 'no_action' : 'review',
           status: requestedPolicy?.status,
           active: requestedPolicy?.active,
           stale: false,
@@ -1311,20 +1318,27 @@ function privacyFetch(
           delete executionRecord.operator_notes;
         }
         executionRecord.audit_evidence = body.execution_request.evidence ?? [];
-        executionRecord.outcome = 'manual_review_required';
-        executionRecord.block_reason =
-          'retention execution request is recorded for manual review only';
+        executionRecord.outcome = isSupportedNoActionRequest
+          ? 'bounded_no_action_recorded'
+          : 'manual_review_required';
+        executionRecord.block_reason = isSupportedNoActionRequest
+          ? 'bounded no-action evidence recorded for the retention target'
+          : 'retention execution request is recorded for manual review only';
         executionRecord.workflow = {
           status: 'awaiting_manual_review',
           blockers: [],
-          required_approvals: [
-            {
-              code: 'retention_manual_review',
-              required_from: 'privacy_or_settings_manager',
-              reason: 'review retained evidence only before any separate operational process',
-            },
-          ],
-          next_step: 'Review retained evidence only; no disposal has been executed.',
+          required_approvals: isSupportedNoActionRequest
+            ? []
+            : [
+                {
+                  code: 'retention_manual_review',
+                  required_from: 'privacy_or_settings_manager',
+                  reason: 'review retained evidence only before any separate operational process',
+                },
+              ],
+          next_step: isSupportedNoActionRequest
+            ? 'Bounded no-action evidence was recorded; no source records were changed.'
+            : 'Review retained evidence only; no disposal has been executed.',
         };
         executionRecord.execution_result = {
           bounded_executor: true,
@@ -1332,29 +1346,75 @@ function privacyFetch(
             {
               target_type: 'retention_candidate_record',
               target_id: body.record_id ?? `${body.scope}:${body.category}`,
-              action: 'bounded_review_evidence',
+              action: isSupportedNoActionRequest
+                ? 'bounded_no_action_evidence'
+                : 'bounded_review_evidence',
               reason_code: 'target_considered',
-              detail: 'candidate queued for review-only evidence evaluation',
+              detail: isSupportedNoActionRequest
+                ? 'candidate evaluated for bounded no-action evidence only'
+                : 'candidate queued for review-only evidence evaluation',
             },
           ],
-          targets_acted: [],
-          targets_skipped: [
-            {
-              target_type: 'retention_candidate_record',
-              target_id: body.record_id ?? `${body.scope}:${body.category}`,
-              action: 'bounded_review_evidence',
-              reason_code: 'review_only_intent',
-              detail: 'manual review request only',
-            },
-          ],
-          reason_codes: ['retention_manual_review', 'review_only_intent'],
-          next_step: 'Review retained evidence only; no disposal has been executed.',
+          targets_acted: isSupportedNoActionRequest
+            ? [
+                {
+                  target_type: 'retention_candidate_record',
+                  target_id: body.record_id ?? `${body.scope}:${body.category}`,
+                  action: 'bounded_no_action_evidence',
+                  reason_code: 'bounded_no_action_recorded',
+                  detail: 'bounded no-action evidence recorded',
+                },
+              ]
+            : [],
+          targets_skipped: isSupportedNoActionRequest
+            ? []
+            : [
+                {
+                  target_type: 'retention_candidate_record',
+                  target_id: body.record_id ?? `${body.scope}:${body.category}`,
+                  action: 'bounded_review_evidence',
+                  reason_code: 'review_only_intent',
+                  detail: 'manual review request only',
+                },
+              ],
+          reason_codes: isSupportedNoActionRequest
+            ? ['bounded_no_action_recorded']
+            : ['retention_manual_review', 'review_only_intent'],
+          next_step: isSupportedNoActionRequest
+            ? 'Bounded no-action evidence was recorded; no source records were changed.'
+            : 'Review retained evidence only; no disposal has been executed.',
           destructive_disposal_completed: false,
           full_erasure_completed: false,
           blocker_metadata: [],
         };
         executionRecord.would_execute = false;
         retentionExecutions = [executionRecord, ...retentionExecutions];
+        if (isSupportedNoActionRequest) {
+          retentionDueCandidatesReport = {
+            ...retentionDueCandidatesReport,
+            candidates: retentionDueCandidatesReport.candidates.map((candidate) =>
+              candidate.record_id === body.record_id &&
+              candidate.policy_id === body.execution_request?.requested_policy_id
+                ? {
+                    ...candidate,
+                    prior_execution: {
+                      execution_id: executionRecord.id,
+                      execution_status: executionRecord.execution_status,
+                      outcome: executionRecord.outcome,
+                      requested_at: executionRecord.requested_at,
+                      executed_at: '2026-07-09T14:05:00Z',
+                      bounded_executor: true,
+                      targets_acted_count: 1,
+                      destructive_disposal_completed: false,
+                      full_erasure_completed: false,
+                      next_step:
+                        'Bounded no-action evidence was recorded; no source records were changed.',
+                    },
+                  }
+                : candidate,
+            ),
+          };
+        }
         return Promise.resolve(
           jsonResponse({
             mode: 'execution_request',
@@ -1523,6 +1583,52 @@ function privacyFetch(
   }) as typeof fetch;
 
   return { fn, calls };
+}
+
+function retentionNoActionPolicy(overrides: Partial<RetentionPolicyMetadata> = {}) {
+  return {
+    ...RETENTION_POLICY_ONE,
+    id: 'retention-no-action',
+    name: 'Conservação sem ação',
+    disposal_action: 'no_action',
+    notes: 'Registo delimitado de evidência sem ação.',
+    ...overrides,
+  };
+}
+
+function retentionNoActionCandidate(overrides: Record<string, unknown> = {}) {
+  return {
+    ...cloneJson(RETENTION_DUE_CANDIDATES_REPORT.candidates[0]),
+    candidate_id: 'retention-candidate-no-action',
+    record_id: 'archive-doc-no-action',
+    book_id: 'book-no-action',
+    entity_id: 'entity-no-action',
+    policy_id: 'retention-no-action',
+    policy_name: 'Conservação sem ação',
+    disposal_action: 'no_action',
+    destructive_action: false,
+    legal_hold_blockers: [],
+    required_approvals: [],
+    blockers: [],
+    findings: [],
+    outcome: 'no_action_required',
+    status: 'due_no_action',
+    would_execute: false,
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    next_step: 'Registar apenas evidência delimitada sem ação; nenhum registo fonte é alterado.',
+    ...overrides,
+  };
+}
+
+function retentionDueReportWith(
+  candidates: Record<string, unknown>[],
+): RetentionDueCandidatesReportMetadata {
+  return {
+    ...cloneJson(RETENTION_DUE_CANDIDATES_REPORT),
+    candidate_count: candidates.length,
+    candidates,
+  } as unknown as RetentionDueCandidatesReportMetadata;
 }
 
 afterEach(() => {
@@ -2577,6 +2683,257 @@ describe('SettingsPage', () => {
       calls.some(
         (call) =>
           call.method === 'POST' && call.url.endsWith('/v1/privacy/retention-policies/dry-run'),
+      ),
+    ).toBe(false);
+  });
+
+  it('records bounded no-action evidence from an eligible due retention candidate row', async () => {
+    const noActionPolicy = retentionNoActionPolicy();
+    const report = retentionDueReportWith([retentionNoActionCandidate()]);
+    const { fn, calls } = privacyFetch(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [noActionPolicy],
+      report,
+      [],
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    const candidateRow = (
+      await within(candidatesPanel!).findByText('archive-doc-no-action')
+    ).closest('tr');
+    expect(candidateRow).toBeTruthy();
+    expect(
+      within(candidateRow!).getByRole('button', { name: 'Registar evidência sem ação' }),
+    ).toBeTruthy();
+    expect(
+      within(candidateRow!).queryByRole('button', { name: 'Pedir revisão de evidência' }),
+    ).toBeNull();
+    expect(
+      within(candidateRow!).queryByText(/GDPR erasure|legal erasure|full erasure/i),
+    ).toBeNull();
+
+    const initialDueCandidateGets = calls.filter(
+      (call) => call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+    ).length;
+    const initialExecutionGets = calls.filter(
+      (call) => call.method === 'GET' && call.url.includes('/v1/privacy/retention-executions'),
+    ).length;
+
+    fireEvent.click(
+      within(candidateRow!).getByRole('button', { name: 'Registar evidência sem ação' }),
+    );
+
+    const supportedRequest = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'POST' &&
+          c.url.endsWith('/v1/privacy/retention-policies/dry-run') &&
+          Boolean(c.body?.includes('execute_supported')),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(supportedRequest.body as string)).toEqual({
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-no-action',
+      execution_request: {
+        requested_policy_id: 'retention-no-action',
+        execution_mode: 'execute_supported',
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (call) =>
+            call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+        ).length,
+      ).toBeGreaterThan(initialDueCandidateGets),
+    );
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (call) => call.method === 'GET' && call.url.includes('/v1/privacy/retention-executions'),
+        ).length,
+      ).toBeGreaterThan(initialExecutionGets),
+    );
+    expect(
+      await within(candidatesPanel!).findByText(/executed · bounded_no_action_recorded/),
+    ).toBeTruthy();
+    const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
+      'section',
+    );
+    expect(executionQueue).toBeTruthy();
+    expect(await within(executionQueue!).findByText('archive-doc-no-action')).toBeTruthy();
+    expect(
+      within(executionQueue!).getAllByText('bounded_no_action_recorded').length,
+    ).toBeGreaterThan(0);
+    expect(
+      calls.some(
+        (call) => call.method === 'POST' && call.url.includes('/v1/privacy/retention-executions'),
+      ),
+    ).toBe(false);
+    expect(
+      calls.some((call) => call.method !== 'GET' && /disposal|erasure|legal-hold/.test(call.url)),
+    ).toBe(false);
+    expect(
+      calls.every(
+        (call) =>
+          !call.body?.includes('"delete"') &&
+          !call.body?.includes('"anonymize"') &&
+          !call.body?.includes('destructive_disposal_completed') &&
+          !call.body?.includes('full_erasure_completed') &&
+          !call.body?.includes('legal_hold'),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps bounded no-action evidence unavailable for ineligible due retention candidates', async () => {
+    const candidates = [
+      retentionNoActionCandidate({
+        candidate_id: 'retention-candidate-archive',
+        record_id: 'archive-doc-action-archive',
+        disposal_action: 'archive',
+      }),
+      retentionNoActionCandidate({
+        candidate_id: 'retention-candidate-delete',
+        record_id: 'archive-doc-action-delete',
+        disposal_action: 'delete',
+        destructive_action: true,
+      }),
+      retentionNoActionCandidate({
+        candidate_id: 'retention-candidate-anonymize',
+        record_id: 'archive-doc-action-anonymize',
+        disposal_action: 'anonymize',
+        destructive_action: true,
+      }),
+      retentionNoActionCandidate({
+        candidate_id: 'retention-candidate-blocked',
+        record_id: 'archive-doc-blocker',
+        blockers: [{ code: 'unsupported_retention_period', message: 'Unsupported period.' }],
+      }),
+      retentionNoActionCandidate({
+        candidate_id: 'retention-candidate-legal-hold',
+        record_id: 'archive-doc-legal-hold',
+        legal_hold_blockers: [{ policy_id: 'hold-1', name: 'Hold', reason: 'Active hold.' }],
+      }),
+      retentionNoActionCandidate({
+        candidate_id: 'retention-candidate-queued',
+        record_id: 'archive-doc-queued-review',
+      }),
+      retentionNoActionCandidate({
+        candidate_id: 'retention-candidate-prior',
+        record_id: 'archive-doc-prior-execution',
+        prior_execution: {
+          execution_id: 'retention-exec-prior-no-action',
+          execution_status: 'executed',
+          outcome: 'bounded_no_action_recorded',
+          requested_at: '2026-07-09T14:00:00Z',
+          executed_at: '2026-07-09T14:00:00Z',
+          bounded_executor: true,
+          targets_acted_count: 1,
+          destructive_disposal_completed: false,
+          full_erasure_completed: false,
+          next_step: 'Bounded no-action evidence already exists.',
+        },
+      }),
+    ];
+    const queuedReview = cloneJson(RETENTION_EXECUTION_AWAITING) as RetentionExecutionMetadata & {
+      requested_policy: Record<string, unknown>;
+      candidate: Record<string, unknown>;
+      matched_records_summary: Record<string, unknown>;
+    };
+    queuedReview.id = 'retention-exec-queued-no-action';
+    queuedReview.execution_intent = 'review_only';
+    queuedReview.execution_status = 'awaiting_review';
+    queuedReview.requested_policy = {
+      ...queuedReview.requested_policy,
+      id: 'retention-no-action',
+      scope: 'book_archive',
+      category: 'documents',
+      disposal_action: 'no_action',
+      destructive_action: false,
+    };
+    queuedReview.candidate = {
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-queued-review',
+    };
+    queuedReview.matched_records_summary = {
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-queued-review',
+      record_count: 1,
+      policy_match_count: 1,
+      destructive_policy_count: 0,
+      policy_ids: ['retention-no-action'],
+    };
+
+    const { fn, calls } = privacyFetch(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [retentionNoActionPolicy()],
+      retentionDueReportWith(candidates),
+      [queuedReview],
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    for (const candidate of candidates) {
+      const candidateRow = (
+        await within(candidatesPanel!).findByText(candidate.record_id as string)
+      ).closest('tr');
+      expect(candidateRow).toBeTruthy();
+      expect(
+        within(candidateRow!).queryByRole('button', { name: 'Registar evidência sem ação' }),
+      ).toBeNull();
+    }
+    for (const recordId of [
+      'archive-doc-action-archive',
+      'archive-doc-action-delete',
+      'archive-doc-action-anonymize',
+      'archive-doc-blocker',
+      'archive-doc-legal-hold',
+    ]) {
+      const candidateRow = (await within(candidatesPanel!).findByText(recordId)).closest('tr');
+      expect(candidateRow).toBeTruthy();
+      expect(
+        within(candidateRow!).getByRole('button', { name: 'Pedir revisão de evidência' }),
+      ).toBeTruthy();
+    }
+    const queuedRow = (
+      await within(candidatesPanel!).findByText('archive-doc-queued-review')
+    ).closest('tr');
+    expect(queuedRow).toBeTruthy();
+    expect(within(queuedRow!).getByText('Revisão já na fila')).toBeTruthy();
+    const priorRow = (
+      await within(candidatesPanel!).findByText('archive-doc-prior-execution')
+    ).closest('tr');
+    expect(priorRow).toBeTruthy();
+    expect(within(priorRow!).getByText('Evidência delimitada existente')).toBeTruthy();
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'POST' &&
+          call.url.endsWith('/v1/privacy/retention-policies/dry-run') &&
+          Boolean(call.body?.includes('execute_supported')),
       ),
     ).toBe(false);
   });

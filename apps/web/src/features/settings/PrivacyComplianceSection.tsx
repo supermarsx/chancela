@@ -544,6 +544,20 @@ function retentionExecutionSearchText(record: RetentionExecutionRecord): string 
   );
 }
 
+function retentionCandidateCanRecordNoActionEvidence(
+  candidate: RetentionDueCandidate,
+  queuedReview: RetentionExecutionRecord | undefined,
+): boolean {
+  return (
+    candidate.disposal_action === 'no_action' &&
+    candidate.destructive_action === false &&
+    candidate.blockers.length === 0 &&
+    candidate.legal_hold_blockers.length === 0 &&
+    !queuedReview &&
+    !candidate.prior_execution
+  );
+}
+
 function recordSearchText(kind: RegisterKind, record: RegisterRecord): string {
   return normalizeSearch(
     [
@@ -2025,7 +2039,10 @@ function RetentionDueCandidatesPanel({
   reviewRequestPending: boolean;
   requestingReviewCandidateId: string | null;
   executionRecords: RetentionExecutionRecord[];
-  onRequestReview: (candidate: RetentionDueCandidate) => Promise<void>;
+  onRequestReview: (
+    candidate: RetentionDueCandidate,
+    executionMode?: 'review_only' | 'execute_supported',
+  ) => Promise<void>;
 }) {
   const candidates: RetentionDueCandidate[] = report?.candidates ?? [];
 
@@ -2067,6 +2084,10 @@ function RetentionDueCandidatesPanel({
             {candidates.map((candidate) => {
               const queuedReview = retentionQueuedReviewForCandidate(candidate, executionRecords);
               const priorExecution = candidate.prior_execution;
+              const canRecordNoActionEvidence = retentionCandidateCanRecordNoActionEvidence(
+                candidate,
+                queuedReview,
+              );
               return (
                 <tr key={candidate.candidate_id}>
                   <td>
@@ -2188,7 +2209,11 @@ function RetentionDueCandidatesPanel({
                           </span>
                         </>
                       ) : null}
-                      <span className="muted">Apenas revisão de evidência.</span>
+                      <span className="muted">
+                        {canRecordNoActionEvidence
+                          ? 'Apenas registo delimitado de evidência sem ação.'
+                          : 'Apenas revisão de evidência.'}
+                      </span>
                     </div>
                   </td>
                   <td>
@@ -2197,13 +2222,25 @@ function RetentionDueCandidatesPanel({
                         <Badge tone="ok">Evidência delimitada existente</Badge>
                       ) : queuedReview ? (
                         <Badge tone="warn">Revisão já na fila</Badge>
+                      ) : canRecordNoActionEvidence ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          icon={<Icon.Check />}
+                          disabled={reviewRequestPending}
+                          onClick={() => void onRequestReview(candidate, 'execute_supported')}
+                        >
+                          {requestingReviewCandidateId === candidate.candidate_id
+                            ? 'A registar evidência sem ação'
+                            : 'Registar evidência sem ação'}
+                        </Button>
                       ) : (
                         <Button
                           type="button"
                           variant="secondary"
                           icon={<Icon.Check />}
                           disabled={reviewRequestPending}
-                          onClick={() => void onRequestReview(candidate)}
+                          onClick={() => void onRequestReview(candidate, 'review_only')}
                         >
                           {requestingReviewCandidateId === candidate.candidate_id
                             ? 'A registar revisão'
@@ -2228,6 +2265,11 @@ function RetentionDueCandidatesPanel({
                             Pedido em {formatDateTime(queuedReview.requested_at)}
                           </span>
                         </>
+                      ) : canRecordNoActionEvidence ? (
+                        <span className="muted">
+                          Regista apenas evidência delimitada de no-action; não aprova nem executa
+                          descarte.
+                        </span>
                       ) : (
                         <span className="muted">
                           Regista um pedido review_only; não aprova nem executa descarte.
@@ -2457,7 +2499,10 @@ function RetentionPolicyPanel({
   onCreate: (body: CreateRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onPatch: (id: string, body: PatchRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onDryRun: (form: RetentionDryRunFormState) => Promise<void>;
-  onRequestReview: (candidate: RetentionDueCandidate) => Promise<void>;
+  onRequestReview: (
+    candidate: RetentionDueCandidate,
+    executionMode?: 'review_only' | 'execute_supported',
+  ) => Promise<void>;
   onExecutionStatusFilterChange: (status: RetentionExecutionStatus | 'all') => void;
 }) {
   const t = useT();
@@ -2691,14 +2736,17 @@ export function PrivacyComplianceSection() {
     }
   }
 
-  async function requestRetentionReview(candidate: RetentionDueCandidate) {
+  async function requestRetentionReview(
+    candidate: RetentionDueCandidate,
+    executionMode: 'review_only' | 'execute_supported' = 'review_only',
+  ) {
     const body: RetentionDryRunBody = {
       scope: candidate.scope,
       category: candidate.category,
       record_id: candidate.record_id,
       execution_request: {
         requested_policy_id: candidate.policy_id,
-        execution_mode: 'review_only',
+        execution_mode: executionMode,
       },
     };
 
@@ -2707,8 +2755,12 @@ export function PrivacyComplianceSection() {
       const report = await dryRunRetentionPolicy.mutateAsync(body);
       toast.success(
         report.execution_record
-          ? 'Pedido de revisão de evidência registado.'
-          : 'Pedido de revisão enviado; sem registo de execução devolvido.',
+          ? executionMode === 'execute_supported'
+            ? 'Evidência delimitada sem ação registada.'
+            : 'Pedido de revisão de evidência registado.'
+          : executionMode === 'execute_supported'
+            ? 'Pedido de evidência sem ação enviado; sem registo devolvido.'
+            : 'Pedido de revisão enviado; sem registo de execução devolvido.',
       );
     } catch (e) {
       toast.error(e);
