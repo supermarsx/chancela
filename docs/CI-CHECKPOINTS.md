@@ -47,7 +47,7 @@ UI, dashboard guest recent-events redaction, Ferramentas external-validator
 metadata UI, raw-report byte download API, imported-document review receipt UI,
 trust identifier-match explanations, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
-download route plus condominium absent-owner communication auto-generation,
+download route plus absent-owner dispatch-evidence recording,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
@@ -95,17 +95,28 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
   continued guest denial from `/v1/ledger/events`.
-- API generated-document by-id downloads:
+- API generated-document by-id downloads and absent-owner dispatch evidence:
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
   `cargo test -p chancela-api --locked in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata`
   plus
   `cargo test -p chancela-server --test e2e_act_document_persistence --locked condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata`
+  plus
+  `cargo test -p chancela-api --locked absent_owner_dispatch_evidence_`
+  plus
+  `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
   plus route-classification coverage for
   `/v1/documents/generated/{document_id}` as a gated `act.read` route while the
   canonical `/v1/acts/{act_id}/document` endpoint remains the sealed Ata path,
   including automatic `condominio-comunicacao-ausentes/v1` generation after
-  condominium seal with absent attendees and pending dispatch evidence status.
+  condominium seal with absent attendees, and `POST`/`GET`
+  `/v1/documents/generated/{document_id}/dispatch-evidence` as gated
+  operator-supplied evidence recording. The markers pin the separate
+  `generated_document_dispatch_evidence` store table, exact-retry idempotency
+  without a duplicate ledger event, selected absent-recipient evidence coverage,
+  evidence-attached/status headers, `x-chancela-dispatch-completed=false`, and
+  the `absent_owner_communication.dispatch_evidence_recorded` false/no-claim
+  flags.
 - API retained-export cleanup dry-run:
   `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
@@ -177,9 +188,12 @@ archive readability/ZK caveat markers, template `FamilyChannelMismatch` markers,
 MCP trust-catalog structured-filter and redacted external-validator summary
 markers, MCP draft-vs-signed comparison review prompt/resource/no-call/no-claim
 markers, dashboard guest `recent_events: []` redaction and no-permission-grant
-markers, generated-document by-id route, `act.read` gate, durable/in-memory,
-canonical Ata preservation, absent-owner communication auto-generation, and
-pending dispatch evidence markers, live-provider assurance markers, validator manifest,
+markers, generated-document by-id route, dispatch-evidence route, `act.read`/
+`document.generate` gates, durable/in-memory, canonical Ata preservation,
+absent-owner communication auto-generation, dispatch-evidence store,
+idempotency, selected-recipient evidence coverage, evidence-attached headers,
+no dispatch completion, and no-claim markers,
+live-provider assurance markers, validator manifest,
 Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
 and load-more coverage, shared list/export filter and limit normalization
 markers, numeric `next_cursor` typing, Livro-style filters, icon-only
@@ -209,9 +223,12 @@ legal acceptance, raw external-validator legal/trust/certification validation,
 trust-list legal validity, provider approval, raw MCP report-byte exposure,
 auto-role reconciliation, permission grants, archive custody/decryption material,
 AI-01/full AI completion, MCP draft-signed legal/source/trust/external
-certification, generated-document signing/bundle/template/threshold/law/provider/
-registry/legal-effect claims, dispatch-sent proof, dispatch completion,
-generated communication legal sufficiency, canonical paper-book conversion,
+certification, generated-document signing, bundle readiness, template legal
+review, threshold correctness, law verification, provider execution, registry
+filing, legal-effect claims, mail/email/SMS/provider sending, provider
+dispatch-sent proof, dispatch completion from operator evidence, delivery proof,
+legal notice completion, generated communication legal sufficiency,
+canonical paper-book conversion,
 paper-book canonical act/document/archive-package creation, paper-book PDF/A/PDF-UA,
 paper-book signature/seal creation, paper-book OCR/conversion behavior, or legal effect for mutable draft acts created from
 accepted OCR drafts. The Arquivo markers prove bounded UI/API paging and

@@ -454,14 +454,27 @@ Implementation checkpoints covered here:
   and bundles. Sealing a condominium act with absent attendees now also
   generates `condominio-comunicacao-ausentes/v1` automatically alongside the
   Ata, leaves the canonical act document as the Ata, makes the communication
-  retrievable by generated document id in durable and in-memory modes, and emits
-  `document.generated` payload/header evidence with dispatch status
-  `required_pending`, `evidence_attached=false`, and
-  `dispatch_completed=false`, including server E2E re-checks after restart.
-  This is generated-document retrieval and pending-dispatch evidence only: no
-  signing, bundle, template, threshold, law, provider, registry, dispatch-sent
-  proof, dispatch completion, legal sufficiency, or legal-effect claim is
-  added.
+  retrievable by generated document id in durable and in-memory modes, and
+  starts with `document.generated` payload/header status `required_pending`,
+  `evidence_attached=false`, and `dispatch_completed=false`, including server
+  E2E re-checks after restart. The same bounded backend slice now exposes
+  `POST`/`GET` `/v1/documents/generated/{document_id}/dispatch-evidence` for
+  operator-supplied dispatch evidence on
+  `condominio-comunicacao-ausentes/v1`. It stores metadata in the separate
+  `generated_document_dispatch_evidence` table, returns exact retries from the
+  idempotency key without a duplicate ledger event, derives selected
+  absent-recipient evidence coverage and evidence-attached status/header state
+  while keeping `dispatch_completed=false` and
+  `x-chancela-dispatch-completed=false`, and appends
+  `absent_owner_communication.dispatch_evidence_recorded` with selected/required
+  recipients plus false `sending_performed_by_chancela`, `delivery_confirmed`,
+  `legal_sufficiency_claimed`, `legal_notice_completion_claimed`, and
+  `bytes_in_payload` flags. This is generated-document retrieval plus
+  operator-recorded dispatch-evidence metadata only: no sealed act, canonical
+  Ata, or generated-byte mutation; no mail, email, SMS, or provider sending, and
+  no delivery, legal notice completion, legal sufficiency, legal effect,
+  provider execution, registry filing, signing, bundle readiness, template legal
+  review, threshold correctness, or law verification claim is added.
 - Working tree keeps Documents/Archive/API/CI **PARTIAL**: `GET
   /v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by
   `book.export@Book`, returns a deterministic local
@@ -2571,7 +2584,9 @@ behavior, legal disposal, or legal-effect claims.
   review receipt UI/no-fake-receipt/no-extra-route markers, MCP workflow provenance review
   prompt/resource markers, MCP draft-vs-signed comparison review prompt/resource
   markers, dashboard guest `recent_events: []` redaction markers,
-  generated-document by-id download route markers, external-signing
+  generated-document by-id download route plus absent-owner dispatch-evidence
+  route/store/idempotency/coverage/evidence-attached/no-completion/no-claim
+  markers, external-signing
   envelope UI/safe-409/Ferramentas label markers, PDF verifier DSS/VRI
   `/TU` plus local renewal/no-live-trust/no-legal-claim UI markers, hardening-plan head markers,
   validator corpus sidecar validation, CLI encrypted-key environment tests, and desktop lockfile

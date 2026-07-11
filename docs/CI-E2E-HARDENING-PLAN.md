@@ -15,8 +15,9 @@ scaffolding and BookDetail JSON download,
 richer Ata editor AI statement-source provenance rendering, explicit external-validator raw
 report upload UI guardrails, the raw external-validator raw-report byte download
 API, the MCP workflow provenance and draft-vs-signed comparison review aids,
-dashboard guest recent-events redaction, generated-document by-id download route
-and condominium absent-owner communication auto-generation,
+dashboard guest recent-events redaction, generated-document by-id download route,
+condominium absent-owner communication auto-generation, and operator-supplied
+dispatch-evidence recording,
 imported-document review receipt UI, trust catalog identifier-match explanations,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
 plus release workflow static
@@ -219,7 +220,7 @@ test operating checklist for driving Chancela toward release confidence.
   `Leitor` sessions keep recent events. Guest still lacks `GET /v1/ledger/events`.
   Treat this as response redaction only: no permission grants, no broader
   anonymization/redaction completion, and no access-control completeness claim.
-- The current generated-document by-id download slice returns
+- The current generated-document by-id download and dispatch-evidence slice returns
   `/v1/documents/generated/{document_id}` for on-demand generated post-act docs,
   gates the download through `act.read` on the owning act, and covers both
   durable and in-memory modes while keeping `/v1/acts/{act_id}/document` as the
@@ -228,10 +229,21 @@ test operating checklist for driving Chancela toward release confidence.
   document as the Ata, stores the communication for generated-document by-id
   retrieval in durable and in-memory modes, and emits honest pending dispatch
   evidence (`required_pending`, `evidence_attached=false`,
-  `dispatch_completed=false`) that server E2E re-checks after restart. Treat
-  this as retrieval and pending-dispatch evidence plumbing only: no signing,
-  bundle, template, threshold, law, provider, registry, dispatch-sent proof,
-  dispatch completion, legal sufficiency, or legal-effect claim.
+  `dispatch_completed=false`) that server E2E re-checks after restart. The same
+  backend slice exposes `POST`/`GET`
+  `/v1/documents/generated/{document_id}/dispatch-evidence` for
+  operator-supplied dispatch evidence, stores it in
+  `generated_document_dispatch_evidence`, returns exact retries idempotently,
+  records selected absent-recipient evidence coverage, updates only
+  evidence-attached/status headers while keeping
+  `x-chancela-dispatch-completed=false`, and emits
+  `absent_owner_communication.dispatch_evidence_recorded` with false/no-claim
+  flags. Treat this as retrieval and operator-recorded dispatch-evidence
+  metadata only: no sealed act, canonical Ata, or generated-byte mutation; no
+  mail, email, SMS, or provider sending; no delivery, legal notice completion,
+  legal sufficiency, legal effect, provider execution, registry filing, signing,
+  bundle readiness, template legal review, threshold correctness, or law
+  verification claim.
 - The current imported-document receipt slice derives a `Recibo de revisão`
   panel from the existing imported-document view. Pending rows show no fake
   receipt, while reviewed rows show status, reviewer, time, note, required and
@@ -906,21 +918,33 @@ settingsDefaults.test.ts contracts.test.ts`.
   and `Leitor` recent-event visibility, and continued Guest refusal from
   `/v1/ledger/events`. This is response redaction only: no permission grants,
   full anonymization, destructive erasure, or policy-completeness claim.
-- Current working-tree generated-document by-id download checks: focused
+- Current working-tree generated-document by-id download and dispatch-evidence checks: focused
   `cargo test -p chancela-api --locked on_demand_generate_persists_a_chosen_document_and_emits_the_event`
   and
   `cargo test -p chancela-api --locked in_memory_generated_document_download_uses_returned_url_and_keeps_canonical_ata`
   plus
   `cargo test -p chancela-server --test e2e_act_document_persistence --locked condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata`
+  plus `cargo test -p chancela-api --locked absent_owner_dispatch_evidence_`
+  and
+  `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
   coverage pins `/v1/documents/generated/{document_id}`, route classification,
   `act.read` gating by the owning act, durable and in-memory lookup, and
   preservation of `/v1/acts/{act_id}/document` as the sealed Ata bytes. It also
   pins automatic condominium absent-owner communication generation after seal,
   generated-document by-id retrieval of that communication, pending dispatch
-  evidence status, and restart persistence. This is generated-document retrieval
-  and pending-dispatch evidence only: no signing, bundle, template, threshold,
-  law, provider, registry, dispatch-sent proof, dispatch completion, legal
-  sufficiency, or legal-effect claim.
+  evidence status, restart persistence, `POST`/`GET`
+  `/v1/documents/generated/{document_id}/dispatch-evidence`,
+  `generated_document_dispatch_evidence`, operator-supplied dispatch evidence
+  with exact-retry idempotency, selected absent-recipient evidence coverage,
+  evidence-attached/status headers, no dispatch-completed header claim, and the
+  bounded
+  `absent_owner_communication.dispatch_evidence_recorded` event false flags.
+  This is generated-document retrieval and operator-recorded dispatch-evidence
+  metadata only: no sealed act, canonical Ata, or generated-byte mutation; no
+  mail, email, SMS, or provider sending; no delivery, legal notice completion,
+  legal sufficiency, legal effect, provider execution, registry filing, signing,
+  bundle readiness, template legal review, threshold correctness, or law
+  verification claim.
 - Current working-tree external-validator raw-report checks: focused API,
   archive-package, and web Ferramentas tests now pin bounded
   `raw_report.content_base64` acceptance only when declared byte length and
@@ -1218,7 +1242,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   drift read-only manual-review markers, archive readability/ZK manifest-only
   caveat markers, template `FamilyChannelMismatch` compatibility markers, and
   MCP structured trust-catalog filter plus redacted external-validator summary
-  markers, plus Arquivo paged ledger route/default-limit/cursor markers,
+  markers, plus generated-document by-id route, absent-owner dispatch-evidence
+  route/store/idempotency/selected-recipient coverage/evidence-attached/
+  no-completion/no-claim markers,
+  plus Arquivo paged ledger route/default-limit/cursor markers,
   1000+ event first-page/load-more tests, shared list/export filter and limit
   normalization markers, numeric `next_cursor` typing, Livro-style filter and
   icon-only clear-control markers, and JSON/TXT/CSV/HTML export-format markers

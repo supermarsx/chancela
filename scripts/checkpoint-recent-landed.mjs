@@ -183,6 +183,28 @@ const checks = [
     ],
   },
   {
+    name: "API absent-owner generated dispatch-evidence tests",
+    command: [
+      "cargo",
+      ["test", "-p", "chancela-api", "--locked", "absent_owner_dispatch_evidence_"],
+    ],
+  },
+  {
+    name: "store generated-document dispatch evidence tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-store",
+        "--test",
+        "store",
+        "--locked",
+        "generated_document_dispatch_evidence",
+      ],
+    ],
+  },
+  {
     name: "API retained-export cleanup dry-run tests",
     command: [
       "cargo",
@@ -1685,8 +1707,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id\ndownload route plus condominium absent-owner communication auto-generation",
-    "CI checkpoints generated-document by-id route lane marker",
+    "generated-document by-id\ndownload route plus absent-owner dispatch-evidence recording",
+    "CI checkpoints generated-document dispatch-evidence route lane marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -1770,8 +1792,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id route, `act.read` gate, durable/in-memory,\ncanonical Ata preservation, absent-owner communication auto-generation, and\npending dispatch evidence markers",
-    "CI checkpoints static generated-document by-id marker",
+    "generated-document by-id route, dispatch-evidence route, `act.read`/\n`document.generate` gates, durable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, and no-claim markers",
+    "CI checkpoints static generated-document dispatch-evidence marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -1782,6 +1804,16 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata",
     "CI checkpoints absent-owner communication server command marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "absent_owner_dispatch_evidence_",
+    "CI checkpoints absent-owner dispatch-evidence API command marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "generated_document_dispatch_evidence",
+    "CI checkpoints generated-document dispatch-evidence store command marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -3614,6 +3646,11 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/authz.rs",
+    '"/v1/documents/generated/{document_id}/dispatch-evidence"',
+    "API generated-document dispatch-evidence route classified gated marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/authz.rs",
     "generated_document_download_route_is_classified_as_gated",
     "API generated-document route classification coverage",
   );
@@ -3664,22 +3701,190 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/documents.rs",
-    'status: "required_pending"',
+    'communication.event_payload["dispatch_evidence_status"]["status"]',
     "API condominium absent-owner pending dispatch status marker",
   );
   assertFileContains(
     "crates/chancela-api/src/documents.rs",
-    "evidence_attached: false",
+    'communication.event_payload["dispatch_evidence_status"]["evidence_attached"]',
     "API condominium absent-owner false dispatch evidence marker",
   );
   assertFileContains(
     "crates/chancela-api/src/documents.rs",
-    "dispatch_completed: false",
+    'communication.event_payload["dispatch_evidence_status"]["dispatch_completed"]',
     "API condominium absent-owner false dispatch completion marker",
   );
   assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    '"/v1/documents/generated/{document_id}/dispatch-evidence"',
+    "API generated-document dispatch-evidence route wiring marker",
+  );
+  assertFileContains(
     "crates/chancela-api/src/documents.rs",
-    "communication generated automatically; dispatch evidence is not attached",
+    "pub async fn record_generated_document_dispatch_evidence",
+    "API generated-document dispatch-evidence POST handler marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "pub async fn get_generated_document_dispatch_evidence",
+    "API generated-document dispatch-evidence GET handler marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "GeneratedDocumentDispatchEvidenceRequest",
+    "API generated-document dispatch-evidence request DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "GeneratedDocumentDispatchEvidenceListView",
+    "API generated-document dispatch-evidence list DTO marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "ABSENT_OWNER_DISPATCH_EVIDENCE_EVENT_KIND",
+    "API absent-owner dispatch-evidence event constant marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    '"absent_owner_communication.dispatch_evidence_recorded"',
+    "API absent-owner dispatch-evidence event kind marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "selected_absent_recipients",
+    "API absent-owner selected-recipient event marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "required_absent_recipients",
+    "API absent-owner required-recipient event marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "operator_evidence_partial",
+    "API absent-owner partial dispatch-evidence status marker",
+  );
+  assertFileDoesNotContain(
+    "crates/chancela-api/src/documents.rs",
+    "operator_evidence_complete",
+    "API absent-owner operator evidence completion status removed",
+  );
+  assertFileDoesNotContain(
+    "crates/chancela-api/src/documents.rs",
+    "dispatch_completed: complete",
+    "API absent-owner dispatch_completed not derived from coverage",
+  );
+  assertFileDoesNotContain(
+    "crates/chancela-api/src/documents.rs",
+    "operator_recorded_evidence_complete_only",
+    "API absent-owner no operator-evidence completion basis marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "recorded_recipients",
+    "API absent-owner recorded-recipient status marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "missing_recipients",
+    "API absent-owner missing-recipient status marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    '"x-chancela-dispatch-evidence-status"',
+    "API generated-document dispatch-evidence status header marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    '"x-chancela-dispatch-completed"',
+    "API generated-document dispatch-completed header marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/documents.rs",
+    `assert_eq!(
+            body["dispatch_evidence_status"]["dispatch_completed"],
+            false
+        );`,
+    "API absent-owner dispatch evidence keeps completion false coverage",
+  );
+  assertFileMatches(
+    "crates/chancela-api/src/documents.rs",
+    /get\("x-chancela-dispatch-completed"\)[\s\S]{0,500}Some\("false"\)/u,
+    "API generated-document dispatch-completed header remains false coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "sending_performed_by_chancela: false",
+    "API absent-owner no-sending response flag marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "delivery_confirmed: false",
+    "API absent-owner no-delivery response flag marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "legal_sufficiency_claimed: false",
+    "API absent-owner no-legal-sufficiency response flag marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "legal_notice_completion_claimed: false",
+    "API absent-owner no-legal-notice response flag marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "bytes_in_payload: false",
+    "API absent-owner no-evidence-bytes response flag marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/documents.rs",
+    "assert_eq!(generated_bytes.as_ref(), communication.pdf_bytes.as_slice());",
+    "API absent-owner generated bytes preservation coverage",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/documents.rs",
+    "assert_eq!(canonical.pdf_bytes, ata.pdf_bytes);",
+    "API absent-owner canonical Ata preservation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/schema.rs",
+    "CREATE TABLE IF NOT EXISTS generated_document_dispatch_evidence",
+    "store generated-document dispatch-evidence table marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/schema.rs",
+    "PRIMARY KEY (document_id, idempotency_key)",
+    "store generated-document dispatch-evidence idempotency key marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "generated_document_dispatch_evidence_by_key",
+    "store generated-document dispatch-evidence idempotent lookup marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "upsert_generated_document_dispatch_evidence",
+    "store generated-document dispatch-evidence idempotent upsert marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "absent_owner_dispatch_evidence_records_status_idempotently_and_preserves_bytes",
+    "API absent-owner dispatch-evidence focused coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "exact retry must not append a duplicate ledger event",
+    "API absent-owner dispatch-evidence no duplicate event marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/tests/store.rs",
+    "generated_document_dispatch_evidence_round_trips_idempotently_by_idempotency_key",
+    "store generated-document dispatch-evidence round-trip coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "communication generated automatically; operator-recorded dispatch evidence does not cover every required absent recipient",
     "API condominium absent-owner no dispatch proof marker",
   );
   assertFileContains(
@@ -5308,8 +5513,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree generated-document by-id download checks",
-    "CI/E2E hardening plan generated-document by-id checks marker",
+    "Current working-tree generated-document by-id download and dispatch-evidence checks",
+    "CI/E2E hardening plan generated-document dispatch-evidence checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -5326,14 +5531,19 @@ function assertCheckpointMap() {
     "condominium_absent_owner_communication_auto_generates_and_keeps_canonical_ata",
     "CI/E2E hardening plan absent-owner communication server command marker",
   );
-  assertFileContains(
+  assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "pending dispatch\n  evidence status, and restart persistence",
-    "CI/E2E hardening plan absent-owner pending dispatch persistence marker",
+    "operator-supplied dispatch evidence with exact-retry idempotency",
+    "CI/E2E hardening plan absent-owner dispatch-evidence idempotency marker",
   );
-  assertFileContains(
+  assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "no signing, bundle, template, threshold,\n  law, provider, registry, dispatch-sent proof, dispatch completion, legal\n  sufficiency, or legal-effect claim",
+    "no dispatch-completed header claim",
+    "CI/E2E hardening plan absent-owner no dispatch-completed header claim marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "no sealed act, canonical Ata, or generated-byte mutation; no mail, email, SMS, or provider sending",
     "CI/E2E hardening plan generated-document no-claim marker",
   );
   assertFileContains(
@@ -6193,12 +6403,27 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "`required_pending`, `evidence_attached=false`, and\n  `dispatch_completed=false`",
-    "spec coverage condominium absent-owner pending dispatch marker",
+    "`POST`/`GET` `/v1/documents/generated/{document_id}/dispatch-evidence`",
+    "spec coverage condominium absent-owner dispatch-evidence route marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "no\n  signing, bundle, template, threshold, law, provider, registry, dispatch-sent\n  proof, dispatch completion, legal sufficiency, or legal-effect claim",
+    "`generated_document_dispatch_evidence`",
+    "spec coverage condominium absent-owner dispatch-evidence store marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "absent-recipient evidence coverage and evidence-attached status/header state while keeping `dispatch_completed=false` and `x-chancela-dispatch-completed=false`",
+    "spec coverage condominium absent-owner no dispatch completion marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "`absent_owner_communication.dispatch_evidence_recorded`",
+    "spec coverage condominium absent-owner dispatch event marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "no mail, email, SMS, or provider sending, and no delivery, legal notice completion, legal sufficiency, legal effect, provider execution, registry filing, signing, bundle readiness, template legal review, threshold correctness, or law verification claim",
     "spec coverage generated-document no-claim marker",
   );
   assertFileContains(
