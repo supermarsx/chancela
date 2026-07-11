@@ -276,11 +276,16 @@ test operating checklist for driving Chancela toward release confidence.
   `external_slot_id` only when selected, preserves the tracking-only payload
   when unselected, and renders later sequential-slot 409s as safe operational
   messages without raw backend/token-like detail, including after slot selection
-  changes. Ferramentas maps `workflow: external_envelope` to localized copy in
-  rows and token lookup. Treat this as operational tracking only, not provider
-  signing, PIN/OTP/passphrase collection, evidence capture, slot signing,
-  envelope completion UI, public token exposure, legal completion, or qualified
-  status.
+  changes. SigningPanel also displays stored slot evidence metadata and records
+  operator-supplied technical evidence for pending/initiated slots through
+  `PATCH /v1/external-signing/envelopes/{id}` with a `slots` payload that omits
+  `complete:true`; identity-requirement-tagged evidence rows are required before
+  submit when configured. Ferramentas maps `workflow: external_envelope` to
+  localized copy in rows and token lookup. Treat this as operational tracking
+  and operator-supplied technical slot evidence only, not provider signing,
+  PIN/OTP/passphrase collection, provider calls, trust-list checks, QES/
+  qualified status, legal validity, provider completion, act finalization,
+  envelope legal completion, or public token exposure.
 - The current ASiC inspection slice exposes `POST /v1/signature/asic/inspect`
   for read-only local technical profile inspection of a base64 ASiC ZIP with
   optional filename, declared size, and declared SHA-256. Focused API and
@@ -1000,27 +1005,37 @@ settingsDefaults.test.ts contracts.test.ts`.
   blocking slot IDs), refuses identity-required slots with a bounded blocked
   reason, and replays idempotently without duplicate signed documents, slot
   evidence, or update events. The public invite upload path is bounded before
-  frontend file read and by the backend body-limit envelope. Focused web
-  coverage in `SigningPanel.test.tsx`, `client.test.ts`, and
-  `ExternalSigningWorkflowsPage.test.tsx` pins workflow-only envelope list/create
-  UI, order policy and signer-slot payloads, optional linked-slot invite payloads
-  (`external_envelope_id` / `external_slot_id`), tracking-only payloads when no
-  slot is selected, safe sequential 409 messaging without raw backend/token-like
-  detail after slot selection changes, and localized Ferramentas
-  `workflow: external_envelope` labels. `ExternalSignerInvitePage.test.tsx` and
-  `i18n.test.ts` also pin that upload/result copy is technical evidence only and
-  that non-pt locale keys do not leak Portuguese source text. The focused web
-  command is
+  frontend file read and by the backend body-limit envelope. The web
+  external-signing evidence slice now also pins `updateExternalSigningEnvelope`
+  on `PATCH /v1/external-signing/envelopes/{id}`,
+  `useUpdateExternalSigningEnvelope(actId)`, `SlotEvidenceMetadata` rendering,
+  `slotCanRecordTechnicalEvidence`, `buildSlotEvidenceRows`, and
+  `identity_requirement: requirement` rows. `SigningPanel.test.tsx` covers
+  identity-tagged operator evidence submission with no `complete:true`, stored
+  evidence metadata display, and pending/initiated-only evidence actions;
+  `client.test.ts` covers the client PATCH route/payload, and
+  `external_signing_envelopes.rs` pins that signed slot evidence without
+  `complete:true` leaves the workflow envelope open. Focused web coverage in
+  `SigningPanel.test.tsx`, `client.test.ts`, and
+  `ExternalSigningWorkflowsPage.test.tsx` also pins workflow-only envelope
+  list/create UI, order policy and signer-slot payloads, optional linked-slot
+  invite payloads (`external_envelope_id` / `external_slot_id`), tracking-only
+  payloads when no slot is selected, safe sequential 409 messaging without raw
+  backend/token-like detail after slot selection changes, and localized
+  Ferramentas `workflow: external_envelope` labels. `ExternalSignerInvitePage.test.tsx`
+  and `i18n.test.ts` also pin that upload/result copy is technical evidence only
+  and that non-pt locale keys do not leak Portuguese source text. The focused
+  web command is
   `npm run test --workspace apps/web -- src/api/client.test.ts
   src/contracts/contracts.test.ts
   src/features/signing/ExternalSignerInvitePage.test.tsx
   src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx
   src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`. This is
   invite/envelope tracking plus linked no-identity-slot technical evidence
-  status only; it is not provider signing, PIN/OTP/passphrase collection,
-  provider calls, trust-list checks, QES/qualified status, legal validity,
-  provider completion, act finalization, full envelope legal completion, public
-  token exposure, or qualified status.
+  status and operator-supplied workflow slot evidence only; it is not provider
+  signing, PIN/OTP/passphrase collection, provider calls, trust-list checks,
+  QES/qualified status, legal validity, provider completion, act finalization,
+  full envelope legal completion, or public token exposure.
 - Current working-tree ASiC inspection/decompression checks: focused `cargo
   test -p chancela-api --test asic_signature_validation --locked` coverage pins
   `POST /v1/signature/asic/inspect`, base64 ASiC ZIP envelopes with optional
@@ -1176,9 +1191,11 @@ settingsDefaults.test.ts contracts.test.ts`.
   BookDetail UI accepted-draft/existing-dossier/no-automatic-POST/no-endpoint
   guardrail markers,
   and external signer linked-invite sequential/parallel slot-policy,
-  workflow-only envelope list/create UI, safe sequential 409 rendering, and
-  tracking-only response markers, release workflow unsigned/local-only static
-  guard, clean-source provenance gate, and production-package manifest-required
+  workflow-only envelope list/create UI, safe sequential 409 rendering,
+  tracking-only response markers, stored slot evidence display,
+  operator technical evidence PATCH/no-`complete:true` payload markers, and
+  identity-requirement-tagged row markers, release workflow unsigned/local-only
+  static guard, clean-source provenance gate, and production-package manifest-required
   markers, plus ASiC inspect route/base64/fixity/
   malformed-ZIP/unsafe-path checks, bounded profile/member/manifest/signature
   diagnostics, local CAdES-only bounded validation, ASiC-XAdES unsupported

@@ -54,8 +54,10 @@ metadata, template family/channel rule guards, MCP trust-catalog filter
 discoverability, redacted external-validator report summary tools, external
 invite signed-PDF technical evidence markers including linked no-identity slot
 completion, identity-required refusal, replay idempotency, upload body limits,
-i18n leakage guards, validator fixtures, and the standalone desktop Cargo
-workspace.
+i18n leakage guards, external-signing stored slot evidence rendering,
+operator technical evidence form submission, identity-requirement-tagged
+evidence rows, `PATCH` slot payloads that omit `complete:true`, validator
+fixtures, and the standalone desktop Cargo workspace.
 
 It intentionally reuses existing test surfaces:
 
@@ -182,7 +184,9 @@ Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
 and load-more coverage, shared list/export filter and limit normalization
 markers, numeric `next_cursor` typing, Livro-style filters, icon-only
 clear-control markers, JSON/TXT/CSV/HTML export-format markers, and
-canonical-only PDF/A evidence boundaries,
+canonical-only PDF/A evidence boundaries, external-signing slot evidence
+metadata rendering, pending/initiated slot operator evidence actions,
+identity-requirement-tagged row builders, no-`complete:true` PATCH payloads,
 and desktop `Cargo.lock` are present, so accidental deletion or rename of the
 checkpoint targets fails with a direct message. It also statically pins the
 imported-document review notification/export browser E2E marker; Playwright
@@ -214,9 +218,12 @@ accepted OCR drafts. The Arquivo markers prove bounded UI/API paging and
 filtered export behavior only; they do not prove persistent-store boot-time SQL
 paging or turn non-PDF/A exports into preserved evidence. The external invite
 signed-PDF markers prove act-scoped technical signed evidence and the linked
-no-identity external slot status path only; they do not prove provider calls,
-trust-list checks, QES/qualified status, legal validity, provider completion,
-act finalization, or full envelope legal completion.
+no-identity external slot status path only. The operator-supplied
+external-signing slot evidence markers prove stored technical evidence display
+and PATCH recording for pending/initiated slots with required identity-tagged
+rows and no `complete:true`; they do not prove provider calls, trust-list
+checks, QES/qualified status, legal validity, provider completion, act
+finalization, provider-backed slot signing, or full envelope legal completion.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 

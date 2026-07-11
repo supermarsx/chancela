@@ -694,6 +694,61 @@ function assertCheckpointMap() {
     "web SigningPanel envelope identity requirement marker",
   );
   assertFileContains(
+    "apps/web/src/api/client.ts",
+    "updateExternalSigningEnvelope",
+    "web external-signing envelope PATCH client marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "export function useUpdateExternalSigningEnvelope(actId: string)",
+    "web external-signing envelope update hook marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "const updated = await api.updateExternalSigningEnvelope('env-1'",
+    "web external-signing envelope client PATCH coverage marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "expect(fetchMock.mock.calls[2][1]?.method).toBe('PATCH');",
+    "web external-signing envelope client PATCH method marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.tsx",
+    "function SlotEvidenceMetadata",
+    "web SigningPanel stored slot evidence metadata marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.tsx",
+    "function slotCanRecordTechnicalEvidence",
+    "web SigningPanel pending initiated slot evidence action marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.tsx",
+    "function buildSlotEvidenceRows",
+    "web SigningPanel slot evidence row builder marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.tsx",
+    "identity_requirement: requirement,",
+    "web SigningPanel identity-requirement tagged evidence marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.test.tsx",
+    "submits identity-tagged slot evidence without completing the envelope",
+    "web SigningPanel identity-required no-complete evidence coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/SigningPanel.test.tsx",
+    "expect(bodies[0]).not.toHaveProperty('complete');",
+    "web SigningPanel operator evidence omits complete marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/external_signing_envelopes.rs",
+    "signed_slot_evidence_without_complete_stays_workflow_open",
+    "API external-signing signed slot evidence no-complete coverage",
+  );
+  assertFileContains(
     "apps/web/src/features/ferramentas/ExternalSigningWorkflowsPage.tsx",
     "if (workflow === 'external_envelope') return t('signing.invites.workflow.externalEnvelope');",
     "web Ferramentas external envelope workflow label marker",
@@ -1638,6 +1693,21 @@ function assertCheckpointMap() {
     "raw-report byte download API",
     "CI checkpoints external-validator raw-report byte lane marker",
   );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "external-signing stored slot evidence rendering",
+    "CI checkpoints external-signing stored slot evidence lane marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "`PATCH` slot payloads that omit `complete:true`",
+    "CI checkpoints external-signing PATCH no-complete lane marker",
+  );
+  assertFileMatches(
+    "docs/CI-CHECKPOINTS.md",
+    /they do not prove provider calls[\s\S]*trust-list\s+checks[\s\S]*QES\/\s*qualified status[\s\S]*legal validity[\s\S]*provider completion[\s\S]*act\s+finalization[\s\S]*provider-backed slot signing[\s\S]*full envelope legal\s+completion/u,
+    "CI checkpoints external-signing operator evidence no-claim marker",
+  );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "imported-document review receipt UI",
@@ -1702,6 +1772,11 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "generated-document by-id route, `act.read` gate, durable/in-memory,\ncanonical Ata preservation, absent-owner communication auto-generation, and\npending dispatch evidence markers",
     "CI checkpoints static generated-document by-id marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "operator-supplied external-signing slot evidence markers prove stored technical evidence display",
+    "CI checkpoints external-signing operator evidence boundary marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -5461,7 +5536,27 @@ function assertCheckpointMap() {
     "workflow-only envelope list/create UI",
     "CI/E2E hardening plan external-signing workflow-only UI marker",
   );
-  assertFileContains(
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "operator-supplied technical evidence for pending/initiated slots",
+    "CI/E2E hardening plan external-signing operator evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`PATCH /v1/external-signing/envelopes/{id}` with a `slots` payload that omits",
+    "CI/E2E hardening plan external-signing PATCH no-complete marker",
+  );
+  assertFileMatches(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    /operator-supplied technical slot evidence only[\s\S]*not provider signing[\s\S]*PIN\/OTP\/passphrase collection[\s\S]*provider calls[\s\S]*trust-list checks[\s\S]*QES\/\s*qualified status[\s\S]*legal validity[\s\S]*provider completion[\s\S]*act finalization[\s\S]*envelope legal completion[\s\S]*public token exposure/u,
+    "CI/E2E hardening plan external-signing operator evidence no-claim marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "identity-requirement-tagged evidence rows are required before submit when configured",
+    "CI/E2E hardening plan external-signing identity-tagged evidence marker",
+  );
+  assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "safe sequential 409 messaging without raw backend/token-like",
     "CI/E2E hardening plan external-signing safe 409 marker",
@@ -5596,9 +5691,9 @@ function assertCheckpointMap() {
     "does not add signing, notarization, attestation,\n  registry publishing, reproducible-build proof, or production trust claims",
     "CI/E2E hardening plan release workflow static-only boundary marker",
   );
-  assertFileContains(
+  assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "release workflow unsigned/local-only static\n  guard, clean-source provenance gate, and production-package manifest-required",
+    "identity-requirement-tagged row markers, release workflow unsigned/local-only static guard, clean-source provenance gate, and production-package manifest-required",
     "CI/E2E hardening plan checkpoint release static guard summary marker",
   );
   assertFileContains(
@@ -6466,6 +6561,26 @@ function assertCheckpointMap() {
     "lists per-act workflow-only external-signing envelopes",
     "spec coverage external-signing envelope UI marker",
   );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "SigningPanel also displays stored slot evidence metadata",
+    "spec coverage external-signing stored slot evidence marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "requires every configured identity requirement to have a tagged evidence row before submit",
+    "spec coverage external-signing identity-tagged evidence marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "sends no `complete:true`",
+    "spec coverage external-signing no-complete payload marker",
+  );
+  assertFileMatches(
+    "SPEC-COVERAGE.md",
+    /This is operator-supplied technical workflow evidence only[\s\S]*not provider\s+signing[\s\S]*provider completion[\s\S]*legal envelope completion[\s\S]*QES\/\s*qualified status[\s\S]*act\s+finalization/u,
+    "spec coverage external-signing operator evidence no-claim marker",
+  );
   assertFileContains(
     "SPEC-COVERAGE.md",
     "leaving the slot unselected\n  preserves the tracking-only payload",
@@ -6668,6 +6783,25 @@ function assertFileContains(relativePath, needle, label) {
     body.includes(needle),
     `${label} missing expected marker ${needle}`,
   );
+}
+
+function assertFileContainsNormalized(relativePath, needle, label) {
+  assertFileExists(relativePath, label);
+  const body = readFileSync(join(repoRoot, relativePath), "utf8");
+  assert.ok(
+    normalizeWhitespace(body).includes(normalizeWhitespace(needle)),
+    `${label} missing expected marker ${needle}`,
+  );
+}
+
+function assertFileMatches(relativePath, pattern, label) {
+  assertFileExists(relativePath, label);
+  const body = readFileSync(join(repoRoot, relativePath), "utf8");
+  assert.ok(pattern.test(body), `${label} missing expected marker ${pattern}`);
+}
+
+function normalizeWhitespace(value) {
+  return value.replace(/\s+/gu, " ").trim();
 }
 
 function assertFileDoesNotContain(relativePath, needle, label) {
