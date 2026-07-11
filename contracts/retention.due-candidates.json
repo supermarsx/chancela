@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-07-09T14:00:00Z",
+  "scope": "book_archive",
+  "category": "documents",
+  "candidate_count": 2,
+  "candidates": [
+    {
+      "candidate_id": "retention-candidate-1",
+      "scope": "book_archive",
+      "category": "documents",
+      "record_id": "archive-doc-1",
+      "book_id": "book-archive-1",
+      "entity_id": "entity-1",
+      "closing_date": "2024-06-01",
+      "due_date": "2026-06-01",
+      "overdue": true,
+      "policy_id": "retention-1",
+      "policy_name": "Mensagens de suporte",
+      "schedule_id": "support-messages-v1",
+      "retention_period": "P2Y",
+      "disposal_action": "review",
+      "destructive_action": false,
+      "legal_hold_blockers": [],
+      "required_approvals": [
+        {
+          "code": "retention_manual_review",
+          "required_from": "privacy_or_settings_manager",
+          "reason": "review evidence only before any separate operational process"
+        }
+      ],
+      "blockers": [],
+      "findings": [],
+      "outcome": "manual_review_required",
+      "status": "awaiting_manual_review",
+      "would_execute": false,
+      "destructive_disposal_completed": false,
+      "full_erasure_completed": false,
+      "next_step": "Review evidence only; no deletion or anonymization is performed."
+    },
+    {
+      "candidate_id": "retention-candidate-unsupported",
+      "scope": "book_archive",
+      "category": "documents",
+      "record_id": "archive-doc-blocked",
+      "book_id": "book-archive-blocked",
+      "entity_id": "entity-2",
+      "closing_date": "2023-02-10",
+      "due_date": null,
+      "overdue": false,
+      "policy_id": "retention-unsupported",
+      "policy_name": "Unsupported archival period",
+      "schedule_id": "archive-unsupported-v1",
+      "retention_period": "PXBROKEN",
+      "disposal_action": "review",
+      "destructive_action": false,
+      "legal_hold_blockers": [
+        {
+          "policy_id": "retention-unsupported",
+          "name": "Board preservation hold",
+          "reason": "legal hold active on archived book"
+        }
+      ],
+      "required_approvals": [
+        {
+          "code": "unsupported_period_review",
+          "required_from": "privacy_or_settings_manager",
+          "reason": "unsupported period must be corrected before operational review"
+        }
+      ],
+      "blockers": [
+        {
+          "code": "unsupported_retention_period",
+          "message": "Retention period PXBROKEN is not supported."
+        }
+      ],
+      "findings": [
+        {
+          "code": "unsupported_retention_period",
+          "message": "Retention period PXBROKEN is not supported.",
+          "severity": "warning"
+        }
+      ],
+      "outcome": "blocked_unsupported_period",
+      "status": "blocked",
+      "would_execute": false,
+      "destructive_disposal_completed": false,
+      "full_erasure_completed": false,
+      "next_step": "Correct the retention schedule; this scan records evidence only."
+    }
+  ]
+}

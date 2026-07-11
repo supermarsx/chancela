@@ -13,6 +13,7 @@ import {
   usePatchPrivacyTransferControl,
   usePrivacyBreachPlaybooks,
   usePrivacyDpias,
+  usePrivacyRetentionDueCandidates,
   usePrivacyProcessors,
   usePrivacyRetentionExecutions,
   usePrivacyRetentionPolicies,
@@ -41,7 +42,11 @@ import {
   type PrivacyRiskLevel,
   type ProcessorRecordView,
   type RetentionDisposalAction,
+  type RetentionDryRunBody,
   type RetentionDryRunReport,
+  type RetentionDueCandidate,
+  type RetentionDueCandidatesReport,
+  type RetentionDueCandidateFinding,
   type RetentionExecutionRecord,
   type RetentionExecutionStatus,
   type RetentionPolicyStatus,
@@ -588,6 +593,48 @@ function formatDateTime(value: string): string {
 
 function latestReceipt<T extends { recorded_at: string }>(receipts: T[]): T | undefined {
   return [...receipts].sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))[0];
+}
+
+function renderUnknownEvidence(value: unknown): string {
+  if (value === null || value === undefined) return 'Sem detalhe';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(renderUnknownEvidence).join(', ');
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== null && item !== undefined && item !== '')
+      .map(([key, item]) => `${key}: ${renderUnknownEvidence(item)}`);
+    return entries.length > 0 ? entries.join(' · ') : 'Sem detalhe';
+  }
+  return String(value);
+}
+
+function retentionFindingText(finding: RetentionDueCandidateFinding): string {
+  if (typeof finding === 'string') return finding;
+  return [
+    finding.severity ? `severity: ${finding.severity}` : '',
+    finding.code ? `code: ${finding.code}` : '',
+    finding.message ? `message: ${finding.message}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function retentionQueuedReviewForCandidate(
+  candidate: RetentionDueCandidate,
+  records: RetentionExecutionRecord[],
+): RetentionExecutionRecord | undefined {
+  return records
+    .filter(
+      (record) =>
+        record.execution_intent === 'review_only' &&
+        record.execution_status === 'awaiting_review' &&
+        record.candidate.scope === candidate.scope &&
+        record.candidate.category === candidate.category &&
+        record.candidate.record_id === candidate.record_id &&
+        record.requested_policy.id === candidate.policy_id,
+    )
+    .sort((a, b) => a.requested_at.localeCompare(b.requested_at) || a.id.localeCompare(b.id))[0];
 }
 
 function RegisterForm({
@@ -1963,6 +2010,196 @@ function RetentionDryRunPanel({
   );
 }
 
+function RetentionDueCandidatesPanel({
+  report,
+  loading,
+  error,
+  reviewRequestPending,
+  requestingReviewCandidateId,
+  executionRecords,
+  onRequestReview,
+}: {
+  report: RetentionDueCandidatesReport | null;
+  loading: boolean;
+  error: unknown;
+  reviewRequestPending: boolean;
+  requestingReviewCandidateId: string | null;
+  executionRecords: RetentionExecutionRecord[];
+  onRequestReview: (candidate: RetentionDueCandidate) => Promise<void>;
+}) {
+  const candidates: RetentionDueCandidate[] = report?.candidates ?? [];
+
+  return (
+    <Card title="Candidatos de retenção vencidos">
+      <div className="stack">
+        <p className="field__hint">
+          Varredura GET somente leitura para revisão de evidência. Esta secção não apaga, não
+          anonimiza e não conclui cumprimento legal.
+        </p>
+        {report ? (
+          <p className="muted">
+            Gerado em {formatDateTime(report.generated_at)} · {report.scope} / {report.category} ·{' '}
+            {report.candidate_count} candidato(s)
+          </p>
+        ) : null}
+        {loading ? (
+          <SkeletonTable cols={7} />
+        ) : error ? (
+          <ErrorNote error={error} />
+        ) : candidates.length === 0 ? (
+          <EmptyState title="Sem candidatos vencidos">
+            <p>Não há candidatos vencidos da varredura somente leitura.</p>
+          </EmptyState>
+        ) : (
+          <Table
+            head={
+              <tr>
+                <th>Livro e registo</th>
+                <th>Política</th>
+                <th>Vencimento e estado</th>
+                <th>Bloqueios e aprovações</th>
+                <th>Achados</th>
+                <th>Flags sem execução</th>
+                <th>Pedido de revisão</th>
+              </tr>
+            }
+          >
+            {candidates.map((candidate) => {
+              const queuedReview = retentionQueuedReviewForCandidate(candidate, executionRecords);
+              return (
+                <tr key={candidate.candidate_id}>
+                  <td>
+                    <div className="stack--tight">
+                      <span className="mono">{candidate.record_id}</span>
+                      <span>Livro: {candidate.book_id}</span>
+                      <span className="muted">Entidade: {candidate.entity_id}</span>
+                      <span className="muted">
+                        {candidate.scope} / {candidate.category}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="stack--tight">
+                      <span>{candidate.policy_name}</span>
+                      <span className="muted">{candidate.policy_id}</span>
+                      <span className="muted">
+                        {candidate.schedule_id} · {candidate.retention_period}
+                      </span>
+                      <span>{candidate.disposal_action}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="stack--tight">
+                      <span>Fecho: {candidate.closing_date}</span>
+                      <span>Vencimento: {candidate.due_date ?? 'Sem data calculada'}</span>
+                      <Badge tone={candidate.overdue ? 'warn' : 'neutral'}>
+                        overdue: {String(candidate.overdue)}
+                      </Badge>
+                      <span>
+                        {candidate.status} · {candidate.outcome}
+                      </span>
+                      <span className="muted">{candidate.next_step}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="stack--tight">
+                      <strong>Legal hold</strong>
+                      {candidate.legal_hold_blockers.length > 0 ? (
+                        candidate.legal_hold_blockers.map((blocker, index) => (
+                          <span key={`${candidate.candidate_id}-hold-${index}`}>
+                            {renderUnknownEvidence(blocker)}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="muted">Sem bloqueios de legal hold</span>
+                      )}
+                      <strong>Aprovações requeridas</strong>
+                      {candidate.required_approvals.length > 0 ? (
+                        candidate.required_approvals.map((approval, index) => (
+                          <span key={`${candidate.candidate_id}-approval-${index}`}>
+                            {renderUnknownEvidence(approval)}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="muted">Sem aprovações requeridas</span>
+                      )}
+                      {candidate.blockers.map((blocker, index) => (
+                        <span key={`${candidate.candidate_id}-blocker-${index}`}>
+                          {renderUnknownEvidence(blocker)}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="stack--tight">
+                      {candidate.findings.length > 0 ? (
+                        candidate.findings.map((finding, index) => (
+                          <span key={`${candidate.candidate_id}-finding-${index}`}>
+                            {retentionFindingText(finding)}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="muted">Sem achados de período não suportado</span>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="stack--tight">
+                      <span>destructive_action: {String(candidate.destructive_action)}</span>
+                      <span>would_execute: {String(candidate.would_execute)}</span>
+                      <span>
+                        destructive_disposal_completed:{' '}
+                        {String(candidate.destructive_disposal_completed)}
+                      </span>
+                      <span>
+                        full_erasure_completed: {String(candidate.full_erasure_completed)}
+                      </span>
+                      <span className="muted">Apenas revisão de evidência.</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="stack--tight">
+                      {queuedReview ? (
+                        <Badge tone="warn">Revisão já na fila</Badge>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          icon={<Icon.Check />}
+                          disabled={reviewRequestPending}
+                          onClick={() => void onRequestReview(candidate)}
+                        >
+                          {requestingReviewCandidateId === candidate.candidate_id
+                            ? 'A registar revisão'
+                            : 'Pedir revisão de evidência'}
+                        </Button>
+                      )}
+                      {queuedReview ? (
+                        <>
+                          <span className="muted">
+                            {queuedReview.execution_status} · {queuedReview.id}
+                          </span>
+                          <span className="muted">
+                            Pedido em {formatDateTime(queuedReview.requested_at)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="muted">
+                          Regista um pedido review_only; não aprova nem executa descarte.
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </Table>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function RetentionExecutionReviewQueue({
   records,
   loading,
@@ -2142,6 +2379,11 @@ function RetentionPolicyPanel({
   saving,
   runningDryRun,
   dryRunReport,
+  dueCandidatesReport,
+  dueCandidatesLoading,
+  dueCandidatesError,
+  reviewRequestPending,
+  requestingReviewCandidateId,
   executionRecords,
   executionLoading,
   executionError,
@@ -2149,6 +2391,7 @@ function RetentionPolicyPanel({
   onCreate,
   onPatch,
   onDryRun,
+  onRequestReview,
   onExecutionStatusFilterChange,
 }: {
   records: RetentionPolicyView[];
@@ -2157,6 +2400,11 @@ function RetentionPolicyPanel({
   saving: boolean;
   runningDryRun: boolean;
   dryRunReport: RetentionDryRunReport | null;
+  dueCandidatesReport: RetentionDueCandidatesReport | null;
+  dueCandidatesLoading: boolean;
+  dueCandidatesError: unknown;
+  reviewRequestPending: boolean;
+  requestingReviewCandidateId: string | null;
   executionRecords: RetentionExecutionRecord[];
   executionLoading: boolean;
   executionError: unknown;
@@ -2164,6 +2412,7 @@ function RetentionPolicyPanel({
   onCreate: (body: CreateRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onPatch: (id: string, body: PatchRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onDryRun: (form: RetentionDryRunFormState) => Promise<void>;
+  onRequestReview: (candidate: RetentionDueCandidate) => Promise<void>;
   onExecutionStatusFilterChange: (status: RetentionExecutionStatus | 'all') => void;
 }) {
   const t = useT();
@@ -2333,6 +2582,15 @@ function RetentionPolicyPanel({
           )}
         </div>
       </Card>
+      <RetentionDueCandidatesPanel
+        report={dueCandidatesReport}
+        loading={dueCandidatesLoading}
+        error={dueCandidatesError}
+        reviewRequestPending={reviewRequestPending}
+        requestingReviewCandidateId={requestingReviewCandidateId}
+        executionRecords={executionRecords}
+        onRequestReview={onRequestReview}
+      />
       <RetentionDryRunPanel running={runningDryRun} report={dryRunReport} onDryRun={onDryRun} />
       <RetentionExecutionReviewQueue
         records={executionRecords}
@@ -2352,11 +2610,13 @@ export function PrivacyComplianceSection() {
   const [retentionExecutionStatusFilter, setRetentionExecutionStatusFilter] = useState<
     RetentionExecutionStatus | 'all'
   >('all');
+  const [retentionReviewCandidateId, setRetentionReviewCandidateId] = useState<string | null>(null);
   const processors = usePrivacyProcessors(canManage);
   const dpias = usePrivacyDpias(canManage);
   const breachPlaybooks = usePrivacyBreachPlaybooks(canManage);
   const transferControls = usePrivacyTransferControls(canManage);
   const retentionPolicies = usePrivacyRetentionPolicies(canManage);
+  const retentionDueCandidates = usePrivacyRetentionDueCandidates(canManage);
   const retentionExecutions = usePrivacyRetentionExecutions(
     retentionExecutionStatusFilter,
     canManage,
@@ -2383,6 +2643,32 @@ export function PrivacyComplianceSection() {
       });
     } catch (e) {
       toast.error(e);
+    }
+  }
+
+  async function requestRetentionReview(candidate: RetentionDueCandidate) {
+    const body: RetentionDryRunBody = {
+      scope: candidate.scope,
+      category: candidate.category,
+      record_id: candidate.record_id,
+      execution_request: {
+        requested_policy_id: candidate.policy_id,
+        execution_mode: 'review_only',
+      },
+    };
+
+    setRetentionReviewCandidateId(candidate.candidate_id);
+    try {
+      const report = await dryRunRetentionPolicy.mutateAsync(body);
+      toast.success(
+        report.execution_record
+          ? 'Pedido de revisão de evidência registado.'
+          : 'Pedido de revisão enviado; sem registo de execução devolvido.',
+      );
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setRetentionReviewCandidateId(null);
     }
   }
 
@@ -2451,6 +2737,11 @@ export function PrivacyComplianceSection() {
         saving={createRetentionPolicy.isPending || patchRetentionPolicy.isPending}
         runningDryRun={dryRunRetentionPolicy.isPending}
         dryRunReport={dryRunRetentionPolicy.data ?? null}
+        dueCandidatesReport={retentionDueCandidates.data ?? null}
+        dueCandidatesLoading={retentionDueCandidates.isLoading}
+        dueCandidatesError={retentionDueCandidates.error}
+        reviewRequestPending={dryRunRetentionPolicy.isPending}
+        requestingReviewCandidateId={retentionReviewCandidateId}
         executionRecords={retentionExecutions.data ?? []}
         executionLoading={retentionExecutions.isLoading}
         executionError={retentionExecutions.error}
@@ -2458,6 +2749,7 @@ export function PrivacyComplianceSection() {
         onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
         onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
         onDryRun={dryRunRetention}
+        onRequestReview={requestRetentionReview}
         onExecutionStatusFilterChange={setRetentionExecutionStatusFilter}
       />
     </div>

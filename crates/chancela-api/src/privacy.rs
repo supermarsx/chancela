@@ -12,15 +12,16 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, RoleId, Scope};
+use chancela_core::{Book, BookState, LegalHold};
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use time::{Date, Duration, Month, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{authorizer, forbidden, require_permission};
-use crate::dto::LedgerEventView;
+use crate::dto::{LedgerEventView, format_date};
 use crate::error::ApiError;
 use crate::try_append_event;
 use crate::users::{User, UserId, UserView};
@@ -39,6 +40,8 @@ const TRANSFER_CONTROL_UPDATED_KIND: &str = "privacy.transfer.control.updated";
 const RETENTION_POLICY_CREATED_KIND: &str = "privacy.retention.policy.created";
 const RETENTION_POLICY_UPDATED_KIND: &str = "privacy.retention.policy.updated";
 const RETENTION_EXECUTION_REQUESTED_KIND: &str = "privacy.retention.execution.requested";
+const ARCHIVE_RETENTION_POLICY_SCOPE: &str = "book_archive";
+const ARCHIVE_RETENTION_POLICY_CATEGORY: &str = "documents";
 pub(crate) const PROCESSORS_FILE: &str = "privacy-processors.json";
 pub(crate) const DPIAS_FILE: &str = "privacy-dpias.json";
 pub(crate) const BREACH_PLAYBOOKS_FILE: &str = "privacy-breach-playbooks.json";
@@ -1362,6 +1365,67 @@ pub struct RetentionDryRunMatch {
     pub reason: &'static str,
 }
 
+#[derive(Serialize)]
+pub struct RetentionDueCandidatesReport {
+    pub generated_at: String,
+    pub scope: &'static str,
+    pub category: &'static str,
+    pub candidate_count: usize,
+    pub candidates: Vec<RetentionDueCandidate>,
+}
+
+#[derive(Serialize)]
+pub struct RetentionDueCandidate {
+    pub candidate_id: String,
+    pub scope: String,
+    pub category: String,
+    pub record_id: String,
+    pub book_id: String,
+    pub entity_id: String,
+    pub closing_date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    pub overdue: bool,
+    pub policy_id: String,
+    pub policy_name: String,
+    pub schedule_id: String,
+    pub retention_period: String,
+    pub disposal_action: RetentionDisposalAction,
+    pub destructive_action: bool,
+    pub legal_hold_blockers: Vec<RetentionDueLegalHoldBlocker>,
+    pub required_approvals: Vec<RetentionRequiredApproval>,
+    pub blockers: Vec<RetentionWorkflowBlocker>,
+    pub findings: Vec<RetentionDueFinding>,
+    pub outcome: String,
+    pub status: String,
+    pub would_execute: bool,
+    pub destructive_disposal_completed: bool,
+    pub full_erasure_completed: bool,
+    pub next_step: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct RetentionDueLegalHoldBlocker {
+    pub source: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_period: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct RetentionDueFinding {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_id: Option<String>,
+}
+
 #[derive(Debug)]
 struct ValidatedRetentionExecutionRequest {
     requested_policy_id: Option<RetentionPolicyId>,
@@ -1944,10 +2008,12 @@ async fn persist_retention_policies(state: &AppState) -> Result<(), ApiError> {
     Ok(())
 }
 
-async fn persist_retention_execution_records(state: &AppState) -> Result<(), ApiError> {
+fn persist_retention_execution_records_locked(
+    state: &AppState,
+    records: &HashMap<String, RetentionExecutionRecord>,
+) -> Result<(), ApiError> {
     if let Some(path) = &state.retention_execution_records_path {
-        let records = state.retention_execution_records.read().await;
-        write_retention_execution_records_atomic(path, &records).map_err(|e| {
+        write_retention_execution_records_atomic(path, records).map_err(|e| {
             ApiError::Internal(format!(
                 "failed to persist retention execution records: {e}"
             ))
@@ -2757,6 +2823,57 @@ pub async fn list_retention_execution_records(
     Ok(Json(list.into_iter().cloned().collect()))
 }
 
+/// `GET /v1/privacy/retention-due-candidates` — read-only closed-book archive retention scanner.
+pub async fn list_retention_due_candidates(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<RetentionDueCandidatesReport>, ApiError> {
+    require_privacy_record_manage(&state, &actor).await?;
+
+    let today = OffsetDateTime::now_utc().date();
+    let policies = state.retention_policies.read().await;
+    let candidate_policies = archive_retention_candidate_policies(&policies);
+    let books = state.books.read().await;
+    let prior_execution_records = state.retention_execution_records.read().await;
+    let mut candidates = Vec::new();
+
+    for book in books
+        .values()
+        .filter(|book| book.state == BookState::Closed && book.termo_encerramento.is_some())
+    {
+        let Some(termo) = book.termo_encerramento.as_ref() else {
+            continue;
+        };
+        for policy in &candidate_policies {
+            if let Some(candidate) = retention_due_candidate_for_book_policy(
+                book,
+                termo.closing_date,
+                policy,
+                &policies,
+                &prior_execution_records,
+                today,
+            ) {
+                candidates.push(candidate);
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| {
+        a.due_date
+            .cmp(&b.due_date)
+            .then(a.record_id.cmp(&b.record_id))
+            .then(a.policy_id.cmp(&b.policy_id))
+    });
+    let candidate_count = candidates.len();
+    Ok(Json(RetentionDueCandidatesReport {
+        generated_at: now_rfc3339(),
+        scope: ARCHIVE_RETENTION_POLICY_SCOPE,
+        category: ARCHIVE_RETENTION_POLICY_CATEGORY,
+        candidate_count,
+        candidates,
+    }))
+}
+
 /// `PATCH /v1/privacy/retention-policies/{id}` — update a retention policy register record.
 pub async fn patch_retention_policy(
     State(state): State<AppState>,
@@ -2839,30 +2956,39 @@ pub async fn retention_policy_dry_run(
         })
         .collect();
     let matched_count = matches.len();
-    let prior_execution_records = state.retention_execution_records.read().await;
-    let execution_record = execution_request.map(|execution_request| {
-        build_retention_execution_record(
-            &actor_name,
-            &candidate,
-            &records,
-            &matches,
-            &prior_execution_records,
-            execution_request,
-        )
-    });
-    drop(prior_execution_records);
+    let mut new_execution_record = None;
+    let execution_record = match execution_request {
+        Some(execution_request) => {
+            let mut prior_execution_records = state.retention_execution_records.write().await;
+            if let Some(existing_record) = retention_existing_awaiting_review_execution(
+                &candidate,
+                &execution_request,
+                &prior_execution_records,
+            ) {
+                Some(existing_record)
+            } else {
+                let record = build_retention_execution_record(
+                    &actor_name,
+                    &candidate,
+                    &records,
+                    &matches,
+                    &prior_execution_records,
+                    execution_request,
+                );
+                prior_execution_records.insert(record.id.clone(), record.clone());
+                persist_retention_execution_records_locked(&state, &prior_execution_records)?;
+                new_execution_record = Some(record.clone());
+                Some(record)
+            }
+        }
+        None => None,
+    };
     drop(records);
     if let Some(record) = &execution_record {
         apply_execution_result_to_matches(record, &mut matches);
     }
 
-    if let Some(record) = &execution_record {
-        state
-            .retention_execution_records
-            .write()
-            .await
-            .insert(record.id.clone(), record.clone());
-        persist_retention_execution_records(&state).await?;
+    if let Some(record) = &new_execution_record {
         let scope = format!("privacy:retention-execution:{}", record.id);
         record_privacy_event(
             &state,
@@ -2890,6 +3016,382 @@ pub async fn retention_policy_dry_run(
         matches,
         execution_record,
     }))
+}
+
+fn archive_retention_candidate_policies(
+    records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
+) -> Vec<&RetentionPolicyRecord> {
+    let mut policies: Vec<&RetentionPolicyRecord> = records
+        .values()
+        .filter(|record| {
+            retention_policy_applies(
+                record,
+                ARCHIVE_RETENTION_POLICY_SCOPE,
+                ARCHIVE_RETENTION_POLICY_CATEGORY,
+            ) && record.disposal_action != RetentionDisposalAction::LegalHold
+        })
+        .collect();
+    policies.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    policies
+}
+
+fn retention_due_candidate_for_book_policy(
+    book: &Book,
+    closing_date: Date,
+    policy: &RetentionPolicyRecord,
+    records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
+    prior_execution_records: &HashMap<String, RetentionExecutionRecord>,
+    today: Date,
+) -> Option<RetentionDueCandidate> {
+    let mut findings = Vec::new();
+    let due_date = match retention_due_date(closing_date, &policy.retention_period) {
+        Ok(due_date) => {
+            if due_date > today {
+                return None;
+            }
+            Some(due_date)
+        }
+        Err(message) => {
+            findings.push(RetentionDueFinding {
+                code: "unsupported_retention_period".to_owned(),
+                message,
+                policy_id: Some(policy.id.to_string()),
+            });
+            None
+        }
+    };
+    let record_id = book.id.to_string();
+    let candidate = RetentionDryRunCandidate {
+        scope: ARCHIVE_RETENTION_POLICY_SCOPE.to_owned(),
+        category: ARCHIVE_RETENTION_POLICY_CATEGORY.to_owned(),
+        record_id: Some(record_id.clone()),
+    };
+    let matches = vec![RetentionDryRunMatch {
+        policy_id: policy.id.to_string(),
+        name: policy.name.clone(),
+        scope: policy.scope.clone(),
+        category: policy.category.clone(),
+        schedule_id: policy.schedule_id.clone(),
+        retention_period: policy.retention_period.clone(),
+        disposal_action: policy.disposal_action,
+        status: policy.status,
+        active: policy.active,
+        destructive_action: policy.disposal_action.is_destructive(),
+        would_execute: false,
+        reason: "scope/category matched an active archive retention policy; candidate scan only",
+    }];
+    let review_request = ValidatedRetentionExecutionRequest {
+        requested_policy_id: Some(policy.id),
+        execution_intent: RetentionExecutionIntent::ReviewOnly,
+        operator_notes: None,
+        evidence: Vec::new(),
+        approval: None,
+    };
+    let execution_record = retention_existing_awaiting_review_execution(
+        &candidate,
+        &review_request,
+        prior_execution_records,
+    )
+    .unwrap_or_else(|| {
+        build_retention_execution_record(
+            "retention-due-candidate-scanner",
+            &candidate,
+            records,
+            &matches,
+            prior_execution_records,
+            review_request,
+        )
+    });
+    let book_hold_blocker = book
+        .legal_hold
+        .as_ref()
+        .map(retention_due_book_legal_hold_blocker);
+    let mut legal_hold_blockers = execution_record
+        .legal_hold_blockers
+        .iter()
+        .map(|blocker| RetentionDueLegalHoldBlocker {
+            source: "retention_policy",
+            policy_id: Some(blocker.policy_id.clone()),
+            name: Some(blocker.name.clone()),
+            schedule_id: Some(blocker.schedule_id.clone()),
+            retention_period: Some(blocker.retention_period.clone()),
+            reason: blocker.reason.clone(),
+        })
+        .collect::<Vec<_>>();
+    if let Some(blocker) = book_hold_blocker {
+        legal_hold_blockers.push(blocker);
+    }
+
+    let mut blockers = execution_record.workflow.blockers.clone();
+    let mut required_approvals = execution_record.workflow.required_approvals.clone();
+    if book.legal_hold.is_some()
+        && !required_approvals
+            .iter()
+            .any(|approval| approval.code == "legal_hold_owner_release")
+    {
+        required_approvals.push(retention_required_approval(
+            "legal_hold_owner_release",
+            "legal_hold_owner",
+            "resolve the persisted book legal hold before disposal review can continue",
+        ));
+    }
+    if book.legal_hold.is_some()
+        && !blockers
+            .iter()
+            .any(|blocker| blocker.code == "legal_hold_release")
+    {
+        blockers.push(retention_blocker(
+            "legal_hold_release",
+            "active persisted book legal hold blocks retention disposal review",
+            None,
+        ));
+    }
+    if !findings.is_empty() {
+        blockers.push(retention_blocker(
+            "unsupported_retention_period",
+            "retention period syntax is unsupported; candidate requires policy register review",
+            Some(policy.id.to_string()),
+        ));
+        if !required_approvals
+            .iter()
+            .any(|approval| approval.code == "policy_register_review")
+        {
+            required_approvals.push(retention_required_approval(
+                "policy_register_review",
+                "privacy_or_settings_manager",
+                "replace unsupported retention period syntax with the supported single-component period format",
+            ));
+        }
+    }
+
+    let (outcome, status, next_step) = if findings
+        .iter()
+        .any(|finding| finding.code == "unsupported_retention_period")
+    {
+        (
+            "unsupported_retention_period".to_owned(),
+            "blocked".to_owned(),
+            "Review the retention policy period syntax; no disposal has been executed.".to_owned(),
+        )
+    } else if book.legal_hold.is_some()
+        && execution_record.outcome != RetentionExecutionOutcome::BlockedLegalHold
+    {
+        (
+            "blocked_legal_hold".to_owned(),
+            "blocked".to_owned(),
+            "Resolve the legal hold approval before continuing; no disposal has been executed."
+                .to_owned(),
+        )
+    } else {
+        (
+            retention_execution_outcome_wire(execution_record.outcome).to_owned(),
+            retention_execution_status_wire(execution_record.execution_status).to_owned(),
+            execution_record.workflow.next_step.clone(),
+        )
+    };
+
+    Some(RetentionDueCandidate {
+        candidate_id: format!(
+            "{}:{}:{}:{}",
+            ARCHIVE_RETENTION_POLICY_SCOPE, ARCHIVE_RETENTION_POLICY_CATEGORY, book.id, policy.id
+        ),
+        scope: ARCHIVE_RETENTION_POLICY_SCOPE.to_owned(),
+        category: ARCHIVE_RETENTION_POLICY_CATEGORY.to_owned(),
+        record_id,
+        book_id: book.id.to_string(),
+        entity_id: book.entity_id.to_string(),
+        closing_date: format_date(closing_date),
+        due_date: due_date.map(format_date),
+        overdue: due_date.is_some_and(|due_date| due_date < today),
+        policy_id: policy.id.to_string(),
+        policy_name: policy.name.clone(),
+        schedule_id: policy.schedule_id.clone(),
+        retention_period: policy.retention_period.clone(),
+        disposal_action: policy.disposal_action,
+        destructive_action: policy.disposal_action.is_destructive(),
+        legal_hold_blockers,
+        required_approvals,
+        blockers,
+        findings,
+        outcome,
+        status,
+        would_execute: false,
+        destructive_disposal_completed: false,
+        full_erasure_completed: false,
+        next_step,
+    })
+}
+
+fn retention_due_book_legal_hold_blocker(hold: &LegalHold) -> RetentionDueLegalHoldBlocker {
+    let set_at = hold.set_at.format(&Rfc3339).unwrap_or_default();
+    RetentionDueLegalHoldBlocker {
+        source: "book",
+        policy_id: None,
+        name: None,
+        schedule_id: None,
+        retention_period: None,
+        reason: format!(
+            "persisted book legal hold set by {} at {}: {}",
+            hold.actor, set_at, hold.reason
+        ),
+    }
+}
+
+fn retention_due_date(closing_date: Date, raw_period: &str) -> Result<Date, String> {
+    match parse_safe_retention_period(raw_period)? {
+        SafeRetentionPeriod::Years(years) => add_months(closing_date, years.saturating_mul(12)),
+        SafeRetentionPeriod::Months(months) => add_months(closing_date, months),
+        SafeRetentionPeriod::Days(days) => closing_date
+            .checked_add(Duration::days(days))
+            .ok_or_else(|| "retention_period would overflow a valid date".to_owned()),
+    }
+}
+
+enum SafeRetentionPeriod {
+    Years(i32),
+    Months(i32),
+    Days(i64),
+}
+
+fn parse_safe_retention_period(raw_period: &str) -> Result<SafeRetentionPeriod, String> {
+    let period = raw_period.trim();
+    if period.len() < 3 || !period.starts_with('P') || period.contains('T') {
+        return Err(format!(
+            "unsupported_retention_period: {period:?}; expected a single-component period like P10Y, P6M, or P30D"
+        ));
+    }
+    let mut component = period
+        .strip_prefix('P')
+        .expect("starts_with checked above")
+        .chars();
+    let Some(unit) = component.next_back() else {
+        return Err(format!(
+            "unsupported_retention_period: {period:?}; expected PnY, PnM, or PnD"
+        ));
+    };
+    let number = component.as_str();
+    if number.is_empty() || !number.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err(format!(
+            "unsupported_retention_period: {period:?}; expected a positive integer component"
+        ));
+    }
+    let value: i64 = number.parse().map_err(|_| {
+        format!("unsupported_retention_period: {period:?}; integer component is too large")
+    })?;
+    if value < 0 {
+        return Err(format!(
+            "unsupported_retention_period: {period:?}; negative periods are not supported"
+        ));
+    }
+    match unit {
+        'Y' => i32::try_from(value)
+            .map(SafeRetentionPeriod::Years)
+            .map_err(|_| {
+                format!("unsupported_retention_period: {period:?}; year component is too large")
+            }),
+        'M' => i32::try_from(value)
+            .map(SafeRetentionPeriod::Months)
+            .map_err(|_| {
+                format!("unsupported_retention_period: {period:?}; month component is too large")
+            }),
+        'D' => Ok(SafeRetentionPeriod::Days(value)),
+        _ => Err(format!(
+            "unsupported_retention_period: {period:?}; expected PnY, PnM, or PnD"
+        )),
+    }
+}
+
+fn add_months(date: Date, months: i32) -> Result<Date, String> {
+    let month_number = i32::from(month_number(date.month()));
+    let total = date
+        .year()
+        .checked_mul(12)
+        .and_then(|year_months| year_months.checked_add(month_number - 1))
+        .and_then(|base| base.checked_add(months))
+        .ok_or_else(|| "retention_period would overflow a valid date".to_owned())?;
+    let year = total.div_euclid(12);
+    let month = month_from_number((total.rem_euclid(12) + 1) as u8)?;
+    let day = date.day().min(days_in_month(year, month));
+    Date::from_calendar_date(year, month, day)
+        .map_err(|_| "retention_period would overflow a valid date".to_owned())
+}
+
+fn month_number(month: Month) -> u8 {
+    match month {
+        Month::January => 1,
+        Month::February => 2,
+        Month::March => 3,
+        Month::April => 4,
+        Month::May => 5,
+        Month::June => 6,
+        Month::July => 7,
+        Month::August => 8,
+        Month::September => 9,
+        Month::October => 10,
+        Month::November => 11,
+        Month::December => 12,
+    }
+}
+
+fn month_from_number(month: u8) -> Result<Month, String> {
+    match month {
+        1 => Ok(Month::January),
+        2 => Ok(Month::February),
+        3 => Ok(Month::March),
+        4 => Ok(Month::April),
+        5 => Ok(Month::May),
+        6 => Ok(Month::June),
+        7 => Ok(Month::July),
+        8 => Ok(Month::August),
+        9 => Ok(Month::September),
+        10 => Ok(Month::October),
+        11 => Ok(Month::November),
+        12 => Ok(Month::December),
+        _ => Err("retention_period would produce an invalid month".to_owned()),
+    }
+}
+
+fn days_in_month(year: i32, month: Month) -> u8 {
+    match month {
+        Month::January
+        | Month::March
+        | Month::May
+        | Month::July
+        | Month::August
+        | Month::October
+        | Month::December => 31,
+        Month::April | Month::June | Month::September | Month::November => 30,
+        Month::February if is_leap_year(year) => 29,
+        Month::February => 28,
+    }
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn retention_execution_outcome_wire(outcome: RetentionExecutionOutcome) -> &'static str {
+    match outcome {
+        RetentionExecutionOutcome::BlockedMissingPolicy => "blocked_missing_policy",
+        RetentionExecutionOutcome::BlockedStalePolicy => "blocked_stale_policy",
+        RetentionExecutionOutcome::BlockedPolicyMismatch => "blocked_policy_mismatch",
+        RetentionExecutionOutcome::BlockedLegalHold => "blocked_legal_hold",
+        RetentionExecutionOutcome::BlockedDestructiveAction => "blocked_destructive_action",
+        RetentionExecutionOutcome::BlockedApprovalMismatch => "blocked_approval_mismatch",
+        RetentionExecutionOutcome::BlockedMissingTarget => "blocked_missing_target",
+        RetentionExecutionOutcome::ManualReviewRequired => "manual_review_required",
+        RetentionExecutionOutcome::BoundedArchiveRecorded => "bounded_archive_recorded",
+        RetentionExecutionOutcome::BoundedNoActionRecorded => "bounded_no_action_recorded",
+        RetentionExecutionOutcome::AlreadyExecuted => "already_executed",
+    }
+}
+
+fn retention_execution_status_wire(status: RetentionExecutionStatus) -> &'static str {
+    match status {
+        RetentionExecutionStatus::AwaitingReview => "awaiting_review",
+        RetentionExecutionStatus::Blocked => "blocked",
+        RetentionExecutionStatus::Executed => "executed",
+    }
 }
 
 async fn complete_dsr_request_inner(
@@ -3610,6 +4112,29 @@ fn retention_prior_bounded_execution(
         })
         .min_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)))
         .map(|record| record.id.clone())
+}
+
+fn retention_existing_awaiting_review_execution(
+    candidate: &RetentionDryRunCandidate,
+    request: &ValidatedRetentionExecutionRequest,
+    prior_execution_records: &HashMap<String, RetentionExecutionRecord>,
+) -> Option<RetentionExecutionRecord> {
+    if request.execution_intent != RetentionExecutionIntent::ReviewOnly {
+        return None;
+    }
+    let requested_policy_id = request.requested_policy_id.map(|id| id.to_string());
+    prior_execution_records
+        .values()
+        .filter(|record| {
+            record.execution_intent == RetentionExecutionIntent::ReviewOnly
+                && record.execution_status == RetentionExecutionStatus::AwaitingReview
+                && record.candidate.scope == candidate.scope
+                && record.candidate.category == candidate.category
+                && record.candidate.record_id == candidate.record_id
+                && record.requested_policy.id.as_deref() == requested_policy_id.as_deref()
+        })
+        .min_by(|a, b| a.requested_at.cmp(&b.requested_at).then(a.id.cmp(&b.id)))
+        .cloned()
 }
 
 fn retention_execution_decision(

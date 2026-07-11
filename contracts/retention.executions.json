@@ -200,5 +200,92 @@
       "blocker_metadata": []
     },
     "would_execute": true
+  },
+  {
+    "id": "retention-exec-awaiting-review",
+    "requested_at": "2026-07-09T13:40:00Z",
+    "actor": "amelia.marques",
+    "execution_intent": "review_only",
+    "execution_status": "awaiting_review",
+    "operator_review_decision": "review_required",
+    "requested_policy": {
+      "id": "8b7c6d50-0000-4000-8000-000000000073",
+      "found": true,
+      "name": "Signed PDF archive",
+      "scope": "document",
+      "category": "signed_pdf",
+      "schedule_id": "documents-signed-10y",
+      "retention_period": "P10Y",
+      "disposal_action": "archive",
+      "status": "active",
+      "active": true,
+      "stale": false,
+      "matches_candidate": true,
+      "destructive_action": false
+    },
+    "candidate": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-review"
+    },
+    "matched_records_summary": {
+      "scope": "document",
+      "category": "signed_pdf",
+      "record_id": "doc-review",
+      "record_count": 1,
+      "policy_match_count": 1,
+      "destructive_policy_count": 0,
+      "policy_ids": ["8b7c6d50-0000-4000-8000-000000000073"]
+    },
+    "legal_hold_blockers": [],
+    "operator_notes": "Manual retention evidence queued for review.",
+    "audit_evidence": [
+      {
+        "label": "review",
+        "value": "policy match and candidate evidence captured"
+      }
+    ],
+    "outcome": "manual_review_required",
+    "block_reason": "manual review required before any separate operational action",
+    "workflow": {
+      "status": "awaiting_manual_review",
+      "blockers": [],
+      "required_approvals": [
+        {
+          "code": "retention_manual_review",
+          "required_from": "privacy_or_settings_manager",
+          "reason": "approve the retained evidence before any separate operational action"
+        }
+      ],
+      "next_step": "Review the retained evidence and record separate governance approval before any external operational action."
+    },
+    "execution_result": {
+      "bounded_executor": true,
+      "targets_considered": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-review",
+          "action": "bounded_review_evidence",
+          "reason_code": "target_considered",
+          "detail": "candidate scope=document category=signed_pdf evaluated against policy 8b7c6d50-0000-4000-8000-000000000073; bounded review evidence only"
+        }
+      ],
+      "targets_acted": [],
+      "targets_skipped": [
+        {
+          "target_type": "retention_candidate_record",
+          "target_id": "doc-review",
+          "action": "bounded_review_evidence",
+          "reason_code": "retention_manual_review",
+          "detail": "manual review required before any separate operational action"
+        }
+      ],
+      "reason_codes": ["retention_manual_review"],
+      "next_step": "Review the retained evidence and record separate governance approval before any external operational action.",
+      "destructive_disposal_completed": false,
+      "full_erasure_completed": false,
+      "blocker_metadata": []
+    },
+    "would_execute": false
   }
 ]

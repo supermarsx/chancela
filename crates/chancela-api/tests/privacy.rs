@@ -7,10 +7,14 @@ use chancela_api::{AppState, User, UserId, router};
 use chancela_authz::{
     LEITOR_ROLE_ID, OWNER_ROLE_ID, Permission, Role, RoleAssignment, RoleCatalog, RoleId, Scope,
 };
+use chancela_core::book::ClosingReason;
+use chancela_core::{
+    Book, BookKind, EntityId, NumberingScheme, TermoDeAbertura, TermoDeEncerramento,
+};
 use serde_json::{Value, json};
-use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tokio::sync::RwLock;
+use time::{Date, Month, OffsetDateTime};
+use tokio::sync::{Barrier, RwLock};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -232,6 +236,52 @@ fn retention_policy_payload(disposal_action: &str, status: &str) -> Value {
         "active": true,
         "notes": "  Register only; disposal execution is out of scope.  "
     })
+}
+
+fn archive_retention_policy_payload(disposal_action: &str, retention_period: &str) -> Value {
+    json!({
+        "name": "  Closed book archive  ",
+        "scope": "  book_archive  ",
+        "category": "  documents  ",
+        "schedule_id": " archive-documents-v1 ",
+        "retention_period": retention_period,
+        "legal_basis": "  Closed book archive retention obligation  ",
+        "disposal_action": disposal_action,
+        "status": "active",
+        "active": true,
+        "notes": "  Scanner only; no disposal execution.  "
+    })
+}
+
+fn date(year: i32, month: Month, day: u8) -> Date {
+    Date::from_calendar_date(year, month, day).expect("valid date")
+}
+
+async fn insert_closed_book(state: &AppState, closing_date: Date) -> String {
+    let entity_id = EntityId(Uuid::new_v4());
+    let mut book = Book::new(entity_id, BookKind::AssembleiaGeral);
+    book.open(TermoDeAbertura {
+        entity_name: "Retained Entity SA".to_owned(),
+        entity_nipc: "503004642".to_owned(),
+        entity_seat: "Lisboa".to_owned(),
+        purpose: "Livro de atas".to_owned(),
+        numbering_scheme: NumberingScheme::Sequential,
+        opening_date: date(1999, Month::January, 1),
+        required_signatories: vec!["Management".to_owned()],
+        required_signatory_records: Vec::new(),
+    })
+    .expect("book opens");
+    book.close(TermoDeEncerramento {
+        ata_count: 0,
+        reason: ClosingReason::BookFull,
+        closing_date,
+        required_signatories: vec!["Management".to_owned()],
+        required_signatory_records: Vec::new(),
+    })
+    .expect("book closes");
+    let book_id = book.id.to_string();
+    state.books.write().await.insert(book.id, book);
+    book_id
 }
 
 fn breach_playbook_payload(risk_level: &str, status: &str) -> Value {
@@ -2117,6 +2167,392 @@ async fn transfer_controls_allow_user_manage_validate_persist_and_audit() {
 }
 
 #[tokio::test]
+async fn retention_due_candidates_closed_book_with_active_archive_policy_becomes_due() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "P10Y"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "archive policy create: {created}"
+    );
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let (status, body) = send(
+        state,
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["scope"], json!("book_archive"));
+    assert_eq!(body["category"], json!("documents"));
+    assert_eq!(body["candidate_count"], json!(1));
+    let candidate = &body["candidates"][0];
+    assert_eq!(candidate["record_id"], json!(book_id));
+    assert_eq!(candidate["book_id"], json!(book_id));
+    assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(candidate["policy_name"], json!("Closed book archive"));
+    assert_eq!(candidate["closing_date"], json!("2000-01-15"));
+    assert_eq!(candidate["due_date"], json!("2010-01-15"));
+    assert_eq!(candidate["overdue"], json!(true));
+    assert_eq!(candidate["outcome"], json!("manual_review_required"));
+    assert_eq!(candidate["status"], json!("awaiting_review"));
+    assert_eq!(candidate["would_execute"], json!(false));
+    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
+    assert_eq!(candidate["full_erasure_completed"], json!(false));
+    assert!(
+        candidate["legal_hold_blockers"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        candidate["required_approvals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|approval| approval["code"] == "retention_manual_review")
+    );
+}
+
+#[tokio::test]
+async fn retention_due_candidates_active_legal_hold_blocks_candidate() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, archive_policy) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "P10Y"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "archive policy create: {archive_policy}"
+    );
+    let (status, hold_policy) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("legal_hold", "P99Y"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "legal hold policy create: {hold_policy}"
+    );
+    let hold_policy_id = hold_policy["id"].as_str().expect("hold id").to_owned();
+
+    let (status, body) = send(
+        state,
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["candidate_count"], json!(1));
+    let candidate = &body["candidates"][0];
+    assert_eq!(candidate["record_id"], json!(book_id));
+    assert_eq!(candidate["outcome"], json!("blocked_legal_hold"));
+    assert_eq!(candidate["status"], json!("blocked"));
+    assert_eq!(
+        candidate["legal_hold_blockers"][0]["source"],
+        json!("retention_policy")
+    );
+    assert_eq!(
+        candidate["legal_hold_blockers"][0]["policy_id"],
+        json!(hold_policy_id)
+    );
+    assert!(
+        candidate["required_approvals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|approval| approval["code"] == "legal_hold_owner_release")
+    );
+    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
+    assert_eq!(candidate["full_erasure_completed"], json!(false));
+}
+
+#[tokio::test]
+async fn retention_due_candidates_destructive_policy_returns_approval_metadata_and_false_flags() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("delete", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "destructive policy create: {created}"
+    );
+
+    let (status, body) = send(
+        state,
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    let candidate = &body["candidates"][0];
+    assert_eq!(candidate["disposal_action"], json!("delete"));
+    assert_eq!(candidate["destructive_action"], json!(true));
+    assert_eq!(candidate["outcome"], json!("blocked_destructive_action"));
+    assert_eq!(candidate["status"], json!("blocked"));
+    assert_eq!(candidate["would_execute"], json!(false));
+    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
+    assert_eq!(candidate["full_erasure_completed"], json!(false));
+    assert!(
+        candidate["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|blocker| blocker["code"] == "destructive_action_disabled")
+    );
+    assert!(
+        candidate["required_approvals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|approval| approval["code"] == "destructive_disposal_governance")
+    );
+}
+
+#[tokio::test]
+async fn retention_due_candidates_unsupported_retention_period_fails_closed() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    insert_closed_book(&state, date(2026, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "10 years"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "unsupported period policy create: {created}"
+    );
+
+    let (status, body) = send(
+        state,
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["candidate_count"], json!(1));
+    let candidate = &body["candidates"][0];
+    assert_eq!(candidate["due_date"], Value::Null);
+    assert_eq!(candidate["overdue"], json!(false));
+    assert_eq!(candidate["outcome"], json!("unsupported_retention_period"));
+    assert_eq!(candidate["status"], json!("blocked"));
+    assert!(
+        candidate["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["code"] == "unsupported_retention_period")
+    );
+    assert!(
+        candidate["blockers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|blocker| blocker["code"] == "unsupported_retention_period")
+    );
+    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
+    assert_eq!(candidate["full_erasure_completed"], json!(false));
+}
+
+#[tokio::test]
+async fn retention_due_candidates_get_is_non_mutating() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "archive policy create: {created}"
+    );
+    let execution_count_before = state.retention_execution_records.read().await.len();
+    let ledger_count_before = state.ledger.read().await.events().len();
+    let books_before = state.books.read().await.clone();
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["candidate_count"], json!(1));
+
+    assert_eq!(
+        state.retention_execution_records.read().await.len(),
+        execution_count_before,
+        "GET must not write retention execution records"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before,
+        "GET must not append audit events"
+    );
+    assert_eq!(
+        *state.books.read().await,
+        books_before,
+        "GET must not mutate books"
+    );
+}
+
+#[tokio::test]
+async fn retention_due_candidates_surface_existing_review_without_mutation() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+    let book_id = insert_closed_book(&state, date(2000, Month::January, 15)).await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                archive_retention_policy_payload("archive", "P1D"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "archive policy create: {created}"
+    );
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let (status, review) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies/dry-run",
+                json!({
+                    "scope": "book_archive",
+                    "category": "documents",
+                    "record_id": book_id,
+                    "execution_request": {
+                        "requested_policy_id": policy_id,
+                        "execution_mode": "review_only",
+                        "operator_notes": "Queue closed-book review evidence."
+                    }
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "review-only request: {review}");
+    let execution_record = &review["execution_record"];
+    assert_eq!(
+        execution_record["execution_status"],
+        json!("awaiting_review")
+    );
+    assert_eq!(execution_record["outcome"], json!("manual_review_required"));
+    assert_eq!(execution_record["would_execute"], json!(false));
+    assert!(
+        execution_record["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("acted targets")
+            .is_empty()
+    );
+    assert_eq!(
+        execution_record["execution_result"]["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        execution_record["execution_result"]["full_erasure_completed"],
+        json!(false)
+    );
+
+    let execution_count_before = state.retention_execution_records.read().await.len();
+    let ledger_count_before = state.ledger.read().await.events().len();
+    let books_before = state.books.read().await.clone();
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/retention-due-candidates"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "due candidates list: {body}");
+    assert_eq!(body["candidate_count"], json!(1));
+    let candidate = &body["candidates"][0];
+    assert_eq!(candidate["record_id"], json!(book_id));
+    assert_eq!(candidate["policy_id"], json!(policy_id));
+    assert_eq!(candidate["status"], execution_record["execution_status"]);
+    assert_eq!(candidate["outcome"], execution_record["outcome"]);
+    assert_eq!(candidate["would_execute"], json!(false));
+    assert_eq!(candidate["destructive_disposal_completed"], json!(false));
+    assert_eq!(candidate["full_erasure_completed"], json!(false));
+
+    assert_eq!(
+        state.retention_execution_records.read().await.len(),
+        execution_count_before,
+        "GET must not write another retention execution record"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before,
+        "GET must not append audit events"
+    );
+    assert_eq!(
+        *state.books.read().await,
+        books_before,
+        "GET must not mutate books"
+    );
+}
+
+#[tokio::test]
 async fn retention_policies_allow_settings_manage_update_and_guarded_execution_request() {
     let (state, _target, owner_token, _reader, reader_token) = fixture_state().await;
     let (_settings_user, settings_token) = add_settings_manager(&state).await;
@@ -2549,6 +2985,262 @@ async fn retention_execution_request_records_manual_review_for_non_destructive_p
     assert!(events.as_array().expect("events").iter().any(|e| {
         e["kind"] == "privacy.retention.execution.requested" && e["actor"] == json!("owner")
     }));
+}
+
+#[tokio::test]
+async fn retention_review_only_duplicate_returns_existing_queue_without_new_history_or_ledger() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                retention_policy_payload("review", "active"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "policy create: {created}");
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let first_request = json!({
+        "scope": "document",
+        "category": "signed_pdf",
+        "record_id": "doc-review-duplicate",
+        "execution_request": {
+            "requested_policy_id": policy_id,
+            "execution_mode": "review_only",
+            "operator_notes": "Initial manual review evidence captured."
+        }
+    });
+
+    let (status, first) = send(
+        state.clone(),
+        with_session(
+            post_json("/v1/privacy/retention-policies/dry-run", first_request),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "first review request: {first}");
+    let first_record = &first["execution_record"];
+    let first_execution_id = first_record["id"]
+        .as_str()
+        .expect("first execution id")
+        .to_owned();
+    let first_requested_at = first_record["requested_at"]
+        .as_str()
+        .expect("first requested_at")
+        .to_owned();
+    assert_eq!(first_record["execution_intent"], json!("review_only"));
+    assert_eq!(first_record["execution_status"], json!("awaiting_review"));
+    assert_eq!(first_record["outcome"], json!("manual_review_required"));
+    assert_eq!(first_record["would_execute"], json!(false));
+    assert!(
+        first_record["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("first acted targets")
+            .is_empty()
+    );
+
+    let execution_count_before_duplicate = state.retention_execution_records.read().await.len();
+    let ledger_count_before_duplicate = state.ledger.read().await.events().len();
+
+    let duplicate_request = json!({
+        "scope": "document",
+        "category": "signed_pdf",
+        "record_id": "doc-review-duplicate",
+        "execution_request": {
+            "requested_policy_id": policy_id,
+            "execution_mode": "review_only",
+            "operator_notes": "Second request must not replace the queued review."
+        }
+    });
+    let (status, duplicate) = send(
+        state.clone(),
+        with_session(
+            post_json("/v1/privacy/retention-policies/dry-run", duplicate_request),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "duplicate review request: {duplicate}"
+    );
+    let duplicate_record = &duplicate["execution_record"];
+    assert_eq!(duplicate_record["id"], json!(first_execution_id));
+    assert_eq!(duplicate_record["requested_at"], json!(first_requested_at));
+    assert_eq!(
+        duplicate_record["operator_notes"],
+        json!("Initial manual review evidence captured.")
+    );
+    assert_eq!(duplicate_record["execution_intent"], json!("review_only"));
+    assert_eq!(
+        duplicate_record["execution_status"],
+        json!("awaiting_review")
+    );
+    assert_eq!(duplicate_record["outcome"], json!("manual_review_required"));
+    assert_ne!(duplicate_record["outcome"], json!("already_executed"));
+    assert_eq!(duplicate_record["would_execute"], json!(false));
+    assert!(
+        duplicate_record["execution_result"]["targets_acted"]
+            .as_array()
+            .expect("duplicate acted targets")
+            .is_empty()
+    );
+    assert_eq!(
+        duplicate_record["execution_result"]["destructive_disposal_completed"],
+        json!(false)
+    );
+    assert_eq!(
+        duplicate_record["execution_result"]["full_erasure_completed"],
+        json!(false)
+    );
+
+    assert_eq!(
+        state.retention_execution_records.read().await.len(),
+        execution_count_before_duplicate,
+        "duplicate review request must not write another execution record"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before_duplicate,
+        "duplicate review request must not append another ledger event"
+    );
+
+    let (status, history) = send(
+        state,
+        with_session(get("/v1/privacy/retention-executions"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "history: {history}");
+    let matching = history
+        .as_array()
+        .expect("history")
+        .iter()
+        .filter(|record| {
+            record["candidate"]["record_id"] == json!("doc-review-duplicate")
+                && record["requested_policy"]["id"].as_str() == Some(policy_id.as_str())
+        })
+        .count();
+    assert_eq!(matching, 1);
+}
+
+#[tokio::test]
+async fn retention_review_only_concurrent_duplicates_create_one_queue_and_ledger_event() {
+    let (state, _target, owner_token, _reader, _reader_token) = fixture_state().await;
+
+    let (status, created) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                "/v1/privacy/retention-policies",
+                retention_policy_payload("review", "active"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "policy create: {created}");
+    let policy_id = created["id"].as_str().expect("policy id").to_owned();
+
+    let execution_count_before = state.retention_execution_records.read().await.len();
+    let ledger_count_before = state.ledger.read().await.events().len();
+    let attempts = 8;
+    let barrier = Arc::new(Barrier::new(attempts));
+    let mut tasks = Vec::new();
+    for idx in 0..attempts {
+        let state = state.clone();
+        let owner_token = owner_token.clone();
+        let policy_id = policy_id.clone();
+        let barrier = barrier.clone();
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            let request = json!({
+                "scope": "document",
+                "category": "signed_pdf",
+                "record_id": "doc-review-concurrent-duplicate",
+                "execution_request": {
+                    "requested_policy_id": policy_id,
+                    "execution_mode": "review_only",
+                    "operator_notes": format!("Concurrent review request {idx}.")
+                }
+            });
+            send(
+                state,
+                with_session(
+                    post_json("/v1/privacy/retention-policies/dry-run", request),
+                    &owner_token,
+                ),
+            )
+            .await
+        }));
+    }
+
+    let mut execution_ids = Vec::new();
+    for task in tasks {
+        let (status, body) = task.await.expect("concurrent review request joins");
+        assert_eq!(status, StatusCode::OK, "concurrent review request: {body}");
+        let execution_record = &body["execution_record"];
+        let execution_id = execution_record["id"]
+            .as_str()
+            .expect("concurrent execution id")
+            .to_owned();
+        execution_ids.push(execution_id);
+        assert_eq!(execution_record["execution_intent"], json!("review_only"));
+        assert_eq!(
+            execution_record["execution_status"],
+            json!("awaiting_review")
+        );
+        assert_eq!(execution_record["outcome"], json!("manual_review_required"));
+        assert_eq!(execution_record["would_execute"], json!(false));
+        assert!(
+            execution_record["execution_result"]["targets_acted"]
+                .as_array()
+                .expect("concurrent acted targets")
+                .is_empty()
+        );
+        assert_eq!(
+            execution_record["execution_result"]["destructive_disposal_completed"],
+            json!(false)
+        );
+        assert_eq!(
+            execution_record["execution_result"]["full_erasure_completed"],
+            json!(false)
+        );
+    }
+
+    let first_execution_id = execution_ids
+        .first()
+        .expect("at least one concurrent response");
+    assert!(
+        execution_ids.iter().all(|id| id == first_execution_id),
+        "concurrent duplicates returned different execution ids: {execution_ids:?}"
+    );
+    assert_eq!(
+        state.retention_execution_records.read().await.len(),
+        execution_count_before + 1,
+        "concurrent duplicate review requests must create one execution record"
+    );
+    assert_eq!(
+        state.ledger.read().await.events().len(),
+        ledger_count_before + 1,
+        "concurrent duplicate review requests must append one ledger event"
+    );
+
+    let execution_records = state.retention_execution_records.read().await;
+    let matching = execution_records
+        .values()
+        .filter(|record| {
+            record.candidate.record_id.as_deref() == Some("doc-review-concurrent-duplicate")
+                && record.requested_policy.id.as_deref() == Some(policy_id.as_str())
+        })
+        .count();
+    assert_eq!(matching, 1);
 }
 
 #[tokio::test]
