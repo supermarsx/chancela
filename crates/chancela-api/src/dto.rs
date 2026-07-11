@@ -18,7 +18,9 @@ use uuid::Uuid;
 
 use chancela_authz::{Permission, ScopedPermissionSet};
 use chancela_cae::CaeCatalog;
-use chancela_core::act::{AiHumanVerification, AiHumanVerificationStatus, AiProvenance};
+use chancela_core::act::{
+    AiHumanVerification, AiHumanVerificationStatus, AiProvenance, AiStatementSource,
+};
 #[cfg(test)]
 use chancela_core::book::{BookId, TermoDeAbertura};
 use chancela_core::book::{ClosingReason, TermoSignatory};
@@ -1578,6 +1580,8 @@ pub struct AiProvenanceView {
     pub source: String,
     pub tool: Option<String>,
     pub statement_source: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub statement_sources: Vec<AiStatementSourceView>,
     pub human_verification: AiHumanVerificationView,
 }
 
@@ -1587,6 +1591,11 @@ impl From<&AiProvenance> for AiProvenanceView {
             source: p.source.clone(),
             tool: p.tool.clone(),
             statement_source: p.statement_source.clone(),
+            statement_sources: p
+                .statement_sources
+                .iter()
+                .map(AiStatementSourceView::from)
+                .collect(),
             human_verification: AiHumanVerificationView::from(&p.human_verification),
         }
     }
@@ -1595,7 +1604,43 @@ impl From<&AiProvenance> for AiProvenanceView {
 impl AiProvenanceView {
     fn redact_sensitive(&mut self) {
         self.statement_source = self.statement_source.as_ref().map(|_| redacted());
+        for source in &mut self.statement_sources {
+            source.redact_sensitive();
+        }
         self.human_verification.redact_sensitive();
+    }
+}
+
+/// Wire view of a statement-level AI source breadcrumb. Flags are conservative: these rows do not
+/// certify human verification, authoritative source status, or legal validity.
+#[derive(Serialize)]
+pub struct AiStatementSourceView {
+    pub path: String,
+    pub source_type: String,
+    pub source_label: String,
+    pub human_verified: bool,
+    pub human_verification_status: AiHumanVerificationStatus,
+    pub authoritative_source_claimed: bool,
+    pub legal_validity_claimed: bool,
+}
+
+impl From<&AiStatementSource> for AiStatementSourceView {
+    fn from(source: &AiStatementSource) -> Self {
+        AiStatementSourceView {
+            path: source.path.clone(),
+            source_type: source.source_type.clone(),
+            source_label: source.source_label.clone(),
+            human_verified: false,
+            human_verification_status: AiHumanVerificationStatus::Pending,
+            authoritative_source_claimed: false,
+            legal_validity_claimed: false,
+        }
+    }
+}
+
+impl AiStatementSourceView {
+    fn redact_sensitive(&mut self) {
+        self.source_label = redacted();
     }
 }
 
@@ -1652,6 +1697,8 @@ pub struct AiProvenanceInput {
     pub tool: Option<String>,
     #[serde(default)]
     pub statement_source: Option<String>,
+    #[serde(default)]
+    pub statement_sources: Vec<AiStatementSourceInput>,
 }
 
 impl AiProvenanceInput {
@@ -1661,11 +1708,69 @@ impl AiProvenanceInput {
                 "ai_provenance.source must not be empty".to_owned(),
             ));
         }
+        let statement_sources = self
+            .statement_sources
+            .into_iter()
+            .map(AiStatementSourceInput::into_core)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(AiProvenance {
             source: self.source,
             tool: self.tool,
             statement_source: self.statement_source,
+            statement_sources,
             human_verification: Default::default(),
+        })
+    }
+}
+
+/// Statement-level AI provenance accepted on draft creation. Unsafe truthy flags are ignored.
+#[derive(Deserialize)]
+pub struct AiStatementSourceInput {
+    pub path: String,
+    pub source_type: String,
+    pub source_label: String,
+    #[serde(default)]
+    pub human_verified: bool,
+    #[serde(default)]
+    pub human_verification_status: AiHumanVerificationStatus,
+    #[serde(default)]
+    pub authoritative_source_claimed: bool,
+    #[serde(default)]
+    pub legal_validity_claimed: bool,
+}
+
+impl AiStatementSourceInput {
+    fn into_core(self) -> Result<AiStatementSource, ApiError> {
+        let ignored_client_claims = (
+            self.human_verified,
+            self.human_verification_status,
+            self.authoritative_source_claimed,
+            self.legal_validity_claimed,
+        );
+        let _ = ignored_client_claims;
+        if self.path.trim().is_empty() {
+            return Err(ApiError::Unprocessable(
+                "ai_provenance.statement_sources[].path must not be empty".to_owned(),
+            ));
+        }
+        if self.source_type.trim().is_empty() {
+            return Err(ApiError::Unprocessable(
+                "ai_provenance.statement_sources[].source_type must not be empty".to_owned(),
+            ));
+        }
+        if self.source_label.trim().is_empty() {
+            return Err(ApiError::Unprocessable(
+                "ai_provenance.statement_sources[].source_label must not be empty".to_owned(),
+            ));
+        }
+        Ok(AiStatementSource {
+            path: self.path,
+            source_type: self.source_type,
+            source_label: self.source_label,
+            human_verified: false,
+            human_verification_status: AiHumanVerificationStatus::Pending,
+            authoritative_source_claimed: false,
+            legal_validity_claimed: false,
         })
     }
 }

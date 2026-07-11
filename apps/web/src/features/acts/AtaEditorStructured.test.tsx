@@ -366,23 +366,132 @@ describe('AtaEditorPage — signatories', () => {
 });
 
 describe('AtaEditorPage — AI human review gate', () => {
-  it('records reject and accept decisions and only enables Signing after acceptance', async () => {
-    const withAi: ActView = {
+  type AiProvenance = NonNullable<ActView['ai_provenance']>;
+  type AiStatementSources = NonNullable<AiProvenance['statement_sources']>;
+
+  const aiReviewStatementSources: AiStatementSources = [
+    {
+      path: '/draft',
+      source_type: 'ai_suggestion',
+      source_label: 'draft_act',
+      human_verified: false,
+      human_verification_status: 'pending_human_verification',
+      authoritative_source_claimed: false,
+      legal_validity_claimed: false,
+    },
+    {
+      path: '/draft/title',
+      source_type: 'caller_supplied',
+      source_label: 'arguments.title',
+      human_verified: false,
+      human_verification_status: 'pending_human_verification',
+      authoritative_source_claimed: false,
+      legal_validity_claimed: false,
+    },
+    {
+      path: '/draft/body',
+      source_type: 'ai_suggestion',
+      source_label: 'draft_act.body',
+      human_verified: false,
+      human_verification_status: 'pending_human_verification',
+      authoritative_source_claimed: false,
+      legal_validity_claimed: false,
+    },
+  ];
+
+  function actWithAiReview(statementSources: AiStatementSources | null): ActView {
+    const ai_provenance: AiProvenance = {
+      source: 'mcp',
+      tool: 'draft_act',
+      statement_source: 'operator instruction',
+      human_verification: {
+        status: 'pending_human_verification',
+        actor: null,
+        reviewed_at: null,
+        note: null,
+      },
+    };
+    if (statementSources !== null) ai_provenance.statement_sources = statementSources;
+    return {
       ...baseAct,
       state: 'TextApproved',
       mesa: { presidente: 'Ana', secretarios: [] },
-      ai_provenance: {
-        source: 'mcp',
-        tool: 'draft_act',
-        statement_source: 'operator instruction',
-        human_verification: {
-          status: 'pending_human_verification',
-          actor: null,
-          reviewed_at: null,
-          note: null,
-        },
-      },
+      ai_provenance,
     };
+  }
+
+  it('renders grouped provenance summary by source_type', async () => {
+    const shared = stateful(actWithAiReview(aiReviewStatementSources));
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    const summary = await screen.findByLabelText('Resumo por tipo de origem');
+    const aiSuggestion = within(summary).getByText('ai_suggestion').closest('div')!;
+    const callerSupplied = within(summary).getByText('caller_supplied').closest('div')!;
+    expect(within(aiSuggestion as HTMLElement).getByText('2')).toBeTruthy();
+    expect(within(callerSupplied as HTMLElement).getByText('1')).toBeTruthy();
+  });
+
+  it('renders statement-source rows with path type label status and conservative flags', async () => {
+    const shared = stateful(actWithAiReview(aiReviewStatementSources));
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    await screen.findByRole('heading', { name: 'Proveniência das declarações' });
+    const titleRow = screen.getByText('/draft/title').closest('tr')!;
+    expect(within(titleRow as HTMLElement).getByText('caller_supplied')).toBeTruthy();
+    expect(within(titleRow as HTMLElement).getByText('arguments.title')).toBeTruthy();
+    expect(within(titleRow as HTMLElement).getByText('pending_human_verification')).toBeTruthy();
+    expect(within(titleRow as HTMLElement).getByText('human_verified=false')).toBeTruthy();
+    expect(
+      within(titleRow as HTMLElement).getByText('authoritative_source_claimed=false/no claim'),
+    ).toBeTruthy();
+    expect(
+      within(titleRow as HTMLElement).getByText('legal_validity_claimed=false/no claim'),
+    ).toBeTruthy();
+  });
+
+  it('renders missing statement-source fields with missing labels', async () => {
+    const malformedStatementSources = [
+      {
+        source_type: null,
+        source_label: undefined,
+        human_verified: false,
+        human_verification_status: null,
+        authoritative_source_claimed: false,
+        legal_validity_claimed: false,
+      },
+    ] as unknown as AiStatementSources;
+    const shared = stateful(actWithAiReview(malformedStatementSources));
+    vi.stubGlobal('fetch', shared.fetchImpl);
+    renderEditor();
+
+    const summary = await screen.findByLabelText('Resumo por tipo de origem');
+    const missingSummary = within(summary).getByText('Não indicado').closest('div')!;
+    expect(within(missingSummary as HTMLElement).getByText('1')).toBeTruthy();
+
+    const heading = screen.getByRole('heading', { name: 'Proveniência das declarações' });
+    const provenanceSection = heading.closest('section')!;
+    const row = within(provenanceSection as HTMLElement)
+      .getByText('human_verified=false')
+      .closest('tr')!;
+    expect(within(row as HTMLElement).getAllByText('Não indicado').length).toBe(4);
+  });
+
+  it('keeps missing and empty statement_sources safe', async () => {
+    const emptySources: AiStatementSources = [];
+    for (const statementSources of [null, emptySources]) {
+      cleanup();
+      const shared = stateful(actWithAiReview(statementSources));
+      vi.stubGlobal('fetch', shared.fetchImpl);
+      renderEditor();
+
+      expect(await screen.findByText('Sem fontes de declaração registadas.')).toBeTruthy();
+    }
+  });
+
+  it('records reject and accept decisions and only enables Signing after acceptance', async () => {
+    const withAi = actWithAiReview(aiReviewStatementSources);
     const shared = stateful(withAi);
     vi.stubGlobal('fetch', shared.fetchImpl);
     renderEditor();

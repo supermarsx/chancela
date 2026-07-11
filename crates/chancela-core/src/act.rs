@@ -114,6 +114,30 @@ impl Default for AiHumanVerification {
     }
 }
 
+/// Statement-level provenance row for AI-assisted draft content. These rows are source breadcrumbs
+/// only; flags default to safe false and do not assert legal validity or authoritative status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiStatementSource {
+    /// JSON-ish path or stable label for the drafted statement/field.
+    pub path: String,
+    /// Source kind, for example `ai_suggestion` or `caller_supplied`.
+    pub source_type: String,
+    /// Human-readable source label, for example `arguments.title`.
+    pub source_label: String,
+    /// Whether this row has been human-verified. Kept false for draft provenance.
+    #[serde(default)]
+    pub human_verified: bool,
+    /// Row-level human-review status. Defaults to pending.
+    #[serde(default)]
+    pub human_verification_status: AiHumanVerificationStatus,
+    /// Whether an authoritative source is claimed. Kept false for draft provenance.
+    #[serde(default)]
+    pub authoritative_source_claimed: bool,
+    /// Whether legal validity is claimed. Kept false for draft provenance.
+    #[serde(default)]
+    pub legal_validity_claimed: bool,
+}
+
 /// Non-authoritative provenance for AI-assisted draft creation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiProvenance {
@@ -125,6 +149,9 @@ pub struct AiProvenance {
     /// Where the human statement or instruction came from, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub statement_source: Option<String>,
+    /// Statement-level source breadcrumbs. Additive; legacy records default to no rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub statement_sources: Vec<AiStatementSource>,
     /// Human-review status for the AI-assisted draft. Defaults to pending.
     #[serde(default)]
     pub human_verification: AiHumanVerification,
@@ -1149,6 +1176,7 @@ mod tests {
             source: "mcp".to_owned(),
             tool: Some("draft_act".to_owned()),
             statement_source: Some("operator instruction".to_owned()),
+            statement_sources: vec![],
             human_verification: Default::default(),
         });
         for state in [
@@ -1178,5 +1206,65 @@ mod tests {
             .unwrap();
         assert!(!ai_act.requires_ai_human_verification());
         ai_act.advance_to(ActState::Signing).unwrap();
+    }
+
+    #[test]
+    fn ai_provenance_statement_sources_are_backward_compatible_and_roundtrip() {
+        let mut old_json = serde_json::to_value(draft()).unwrap();
+        old_json["ai_provenance"] = serde_json::json!({
+            "source": "mcp",
+            "tool": "draft_minutes",
+            "statement_source": "mcp tool arguments"
+        });
+        let old: Act = serde_json::from_value(old_json).unwrap();
+        let old_provenance = old.ai_provenance.expect("old provenance restored");
+        assert_eq!(
+            old_provenance.statement_source.as_deref(),
+            Some("mcp tool arguments")
+        );
+        assert!(old_provenance.statement_sources.is_empty());
+
+        let mut ai_act = draft();
+        ai_act.ai_provenance = Some(AiProvenance {
+            source: "mcp".to_owned(),
+            tool: Some("draft_minutes".to_owned()),
+            statement_source: Some("mcp tool arguments".to_owned()),
+            statement_sources: vec![
+                AiStatementSource {
+                    path: "/draft".to_owned(),
+                    source_type: "ai_suggestion".to_owned(),
+                    source_label: "draft_minutes".to_owned(),
+                    human_verified: false,
+                    human_verification_status: AiHumanVerificationStatus::Pending,
+                    authoritative_source_claimed: false,
+                    legal_validity_claimed: false,
+                },
+                AiStatementSource {
+                    path: "/draft/title".to_owned(),
+                    source_type: "caller_supplied".to_owned(),
+                    source_label: "arguments.title".to_owned(),
+                    human_verified: false,
+                    human_verification_status: AiHumanVerificationStatus::Pending,
+                    authoritative_source_claimed: false,
+                    legal_validity_claimed: false,
+                },
+            ],
+            human_verification: Default::default(),
+        });
+
+        let value = serde_json::to_value(&ai_act).unwrap();
+        assert_eq!(
+            value["ai_provenance"]["statement_sources"][1]["source_label"],
+            "arguments.title"
+        );
+        let restored: Act = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            restored
+                .ai_provenance
+                .expect("new provenance restored")
+                .statement_sources
+                .len(),
+            2
+        );
     }
 }

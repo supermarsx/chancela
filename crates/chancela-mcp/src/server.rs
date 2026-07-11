@@ -30,6 +30,9 @@ pub const SERVER_NAME: &str = "chancela-mcp";
 pub const MCP_STATUS_RESOURCE_URI: &str = "chancela://mcp/status";
 /// Read-only MCP resource URI for local spec 09 MCP coverage boundaries.
 pub const MCP_SPEC_09_COVERAGE_RESOURCE_URI: &str = "chancela://mcp/spec-09-coverage";
+/// Read-only MCP resource URI for static workflow provenance review guidance.
+pub const MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI: &str =
+    "chancela://mcp/workflow-provenance-review";
 
 const DRAFT_MINUTES_REVIEW_PROMPT_NAME: &str = "draft_minutes_human_review_checklist";
 const DRAFT_MINUTES_REVIEW_PROMPT_TITLE: &str = "Draft Minutes Human Review Checklist";
@@ -40,6 +43,9 @@ const COMPLIANCE_PACK_GAP_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review prompt
 const PAPER_BOOK_OCR_REVIEW_PROMPT_NAME: &str = "paper_book_ocr_canonical_review";
 const PAPER_BOOK_OCR_REVIEW_PROMPT_TITLE: &str = "Paper Book OCR Canonical Review";
 const PAPER_BOOK_OCR_REVIEW_PROMPT_DESCRIPTION: &str = "Human-review prompt for paper-book OCR and canonical-conversion evidence. Guidance only; no legal-validity, signing, or provider claims.";
+const WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME: &str = "workflow_provenance_review_checklist";
+const WORKFLOW_PROVENANCE_REVIEW_PROMPT_TITLE: &str = "Workflow Provenance Review Checklist";
+const WORKFLOW_PROVENANCE_REVIEW_PROMPT_DESCRIPTION: &str = "Static human-review prompt for workflow provenance evidence. Guidance only; no legal-validity, source-certification, provider, or trust claims.";
 
 const HUMAN_VERIFICATION_PENDING: &str = "pending_human_verification";
 const HUMAN_VERIFICATION_ACCEPTED: &str = "accepted_by_human";
@@ -74,6 +80,12 @@ const PROMPT_CATALOG: &[McpPrompt] = &[
         title: PAPER_BOOK_OCR_REVIEW_PROMPT_TITLE,
         description: PAPER_BOOK_OCR_REVIEW_PROMPT_DESCRIPTION,
         text: paper_book_ocr_review_prompt_text,
+    },
+    McpPrompt {
+        name: WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
+        title: WORKFLOW_PROVENANCE_REVIEW_PROMPT_TITLE,
+        description: WORKFLOW_PROVENANCE_REVIEW_PROMPT_DESCRIPTION,
+        text: workflow_provenance_review_prompt_text,
     },
 ];
 
@@ -299,6 +311,17 @@ impl<T: HttpTransport> McpServer<T> {
                         "audience": ["user", "assistant"],
                         "priority": 0.7,
                     },
+                },
+                {
+                    "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                    "name": "workflow_provenance_review",
+                    "title": "Workflow Provenance Review",
+                    "description": "Read-only static workflow provenance review aid. Contains no secrets, performs no bridge or provider calls, and makes no legal-validity, source-certification, provider, or trust claims.",
+                    "mimeType": "application/json",
+                    "annotations": {
+                        "audience": ["user", "assistant"],
+                        "priority": 0.65,
+                    },
                 }
             ]
         })
@@ -328,6 +351,9 @@ impl<T: HttpTransport> McpServer<T> {
         let payload = match uri {
             MCP_STATUS_RESOURCE_URI => self.status_resource_payload(),
             MCP_SPEC_09_COVERAGE_RESOURCE_URI => self.spec_09_coverage_resource_payload(),
+            MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI => {
+                self.workflow_provenance_review_resource_payload()
+            }
             _ => {
                 return JsonRpcResponse::error_with_data(
                     id,
@@ -432,7 +458,11 @@ impl<T: HttpTransport> McpServer<T> {
                     "requirement": "MCP discovery for tools, resources, and prompts",
                     "covered_locally": {
                         "tools": true,
-                        "resources": [MCP_STATUS_RESOURCE_URI, MCP_SPEC_09_COVERAGE_RESOURCE_URI],
+                        "resources": [
+                            MCP_STATUS_RESOURCE_URI,
+                            MCP_SPEC_09_COVERAGE_RESOURCE_URI,
+                            MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI,
+                        ],
                         "prompts": prompt_names,
                     },
                     "boundaries": [
@@ -466,6 +496,13 @@ impl<T: HttpTransport> McpServer<T> {
                     ],
                 },
             },
+            "mcp_review_aids": {
+                "resources": [MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI],
+                "prompts": [WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME],
+                "purpose": "static_offline_human_review_guidance_only",
+                "ai_02_claimed": false,
+                "full_ai_mcp_completion_claimed": false,
+            },
             "review_boundaries": {
                 "hidden_provider_calls": false,
                 "additional_credentials_required": false,
@@ -479,6 +516,101 @@ impl<T: HttpTransport> McpServer<T> {
                 "Compare enabled tools against the tenant policy and API-key grant before use.",
                 "Use explicit tools or API records to verify DSR, retention, archive, and audit evidence.",
                 "Treat all prompt output as review assistance only; human review and normal platform gates remain required.",
+            ],
+        })
+    }
+
+    fn workflow_provenance_review_resource_payload(&self) -> Value {
+        json!({
+            "kind": "chancela_mcp_workflow_provenance_review",
+            "schema_version": 1,
+            "source": "static_mcp_review_aid",
+            "offline": true,
+            "static": true,
+            "arguments": [],
+            "bridge_calls": false,
+            "api_calls": false,
+            "provider_calls": false,
+            "secrets_in_resource": false,
+            "claims": {
+                "legal_validity": false,
+                "source_certification": false,
+                "provider": false,
+                "trust": false,
+                "external": false,
+                "archive_certification": false,
+                "signature_qualification": false,
+            },
+            "review_categories": [
+                {
+                    "id": "act_lifecycle",
+                    "title": "Act lifecycle",
+                    "checkpoints": [
+                        "Identify draft, review, approval, signature, sealing, archive, and correction states recorded for the act.",
+                        "Check timestamps, actors, transitions, and unresolved lifecycle gaps against supplied platform evidence.",
+                        "Separate recorded lifecycle facts from reviewer assumptions and proposed next actions.",
+                    ],
+                },
+                {
+                    "id": "book_chain",
+                    "title": "Book chain",
+                    "checkpoints": [
+                        "Check book id, entity id, act sequence, page or folio references, prior and next act links, and any gap markers.",
+                        "Compare chain references with ledger evidence or manifests supplied for review.",
+                        "Flag duplicate, missing, reordered, or unexplained chain entries for human review.",
+                    ],
+                },
+                {
+                    "id": "source_records",
+                    "title": "Source records",
+                    "checkpoints": [
+                        "List source record ids, filenames, checksums, capture timestamps, import actors, and stated source type.",
+                        "Check whether every provenance statement points to a supplied source record.",
+                        "Flag missing, ambiguous, or inconsistent source records without treating the source as certified.",
+                    ],
+                },
+                {
+                    "id": "ledger_events",
+                    "title": "Ledger events",
+                    "checkpoints": [
+                        "List ledger event ids, event types, actor references, timestamps, object ids, and digests supplied for review.",
+                        "Compare event order with act lifecycle and book chain evidence.",
+                        "Treat ledger evidence as technical evidence to review, not a legal-validity or external trust claim.",
+                    ],
+                },
+                {
+                    "id": "imported_evidence",
+                    "title": "Imported evidence",
+                    "checkpoints": [
+                        "Review imported paper-book, OCR, canonical conversion, external report, and manifest references supplied by the operator.",
+                        "Check provenance fields for source capture, import job, human correction, checksum, and ledger anchoring.",
+                        "Flag imports whose evidence is incomplete, mismatched, or unclear before downstream archive or signature workflows.",
+                    ],
+                },
+                {
+                    "id": "signature_archive_technical_evidence",
+                    "title": "Signature/archive technical evidence",
+                    "checkpoints": [
+                        "Review signature bundle ids, validator report ids, archive package ids, manifests, timestamps, digests, and preservation metadata supplied for review.",
+                        "Keep signature and archive observations limited to technical evidence fields.",
+                        "Do not infer legal validity, signature qualification, archive certification, provider assurance, or trust status.",
+                    ],
+                },
+                {
+                    "id": "operator_review_notes",
+                    "title": "Operator review notes",
+                    "checkpoints": [
+                        "Record human review questions, missing evidence, conflicting identifiers, and follow-up owners.",
+                        "Label suggested corrections as suggestions only until the responsible operator verifies them.",
+                        "Preserve a concise boundary note: static offline review aid, no bridge calls, no secrets, no legal or provider claims.",
+                    ],
+                },
+            ],
+            "operator_boundaries": [
+                "Use only evidence supplied by the operator or explicitly retrieved through Chancela tools.",
+                "Do not claim legal validity, source certification, provider assurance, trust status, external verification, archive certification, or signature qualification.",
+                "Do not include credentials, API keys, secrets, or personal data that is not needed for the review.",
+                "Normal platform permissions, lifecycle gates, and human review remain required.",
             ],
         })
     }
@@ -504,7 +636,7 @@ impl<T: HttpTransport> McpServer<T> {
         };
         let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
 
-        let resolved = match resolve_call(tool, &arguments) {
+        let mut resolved = match resolve_call(tool, &arguments) {
             Ok(r) => r,
             Err(e) => {
                 return JsonRpcResponse::success(id, tool_error_result(&tool_error_message(&e)));
@@ -523,6 +655,7 @@ impl<T: HttpTransport> McpServer<T> {
         } else {
             None
         };
+        attach_ai_draft_statement_sources(tool, &mut resolved, &arguments);
 
         match self.bridge.execute(
             resolved.method,
@@ -713,6 +846,31 @@ Return a concise review with these sections:
 - Suggested corrections, clearly labelled as suggestions only
 - Follow-up questions for the human reviewer
 - Boundary reminder: guidance only, no legal validity, no signing, no hidden provider call"#
+}
+
+fn workflow_provenance_review_prompt_text() -> &'static str {
+    r#"You are helping a human reviewer inspect workflow provenance evidence in Chancela.
+
+Use this checklist as static offline review guidance only. It accepts no arguments, uses only evidence the human reviewer supplies or explicitly retrieves through Chancela tools, and makes no bridge, API, registry, signature, archive, trust, legal, or provider call. There is no hidden provider call. Do not claim legal validity, source certification, official archive status, signature qualification, provider assurance, trust-list status, or external verification.
+
+Review checklist:
+1. Act lifecycle: identify draft, review, approval, signature, sealing, archive, correction, cancellation, and re-open states with actors, timestamps, and object ids.
+2. Book chain: check entity id, book id, act sequence, page or folio references, prior and next act links, and any chain gaps or reorderings.
+3. Source records: list source records, filenames, checksums, capture timestamps, import actors, and source types; mark missing or ambiguous source records for human review.
+4. Ledger evidence: compare ledger evidence, event ids, event types, digests, actors, timestamps, and object references against the act lifecycle and book chain.
+5. Imported evidence: review paper-book imports, OCR outputs, canonical conversion records, external reports, manifests, human corrections, and checksum links.
+6. Signature/archive technical evidence: review validator report ids, signature bundle ids, archive package ids, manifests, timestamps, digests, and preservation metadata as technical evidence only.
+7. Operator review notes: separate recorded facts from assumptions, suggested corrections, unresolved questions, and follow-up owners.
+
+Return a concise workflow provenance review with these sections:
+- Evidence reviewed
+- Act lifecycle gaps
+- Book chain gaps
+- Source records and imported evidence gaps
+- Ledger evidence gaps
+- Signature/archive technical evidence gaps
+- Human review notes and follow-up questions
+- Boundary reminder: human review aid only, no legal validity, no source certification, no hidden provider call"#
 }
 
 fn tool_text_result(text: &str, is_error: bool) -> Value {
@@ -942,6 +1100,34 @@ fn ai_draft_source_provenance(tool: &McpTool, source: &Value, arguments: &Value)
         "source": source.clone(),
         "statement_sources": statement_sources,
     })
+}
+
+fn attach_ai_draft_statement_sources(
+    tool: &McpTool,
+    resolved: &mut ResolvedCall,
+    arguments: &Value,
+) {
+    if !is_ai_draft_tool(tool.name) {
+        return;
+    }
+    let Some(Value::Object(body)) = &mut resolved.body else {
+        return;
+    };
+    let source = json!({
+        "surface": "mcp",
+        "tool": tool.name,
+        "endpoint": format!("{} {}", resolved.method.as_str(), resolved.path),
+    });
+    let statement_sources = ai_draft_source_provenance(tool, &source, arguments)
+        .get("statement_sources")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let provenance = body
+        .entry("ai_provenance".to_owned())
+        .or_insert_with(|| json!({}));
+    if let Value::Object(provenance) = provenance {
+        provenance.insert("statement_sources".to_owned(), statement_sources);
+    }
 }
 
 fn ensure_unsealed_draft_response(value: &Value) -> Result<(), String> {
@@ -1316,6 +1502,16 @@ mod tests {
             json!(PAPER_BOOK_OCR_REVIEW_PROMPT_DESCRIPTION)
         );
         assert_eq!(paper_book["arguments"], json!([]));
+        let workflow_provenance = by_name(WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME);
+        assert_eq!(
+            workflow_provenance["title"],
+            json!(WORKFLOW_PROVENANCE_REVIEW_PROMPT_TITLE)
+        );
+        assert_eq!(
+            workflow_provenance["description"],
+            json!(WORKFLOW_PROVENANCE_REVIEW_PROMPT_DESCRIPTION)
+        );
+        assert_eq!(workflow_provenance["arguments"], json!([]));
         let encoded = serde_json::to_string(&result).unwrap();
         assert!(!encoded.contains("chk_ab12cd_secretsecret"));
         assert!(!encoded.contains("secretsecret"));
@@ -1438,6 +1634,44 @@ mod tests {
     }
 
     #[test]
+    fn prompts_get_returns_workflow_provenance_review_without_http_or_secret() {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "prompts/get",
+                48,
+                json!({ "name": WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        assert_eq!(
+            result["description"],
+            json!(WORKFLOW_PROVENANCE_REVIEW_PROMPT_DESCRIPTION)
+        );
+        let messages = result["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], json!("user"));
+        assert_eq!(messages[0]["content"]["type"], json!("text"));
+        let text = messages[0]["content"]["text"].as_str().unwrap();
+        for needle in [
+            "workflow provenance",
+            "source records",
+            "ledger evidence",
+            "human review",
+            "no legal validity",
+            "no hidden provider call",
+        ] {
+            assert!(
+                text.contains(needle),
+                "prompt should contain {needle:?}: {text}"
+            );
+        }
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn prompts_get_rejects_invalid_prompt_params_without_http() {
         let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
 
@@ -1463,6 +1697,20 @@ mod tests {
         assert_eq!(error.code, codes::INVALID_PARAMS);
         assert!(error.message.contains("does not accept arguments"));
 
+        let workflow_arguments = server
+            .handle(&req(
+                "prompts/get",
+                49,
+                json!({
+                    "name": WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME,
+                    "arguments": { "workflow_id": "wf_123" }
+                }),
+            ))
+            .unwrap();
+        let error = workflow_arguments.error.unwrap();
+        assert_eq!(error.code, codes::INVALID_PARAMS);
+        assert!(error.message.contains("does not accept arguments"));
+
         assert!(server.bridge_recorded().is_empty());
     }
 
@@ -1474,7 +1722,7 @@ mod tests {
             .unwrap();
         let result = resp.result.unwrap();
         let resources = result["resources"].as_array().unwrap();
-        assert_eq!(resources.len(), 2);
+        assert_eq!(resources.len(), 3);
         let by_uri = |uri: &str| {
             resources
                 .iter()
@@ -1491,6 +1739,12 @@ mod tests {
         assert_eq!(spec_09["mimeType"], json!("application/json"));
         assert_eq!(
             spec_09["annotations"]["audience"],
+            json!(["user", "assistant"])
+        );
+        let workflow_provenance = by_uri(MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI);
+        assert_eq!(workflow_provenance["mimeType"], json!("application/json"));
+        assert_eq!(
+            workflow_provenance["annotations"]["audience"],
             json!(["user", "assistant"])
         );
         assert!(server.bridge_recorded().is_empty());
@@ -1550,6 +1804,72 @@ mod tests {
     }
 
     #[test]
+    fn resources_read_workflow_provenance_review_returns_static_categories_without_http_or_secret()
+    {
+        let server = McpServer::from_config(&enabled_cfg(), MockTransport::new(200, "{}")).unwrap();
+        let resp = server
+            .handle(&req(
+                "resources/read",
+                50,
+                json!({ "uri": MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI }),
+            ))
+            .unwrap();
+        let result = resp.result.unwrap();
+        let contents = result["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(
+            contents[0]["uri"],
+            json!(MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI)
+        );
+        assert_eq!(contents[0]["mimeType"], json!("application/json"));
+        let text = contents[0]["text"].as_str().unwrap();
+        assert!(!text.contains("chk_ab12cd_secretsecret"));
+        assert!(!text.contains("secretsecret"));
+
+        let review: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            review["kind"],
+            json!("chancela_mcp_workflow_provenance_review")
+        );
+        assert_eq!(review["offline"], json!(true));
+        assert_eq!(review["static"], json!(true));
+        assert_eq!(review["arguments"], json!([]));
+        assert_eq!(review["bridge_calls"], json!(false));
+        assert_eq!(review["api_calls"], json!(false));
+        assert_eq!(review["provider_calls"], json!(false));
+        assert_eq!(review["secrets_in_resource"], json!(false));
+        assert_eq!(review["claims"]["legal_validity"], json!(false));
+        assert_eq!(review["claims"]["source_certification"], json!(false));
+        assert_eq!(review["claims"]["provider"], json!(false));
+        assert_eq!(review["claims"]["trust"], json!(false));
+        assert_eq!(review["claims"]["external"], json!(false));
+
+        let categories = review["review_categories"].as_array().unwrap();
+        let category_ids = categories
+            .iter()
+            .map(|category| category["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for expected in [
+            "act_lifecycle",
+            "book_chain",
+            "source_records",
+            "ledger_events",
+            "imported_evidence",
+            "signature_archive_technical_evidence",
+            "operator_review_notes",
+        ] {
+            assert!(
+                category_ids.contains(&expected),
+                "resource should include category {expected:?}: {review}"
+            );
+        }
+        for category in categories {
+            assert!(!category["checkpoints"].as_array().unwrap().is_empty());
+        }
+        assert!(server.bridge_recorded().is_empty());
+    }
+
+    #[test]
     fn resources_read_spec_09_coverage_returns_boundaries_without_http_or_secret() {
         let cfg = McpConfig {
             enabled_tools: EnabledTools::List(vec![
@@ -1584,10 +1904,21 @@ mod tests {
             coverage["spec"]["covered_here"],
             json!(["AI-10", "AI-11", "AI-12"])
         );
+        assert!(
+            !coverage["spec"]["covered_here"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|id| id.as_str() == Some("AI-02"))
+        );
         assert_eq!(coverage["coverage"]["AI-10"]["status"], json!("partial"));
         assert_eq!(
             coverage["coverage"]["AI-10"]["covered_locally"]["resources"],
-            json!([MCP_STATUS_RESOURCE_URI, MCP_SPEC_09_COVERAGE_RESOURCE_URI])
+            json!([
+                MCP_STATUS_RESOURCE_URI,
+                MCP_SPEC_09_COVERAGE_RESOURCE_URI,
+                MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI
+            ])
         );
         assert!(
             coverage["coverage"]["AI-10"]["covered_locally"]["prompts"]
@@ -1595,6 +1926,19 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|name| name.as_str() == Some(COMPLIANCE_PACK_GAP_REVIEW_PROMPT_NAME))
+        );
+        assert_eq!(
+            coverage["mcp_review_aids"]["resources"],
+            json!([MCP_WORKFLOW_PROVENANCE_REVIEW_RESOURCE_URI])
+        );
+        assert_eq!(
+            coverage["mcp_review_aids"]["prompts"],
+            json!([WORKFLOW_PROVENANCE_REVIEW_PROMPT_NAME])
+        );
+        assert_eq!(coverage["mcp_review_aids"]["ai_02_claimed"], json!(false));
+        assert_eq!(
+            coverage["mcp_review_aids"]["full_ai_mcp_completion_claimed"],
+            json!(false)
         );
         assert_eq!(
             coverage["coverage"]["AI-11"]["mcp_reimplements_rbac"],
@@ -1911,19 +2255,38 @@ mod tests {
             Some("Bearer chk_ab12cd_secretsecret")
         );
         let body: Value = serde_json::from_str(recorded[0].body.as_deref().unwrap()).unwrap();
+        assert_eq!(body["actor"], json!("mcp"));
+        assert_eq!(body["book_id"], json!("book-7"));
+        assert_eq!(body["channel"], json!("Physical"));
+        assert_eq!(body["title"], json!("Ata da Assembleia Geral Anual"));
+        assert_eq!(body["ai_provenance"]["source"], json!("mcp"));
+        assert_eq!(body["ai_provenance"]["tool"], json!("draft_minutes"));
         assert_eq!(
-            body,
-            json!({
-                "actor": "mcp",
-                "ai_provenance": {
-                    "source": "mcp",
-                    "tool": "draft_minutes",
-                    "statement_source": "mcp tool arguments"
-                },
-                "book_id": "book-7",
-                "channel": "Physical",
-                "title": "Ata da Assembleia Geral Anual"
-            })
+            body["ai_provenance"]["statement_source"],
+            json!("mcp tool arguments")
+        );
+        let posted_sources = body["ai_provenance"]["statement_sources"]
+            .as_array()
+            .expect("posted statement sources");
+        assert!(
+            posted_sources
+                .iter()
+                .any(|source| source["path"] == json!("/draft")
+                    && source["source_type"] == json!("ai_suggestion")
+                    && source["source_label"] == json!("draft_minutes")
+                    && source["human_verified"] == json!(false)
+                    && source["authoritative_source_claimed"] == json!(false)
+                    && source["legal_validity_claimed"] == json!(false)),
+            "posted whole-draft source missing: {posted_sources:?}"
+        );
+        assert!(
+            posted_sources
+                .iter()
+                .any(|source| source["path"] == json!("/draft/title")
+                    && source["source_type"] == json!("caller_supplied")
+                    && source["source_label"] == json!("arguments.title")
+                    && source["human_verification_status"] == json!("pending_human_verification")),
+            "posted title source missing: {posted_sources:?}"
         );
     }
 

@@ -1032,6 +1032,20 @@ function aiHumanVerificationLabel(
   }
 }
 
+function aiRecordedSourceValue(value: unknown, missingLabel: string): string {
+  if (typeof value !== 'string') return missingLabel;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : missingLabel;
+}
+
+function aiBooleanFlagLabel(value: unknown): 'true' | 'false' {
+  return value === true ? 'true' : 'false';
+}
+
+function aiClaimFlagLabel(value: unknown): 'true/claimed' | 'false/no claim' {
+  return value === true ? 'true/claimed' : 'false/no claim';
+}
+
 function AiHumanReviewPanel({
   provenance,
   readOnly,
@@ -1055,9 +1069,19 @@ function AiHumanReviewPanel({
 }) {
   const t = useT();
   const noteId = useId();
+  const provenanceId = useId();
   const verification = provenance.human_verification;
   const statusLabel = t(aiHumanVerificationLabel(verification.status));
   const reviewedAt = verification.reviewed_at;
+  const statementSources = provenance.statement_sources ?? [];
+  const missingLabel = t('acts.aiReview.missing');
+  const sourceTypeCounts = Array.from(
+    statementSources.reduce<Map<string, number>>((counts, source) => {
+      const sourceType = aiRecordedSourceValue(source.source_type, missingLabel);
+      counts.set(sourceType, (counts.get(sourceType) ?? 0) + 1);
+      return counts;
+    }, new Map()),
+  ).sort(([left], [right]) => left.localeCompare(right));
 
   return (
     <div className="stack--tight ai-review">
@@ -1110,6 +1134,84 @@ function AiHumanReviewPanel({
           </div>
         ) : null}
       </dl>
+
+      <section className="stack--tight" aria-labelledby={provenanceId}>
+        <h3 id={provenanceId}>{t('acts.aiReview.provenance.title')}</h3>
+        {statementSources.length > 0 ? (
+          <>
+            <dl
+              className="deflist deflist--tight"
+              aria-label={t('acts.aiReview.provenance.summary')}
+            >
+              {sourceTypeCounts.map(([sourceType, count]) => (
+                <div key={sourceType}>
+                  <dt className="mono">{sourceType}</dt>
+                  <dd>{count}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t('acts.aiReview.provenance.path')}</th>
+                    <th>{t('acts.aiReview.provenance.type')}</th>
+                    <th>{t('acts.aiReview.provenance.label')}</th>
+                    <th>{t('acts.aiReview.provenance.status')}</th>
+                    <th>{t('acts.aiReview.provenance.flags')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statementSources.map((source, index) => {
+                    const path = aiRecordedSourceValue(source.path, missingLabel);
+                    const sourceType = aiRecordedSourceValue(source.source_type, missingLabel);
+                    const sourceLabel = aiRecordedSourceValue(source.source_label, missingLabel);
+                    const humanVerificationStatus = aiRecordedSourceValue(
+                      source.human_verification_status,
+                      missingLabel,
+                    );
+                    return (
+                      <tr key={`${path}:${sourceType}:${sourceLabel}:${index}`}>
+                        <td>
+                          <span className="mono">{path}</span>
+                        </td>
+                        <td>
+                          <span className="mono">{sourceType}</span>
+                        </td>
+                        <td>
+                          <span className="mono">{sourceLabel}</span>
+                        </td>
+                        <td>
+                          <span className="mono">{humanVerificationStatus}</span>
+                        </td>
+                        <td>
+                          <div className="stack--tight">
+                            <span className="mono">
+                              {`human_verified=${aiBooleanFlagLabel(source.human_verified)}`}
+                            </span>
+                            <span className="mono">
+                              {`authoritative_source_claimed=${aiClaimFlagLabel(
+                                source.authoritative_source_claimed,
+                              )}`}
+                            </span>
+                            <span className="mono">
+                              {`legal_validity_claimed=${aiClaimFlagLabel(
+                                source.legal_validity_claimed,
+                              )}`}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <p className="muted">{t('acts.aiReview.provenance.empty')}</p>
+        )}
+      </section>
 
       {error ? <ErrorNote error={error} /> : null}
 

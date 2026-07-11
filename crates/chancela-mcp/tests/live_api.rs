@@ -255,6 +255,25 @@ async fn mcp_draft_minutes_returns_provenance_and_unsealed_api_draft() {
         api_act["payload_digest"].is_null(),
         "API act is not legal/sealed text: {api_act}"
     );
+    assert_eq!(
+        api_act["ai_provenance"]["statement_source"],
+        json!("mcp tool arguments"),
+        "API act keeps legacy provenance summary: {api_act}"
+    );
+    let api_statement_sources = api_act["ai_provenance"]["statement_sources"]
+        .as_array()
+        .expect("API persisted statement source rows");
+    assert!(
+        api_statement_sources
+            .iter()
+            .any(|source| source["path"] == json!("/draft/title")
+                && source["source_type"] == json!("caller_supplied")
+                && source["source_label"] == json!("arguments.title")
+                && source["human_verified"] == json!(false)
+                && source["authoritative_source_claimed"] == json!(false)
+                && source["legal_validity_claimed"] == json!(false)),
+        "API act persisted statement sources: {api_act}"
+    );
 
     let rejected = mcp_tool_call(
         &api.base_url,
