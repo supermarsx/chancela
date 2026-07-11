@@ -283,6 +283,29 @@ function importedGuardrailLabel(guardrail: string, t: TFunction): string {
   }
 }
 
+function importedAcknowledgedReviewGuardrails(
+  document: ImportedDocumentView,
+): ImportedDocumentReviewGuardrail[] {
+  return uniqueImportedGuardrails(importedGuardrailChecklist(document.acknowledged_guardrail_ids));
+}
+
+function importedDocumentHasReviewReceipt(document: ImportedDocumentView): boolean {
+  const status = metadataText(document.operator_review_status);
+  if (
+    status === 'reviewed_non_canonical_original_only' ||
+    status === 'rejected_non_canonical_evidence'
+  ) {
+    return true;
+  }
+
+  return (
+    metadataText(document.operator_reviewed_at) != null ||
+    metadataText(document.operator_reviewed_by) != null ||
+    metadataText(document.operator_review_note) != null ||
+    importedAcknowledgedReviewGuardrails(document).length > 0
+  );
+}
+
 function reviewPatchStatusFromDocument(
   status: ImportedDocumentView['operator_review_status'] | undefined,
 ): ImportedDocumentReviewPatchStatus {
@@ -394,6 +417,138 @@ function DocumentImportValidationEvidence({
   );
 }
 
+function GuardrailList({
+  empty,
+  guardrails,
+  t,
+}: {
+  empty: string;
+  guardrails: ImportedDocumentReviewGuardrail[];
+  t: TFunction;
+}) {
+  if (guardrails.length === 0) return <span className="muted">{empty}</span>;
+
+  return (
+    <ul className="plain-list">
+      {guardrails.map((guardrail) => (
+        <li key={guardrail}>{importedGuardrailLabel(guardrail, t)}</li>
+      ))}
+    </ul>
+  );
+}
+
+function ImportedDocumentReviewReceipt({
+  document,
+  t,
+}: {
+  document: ImportedDocumentView;
+  t: TFunction;
+}) {
+  const hasReceipt = importedDocumentHasReviewReceipt(document);
+  const requiredGuardrails = importedRequiredReviewGuardrails(document);
+  const acknowledgedGuardrails = importedAcknowledgedReviewGuardrails(document);
+  const reviewedAt = metadataText(document.operator_reviewed_at);
+  const reviewedBy = metadataText(document.operator_reviewed_by);
+  const reviewNote = metadataText(document.operator_review_note);
+  const receiptStatus = hasReceipt
+    ? importedReviewStatusLabel(document.operator_review_status)
+    : 'Sem recibo de revisão';
+
+  return (
+    <div className="stack--tight" role="group" aria-label="Recibo de revisão">
+      <p className="card__label">Recibo de revisão</p>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>Estado do recibo</dt>
+          <dd>
+            <Badge
+              tone={
+                hasReceipt ? importedReviewStatusTone(document.operator_review_status) : 'neutral'
+              }
+            >
+              {receiptStatus}
+            </Badge>
+          </dd>
+        </div>
+        {hasReceipt ? (
+          <>
+            <div>
+              <dt>Revisto em</dt>
+              <dd>
+                {reviewedAt ? (
+                  <time className="mono" dateTime={reviewedAt}>
+                    {reviewedAt}
+                  </time>
+                ) : (
+                  <span className="muted">Não indicado no recibo</span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Revisto por</dt>
+              <dd>{reviewedBy ?? <span className="muted">Não indicado no recibo</span>}</dd>
+            </div>
+            <div>
+              <dt>Nota registada</dt>
+              <dd>{reviewNote ?? <span className="muted">Sem nota registada</span>}</dd>
+            </div>
+            <div>
+              <dt>Limites exigidos</dt>
+              <dd>
+                <GuardrailList
+                  empty="Sem limites exigidos indicados"
+                  guardrails={requiredGuardrails}
+                  t={t}
+                />
+              </dd>
+            </div>
+            <div>
+              <dt>Limites reconhecidos</dt>
+              <dd>
+                <GuardrailList
+                  empty="Sem limites reconhecidos no recibo"
+                  guardrails={acknowledgedGuardrails}
+                  t={t}
+                />
+              </dd>
+            </div>
+          </>
+        ) : null}
+        <div>
+          <dt>OCR</dt>
+          <dd>
+            <Badge tone="neutral">Não</Badge> Não efetuado por esta revisão.
+          </dd>
+        </div>
+        <div>
+          <dt>Conversão</dt>
+          <dd>
+            <Badge tone="neutral">Não</Badge> Não efetuada por esta revisão.
+          </dd>
+        </div>
+        <div>
+          <dt>Substituição do PDF/A canónico</dt>
+          <dd>
+            <Badge tone="neutral">Não</Badge> Não substituído por este documento.
+          </dd>
+        </div>
+        <div>
+          <dt>PDF assinado</dt>
+          <dd>
+            <Badge tone="neutral">Não</Badge> Não criado nem validado por esta revisão.
+          </dd>
+        </div>
+        <div>
+          <dt>Aceitação legal</dt>
+          <dd>
+            <Badge tone="neutral">Não</Badge> Não declarada por esta revisão.
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 function MetadataValue({ value, missing }: { value: unknown; missing: string }) {
   const text = metadataText(value);
   if (!text) return <span className="muted">{missing}</span>;
@@ -489,117 +644,120 @@ function ImportedDocumentDetails({
   const reviewNote = metadataText(document.operator_review_note);
 
   return (
-    <div className="stack--tight" role="group" aria-label={t('documents.import.metadataAria')}>
-      <p className="card__label">{t('documents.import.metadataTitle')}</p>
-      <dl className="deflist deflist--tight">
-        <div>
-          <dt>{t('documents.import.file')}</dt>
-          <dd>
-            {filename ? (
-              <Truncate text={filename} />
-            ) : (
-              <span className="muted">{t('documents.import.filenameMissing')}</span>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('documents.import.identifier')}</dt>
-          <dd>
-            <Truncate text={document.id} mono />
-          </dd>
-        </div>
-        <div>
-          <dt>{t('documents.import.nature')}</dt>
-          <dd>
-            <Badge tone={document.non_canonical ? 'warn' : 'neutral'}>
-              {document.non_canonical
-                ? t('documents.import.nonCanonical')
-                : t('documents.import.imported')}
-            </Badge>
-          </dd>
-        </div>
-        <div>
-          <dt>{t('documents.import.size')}</dt>
-          <dd>{formatBytes(document.size_bytes, t)}</dd>
-        </div>
-        <div>
-          <dt>{t('documents.import.declaredType')}</dt>
-          <dd>
-            {declaredType ?? <span className="muted">{t('documents.import.notDeclared')}</span>}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('documents.import.detectedType')}</dt>
-          <dd>
-            {detectedType ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('documents.import.importedAt')}</dt>
-          <dd>
-            {importedAt ? (
-              <time className="mono" dateTime={importedAt}>
-                {importedAt}
-              </time>
-            ) : (
-              <span className="muted">{t('documents.import.notIndicated')}</span>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('documents.import.importedBy')}</dt>
-          <dd>
-            {importedBy ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
-          </dd>
-        </div>
-        <div>
-          <dt>Revisão do operador</dt>
-          <dd>
-            <Badge tone={importedReviewStatusTone(document.operator_review_status)}>
-              {importedReviewStatusLabel(document.operator_review_status)}
-            </Badge>
-          </dd>
-        </div>
-        <div>
-          <dt>Aviso de revisão</dt>
-          <dd>{reviewNotice}</dd>
-        </div>
-        <div>
-          <dt>Revisto em</dt>
-          <dd>
-            {reviewedAt ? (
-              <time className="mono" dateTime={reviewedAt}>
-                {reviewedAt}
-              </time>
-            ) : (
-              <span className="muted">{t('documents.import.notIndicated')}</span>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Revisto por</dt>
-          <dd>
-            {reviewedBy ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
-          </dd>
-        </div>
-        <div>
-          <dt>Nota da revisão</dt>
-          <dd>
-            {reviewNote ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
-          </dd>
-        </div>
-        <ImportedDocumentGuardrails document={document} t={t} />
-        <div>
-          <dt>{t('documents.import.sha256')}</dt>
-          <dd>
-            <Digest value={document.sha256} />
-          </dd>
-        </div>
-        <div>
-          <dt>{t('documents.import.warning')}</dt>
-          <dd>{legalNotice}</dd>
-        </div>
-      </dl>
+    <div className="stack--tight">
+      <div className="stack--tight" role="group" aria-label={t('documents.import.metadataAria')}>
+        <p className="card__label">{t('documents.import.metadataTitle')}</p>
+        <dl className="deflist deflist--tight">
+          <div>
+            <dt>{t('documents.import.file')}</dt>
+            <dd>
+              {filename ? (
+                <Truncate text={filename} />
+              ) : (
+                <span className="muted">{t('documents.import.filenameMissing')}</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('documents.import.identifier')}</dt>
+            <dd>
+              <Truncate text={document.id} mono />
+            </dd>
+          </div>
+          <div>
+            <dt>{t('documents.import.nature')}</dt>
+            <dd>
+              <Badge tone={document.non_canonical ? 'warn' : 'neutral'}>
+                {document.non_canonical
+                  ? t('documents.import.nonCanonical')
+                  : t('documents.import.imported')}
+              </Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>{t('documents.import.size')}</dt>
+            <dd>{formatBytes(document.size_bytes, t)}</dd>
+          </div>
+          <div>
+            <dt>{t('documents.import.declaredType')}</dt>
+            <dd>
+              {declaredType ?? <span className="muted">{t('documents.import.notDeclared')}</span>}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('documents.import.detectedType')}</dt>
+            <dd>
+              {detectedType ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('documents.import.importedAt')}</dt>
+            <dd>
+              {importedAt ? (
+                <time className="mono" dateTime={importedAt}>
+                  {importedAt}
+                </time>
+              ) : (
+                <span className="muted">{t('documents.import.notIndicated')}</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('documents.import.importedBy')}</dt>
+            <dd>
+              {importedBy ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+            </dd>
+          </div>
+          <div>
+            <dt>Revisão do operador</dt>
+            <dd>
+              <Badge tone={importedReviewStatusTone(document.operator_review_status)}>
+                {importedReviewStatusLabel(document.operator_review_status)}
+              </Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Aviso de revisão</dt>
+            <dd>{reviewNotice}</dd>
+          </div>
+          <div>
+            <dt>Revisto em</dt>
+            <dd>
+              {reviewedAt ? (
+                <time className="mono" dateTime={reviewedAt}>
+                  {reviewedAt}
+                </time>
+              ) : (
+                <span className="muted">{t('documents.import.notIndicated')}</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Revisto por</dt>
+            <dd>
+              {reviewedBy ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+            </dd>
+          </div>
+          <div>
+            <dt>Nota da revisão</dt>
+            <dd>
+              {reviewNote ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+            </dd>
+          </div>
+          <ImportedDocumentGuardrails document={document} t={t} />
+          <div>
+            <dt>{t('documents.import.sha256')}</dt>
+            <dd>
+              <Digest value={document.sha256} />
+            </dd>
+          </div>
+          <div>
+            <dt>{t('documents.import.warning')}</dt>
+            <dd>{legalNotice}</dd>
+          </div>
+        </dl>
+      </div>
+      <ImportedDocumentReviewReceipt document={document} t={t} />
     </div>
   );
 }

@@ -81,10 +81,43 @@ impl DecorativeArtifact {
         }
     }
 
-    /// Build decorative artifact metadata for a `DocumentModel.blocks` index.
+    /// Build decorative artifact metadata for a currently decorative `DocumentModel.blocks` entry.
     pub fn block(index: usize) -> Self {
+        Self::block_rule(index)
+    }
+
+    /// Build decorative artifact metadata for the fixed layout header separator rule.
+    pub fn header_rule() -> Self {
         Self {
-            target: block_target(index),
+            target: header_rule_target(),
+        }
+    }
+
+    /// Build decorative artifact metadata for an explicit horizontal rule block.
+    pub fn block_rule(index: usize) -> Self {
+        Self {
+            target: block_rule_target(index),
+        }
+    }
+
+    /// Build decorative artifact metadata for a vote-table header divider rule.
+    pub fn vote_table_header_rule(index: usize) -> Self {
+        Self {
+            target: vote_table_rule_target(index, "header"),
+        }
+    }
+
+    /// Build decorative artifact metadata for a vote-table footer divider rule.
+    pub fn vote_table_footer_rule(index: usize) -> Self {
+        Self {
+            target: vote_table_rule_target(index, "footer"),
+        }
+    }
+
+    /// Build decorative artifact metadata for a signature slot's blank-line rule.
+    pub fn signature_line(block_index: usize, slot_index: usize) -> Self {
+        Self {
+            target: signature_line_target(block_index, slot_index),
         }
     }
 }
@@ -154,6 +187,8 @@ pub struct AccessibilityReport {
     pub role_map: RoleMapCoverageReport,
     /// Local table/vote-table structure facts.
     pub table_semantics: TableSemanticsReport,
+    /// Local structural-depth/topology facts for the writer's bounded tagged-PDF profile.
+    pub structure_depth: StructureDepthReport,
     /// Local decorative-layout artifact marking facts.
     pub artifact_marking: ArtifactMarkingReport,
     /// Explicit non-text alternate/decorative accounting supplied by the caller.
@@ -213,6 +248,33 @@ pub struct TableSemanticsReport {
     pub complete: bool,
 }
 
+/// Local structural-depth and topology facts for the bounded tagged-PDF profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructureDepthReport {
+    /// This is the writer's bounded local structure profile, not a PDF/UA conformance profile.
+    pub bounded_local_profile: bool,
+    /// Maximum structure depth observed in the local profile: root, document, block, row, cell.
+    pub max_depth: usize,
+    /// Top-level semantic elements under the document element.
+    pub top_level_semantic_block_count: usize,
+    /// Table-like top-level elements.
+    pub table_count: usize,
+    /// Row elements under table-like elements.
+    pub table_row_count: usize,
+    /// Header/data cell elements under row elements.
+    pub table_cell_count: usize,
+    /// The document element's children are top-level semantic blocks in this writer profile.
+    pub document_root_children_are_top_level_semantic_blocks: bool,
+    /// Table elements contain row elements only in this writer profile.
+    pub tables_contain_rows_only: bool,
+    /// Row elements contain header/data cell elements only in this writer profile.
+    pub rows_contain_header_or_data_cells_only: bool,
+    /// Row and cell roles are scoped inside the expected table/row ancestry.
+    pub row_and_cell_roles_are_table_scoped: bool,
+    /// The emitted topology is complete for the writer's local bounded profile.
+    pub complete_for_local_profile: bool,
+}
+
 /// Local facts about layout-only drawing being marked as PDF artifacts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactMarkingReport {
@@ -241,9 +303,9 @@ pub struct NonTextContentReport {
     pub text_alternative_count: usize,
     /// Number of decorative artifact entries supplied.
     pub decorative_artifact_count: usize,
-    /// Count of model blocks this writer emits as known decorative content.
+    /// Count of writer-owned rule artifacts this writer emits as known decorative content.
     pub known_decorative_block_count: usize,
-    /// Known decorative block targets absent from the supplied decorative entries.
+    /// Known decorative artifact targets absent from the supplied decorative entries.
     pub missing_decorative_artifacts: Vec<String>,
     /// Alternate text entries with blank target or text.
     pub invalid_text_alternative_count: usize,
@@ -268,8 +330,8 @@ pub enum PdfUaBlocker {
     NoAltTextModel,
     NonTextContentNotAccountedFor,
     LayoutArtifactsNotMarked,
-    /// Historical umbrella blocker retained for callers that matched on it. New reports use the
-    /// local blocker codes above instead.
+    /// Explicit blocker showing the writer's bounded tagged-PDF structure is not a full PDF/UA
+    /// conformance implementation.
     LimitedTaggedStructure,
 }
 
@@ -305,7 +367,7 @@ impl AccessibilityReport {
             .join(",");
 
         format!(
-            "{{\"version\":4,\
+            "{{\"version\":6,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
@@ -327,6 +389,7 @@ impl AccessibilityReport {
 \"heading_hierarchy\":{{\"document_title_tagged_as_h1\":{title_h1},\"heading_count\":{heading_count},\"max_observed_level\":{max_heading},\"no_skipped_levels\":{no_skipped_headings},\"unsupported_levels\":[{unsupported_headings}]}},\
 \"role_map\":{{\"present\":{role_map_present},\"required_custom_roles\":[{required_roles}],\"missing_custom_roles\":[{missing_roles}],\"standard_targets_only\":{standard_role_targets},\"complete\":{role_map_complete}}},\
 \"tables\":{{\"key_value_table_count\":{kv_table_count},\"vote_table_count\":{vote_table_count},\"key_value_tables_have_table_semantics\":{kv_tables_semantic},\"vote_tables_have_table_semantics\":{vote_tables_semantic},\"vote_table_headers_tagged\":{vote_headers_tagged},\"complete\":{table_semantics_complete}}},\
+\"structure_depth\":{{\"bounded_local_profile\":{bounded_local_profile},\"max_depth\":{max_depth},\"top_level_semantic_block_count\":{top_level_count},\"table_count\":{depth_table_count},\"table_row_count\":{table_row_count},\"table_cell_count\":{table_cell_count},\"document_root_children_are_top_level_semantic_blocks\":{root_children_top_level},\"tables_contain_rows_only\":{tables_rows_only},\"rows_contain_header_or_data_cells_only\":{rows_cells_only},\"row_and_cell_roles_are_table_scoped\":{row_cell_scoped},\"complete_for_local_profile\":{depth_complete}}},\
 \"artifact_marking\":{{\"layout_artifacts_marked\":{artifact_layout_marked},\"known_layout_artifact_count\":{artifact_count},\"header_rule_artifact_count\":{header_artifacts},\"horizontal_rule_artifact_count\":{rule_artifacts},\"vote_table_rule_artifact_count\":{vote_rule_artifacts},\"signature_line_artifact_count\":{signature_artifacts}}}\
 }},\
 \"non_text_content\":{{\"model_supplied\":{non_text_model_supplied},\"all_non_text_content_accounted_for\":{non_text_all_accounted},\"text_alternative_count\":{text_alt_count},\"decorative_artifact_count\":{decorative_count},\"known_decorative_block_count\":{known_decorative_count},\"missing_decorative_artifacts\":[{missing_decorative}],\"invalid_text_alternative_count\":{invalid_text_alts},\"invalid_decorative_artifact_count\":{invalid_decorative},\"complete\":{non_text_complete}}},\
@@ -368,6 +431,19 @@ impl AccessibilityReport {
             vote_tables_semantic = self.table_semantics.vote_tables_have_table_semantics,
             vote_headers_tagged = self.table_semantics.vote_table_headers_tagged,
             table_semantics_complete = self.table_semantics.complete,
+            bounded_local_profile = self.structure_depth.bounded_local_profile,
+            max_depth = self.structure_depth.max_depth,
+            top_level_count = self.structure_depth.top_level_semantic_block_count,
+            depth_table_count = self.structure_depth.table_count,
+            table_row_count = self.structure_depth.table_row_count,
+            table_cell_count = self.structure_depth.table_cell_count,
+            root_children_top_level = self
+                .structure_depth
+                .document_root_children_are_top_level_semantic_blocks,
+            tables_rows_only = self.structure_depth.tables_contain_rows_only,
+            rows_cells_only = self.structure_depth.rows_contain_header_or_data_cells_only,
+            row_cell_scoped = self.structure_depth.row_and_cell_roles_are_table_scoped,
+            depth_complete = self.structure_depth.complete_for_local_profile,
             artifact_layout_marked = self.artifact_marking.layout_artifacts_marked,
             artifact_count = self.artifact_marking.known_layout_artifact_count,
             header_artifacts = self.artifact_marking.header_rule_artifact_count,
@@ -395,6 +471,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
     let heading_hierarchy = heading_hierarchy(input.doc);
     let role_map = role_map_coverage(input.doc);
     let table_semantics = table_semantics(input.doc);
+    let structure_depth = structure_depth(input.doc);
     let artifact_marking = artifact_marking(input.doc);
     let non_text_content = non_text_content(input.doc, input.alt_text_model);
     let alt_text_model_present = non_text_content.complete;
@@ -430,6 +507,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
             blockers.push(PdfUaBlocker::NoAltTextModel);
         }
     }
+    blockers.push(PdfUaBlocker::LimitedTaggedStructure);
 
     AccessibilityReport {
         metadata: metadata(input.doc),
@@ -448,6 +526,7 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
         heading_hierarchy,
         role_map,
         table_semantics,
+        structure_depth,
         artifact_marking,
         non_text_content,
         alt_text_model_present,
@@ -681,6 +760,103 @@ fn table_semantics(doc: &DocumentModel) -> TableSemanticsReport {
     }
 }
 
+fn structure_depth(doc: &DocumentModel) -> StructureDepthReport {
+    let mut top_level_semantic_block_count = 0usize;
+    let mut table_count = 0usize;
+    let mut table_row_count = 0usize;
+    let mut table_cell_count = 0usize;
+
+    if has_words(&doc.title) {
+        top_level_semantic_block_count += 1;
+    }
+    if has_words(&doc.entity_name) || doc.entity_nipc.as_deref().is_some_and(has_words) {
+        top_level_semantic_block_count += 1;
+    }
+    if has_words(&doc.subject) {
+        top_level_semantic_block_count += 1;
+    }
+
+    for block in &doc.blocks {
+        match block {
+            Block::Heading { text, .. } if has_words(text) => {
+                top_level_semantic_block_count += 1;
+            }
+            Block::Paragraph { runs } if runs.iter().any(|run| has_words(&run.text)) => {
+                top_level_semantic_block_count += 1;
+            }
+            Block::KeyValue { rows } => {
+                let mut emitted_rows = 0usize;
+                let mut emitted_cells = 0usize;
+                for row in rows {
+                    let key_present = has_words(&row.key);
+                    let value_present = has_words(&row.value);
+                    if key_present || value_present {
+                        emitted_rows += 1;
+                    }
+                    if key_present {
+                        emitted_cells += 1;
+                    }
+                    if value_present {
+                        emitted_cells += 1;
+                    }
+                }
+                if emitted_rows > 0 {
+                    top_level_semantic_block_count += 1;
+                    table_count += 1;
+                    table_row_count += emitted_rows;
+                    table_cell_count += emitted_cells;
+                }
+            }
+            Block::VoteTable { rows } => {
+                top_level_semantic_block_count += 1;
+                table_count += 1;
+                table_row_count += rows.len() + 1;
+                table_cell_count += (rows.len() + 1) * 4;
+            }
+            Block::SignatureBlock { slots }
+                if slots
+                    .iter()
+                    .any(|slot| has_words(&slot.role) || has_words(&slot.name)) =>
+            {
+                top_level_semantic_block_count += 1;
+            }
+            _ => {}
+        }
+    }
+
+    let max_depth = if table_cell_count > 0 {
+        4
+    } else if table_row_count > 0 {
+        3
+    } else if top_level_semantic_block_count > 0 {
+        2
+    } else {
+        1
+    };
+    let document_root_children_are_top_level_semantic_blocks = true;
+    let tables_contain_rows_only = true;
+    let rows_contain_header_or_data_cells_only = true;
+    let row_and_cell_roles_are_table_scoped = true;
+    let complete_for_local_profile = document_root_children_are_top_level_semantic_blocks
+        && tables_contain_rows_only
+        && rows_contain_header_or_data_cells_only
+        && row_and_cell_roles_are_table_scoped;
+
+    StructureDepthReport {
+        bounded_local_profile: true,
+        max_depth,
+        top_level_semantic_block_count,
+        table_count,
+        table_row_count,
+        table_cell_count,
+        document_root_children_are_top_level_semantic_blocks,
+        tables_contain_rows_only,
+        rows_contain_header_or_data_cells_only,
+        row_and_cell_roles_are_table_scoped,
+        complete_for_local_profile,
+    }
+}
+
 fn artifact_marking(doc: &DocumentModel) -> ArtifactMarkingReport {
     let horizontal_rule_artifact_count = doc
         .blocks
@@ -772,20 +948,39 @@ fn non_text_content(doc: &DocumentModel, model: Option<&AltTextModel>) -> NonTex
 }
 
 fn known_decorative_targets(doc: &DocumentModel) -> Vec<String> {
-    doc.blocks
-        .iter()
-        .enumerate()
-        .filter(|(_, block)| emits_decorative_artifact_block(block))
-        .map(|(index, _)| block_target(index))
-        .collect()
+    let mut targets = vec![header_rule_target()];
+    for (index, block) in doc.blocks.iter().enumerate() {
+        match block {
+            Block::Rule => targets.push(block_rule_target(index)),
+            Block::VoteTable { .. } => {
+                targets.push(vote_table_rule_target(index, "header"));
+                targets.push(vote_table_rule_target(index, "footer"));
+            }
+            Block::SignatureBlock { slots } => {
+                targets.extend(
+                    (0..slots.len()).map(|slot_index| signature_line_target(index, slot_index)),
+                );
+            }
+            _ => {}
+        }
+    }
+    targets
 }
 
-fn emits_decorative_artifact_block(block: &Block) -> bool {
-    matches!(block, Block::Rule)
+fn header_rule_target() -> String {
+    "layout:header-rule".to_string()
 }
 
-fn block_target(index: usize) -> String {
-    format!("block:{index}")
+fn block_rule_target(index: usize) -> String {
+    format!("block:{index}:rule")
+}
+
+fn vote_table_rule_target(index: usize, position: &str) -> String {
+    format!("block:{index}:vote-table-{position}-rule")
+}
+
+fn signature_line_target(block_index: usize, slot_index: usize) -> String {
+    format!("block:{block_index}:signature-line:{slot_index}")
 }
 
 fn json_string(s: &str) -> String {

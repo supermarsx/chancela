@@ -443,6 +443,18 @@ function isImportValidate(url: string) {
   return url.endsWith('/v1/documents/import/validate');
 }
 
+function isBlockedReviewReceiptEndpoint(url: string) {
+  const lower = url.toLowerCase();
+  return (
+    lower.includes('/bytes') ||
+    lower.includes('/archive') ||
+    lower.includes('/signed-document') ||
+    lower.includes('/external-validator') ||
+    lower.includes('/trust') ||
+    lower.includes('/mcp')
+  );
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -1027,11 +1039,26 @@ describe('ActDocumentPanel — imported evidence documents', () => {
 
     const list = await screen.findByRole('list', { name: 'Documentos importados' });
     fireEvent.click(within(list).getByRole('button', { name: 'Ver metadados' }));
+    const receipt = await screen.findByRole('group', { name: 'Recibo de revisão' });
     const save = await screen.findByRole('button', { name: 'Guardar revisão' });
     const acknowledgement = screen.getByLabelText(
       /Confirmo que revi estes limites/,
     ) as HTMLInputElement;
 
+    expect(within(receipt).getByText('Sem recibo de revisão')).toBeTruthy();
+    expect(within(receipt).queryByText('Revisto em')).toBeNull();
+    expect(within(receipt).queryByText('Revisto por')).toBeNull();
+    expect(within(receipt).queryByText('Nota registada')).toBeNull();
+    expect(within(receipt).getByText('OCR')).toBeTruthy();
+    expect(within(receipt).getByText('Não efetuado por esta revisão.')).toBeTruthy();
+    expect(within(receipt).getByText('Conversão')).toBeTruthy();
+    expect(within(receipt).getByText('Não efetuada por esta revisão.')).toBeTruthy();
+    expect(within(receipt).getByText('Substituição do PDF/A canónico')).toBeTruthy();
+    expect(within(receipt).getByText('Não substituído por este documento.')).toBeTruthy();
+    expect(within(receipt).getByText('PDF assinado')).toBeTruthy();
+    expect(within(receipt).getByText('Não criado nem validado por esta revisão.')).toBeTruthy();
+    expect(within(receipt).getByText('Aceitação legal')).toBeTruthy();
+    expect(within(receipt).getByText('Não declarada por esta revisão.')).toBeTruthy();
     expect((save as HTMLButtonElement).disabled).toBe(true);
     expect(acknowledgement.checked).toBe(false);
     fireEvent.click(save);
@@ -1079,8 +1106,12 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     const metadata = await screen.findByRole('group', {
       name: 'Metadados do documento importado',
     });
+    const receipt = await screen.findByRole('group', { name: 'Recibo de revisão' });
     expect(within(metadata).getByText('Revisão do operador necessária')).toBeTruthy();
     expect(within(metadata).getByText(importedDocumentReviewNotice)).toBeTruthy();
+    expect(within(receipt).getByText('Sem recibo de revisão')).toBeTruthy();
+    expect(within(receipt).queryByText('Limites exigidos')).toBeNull();
+    expect(within(receipt).queryByText('Limites reconhecidos')).toBeNull();
     expect(within(metadata).getByText('Limites de preservação')).toBeTruthy();
     expect(within(metadata).getByText('Registo canónico')).toBeTruthy();
     expect(within(metadata).getByText('Não substitui o PDF/A canónico preservado.')).toBeTruthy();
@@ -1111,6 +1142,7 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     expect(save.disabled).toBe(true);
     fireEvent.click(screen.getByLabelText(/Confirmo que revi estes limites/));
     expect(save.disabled).toBe(false);
+    const callsBeforeReview = calls.length;
     fireEvent.click(save);
 
     await waitFor(() => expect(reviewBodies).toHaveLength(1));
@@ -1125,11 +1157,38 @@ describe('ActDocumentPanel — imported evidence documents', () => {
           call.method === 'PATCH' && call.url.includes('/v1/documents/imported/import-1/review'),
       ),
     ).toBe(true);
+    const reviewCalls = calls.slice(callsBeforeReview);
+    expect(reviewCalls.some((call) => call.method === 'PATCH')).toBe(true);
+    expect(reviewCalls.filter((call) => isBlockedReviewReceiptEndpoint(call.url))).toEqual([]);
     await waitFor(() =>
       expect(within(metadata).getByText('Rejeitado como evidência não canónica')).toBeTruthy(),
     );
-    expect(await screen.findByText('2026-07-10T09:30:00Z')).toBeTruthy();
-    expect(await screen.findByText('amelia.operator')).toBeTruthy();
+    await waitFor(() =>
+      expect(within(receipt).getByText('Rejeitado como evidência não canónica')).toBeTruthy(),
+    );
+    expect(within(receipt).getByText('Revisto em')).toBeTruthy();
+    expect(within(receipt).getByText('2026-07-10T09:30:00Z')).toBeTruthy();
+    expect(within(receipt).getByText('Revisto por')).toBeTruthy();
+    expect(within(receipt).getByText('amelia.operator')).toBeTruthy();
+    expect(within(receipt).getByText('Nota registada')).toBeTruthy();
+    expect(within(receipt).getByText('Conferido contra o original preservado.')).toBeTruthy();
+    expect(within(receipt).getByText('Limites exigidos')).toBeTruthy();
+    expect(within(receipt).getByText('Limites reconhecidos')).toBeTruthy();
+    expect(
+      within(receipt).getAllByText(
+        'Bytes originais permanecem preservados apenas como evidência não canónica.',
+      ),
+    ).toHaveLength(2);
+    expect(
+      within(receipt).getAllByText('OCR ou conversão não são promovidos a registos canónicos.'),
+    ).toHaveLength(2);
+    expect(within(receipt).getByText('Não efetuado por esta revisão.')).toBeTruthy();
+    expect(within(receipt).getByText('Não efetuada por esta revisão.')).toBeTruthy();
+    expect(within(receipt).getByText('Não substituído por este documento.')).toBeTruthy();
+    expect(within(receipt).getByText('Não criado nem validado por esta revisão.')).toBeTruthy();
+    expect(within(receipt).getByText('Não declarada por esta revisão.')).toBeTruthy();
+    expect(await screen.findAllByText('2026-07-10T09:30:00Z')).toHaveLength(2);
+    expect(await screen.findAllByText('amelia.operator')).toHaveLength(2);
     await waitFor(() =>
       expect(within(metadata).getByText('Conferido contra o original preservado.')).toBeTruthy(),
     );

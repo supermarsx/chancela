@@ -3,10 +3,11 @@
 //! fidelity gate before it may supersede the active catalog. The reliable-obtain guarantee lives in
 //! the pipeline, not the parser — a bad parse is rejected, never promoted.
 //!
-//! **Skeleton status (t23-m1):** this module pins the public surface (the [`OfficialCaeSource`]
-//! trait, [`DrPdfSource`], [`ObtainedDataset`], [`obtain_and_supersede`]) and the load-bearing
-//! constants (immutable Diário da República URLs + pinned artifact digests); the bodies are
-//! `todo!()` stubs that t23-e1 fills in.
+//! **Implementation status:** [`DrPdfSource`] obtains the digest-pinned Diário da República
+//! Rev.3/Rev.4 diploma PDFs, parses them with the in-crate PDF pipeline, stamps provenance, and the
+//! obtain pipeline gates the result before promotion. INE and SICONF support remains intentionally
+//! bounded: INE is represented as an honest unavailable bulk source until it publishes a viable
+//! downloadable catalog, while SICONF is a per-code verifier surface rather than a bulk obtainer.
 //!
 //! **PDF engine:** pure-Rust `lopdf` (already a workspace dep). No native library is bundled, so the
 //! default build stays native-dep-free — unlike a `pdfium-render` path, which is the documented

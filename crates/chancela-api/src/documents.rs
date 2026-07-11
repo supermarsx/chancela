@@ -52,10 +52,11 @@ use crate::authz::{require_permission, scope_of_act};
 use crate::dto::{ReadRedaction, format_date, format_time, read_redaction_for_actor};
 use crate::error::ApiError;
 use crate::external_validator_evidence::{
+    EXTERNAL_VALIDATOR_RAW_REPORT_ARCHIVE_PATH_PATTERN,
     EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN, EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
     EXTERNAL_VALIDATOR_REPORT_EVIDENCE_KIND, EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
-    ExternalValidatorEvidenceAttachment, TECHNICAL_METADATA_ONLY, attachment_indexes,
-    matching_attachments,
+    ExternalValidatorEvidenceAttachment, ExternalValidatorRawReportAttachmentIndex,
+    TECHNICAL_METADATA_ONLY, attachment_indexes, matching_attachments,
 };
 
 /// The frozen PDF/A profile string bound into every `document.generated` event and stored row
@@ -3933,6 +3934,7 @@ pub struct DocumentBundleExternalValidatorReportIndex {
     pub metadata_schema: &'static str,
     pub archive_path_prefix: &'static str,
     pub archive_path_pattern: &'static str,
+    pub raw_report_path_pattern: &'static str,
     pub bundle_attachment_status: &'static str,
     pub status_scope: &'static str,
     pub attachments: Vec<DocumentBundleExternalValidatorReportAttachment>,
@@ -3945,6 +3947,8 @@ pub struct DocumentBundleExternalValidatorReportAttachment {
     pub archive_path: String,
     pub content_type: String,
     pub sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_report: Option<ExternalValidatorRawReportAttachmentIndex>,
 }
 
 #[derive(Serialize)]
@@ -4031,6 +4035,7 @@ fn document_bundle_evidence_index(
                 archive_path: attachment.path,
                 content_type: attachment.content_type,
                 sha256: attachment.sha256,
+                raw_report: attachment.raw_report,
             },
         )
         .collect::<Vec<_>>();
@@ -4055,6 +4060,7 @@ fn document_bundle_evidence_index(
             metadata_schema: EXTERNAL_VALIDATOR_REPORT_EVIDENCE_SCHEMA,
             archive_path_prefix: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PREFIX,
             archive_path_pattern: EXTERNAL_VALIDATOR_REPORT_ARCHIVE_PATH_PATTERN,
+            raw_report_path_pattern: EXTERNAL_VALIDATOR_RAW_REPORT_ARCHIVE_PATH_PATTERN,
             bundle_attachment_status,
             status_scope: TECHNICAL_METADATA_ONLY,
             attachments,
@@ -4526,8 +4532,8 @@ mod tests {
     use chancela_core::book::ClosingReason;
     use chancela_core::{
         ActState, AgendaItem, AttendanceWeight, Attendee, Book, BookKind, Convening,
-        DispatchChannel, Entity, EntityKind, KvRow, MeetingChannel, Nipc, PresenceMode, SecondCall,
-        SignatoryCapacity, SignatureSlot, VoteRow,
+        DeliberationItem, DispatchChannel, Entity, EntityKind, KvRow, MeetingChannel, Nipc,
+        PresenceMode, SecondCall, SignatoryCapacity, SignatureSlot, VoteRow,
     };
     use der::Encode;
     use der::asn1::{Any, BitString, ObjectIdentifier};
@@ -5925,6 +5931,152 @@ mod tests {
         assert_eq!(loaded_after_restart.id, ata_id);
         assert_eq!(loaded_after_restart.pdf_digest, ata_digest);
         assert_eq!(loaded_after_restart.template_id, "csc-ata-ag/v1");
+    }
+
+    #[tokio::test]
+    async fn condominium_absent_owner_communication_generation_preserves_canonical_ata() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        let entity = entity_of(EntityKind::Condominio);
+        let book = Book::new(entity.id, BookKind::Condominio);
+        let mut act = sealed_csc_act(&book);
+        act.title = "Ata da assembleia de condóminos".to_owned();
+        act.attendees = vec![
+            Attendee {
+                name: "Ana Rocha".to_owned(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::InPerson,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(520)),
+            },
+            Attendee {
+                name: "Bruno Dias".to_owned(),
+                quality: SignatoryCapacity::CondoOwner,
+                presence: PresenceMode::Absent,
+                represented_by: None,
+                weight: Some(AttendanceWeight::Permilage(125)),
+            },
+        ];
+        act.deliberation_items = vec![DeliberationItem {
+            agenda_number: Some(1),
+            text: "Aprovada a realização de obras de conservação.".to_owned(),
+            vote: None,
+            statements: vec![],
+        }];
+        let ata = generate_for_act(&act, &entity, None)
+            .expect("ata generation ok")
+            .expect("ata document");
+        let ata_id = ata.stored.id.clone();
+        let ata_digest = ata.stored.pdf_digest.clone();
+
+        {
+            let mut ledger = state.ledger.write().await;
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &entity.id.to_string(),
+                "entity.created",
+                None,
+                b"entity",
+            )
+            .expect("entity genesis");
+            crate::try_append_event(
+                &mut ledger,
+                "document.owner",
+                &format!("entity:{}/book:{}", entity.id, book.id),
+                "book.opened",
+                None,
+                b"book",
+            )
+            .expect("book genesis");
+            let events = ledger.events().to_vec();
+            state
+                .store
+                .as_ref()
+                .expect("store")
+                .persist(|tx| {
+                    for event in &events {
+                        tx.append_event(event)?;
+                    }
+                    tx.upsert_entity(&entity)?;
+                    tx.upsert_book(&book)?;
+                    tx.upsert_act(&act)?;
+                    tx.upsert_document(&ata.stored)
+                })
+                .expect("seed persisted");
+        }
+        state
+            .entities
+            .write()
+            .await
+            .insert(entity.id, entity.clone());
+        state.books.write().await.insert(book.id, book);
+        state.acts.write().await.insert(act.id, act.clone());
+        state
+            .documents
+            .write()
+            .await
+            .insert(act.id, ata.stored.clone());
+
+        let response = generate_document(
+            State(state.clone()),
+            Path(act.id.0),
+            actor,
+            CurrentAttestor::default(),
+            Query(GenerateQuery {
+                template_id: "condominio-comunicacao-ausentes/v1".to_owned(),
+            }),
+        )
+        .await
+        .expect("absent-owner communication generation succeeds");
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let rows = state
+            .store
+            .as_ref()
+            .expect("store")
+            .documents_for_act(act.id)
+            .expect("documents read");
+        assert_eq!(
+            rows.len(),
+            2,
+            "canonical ata plus absent-owner communication are both preserved"
+        );
+        assert!(
+            rows.iter()
+                .any(|doc| doc.template_id == "condominio-comunicacao-ausentes/v1"),
+            "absent-owner communication row was generated"
+        );
+
+        let live_slot = state
+            .documents
+            .read()
+            .await
+            .get(&act.id)
+            .expect("live canonical doc")
+            .clone();
+        assert_eq!(live_slot.id, ata_id);
+
+        let loaded = load_document(&state, act.id)
+            .await
+            .expect("load ok")
+            .expect("canonical doc");
+        assert_eq!(loaded.id, ata_id);
+        assert_eq!(loaded.pdf_digest, ata_digest);
+        assert_eq!(loaded.template_id, "condominio-ata-assembleia/v1");
+        assert!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .filter(|event| event.kind == "document.generated")
+                .count()
+                >= 1,
+            "document.generated event was appended for the communication"
+        );
     }
 
     // --- G1/G2 render-ctx exposure -------------------------------------------------------------

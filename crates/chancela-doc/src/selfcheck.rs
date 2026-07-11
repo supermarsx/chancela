@@ -366,6 +366,10 @@ fn verify_tagged_structure(
         .and_then(Object::as_array)
         .map_err(|_| fail("/ParentTree has no /Nums array".into()))?;
     let parent_arrays = parse_parent_tree_nums(parent_tree_nums, fail)?;
+    let root_k = struct_root
+        .get(b"K")
+        .map_err(|_| fail("/StructTreeRoot has no /K entry".into()))?;
+    verify_local_structure_topology(doc, struct_root_ref, root_k, fail)?;
 
     let page_ids = doc.page_iter().collect::<Vec<_>>();
     let parent_tree_next_key = struct_root
@@ -457,9 +461,6 @@ fn verify_tagged_structure(
 
     let mut mcr_entries = BTreeMap::<(usize, i64), ObjectId>::new();
     let mut seen_struct_elems = BTreeSet::new();
-    let root_k = struct_root
-        .get(b"K")
-        .map_err(|_| fail("/StructTreeRoot has no /K entry".into()))?;
     {
         let mut collector = McrEntryCollector {
             page_index_by_id: &page_index_by_id,
@@ -497,6 +498,259 @@ fn verify_tagged_structure(
         }
     }
 
+    Ok(())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LocalTopologyRole {
+    Document,
+    TopLevelBlock,
+    Table,
+    TableRow,
+    TableCell,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LocalTopologyParent {
+    StructTreeRoot,
+    Document,
+    Table,
+    TableRow,
+}
+
+fn verify_local_structure_topology(
+    doc: &Document,
+    struct_root_ref: ObjectId,
+    root_k: &Object,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    let document_ref = root_k.as_reference().map_err(|_| {
+        fail("/StructTreeRoot /K is not the writer document StructElem reference".into())
+    })?;
+    let mut seen = BTreeSet::new();
+    verify_local_topology_element(
+        doc,
+        document_ref,
+        struct_root_ref,
+        LocalTopologyParent::StructTreeRoot,
+        &mut seen,
+        fail,
+    )?;
+    Ok(())
+}
+
+fn verify_local_topology_element(
+    doc: &Document,
+    elem_ref: ObjectId,
+    expected_parent_ref: ObjectId,
+    expected_parent: LocalTopologyParent,
+    seen: &mut BTreeSet<ObjectId>,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<LocalTopologyRole, DocError> {
+    if !seen.insert(elem_ref) {
+        return Err(fail(format!(
+            "tagged table topology repeats StructElem reference {:?}",
+            elem_ref
+        )));
+    }
+
+    let elem = doc
+        .get_object(elem_ref)
+        .and_then(Object::as_dict)
+        .map_err(|_| fail(format!("StructElem {:?} is not a dictionary", elem_ref)))?;
+    if !elem.has_type(b"StructElem") {
+        return Err(fail(format!("object {:?} is not a /StructElem", elem_ref)));
+    }
+
+    let parent_ref = elem
+        .get(b"P")
+        .and_then(Object::as_reference)
+        .map_err(|_| fail("StructElem has no /P parent reference".into()))?;
+    if parent_ref != expected_parent_ref {
+        return Err(fail(format!(
+            "tagged table topology has StructElem {:?} parent {:?}, expected {:?}",
+            elem_ref, parent_ref, expected_parent_ref
+        )));
+    }
+
+    let role_name = elem
+        .get(b"S")
+        .and_then(Object::as_name)
+        .map_err(|_| fail("StructElem has no /S role name".into()))?;
+    let role = local_topology_role(role_name).ok_or_else(|| {
+        fail(format!(
+            "StructElem /{} is outside the writer's bounded tagged-PDF topology",
+            String::from_utf8_lossy(role_name)
+        ))
+    })?;
+    if !local_topology_parent_allows(expected_parent, role) {
+        return Err(fail(format!(
+            "tagged table topology places /{} under {}, expected {}",
+            String::from_utf8_lossy(role_name),
+            local_topology_parent_label(expected_parent),
+            local_topology_expected_child(expected_parent)
+        )));
+    }
+
+    let kids = elem.get(b"K").and_then(Object::as_array).map_err(|_| {
+        fail(format!(
+            "StructElem /{} has no writer-profile /K array",
+            String::from_utf8_lossy(role_name)
+        ))
+    })?;
+
+    match role {
+        LocalTopologyRole::Document => {
+            for kid in kids {
+                let child_ref = local_topology_child_ref(kid, role_name, "top-level block", fail)?;
+                verify_local_topology_element(
+                    doc,
+                    child_ref,
+                    elem_ref,
+                    LocalTopologyParent::Document,
+                    seen,
+                    fail,
+                )?;
+            }
+        }
+        LocalTopologyRole::Table => {
+            if kids.is_empty() {
+                return Err(fail(format!(
+                    "tagged table topology table /{} has no /TR children",
+                    String::from_utf8_lossy(role_name)
+                )));
+            }
+            for kid in kids {
+                let child_ref = local_topology_child_ref(kid, role_name, "/TR", fail)?;
+                verify_local_topology_element(
+                    doc,
+                    child_ref,
+                    elem_ref,
+                    LocalTopologyParent::Table,
+                    seen,
+                    fail,
+                )?;
+            }
+        }
+        LocalTopologyRole::TableRow => {
+            if kids.is_empty() {
+                return Err(fail(
+                    "tagged table topology /TR has no /TH or /TD children".into(),
+                ));
+            }
+            for kid in kids {
+                let child_ref = local_topology_child_ref(kid, role_name, "/TH or /TD", fail)?;
+                verify_local_topology_element(
+                    doc,
+                    child_ref,
+                    elem_ref,
+                    LocalTopologyParent::TableRow,
+                    seen,
+                    fail,
+                )?;
+            }
+        }
+        LocalTopologyRole::TopLevelBlock | LocalTopologyRole::TableCell => {
+            if kids.is_empty() {
+                return Err(fail(format!(
+                    "tagged table topology leaf /{} has no marked-content references",
+                    String::from_utf8_lossy(role_name)
+                )));
+            }
+            for kid in kids {
+                verify_local_leaf_kid(kid, role_name, fail)?;
+            }
+        }
+    }
+
+    Ok(role)
+}
+
+fn local_topology_role(role: &[u8]) -> Option<LocalTopologyRole> {
+    match role {
+        b"ChancelaDocument" => Some(LocalTopologyRole::Document),
+        b"ChancelaDocumentTitle"
+        | b"ChancelaHeaderMetadata"
+        | b"ChancelaHeading1"
+        | b"ChancelaHeading2"
+        | b"ChancelaHeading3"
+        | b"ChancelaHeading"
+        | b"ChancelaParagraph"
+        | b"ChancelaSignatureBlock" => Some(LocalTopologyRole::TopLevelBlock),
+        b"ChancelaKeyValue" | b"ChancelaVoteTable" => Some(LocalTopologyRole::Table),
+        b"TR" => Some(LocalTopologyRole::TableRow),
+        b"TH" | b"TD" => Some(LocalTopologyRole::TableCell),
+        _ => None,
+    }
+}
+
+fn local_topology_parent_allows(parent: LocalTopologyParent, child: LocalTopologyRole) -> bool {
+    match parent {
+        LocalTopologyParent::StructTreeRoot => child == LocalTopologyRole::Document,
+        LocalTopologyParent::Document => matches!(
+            child,
+            LocalTopologyRole::TopLevelBlock | LocalTopologyRole::Table
+        ),
+        LocalTopologyParent::Table => child == LocalTopologyRole::TableRow,
+        LocalTopologyParent::TableRow => child == LocalTopologyRole::TableCell,
+    }
+}
+
+fn local_topology_parent_label(parent: LocalTopologyParent) -> &'static str {
+    match parent {
+        LocalTopologyParent::StructTreeRoot => "/StructTreeRoot",
+        LocalTopologyParent::Document => "/ChancelaDocument",
+        LocalTopologyParent::Table => "a table element",
+        LocalTopologyParent::TableRow => "/TR",
+    }
+}
+
+fn local_topology_expected_child(parent: LocalTopologyParent) -> &'static str {
+    match parent {
+        LocalTopologyParent::StructTreeRoot => "/ChancelaDocument",
+        LocalTopologyParent::Document => "a top-level semantic block",
+        LocalTopologyParent::Table => "/TR",
+        LocalTopologyParent::TableRow => "/TH or /TD",
+    }
+}
+
+fn local_topology_child_ref(
+    kid: &Object,
+    role_name: &[u8],
+    expected: &str,
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<ObjectId, DocError> {
+    kid.as_reference().map_err(|_| {
+        fail(format!(
+            "tagged table topology /{} child is not a {expected} StructElem reference",
+            String::from_utf8_lossy(role_name)
+        ))
+    })
+}
+
+fn verify_local_leaf_kid(
+    kid: &Object,
+    role_name: &[u8],
+    fail: &dyn Fn(String) -> DocError,
+) -> Result<(), DocError> {
+    if kid.as_reference().is_ok() {
+        return Err(fail(format!(
+            "tagged table topology leaf /{} contains a nested StructElem reference",
+            String::from_utf8_lossy(role_name)
+        )));
+    }
+    let dict = kid.as_dict().map_err(|_| {
+        fail(format!(
+            "tagged table topology leaf /{} child is not an /MCR dictionary",
+            String::from_utf8_lossy(role_name)
+        ))
+    })?;
+    if !dict.has_type(b"MCR") {
+        return Err(fail(format!(
+            "tagged table topology leaf /{} child is not an /MCR dictionary",
+            String::from_utf8_lossy(role_name)
+        )));
+    }
     Ok(())
 }
 
