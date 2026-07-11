@@ -685,6 +685,11 @@ pub fn catalog() -> Vec<McpTool> {
             input_schema: obj(
                 serde_json::json!({
                     "search": { "type": "string", "description": "provider or trust-service search text" },
+                    "identifier": { "type": "string", "description": "provider or trust-service identifier" },
+                    "service_type": { "type": "string", "description": "trust-service type filter" },
+                    "status": { "type": "string", "description": "trust-service status filter" },
+                    "history": { "type": "string", "description": "history filter: any/none or historical status/text" },
+                    "supply_point": { "type": "string", "description": "service supply-point filter" },
                     "limit": { "type": "integer", "description": "maximum number of search results" }
                 }),
                 &[],
@@ -692,6 +697,18 @@ pub fn catalog() -> Vec<McpTool> {
             call: ToolCall {
                 method: Get,
                 path_template: "/trust/catalog",
+            },
+        },
+        McpTool {
+            name: "list_external_validator_reports",
+            title: "List external-validator report summaries",
+            description: "List redacted technical metadata summaries for external-validator reports. This read-only tool does not expose raw report bytes or claim legal, trust, provider, certificate-path, or revocation validation.",
+            access: ToolAccess::ReadOnly,
+            permission: "settings.read",
+            input_schema: closed_obj(serde_json::json!({}), &[]),
+            call: ToolCall {
+                method: Get,
+                path_template: "/external-validator-reports",
             },
         },
         McpTool {
@@ -967,9 +984,36 @@ mod tests {
 
     #[test]
     fn search_trust_catalog_args_become_query_params() {
+        let tool = tool("search_trust_catalog");
+        for name in [
+            "search",
+            "identifier",
+            "service_type",
+            "status",
+            "history",
+            "supply_point",
+            "limit",
+        ] {
+            assert!(
+                tool.input_schema["properties"].get(name).is_some(),
+                "missing advertised trust catalog filter {name}"
+            );
+        }
+        assert_eq!(tool.access, ToolAccess::ReadOnly);
+        assert!(tool.access.read_only_hint());
+        assert_eq!(tool.permission, "cae.read");
+
         let call = resolve_call(
-            &tool("search_trust_catalog"),
-            &serde_json::json!({ "search": "multicert", "limit": 5 }),
+            &tool,
+            &serde_json::json!({
+                "search": "multicert",
+                "identifier": "pt-tsl-1",
+                "service_type": "QCertESig",
+                "status": "granted",
+                "history": "WITHDRAWN",
+                "supply_point": "https://example.test/svc",
+                "limit": 5
+            }),
         )
         .unwrap();
         assert_eq!(call.method, HttpMethod::Get);
@@ -977,11 +1021,104 @@ mod tests {
         assert_eq!(
             call.query,
             vec![
+                ("history".to_string(), "WITHDRAWN".to_string()),
+                ("identifier".to_string(), "pt-tsl-1".to_string()),
                 ("limit".to_string(), "5".to_string()),
-                ("search".to_string(), "multicert".to_string())
+                ("search".to_string(), "multicert".to_string()),
+                ("service_type".to_string(), "QCertESig".to_string()),
+                ("status".to_string(), "granted".to_string()),
+                (
+                    "supply_point".to_string(),
+                    "https://example.test/svc".to_string()
+                ),
             ]
         );
         assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn external_validator_reports_tool_is_redacted_read_only_summary_route() {
+        let tool = tool("list_external_validator_reports");
+        assert_eq!(tool.access, ToolAccess::ReadOnly);
+        assert!(tool.access.read_only_hint());
+        assert_eq!(tool.permission, "settings.read");
+        assert_eq!(tool.input_schema, closed_empty_schema());
+
+        let call = resolve_call(&tool, &Value::Null).unwrap();
+        assert_eq!(call.method, HttpMethod::Get);
+        assert_eq!(call.path, "/external-validator-reports");
+        assert!(call.query.is_empty());
+        assert!(call.body.is_none());
+    }
+
+    #[test]
+    fn external_validator_reports_tool_rejects_raw_or_upload_args() {
+        let tool = tool("list_external_validator_reports");
+        for name in ["content_base64", "raw_report", "upload"] {
+            let err =
+                resolve_call(&tool, &serde_json::json!({ name: "not forwarded" })).unwrap_err();
+            assert_eq!(err, ToolError::UnknownArgument(name.to_string()));
+        }
+    }
+
+    #[test]
+    fn external_validator_reports_tool_forwards_bearer_to_summary_route() {
+        use crate::bridge::{ApiBridge, BridgeError, HttpRequest, HttpResponse, HttpTransport};
+        use crate::config::{McpConfig, Secret};
+
+        struct NoopTransport;
+
+        impl HttpTransport for NoopTransport {
+            fn send(&self, _req: &HttpRequest) -> Result<HttpResponse, BridgeError> {
+                unreachable!("registry test only builds the request")
+            }
+        }
+
+        let tool = tool("list_external_validator_reports");
+        let call = resolve_call(&tool, &Value::Null).unwrap();
+        let bridge = ApiBridge::new(
+            &McpConfig {
+                enabled: true,
+                tenant_ai_enabled: true,
+                base_url: "http://127.0.0.1:8080".to_string(),
+                base_path: "/api/v1".to_string(),
+                api_key: Secret::new("chk_ab12cd_secretsecret"),
+                ..McpConfig::default()
+            },
+            NoopTransport,
+        );
+
+        let req = bridge.build(call.method, &call.path, &call.query, call.body.as_ref());
+        assert_eq!(req.method, HttpMethod::Get);
+        assert_eq!(
+            req.url,
+            "http://127.0.0.1:8080/api/v1/external-validator-reports"
+        );
+        assert_eq!(
+            req.header("Authorization"),
+            Some("Bearer chk_ab12cd_secretsecret")
+        );
+        assert!(req.body.is_none());
+    }
+
+    #[test]
+    fn external_validator_catalog_exposes_no_raw_report_route_or_payload_field() {
+        let forbidden_terms = ["raw-report", "content_base64", "raw_report", "upload"];
+        for tool in catalog() {
+            assert!(
+                forbidden_terms
+                    .iter()
+                    .all(|term| !tool.call.path_template.contains(term)),
+                "{} must not expose raw external-validator report routes",
+                tool.name
+            );
+            let schema = tool.input_schema.to_string();
+            assert!(
+                forbidden_terms.iter().all(|term| !schema.contains(term)),
+                "{} must not expose raw external-validator payload fields",
+                tool.name
+            );
+        }
     }
 
     #[test]
@@ -1177,12 +1314,17 @@ mod tests {
         for name in [
             "trust_status",
             "search_trust_catalog",
+            "list_external_validator_reports",
             "get_trust_provider",
             "get_trust_service",
         ] {
-            let trust_tool = tool(name);
-            assert_eq!(trust_tool.access, ToolAccess::ReadOnly);
-            assert_eq!(trust_tool.permission, "cae.read");
+            let read_tool = tool(name);
+            assert_eq!(read_tool.access, ToolAccess::ReadOnly);
+            if name == "list_external_validator_reports" {
+                assert_eq!(read_tool.permission, "settings.read");
+            } else {
+                assert_eq!(read_tool.permission, "cae.read");
+            }
         }
     }
 
@@ -1218,5 +1360,14 @@ mod tests {
     fn non_object_arguments_rejected() {
         let err = resolve_call(&tool("list_entities"), &serde_json::json!([1, 2, 3])).unwrap_err();
         assert_eq!(err, ToolError::ArgumentsNotObject);
+    }
+
+    fn closed_empty_schema() -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false,
+        })
     }
 }
