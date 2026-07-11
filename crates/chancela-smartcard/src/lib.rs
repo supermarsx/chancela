@@ -10,8 +10,16 @@
 //! - The signer **branches on card generation** — CC v1 uses RSA-2048 via
 //!   `CKM_RSA_PKCS` over a `DigestInfo`, CC v2 (June 2024+) uses P-256 via
 //!   `CKM_ECDSA` re-encoded to DER (plan §1.2, risk #3).
-//! - Login uses a **NULL PIN** (protected authentication path): the middleware
-//!   owns the PIN/CAN dialog; we never build our own.
+//! - Login defaults to a **NULL PIN** (protected authentication path): the
+//!   middleware owns the PIN/CAN dialog. An **optional in-app PIN** may instead be
+//!   presented to `C_Login` ([`CryptoToken::sign_digest_with_pin`], t67) for
+//!   co-located deployments where the citizen enters the PIN in the app rather than
+//!   at the reader. This is an honest, deliberate weakening of the prior
+//!   "no credential ever enters the process" guarantee: the PIN is carried only as
+//!   a borrowed view of a caller-owned `zeroize::Zeroizing` buffer, handed
+//!   straight to a self-zeroizing PKCS#11 secret, and never logged, `Debug`-printed,
+//!   persisted, or placed in an error message (plan §6). `None` preserves the
+//!   original NULL-PIN path exactly.
 //! - Reader detection ([`detect`]) never panics: zero readers is a clean empty
 //!   result, an absent PC/SC service is a typed error.
 //!
@@ -31,7 +39,7 @@ pub mod pkcs11;
 pub mod reader;
 pub mod token;
 
-pub use error::SmartcardError;
+pub use error::{PinTriesLeft, SmartcardError};
 pub use mock::MockToken;
 pub use pkcs11::{Pkcs11Token, resolve_module_path};
 pub use reader::{CardReaders, PcscReaders, ReaderInfo, detect};

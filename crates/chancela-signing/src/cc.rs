@@ -4,11 +4,14 @@
 //! [`cmd_initiate`](crate::cmd_initiate) / [`cmd_confirm`](crate::cmd_confirm) split spanning two
 //! stateless HTTP requests (see [`crate::cmd_session`]) — a Cartão de Cidadão signature is **local
 //! and synchronous**: the card, reader, Autenticação.gov middleware, and PIN entry all live on the
-//! same host, and the PIN is entered *at the reader*, by the middleware, inside the single PKCS#11
-//! `sign_digest` call. The PIN never enters this process (protected-authentication / NULL-PIN
-//! path). So CC needs no session, no persisted pending state, and no secret in flight: **one call**
-//! takes the unsigned PDF/A + a [`SmartcardProvider`](crate::SmartcardProvider) + an optional
-//! trusted-list policy and returns the signed PDF.
+//! same host. By default the PIN is entered *at the reader*, by the middleware, inside the single
+//! PKCS#11 `sign_digest` call, and never enters this process (protected-authentication / NULL-PIN
+//! path). t67 adds an **optional transient in-app PIN** ([`sign_pdf_cc_with_pin`]) for co-located
+//! deployments where the citizen enters the PIN in the app instead; when supplied it is carried as a
+//! borrowed [`Zeroizing`] and handed straight to the card's `C_Login`, never persisted or logged
+//! (plan §6). Either way CC needs no session and no persisted pending state: **one call** takes the
+//! unsigned PDF/A + a [`SmartcardProvider`](crate::SmartcardProvider) + an optional trusted-list
+//! policy (+ an optional PIN) and returns the signed PDF.
 //!
 //! [`sign_pdf_cc`] is the seam the api (`spawn_blocking`) and desktop code sign against. It mirrors
 //! the CMD gate ([`cmd_initiate`](crate::cmd_initiate)) and the envelope gate
@@ -23,6 +26,7 @@
 //! CC v2 P-256) is handled below the provider, in `chancela-smartcard`.
 
 use time::OffsetDateTime;
+use zeroize::Zeroizing;
 
 use chancela_cades::{assemble_cades_b, signed_attributes_digest};
 use chancela_pades::{SignOptions, embed_signature, prepare_signature, validate_pdf_signature};
@@ -33,9 +37,11 @@ use crate::{SigningError, TrustedListStatus};
 
 /// The result of a synchronous Cartão de Cidadão PAdES signature ([`sign_pdf_cc`]).
 ///
-/// Non-secret throughout — there is no PIN or OTP anywhere in the CC flow (the PIN is entered at
-/// the reader and never enters this process). The api persists these fields as the signed-document
-/// variant + evidence record (t58 reuses t57's F4 store shape).
+/// **Non-secret throughout** — it holds only the signed PDF, signer certificate, and trust status;
+/// no PIN or OTP is ever stored here. (Any in-app PIN supplied to [`sign_pdf_cc_with_pin`] is
+/// consumed transiently during signing and dropped/zeroized before this result is built; it never
+/// reaches this struct.) The api persists these fields as the signed-document variant + evidence
+/// record (t58 reuses t57's F4 store shape).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct CcSignedPdf {
@@ -86,6 +92,29 @@ pub fn sign_pdf_cc(
     options: &SignOptions,
     policy: Option<&mut dyn TrustPolicy>,
 ) -> Result<CcSignedPdf, SigningError> {
+    // The classic protected-authentication path: no in-app PIN (the middleware owns the PIN dialog
+    // at the reader). Exactly `sign_pdf_cc_with_pin` with `pin = None`, kept as the stable seam so
+    // existing callers (api desktop path) are unaffected by the t67 in-app-PIN addition.
+    sign_pdf_cc_with_pin(provider, pdf, signing_time, options, policy, None)
+}
+
+/// Sign `pdf` with a Cartão de Cidadão, optionally presenting a transient **in-app PIN** (t67).
+///
+/// Identical to [`sign_pdf_cc`] but for the extra `pin` parameter. When `pin` is `Some`, the PIN is
+/// presented to the card's `C_Login` as `CKU_USER` instead of using the reader's protected-
+/// authentication dialog — offered only where the reader is co-located with this process (plan §0.1;
+/// the api gates this on `local_signing`). `pin` is a caller-owned [`Zeroizing<String>`], borrowed
+/// here and threaded to the card without an owned plaintext copy; it is never logged, `Debug`-printed,
+/// persisted, or placed in an error message (plan §6). `pin = None` is exactly the classic
+/// protected-authentication path — the gate, prepare/embed, and validation are all unchanged.
+pub fn sign_pdf_cc_with_pin(
+    provider: &dyn SignerProvider,
+    pdf: &[u8],
+    signing_time: OffsetDateTime,
+    options: &SignOptions,
+    policy: Option<&mut dyn TrustPolicy>,
+    pin: Option<&Zeroizing<String>>,
+) -> Result<CcSignedPdf, SigningError> {
     // 1. Trusted-list gate on the CC issuer (SIG-11/23), fail-closed — identical semantics to
     //    `cmd_initiate` and `sign_slot`: a qualified signature must not be trusted, nor even
     //    started at the reader, unless its issuer is currently granted.
@@ -113,8 +142,9 @@ pub fn sign_pdf_cc(
     let signed_attrs_digest =
         signed_attributes_digest(prepared.byterange_digest(), &signing_cert_der, signing_time)
             .map_err(cades_err)?;
-    // The card signs here; a card/PIN/activation failure surfaces as `SigningError::Provider`.
-    let raw = provider.sign_signed_attributes(&signed_attrs_digest)?;
+    // The card signs here; a card/PIN/activation failure surfaces as `SigningError::Provider`. When
+    // an in-app PIN is supplied it is presented to `C_Login`; otherwise the protected-auth path runs.
+    let raw = provider.sign_signed_attributes_with_pin(&signed_attrs_digest, pin)?;
     let cms =
         assemble_cades_b(&raw, prepared.byterange_digest(), signing_time).map_err(cades_err)?;
     let signed_pdf = embed_signature(&prepared, &cms).map_err(pades_err)?;

@@ -4,7 +4,7 @@
 
 use chancela_cades::SignatureAlgorithm;
 use chancela_smartcard::{
-    CertUsage, CryptoToken, MockToken, SmartcardError, TokenCertificate, detect,
+    CertUsage, CryptoToken, MockToken, PinTriesLeft, SmartcardError, TokenCertificate, detect,
     select_authentication_certificate, select_signature_certificate,
     token::{LABEL_AUTH_CERT, LABEL_SIGNATURE_CERT},
 };
@@ -112,6 +112,122 @@ fn empty_card_has_no_signature_cert() {
     let token = MockToken::with_certificates(Vec::new());
     let certs = token.list_certificates().unwrap();
     assert!(select_signature_certificate(&certs).is_none());
+}
+
+// --- t67: in-app CC PIN plumbing ------------------------------------------------------------------
+
+#[test]
+fn pin_is_threaded_to_the_card_when_presented() {
+    // "PIN passed → login-with-pin invoked" (MockToken records it), and the exact
+    // value threads through unchanged.
+    let token = MockToken::cartao_de_cidadao_v1();
+    let certs = token.list_certificates().unwrap();
+    let cert = select_signature_certificate(&certs).unwrap();
+
+    token
+        .sign_digest_with_pin(cert, &DIGEST, Some("5678"))
+        .unwrap();
+    assert!(token.last_login_used_pin(), "a PIN was presented to login");
+    assert!(
+        token.last_login_pin_was("5678"),
+        "the exact PIN threaded through unchanged"
+    );
+}
+
+#[test]
+fn none_pin_preserves_the_protected_auth_path() {
+    // The explicit `None` and the legacy `sign_digest` must both drive the NULL-PIN
+    // protected-authentication path (no PIN presented).
+    let token = MockToken::cartao_de_cidadao_v1();
+    let certs = token.list_certificates().unwrap();
+    let cert = select_signature_certificate(&certs).unwrap();
+
+    token.sign_digest_with_pin(cert, &DIGEST, None).unwrap();
+    assert!(
+        !token.last_login_used_pin(),
+        "None presents no PIN (protected-auth path)"
+    );
+
+    token.sign_digest(cert, &DIGEST).unwrap();
+    assert!(
+        !token.last_login_used_pin(),
+        "sign_digest is exactly the NULL-PIN path"
+    );
+}
+
+#[test]
+fn wrong_pin_surfaces_wrong_pin_with_tries_left() {
+    let token = MockToken::cartao_de_cidadao_v1().requiring_pin("1234", PinTriesLeft::FinalTry);
+    let certs = token.list_certificates().unwrap();
+    let cert = select_signature_certificate(&certs).unwrap();
+
+    let err = token
+        .sign_digest_with_pin(cert, &DIGEST, Some("9999"))
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            SmartcardError::WrongPin {
+                tries_left: PinTriesLeft::FinalTry
+            }
+        ),
+        "got {err:?}"
+    );
+
+    // The correct PIN then signs.
+    assert!(
+        token
+            .sign_digest_with_pin(cert, &DIGEST, Some("1234"))
+            .is_ok(),
+        "the correct PIN succeeds"
+    );
+}
+
+#[test]
+fn blocked_pin_surfaces_pin_blocked() {
+    let token = MockToken::cartao_de_cidadao_v1().with_blocked_pin();
+    let certs = token.list_certificates().unwrap();
+    let cert = select_signature_certificate(&certs).unwrap();
+
+    let err = token
+        .sign_digest_with_pin(cert, &DIGEST, Some("1234"))
+        .unwrap_err();
+    assert!(matches!(err, SmartcardError::PinBlocked), "got {err:?}");
+}
+
+#[test]
+fn pin_error_display_never_echoes_a_pin_value() {
+    // Neither PIN-related error variant may echo the entered PIN in its Display.
+    let wrong = SmartcardError::WrongPin {
+        tries_left: PinTriesLeft::FinalTry,
+    };
+    let blocked = SmartcardError::PinBlocked;
+    let rendered = format!("{wrong} | {blocked}");
+    assert!(
+        !rendered.contains("1234") && !rendered.contains("9999"),
+        "no PIN value in {rendered:?}"
+    );
+    assert!(
+        rendered.to_ascii_lowercase().contains("pin"),
+        "the message still names the PIN failure: {rendered:?}"
+    );
+}
+
+#[test]
+fn mock_debug_redacts_the_recorded_pin() {
+    // A {:?} on the token (which holds the login record) must never print the PIN.
+    let token = MockToken::cartao_de_cidadao_v1();
+    let certs = token.list_certificates().unwrap();
+    let cert = select_signature_certificate(&certs).unwrap();
+    token
+        .sign_digest_with_pin(cert, &DIGEST, Some("supersecret"))
+        .unwrap();
+
+    let dbg = format!("{token:?}");
+    assert!(
+        !dbg.contains("supersecret"),
+        "Debug must redact the PIN, got {dbg}"
+    );
 }
 
 #[test]

@@ -95,6 +95,37 @@ pub trait CryptoToken {
         cert: &TokenCertificate,
         digest: &[u8; 32],
     ) -> Result<RawSignature, SmartcardError>;
+
+    /// Sign a 32-byte digest, optionally presenting an **in-app PIN** to
+    /// `C_Login` (t67 CC in-app PIN).
+    ///
+    /// - `pin = None` MUST behave **identically** to [`Self::sign_digest`]: the
+    ///   NULL-PIN protected-authentication path, where the Autenticação.gov
+    ///   middleware owns the PIN/CAN dialog at the reader. This is the default and
+    ///   the backward-compatible path.
+    /// - `pin = Some(_)` logs in with that PIN as `CKU_USER` (co-located
+    ///   deployments only — the card is physically on the same host; plan §0.1).
+    ///
+    /// `pin` is a **borrowed view of a caller-owned [`zeroize::Zeroizing`] buffer**
+    /// (held in `chancela-signing`/the api). Implementations MUST NOT retain an
+    /// owned plaintext copy: use it transiently, hand it straight to the PKCS#11
+    /// login (which re-wraps it in a self-zeroizing secret), and never log,
+    /// `Debug`-print, or place it in an error message (plan §6). A token that has
+    /// no PIN concept (e.g. a test stand-in) inherits the default, which ignores
+    /// the PIN and delegates to [`Self::sign_digest`].
+    ///
+    /// # Errors
+    /// As [`Self::sign_digest`], plus [`SmartcardError::WrongPin`] /
+    /// [`SmartcardError::PinBlocked`] when a presented PIN is rejected/locked.
+    fn sign_digest_with_pin(
+        &self,
+        cert: &TokenCertificate,
+        digest: &[u8; 32],
+        pin: Option<&str>,
+    ) -> Result<RawSignature, SmartcardError> {
+        let _ = pin;
+        self.sign_digest(cert, digest)
+    }
 }
 
 /// Select the qualified-signature certificate from an enumerated list, by label.

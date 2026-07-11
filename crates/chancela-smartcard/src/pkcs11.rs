@@ -12,13 +12,15 @@ use std::path::{Path, PathBuf};
 
 use chancela_cades::{RawSignature, SignatureAlgorithm};
 use cryptoki::context::{CInitializeArgs, CInitializeFlags, Pkcs11};
+use cryptoki::error::{Error as CryptokiError, RvError};
 use cryptoki::mechanism::Mechanism;
 use cryptoki::object::{Attribute, AttributeType, ObjectClass, ObjectHandle};
 use cryptoki::session::{Session, UserType};
 use cryptoki::slot::Slot;
+use cryptoki::types::AuthPin;
 
 use crate::crypto;
-use crate::error::SmartcardError;
+use crate::error::{PinTriesLeft, SmartcardError};
 use crate::token::{CryptoToken, TokenCertificate};
 
 /// Environment variable overriding the PKCS#11 module path (plan §2.3). Needed
@@ -66,8 +68,23 @@ fn key_label_for(cert_label: &str) -> String {
     cert_label.replace("CERTIFICATE", "KEY")
 }
 
-fn pkcs11_err(e: cryptoki::error::Error) -> SmartcardError {
+fn pkcs11_err(e: CryptokiError) -> SmartcardError {
     SmartcardError::Pkcs11(e.to_string())
+}
+
+/// Map a PKCS#11 **login** error to a typed [`SmartcardError`], given the token's
+/// best-effort remaining-attempt state (looked up by the caller from token flags).
+///
+/// Pure over its inputs so the mapping is unit-tested offline without a live card.
+/// `CKR_PIN_INCORRECT` → [`SmartcardError::WrongPin`] (carrying `tries_left`),
+/// `CKR_PIN_LOCKED` → [`SmartcardError::PinBlocked`], everything else preserved as
+/// [`SmartcardError::Pkcs11`]. The PIN value is never referenced here.
+fn map_login_error(e: CryptokiError, tries_left: PinTriesLeft) -> SmartcardError {
+    match e {
+        CryptokiError::Pkcs11(RvError::PinLocked, _) => SmartcardError::PinBlocked,
+        CryptokiError::Pkcs11(RvError::PinIncorrect, _) => SmartcardError::WrongPin { tries_left },
+        other => pkcs11_err(other),
+    }
 }
 
 /// A live handle to a Cartão de Cidadão over PKCS#11.
@@ -107,6 +124,19 @@ impl Pkcs11Token {
 
     fn open_session(&self) -> Result<Session, SmartcardError> {
         self.pkcs11.open_ro_session(self.slot).map_err(pkcs11_err)
+    }
+
+    /// Read the token's best-effort remaining-attempt state from its flags
+    /// (`CKF_USER_PIN_LOCKED` / `_FINAL_TRY` / `_COUNT_LOW`), used to annotate a
+    /// [`SmartcardError::WrongPin`]. A token may refuse to reveal it (all flags
+    /// clear) or the query may fail — either yields [`PinTriesLeft::Unknown`].
+    fn pin_tries_left(&self) -> PinTriesLeft {
+        match self.pkcs11.get_token_info(self.slot) {
+            Ok(info) if info.user_pin_locked() => PinTriesLeft::Locked,
+            Ok(info) if info.user_pin_final_try() => PinTriesLeft::FinalTry,
+            Ok(info) if info.user_pin_count_low() => PinTriesLeft::Low,
+            Ok(_) | Err(_) => PinTriesLeft::Unknown,
+        }
     }
 
     /// Locate the private-key object backing `cert`: match by CKA_ID (the robust
@@ -201,15 +231,43 @@ impl CryptoToken for Pkcs11Token {
         cert: &TokenCertificate,
         digest: &[u8; 32],
     ) -> Result<RawSignature, SmartcardError> {
+        // The backward-compatible NULL-PIN path is exactly `sign_digest_with_pin`
+        // with no PIN — one implementation, no divergence.
+        self.sign_digest_with_pin(cert, digest, None)
+    }
+
+    fn sign_digest_with_pin(
+        &self,
+        cert: &TokenCertificate,
+        digest: &[u8; 32],
+        pin: Option<&str>,
+    ) -> Result<RawSignature, SmartcardError> {
         let session = self.open_session()?;
         let key = Self::find_key(&session, cert)?;
 
-        // NULL-PIN login: the middleware advertises a protected authentication
-        // path and owns the PIN/CAN dialog — we never build our own PIN UI
-        // (plan §1.2). The signature key is CKA_ALWAYS_AUTHENTICATE, so real
-        // middleware prompts per operation; context-specific re-auth for such
-        // keys is tuned against hardware (see TESTING.md).
-        session.login(UserType::User, None).map_err(pkcs11_err)?;
+        match pin {
+            // In-app PIN (co-located CC only, plan §0.1): present it to C_Login as
+            // the CKU_USER secret. The borrowed `&str` is a view of a caller-owned
+            // `Zeroizing` buffer; here it is copied only into a cryptoki `AuthPin`
+            // (a `secrecy::SecretString` that zeroizes on drop) which is confined
+            // to this arm and dropped immediately after login. No owned plaintext
+            // copy of the PIN is retained by this crate (plan §6). A rejected PIN
+            // is surfaced as a typed `WrongPin`/`PinBlocked`, never a raw string.
+            Some(pin) => {
+                let auth = AuthPin::new(pin.into());
+                session
+                    .login(UserType::User, Some(&auth))
+                    .map_err(|e| map_login_error(e, self.pin_tries_left()))?;
+            }
+            // NULL-PIN login: the middleware advertises a protected authentication
+            // path and owns the PIN/CAN dialog — we never build our own PIN UI
+            // (plan §1.2). The signature key is CKA_ALWAYS_AUTHENTICATE, so real
+            // middleware prompts per operation; context-specific re-auth for such
+            // keys is tuned against hardware (see TESTING.md).
+            None => {
+                session.login(UserType::User, None).map_err(pkcs11_err)?;
+            }
+        }
 
         let signature = match cert.algorithm {
             SignatureAlgorithm::RsaPkcs1Sha256 => {
@@ -278,5 +336,46 @@ mod tests {
             key_label_for("CITIZEN AUTHENTICATION CERTIFICATE"),
             "CITIZEN AUTHENTICATION KEY"
         );
+    }
+
+    // The login-error mapping is the one PIN-specific branch of the real token that
+    // runs offline: it is pure over a `cryptoki` error + a tries-left hint, so the
+    // CKR_PIN_INCORRECT / CKR_PIN_LOCKED classification is proven here in CI without
+    // a card (the flag lookup that produces the hint needs live hardware and is
+    // covered by `hardware-tests`).
+    use cryptoki::context::Function;
+
+    #[test]
+    fn login_pin_incorrect_maps_to_wrong_pin_with_tries_left() {
+        let err = map_login_error(
+            CryptokiError::Pkcs11(RvError::PinIncorrect, Function::Login),
+            PinTriesLeft::FinalTry,
+        );
+        assert!(matches!(
+            err,
+            SmartcardError::WrongPin {
+                tries_left: PinTriesLeft::FinalTry
+            }
+        ));
+        // The mapped error's Display never contains a PIN value (plan §6).
+        assert!(!err.to_string().to_ascii_lowercase().contains("pin: 0"));
+    }
+
+    #[test]
+    fn login_pin_locked_maps_to_pin_blocked() {
+        let err = map_login_error(
+            CryptokiError::Pkcs11(RvError::PinLocked, Function::Login),
+            PinTriesLeft::Locked,
+        );
+        assert!(matches!(err, SmartcardError::PinBlocked));
+    }
+
+    #[test]
+    fn login_other_error_preserved_as_pkcs11() {
+        let err = map_login_error(
+            CryptokiError::Pkcs11(RvError::FunctionFailed, Function::Login),
+            PinTriesLeft::Unknown,
+        );
+        assert!(matches!(err, SmartcardError::Pkcs11(_)));
     }
 }

@@ -11,11 +11,14 @@
 //! key. Cryptographic round-trip verification is `chancela-cades`'s job (its
 //! tests mint ephemeral keys). See `TESTING.md`.
 
+use std::fmt;
+use std::sync::{Arc, Mutex};
+
 use chancela_cades::{RawSignature, SignatureAlgorithm};
 use sha2::{Digest, Sha256};
 
 use crate::crypto;
-use crate::error::SmartcardError;
+use crate::error::{PinTriesLeft, SmartcardError};
 use crate::token::{
     CertUsage, CryptoToken, LABEL_AUTH_CERT, LABEL_SIGNATURE_CERT, TokenCertificate,
 };
@@ -25,6 +28,53 @@ const FIXTURE_RSA_CERT: &[u8] = include_bytes!("../fixtures/cc_v1_signature_rsa2
 /// A CC v2 (P-256) authentication certificate, DER (self-signed test fixture).
 const FIXTURE_EC_CERT: &[u8] = include_bytes!("../fixtures/cc_v2_authentication_p256.der");
 
+/// How the mock reacts to a presented in-app PIN, so the typed error surfaces
+/// (`WrongPin`/`PinBlocked`) can be driven offline.
+#[derive(Debug, Clone)]
+enum PinPolicy {
+    /// Accept any PIN (and `None`) — the default card behaviour.
+    AcceptAny,
+    /// Require exactly `expected`; any other PIN (or `None`) yields
+    /// [`SmartcardError::WrongPin`] carrying `tries_left`.
+    Require {
+        expected: String,
+        tries_left: PinTriesLeft,
+    },
+    /// The user PIN is blocked — every login attempt yields
+    /// [`SmartcardError::PinBlocked`].
+    Blocked,
+}
+
+/// What the most recent `sign_digest_with_pin` call received, so tests can assert
+/// the PIN plumbing.
+///
+/// This is **offline test infrastructure** (the checked-in mock owns no key and
+/// signs shape-only values). Its `Debug` deliberately **redacts** the recorded PIN
+/// so a `{:?}` on a `MockToken` can never print it (plan §6).
+#[derive(Default)]
+struct PinLoginRecord {
+    /// Whether a non-`None` PIN was presented to the most recent sign call.
+    pin_presented: bool,
+    /// The PIN the last call received (test-only; used to prove the exact value
+    /// threaded through unchanged, never surfaced via `Debug`).
+    received: Option<String>,
+}
+
+impl PinLoginRecord {
+    fn matches(&self, expected: &str) -> bool {
+        self.received.as_deref() == Some(expected)
+    }
+}
+
+impl fmt::Debug for PinLoginRecord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PinLoginRecord")
+            .field("pin_presented", &self.pin_presented)
+            .field("received", &self.received.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
+}
+
 /// An in-memory [`CryptoToken`] for offline tests.
 #[derive(Debug, Clone)]
 pub struct MockToken {
@@ -32,6 +82,11 @@ pub struct MockToken {
     /// When set, signing with the qualified-signature cert fails, simulating a
     /// card whose qualified signature was never activated (plan §1.2).
     signature_activated: bool,
+    /// How the mock reacts to a presented PIN (drives the typed PIN errors).
+    pin_policy: PinPolicy,
+    /// Records the PIN plumbing for test assertions. `Arc<Mutex<_>>` (not `Rc`) so
+    /// `MockToken` stays `Send + Sync` like the real token, and clones share it.
+    login_record: Arc<Mutex<PinLoginRecord>>,
 }
 
 impl MockToken {
@@ -41,6 +96,8 @@ impl MockToken {
         Self {
             certificates,
             signature_activated: true,
+            pin_policy: PinPolicy::AcceptAny,
+            login_record: Arc::new(Mutex::new(PinLoginRecord::default())),
         }
     }
 
@@ -70,6 +127,45 @@ impl MockToken {
     pub fn without_signature_activation(mut self) -> Self {
         self.signature_activated = false;
         self
+    }
+
+    /// Simulate a card that requires exactly `expected` as its in-app PIN: any
+    /// other PIN (or `None`) yields [`SmartcardError::WrongPin`] carrying
+    /// `tries_left`. Used to prove the wrong-PIN + tries-left surfaces (t67).
+    #[must_use]
+    pub fn requiring_pin(mut self, expected: &str, tries_left: PinTriesLeft) -> Self {
+        self.pin_policy = PinPolicy::Require {
+            expected: expected.to_owned(),
+            tries_left,
+        };
+        self
+    }
+
+    /// Simulate a card whose user PIN is blocked: every login attempt yields
+    /// [`SmartcardError::PinBlocked`] (t67).
+    #[must_use]
+    pub fn with_blocked_pin(mut self) -> Self {
+        self.pin_policy = PinPolicy::Blocked;
+        self
+    }
+
+    /// Whether the most recent sign call was given an in-app PIN (test helper).
+    #[must_use]
+    pub fn last_login_used_pin(&self) -> bool {
+        self.login_record
+            .lock()
+            .expect("mock login record poisoned")
+            .pin_presented
+    }
+
+    /// Whether the PIN threaded to the most recent sign call equals `expected`
+    /// (test helper; the recorded PIN is never surfaced directly).
+    #[must_use]
+    pub fn last_login_pin_was(&self, expected: &str) -> bool {
+        self.login_record
+            .lock()
+            .expect("mock login record poisoned")
+            .matches(expected)
     }
 }
 
@@ -132,6 +228,44 @@ impl CryptoToken for MockToken {
             cert.cert_der.clone(),
             Vec::new(),
         ))
+    }
+
+    fn sign_digest_with_pin(
+        &self,
+        cert: &TokenCertificate,
+        digest: &[u8; 32],
+        pin: Option<&str>,
+    ) -> Result<RawSignature, SmartcardError> {
+        // Record the PIN plumbing for the threading assertions before anything can
+        // return early.
+        {
+            let mut rec = self
+                .login_record
+                .lock()
+                .expect("mock login record poisoned");
+            rec.pin_presented = pin.is_some();
+            rec.received = pin.map(str::to_owned);
+        }
+        // Apply the configured PIN policy, so the typed WrongPin/PinBlocked surfaces
+        // are exercised offline. `AcceptAny` (and the `None` protected-auth path)
+        // fall straight through to the shape-only signing below.
+        match &self.pin_policy {
+            PinPolicy::AcceptAny => {}
+            PinPolicy::Blocked => return Err(SmartcardError::PinBlocked),
+            PinPolicy::Require {
+                expected,
+                tries_left,
+            } => {
+                if pin != Some(expected.as_str()) {
+                    return Err(SmartcardError::WrongPin {
+                        tries_left: *tries_left,
+                    });
+                }
+            }
+        }
+        // The PIN only gates login; the produced (shape-only) value is identical to
+        // the NULL-PIN path.
+        self.sign_digest(cert, digest)
     }
 }
 

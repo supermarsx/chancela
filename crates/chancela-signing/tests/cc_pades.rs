@@ -73,6 +73,10 @@ struct CcTestCard {
     /// A separate issuing-CA certificate supplied out-of-band for the TSL gate (the card exposes
     /// only the leaf, so `SmartcardProvider::with_issuer_certificate` carries this).
     issuer_cert_der: Vec<u8>,
+    /// The PIN presented to the most recent `sign_digest_with_pin` call, recorded so the seam test
+    /// can prove the in-app PIN reaches the card (t67). Interior-mutable because `CryptoToken` signs
+    /// through `&self`.
+    recorded_pin: std::sync::Mutex<Option<String>>,
 }
 
 enum SignerKey {
@@ -91,6 +95,7 @@ impl CcTestCard {
             auth_cert_der: auth.cert_der,
             issuer_cert_der: issuer.cert_der,
             signature_key: signature.key,
+            recorded_pin: std::sync::Mutex::new(None),
         }
     }
 
@@ -104,6 +109,7 @@ impl CcTestCard {
             auth_cert_der: auth.cert_der,
             issuer_cert_der: issuer.cert_der,
             signature_key: signature.key,
+            recorded_pin: std::sync::Mutex::new(None),
         }
     }
 
@@ -112,6 +118,11 @@ impl CcTestCard {
             SignerKey::Rsa(_) => SignatureAlgorithm::RsaPkcs1Sha256,
             SignerKey::Ecdsa(_) => SignatureAlgorithm::EcdsaP256Sha256,
         }
+    }
+
+    /// The PIN the card last received (test helper).
+    fn last_pin(&self) -> Option<String> {
+        self.recorded_pin.lock().unwrap().clone()
     }
 }
 
@@ -159,6 +170,19 @@ impl CryptoToken for CcTestCard {
             cert.cert_der.clone(),
             Vec::new(),
         ))
+    }
+
+    fn sign_digest_with_pin(
+        &self,
+        cert: &TokenCertificate,
+        digest: &[u8; 32],
+        pin: Option<&str>,
+    ) -> Result<RawSignature, SmartcardError> {
+        // Record the presented PIN so the seam test can prove the in-app PIN reached the card,
+        // then sign exactly as the protected-auth path would (the key-backed signature is
+        // independent of how login was authenticated).
+        *self.recorded_pin.lock().unwrap() = pin.map(str::to_owned);
+        self.sign_digest(cert, digest)
     }
 }
 
@@ -522,4 +546,143 @@ fn unactivated_signature_fails_cleanly() {
         }
         other => panic!("expected Provider error, got {other:?}"),
     }
+}
+
+// --- t67: in-app CC PIN threading ----------------------------------------------------------------
+
+/// The in-app PIN is threaded end-to-end through `sign_pdf_cc_with_pin`: it reaches the card, and
+/// the produced signature still validates cryptographically over the ByteRange (SIG-24).
+#[test]
+fn cc_in_app_pin_is_threaded_to_the_card_and_validates() {
+    use chancela_signing::cc::sign_pdf_cc_with_pin;
+    use zeroize::Zeroizing;
+
+    let card = CcTestCard::cc_v1();
+    let signature_cert_der = card.signature_cert_der.clone();
+    let issuer_cert_der = card.issuer_cert_der.clone();
+    let provider = SmartcardProvider::new(card).with_issuer_certificate(Some(issuer_cert_der));
+    let mut policy = StaticTrustPolicy::granted();
+    let pin = Zeroizing::new("1234".to_owned());
+
+    let outcome = sign_pdf_cc_with_pin(
+        &provider,
+        &base_pdf(),
+        fixed_time(),
+        &sign_opts(),
+        Some(&mut policy),
+        Some(&pin),
+    )
+    .expect("CC signature with in-app PIN");
+
+    assert_eq!(
+        provider.token().last_pin().as_deref(),
+        Some("1234"),
+        "the in-app PIN reached the card's login"
+    );
+    let report = validate_pdf_signature(&outcome.signed_pdf).expect("signature must validate");
+    assert_eq!(report.cades.signer_cert_der, signature_cert_der);
+}
+
+/// A `None` PIN (the default `sign_pdf_cc` seam) preserves the protected-authentication path — no
+/// PIN is presented to the card.
+#[test]
+fn cc_none_pin_preserves_protected_auth_path() {
+    let card = CcTestCard::cc_v1();
+    let issuer_cert_der = card.issuer_cert_der.clone();
+    let provider = SmartcardProvider::new(card).with_issuer_certificate(Some(issuer_cert_der));
+    let mut policy = StaticTrustPolicy::granted();
+
+    let outcome = sign_pdf_cc(
+        &provider,
+        &base_pdf(),
+        fixed_time(),
+        &sign_opts(),
+        Some(&mut policy),
+    )
+    .expect("CC signature, protected-auth path");
+
+    assert_eq!(
+        provider.token().last_pin(),
+        None,
+        "no PIN is presented on the protected-authentication path"
+    );
+    validate_pdf_signature(&outcome.signed_pdf).expect("signature must validate");
+}
+
+/// `SmartcardProvider` forwards the PIN to the token unchanged (proven on the shape-only
+/// `MockToken`, which records the exact value), and `None` presents no PIN.
+#[test]
+fn provider_forwards_pin_to_token() {
+    use zeroize::Zeroizing;
+
+    let provider = SmartcardProvider::new(MockToken::cartao_de_cidadao_v1());
+    let digest = [0x11u8; 32];
+
+    let pin = Zeroizing::new("4321".to_owned());
+    provider
+        .sign_signed_attributes_with_pin(&digest, Some(&pin))
+        .expect("sign with pin");
+    assert!(provider.token().last_login_used_pin());
+    assert!(provider.token().last_login_pin_was("4321"));
+
+    // The no-PIN entry point presents no PIN (protected-auth path).
+    provider
+        .sign_signed_attributes(&digest)
+        .expect("sign without pin");
+    assert!(!provider.token().last_login_used_pin());
+}
+
+/// A wrong PIN surfaces through the provider as `SigningError::Provider` whose message names the PIN
+/// failure but **never echoes any PIN value** (plan §6).
+#[test]
+fn wrong_pin_surfaces_through_provider_without_leaking_the_pin() {
+    use zeroize::Zeroizing;
+
+    let token = MockToken::cartao_de_cidadao_v1()
+        .requiring_pin("1234", chancela_smartcard::PinTriesLeft::FinalTry);
+    let provider = SmartcardProvider::new(token);
+    let entered = Zeroizing::new("0000".to_owned());
+
+    let err = provider
+        .sign_signed_attributes_with_pin(&[0x22u8; 32], Some(&entered))
+        .expect_err("a wrong PIN must fail");
+
+    match err {
+        SigningError::Provider(msg) => {
+            assert!(
+                !msg.contains("0000") && !msg.contains("1234"),
+                "no PIN value may appear in the error: {msg}"
+            );
+            assert!(
+                msg.to_ascii_lowercase().contains("pin"),
+                "the message names the PIN failure: {msg}"
+            );
+        }
+        other => panic!("expected Provider error, got {other:?}"),
+    }
+}
+
+/// The transient PIN wrapper wipes its buffer on drop — the `Zeroizing` custody the whole in-app-PIN
+/// path relies on (drop-flag pattern; the production PIN is held in exactly this `Zeroizing`).
+#[test]
+fn zeroizing_pin_is_wiped_on_drop() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use zeroize::{Zeroize, Zeroizing};
+
+    static WIPED: AtomicBool = AtomicBool::new(false);
+    struct PinLike;
+    impl Zeroize for PinLike {
+        fn zeroize(&mut self) {
+            WIPED.store(true, Ordering::SeqCst);
+        }
+    }
+
+    {
+        let _guard = Zeroizing::new(PinLike);
+        assert!(!WIPED.load(Ordering::SeqCst), "not wiped while still alive");
+    }
+    assert!(
+        WIPED.load(Ordering::SeqCst),
+        "Zeroizing wipes the PIN when it goes out of scope"
+    );
 }

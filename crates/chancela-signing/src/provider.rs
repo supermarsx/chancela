@@ -46,6 +46,22 @@ pub trait SignerProvider {
         &self,
         signed_attrs_digest: &[u8; 32],
     ) -> Result<RawSignature, SigningError>;
+
+    /// Sign the signed-attributes digest, optionally presenting an **in-app card PIN** (t67).
+    ///
+    /// `pin = None` behaves identically to [`Self::sign_signed_attributes`] and is the default for
+    /// every provider — CMD/CSC collect their PIN/OTP through their own flow, and a software
+    /// certificate carries no card PIN, so only the Cartão de Cidadão provider overrides this. The
+    /// PIN is a caller-owned [`Zeroizing<String>`]; it is borrowed here and forwarded straight to
+    /// the token, never copied into an owned plaintext, logged, or placed in an error (plan §6).
+    fn sign_signed_attributes_with_pin(
+        &self,
+        signed_attrs_digest: &[u8; 32],
+        pin: Option<&Zeroizing<String>>,
+    ) -> Result<RawSignature, SigningError> {
+        let _ = pin;
+        self.sign_signed_attributes(signed_attrs_digest)
+    }
 }
 
 /// The evidentiary label of the CMD OTP confirmation *step* (SIG-02). Exposed so callers/logs can
@@ -132,9 +148,24 @@ impl<T: CryptoToken> SignerProvider for SmartcardProvider<T> {
         &self,
         signed_attrs_digest: &[u8; 32],
     ) -> Result<RawSignature, SigningError> {
+        // The no-PIN path is exactly the in-app-PIN path with no PIN (the NULL-PIN /
+        // protected-authentication login), so there is one implementation.
+        self.sign_signed_attributes_with_pin(signed_attrs_digest, None)
+    }
+
+    fn sign_signed_attributes_with_pin(
+        &self,
+        signed_attrs_digest: &[u8; 32],
+        pin: Option<&Zeroizing<String>>,
+    ) -> Result<RawSignature, SigningError> {
         let cert = self.signature_certificate()?;
+        // Borrow the PIN as a `&str` view of the caller-owned `Zeroizing` buffer: the
+        // secret is never copied into an owned plaintext at this layer. `chancela-smartcard`
+        // maps a rejected/locked PIN to typed `WrongPin`/`PinBlocked`; those cross this seam
+        // as `SigningError::Provider(_)` carrying the PIN-free message (the api resolves the
+        // finer distinction, t67-e8). The token layer never puts the PIN in that message.
         self.token
-            .sign_digest(&cert, signed_attrs_digest)
+            .sign_digest_with_pin(&cert, signed_attrs_digest, pin.map(|p| p.as_str()))
             .map_err(|e| SigningError::Provider(e.to_string()))
     }
 }
