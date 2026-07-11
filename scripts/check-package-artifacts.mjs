@@ -19,6 +19,7 @@ function parseArgs(argv) {
     fixture: false,
     skipDist: false,
     allowEmptyDist: false,
+    requireCleanSource: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -33,6 +34,8 @@ function parseArgs(argv) {
       options.skipDist = true;
     } else if (arg === "--allow-empty-dist") {
       options.allowEmptyDist = true;
+    } else if (arg === "--require-clean-source") {
+      options.requireCleanSource = true;
     } else if (arg === "--help" || arg === "-h") {
       printUsage();
       process.exit(0);
@@ -54,6 +57,8 @@ Options:
   --fixture             Also validate a generated temporary package fixture
   --skip-dist           Validate only the fixture output
   --allow-empty-dist    Do not fail when --dist contains no package artifacts
+  --require-clean-source
+                        Require manifest.sourceProvenance.sourceTreeState to be clean
 `);
 }
 
@@ -166,7 +171,7 @@ function assertExplicitReleaseIntegrity(manifest, label) {
   }
 }
 
-function assertSourceProvenance(manifest, label) {
+function assertSourceProvenance(manifest, label, { requireCleanSource = false } = {}) {
   if (!isRecord(manifest.sourceProvenance)) {
     fail(`${label}: manifest.sourceProvenance is required`);
   }
@@ -178,8 +183,14 @@ function assertSourceProvenance(manifest, label) {
   if (manifest.gitCommit !== provenance.commitSha) {
     fail(`${label}: manifest.gitCommit must mirror manifest.sourceProvenance.commitSha`);
   }
-  if (!["clean", "dirty", "unknown"].includes(provenance.sourceTreeState)) {
+  const sourceTreeState = provenance.sourceTreeState;
+  if (!["clean", "dirty", "unknown"].includes(sourceTreeState)) {
     fail(`${label}: manifest.sourceProvenance.sourceTreeState must be clean, dirty, or unknown`);
+  }
+  if (requireCleanSource && sourceTreeState !== "clean") {
+    fail(
+      `${label}: manifest.sourceProvenance.sourceTreeState must be clean when --require-clean-source is set; got ${sourceTreeState}`,
+    );
   }
   if (provenance.buildMode !== "release") {
     fail(`${label}: manifest.sourceProvenance.buildMode must be release`);
@@ -193,13 +204,13 @@ function assertSourceProvenance(manifest, label) {
   }
 }
 
-function assertManifest(packageRoot, label) {
+function assertManifest(packageRoot, label, options = {}) {
   const manifestPath = path.join(packageRoot, "manifest.json");
   if (!fs.existsSync(manifestPath)) fail(`${label}: missing manifest.json`);
 
   const manifest = readJson(manifestPath);
   assertExplicitReleaseIntegrity(manifest, label);
-  assertSourceProvenance(manifest, label);
+  assertSourceProvenance(manifest, label, options);
 
   if (!Array.isArray(manifest.included) || manifest.included.length === 0) {
     fail(`${label}: manifest.included must be a non-empty array`);
@@ -307,11 +318,11 @@ function assertSha256Sums(packageRoot, label) {
   }
 }
 
-function assertPackageDirectory(packageRoot, label) {
+function assertPackageDirectory(packageRoot, label, options = {}) {
   if (!fs.existsSync(packageRoot) || !fs.statSync(packageRoot).isDirectory()) {
     fail(`${label}: package directory not found`);
   }
-  assertManifest(packageRoot, label);
+  assertManifest(packageRoot, label, options);
   assertSha256Sums(packageRoot, label);
 }
 
@@ -345,13 +356,13 @@ function assertArchiveMembers(archivePath, label) {
   return [...topLevels][0];
 }
 
-function assertArchive(archivePath) {
+function assertArchive(archivePath, options = {}) {
   const label = path.relative(repoRoot, archivePath) || archivePath;
   const topLevel = assertArchiveMembers(archivePath, label);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "chancela-package-"));
   try {
     runTar(["-xzf", archivePath, "-C", tmpDir], label);
-    assertPackageDirectory(path.join(tmpDir, topLevel), `${label}:${topLevel}`);
+    assertPackageDirectory(path.join(tmpDir, topLevel), `${label}:${topLevel}`, options);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -374,7 +385,7 @@ function findPackageOutputs(distDir) {
   return { archives, directories };
 }
 
-function validateDist(distDir, { allowEmptyDist }) {
+function validateDist(distDir, { allowEmptyDist, requireCleanSource = false }) {
   const { archives, directories } = findPackageOutputs(distDir);
   if (archives.length === 0 && directories.length === 0) {
     if (allowEmptyDist) {
@@ -384,9 +395,14 @@ function validateDist(distDir, { allowEmptyDist }) {
     fail(`No package artifacts found in ${distDir}; run npm run package first.`);
   }
 
-  for (const archivePath of archives) assertArchive(archivePath);
+  const validationOptions = { requireCleanSource };
+  for (const archivePath of archives) assertArchive(archivePath, validationOptions);
   for (const directoryPath of directories) {
-    assertPackageDirectory(directoryPath, path.relative(repoRoot, directoryPath) || directoryPath);
+    assertPackageDirectory(
+      directoryPath,
+      path.relative(repoRoot, directoryPath) || directoryPath,
+      validationOptions,
+    );
   }
 
   console.log(`Validated ${archives.length} archive(s) and ${directories.length} package director${directories.length === 1 ? "y" : "ies"} in ${distDir}.`);
@@ -404,7 +420,22 @@ function fileKind(relativePath) {
   return "asset";
 }
 
-function writeFixturePackage(distDir) {
+function writePackageChecksums(packageRoot) {
+  const sums = walkFiles(packageRoot)
+    .map((filePath) => ({ filePath, relativePath: relativePackagePath(packageRoot, filePath) }))
+    .filter(({ relativePath }) => relativePath !== "SHA256SUMS")
+    .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+    .map(({ filePath, relativePath }) => `${sha256(filePath)}  *${relativePath}`)
+    .join("\n");
+  fs.writeFileSync(path.join(packageRoot, "SHA256SUMS"), `${sums}\n`);
+}
+
+function writeManifestAndChecksums(packageRoot, manifest) {
+  fs.writeFileSync(path.join(packageRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  writePackageChecksums(packageRoot);
+}
+
+function writeFixturePackage(distDir, { sourceTreeState = "dirty" } = {}) {
   const stem = "chancela-0.0.0-fixture-x64";
   const packageRoot = path.join(distDir, stem);
   fs.mkdirSync(path.join(packageRoot, "scripts"), { recursive: true });
@@ -431,7 +462,7 @@ function writeFixturePackage(distDir) {
     generatedAt: "2026-01-01T00:00:00.000Z",
     sourceProvenance: {
       commitSha,
-      sourceTreeState: "dirty",
+      sourceTreeState,
       buildMode: "release",
     },
     releaseIntegrity: {
@@ -451,21 +482,13 @@ function writeFixturePackage(distDir) {
     },
   };
 
-  fs.writeFileSync(path.join(packageRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-
-  const sums = walkFiles(packageRoot)
-    .map((filePath) => ({ filePath, relativePath: relativePackagePath(packageRoot, filePath) }))
-    .filter(({ relativePath }) => relativePath !== "SHA256SUMS")
-    .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
-    .map(({ filePath, relativePath }) => `${sha256(filePath)}  *${relativePath}`)
-    .join("\n");
-  fs.writeFileSync(path.join(packageRoot, "SHA256SUMS"), `${sums}\n`);
+  writeManifestAndChecksums(packageRoot, manifest);
 
   runTar(["-czf", `${stem}.tar.gz`, stem], `fixture:${stem}`);
   return packageRoot;
 }
 
-function validateFixture() {
+function validateFixture({ requireCleanSource = false } = {}) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "chancela-package-fixture-"));
   try {
     const distDir = path.join(tmpDir, "dist");
@@ -473,20 +496,44 @@ function validateFixture() {
     const previousCwd = process.cwd();
     process.chdir(distDir);
     try {
-      const packageRoot = writeFixturePackage(distDir);
-      validateDist(distDir, { allowEmptyDist: false });
+      const packageRoot = writeFixturePackage(distDir, {
+        sourceTreeState: requireCleanSource ? "clean" : "dirty",
+      });
+      validateDist(distDir, { allowEmptyDist: false, requireCleanSource });
 
       const headCommit = currentHeadCommit();
+      const manifestPath = path.join(packageRoot, "manifest.json");
+      const baseManifest = readJson(manifestPath);
+      for (const sourceTreeState of ["dirty", "unknown"]) {
+        const manifest = structuredClone(baseManifest);
+        manifest.sourceProvenance.sourceTreeState = sourceTreeState;
+        writeManifestAndChecksums(packageRoot, manifest);
+
+        assertPackageDirectory(packageRoot, `fixture:${sourceTreeState}-source-dev`, {
+          requireCleanSource: false,
+        });
+        expectFail(
+          () =>
+            assertPackageDirectory(packageRoot, `fixture:${sourceTreeState}-source-required`, {
+              requireCleanSource: true,
+            }),
+          "sourceTreeState must be clean when --require-clean-source is set",
+        );
+      }
+      writeManifestAndChecksums(packageRoot, baseManifest);
+
       if (headCommit) {
-        const manifestPath = path.join(packageRoot, "manifest.json");
         const manifest = readJson(manifestPath);
         const mismatchedCommit =
           headCommit === "f".repeat(40) ? "e".repeat(40) : "f".repeat(40);
         manifest.gitCommit = mismatchedCommit;
         manifest.sourceProvenance.commitSha = mismatchedCommit;
-        fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+        writeManifestAndChecksums(packageRoot, manifest);
         expectFail(
-          () => assertPackageDirectory(packageRoot, "fixture:mismatched-head"),
+          () =>
+            assertPackageDirectory(packageRoot, "fixture:mismatched-head", {
+              requireCleanSource,
+            }),
           "does not match current HEAD",
         );
       }
@@ -500,7 +547,7 @@ function validateFixture() {
 
 try {
   const options = parseArgs(process.argv.slice(2));
-  if (options.fixture) validateFixture();
+  if (options.fixture) validateFixture(options);
   if (!options.skipDist) validateDist(options.dist, options);
 } catch (error) {
   console.error(`[package-integrity] ${error.message}`);

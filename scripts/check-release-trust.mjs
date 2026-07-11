@@ -834,8 +834,8 @@ function guardReleaseWorkflow(releaseText) {
 
   requireWorkflowCommand(
     packageJob,
-    /run:\s*npm\s+run\s+test:package-integrity\b/,
-    ".github/workflows/release.yml jobs.package must run package artifact integrity checks",
+    /run:\s*npm\s+run\s+test:package-integrity\s+--\s+--require-clean-source\b/,
+    ".github/workflows/release.yml jobs.package must run package artifact integrity checks with --require-clean-source",
   );
   requireTextMatches(
     packageJob,

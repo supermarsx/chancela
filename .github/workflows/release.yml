@@ -84,7 +84,7 @@ jobs:
         run: npm run package
 
       - name: Check package artifact integrity
-        run: npm run test:package-integrity
+        run: npm run test:package-integrity -- --require-clean-source
 
       - name: Collect manifest and checksum metadata
         id: collect
