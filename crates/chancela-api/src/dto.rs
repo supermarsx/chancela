@@ -2130,6 +2130,14 @@ pub(crate) fn ledger_event_chains(e: &Event) -> Vec<String> {
 pub struct LedgerQuery {
     pub chain: Option<String>,
     pub scope: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::ledger_filter::deserialize_kind_query"
+    )]
+    pub kind: Vec<String>,
+    pub actor: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
     pub limit: Option<usize>,
 }
 

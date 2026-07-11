@@ -99,6 +99,7 @@ mod followups;
 mod hex;
 mod law;
 mod ledger;
+mod ledger_filter;
 mod notifications;
 mod paper_import;
 mod password_policy;
@@ -1377,6 +1378,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/templates", get(documents::list_templates))
         .route("/v1/ledger/events", get(ledger::list_ledger_events))
+        .route(
+            "/v1/ledger/events/page",
+            get(ledger::list_ledger_events_page),
+        )
         .route(
             "/v1/ledger/archive/document",
             get(arquivo::export_archive_document),
@@ -3473,6 +3478,14 @@ mod tests {
     /// Send a request and return (status, content-type, raw body bytes) — for the non-JSON PDF
     /// download. Auto-seeds a session like [`send`].
     async fn send_bytes(state: AppState, req: Request<Body>) -> (StatusCode, String, Vec<u8>) {
+        let (status, ctype, _disposition, bytes) = send_download(state, req).await;
+        (status, ctype, bytes)
+    }
+
+    async fn send_download(
+        state: AppState,
+        req: Request<Body>,
+    ) -> (StatusCode, String, String, Vec<u8>) {
         let req = if req.headers().get("x-chancela-session").is_none() {
             let token = auth_token(&state).await;
             with_session(req, &token)
@@ -3487,10 +3500,16 @@ mod tests {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_owned();
+        let disposition = response
+            .headers()
+            .get("content-disposition")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
         let bytes = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body collects");
-        (status, ctype, bytes.to_vec())
+        (status, ctype, disposition, bytes.to_vec())
     }
 
     #[tokio::test]
@@ -3551,6 +3570,200 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ledger_events_page_handles_thousand_event_chain_without_duplicates() {
+        let state = fresh_state().await;
+        {
+            let mut ledger = state.ledger.write().await;
+            for i in 0..1005 {
+                ledger.append(
+                    "bulk.actor",
+                    "settings",
+                    "settings.updated",
+                    None,
+                    format!("payload-{i}").as_bytes(),
+                );
+            }
+        }
+
+        let (status, first) = send(
+            state.clone(),
+            get("/v1/ledger/events/page?chain=application&limit=50"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(first["limit"], 50);
+        assert_eq!(first["has_more"], true);
+        let first_events = first["events"].as_array().expect("first events");
+        assert_eq!(first_events.len(), 50);
+        assert_eq!(first_events[0]["seq"], 1004);
+        assert_eq!(first_events[49]["seq"], 955);
+        assert!(
+            first_events
+                .windows(2)
+                .all(|pair| pair[0]["seq"].as_u64() > pair[1]["seq"].as_u64()),
+            "page is newest-first: {first_events:?}"
+        );
+        assert!(first_events[0]["hash"].as_str().expect("hash").len() == 64);
+        assert!(
+            first_events[0]["prev_hash"]
+                .as_str()
+                .expect("prev_hash")
+                .len()
+                == 64
+        );
+
+        let cursor = first["next_cursor"].as_u64().expect("next cursor");
+        assert_eq!(cursor, 955);
+        let (status, second) = send(
+            state,
+            get(&format!(
+                "/v1/ledger/events/page?chain=application&limit=50&before_seq={cursor}"
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let second_events = second["events"].as_array().expect("second events");
+        assert_eq!(second_events.len(), 50);
+        assert_eq!(second_events[0]["seq"], 954);
+        assert_eq!(second_events[49]["seq"], 905);
+        let first_seq: std::collections::HashSet<u64> = first_events
+            .iter()
+            .map(|event| event["seq"].as_u64().expect("seq"))
+            .collect();
+        assert!(
+            second_events
+                .iter()
+                .all(|event| !first_seq.contains(&event["seq"].as_u64().expect("seq"))),
+            "second page has no duplicate seq from first page"
+        );
+    }
+
+    #[tokio::test]
+    async fn ledger_events_page_filters_by_chain_scope_kind_actor_and_date() {
+        let state = fresh_state().await;
+        {
+            let mut ledger = state.ledger.write().await;
+            ledger.append(
+                "alice",
+                "settings/archive",
+                "settings.updated",
+                None,
+                b"settings",
+            );
+            ledger.append(
+                "alice",
+                "settings/archive",
+                "settings.reviewed",
+                None,
+                b"settings-review",
+            );
+            ledger.append("bruno", "backup/archive", "backup.created", None, b"backup");
+        }
+
+        let date = {
+            let ledger = state.ledger.read().await;
+            ledger.events()[0]
+                .timestamp
+                .format(&time::format_description::well_known::Rfc3339)
+                .expect("timestamp")
+                .get(..10)
+                .expect("date prefix")
+                .to_owned()
+        };
+        let uri = format!(
+            "/v1/ledger/events/page?chain=application&scope=settings/archive&kind=settings.updated,backup.created&actor=alice&from={date}&to={date}&limit=10"
+        );
+        let (status, page) = send(state.clone(), get(&uri)).await;
+        assert_eq!(status, StatusCode::OK);
+        let events = page["events"].as_array().expect("events");
+        assert_eq!(events.len(), 1, "{page}");
+        assert_eq!(events[0]["kind"], "settings.updated");
+        assert_eq!(events[0]["actor"], "alice");
+        assert_eq!(events[0]["chains"], json!(["global", "application"]));
+
+        let (status, empty) = send(
+            state,
+            get("/v1/ledger/events/page?chain=application&from=2999-01-01"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(empty["events"].as_array().expect("events").is_empty());
+    }
+
+    #[tokio::test]
+    async fn ledger_archive_document_limit_matches_paged_list_for_filtered_exports() {
+        let state = fresh_state().await;
+        {
+            let mut ledger = state.ledger.write().await;
+            for i in 0..300 {
+                ledger.append(
+                    "limit.actor",
+                    "archive/limit-target",
+                    "limit.target",
+                    None,
+                    format!("target-{i}").as_bytes(),
+                );
+            }
+            ledger.append(
+                "limit.actor",
+                "archive/limit-noise",
+                "limit.noise",
+                None,
+                b"noise",
+            );
+        }
+
+        let base =
+            "/v1/ledger/events/page?chain=application&scope=archive/limit-target&kind=limit.target";
+        let export_base = "/v1/ledger/archive/document?chain=application&scope=archive/limit-target&kind=limit.target&format=json";
+
+        for (raw_limit, expected_limit) in [("0", 1_usize), ("500", 250_usize)] {
+            let (status, page) =
+                send(state.clone(), get(&format!("{base}&limit={raw_limit}"))).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(page["limit"], expected_limit);
+            let page_events = page["events"].as_array().expect("page events");
+            assert_eq!(page_events.len(), expected_limit);
+
+            let (status, ctype, _disposition, export_bytes) = send_download(
+                state.clone(),
+                get(&format!("{export_base}&limit={raw_limit}")),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(ctype, "application/json");
+            let export: Value = serde_json::from_slice(&export_bytes).expect("archive json");
+            assert_eq!(export["event_count"], expected_limit);
+            assert!(
+                export["filters"]
+                    .as_str()
+                    .expect("filters")
+                    .contains(&format!("limit={expected_limit}")),
+                "{export}"
+            );
+            let export_events = export["events"].as_array().expect("export events");
+            assert_eq!(export_events.len(), page_events.len());
+            assert_eq!(
+                export_events
+                    .iter()
+                    .map(|event| event["seq"].as_u64().expect("export seq"))
+                    .collect::<Vec<_>>(),
+                page_events
+                    .iter()
+                    .map(|event| event["seq"].as_u64().expect("page seq"))
+                    .collect::<Vec<_>>()
+            );
+            assert!(export_events.iter().all(|event| {
+                event["kind"] == "limit.target"
+                    && event["scope"]
+                        .as_str()
+                        .expect("scope")
+                        .contains("archive/limit-target")
+            }));
+        }
+    }
+
+    #[tokio::test]
     async fn ledger_archive_document_returns_pdfa_and_rejects_bad_chain() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
         let (status, ctype, bytes) = send_bytes(
@@ -3576,6 +3789,69 @@ mod tests {
                 .expect("error")
                 .contains("invalid chain")
         );
+    }
+
+    #[tokio::test]
+    async fn ledger_archive_document_exports_audit_interchange_formats_with_filters() {
+        let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let base = format!(
+            "/v1/ledger/archive/document?chain=book:{book_id}&scope=book:{book_id}&kind=book.opened&limit=1"
+        );
+
+        let (status, pdf_type, pdf_disposition, pdf_bytes) =
+            send_download(state.clone(), get(&base)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(pdf_type, "application/pdf; profile=PDF/A-2u");
+        assert!(pdf_disposition.contains("arquivo-book-"));
+        assert!(pdf_disposition.contains(".pdf"));
+        assert!(pdf_bytes.starts_with(b"%PDF-"));
+
+        let (status, json_type, json_disposition, json_bytes) =
+            send_download(state.clone(), get(&format!("{base}&format=json"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json_type, "application/json");
+        assert!(json_disposition.contains("audit-interchange.json"));
+        let export: Value = serde_json::from_slice(&json_bytes).expect("json export");
+        assert_eq!(export["export_kind"], "audit_interchange");
+        assert_eq!(export["canonical_preserved_evidence"], false);
+        assert_eq!(export["event_count"], 1);
+        assert_eq!(export["order"], "seq_desc");
+        assert_eq!(export["events"][0]["kind"], "book.opened");
+        assert!(
+            export["events"][0]["scope"]
+                .as_str()
+                .expect("scope")
+                .contains(&format!("book:{book_id}"))
+        );
+        assert!(export["events"][0]["hash"].as_str().expect("hash").len() == 64);
+
+        let (status, txt_type, txt_disposition, txt_bytes) =
+            send_download(state.clone(), get(&format!("{base}&format=txt"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(txt_type, "text/plain; charset=utf-8");
+        assert!(txt_disposition.contains("audit-interchange.txt"));
+        let txt = String::from_utf8(txt_bytes).expect("txt utf8");
+        assert!(txt.contains("Audit/interchange export only"));
+        assert!(txt.contains("Eventos exportados: 1"));
+        assert!(txt.contains("kind=book.opened"));
+
+        let (status, csv_type, csv_disposition, csv_bytes) =
+            send_download(state.clone(), get(&format!("{base}&format=csv"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(csv_type, "text/csv; charset=utf-8");
+        assert!(csv_disposition.contains("audit-interchange.csv"));
+        let csv = String::from_utf8(csv_bytes).expect("csv utf8");
+        assert!(csv.contains("seq,chain_seq,kind,scope,actor,timestamp"));
+        assert!(csv.contains("book.opened"));
+
+        let (status, html_type, html_disposition, html_bytes) =
+            send_download(state, get(&format!("{base}&format=html"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(html_type, "text/html; charset=utf-8");
+        assert!(html_disposition.contains("audit-interchange.html"));
+        let html = String::from_utf8(html_bytes).expect("html utf8");
+        assert!(html.contains("Audit/interchange export only"));
+        assert!(html.contains("book.opened"));
     }
 
     #[tokio::test]

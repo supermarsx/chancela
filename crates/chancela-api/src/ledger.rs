@@ -6,8 +6,8 @@ use std::str::FromStr;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use chancela_authz::{Permission, Scope};
-use chancela_ledger::ChainId;
-use serde::Serialize;
+use chancela_ledger::{ChainId, Event};
+use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::actor::CurrentActor;
@@ -15,6 +15,7 @@ use crate::attestation::{self, Attestation};
 use crate::authz::require_permission;
 use crate::dto::{AttestationSummary, LedgerEventView, LedgerQuery};
 use crate::error::ApiError;
+use crate::ledger_filter::{LedgerEventFilters, normalized_page_limit};
 
 /// Default and maximum number of events returned by `GET /v1/ledger/events?limit=` (t41 L3).
 const DEFAULT_LEDGER_LIMIT: usize = 100;
@@ -37,15 +38,20 @@ pub async fn list_ledger_events(
         .filter(|s| !s.is_empty())
         .map(parse_chain)
         .transpose()?;
+    let filters = LedgerEventFilters::from_parts(
+        q.scope,
+        &q.kind,
+        q.actor,
+        q.from.as_deref(),
+        q.to.as_deref(),
+    )?;
     let ledger = state.ledger.read().await;
     let attestations = state.attestations.read().await;
     let mut events: Vec<&_> = match &chain {
         Some(chain) => ledger.events_in_chain(chain),
         None => ledger.events().iter().collect(),
     };
-    if let Some(scope) = &q.scope {
-        events.retain(|e| e.scope.contains(scope.as_str()));
-    }
+    events.retain(|e| filters.matches(e));
     let limit = q
         .limit
         .unwrap_or(DEFAULT_LEDGER_LIMIT)
@@ -62,6 +68,104 @@ pub async fn list_ledger_events(
             })
             .collect(),
     ))
+}
+
+#[derive(Deserialize)]
+pub struct LedgerPageQuery {
+    pub chain: Option<String>,
+    pub scope: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::ledger_filter::deserialize_kind_query"
+    )]
+    pub kind: Vec<String>,
+    pub actor: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub before_seq: Option<u64>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+pub struct LedgerEventsPage {
+    pub events: Vec<LedgerEventView>,
+    pub next_cursor: Option<u64>,
+    pub has_more: bool,
+    pub limit: usize,
+}
+
+/// `GET /v1/ledger/events/page?before_seq=&limit=` — newest-first ledger page.
+///
+/// The cursor is a global `seq` boundary: when `next_cursor` is `Some(n)`, request
+/// `before_seq=n` to fetch the next older page. The displayed order is newest-first, but each
+/// event still carries the original global `seq`, `prev_hash`, and `hash` values; the hash chain
+/// itself remains append-order.
+pub async fn list_ledger_events_page(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    Query(q): Query<LedgerPageQuery>,
+) -> Result<Json<LedgerEventsPage>, ApiError> {
+    require_permission(&state, &actor, Permission::LedgerRead, Scope::Global).await?;
+    let chain = q
+        .chain
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(parse_chain)
+        .transpose()?;
+    let filters = LedgerEventFilters::from_parts(
+        q.scope,
+        &q.kind,
+        q.actor,
+        q.from.as_deref(),
+        q.to.as_deref(),
+    )?;
+    let limit = normalized_page_limit(q.limit);
+    let ledger = state.ledger.read().await;
+    let attestations = state.attestations.read().await;
+
+    let mut selected = Vec::with_capacity(limit.saturating_add(1));
+    for event in ledger.events().iter().rev() {
+        if q.before_seq.is_some_and(|before| event.seq >= before) {
+            continue;
+        }
+        if !event_in_chain(event, chain.as_ref()) || !filters.matches(event) {
+            continue;
+        }
+        selected.push(event);
+        if selected.len() > limit {
+            break;
+        }
+    }
+
+    let has_more = selected.len() > limit;
+    if has_more {
+        selected.truncate(limit);
+    }
+    let next_cursor = has_more
+        .then(|| selected.last().map(|event| event.seq))
+        .flatten();
+    let events = selected
+        .into_iter()
+        .map(|event| {
+            let mut view = LedgerEventView::from(event);
+            view.attestation = attestations.get(&event.seq).map(AttestationSummary::from);
+            view
+        })
+        .collect();
+
+    Ok(Json(LedgerEventsPage {
+        events,
+        next_cursor,
+        has_more,
+        limit,
+    }))
+}
+
+fn event_in_chain(event: &Event, chain: Option<&ChainId>) -> bool {
+    match chain {
+        None | Some(ChainId::Global) => true,
+        Some(chain) => event.links.iter().any(|link| &link.chain == chain),
+    }
 }
 
 fn parse_chain(raw: &str) -> Result<ChainId, ApiError> {

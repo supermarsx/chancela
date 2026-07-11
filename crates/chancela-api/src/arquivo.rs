@@ -4,7 +4,7 @@
 //! does not persist a document and does not append a ledger event; it projects the filtered ledger
 //! state into the existing `DocumentModel` seam and reuses the frozen PDF/A-2u writer.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use axum::body::Body;
@@ -14,10 +14,10 @@ use axum::response::Response;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{Block, BookKind, DocumentModel, KvRow, Run};
 use chancela_ledger::{ChainId, ChainStatus, Event, ReanchorRecord};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use time::macros::format_description;
-use time::{Date, OffsetDateTime, Time};
 
 use crate::AppState;
 use crate::actor::CurrentActor;
@@ -25,6 +25,7 @@ use crate::authz::require_permission;
 use crate::documents::PDFA_PROFILE;
 use crate::error::ApiError;
 use crate::hex::hex;
+use crate::ledger_filter::{LedgerEventFilters, filter_summary, normalized_page_limit};
 
 #[derive(Debug, Deserialize)]
 pub struct ArchiveDocumentQuery {
@@ -33,7 +34,10 @@ pub struct ArchiveDocumentQuery {
     /// Existing substring scope filter.
     pub scope: Option<String>,
     /// Repeatable and CSV-compatible event-kind filter.
-    #[serde(default, deserialize_with = "deserialize_kind_query")]
+    #[serde(
+        default,
+        deserialize_with = "crate::ledger_filter::deserialize_kind_query"
+    )]
     pub kind: Vec<String>,
     /// Exact actor filter.
     pub actor: Option<String>,
@@ -43,125 +47,49 @@ pub struct ArchiveDocumentQuery {
     pub to: Option<String>,
     /// Last-N limit after filters. Omitted means the whole filtered archive.
     pub limit: Option<usize>,
+    /// Export format. `pdfa` is the canonical preserved-evidence rendering; the others are
+    /// audit/interchange exports of the same filtered event set.
+    pub format: Option<ArchiveExportFormat>,
 }
 
-fn deserialize_kind_query<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum OneOrMany {
-        One(String),
-        Many(Vec<String>),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveExportFormat {
+    Pdfa,
+    Json,
+    Txt,
+    Csv,
+    Html,
+}
+
+impl<'de> Deserialize<'de> for ArchiveExportFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "" | "pdf" | "pdfa" | "pdf/a" | "pdf-a" => Ok(Self::Pdfa),
+            "json" => Ok(Self::Json),
+            "txt" | "text" => Ok(Self::Txt),
+            "csv" => Ok(Self::Csv),
+            "html" => Ok(Self::Html),
+            other => Err(serde::de::Error::custom(format!(
+                "invalid archive format {other:?}; expected pdfa, json, txt, csv, or html"
+            ))),
+        }
     }
-
-    Ok(match Option::<OneOrMany>::deserialize(deserializer)? {
-        None => Vec::new(),
-        Some(OneOrMany::One(value)) => vec![value],
-        Some(OneOrMany::Many(values)) => values,
-    })
 }
 
-#[derive(Debug)]
-struct ArchiveFilters {
-    scope: Option<String>,
-    kinds: HashSet<String>,
-    actor: Option<String>,
-    from: Option<OffsetDateTime>,
-    to: Option<UpperBound>,
-}
-
-#[derive(Debug)]
-enum UpperBound {
-    Inclusive(OffsetDateTime),
-    Exclusive(OffsetDateTime),
-}
-
-impl UpperBound {
-    fn contains(&self, timestamp: OffsetDateTime) -> bool {
+impl ArchiveExportFormat {
+    fn extension(self) -> &'static str {
         match self {
-            UpperBound::Inclusive(to) => timestamp <= *to,
-            UpperBound::Exclusive(to) => timestamp < *to,
+            Self::Pdfa => "pdf",
+            Self::Json => "json",
+            Self::Txt => "txt",
+            Self::Csv => "csv",
+            Self::Html => "html",
         }
     }
-}
-
-impl ArchiveFilters {
-    fn from_query(q: &ArchiveDocumentQuery) -> Result<Self, ApiError> {
-        Ok(Self {
-            scope: q.scope.as_ref().filter(|s| !s.is_empty()).cloned(),
-            kinds: parse_kind_filter(&q.kind),
-            actor: q.actor.as_ref().filter(|s| !s.is_empty()).cloned(),
-            from: q.from.as_deref().map(parse_from_bound).transpose()?,
-            to: q.to.as_deref().map(parse_to_bound).transpose()?,
-        })
-    }
-
-    fn matches(&self, event: &Event) -> bool {
-        if let Some(scope) = &self.scope {
-            if !event.scope.contains(scope) {
-                return false;
-            }
-        }
-        if !self.kinds.is_empty() && !self.kinds.contains(&event.kind) {
-            return false;
-        }
-        if let Some(actor) = &self.actor {
-            if &event.actor != actor {
-                return false;
-            }
-        }
-        if let Some(from) = self.from {
-            if event.timestamp < from {
-                return false;
-            }
-        }
-        if let Some(to) = &self.to {
-            if !to.contains(event.timestamp) {
-                return false;
-            }
-        }
-        true
-    }
-}
-
-fn parse_kind_filter(raw: &[String]) -> HashSet<String> {
-    raw.iter()
-        .flat_map(|s| s.split(','))
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-fn parse_from_bound(raw: &str) -> Result<OffsetDateTime, ApiError> {
-    if let Ok(ts) = OffsetDateTime::parse(raw, &Rfc3339) {
-        return Ok(ts);
-    }
-    parse_date(raw).map(|date| date.with_time(Time::MIDNIGHT).assume_utc())
-}
-
-fn parse_to_bound(raw: &str) -> Result<UpperBound, ApiError> {
-    if let Ok(ts) = OffsetDateTime::parse(raw, &Rfc3339) {
-        return Ok(UpperBound::Inclusive(ts));
-    }
-    let date = parse_date(raw)?;
-    let next = date.next_day().ok_or_else(|| {
-        ApiError::Unprocessable("invalid to date: cannot advance past maximum date".to_owned())
-    })?;
-    Ok(UpperBound::Exclusive(
-        next.with_time(Time::MIDNIGHT).assume_utc(),
-    ))
-}
-
-fn parse_date(raw: &str) -> Result<Date, ApiError> {
-    let fmt = format_description!("[year]-[month]-[day]");
-    Date::parse(raw, &fmt).map_err(|_| {
-        ApiError::Unprocessable(format!(
-            "invalid timestamp {raw:?}; expected RFC 3339 or YYYY-MM-DD"
-        ))
-    })
 }
 
 fn parse_chain(raw: Option<&str>) -> Result<ChainId, ApiError> {
@@ -177,17 +105,16 @@ fn parse_chain(raw: Option<&str>) -> Result<ChainId, ApiError> {
 
 fn filtered_events<'a>(
     events: Vec<&'a Event>,
-    filters: &ArchiveFilters,
-    limit: Option<usize>,
+    filters: &LedgerEventFilters,
+    limit: usize,
 ) -> Vec<&'a Event> {
     let mut events: Vec<&Event> = events
         .into_iter()
         .filter(|event| filters.matches(event))
         .collect();
-    if let Some(limit) = limit {
-        let start = events.len().saturating_sub(limit);
-        events.drain(..start);
-    }
+    let start = events.len().saturating_sub(limit);
+    events.drain(..start);
+    events.reverse();
     events
 }
 
@@ -200,7 +127,15 @@ pub async fn export_archive_document(
     require_permission(&state, &actor, Permission::LedgerRead, Scope::Global).await?;
 
     let chain = parse_chain(q.chain.as_deref())?;
-    let filters = ArchiveFilters::from_query(&q)?;
+    let format = q.format.unwrap_or(ArchiveExportFormat::Pdfa);
+    let filters = LedgerEventFilters::from_parts(
+        q.scope.clone(),
+        &q.kind,
+        q.actor.clone(),
+        q.from.as_deref(),
+        q.to.as_deref(),
+    )?;
+    let limit = normalized_page_limit(q.limit);
     let sources = label_sources(&state).await;
     let instance_name = state
         .settings
@@ -214,7 +149,7 @@ pub async fn export_archive_document(
     let (status, records, reanchors) = {
         let ledger = state.ledger.read().await;
         let status = ledger.chain_status(&chain).ok_or(ApiError::NotFound)?;
-        let events = filtered_events(ledger.events_in_chain(&chain), &filters, q.limit);
+        let events = filtered_events(ledger.events_in_chain(&chain), &filters, limit);
         let records = events
             .into_iter()
             .map(|event| RenderRecord::from_event(event, &chain))
@@ -226,32 +161,226 @@ pub async fn export_archive_document(
     let generated_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_default();
-    let filter_summary = filter_summary(&chain, &filters, q.limit);
-    let model = build_archive_document(ArchiveDocumentInput {
+    let filter_summary = filter_summary(&chain.canonical(), &filters, Some(limit));
+    if format == ArchiveExportFormat::Pdfa {
+        let model = build_archive_document(ArchiveDocumentInput {
+            chain: &chain,
+            status: &status,
+            records: &records,
+            reanchors: &reanchors,
+            degraded,
+            sources: &sources,
+            instance_name: &instance_name,
+            generated_at: &generated_at,
+            filter_summary: &filter_summary,
+        });
+        let bytes = chancela_doc::pdfa::write(&model)
+            .map_err(|e| ApiError::Internal(format!("PDF/A generation failed: {e}")))?;
+
+        let filename = format!("arquivo-{}.pdf", chain.canonical().replace(':', "-"));
+        return build_export_response(PDFA_PROFILE, filename, bytes);
+    }
+
+    let filename = format!(
+        "arquivo-{}-audit-interchange.{}",
+        chain.canonical().replace(':', "-"),
+        format.extension()
+    );
+    let (content_type, bytes) = render_interchange_export(InterchangeInput {
+        format,
         chain: &chain,
         status: &status,
         records: &records,
-        reanchors: &reanchors,
         degraded,
-        sources: &sources,
-        instance_name: &instance_name,
         generated_at: &generated_at,
         filter_summary: &filter_summary,
-    });
-    let bytes = chancela_doc::pdfa::write(&model)
-        .map_err(|e| ApiError::Internal(format!("PDF/A generation failed: {e}")))?;
+    })?;
+    build_export_response(content_type, filename, bytes)
+}
 
-    let filename = format!("arquivo-{}.pdf", chain.canonical().replace(':', "-"));
+fn build_export_response(
+    content_type: impl Into<String>,
+    filename: String,
+    bytes: Vec<u8>,
+) -> Result<Response, ApiError> {
     Response::builder()
-        .header(CONTENT_TYPE, PDFA_PROFILE)
+        .header(CONTENT_TYPE, content_type.into())
         .header(
             CONTENT_DISPOSITION,
             format!("attachment; filename=\"{filename}\""),
         )
         .body(Body::from(bytes))
-        .map_err(|e| ApiError::Internal(format!("failed to build pdf response: {e}")))
+        .map_err(|e| ApiError::Internal(format!("failed to build archive response: {e}")))
 }
 
+struct InterchangeInput<'a> {
+    format: ArchiveExportFormat,
+    chain: &'a ChainId,
+    status: &'a ChainStatus,
+    records: &'a [RenderRecord],
+    degraded: bool,
+    generated_at: &'a str,
+    filter_summary: &'a str,
+}
+
+fn render_interchange_export(
+    input: InterchangeInput<'_>,
+) -> Result<(&'static str, Vec<u8>), ApiError> {
+    let chain = input.chain.canonical();
+    let head = input
+        .status
+        .head
+        .as_ref()
+        .map(hex)
+        .unwrap_or_else(|| "-".to_owned());
+    let export_notice =
+        "Audit/interchange export only; PDF/A remains the canonical preserved evidence export.";
+    let bytes = match input.format {
+        ArchiveExportFormat::Json => serde_json::to_vec_pretty(&json!({
+            "export_kind": "audit_interchange",
+            "canonical_preserved_evidence": false,
+            "canonical_evidence_format": "pdfa",
+            "notice": export_notice,
+            "format": "json",
+            "chain": chain,
+            "generated_at": input.generated_at,
+            "filters": input.filter_summary,
+            "event_count": input.records.len(),
+            "chain_length": input.status.length,
+            "chain_head": head,
+            "chain_verified": input.status.verified,
+            "system_degraded": input.degraded,
+            "order": "seq_desc",
+            "events": input.records,
+        }))
+        .map_err(|e| ApiError::Internal(format!("JSON archive export failed: {e}")))?,
+        ArchiveExportFormat::Txt => render_txt(&input, &head, export_notice).into_bytes(),
+        ArchiveExportFormat::Csv => render_csv(&input, export_notice).into_bytes(),
+        ArchiveExportFormat::Html => render_html(&input, &head, export_notice).into_bytes(),
+        ArchiveExportFormat::Pdfa => unreachable!("PDF/A is rendered by the document path"),
+    };
+    let content_type = match input.format {
+        ArchiveExportFormat::Json => "application/json",
+        ArchiveExportFormat::Txt => "text/plain; charset=utf-8",
+        ArchiveExportFormat::Csv => "text/csv; charset=utf-8",
+        ArchiveExportFormat::Html => "text/html; charset=utf-8",
+        ArchiveExportFormat::Pdfa => PDFA_PROFILE,
+    };
+    Ok((content_type, bytes))
+}
+
+fn render_txt(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String {
+    let mut out = String::new();
+    out.push_str("Arquivo - registo de eventos\n");
+    out.push_str(notice);
+    out.push('\n');
+    out.push_str(&format!("Cadeia: {}\n", input.chain.canonical()));
+    out.push_str(&format!("Gerado em: {}\n", input.generated_at));
+    out.push_str(&format!("Filtros: {}\n", input.filter_summary));
+    out.push_str(&format!("Eventos exportados: {}\n", input.records.len()));
+    out.push_str(&format!("Extensao da cadeia: {}\n", input.status.length));
+    out.push_str(&format!("Digest de topo: {head}\n"));
+    out.push_str(&format!("Estado da cadeia: {}\n", input.status.verified));
+    out.push_str(&format!("Modo degradado: {}\n\n", input.degraded));
+    for record in input.records {
+        out.push_str(&format!(
+            "seq={} kind={} timestamp={} actor={} scope={}\n",
+            record.seq, record.kind, record.timestamp, record.actor, record.scope
+        ));
+        out.push_str(&format!("chains={}\n", record.chains.join(",")));
+        out.push_str(&format!("payload_digest={}\n", record.payload_digest));
+        out.push_str(&format!("prev_hash={}\n", record.chain_prev_hash));
+        out.push_str(&format!("hash={}\n\n", record.hash));
+    }
+    out
+}
+
+fn render_csv(input: &InterchangeInput<'_>, notice: &str) -> String {
+    let mut out = String::new();
+    out.push_str("# ");
+    out.push_str(notice);
+    out.push('\n');
+    out.push_str("seq,chain_seq,kind,scope,actor,timestamp,chains,payload_digest,prev_hash,hash,justification\n");
+    for record in input.records {
+        let row = [
+            record.seq.to_string(),
+            record.chain_seq.to_string(),
+            record.kind.clone(),
+            record.scope.clone(),
+            record.actor.clone(),
+            record.timestamp.clone(),
+            record.chains.join("|"),
+            record.payload_digest.clone(),
+            record.chain_prev_hash.clone(),
+            record.hash.clone(),
+            record.justification.clone().unwrap_or_default(),
+        ]
+        .into_iter()
+        .map(csv_escape)
+        .collect::<Vec<_>>()
+        .join(",");
+        out.push_str(&row);
+        out.push('\n');
+    }
+    out
+}
+
+fn render_html(input: &InterchangeInput<'_>, head: &str, notice: &str) -> String {
+    let mut out = String::new();
+    out.push_str("<!doctype html><html lang=\"pt-PT\"><head><meta charset=\"utf-8\"><title>Arquivo - audit interchange</title></head><body>");
+    out.push_str("<h1>Arquivo - registo de eventos</h1>");
+    out.push_str(&format!("<p>{}</p>", html_escape(notice)));
+    out.push_str("<dl>");
+    for (key, value) in [
+        ("Cadeia", input.chain.canonical()),
+        ("Gerado em", input.generated_at.to_owned()),
+        ("Filtros", input.filter_summary.to_owned()),
+        ("Eventos exportados", input.records.len().to_string()),
+        ("Extensao da cadeia", input.status.length.to_string()),
+        ("Digest de topo", head.to_owned()),
+        ("Estado da cadeia", input.status.verified.to_string()),
+        ("Modo degradado", input.degraded.to_string()),
+    ] {
+        out.push_str(&format!(
+            "<dt>{}</dt><dd>{}</dd>",
+            html_escape(key),
+            html_escape(&value)
+        ));
+    }
+    out.push_str("</dl><table><thead><tr><th>Seq</th><th>Acao</th><th>Ambito</th><th>Autor</th><th>Data</th><th>Hash</th></tr></thead><tbody>");
+    for record in input.records {
+        out.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><code>{}</code></td></tr>",
+            record.seq,
+            html_escape(&record.kind),
+            html_escape(&record.scope),
+            html_escape(&record.actor),
+            html_escape(&record.timestamp),
+            html_escape(&record.hash)
+        ));
+    }
+    out.push_str("</tbody></table></body></html>");
+    out
+}
+
+fn csv_escape(value: String) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value
+    }
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+#[derive(Serialize)]
 struct RenderRecord {
     chain_seq: u64,
     chain_prev_hash: String,
@@ -483,39 +612,6 @@ fn kv(key: impl Into<String>, value: impl Into<String>) -> KvRow {
     }
 }
 
-fn filter_summary(chain: &ChainId, filters: &ArchiveFilters, limit: Option<usize>) -> String {
-    let mut parts = vec![format!("cadeia={}", chain.canonical())];
-    if let Some(scope) = &filters.scope {
-        parts.push(format!("scope contem {scope}"));
-    }
-    if !filters.kinds.is_empty() {
-        let mut kinds: Vec<&str> = filters.kinds.iter().map(String::as_str).collect();
-        kinds.sort_unstable();
-        parts.push(format!("kind={}", kinds.join(",")));
-    }
-    if let Some(actor) = &filters.actor {
-        parts.push(format!("actor={actor}"));
-    }
-    if let Some(from) = filters.from {
-        parts.push(format!(
-            "from={}",
-            from.format(&Rfc3339).unwrap_or_default()
-        ));
-    }
-    if let Some(to) = &filters.to {
-        let value = match to {
-            UpperBound::Inclusive(ts) | UpperBound::Exclusive(ts) => {
-                ts.format(&Rfc3339).unwrap_or_default()
-            }
-        };
-        parts.push(format!("to={value}"));
-    }
-    if let Some(limit) = limit {
-        parts.push(format!("limit={limit}"));
-    }
-    parts.join("; ")
-}
-
 fn chain_kind_label(chain: &ChainId) -> &'static str {
     match chain {
         ChainId::Global => "Global",
@@ -621,30 +717,17 @@ mod tests {
             b"4",
         );
 
-        let filters = ArchiveFilters {
-            scope: Some("book:b1".to_owned()),
-            kinds: HashSet::from(["document.generated".to_owned(), "act.sealed".to_owned()]),
-            actor: Some("amelia.marques".to_owned()),
-            from: None,
-            to: None,
-        };
-        let selected = filtered_events(ledger.events().iter().collect(), &filters, Some(1));
+        let filters = LedgerEventFilters::from_parts(
+            Some("book:b1".to_owned()),
+            &["document.generated".to_owned(), "act.sealed".to_owned()],
+            Some("amelia.marques".to_owned()),
+            None,
+            None,
+        )
+        .expect("filters parse");
+        let selected = filtered_events(ledger.events().iter().collect(), &filters, 1);
 
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].kind, "act.sealed");
-    }
-
-    #[test]
-    fn csv_and_repeatable_kind_filters_normalize_to_one_set() {
-        let raw = vec![
-            "book.opened, document.generated".to_owned(),
-            "act.sealed".to_owned(),
-            " ".to_owned(),
-        ];
-        let kinds = parse_kind_filter(&raw);
-        assert_eq!(kinds.len(), 3);
-        assert!(kinds.contains("book.opened"));
-        assert!(kinds.contains("document.generated"));
-        assert!(kinds.contains("act.sealed"));
     }
 }

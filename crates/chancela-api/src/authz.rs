@@ -417,6 +417,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/templates", RouteClass::Gated),           // GET act.read@Global
     // --- Ledger ---------------------------------------------------------------------------------
     ("/v1/ledger/events", RouteClass::Gated), // GET ledger.read@Global
+    ("/v1/ledger/events/page", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/archive/document", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/verify", RouteClass::Gated), // GET ledger.read@Global
     ("/v1/ledger/integrity", RouteClass::Gated), // GET ledger.read@Global
