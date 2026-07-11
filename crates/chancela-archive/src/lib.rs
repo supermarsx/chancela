@@ -287,6 +287,34 @@ pub struct FixitySummary {
     pub total_byte_len: u64,
 }
 
+/// Legal-archive readability mode recorded in the internal manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum LegalArchiveReadabilityMode {
+    /// Manifest-only metadata: no decryption material, import proof, or legal-archive claim.
+    #[default]
+    ManifestOnly,
+}
+
+/// Manifest-only readability and ZK/GDPR caveat metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ReadabilityCaveatMetadata {
+    /// Conservative readability mode for this internal package manifest.
+    pub legal_archive_readability_mode: LegalArchiveReadabilityMode,
+    /// Must remain false: this package does not include keys or decryption material.
+    pub decryption_material_included: bool,
+    /// Must remain false: no import by an external DMS/archive has been verified.
+    pub external_import_verified: bool,
+    /// Must remain false: this package does not certify a legal archive.
+    pub legal_archive_certified: bool,
+    /// Must remain false: this manifest does not claim the source repository is in ZK mode.
+    pub zk_repository_mode: bool,
+    /// Must remain false: ZK does not remove GDPR obligations (LEG-13).
+    pub zk_removes_gdpr_obligations: bool,
+}
+
 /// Internal archival interchange metadata aligned with DGLAB concepts.
 ///
 /// This is intentionally not an official DGLAB interchange claim. It is a stable, structured
@@ -300,6 +328,9 @@ pub struct PreservationInterchangeMetadata {
     pub official_dglab_interchange: bool,
     /// Must remain false: this package does not claim DGLAB certification.
     pub dglab_certification_claimed: bool,
+    /// Manifest-only readability and ZK/GDPR caveats.
+    #[serde(default)]
+    pub readability_caveats: ReadabilityCaveatMetadata,
     /// Producer/operator and source-system metadata.
     pub producer: ProducerMetadata,
     /// Internal package type.
@@ -1046,6 +1077,7 @@ fn preservation_interchange_metadata(
         profile: PRESERVATION_INTERCHANGE_PROFILE.to_owned(),
         official_dglab_interchange: false,
         dglab_certification_claimed: false,
+        readability_caveats: ReadabilityCaveatMetadata::default(),
         producer: ProducerMetadata {
             name: producer_name,
             system: producer_system.clone(),
@@ -1096,6 +1128,36 @@ fn validate_false_claim_flag(label: &str, value: bool) -> Result<(), ArchiveErro
             "{label} must be false"
         )));
     }
+    Ok(())
+}
+
+fn validate_readability_caveats(caveats: &ReadabilityCaveatMetadata) -> Result<(), ArchiveError> {
+    if caveats.legal_archive_readability_mode != LegalArchiveReadabilityMode::ManifestOnly {
+        return Err(ArchiveError::InvalidManifest(
+            "preservation_interchange.readability_caveats.legal_archive_readability_mode must be manifest_only"
+                .to_owned(),
+        ));
+    }
+    validate_false_claim_flag(
+        "preservation_interchange.readability_caveats.decryption_material_included",
+        caveats.decryption_material_included,
+    )?;
+    validate_false_claim_flag(
+        "preservation_interchange.readability_caveats.external_import_verified",
+        caveats.external_import_verified,
+    )?;
+    validate_false_claim_flag(
+        "preservation_interchange.readability_caveats.legal_archive_certified",
+        caveats.legal_archive_certified,
+    )?;
+    validate_false_claim_flag(
+        "preservation_interchange.readability_caveats.zk_repository_mode",
+        caveats.zk_repository_mode,
+    )?;
+    validate_false_claim_flag(
+        "preservation_interchange.readability_caveats.zk_removes_gdpr_obligations",
+        caveats.zk_removes_gdpr_obligations,
+    )?;
     Ok(())
 }
 
@@ -1159,6 +1221,7 @@ fn validate_interchange_metadata(manifest: &PackageManifest) -> Result<(), Archi
             "preservation_interchange.dglab_certification_claimed must be false".to_owned(),
         ));
     }
+    validate_readability_caveats(&metadata.readability_caveats)?;
     validate_required_text(
         "preservation_interchange.producer.name",
         &metadata.producer.name,
@@ -1641,6 +1704,64 @@ mod tests {
     }
 
     #[test]
+    fn readability_caveat_metadata_defaults_are_present_in_manifest() {
+        let package = build_archive_package(sample_input()).unwrap();
+        let second = build_archive_package(sample_input()).unwrap();
+        let manifest = validate_package(&package.bytes).unwrap();
+        let caveats = &manifest.preservation_interchange.readability_caveats;
+
+        assert_eq!(caveats, &ReadabilityCaveatMetadata::default());
+        assert_eq!(
+            caveats.legal_archive_readability_mode,
+            LegalArchiveReadabilityMode::ManifestOnly
+        );
+        assert!(!caveats.decryption_material_included);
+        assert!(!caveats.external_import_verified);
+        assert!(!caveats.legal_archive_certified);
+        assert!(!caveats.zk_repository_mode);
+        assert!(!caveats.zk_removes_gdpr_obligations);
+        assert_eq!(
+            package
+                .manifest
+                .preservation_interchange
+                .readability_caveats,
+            second.manifest.preservation_interchange.readability_caveats
+        );
+
+        let members = read_zip_members(&package.bytes).unwrap();
+        let manifest_json: serde_json::Value =
+            serde_json::from_slice(members.get(MANIFEST_PATH).unwrap()).unwrap();
+        assert_eq!(
+            manifest_json["preservation_interchange"]["readability_caveats"],
+            serde_json::json!({
+                "legal_archive_readability_mode": "manifest_only",
+                "decryption_material_included": false,
+                "external_import_verified": false,
+                "legal_archive_certified": false,
+                "zk_repository_mode": false,
+                "zk_removes_gdpr_obligations": false
+            })
+        );
+    }
+
+    #[test]
+    fn readability_caveats_default_when_missing_from_v1_manifest() {
+        let package = build_archive_package(sample_input()).unwrap();
+        let legacy = tamper_manifest_json(&package.bytes, |manifest| {
+            manifest["preservation_interchange"]
+                .as_object_mut()
+                .unwrap()
+                .remove("readability_caveats");
+        });
+
+        let manifest = validate_package(&legacy).unwrap();
+        assert_eq!(
+            manifest.preservation_interchange.readability_caveats,
+            ReadabilityCaveatMetadata::default()
+        );
+    }
+
+    #[test]
     fn local_dglab_interchange_manifest_generation_is_deterministic() {
         let package = build_archive_package(sample_input_with_evidence_index()).unwrap();
         let package_bytes = package.bytes.clone();
@@ -2059,6 +2180,66 @@ mod tests {
         assert!(
             matches!(validate_manifest(&manifest), Err(ArchiveError::InvalidManifest(message)) if message.contains("dglab_certification_claimed"))
         );
+    }
+
+    #[test]
+    fn readability_caveat_validation_rejects_any_true_overclaim_flag() {
+        type ClaimFlagCase = (&'static str, fn(&mut ReadabilityCaveatMetadata));
+        let cases: [ClaimFlagCase; 5] = [
+            ("decryption_material_included", |caveats| {
+                caveats.decryption_material_included = true
+            }),
+            ("external_import_verified", |caveats| {
+                caveats.external_import_verified = true
+            }),
+            ("legal_archive_certified", |caveats| {
+                caveats.legal_archive_certified = true
+            }),
+            ("zk_repository_mode", |caveats| {
+                caveats.zk_repository_mode = true
+            }),
+            ("zk_removes_gdpr_obligations", |caveats| {
+                caveats.zk_removes_gdpr_obligations = true
+            }),
+        ];
+
+        for (flag, mutate) in cases {
+            let mut manifest = sample_manifest();
+            mutate(&mut manifest.preservation_interchange.readability_caveats);
+            assert!(
+                matches!(
+                    validate_manifest(&manifest),
+                    Err(ArchiveError::InvalidManifest(message)) if message.contains(flag)
+                ),
+                "{flag} must be rejected when true"
+            );
+        }
+    }
+
+    #[test]
+    fn readability_caveats_reject_unknown_manifest_fields() {
+        let package = build_archive_package(sample_input()).unwrap();
+        for field in [
+            "decryption_key",
+            "sync_target",
+            "custody_proof",
+            "official_dglab_interchange",
+            "dglab_certification_claimed",
+        ] {
+            let tampered = tamper_manifest_json(&package.bytes, |manifest| {
+                manifest["preservation_interchange"]["readability_caveats"][field] =
+                    serde_json::json!(true);
+            });
+
+            assert!(
+                matches!(
+                    validate_package(&tampered),
+                    Err(ArchiveError::InvalidManifest(message))
+                        if message.contains("unknown field") && message.contains(field)
+                ),
+                "{field} must not be accepted under readability_caveats"
+            );
+        }
     }
 
     #[test]
