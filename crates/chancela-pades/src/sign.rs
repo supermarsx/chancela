@@ -18,6 +18,7 @@ use der::{Decode, Encode};
 use sha2::{Digest, Sha256};
 use x509_cert::attr::Attribute;
 
+use crate::appearance::{self, SealAppearance};
 use crate::error::PadesError;
 use crate::pdf;
 
@@ -104,7 +105,31 @@ where
     S: FnOnce(&[u8; 32]) -> Result<Vec<u8>, E>,
     E: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    let prepared = prepare_signature(pdf_bytes, opts)?;
+    sign_pdf_with_appearance(pdf_bytes, opts, None, sign_cms)
+}
+
+/// Sign an existing PDF with an optional **visible seal** appearance (t67-e3).
+///
+/// Identical to [`sign_pdf`] but, when `appearance` is `Some`, the signature widget gains a real
+/// `/Rect` on the requested page and an `/AP /N` appearance stream (a text template or a raster
+/// image — see [`SealAppearance`] / [`crate::appearance::SealPlacement`] for the coordinate spec).
+/// With `appearance == None` the widget stays the invisible, locked default (`/Rect [0 0 0 0]`, no
+/// `/AP`), so existing callers are unaffected.
+///
+/// The appearance is baked into the prepared bytes, so the `/ByteRange` digest the CMS attests
+/// already covers the seal — the two-phase [`prepare_signature_with_appearance`] →
+/// [`embed_signature`] seam works the same way.
+pub fn sign_pdf_with_appearance<S, E>(
+    pdf_bytes: &[u8],
+    opts: &SignOptions,
+    appearance: Option<&SealAppearance>,
+    sign_cms: S,
+) -> Result<Vec<u8>, PadesError>
+where
+    S: FnOnce(&[u8; 32]) -> Result<Vec<u8>, E>,
+    E: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    let prepared = prepare_incremental(pdf_bytes, opts, appearance)?;
     let cms = sign_cms(&prepared.byterange_digest).map_err(|e| PadesError::Signer(e.into()))?;
     // No clone: consume the prepared bytes directly (the synchronous path never reuses them).
     embed_cms(prepared.prepared_pdf, prepared.hex_start, &cms)
@@ -123,7 +148,20 @@ pub fn prepare_signature(
     pdf_bytes: &[u8],
     opts: &SignOptions,
 ) -> Result<PreparedSignature, PadesError> {
-    prepare_incremental(pdf_bytes, opts)
+    prepare_incremental(pdf_bytes, opts, None)
+}
+
+/// **Phase 1 of two-phase signing, with an optional visible seal** (t67-e3). Like
+/// [`prepare_signature`] but places a [`SealAppearance`] (real `/Rect` + `/AP /N` stream) when
+/// `appearance` is `Some`; `None` keeps the invisible, locked default. Pair with
+/// [`embed_signature`] exactly as [`prepare_signature`] does — the seal is already in the prepared
+/// bytes and covered by the ByteRange digest.
+pub fn prepare_signature_with_appearance(
+    pdf_bytes: &[u8],
+    opts: &SignOptions,
+    appearance: Option<&SealAppearance>,
+) -> Result<PreparedSignature, PadesError> {
+    prepare_incremental(pdf_bytes, opts, appearance)
 }
 
 /// **Phase 2 of two-phase signing (t57 F5).** Embed `cms` — a detached CMS built over
@@ -143,7 +181,16 @@ pub fn embed_signature(prepared: &PreparedSignature, cms: &[u8]) -> Result<Vec<u
 fn prepare_incremental(
     pdf_bytes: &[u8],
     opts: &SignOptions,
+    appearance: Option<&SealAppearance>,
 ) -> Result<PreparedSignature, PadesError> {
+    if let Some(app) = appearance {
+        if !(app.placement.w > 0.0 && app.placement.h > 0.0) {
+            return Err(PadesError::MalformedStructure(
+                "seal appearance width and height must be positive".into(),
+            ));
+        }
+    }
+
     let doc =
         lopdf::Document::load_mem(pdf_bytes).map_err(|e| PadesError::PdfParse(e.to_string()))?;
 
@@ -182,13 +229,22 @@ fn prepare_incremental(
         .get_object(pages_id)
         .and_then(lopdf::Object::as_dict)
         .map_err(|_| PadesError::MalformedStructure("pages tree missing".into()))?;
-    let page_id = pages
+    // A visible seal targets its requested page; the invisible default stays on the first page
+    // (page 0) as before. The signing path assumes a flat page tree (phase-1 input requirement).
+    let target_page = appearance.map(|a| a.placement.page).unwrap_or(0);
+    let kids = pages
         .get(b"Kids")
         .and_then(lopdf::Object::as_array)
-        .ok()
-        .and_then(|kids| kids.first())
+        .map_err(|_| PadesError::MalformedStructure("pages tree has no /Kids".into()))?;
+    let page_id = kids
+        .get(target_page)
         .and_then(|k| k.as_reference().ok())
-        .ok_or_else(|| PadesError::MalformedStructure("no page in /Kids".into()))?;
+        .ok_or_else(|| {
+            PadesError::MalformedStructure(format!(
+                "requested seal page {target_page} is out of range ({} page(s))",
+                kids.len()
+            ))
+        })?;
     let mut page = doc
         .get_object(page_id)
         .and_then(lopdf::Object::as_dict)
@@ -200,6 +256,18 @@ fn prepare_incremental(
     let af_num = base + 1;
     let field_num = base + 2;
     let sig_num = base + 3;
+
+    // Build the visible-seal appearance objects (form XObject, and for image seals the image
+    // XObject + optional /SMask), numbered from base + 4. `None` keeps the invisible default.
+    let built_appearance = match appearance {
+        Some(app) => Some(appearance::build_appearance(
+            &app.content,
+            app.placement.w,
+            app.placement.h,
+            base + 4,
+        )?),
+        None => None,
+    };
 
     // Catalog gains the AcroForm.
     catalog.set("AcroForm", lopdf::Object::Reference((af_num, 0)));
@@ -239,17 +307,40 @@ fn prepare_incremental(
     field.set("V", lopdf::Object::Reference((sig_num, 0)));
     field.set("Type", lopdf::Object::Name(b"Annot".to_vec()));
     field.set("Subtype", lopdf::Object::Name(b"Widget".to_vec()));
-    // /F 132 = Print (4) + Locked (128): an invisible, locked signature widget.
+    // /F 132 = Print (4) + Locked (128). The Invisible/Hidden bits are NOT set, so the widget is
+    // displayed and printed; visibility is governed by the `/Rect` and `/AP` below — a zero `/Rect`
+    // with no `/AP` shows nothing (the invisible default), a real `/Rect` + `/AP` shows the seal.
     field.set("F", lopdf::Object::Integer(132));
-    field.set(
-        "Rect",
-        lopdf::Object::Array(vec![
-            lopdf::Object::Integer(0),
-            lopdf::Object::Integer(0),
-            lopdf::Object::Integer(0),
-            lopdf::Object::Integer(0),
-        ]),
-    );
+    match (appearance, &built_appearance) {
+        (Some(app), Some(built)) => {
+            // Real /Rect [x, y, x+w, y+h] on the requested page + the /AP /N appearance stream.
+            let p = &app.placement;
+            field.set(
+                "Rect",
+                lopdf::Object::Array(vec![
+                    lopdf::Object::Real(p.x),
+                    lopdf::Object::Real(p.y),
+                    lopdf::Object::Real(p.x + p.w),
+                    lopdf::Object::Real(p.y + p.h),
+                ]),
+            );
+            let mut ap = lopdf::Dictionary::new();
+            ap.set("N", lopdf::Object::Reference((built.normal_ap_num, 0)));
+            field.set("AP", lopdf::Object::Dictionary(ap));
+        }
+        _ => {
+            // Invisible, locked default (backward compatible): zero /Rect, no /AP.
+            field.set(
+                "Rect",
+                lopdf::Object::Array(vec![
+                    lopdf::Object::Integer(0),
+                    lopdf::Object::Integer(0),
+                    lopdf::Object::Integer(0),
+                    lopdf::Object::Integer(0),
+                ]),
+            );
+        }
+    }
     field.set("P", lopdf::Object::Reference((page_id.0, page_id.1)));
 
     // Serialize the overriding / new objects.
@@ -270,16 +361,22 @@ fn prepare_incremental(
     section.push(b'\n');
     let mut offsets: Vec<(u32, usize)> = Vec::new();
 
-    let objects: [(u32, &[u8]); 5] = [
-        (root_id.0, &catalog_body),
-        (page_id.0, &page_body),
-        (af_num, &acroform_body),
-        (field_num, &field_body),
-        (sig_num, &sig_body),
+    // The signature dictionary (the only object carrying `/Contents <` and `/ByteRange [0 `) is
+    // emitted before any appearance stream so those placeholder searches below cannot mismatch on
+    // an image XObject's binary bytes.
+    let mut objects: Vec<(u32, Vec<u8>)> = vec![
+        (root_id.0, catalog_body),
+        (page_id.0, page_body),
+        (af_num, acroform_body),
+        (field_num, field_body),
+        (sig_num, sig_body),
     ];
-    for (id, body) in objects {
+    if let Some(built) = &built_appearance {
+        objects.extend(built.objects.iter().cloned());
+    }
+    for (id, body) in &objects {
         let off = prev_len + section.len();
-        offsets.push((id, off));
+        offsets.push((*id, off));
         section.extend_from_slice(format!("{id} 0 obj\n").as_bytes());
         section.extend_from_slice(body);
         section.extend_from_slice(b"\nendobj\n");
@@ -305,8 +402,9 @@ fn prepare_incremental(
         i = j + 1;
     }
 
-    // Trailer + startxref.
-    let size = sig_num + 1;
+    // Trailer + startxref. /Size is one past the highest object number, which the appearance
+    // objects may push beyond sig_num.
+    let size = objects.iter().map(|(id, _)| *id).max().unwrap_or(sig_num) + 1;
     section.extend_from_slice(
         format!(
             "trailer\n<< /Size {size} /Root {} 0 R /Prev {prev_startxref} >>\n",

@@ -26,9 +26,11 @@ use crate::renewal::{LtvRenewalDeadlineStatus, LtvRenewalPolicy, plan_ltv_renewa
 use crate::sign::MAX_CONTENTS_BYTES;
 use crate::{
     DocTimeStampFailureReason, DocTimeStampReport, DocTimeStampSemanticStatus, DssEvidence,
-    DssReport, LtvRenewalPlanAction, LtvRenewalPlanInput, LtvRenewalPlanScope, SignOptions,
+    DssReport, ImageSeal, LtvRenewalPlanAction, LtvRenewalPlanInput, LtvRenewalPlanScope,
+    SealAppearance, SealContent, SealImageFormat, SealPlacement, SignOptions, TextSeal,
     add_doc_timestamp_revision, add_dss_revision, add_dss_revision_with_validation_time,
-    add_signature_timestamp, inspect_doc_timestamps, inspect_dss, sign_pdf, validate_pdf_signature,
+    add_signature_timestamp, inspect_doc_timestamps, inspect_dss,
+    prepare_signature_with_appearance, sign_pdf, sign_pdf_with_appearance, validate_pdf_signature,
 };
 
 // --- OIDs used only for the in-test self-signed certificates -------------------------------------
@@ -241,6 +243,121 @@ fn sign_with(pdf: &[u8], signer: &TestSigner, opts: &SignOptions) -> Vec<u8> {
         assemble_cades_b(&raw, digest, signing_time)
     })
     .expect("sign_pdf")
+}
+
+/// Sign `pdf` with `signer` placing a visible seal `appearance`.
+fn sign_with_appearance(
+    pdf: &[u8],
+    signer: &TestSigner,
+    opts: &SignOptions,
+    appearance: &SealAppearance,
+) -> Vec<u8> {
+    let signing_time = fixed_time();
+    let cert = signer.cert_der();
+    sign_pdf_with_appearance(pdf, opts, Some(appearance), |digest| {
+        let attrs = signed_attributes_digest(digest, &cert, signing_time)?;
+        let raw = signer.raw_signature(&attrs);
+        assemble_cades_b(&raw, digest, signing_time)
+    })
+    .expect("sign_pdf_with_appearance")
+}
+
+/// A two-page classic-xref PDF (page objects 3 and 4; page index 1 = object 4).
+fn base_pdf_two_pages() -> Vec<u8> {
+    assemble_pdf(
+        &[
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            (
+                3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>",
+            ),
+            (
+                4,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>",
+            ),
+        ],
+        1,
+    )
+}
+
+/// Encode a 2×2 RGBA PNG (one fully transparent pixel, one semi-transparent) so the decode path
+/// exercises the alpha → `/SMask` split.
+fn tiny_rgba_png() -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut out, 2, 2);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("png header");
+        let data: [u8; 16] = [
+            255, 0, 0, 255, // opaque red
+            0, 255, 0, 128, // semi-transparent green
+            0, 0, 255, 255, // opaque blue
+            0, 0, 0, 0, // fully transparent
+        ];
+        writer.write_image_data(&data).expect("png data");
+    }
+    out
+}
+
+/// The signature widget annotation (the merged `/FT /Sig` + `/Subtype /Widget` field) of a signed
+/// PDF, cloned out of the parsed document.
+fn signature_widget(pdf: &[u8]) -> lopdf::Dictionary {
+    let doc = lopdf::Document::load_mem(pdf).expect("parse signed PDF");
+    doc.objects
+        .values()
+        .find_map(|obj| {
+            let dict = obj.as_dict().ok()?;
+            let is_widget = matches!(dict.get(b"Subtype").ok()?.as_name().ok(), Some(b"Widget"));
+            let is_sig = matches!(
+                dict.get(b"FT").ok().and_then(|o| o.as_name().ok()),
+                Some(b"Sig")
+            );
+            (is_widget && is_sig).then(|| dict.clone())
+        })
+        .expect("signature widget present")
+}
+
+/// The four `/Rect` numbers of the signature widget.
+fn widget_rect(widget: &lopdf::Dictionary) -> [f32; 4] {
+    let arr = widget
+        .get(b"Rect")
+        .and_then(|o| o.as_array())
+        .expect("Rect");
+    assert_eq!(arr.len(), 4, "Rect has four numbers");
+    // Whole-number coordinates serialize without a decimal point, so lopdf reparses them as
+    // Integer; `as_float` accepts both Integer and Real.
+    [
+        arr[0].as_float().unwrap(),
+        arr[1].as_float().unwrap(),
+        arr[2].as_float().unwrap(),
+        arr[3].as_float().unwrap(),
+    ]
+}
+
+/// Assert the widget's `/AP /N` references a `/Subtype /Form` XObject in `pdf`, returning the
+/// referenced object id.
+fn assert_ap_is_form_xobject(pdf: &[u8], widget: &lopdf::Dictionary) -> (u32, u16) {
+    let ap = widget
+        .get(b"AP")
+        .and_then(|o| o.as_dict())
+        .expect("/AP dictionary present");
+    let n_ref = ap
+        .get(b"N")
+        .and_then(|o| o.as_reference())
+        .expect("/AP /N reference");
+    let doc = lopdf::Document::load_mem(pdf).expect("parse signed PDF");
+    let form = doc
+        .get_object(n_ref)
+        .and_then(|o| o.as_stream())
+        .expect("/AP /N is a stream");
+    assert_eq!(
+        form.dict.get(b"Subtype").and_then(|o| o.as_name()).ok(),
+        Some(b"Form".as_ref()),
+        "appearance stream is a form XObject"
+    );
+    n_ref
 }
 
 fn add_fixture_timestamp(signed: &[u8]) -> Vec<u8> {
@@ -933,6 +1050,255 @@ fn a_pdf_with_an_existing_acroform_is_rejected() {
         PadesError::MalformedStructure(msg) => assert!(msg.contains("AcroForm"), "got {msg}"),
         other => panic!("expected MalformedStructure, got {other:?}"),
     }
+}
+
+// --- Visible-seal (t67-e3) -----------------------------------------------------------------------
+
+#[test]
+fn visible_text_seal_places_rect_and_ap_and_still_validates() {
+    let signer = TestSigner::new_rsa("PAdES Seal Text", 20);
+    let placement = SealPlacement {
+        page: 0,
+        x: 72.0,
+        y: 700.0,
+        w: 180.0,
+        h: 48.0,
+    };
+    let seal = SealAppearance {
+        placement,
+        // memory: fictional example name, never a real person.
+        content: SealContent::Text(TextSeal::name_date("Amélia Marques", "2026-07-11")),
+    };
+    let signed = sign_with_appearance(&base_pdf(), &signer, &SignOptions::default(), &seal);
+
+    // The B-B signature still validates and covers the whole file except /Contents.
+    let report = validate_pdf_signature(&signed).expect("validate visible-seal PDF");
+    assert!(report.covers_whole_file_except_contents);
+    assert_eq!(report.cades.signer_cert_der, signer.cert_der());
+
+    // Real /Rect = [x, y, x+w, y+h] and a form-XObject appearance stream.
+    let widget = signature_widget(&signed);
+    assert_eq!(widget_rect(&widget), [72.0, 700.0, 252.0, 748.0]);
+    assert_ap_is_form_xobject(&signed, &widget);
+    // Widget bound to the requested page (object 3 = first page).
+    assert_eq!(
+        widget.get(b"P").and_then(|o| o.as_reference()).unwrap(),
+        (3, 0)
+    );
+    // The invisible zero-Rect placeholder is gone.
+    assert!(crate_find(&signed, b"/Rect [0 0 0 0]").is_none());
+}
+
+#[test]
+fn visible_image_seal_embeds_png_with_smask_on_requested_page_and_validates() {
+    let signer = TestSigner::new_ecdsa("PAdES Seal Image", 21);
+    let placement = SealPlacement {
+        page: 1, // second page of a two-page document
+        x: 100.0,
+        y: 120.0,
+        w: 96.0,
+        h: 64.0,
+    };
+    let seal = SealAppearance {
+        placement,
+        content: SealContent::Image(ImageSeal {
+            data: tiny_rgba_png(),
+            format: SealImageFormat::Png,
+        }),
+    };
+    let signed = sign_with_appearance(
+        &base_pdf_two_pages(),
+        &signer,
+        &SignOptions::default(),
+        &seal,
+    );
+
+    // Signature integrity preserved.
+    let report = validate_pdf_signature(&signed).expect("validate image-seal PDF");
+    assert!(report.covers_whole_file_except_contents);
+
+    // /Rect on the requested page and an /AP /N form XObject.
+    let widget = signature_widget(&signed);
+    assert_eq!(widget_rect(&widget), [100.0, 120.0, 196.0, 184.0]);
+    let form_ref = assert_ap_is_form_xobject(&signed, &widget);
+    // Widget bound to page index 1 (object 4 = second page).
+    assert_eq!(
+        widget.get(b"P").and_then(|o| o.as_reference()).unwrap(),
+        (4, 0)
+    );
+
+    // The appearance form references an image XObject, and the RGBA source produced an /SMask.
+    let doc = lopdf::Document::load_mem(&signed).expect("parse");
+    let form = doc
+        .get_object(form_ref)
+        .and_then(|o| o.as_stream())
+        .unwrap();
+    let xobjects = form
+        .dict
+        .get(b"Resources")
+        .and_then(|o| o.as_dict())
+        .and_then(|r| r.get(b"XObject"))
+        .and_then(|o| o.as_dict())
+        .expect("form /Resources /XObject");
+    let im_ref = xobjects
+        .get(b"Im0")
+        .and_then(|o| o.as_reference())
+        .expect("/Im0 image reference");
+    let image = doc.get_object(im_ref).and_then(|o| o.as_stream()).unwrap();
+    assert_eq!(
+        image.dict.get(b"Subtype").and_then(|o| o.as_name()).ok(),
+        Some(b"Image".as_ref())
+    );
+    assert_eq!(
+        image.dict.get(b"Width").and_then(|o| o.as_i64()).ok(),
+        Some(2)
+    );
+    assert_eq!(
+        image.dict.get(b"ColorSpace").and_then(|o| o.as_name()).ok(),
+        Some(b"DeviceRGB".as_ref())
+    );
+    let smask_ref = image
+        .dict
+        .get(b"SMask")
+        .and_then(|o| o.as_reference())
+        .expect("RGBA image carries an /SMask");
+    let smask = doc
+        .get_object(smask_ref)
+        .and_then(|o| o.as_stream())
+        .unwrap();
+    assert_eq!(
+        smask.dict.get(b"ColorSpace").and_then(|o| o.as_name()).ok(),
+        Some(b"DeviceGray".as_ref())
+    );
+}
+
+#[test]
+fn visible_jpeg_seal_embeds_verbatim_dctdecode() {
+    let signer = TestSigner::new_rsa("PAdES Seal JPEG", 22);
+    // A minimal baseline-JPEG header: SOI, an APP0/JFIF stub, then a SOF0 declaring 8×8 3-component,
+    // then SOS. Enough for the frame-header scan; the bytes are embedded verbatim as /DCTDecode.
+    let jpeg: Vec<u8> = vec![
+        0xFF, 0xD8, // SOI
+        0xFF, 0xC0, 0x00, 0x11, // SOF0, length 17
+        0x08, // precision 8
+        0x00, 0x08, // height 8
+        0x00, 0x08, // width 8
+        0x03, // 3 components
+        0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, // component specs
+        0xFF, 0xDA, 0x00, 0x02, // SOS
+        0xFF, 0xD9, // EOI
+    ];
+    let placement = SealPlacement {
+        page: 0,
+        x: 40.0,
+        y: 40.0,
+        w: 72.0,
+        h: 72.0,
+    };
+    let seal = SealAppearance {
+        placement,
+        content: SealContent::Image(ImageSeal {
+            data: jpeg.clone(),
+            format: SealImageFormat::Jpeg,
+        }),
+    };
+    let signed = sign_with_appearance(&base_pdf(), &signer, &SignOptions::default(), &seal);
+
+    let report = validate_pdf_signature(&signed).expect("validate jpeg-seal PDF");
+    assert!(report.covers_whole_file_except_contents);
+
+    let widget = signature_widget(&signed);
+    let form_ref = assert_ap_is_form_xobject(&signed, &widget);
+    let doc = lopdf::Document::load_mem(&signed).expect("parse");
+    let form = doc
+        .get_object(form_ref)
+        .and_then(|o| o.as_stream())
+        .unwrap();
+    let im_ref = form
+        .dict
+        .get(b"Resources")
+        .and_then(|o| o.as_dict())
+        .and_then(|r| r.get(b"XObject"))
+        .and_then(|o| o.as_dict())
+        .and_then(|x| x.get(b"Im0"))
+        .and_then(|o| o.as_reference())
+        .unwrap();
+    let image = doc.get_object(im_ref).and_then(|o| o.as_stream()).unwrap();
+    assert_eq!(
+        image.dict.get(b"Filter").and_then(|o| o.as_name()).ok(),
+        Some(b"DCTDecode".as_ref()),
+        "JPEG embedded as DCTDecode"
+    );
+    assert_eq!(image.content, jpeg, "JPEG bytes embedded verbatim");
+    assert_eq!(
+        image.dict.get(b"ColorSpace").and_then(|o| o.as_name()).ok(),
+        Some(b"DeviceRGB".as_ref())
+    );
+}
+
+#[test]
+fn invisible_default_is_unchanged_with_appearance_api() {
+    // Driving the appearance-capable path with `None` must reproduce the byte-identical invisible
+    // signature the legacy `sign_pdf` produces (backward compatibility).
+    let signer = TestSigner::new_rsa("PAdES Invisible Default", 23);
+    let opts = SignOptions {
+        signing_time: Some("D:20260706142640Z".into()),
+        ..SignOptions::default()
+    };
+    let via_legacy = sign_with(&base_pdf(), &signer, &opts);
+
+    let signing_time = fixed_time();
+    let cert = signer.cert_der();
+    let via_new = sign_pdf_with_appearance(&base_pdf(), &opts, None, |digest| {
+        let attrs = signed_attributes_digest(digest, &cert, signing_time)?;
+        let raw = signer.raw_signature(&attrs);
+        assemble_cades_b(&raw, digest, signing_time)
+    })
+    .expect("sign_pdf_with_appearance(None)");
+
+    assert_eq!(via_legacy, via_new);
+    assert!(crate_find(&via_new, b"/Rect [0 0 0 0]").is_some());
+    assert!(crate_find(&via_new, b"/AP").is_none());
+}
+
+#[test]
+fn seal_page_out_of_range_is_rejected() {
+    let seal = SealAppearance {
+        placement: SealPlacement {
+            page: 5, // base_pdf has one page
+            x: 10.0,
+            y: 10.0,
+            w: 50.0,
+            h: 20.0,
+        },
+        content: SealContent::Text(TextSeal::name_date("Amélia Marques", "2026-07-11")),
+    };
+    let err = prepare_signature_with_appearance(&base_pdf(), &SignOptions::default(), Some(&seal))
+        .unwrap_err();
+    match err {
+        PadesError::MalformedStructure(msg) => assert!(msg.contains("out of range"), "got {msg}"),
+        other => panic!("expected MalformedStructure, got {other:?}"),
+    }
+}
+
+#[test]
+fn seal_zero_size_is_rejected() {
+    let seal = SealAppearance {
+        placement: SealPlacement {
+            page: 0,
+            x: 10.0,
+            y: 10.0,
+            w: 0.0,
+            h: 20.0,
+        },
+        content: SealContent::Text(TextSeal::name_date("Amélia Marques", "2026-07-11")),
+    };
+    let err = prepare_signature_with_appearance(&base_pdf(), &SignOptions::default(), Some(&seal))
+        .unwrap_err();
+    assert!(
+        matches!(err, PadesError::MalformedStructure(_)),
+        "got {err:?}"
+    );
 }
 
 /// Tiny helper: first occurrence of `needle` in `haystack` (tests avoid depending on `pdf` internals).

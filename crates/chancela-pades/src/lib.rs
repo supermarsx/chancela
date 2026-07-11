@@ -36,6 +36,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod appearance;
 pub mod archive_timestamp;
 pub mod dss;
 pub mod error;
@@ -48,6 +49,9 @@ mod pdf;
 #[cfg(test)]
 mod tests;
 
+pub use appearance::{
+    ImageSeal, SealAppearance, SealContent, SealImageFormat, SealPlacement, SealTextLine, TextSeal,
+};
 pub use archive_timestamp::{
     DocTimeStampFailureReason, DocTimeStampReport, DocTimeStampSemanticStatus,
     DocTimeStampValidation, add_doc_timestamp_revision, inspect_doc_timestamps,
@@ -62,6 +66,6 @@ pub use renewal::{
 };
 pub use sign::{
     MAX_CONTENTS_BYTES, PreparedSignature, SignOptions, add_signature_timestamp, embed_signature,
-    prepare_signature, sign_pdf,
+    prepare_signature, prepare_signature_with_appearance, sign_pdf, sign_pdf_with_appearance,
 };
 pub use validate::{PdfSignatureReport, validate_pdf_signature};

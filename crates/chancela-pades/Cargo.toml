@@ -19,6 +19,7 @@ x509-tsp = { workspace = true }
 cms = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+png = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
