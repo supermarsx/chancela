@@ -130,6 +130,20 @@ function RoleEditor({
   );
 }
 
+function RoleDriftStatus({ role }: { role: RoleView }) {
+  const drift = role.seeded_role_drift;
+  if (!drift) return <span className="muted">-</span>;
+  if (!drift.requires_manual_review || drift.missing_default_permissions.length === 0) {
+    return <span className="muted">Atual</span>;
+  }
+  return (
+    <span className="row-wrap">
+      <Badge tone="warn">Revisão manual</Badge>
+      <span className="muted">Faltam: {drift.missing_default_permissions.join(', ')}</span>
+    </span>
+  );
+}
+
 /** One role row: name, protected badge, permission count, and (for non-protected roles)
  *  gated Edit + Delete affordances. Delete uses an inline two-step confirm. */
 function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) => void }) {
@@ -163,6 +177,9 @@ function RoleRow({ role, onEdit }: { role: RoleView; onEdit: (role: RoleView) =>
         ) : null}
       </td>
       <td>{t('rbac.roles.permissionsCount', { count: role.permissions.length })}</td>
+      <td>
+        <RoleDriftStatus role={role} />
+      </td>
       <td className="users-actions">
         {role.protected ? (
           <span className="muted">{t('rbac.roles.readonly')}</span>
@@ -269,6 +286,7 @@ export function FuncoesSection() {
                 <tr>
                   <th>{t('rbac.roles.table.name')}</th>
                   <th>{t('rbac.roles.table.permissions')}</th>
+                  <th>Estado</th>
                   <th>{t('rbac.roles.table.action')}</th>
                 </tr>
               }

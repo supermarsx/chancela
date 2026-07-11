@@ -328,6 +328,15 @@ impl From<ScopeInput> for Scope {
     }
 }
 
+/// Read-only drift diagnostics for an editable seeded role. Missing permissions are permissions the
+/// current persisted role lacks compared with the current default seed; they are never reconciled by
+/// this view.
+#[derive(Debug, Serialize)]
+pub struct SeededRoleDriftView {
+    pub missing_default_permissions: Vec<String>,
+    pub requires_manual_review: bool,
+}
+
 /// A role rendered for the web (FROZEN for E6/t62). `permissions` are dotted verb ids in the role's
 /// deterministic (`BTreeSet`) order; `protected` marks the locked, undeletable Owner.
 #[derive(Debug, Serialize)]
@@ -336,10 +345,13 @@ pub struct RoleView {
     pub name: String,
     pub permissions: Vec<String>,
     pub protected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seeded_role_drift: Option<SeededRoleDriftView>,
 }
 
 impl From<&Role> for RoleView {
     fn from(r: &Role) -> Self {
+        let seeded_role_drift = seeded_role_drift(r);
         RoleView {
             id: r.id.0.to_string(),
             name: r.name.clone(),
@@ -349,8 +361,25 @@ impl From<&Role> for RoleView {
                 .map(|p| p.as_str().to_owned())
                 .collect(),
             protected: r.protected,
+            seeded_role_drift,
         }
     }
+}
+
+fn seeded_role_drift(role: &Role) -> Option<SeededRoleDriftView> {
+    let seeded = chancela_authz::default_roles()
+        .into_iter()
+        .find(|seeded| seeded.id == role.id && !seeded.protected)?;
+    let missing_default_permissions: Vec<String> = seeded
+        .permission_set
+        .difference(&role.permission_set)
+        .map(|p| p.as_str().to_owned())
+        .collect();
+    let requires_manual_review = !missing_default_permissions.is_empty();
+    Some(SeededRoleDriftView {
+        missing_default_permissions,
+        requires_manual_review,
+    })
 }
 
 /// One verb in the permission catalog (`GET /v1/permissions`), tagged with whether it is a
@@ -877,6 +906,41 @@ mod tests {
         assert_eq!(
             cat.get(chancela_authz::API_CLIENT_ROLE_ID),
             Some(&custom_api_client)
+        );
+    }
+
+    #[test]
+    fn customized_seeded_platform_admin_reports_missing_defaults_without_granting_them() {
+        let mut custom_platform_admin = Role::platform_administrator();
+        assert!(
+            custom_platform_admin
+                .permission_set
+                .remove(&Permission::PlatformLogsWrite)
+        );
+        let mut cat: RoleCatalog = [Role::owner(), custom_platform_admin.clone()]
+            .into_iter()
+            .collect();
+
+        assert!(ensure_seeded_defaults(&mut cat));
+        let stored = cat
+            .get(chancela_authz::PLATFORM_ADMIN_ROLE_ID)
+            .expect("platform administrator remains present");
+        assert_eq!(stored, &custom_platform_admin);
+        assert!(
+            !stored
+                .permission_set
+                .contains(&Permission::PlatformLogsWrite)
+        );
+
+        let view = RoleView::from(stored);
+        assert!(!view.permissions.contains(&"platform.logs.write".to_owned()));
+        let drift = view
+            .seeded_role_drift
+            .expect("seeded editable role has status");
+        assert!(drift.requires_manual_review);
+        assert_eq!(
+            drift.missing_default_permissions,
+            vec!["platform.logs.write".to_owned()]
         );
     }
 

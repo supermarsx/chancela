@@ -2337,6 +2337,12 @@ export interface SessionPermissions {
 // serde-`kind`-tagged union `{"kind":"global"|"entity"|"book","id"?}`. We reuse
 // `PermissionScope` for both so the scope picker maps directly onto the wire.
 
+/** Read-only seeded-role drift diagnostics from `GET /v1/roles`. */
+export interface SeededRoleDriftView {
+  missing_default_permissions: string[];
+  requires_manual_review: boolean;
+}
+
 /** A role rendered for the web (`GET /v1/roles`, t64-E4). `permissions` are dotted verb ids
  *  in the role's deterministic order; `protected` marks the locked, undeletable Owner. */
 export interface RoleView {
@@ -2344,6 +2350,8 @@ export interface RoleView {
   name: string;
   permissions: string[];
   protected: boolean;
+  /** Present for editable seeded roles; never means the server auto-reconciled permissions. */
+  seeded_role_drift?: SeededRoleDriftView | null;
 }
 
 /** One verb in the permission catalog (`GET /v1/permissions`), tagged with whether it is a

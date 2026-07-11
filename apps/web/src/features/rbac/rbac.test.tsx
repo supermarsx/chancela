@@ -211,6 +211,37 @@ describe('FuncoesSection — role create + gating', () => {
     expect(screen.getByText(/role\.manage/)).toBeTruthy();
     vi.unstubAllGlobals();
   });
+
+  it('shows seeded role drift as a manual-review status', async () => {
+    const { fn } = mockFetch([
+      {
+        method: 'GET',
+        match: '/v1/roles',
+        body: [
+          {
+            id: 'platform-admin',
+            name: 'Platform Administrator',
+            permissions: ['role.manage'],
+            protected: false,
+            seeded_role_drift: {
+              missing_default_permissions: ['platform.logs.write'],
+              requires_manual_review: true,
+            },
+          },
+        ],
+      },
+      { method: 'GET', match: '/v1/permissions', body: CATALOG },
+    ]);
+    vi.stubGlobal('fetch', fn);
+
+    renderRbac(<FuncoesSection />);
+
+    const row = (await screen.findByText('Platform Administrator')).closest('tr')!;
+    expect(within(row).getByText('Revisão manual')).toBeTruthy();
+    expect(within(row).getByText(/Faltam: platform\.logs\.write/)).toBeTruthy();
+    expect(within(row).queryByText(/corrigid|automatic/i)).toBeNull();
+    vi.unstubAllGlobals();
+  });
 });
 
 // --- Scoped role assignment -----------------------------------------------------
