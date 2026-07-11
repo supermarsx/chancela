@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 pub mod asic;
 pub mod asic_sign;
 pub mod asic_validate;
+pub mod batch;
 pub mod cc;
 pub mod cmd_session;
 pub mod envelope;
@@ -60,6 +61,10 @@ pub use asic_sign::{AsicEMultiSignRequest, sign_asic_e_multi, sign_asic_s_xades}
 pub use asic_validate::{
     AsicArchiveTimestampValidation, AsicSignatureValidation, AsicValidationReport,
     validate_asic_container,
+};
+pub use batch::{
+    AuthMode, BatchCadesDocument, BatchDocumentOutcome, BatchPdfDocument, BatchReport,
+    sign_detached_cades_batch, sign_pdf_batch,
 };
 pub use cc::{CcSignedPdf, sign_pdf_cc};
 pub use cmd_session::{
@@ -94,7 +99,9 @@ pub use validate::{
 // Re-export the pieces of the underlying stack callers most often name through this crate.
 pub use chancela_cades::{RawSignature, SignatureAlgorithm};
 pub use chancela_pades::{
-    DssEvidence, DssReport, PreparedSignature, SignOptions, embed_signature, prepare_signature,
+    DssEvidence, DssReport, ImageSeal, PreparedSignature, SealAppearance, SealContent,
+    SealImageFormat, SealPlacement, SealTextLine, SignOptions, TextSeal, embed_signature,
+    prepare_signature, prepare_signature_with_appearance, sign_pdf_with_appearance,
 };
 pub use chancela_tsa::{Timestamp, TsaClient};
 pub use chancela_xades::{XadesLevel, XadesValidationReport, validate_xades};
