@@ -3909,8 +3909,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
-    "previews retained export cleanup without changing the crash cleanup target",
-    "data management retained-export preview row coverage",
+    "previews retained export cleanup before explicit confirmed execution",
+    "data management retained-export preview-before-execution coverage",
   );
   assertFileContains(
     "crates/chancela-api/src/data_status.rs",
@@ -3938,14 +3938,39 @@ function assertCheckpointMap() {
     "data management retained-export preview payload marker",
   );
   assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "const EXPORT_CLEANUP_EXECUTION_BODY =",
+    "data management retained-export execution payload marker",
+  );
+  assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "minimum_age_days: 30",
     "data management retained-export preview minimum-age marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "dry_run: false",
+    "data management retained-export execution dry-run false marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "keep_latest: 5",
+    "data management retained-export keep-latest marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
     "Nenhum ficheiro foi removido",
     "data management retained-export no-files-removed copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
+    "foram removidos",
+    "data management retained-export deleted-counter execution copy marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/recovery/GestaoDadosSection.tsx",
+    "canConfirm={activeCleanup?.target !== 'exports' || hasExportCleanupPreview}",
+    "data management retained-export shared modal preview gate marker",
   );
   assertFileContains(
     "apps/web/src/features/recovery/GestaoDadosSection.test.tsx",
@@ -4933,12 +4958,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree retained-export cleanup dry-run checks",
-    "CI/E2E hardening plan retained-export dry-run checks marker",
+    "Current working-tree retained-export cleanup UX checks",
+    "CI/E2E hardening plan retained-export cleanup UX checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "preview-only no-files-removed\n  Settings payload markers",
+    "copy, disabled execution button before preview, shared-modal confirmation\n  gate, execution payload that preserves the policy fields",
     "CI/E2E hardening plan retained-export preview no-delete marker",
   );
   assertFileContains(
@@ -5728,7 +5753,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "not GDPR erasure, legal disposal, anonymization/redaction\n  completion",
+    "not GDPR erasure, legal disposal, archive deletion,\n  certification",
     "spec coverage retained-export no-erasure-disposal marker",
   );
   assertFileContains(

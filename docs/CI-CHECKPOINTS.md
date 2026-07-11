@@ -152,7 +152,8 @@ imported-document review receipt markers for pending/reviewed states and
 no-extra-route behavior, trust identifier-match explanation/copy-safe hash and
 SKI markers,
 retained-export `would_delete_*`/zero-`deleted_*` dry-run planning markers,
-preview-only Settings payload/no-files-removed markers, post-act
+preview-only Settings payload/no-files-removed markers, retained-export
+execution payload/modal-gate/deleted-counter markers, post-act
 `Certidao`/`Extrato` `ata_number`/`payload_digest` template lint markers,
 standalone agenda-item template IDs, rendering markers, and the 101-template
 census, CSC delegation/revocation template IDs/rendering markers, forwarded

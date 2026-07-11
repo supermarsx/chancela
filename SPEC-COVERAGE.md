@@ -194,9 +194,14 @@ Implementation checkpoints covered here:
   non-export targets. Settings Data Management now uses a preview-only exports
   request of `{ target: "exports", dry_run: true, minimum_age_days: 30,
   keep_latest: 5 }` and renders the resulting plan with explicit copy that no
-  files were removed. This is retained-export cleanup planning and UI preview
-  only; it is not GDPR erasure, legal disposal, anonymization/redaction
-  completion, retention execution, or a deletion/legal-effect claim.
+  files were removed. The guarded execution control is exposed only after that
+  preview and shared modal confirmation, preserves the same export policy
+  fields while changing only `dry_run` to `false`, and renders execution
+  results from `deleted_*` counters rather than preview `would_delete_*`
+  counters. This is retained local export file cleanup UX for existing backend
+  guardrails; it is not GDPR erasure, legal disposal, archive deletion,
+  certification, anonymization/redaction completion, full data deletion,
+  retention execution, or a broad deletion/legal-effect claim.
 - Working tree keeps Documents/Workflows/UX/CI **PARTIAL**: accepted
   paper-book OCR drafts can now create/list metadata-only, non-canonical
   conversion dossiers through `POST
@@ -1374,10 +1379,12 @@ rendering plus the MCP draft-vs-signed comparison prompt/resource are AI/UX
 human-review coverage. Guest dashboard recent-event redaction is read-response
 redaction only. Generated-document by-id downloads are Documents/Workflow
 plumbing for non-Ata generated rows only. Retained-export cleanup dry-run
-planning is Data/Documents/UX preview coverage only, and the post-act
+planning/execution UX is retained local export file cleanup coverage only, with
+execution exposed after preview plus shared modal confirmation, and the post-act
 `Certidao`/`Extrato` sealed-provenance lint is Template Catalog/CI
 test/build-time coverage only. These keep the affected top-level
-areas **PARTIAL** and do not add deletion/retention execution, official DGLAB
+areas **PARTIAL** and do not add GDPR erasure, legal disposal, archive deletion,
+certification, full data deletion, official DGLAB
 interchange/certification/approval, legal archive custody, model accuracy,
 legal advice, source certification, new provider/network behavior, non-stdio MCP
 transport, unreviewed finalization, hidden signing/API/provider calls, DRE
@@ -1964,12 +1971,18 @@ behavior, legal disposal, or legal-effect claims.
   `would_delete_files`, `would_delete_directories`, and `would_delete_bytes` while every
   `deleted_*` counter stays zero, and those options are rejected for crash cleanup. Data Management
   renders the same status with refresh, copy-path, scan-error, browser-safe open-folder-disabled
-  states, and cleanup controls, and the retained-export action posts the preview-only
-  `{ target: "exports", dry_run: true, minimum_age_days: 30, keep_latest: 5 }` payload with
-  explicit no-files-removed copy. This does not add durable log
-  retention, SQLCipher production enablement, storage migration tooling, arbitrary deletion, GDPR
-  erasure, legal disposal approval, legal retention execution, physical deletion guarantees beyond
-  the bounded cleanup behavior, or complete data lifecycle automation.
+  states, and cleanup controls, and the retained-export action first posts the
+  `{ target: "exports", dry_run: true, minimum_age_days: 30, keep_latest: 5 }` preview payload
+  with explicit no-files-removed copy. The execution button stays disabled until
+  that dry-run result exists, the shared confirmation modal gates execution, the
+  execution payload preserves `target: "exports"`, `minimum_age_days: 30`, and
+  `keep_latest: 5` while changing only `dry_run` to `false`, and the result copy
+  reads `deleted_*` counters instead of preview `would_delete_*` counters. This
+  does not add durable log retention, SQLCipher production enablement, storage
+  migration tooling, arbitrary deletion, GDPR erasure, legal disposal approval,
+  archive deletion, certification, legal retention execution, full data
+  deletion, physical deletion guarantees beyond the bounded cleanup behavior, or
+  complete data lifecycle automation.
 - **Local PDF signature validator endpoint:** `POST /v1/signature/pdf/validate` accepts a bounded
   raw PDF or JSON/base64 envelope and returns local technical evidence: file SHA-256/size,
   PDF-structure markers, signature and ByteRange signals, PAdES/CAdES validation where available,
@@ -2852,12 +2865,14 @@ behavior, legal disposal, or legal-effect claims.
   notification, approve or execute transfers, or certify GDPR compliance.
 - Data cleanup is bounded storage maintenance for crash reports and retained exports. Retained-export
   dry-run, minimum-age, and keep-latest options are policy controls for that cleanup target only; the
-  dry-run surface reports `would_delete_*` planning counters and zero `deleted_*` counters, and the
-  Settings preview states that no files were removed. Guarded archive disposal execution is
-  non-destructive ledger/audit evidence only; these surfaces are not GDPR erasure, legal disposal
-  approval, anonymization/redaction completion, legal retention certification, certification of
-  data-lifecycle compliance, or physical deletion guarantees beyond the existing bounded cleanup
-  behavior.
+  dry-run surface reports `would_delete_*` planning counters and zero `deleted_*` counters. The
+  Settings preview states that no files were removed; retained-export execution is only exposed
+  after that preview plus confirmation, preserves the policy fields with `dry_run: false`, and
+  reports `deleted_*` execution counters. Guarded archive disposal execution is non-destructive
+  ledger/audit evidence only; these surfaces are not GDPR erasure, legal disposal approval, archive
+  deletion, certification, anonymization/redaction completion, legal retention certification,
+  certification of data-lifecycle compliance, full data deletion, or physical deletion guarantees
+  beyond the existing bounded cleanup behavior.
 - Data-status filesystem categories for `platform-logs.json` and
   `backup-recovery-drills.json` are telemetry labels for usage/status display.
   They do not change cleanup targets, execute retention, delete files, prove

@@ -98,6 +98,12 @@ test operating checklist for driving Chancela toward release confidence.
   The retained-export action now uses export-only dry-run planning for the
   Settings preview: `would_delete_*` counters are reported while `deleted_*`
   counters stay zero, and the preview copy states that no files were removed.
+  The cleanup execution control is disabled until that dry-run exists; the
+  shared confirmation modal then posts the same export policy payload with only
+  `dry_run` changed to `false` and renders execution results from `deleted_*`
+  counters. Treat this as retained local export file cleanup only, not GDPR
+  erasure, legal disposal, archive deletion, certification, or full data
+  deletion.
 - Data-status filesystem classification now groups `platform-logs.json` as
   `platform_logs` and `backup-recovery-drills.json` as
   `backup_recovery_drills` while preserving durable permission/status behavior.
@@ -440,7 +446,10 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   bounded maintenance rows, rejects unknown cleanup targets, and preserves
   permission/usage diagnostics after a failed cleanup. Retained-export dry-run
   preview reports `would_delete_*`, keeps `deleted_*` at zero, and must not
-  delete files or accept those policy fields for crash cleanup.
+  delete files or accept those policy fields for crash cleanup. Retained-export
+  execution is UI-gated by that preview plus the shared confirmation modal,
+  keeps `{ target: "exports", minimum_age_days: 30, keep_latest: 5 }`, changes
+  only `dry_run` to `false`, and renders `deleted_*` execution counts.
 - SQLCipher package defaults are checked statically, and plaintext development
   paths remain explicit so local tests do not silently claim production
   encrypted deployment.
@@ -694,15 +703,19 @@ settingsDefaults.test.ts contracts.test.ts`.
   Settings user create/edit email, Ata signatory email, and Data Management
   cleanup-row/retained-export target coverage are the focused UI checks for the
   latest web slices, alongside Prettier and ESLint.
-- Current working-tree retained-export cleanup dry-run checks: focused API/core
+- Current working-tree retained-export cleanup UX checks: focused API/core
   markers pin export dry-run `would_delete_files`, `would_delete_directories`,
   and `would_delete_bytes` planning with `deleted_files`, `deleted_directories`,
   and `deleted_bytes` all zero and retained files preserved. Focused Settings
   Data Management markers pin the preview-only `{ target: "exports", dry_run:
-  true, minimum_age_days: 30, keep_latest: 5 }` payload and no-files-removed
-  result copy. Crash cleanup continues to reject export policy fields. This is
-  planning/preview coverage only, not GDPR erasure, legal disposal,
-  anonymization/redaction completion, retention execution, or a deletion claim.
+  true, minimum_age_days: 30, keep_latest: 5 }` payload, no-files-removed result
+  copy, disabled execution button before preview, shared-modal confirmation
+  gate, execution payload that preserves the policy fields with `dry_run:
+  false`, and execution copy based on `deleted_*` counters. Crash cleanup
+  continues to reject export policy fields. This is retained local export file
+  cleanup coverage only, not GDPR erasure, legal disposal, archive deletion,
+  certification, anonymization/redaction completion, full data deletion,
+  retention execution, or a broad deletion claim.
 - Recent trust-source provider checks through `fa57352`: focused
   `SettingsPage.test.tsx` trust-source/TSA-provider coverage, i18n locale
   catalog validation, Prettier, and ESLint are the focused web checks for
