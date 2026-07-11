@@ -238,12 +238,17 @@ test operating checklist for driving Chancela toward release confidence.
   evidence-attached/status headers while keeping
   `x-chancela-dispatch-completed=false`, and emits
   `absent_owner_communication.dispatch_evidence_recorded` with false/no-claim
-  flags. Treat this as retrieval and operator-recorded dispatch-evidence
-  metadata only: no sealed act, canonical Ata, or generated-byte mutation; no
-  mail, email, SMS, or provider sending; no delivery, legal notice completion,
-  legal sufficiency, legal effect, provider execution, registry filing, signing,
-  bundle readiness, template legal review, threshold correctness, or law
-  verification claim.
+  flags. The web follow-on slice covers `listGeneratedDocuments`, generated PDF
+  fetch, `getGeneratedDocumentDispatchEvidence`,
+  `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
+  communication listing, stored evidence rows, permission-gated metadata-only
+  evidence recording, `operator_evidence_*` statuses, and
+  `documents.generated.noClaim.*` copy. Treat this as retrieval and
+  operator-recorded dispatch-evidence metadata only: no sealed act, canonical
+  Ata, or generated-byte mutation; no mail, email, SMS, or provider sending; no
+  delivery, legal notice completion, legal sufficiency, legal effect, provider
+  execution, registry filing, signing, bundle readiness, template legal review,
+  threshold correctness, or law verification claim.
 - The current imported-document receipt slice derives a `Recibo de revisão`
   panel from the existing imported-document view. Pending rows show no fake
   receipt, while reviewed rows show status, reviewer, time, note, required and
@@ -939,6 +944,14 @@ settingsDefaults.test.ts contracts.test.ts`.
   evidence-attached/status headers, no dispatch-completed header claim, and the
   bounded
   `absent_owner_communication.dispatch_evidence_recorded` event false flags.
+  Focused web coverage is
+  `npm run test --workspace apps/web -- src/api/client.test.ts src/features/documents/ActDocumentPanel.test.tsx src/i18n/i18n.test.ts`;
+  it pins `listGeneratedDocuments`, `getGeneratedDocumentDispatchEvidence`,
+  `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
+  communication listing, generated PDF fetch, stored evidence rows,
+  permission-gated metadata-only evidence recording, `operator_evidence_*`
+  status display, and `documents.generated.noClaim.*` localized copy without a
+  contracts test because this slice did not change contract fixtures.
   This is generated-document retrieval and operator-recorded dispatch-evidence
   metadata only: no sealed act, canonical Ata, or generated-byte mutation; no
   mail, email, SMS, or provider sending; no delivery, legal notice completion,
@@ -1244,7 +1257,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   MCP structured trust-catalog filter plus redacted external-validator summary
   markers, plus generated-document by-id route, absent-owner dispatch-evidence
   route/store/idempotency/selected-recipient coverage/evidence-attached/
-  no-completion/no-claim markers,
+  no-completion/no-claim markers and focused generated absent-owner evidence
+  web client/panel/i18n markers,
   plus Arquivo paged ledger route/default-limit/cursor markers,
   1000+ event first-page/load-more tests, shared list/export filter and limit
   normalization markers, numeric `next_cursor` typing, Livro-style filter and

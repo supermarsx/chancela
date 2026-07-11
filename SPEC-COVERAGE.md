@@ -469,12 +469,19 @@ Implementation checkpoints covered here:
   `absent_owner_communication.dispatch_evidence_recorded` with selected/required
   recipients plus false `sending_performed_by_chancela`, `delivery_confirmed`,
   `legal_sufficiency_claimed`, `legal_notice_completion_claimed`, and
-  `bytes_in_payload` flags. This is generated-document retrieval plus
-  operator-recorded dispatch-evidence metadata only: no sealed act, canonical
-  Ata, or generated-byte mutation; no mail, email, SMS, or provider sending, and
-  no delivery, legal notice completion, legal sufficiency, legal effect,
-  provider execution, registry filing, signing, bundle readiness, template legal
-  review, threshold correctness, or law verification claim is added.
+  `bytes_in_payload` flags. Follow-on web coverage now surfaces the generated
+  absent-owner communication list, generated PDF fetch, stored evidence rows,
+  metadata-only evidence recording form, `operator_evidence_*` status display,
+  and `documents.generated.noClaim.*` copy through the web client/hooks and
+  `ActDocumentPanel`; the focused web tests pin that the UI records bounded
+  operator metadata without changing `dispatch_completed=false` or claiming
+  send/delivery/legal-notice completion. This is generated-document retrieval
+  plus operator-recorded dispatch-evidence metadata only: no sealed act,
+  canonical Ata, or generated-byte mutation; no mail, email, SMS, or provider
+  sending, and no delivery, legal notice completion, legal sufficiency, legal
+  effect, provider execution, registry filing, signing, bundle readiness,
+  template legal review, threshold correctness, or law verification claim is
+  added.
 - Working tree keeps Documents/Archive/API/CI **PARTIAL**: `GET
   /v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by
   `book.export@Book`, returns a deterministic local

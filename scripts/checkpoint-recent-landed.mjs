@@ -1710,6 +1710,11 @@ function assertCheckpointMap() {
     "generated-document by-id\ndownload route plus absent-owner dispatch-evidence recording",
     "CI checkpoints generated-document dispatch-evidence route lane marker",
   );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "generated absent-owner evidence UI",
+    "CI checkpoints generated absent-owner evidence UI lane marker",
+  );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "raw-report byte download API",
@@ -1792,8 +1797,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "generated-document by-id route, dispatch-evidence route, `act.read`/\n`document.generate` gates, durable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, and no-claim markers",
+    "generated-document by-id route, dispatch-evidence route, `act.read`/\n`document.generate` gates, durable/in-memory, canonical Ata preservation,\nabsent-owner communication auto-generation, dispatch-evidence store,\nidempotency, selected-recipient evidence coverage, evidence-attached headers,\nno dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\nno send/delivery/legal-notice copy, and no-claim markers",
     "CI checkpoints static generated-document dispatch-evidence marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,\nno send/delivery/legal-notice copy, and no-claim markers",
+    "CI checkpoints static generated absent-owner evidence UI marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "`x-chancela-dispatch-completed=false`",
+    "CI checkpoints generated-document false dispatch-completed header marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -3638,6 +3653,146 @@ function assertCheckpointMap() {
     "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
     "reviewCalls.filter((call) => isBlockedReviewReceiptEndpoint(call.url))).toEqual([])",
     "imported-document review receipt no extra routes coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "listGeneratedDocuments: (actId: string) =>",
+    "web generated-document discovery client marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "getGeneratedDocumentDispatchEvidence: (documentId: string) =>",
+    "web generated-document dispatch-evidence GET client marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.ts",
+    "recordGeneratedDocumentDispatchEvidence: (",
+    "web generated-document dispatch-evidence POST client marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "export function useGeneratedDocuments(actId: string, enabled = true)",
+    "web generated-document discovery hook marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "export function useGeneratedDocumentDispatchEvidence(documentId: string | null | undefined)",
+    "web generated-document dispatch-evidence GET hook marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/hooks.ts",
+    "export function useRecordGeneratedDocumentDispatchEvidence()",
+    "web generated-document dispatch-evidence mutation hook marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface GeneratedDocumentDispatchEvidenceRequest",
+    "web generated-document dispatch-evidence request type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export interface GeneratedDocumentDispatchEvidenceList",
+    "web generated-document dispatch-evidence list type marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "| 'operator_evidence_covered'",
+    "web generated-document operator evidence covered status marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "routes generated-document discovery, PDF download, and dispatch evidence bodies",
+    "web generated-document client route/body coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "await api.listGeneratedDocuments('act 1');",
+    "web generated-document discovery client coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "await api.getGeneratedDocumentDispatchEvidence('generated doc');",
+    "web generated-document dispatch-evidence GET coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/client.test.ts",
+    "await api.recordGeneratedDocumentDispatchEvidence('generated doc', {",
+    "web generated-document dispatch-evidence POST coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "function GeneratedDispatchEvidenceRows",
+    "web generated absent-owner evidence rows marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "function GeneratedDispatchEvidenceForm",
+    "web generated absent-owner evidence form marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "documents.generated.noClaim.body",
+    "web generated absent-owner no-claim body key marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "const body: GeneratedDocumentDispatchEvidenceRequest = {",
+    "web generated absent-owner metadata-only request marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "renders generated communications, evidence rows, and no-claim copy",
+    "web generated absent-owner communication list coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "posts metadata-only evidence with selected recipients and a locator",
+    "web generated absent-owner evidence recording coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "expect(within(status).getByText('dispatch_completed')).toBeTruthy();",
+    "web generated absent-owner dispatch completed label coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "expect(within(status).getByText('false')).toBeTruthy();",
+    "web generated absent-owner dispatch completion false coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "expect(screen.queryByText('Aviso legal válido')).toBeNull();",
+    "web generated absent-owner no legal notice validity copy coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "sending_performed_by_chancela: false",
+    "web generated absent-owner no-sending flag coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "delivery_confirmed: false",
+    "web generated absent-owner no-delivery flag coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.test.tsx",
+    "legal_notice_completion_claimed: false",
+    "web generated absent-owner no-legal-notice flag coverage",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/i18n.test.ts",
+    "keeps generated absent-owner communication copy localized outside source and English fallback text",
+    "web generated absent-owner i18n leakage coverage",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/i18n.test.ts",
+    "'documents.generated.noClaim.body'",
+    "web generated absent-owner no-completion i18n key coverage",
+  );
+  assertFileContains(
+    "apps/web/src/i18n/locales/en-US.ts",
+    "Chancela did not send, confirm delivery, or complete legal notice",
+    "web generated absent-owner no send/delivery/legal notice copy marker",
   );
   assertFileContains(
     "crates/chancela-api/src/authz.rs",
@@ -5536,6 +5691,21 @@ function assertCheckpointMap() {
     "operator-supplied dispatch evidence with exact-retry idempotency",
     "CI/E2E hardening plan absent-owner dispatch-evidence idempotency marker",
   );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`npm run test --workspace apps/web -- src/api/client.test.ts src/features/documents/ActDocumentPanel.test.tsx src/i18n/i18n.test.ts`",
+    "CI/E2E hardening plan generated absent-owner focused web command marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "without a\n  contracts test because this slice did not change contract fixtures",
+    "CI/E2E hardening plan generated absent-owner no contracts test marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "web client/panel/i18n markers",
+    "CI/E2E hardening plan generated absent-owner web static-map marker",
+  );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "no dispatch-completed header claim",
@@ -6415,6 +6585,16 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "absent-recipient evidence coverage and evidence-attached status/header state while keeping `dispatch_completed=false` and `x-chancela-dispatch-completed=false`",
     "spec coverage condominium absent-owner no dispatch completion marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Follow-on web coverage now surfaces the generated absent-owner communication list, generated PDF fetch, stored evidence rows, metadata-only evidence recording form, `operator_evidence_*` status display, and `documents.generated.noClaim.*` copy",
+    "spec coverage generated absent-owner web follow-on marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "without changing `dispatch_completed=false` or claiming send/delivery/legal-notice completion",
+    "spec coverage generated absent-owner web no-claim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

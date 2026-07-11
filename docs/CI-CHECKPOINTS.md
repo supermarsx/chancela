@@ -47,7 +47,8 @@ UI, dashboard guest recent-events redaction, Ferramentas external-validator
 metadata UI, raw-report byte download API, imported-document review receipt UI,
 trust identifier-match explanations, and read-only local DGLAB interchange
 manifest API and BookDetail JSON-download markers, generated-document by-id
-download route plus absent-owner dispatch-evidence recording,
+download route plus absent-owner dispatch-evidence recording and generated
+absent-owner evidence UI,
 compact validator-report actions, template provenance UI, release clean-source
 provenance gating, seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
@@ -116,7 +117,13 @@ It intentionally reuses existing test surfaces:
   without a duplicate ledger event, selected absent-recipient evidence coverage,
   evidence-attached/status headers, `x-chancela-dispatch-completed=false`, and
   the `absent_owner_communication.dispatch_evidence_recorded` false/no-claim
-  flags.
+  flags. Web/UI markers pin `listGeneratedDocuments`,
+  `getGeneratedDocumentDispatchEvidence`,
+  `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
+  communication listing, generated PDF fetch, stored evidence rows,
+  metadata-only evidence form submission, `operator_evidence_*` statuses,
+  `documents.generated.noClaim.*` copy, and no send/delivery/legal-notice or
+  dispatch-completion copy.
 - API retained-export cleanup dry-run:
   `cargo test -p chancela-api --locked data_cleanup_`
 - API data key operations:
@@ -192,7 +199,8 @@ markers, generated-document by-id route, dispatch-evidence route, `act.read`/
 `document.generate` gates, durable/in-memory, canonical Ata preservation,
 absent-owner communication auto-generation, dispatch-evidence store,
 idempotency, selected-recipient evidence coverage, evidence-attached headers,
-no dispatch completion, and no-claim markers,
+no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,
+no send/delivery/legal-notice copy, and no-claim markers,
 live-provider assurance markers, validator manifest,
 Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
 and load-more coverage, shared list/export filter and limit normalization

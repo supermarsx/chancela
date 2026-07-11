@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { ptPT } from './locales/pt-PT';
 import { enUS } from './locales/en-US';
 import { enGB } from './locales/en-GB';
+import { ptBR } from './locales/pt-BR';
 import { deDE } from './locales/de-DE';
 import { daDK } from './locales/da-DK';
 import { esES } from './locales/es-ES';
@@ -70,6 +71,116 @@ describe('catalog completeness matrix', () => {
     for (const catalog of [deDE, svSE]) {
       expect(catalog['documents.import.guardrails.title']).not.toBe('Limites de preservação');
       expect(catalog['documents.import.guardrails.canonical.label']).not.toBe('Registo canónico');
+    }
+  });
+
+  it('keeps generated absent-owner communication copy localized outside source and English fallback text', () => {
+    const portugueseLeakageKeys = [
+      'documents.generated.title',
+      'documents.generated.notice',
+      'documents.generated.noClaim.badge',
+      'documents.generated.status.title',
+      'documents.generated.status.coverage',
+      'documents.generated.noClaim.body',
+      'documents.generated.evidence.empty.title',
+      'documents.generated.form.noticeTitle',
+      'documents.generated.form.noticeBody',
+      'documents.generated.form.locatorHint',
+      'documents.generated.form.submit',
+    ] as const;
+    const englishFallbackKeys = [
+      'documents.generated.sectionAria',
+      'documents.generated.title',
+      'documents.generated.notice',
+      'documents.generated.noClaim.badge',
+      'documents.generated.empty.title',
+      'documents.generated.empty.body',
+      'documents.generated.listAria',
+      'documents.generated.downloadPath',
+      'documents.generated.viewEvidence',
+      'documents.generated.download',
+      'documents.generated.status.aria',
+      'documents.generated.status.title',
+      'documents.generated.status.notRequired',
+      'documents.generated.status.coverage',
+      'documents.generated.status.coverageValue',
+      'documents.generated.status.evidenceAttached',
+      'documents.generated.status.completionBasis',
+      'documents.generated.noClaim.title',
+      'documents.generated.noClaim.body',
+      'documents.generated.evidence.notIndicated',
+      'documents.generated.evidence.empty.title',
+      'documents.generated.evidence.empty.body',
+      'documents.generated.evidence.listAria',
+      'documents.generated.evidence.actor',
+      'documents.generated.evidence.recordedAt',
+      'documents.generated.evidence.flags',
+      'documents.generated.evidence.flagsValue',
+      'documents.generated.form.aria',
+      'documents.generated.form.noticeTitle',
+      'documents.generated.form.noticeBody',
+      'documents.generated.form.dispatchedAt',
+      'documents.generated.form.channel',
+      'documents.generated.form.reference',
+      'documents.generated.form.evidenceReference',
+      'documents.generated.form.importedDocument',
+      'documents.generated.form.noImportedDocument',
+      'documents.generated.form.locatorHint',
+      'documents.generated.form.recipients',
+      'documents.generated.form.operatorNote',
+      'documents.generated.form.submit',
+      'documents.generated.form.submitting',
+      'documents.generated.form.toast.success',
+    ] as const;
+    const portugueseSourcePhrases =
+      /Comunicações geradas|condóminos ausentes|Sem reivindicação|Evidência registada|Cobertura de destinatários|A Chancela não enviou|Sem linhas de evidência|Registo de evidência|Registe apenas|Indique pelo menos|Registar evidência/;
+
+    expect(enUS['documents.generated.title']).toBe('Generated communications');
+    expect(enUS['documents.generated.noClaim.badge']).toBe('No completion claim');
+    expect(enUS['documents.generated.form.submit']).toBe('Record evidence');
+    expect(deDE['documents.generated.title']).toBe('Generierte Mitteilungen');
+    expect(esES['documents.generated.form.submit']).toBe('Registrar evidencia');
+
+    const nonPortugueseCatalogs = [
+      ['da-DK', daDK],
+      ['de-DE', deDE],
+      ['en-GB', enGB],
+      ['en-US', enUS],
+      ['es-ES', esES],
+      ['fi-FI', fiFI],
+      ['fr-FR', frFR],
+      ['it-IT', itIT],
+      ['nl-NL', nlNL],
+      ['pl-PL', plPL],
+      ['sv-FI', svFI],
+      ['sv-SE', svSE],
+    ] as const;
+
+    for (const [locale, catalog] of nonPortugueseCatalogs) {
+      for (const key of portugueseLeakageKeys) {
+        expect(catalog[key], `${locale} ${key}`).not.toMatch(portugueseSourcePhrases);
+      }
+    }
+
+    const nonEnglishCatalogs = [
+      ['pt-PT', ptPT],
+      ['pt-BR', ptBR],
+      ['da-DK', daDK],
+      ['de-DE', deDE],
+      ['es-ES', esES],
+      ['fi-FI', fiFI],
+      ['fr-FR', frFR],
+      ['it-IT', itIT],
+      ['nl-NL', nlNL],
+      ['pl-PL', plPL],
+      ['sv-FI', svFI],
+      ['sv-SE', svSE],
+    ] as const;
+
+    for (const [locale, catalog] of nonEnglishCatalogs) {
+      for (const key of englishFallbackKeys) {
+        expect(catalog[key], `${locale} ${key}`).not.toBe(enUS[key]);
+      }
     }
   });
 
