@@ -3061,7 +3061,7 @@ fn generated_dispatch_evidence_response(
     let rows = store
         .generated_document_dispatch_evidence(&context.doc.id)
         .map_err(|e| ApiError::Internal(format!("dispatch evidence store read failed: {e}")))?;
-    let status = dispatch_evidence_status_from_rows(&context, &rows);
+    let status = dispatch_evidence_status_from_rows(context, &rows);
     Ok((
         status_code,
         Json(GeneratedDocumentDispatchEvidenceResponse {
