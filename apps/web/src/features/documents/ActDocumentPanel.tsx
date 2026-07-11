@@ -549,6 +549,77 @@ function ImportedDocumentReviewReceipt({
   );
 }
 
+function ImportedDocumentReviewDepthSummary({
+  document,
+  t,
+}: {
+  document: ImportedDocumentView;
+  t: TFunction;
+}) {
+  const reviewNote = metadataText(document.operator_review_note);
+  const originalBytesStatus = metadataText(
+    document.preservation_policy?.original_bytes_preservation_status,
+  );
+  const originalBytesSummary = originalBytesStatus
+    ? `Bytes preservados (${originalBytesStatus})`
+    : 'Preservação dos bytes originais não indicada nos metadados carregados';
+  const hasReceipt = importedDocumentHasReviewReceipt(document);
+
+  return (
+    <div
+      className="stack--tight"
+      role="group"
+      aria-label="Resumo de profundidade da revisão importada"
+    >
+      <p className="card__label">Resumo de profundidade da revisão</p>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>Inclui</dt>
+          <dd>
+            {originalBytesSummary}, digest SHA-256, estado de revisão{' '}
+            {hasReceipt ? 'registado' : 'pendente'} e nota do operador{' '}
+            {reviewNote ? 'registada' : 'não indicada'}.
+          </dd>
+        </div>
+        <div>
+          <dt>Digest revisto</dt>
+          <dd>
+            <Digest value={document.sha256} />
+          </dd>
+        </div>
+        <div>
+          <dt>Estado derivado</dt>
+          <dd>
+            <Badge tone={importedReviewStatusTone(document.operator_review_status)}>
+              {importedReviewStatusLabel(document.operator_review_status)}
+            </Badge>
+          </dd>
+        </div>
+        <div>
+          <dt>Nota do operador</dt>
+          <dd>
+            {reviewNote ?? <span className="muted">{t('documents.import.notIndicated')}</span>}
+          </dd>
+        </div>
+        <div>
+          <dt>Exclui</dt>
+          <dd>
+            OCR, conversão, substituição de PDF/A, PDF assinado, validação de assinatura, selo,
+            PDF/UA e aceitação legal.
+          </dd>
+        </div>
+        <div>
+          <dt>Flags sem reivindicação</dt>
+          <dd>
+            OCR: não · conversão: não · PDF/A substituído: não · PDF assinado: não · assinatura: não
+            · selo: não · PDF/UA: não · aceitação legal: não.
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 function MetadataValue({ value, missing }: { value: unknown; missing: string }) {
   const text = metadataText(value);
   if (!text) return <span className="muted">{missing}</span>;
@@ -757,6 +828,7 @@ function ImportedDocumentDetails({
           </div>
         </dl>
       </div>
+      <ImportedDocumentReviewDepthSummary document={document} t={t} />
       <ImportedDocumentReviewReceipt document={document} t={t} />
     </div>
   );

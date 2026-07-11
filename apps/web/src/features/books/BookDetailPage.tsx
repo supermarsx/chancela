@@ -653,6 +653,105 @@ function PaperBookOcrConversionDossierPanel({
   );
 }
 
+function PaperBookOcrDossierReviewSummary({
+  dossiers,
+  drafts,
+  loading,
+}: {
+  dossiers: PaperBookOcrConversionDossierView[];
+  drafts: PaperBookOcrDraftView[];
+  loading: boolean;
+}) {
+  const acceptedDraft = drafts.find((draft) => draft.review_status === 'accepted') ?? null;
+  const acceptedDossier = acceptedDraft
+    ? (dossiers.find((dossier) => dossier.draft_id === acceptedDraft.draft_id) ?? null)
+    : null;
+  const reviewedDraft = acceptedDraft ?? drafts.find((draft) => draft.reviewed_at) ?? null;
+  const acceptedWithoutCanonicalConversion =
+    acceptedDraft !== null &&
+    !acceptedDraft.canonical_act_created &&
+    !acceptedDraft.canonical_document_created &&
+    !acceptedDraft.canonical_minutes_claimed;
+  const noRawOcrTextInDossier =
+    acceptedDossier === null ||
+    (!acceptedDossier.source_extracted_text_in_response &&
+      !acceptedDossier.source_extracted_text_in_ledger_event);
+
+  return (
+    <section
+      className="stack--tight"
+      aria-label="Resumo de profundidade OCR e dossier do livro em papel"
+    >
+      <p className="card__label">Resumo OCR/dossier derivado</p>
+      <dl className="deflist deflist--tight">
+        <div>
+          <dt>Rascunho revisto</dt>
+          <dd>
+            {reviewedDraft ? (
+              <>
+                {paperBookOcrReviewStatusLabel(reviewedDraft.review_status)} ·{' '}
+                <span className="mono">{reviewedDraft.draft_id}</span>
+              </>
+            ) : (
+              'Sem rascunho OCR revisto nos metadados carregados.'
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Rascunho aceite</dt>
+          <dd>
+            {acceptedDraft ? (
+              <>
+                Aceite para referência auxiliar
+                {acceptedWithoutCanonicalConversion ? ', sem conversão canónica' : ''}.
+              </>
+            ) : (
+              'Sem rascunho OCR aceite.'
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Dossier</dt>
+          <dd>
+            {loading
+              ? 'A carregar metadados de dossier.'
+              : acceptedDossier
+                ? `Dossier só de metadados registado (${acceptedDossier.dossier_id}).`
+                : acceptedDraft
+                  ? 'Dossier só de metadados ainda não registado.'
+                  : 'Sem dossier aplicável sem rascunho aceite.'}
+          </dd>
+        </div>
+        <div>
+          <dt>Texto OCR bruto no dossier</dt>
+          <dd>{noRawOcrTextInDossier ? 'não' : 'sim'}</dd>
+        </div>
+        <div>
+          <dt>Inclui</dt>
+          <dd>
+            Estado de revisão OCR, digest de texto quando indicado, páginas revistas, motor OCR e
+            metadados de dossier quando existirem.
+          </dd>
+        </div>
+        <div>
+          <dt>Exclui</dt>
+          <dd>
+            Ata canónica, documento canónico, pacote de arquivo, assinatura, selo, PDF/A, PDF/UA e
+            validade legal.
+          </dd>
+        </div>
+        <div>
+          <dt>Flags sem reivindicação</dt>
+          <dd>
+            Só metadados: sim · ata canónica: não · documento canónico: não · pacote de arquivo: não
+            · assinatura: não · selo: não · PDF/A: não · PDF/UA: não · validade legal: não.
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
   const toast = useToast();
   const drafts = usePaperBookOcrDrafts(row.import_id);
@@ -771,6 +870,11 @@ function PaperBookOcrDraftPanel({ row }: { row: PaperBookImportView }) {
       <InlineWarning tone="info" title="Rascunhos OCR e revisão auxiliar">
         {PAPER_BOOK_OCR_DRAFT_COPY}
       </InlineWarning>
+      <PaperBookOcrDossierReviewSummary
+        dossiers={dossiers.data ?? []}
+        drafts={rows}
+        loading={dossiers.isLoading}
+      />
       <form className="form" aria-label="Criar rascunho OCR auxiliar" onSubmit={submit}>
         <Field
           label="Texto OCR auxiliar"

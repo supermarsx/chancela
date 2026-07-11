@@ -1001,11 +1001,17 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     const metadata = await screen.findByRole('group', {
       name: 'Metadados do documento importado',
     });
+    const summary = await screen.findByRole('group', {
+      name: 'Resumo de profundidade da revisão importada',
+    });
     expect(within(metadata).getByText('Nome não fornecido pelo importador')).toBeTruthy();
     expect(within(metadata).getByTitle(longId)).toBeTruthy();
     expect(within(metadata).getByText('Não declarado')).toBeTruthy();
     expect(within(metadata).getByText('application/octet-stream')).toBeTruthy();
     expect(within(metadata).getByText('Não canónico')).toBeTruthy();
+    expect(within(summary).getByText(/Preservação dos bytes originais não indicada/i)).toBeTruthy();
+    expect(within(summary).getByText(/metadados carregados/i)).toBeTruthy();
+    expect(within(summary).queryByText(/Bytes preservados/)).toBeNull();
     expect(calls.some((url) => url.includes(`/v1/documents/imported/${longId}`))).toBe(true);
 
     fireEvent.click(within(firstItem).getByRole('button', { name: 'Descarregar importado' }));
@@ -1040,11 +1046,26 @@ describe('ActDocumentPanel — imported evidence documents', () => {
     const list = await screen.findByRole('list', { name: 'Documentos importados' });
     fireEvent.click(within(list).getByRole('button', { name: 'Ver metadados' }));
     const receipt = await screen.findByRole('group', { name: 'Recibo de revisão' });
+    const summary = await screen.findByRole('group', {
+      name: 'Resumo de profundidade da revisão importada',
+    });
     const save = await screen.findByRole('button', { name: 'Guardar revisão' });
     const acknowledgement = screen.getByLabelText(
       /Confirmo que revi estes limites/,
     ) as HTMLInputElement;
 
+    expect(within(summary).getByText('Resumo de profundidade da revisão')).toBeTruthy();
+    expect(within(summary).getByText(/Bytes preservados/)).toBeTruthy();
+    expect(within(summary).getByText(/digest SHA-256/i)).toBeTruthy();
+    expect(within(summary).getByText(/estado de revisão pendente/i)).toBeTruthy();
+    expect(within(summary).getByText(/nota do operador não indicada/i)).toBeTruthy();
+    expect(within(summary).getByText(/OCR, conversão, substituição de PDF\/A/i)).toBeTruthy();
+    expect(within(summary).getByText(/PDF assinado, validação de assinatura, selo/i)).toBeTruthy();
+    expect(within(summary).getByText(/PDF\/UA e aceitação legal/i)).toBeTruthy();
+    expect(within(summary).getByText(/OCR: não · conversão: não/i)).toBeTruthy();
+    expect(within(summary).queryByText(/Assinatura válida/i)).toBeNull();
+    expect(within(summary).queryByText(/Conversão concluída/i)).toBeNull();
+    expect(within(summary).queryByText(/PDF\/A certificado/i)).toBeNull();
     expect(within(receipt).getByText('Sem recibo de revisão')).toBeTruthy();
     expect(within(receipt).queryByText('Revisto em')).toBeNull();
     expect(within(receipt).queryByText('Revisto por')).toBeNull();
@@ -1107,8 +1128,14 @@ describe('ActDocumentPanel — imported evidence documents', () => {
       name: 'Metadados do documento importado',
     });
     const receipt = await screen.findByRole('group', { name: 'Recibo de revisão' });
+    const summary = await screen.findByRole('group', {
+      name: 'Resumo de profundidade da revisão importada',
+    });
     expect(within(metadata).getByText('Revisão do operador necessária')).toBeTruthy();
     expect(within(metadata).getByText(importedDocumentReviewNotice)).toBeTruthy();
+    expect(within(summary).getByText(/Resumo de profundidade da revisão/)).toBeTruthy();
+    expect(within(summary).getByText(/Bytes preservados/)).toBeTruthy();
+    expect(within(summary).getByText(/aceitação legal: não/i)).toBeTruthy();
     expect(within(receipt).getByText('Sem recibo de revisão')).toBeTruthy();
     expect(within(receipt).queryByText('Limites exigidos')).toBeNull();
     expect(within(receipt).queryByText('Limites reconhecidos')).toBeNull();

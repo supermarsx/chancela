@@ -848,6 +848,47 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     );
   });
 
+  it('summarizes missing OCR draft metadata without creating a conversion dossier', async () => {
+    const preserved = preservedPaperImport({
+      import_id: '12121212-1212-4212-8212-121212121212',
+      bytes_download: '/v1/books/paper-import/12121212-1212-4212-8212-121212121212/bytes',
+    });
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/paper-import?book_ref=book-1' && method === 'GET') {
+        return jsonResponse([preserved]);
+      }
+      if (url === `/v1/books/paper-import/${preserved.import_id}/ocr-drafts` && method === 'GET') {
+        return jsonResponse([]);
+      }
+      if (
+        url === `/v1/books/paper-import/${preserved.import_id}/conversion-dossiers` &&
+        method === 'GET'
+      ) {
+        return jsonResponse([]);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    const summary = await screen.findByRole('region', {
+      name: 'Resumo de profundidade OCR e dossier do livro em papel',
+    });
+    expect(within(summary).getByText('Resumo OCR/dossier derivado')).toBeTruthy();
+    expect(
+      within(summary).getByText('Sem rascunho OCR revisto nos metadados carregados.'),
+    ).toBeTruthy();
+    expect(within(summary).getByText('Sem rascunho OCR aceite.')).toBeTruthy();
+    expect(
+      await within(summary).findByText('Sem dossier aplicável sem rascunho aceite.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Sem rascunhos OCR registados')).toBeTruthy();
+    expect(
+      calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
+    ).toBe(false);
+  });
+
   it('creates and reviews OCR drafts as auxiliary non-canonical metadata only', async () => {
     const preserved: PaperBookImportView = {
       import_id: '33333333-3333-4333-8333-333333333333',
@@ -1070,9 +1111,9 @@ describe('BookDetailPage — paper-book preserved imports', () => {
         call.method === 'POST',
     );
     expect(actDraftCall).toBeTruthy();
-    expect(screen.getByText(/PDF\/A: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/PDF\/A: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/selo: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/selo: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
   });
 
@@ -1112,6 +1153,26 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     const create = await screen.findByRole('button', {
       name: 'Criar dossier de conversão só de metadados',
     });
+    const summary = await screen.findByRole('region', {
+      name: 'Resumo de profundidade OCR e dossier do livro em papel',
+    });
+    expect(within(summary).getByText('Resumo OCR/dossier derivado')).toBeTruthy();
+    expect(
+      within(summary).getByText(/Aceite para referência auxiliar, sem conversão canónica/i),
+    ).toBeTruthy();
+    expect(within(summary).getByText('Dossier só de metadados ainda não registado.')).toBeTruthy();
+    expect(within(summary).getByText(/Texto OCR bruto no dossier/i)).toBeTruthy();
+    expect(within(summary).getByText(/^não$/i)).toBeTruthy();
+    expect(within(summary).getByText(/Só metadados: sim/i)).toBeTruthy();
+    expect(within(summary).getByText(/ata canónica: não/i)).toBeTruthy();
+    expect(within(summary).getByText(/documento canónico: não/i)).toBeTruthy();
+    expect(within(summary).getByText(/pacote de arquivo:\s* não/i)).toBeTruthy();
+    expect(within(summary).getByText(/PDF\/A: não/i)).toBeTruthy();
+    expect(within(summary).getByText(/PDF\/UA: não/i)).toBeTruthy();
+    expect(within(summary).getByText(/validade legal: não/i)).toBeTruthy();
+    expect(within(summary).queryByText(/dossier canónico/i)).toBeNull();
+    expect(within(summary).queryByText(/assinatura válida/i)).toBeNull();
+    expect(within(summary).queryByText(/PDF\/A certificado/i)).toBeNull();
     expect(
       calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
     ).toBe(false);
@@ -1131,12 +1192,17 @@ describe('BookDetailPage — paper-book preserved imports', () => {
       ),
     ).toBeTruthy();
     expect(await screen.findByText('Dossier já registado')).toBeTruthy();
+    expect(
+      within(summary).getByText(
+        `Dossier só de metadados registado (${createdDossier.dossier_id}).`,
+      ),
+    ).toBeTruthy();
     expect(screen.getByText(/metadata-only, non-canonical/i)).toBeTruthy();
     expect(screen.getByText(/Ata criada: não/i)).toBeTruthy();
     expect(screen.getAllByText(/documento canónico: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/PDF\/A: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/PDF\/A: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/assinatura: não/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/selo: não/i)).toBeTruthy();
+    expect(screen.getAllByText(/selo: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/validade legal: não/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Na resposta: não/i)).toBeTruthy();
     expect(screen.queryByText(rawOcrText)).toBeNull();
@@ -1177,6 +1243,23 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     renderAtBook();
 
     expect(await screen.findByText('Dossier já registado')).toBeTruthy();
+    const summary = await screen.findByRole('region', {
+      name: 'Resumo de profundidade OCR e dossier do livro em papel',
+    });
+    expect(within(summary).getByText('Resumo OCR/dossier derivado')).toBeTruthy();
+    expect(
+      within(summary).getByText(/Aceite para referência auxiliar, sem conversão canónica/i),
+    ).toBeTruthy();
+    expect(
+      within(summary).getByText(
+        'Dossier só de metadados registado (dddddddd-dddd-4ddd-8ddd-dddddddddddd).',
+      ),
+    ).toBeTruthy();
+    expect(within(summary).getByText(/Só metadados: sim/i)).toBeTruthy();
+    expect(within(summary).getByText(/documento canónico: não/i)).toBeTruthy();
+    expect(within(summary).getByText(/pacote de arquivo:\s* não/i)).toBeTruthy();
+    expect(within(summary).getByText(/PDF\/UA: não/i)).toBeTruthy();
+    expect(within(summary).getByText(/validade legal: não/i)).toBeTruthy();
     expect(screen.getByText('dddddddd-dddd-4ddd-8ddd-dddddddddddd')).toBeTruthy();
     expect(screen.getByText(/Digest da fonte OCR/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Criar dossier de conversão/i })).toBeNull();
@@ -1217,6 +1300,14 @@ describe('BookDetailPage — paper-book preserved imports', () => {
     renderAtBook();
 
     expect((await screen.findAllByText('Sem revisão OCR')).length).toBeGreaterThan(0);
+    const summary = await screen.findByRole('region', {
+      name: 'Resumo de profundidade OCR e dossier do livro em papel',
+    });
+    expect(
+      within(summary).getByText('Sem rascunho OCR revisto nos metadados carregados.'),
+    ).toBeTruthy();
+    expect(within(summary).getByText('Sem rascunho OCR aceite.')).toBeTruthy();
+    expect(within(summary).getByText('Sem dossier aplicável sem rascunho aceite.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Criar dossier de conversão/i })).toBeNull();
     expect(
       calls.some((call) => call.url.endsWith('/conversion-dossier') && call.method === 'POST'),
