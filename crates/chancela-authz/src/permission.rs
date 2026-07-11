@@ -88,6 +88,10 @@ pub enum Permission {
     #[serde(rename = "settings.manage")]
     SettingsManage,
 
+    // --- Platform operations ---
+    #[serde(rename = "platform.logs.write")]
+    PlatformLogsWrite,
+
     // --- Reference (CAE + law corpus) ---
     #[serde(rename = "cae.read")]
     CaeRead,
@@ -117,7 +121,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 37] = [
+    pub const ALL: [Permission; 38] = [
         Permission::EntityRead,
         Permission::EntityCreate,
         Permission::EntityUpdate,
@@ -145,6 +149,7 @@ impl Permission {
         Permission::DataStartOver,
         Permission::SettingsRead,
         Permission::SettingsManage,
+        Permission::PlatformLogsWrite,
         Permission::CaeRead,
         Permission::CaeRefresh,
         Permission::LawRead,
@@ -198,6 +203,7 @@ impl Permission {
             Permission::DataStartOver => "data.start_over",
             Permission::SettingsRead => "settings.read",
             Permission::SettingsManage => "settings.manage",
+            Permission::PlatformLogsWrite => "platform.logs.write",
             Permission::CaeRead => "cae.read",
             Permission::CaeRefresh => "cae.refresh",
             Permission::LawRead => "law.read",

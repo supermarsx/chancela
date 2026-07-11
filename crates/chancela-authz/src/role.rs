@@ -207,6 +207,7 @@ impl Role {
                 Permission::DataExport,
                 Permission::SettingsRead,
                 Permission::SettingsManage,
+                Permission::PlatformLogsWrite,
                 Permission::CaeRead,
                 Permission::CaeRefresh,
                 Permission::LawRead,
@@ -517,6 +518,7 @@ mod tests {
         for forbidden in [
             Permission::UserManage,
             Permission::SettingsManage,
+            Permission::PlatformLogsWrite,
             Permission::LedgerRecover,
             Permission::DataWipe,
             Permission::DataStartOver,
@@ -580,5 +582,22 @@ mod tests {
             assert_eq!(cat.get(id).unwrap().name, name);
         }
         assert_eq!(cat.owner().unwrap().id, OWNER_ROLE_ID);
+    }
+
+    #[test]
+    fn platform_log_write_is_seeded_only_to_owner_and_platform_admin() {
+        for role in default_roles() {
+            let has_write = role.permission_set.contains(&Permission::PlatformLogsWrite);
+            match role.id {
+                OWNER_ROLE_ID | PLATFORM_ADMIN_ROLE_ID => {
+                    assert!(has_write, "{} should hold platform.logs.write", role.name)
+                }
+                _ => assert!(
+                    !has_write,
+                    "{} should not hold platform.logs.write by default",
+                    role.name
+                ),
+            }
+        }
     }
 }
