@@ -2842,20 +2842,25 @@ behavior, legal disposal, or legal-effect claims.
   mutable-sidecar planning, and explicit false destructive/full-erasure flags. It is not GDPR
   erasure, anonymization, physical deletion, redaction execution, or full data-subject erasure.
 - Imported-document preservation review policy, UI controls, guardrail acknowledgements, guardrail
-  fields, and the derived `Recibo de revisão` panel record review requirements, reviewer metadata,
-  and conservative original-byte/canonical-conversion decisions for non-canonical evidence. Pending
-  rows do not invent receipt metadata. These surfaces do not run OCR, convert documents to PDF/A,
-  create canonical records, create or validate signed artifacts, add routes/schema/mutations/downloads,
-  certify legal acceptance, or validate legal effect.
+  fields, and the derived review-depth / `Recibo de revisão` panels record review requirements,
+  reviewer metadata, loaded preservation metadata, and conservative original-byte/canonical-conversion
+  decisions for non-canonical evidence. Pending rows do not invent receipt metadata, and missing
+  preservation status renders neutral/not-indicated copy rather than a bytes-preserved claim. These
+  surfaces do not run OCR, convert documents to PDF/A, replace canonical PDF/A records, create
+  canonical records, create signed PDFs, create seals, validate signatures, add PDF/UA, add
+  routes/schema/events/POSTs/mutations/downloads, certify legal acceptance, or validate legal effect.
 - Paper-book local OCR run, OCR draft review metadata, accepted-draft conversion
   dossiers, any accepted-draft-to-act drafting aid, UI, and focused browser
   workflow coverage record bounded command status and non-authoritative
   review/drafting evidence with explicit false canonical/signature/legal flags.
-  The conversion-dossier path is metadata-only and keeps raw OCR text out of API
-  responses and ledger events; duplicate creation is idempotent. Any mutable
-  drafting aid remains non-authoritative. These paths do not create canonical
-  minutes, create canonical documents or PDF/A, sign or seal anything, certify
-  OCR accuracy, or accept historical scans as legally converted digital records.
+  The BookDetail OCR/dossier review-depth summary is derived from loaded metadata
+  only and has explicit fallbacks for no OCR draft, no accepted draft, and no
+  dossier. The conversion-dossier path is metadata-only and keeps raw OCR text
+  out of API responses and ledger events; duplicate creation is idempotent. Any
+  mutable drafting aid remains non-authoritative. These paths do not create
+  canonical acts, create canonical documents or archive packages, create PDF/A
+  or PDF/UA, sign or seal anything, certify OCR accuracy, or accept historical
+  scans as legally converted digital records.
 - Paper-book canonical-conversion preflight evidence classifies whether an operator-supplied
   evidence set is missing, blocked, or sufficient for a later draft step. The
   accepted-draft conversion dossier is metadata-only, and any accepted-draft

@@ -154,8 +154,10 @@ retention due-candidate duplicate-review, queued-status, prior-execution
 projection, and projected-row duplicate-action suppression UI markers,
 locale keys, and non-destructive payload assertions, Ferramentas
 panel/client/i18n markers including compact validator-report actions,
-imported-document review receipt markers for pending/reviewed states and
-no-extra-route behavior, trust identifier-match explanation/copy-safe hash and
+imported-document review-depth/receipt markers for metadata-derived summaries,
+neutral missing-preservation copy, pending/reviewed states, no-claim OCR/
+conversion/PDF-A replacement/signed-PDF/signature-validation/seal/PDF-UA/legal
+acceptance copy, and no-extra-route behavior, trust identifier-match explanation/copy-safe hash and
 SKI markers,
 retained-export `would_delete_*`/zero-`deleted_*` dry-run planning markers,
 preview-only Settings payload/no-files-removed markers, retained-export
@@ -195,13 +197,17 @@ conformance, validator evidence, signed-PDF accessibility certification,
 XAdES validation, ASiC trust/LTV
 or legal validity, production B-LT/B-LTA, SCAP verification, representative
 authority, live provider validity, canonical OCR conversion, imported-document
+OCR, imported-document conversion, imported-document PDF/A replacement, imported-document
+signed-PDF creation or signature validation, imported-document seal/PDF-UA, imported-document
 legal acceptance, raw external-validator legal/trust/certification validation,
 trust-list legal validity, provider approval, raw MCP report-byte exposure,
 auto-role reconciliation, permission grants, archive custody/decryption material,
 AI-01/full AI completion, MCP draft-signed legal/source/trust/external
 certification, generated-document signing/bundle/template/threshold/law/provider/
 registry/legal-effect claims, dispatch-sent proof, dispatch completion,
-generated communication legal sufficiency, or legal effect for mutable draft acts created from
+generated communication legal sufficiency, canonical paper-book conversion,
+paper-book canonical act/document/archive-package creation, paper-book PDF/A/PDF-UA,
+paper-book signature/seal creation, paper-book OCR/conversion behavior, or legal effect for mutable draft acts created from
 accepted OCR drafts. The Arquivo markers prove bounded UI/API paging and
 filtered export behavior only; they do not prove persistent-store boot-time SQL
 paging or turn non-PDF/A exports into preserved evidence. The external invite

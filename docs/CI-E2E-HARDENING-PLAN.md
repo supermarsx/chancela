@@ -935,14 +935,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   or provider-approval claim.
 - Current working-tree imported-document review receipt checks: focused
   `npm run test --workspace apps/web -- src/features/documents/ActDocumentPanel.test.tsx`
-  coverage pins the derived `Recibo de revisão` group, pending `Sem recibo de
-  revisão` without fake reviewer/time/note/guardrail details, reviewed
-  status/reviewer/time/note plus required and acknowledged guardrails, explicit
-  no-claim rows for OCR/conversion/PDF-A replacement/signed artifact/legal
-  acceptance, and no accidental bytes/archive/signed-document/external-validator/
-  trust/OCR/conversion calls. This is existing-view review receipt rendering
-  only, with no new route, schema, mutation, download, OCR, conversion, signed
-  artifact, or legal acceptance behavior.
+  coverage pins the derived review-depth summary and `Recibo de revisão` group,
+  pending `Sem recibo de revisão` without fake reviewer/time/note/guardrail
+  details, neutral/not-indicated copy when preservation status is missing,
+  reviewed status/reviewer/time/note plus required and acknowledged guardrails,
+  explicit no-claim rows for OCR/conversion/PDF-A replacement/signed artifact/
+  signature validation/seal/PDF-UA/legal acceptance, and no accidental bytes/
+  archive/signed-document/external-validator/trust/OCR/conversion calls. This is
+  existing-view metadata rendering only, with no new route, schema, event,
+  mutation, POST, download, OCR, conversion, PDF/A replacement, signed PDF,
+  signature validation, seal, PDF/UA, or legal acceptance behavior.
 - Current working-tree trust catalog identifier-match checks: focused
   `cargo test -p chancela-api trust --locked` and `npm run test --workspace
   apps/web -- src/features/ferramentas/trust.test.tsx` coverage pins optional
@@ -971,12 +973,14 @@ settingsDefaults.test.ts contracts.test.ts`.
   requirements, metadata-only response fields, idempotent duplicate creation
   without another ledger event, raw OCR text redaction from responses, ledger
   events, and dossier UI, false act/document/PDF-A/PDF-UA/signature/seal/legal
-  flags, existing-dossier rendering without duplicate creation, accepted-draft
-  gating, operator-only creation with no automatic POST, separate mutable
-  draft-act creation, and no document/signature/seal/archive endpoint calls from
-  the dossier UI. This is metadata-only review UI coverage; no canonical
-  paper-book conversion, act/document/PDF/signature/seal/archive creation, or
-  legal-validity claim is implemented.
+  flags, the derived OCR/dossier review-depth summary with fallbacks for no OCR
+  draft/no accepted draft/no dossier, existing-dossier rendering without
+  duplicate creation, accepted-draft gating, operator-only creation with no
+  automatic POST, separate mutable draft-act creation, and no document/signature/
+  seal/archive endpoint calls from the dossier UI. This is metadata-only review
+  UI coverage; no canonical paper-book conversion, canonical act/document,
+  archive package, PDF/A, PDF/UA, signature, seal, OCR behavior, conversion
+  behavior, or legal-validity claim is implemented.
 - Current working-tree external-signing envelope UI checks: focused
   `external_signer_invites` coverage pins optional envelope/slot request fields,
   first sequential slot initiation, later sequential slot 409 refusal without

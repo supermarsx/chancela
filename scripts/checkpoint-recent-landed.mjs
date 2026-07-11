@@ -509,6 +509,36 @@ function assertCheckpointMap() {
     "web paper-book conversion dossier operator-action coverage",
   );
   assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    'aria-label="Resumo de profundidade OCR e dossier do livro em papel"',
+    "web paper-book OCR/dossier review-depth summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "Sem rascunho OCR revisto nos metadados carregados.",
+    "web paper-book OCR/dossier no-reviewed-draft fallback marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "Sem rascunho OCR aceite.",
+    "web paper-book OCR/dossier no-accepted-draft fallback marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "Sem dossier aplicável sem rascunho aceite.",
+    "web paper-book OCR/dossier no-dossier fallback marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "Ata canónica, documento canónico, pacote de arquivo, assinatura, selo, PDF/A, PDF/UA e",
+    "web paper-book OCR/dossier explicit exclusions marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/books/BookDetailPage.tsx",
+    "Só metadados: sim · ata canónica: não · documento canónico: não · pacote de arquivo: não",
+    "web paper-book OCR/dossier metadata-only no-claim flags marker",
+  );
+  assertFileContains(
     "apps/web/src/features/books/books.test.tsx",
     "renders an existing conversion dossier without encouraging duplicate creation",
     "web paper-book conversion dossier existing-dossier coverage",
@@ -1615,6 +1645,21 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "imported-document review-depth/receipt markers for metadata-derived summaries",
+    "CI checkpoints imported-document review-depth static marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "neutral missing-preservation copy, pending/reviewed states, no-claim OCR/",
+    "CI checkpoints imported-document neutral/no-claim static marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "canonical paper-book conversion,\npaper-book canonical act/document/archive-package creation, paper-book PDF/A/PDF-UA",
+    "CI checkpoints paper-book no canonical artifacts static marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "trust identifier-match explanations",
     "CI checkpoints trust identifier-match lane marker",
   );
@@ -1675,7 +1720,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "imported-document review receipt markers for pending/reviewed states",
+    "imported-document review-depth/receipt markers for metadata-derived summaries",
     "CI checkpoints static imported-document receipt marker",
   );
   assertFileContains(
@@ -3331,6 +3376,26 @@ function assertCheckpointMap() {
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
     "const hasReceipt = importedDocumentHasReviewReceipt(document);",
     "imported-document review receipt derives from existing view marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    'aria-label="Resumo de profundidade da revisão importada"',
+    "imported-document review-depth summary group marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "Preservação dos bytes originais não indicada nos metadados carregados",
+    "imported-document missing preservation status neutral summary marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "OCR, conversão, substituição de PDF/A, PDF assinado, validação de assinatura, selo",
+    "imported-document review-depth explicit exclusions marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/ActDocumentPanel.tsx",
+    "· selo: não · PDF/UA: não · aceitação legal: não.",
+    "imported-document review-depth no-claim flags marker",
   );
   assertFileContains(
     "apps/web/src/features/documents/ActDocumentPanel.tsx",
@@ -5183,12 +5248,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "pending `Sem recibo de\n  revisão` without fake reviewer/time/note/guardrail details",
+    "pending `Sem recibo de revisão` without fake reviewer/time/note/guardrail",
     "CI/E2E hardening plan imported-document no fake receipt marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "no new route, schema, mutation, download, OCR, conversion, signed\n  artifact, or legal acceptance behavior",
+    "no new route, schema, event,\n  mutation, POST, download, OCR, conversion, PDF/A replacement, signed PDF",
     "CI/E2E hardening plan imported-document receipt no-claim marker",
   );
   assertFileContains(
@@ -5245,6 +5310,21 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current working-tree paper-book OCR conversion-dossier checks",
     "CI/E2E hardening plan paper-book conversion-dossier checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "neutral/not-indicated copy when preservation status is missing",
+    "CI/E2E hardening plan imported-document neutral preservation-status marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "signature validation/seal/PDF-UA/legal acceptance",
+    "CI/E2E hardening plan imported-document no-claim exclusion marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "fallbacks for no OCR\n  draft/no accepted draft/no dossier",
+    "CI/E2E hardening plan paper-book summary fallback marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -5943,8 +6023,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "missing\n  preservation status renders neutral/not-indicated copy rather than a bytes-preserved claim",
+    "spec coverage imported-document neutral missing preservation marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "no OCR, conversion, PDF/A replacement, signed\n  artifact creation/validation, new route/schema/mutation/download, or legal\n  acceptance claim",
     "spec coverage imported-document review receipt no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "create\n  canonical records, create signed PDFs, create seals, validate signatures, add PDF/UA",
+    "spec coverage imported-document review-depth no-runtime-behavior marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -6108,8 +6198,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
+    "BookDetail OCR/dossier review-depth summary is derived from loaded metadata\n  only and has explicit fallbacks for no OCR draft, no accepted draft, and no\n  dossier",
+    "spec coverage paper-book OCR/dossier metadata-derived summary marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
     "no automatic dossier POST",
     "spec coverage paper-book conversion-dossier no automatic POST marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "do not create\n  canonical acts, create canonical documents or archive packages, create PDF/A\n  or PDF/UA",
+    "spec coverage paper-book OCR/dossier no canonical artifacts marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
