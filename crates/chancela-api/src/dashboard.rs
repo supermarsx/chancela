@@ -25,10 +25,9 @@ use crate::dto::{
     format_date,
 };
 use crate::error::ApiError;
+use crate::settings::WorkflowReminderSettings;
 
-const DASHBOARD_REMINDER_LIMIT: usize = 5;
 const REGISTRY_EXPIRY_WARNING_DAYS: i32 = 30;
-const ACT_WORK_QUEUE_LOOKAHEAD_DAYS: i32 = 45;
 
 /// `GET /v1/dashboard` — aggregate counts and the last ten ledger events.
 pub async fn dashboard(
@@ -37,6 +36,7 @@ pub async fn dashboard(
 ) -> Result<Json<DashboardResponse>, ApiError> {
     // RBAC (t64-E3): the dashboard aggregates act data → `act.read` at Global.
     require_permission(&state, &actor, Permission::ActRead, Scope::Global).await?;
+    let reminder_policy = state.settings.read().await.workflow.reminders.clone();
     // entities → books → acts → follow_ups → registry_extracts → ledger (read locks; the global order).
     let entities = state.entities.read().await;
     let books = state.books.read().await;
@@ -107,6 +107,7 @@ pub async fn dashboard(
         &follow_ups,
         &registry_extracts,
         today,
+        &reminder_policy,
     );
 
     Ok(Json(DashboardResponse {
@@ -1035,6 +1036,7 @@ fn dashboard_reminders(
         &HashMap::new(),
         registry_extracts,
         today,
+        &WorkflowReminderSettings::default(),
     )
 }
 
@@ -1045,23 +1047,50 @@ fn dashboard_reminders_with_follow_ups(
     follow_ups: &HashMap<String, StoredFollowUp>,
     registry_extracts: &HashMap<EntityId, RegistryExtract>,
     today: Date,
+    policy: &WorkflowReminderSettings,
 ) -> Vec<DashboardReminder> {
-    let mut reminders = follow_up_reminders(entities, books, acts, follow_ups, today);
-    reminders.extend(open_act_attendance_reminders(entities, books, acts, today));
-    reminders.extend(
-        entities
-            .values()
-            .flat_map(|entity| {
-                annual_general_meeting_reminders(
-                    entity,
-                    books,
-                    acts,
-                    registry_extracts.get(&entity.id),
-                    today,
-                )
-            })
-            .collect::<Vec<_>>(),
-    );
+    if !policy.enabled {
+        return Vec::new();
+    }
+
+    let mut reminders = Vec::new();
+    if policy.sources.act_follow_ups {
+        reminders.extend(follow_up_reminders(
+            entities,
+            books,
+            acts,
+            follow_ups,
+            today,
+            policy.due_soon_days,
+        ));
+    }
+    if policy.sources.attendance_hygiene {
+        reminders.extend(open_act_attendance_reminders(
+            entities,
+            books,
+            acts,
+            today,
+            policy.attendance_lookahead_days,
+            policy.due_soon_days,
+        ));
+    }
+    if policy.sources.profile_calendar {
+        reminders.extend(
+            entities
+                .values()
+                .flat_map(|entity| {
+                    let context = ProfileCalendarReminderContext {
+                        books,
+                        acts,
+                        registry_extract: registry_extracts.get(&entity.id),
+                        today,
+                        due_soon_days: policy.due_soon_days,
+                    };
+                    annual_general_meeting_reminders(entity, &context)
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
 
     reminders.sort_by(|a, b| {
         a.due_date
@@ -1071,7 +1100,7 @@ fn dashboard_reminders_with_follow_ups(
             .then_with(|| a.source_profile.cmp(&b.source_profile))
             .then_with(|| a.source_rule.cmp(&b.source_rule))
     });
-    reminders.truncate(DASHBOARD_REMINDER_LIMIT);
+    reminders.truncate(policy.dashboard_limit as usize);
     reminders
 }
 
@@ -1081,6 +1110,7 @@ fn follow_up_reminders(
     acts: &HashMap<ActId, Act>,
     follow_ups: &HashMap<String, StoredFollowUp>,
     today: Date,
+    due_soon_days: u16,
 ) -> Vec<DashboardReminder> {
     follow_ups
         .values()
@@ -1091,7 +1121,13 @@ fn follow_up_reminders(
             let book = books.get(&act.book_id)?;
             let entity = entities.get(&book.entity_id)?;
             Some(follow_up_reminder(
-                entity, book, act, follow_up, due_date, today,
+                entity,
+                book,
+                act,
+                follow_up,
+                due_date,
+                today,
+                due_soon_days,
             ))
         })
         .collect()
@@ -1102,6 +1138,8 @@ fn open_act_attendance_reminders(
     books: &HashMap<BookId, Book>,
     acts: &HashMap<ActId, Act>,
     today: Date,
+    attendance_lookahead_days: u16,
+    due_soon_days: u16,
 ) -> Vec<DashboardReminder> {
     acts.values()
         .filter_map(|act| {
@@ -1113,7 +1151,14 @@ fn open_act_attendance_reminders(
             if !entity.is_consistent() {
                 return None;
             }
-            act_attendance_reminder(entity, book, act, today)
+            act_attendance_reminder(
+                entity,
+                book,
+                act,
+                today,
+                attendance_lookahead_days,
+                due_soon_days,
+            )
         })
         .collect()
 }
@@ -1123,10 +1168,12 @@ fn act_attendance_reminder(
     book: &Book,
     act: &Act,
     today: Date,
+    attendance_lookahead_days: u16,
+    due_soon_days: u16,
 ) -> Option<DashboardReminder> {
     let due_date = act.meeting_date?;
     let days_until = due_date.to_julian_day() - today.to_julian_day();
-    if days_until > ACT_WORK_QUEUE_LOOKAHEAD_DAYS {
+    if days_until > i32::from(attendance_lookahead_days) {
         return None;
     }
 
@@ -1136,7 +1183,7 @@ fn act_attendance_reminder(
     }
 
     let due_date_text = format_date(due_date);
-    let status = reminder_status(today, due_date).to_owned();
+    let status = reminder_status(today, due_date, due_soon_days).to_owned();
     let severity = if status == "Overdue" {
         "Warning"
     } else {
@@ -1238,9 +1285,10 @@ fn follow_up_reminder(
     follow_up: &StoredFollowUp,
     due_date: Date,
     today: Date,
+    due_soon_days: u16,
 ) -> DashboardReminder {
     let due_date_text = format_date(due_date);
-    let status = reminder_status(today, due_date).to_owned();
+    let status = reminder_status(today, due_date, due_soon_days).to_owned();
     let severity = match status.as_str() {
         "Overdue" => "Warning",
         "DueSoon" => "Info",
@@ -1335,10 +1383,7 @@ fn follow_up_reminder(
 
 fn annual_general_meeting_reminders(
     entity: &Entity,
-    books: &HashMap<BookId, Book>,
-    acts: &HashMap<ActId, Act>,
-    registry_extract: Option<&RegistryExtract>,
-    today: Date,
+    context: &ProfileCalendarReminderContext<'_>,
 ) -> Vec<DashboardReminder> {
     if !entity.is_consistent() || !supports_profile_calendar_reminders(entity) {
         return Vec::new();
@@ -1348,47 +1393,45 @@ fn annual_general_meeting_reminders(
     profile
         .calendar_presets
         .iter()
-        .filter_map(|preset| {
-            profile_calendar_reminder(
-                entity,
-                &profile,
-                preset,
-                books,
-                acts,
-                registry_extract,
-                today,
-            )
-        })
+        .filter_map(|preset| profile_calendar_reminder(entity, &profile, preset, context))
         .collect()
+}
+
+struct ProfileCalendarReminderContext<'a> {
+    books: &'a HashMap<BookId, Book>,
+    acts: &'a HashMap<ActId, Act>,
+    registry_extract: Option<&'a RegistryExtract>,
+    today: Date,
+    due_soon_days: u16,
 }
 
 fn profile_calendar_reminder(
     entity: &Entity,
     profile: &EntityProfile,
     preset: &CalendarPreset,
-    books: &HashMap<BookId, Book>,
-    acts: &HashMap<ActId, Act>,
-    registry_extract: Option<&RegistryExtract>,
-    today: Date,
+    context: &ProfileCalendarReminderContext<'_>,
 ) -> Option<DashboardReminder> {
     let months_after_fiscal_year_end = preset.months_after_fiscal_year_end?;
 
     let parsed_fiscal_year_end = parse_fiscal_year_end(entity.fiscal_year_end.as_deref());
     let fiscal_year_end = parsed_fiscal_year_end.unwrap_or(DEFAULT_FISCAL_YEAR_END);
-    if is_in_first_fiscal_year(registry_extract, fiscal_year_end, today) {
+    if is_in_first_fiscal_year(context.registry_extract, fiscal_year_end, context.today) {
         return None;
     }
-    let due_date =
-        annual_due_date_for_year(today.year(), fiscal_year_end, months_after_fiscal_year_end);
+    let due_date = annual_due_date_for_year(
+        context.today.year(),
+        fiscal_year_end,
+        months_after_fiscal_year_end,
+    );
     if is_before_first_applicable_annual_due(
-        registry_extract,
+        context.registry_extract,
         fiscal_year_end,
         months_after_fiscal_year_end,
         due_date,
     ) {
         return None;
     }
-    if has_recent_calendar_signal(entity, books, acts, due_date.year()) {
+    if has_recent_calendar_signal(entity, context.books, context.acts, due_date.year()) {
         return None;
     }
 
@@ -1407,7 +1450,7 @@ fn profile_calendar_reminder(
     Some(DashboardReminder {
         due_date: format_date(due_date),
         severity: "Advisory".to_owned(),
-        status: reminder_status(today, due_date).to_owned(),
+        status: reminder_status(context.today, due_date, context.due_soon_days).to_owned(),
         reason: format!(
             "The {} calendar preset \"{}\" points to an annual item by {} \
              ({fiscal_year_note}). \
@@ -1630,12 +1673,12 @@ fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
-fn reminder_status(today: Date, due_date: Date) -> &'static str {
+fn reminder_status(today: Date, due_date: Date, due_soon_days: u16) -> &'static str {
     if today > due_date {
         return "Overdue";
     }
-    let days_until = due_date.ordinal() as i32 - today.ordinal() as i32;
-    if days_until <= 45 {
+    let days_until = due_date.to_julian_day() - today.to_julian_day();
+    if days_until <= i32::from(due_soon_days) {
         "DueSoon"
     } else {
         "Upcoming"
@@ -1677,9 +1720,18 @@ fn calendar_signal_book_kinds(family: EntityFamily) -> &'static [BookKind] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::WorkflowReminderSourceSettings;
     use chancela_core::{LegalHold, MeetingChannel, Nipc, NumberingScheme, TermoDeAbertura};
     use chancela_registry::{RegistryExtract, RegistryOfficer, RegistryProvenance};
     use time::macros::date;
+
+    struct ReminderFixture {
+        entities: HashMap<EntityId, Entity>,
+        books: HashMap<BookId, Book>,
+        acts: HashMap<ActId, Act>,
+        follow_ups: HashMap<String, StoredFollowUp>,
+        registry_extracts: HashMap<EntityId, RegistryExtract>,
+    }
 
     fn entity_of(kind: EntityKind) -> Entity {
         Entity::new(
@@ -1741,6 +1793,70 @@ mod tests {
             source_event: Some("1".to_owned()),
         });
         extract
+    }
+
+    fn reminder_fixture() -> ReminderFixture {
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        book.state = BookState::Open;
+
+        let mut act = Act::draft(
+            book.id,
+            "Ata com presencas e seguimento",
+            MeetingChannel::Physical,
+        );
+        act.state = ActState::Review;
+        act.meeting_date = Some(date!(2026 - 07 - 20));
+        let follow_up = StoredFollowUp {
+            id: "follow-up-open".to_owned(),
+            act_id: act.id,
+            agenda_number: Some(1),
+            deliberation_index: Some(0),
+            title: "Enviar certidão ao contabilista".to_owned(),
+            detail: Some("Confirmar envio depois da revisão.".to_owned()),
+            due_date: Some(date!(2026 - 07 - 01)),
+            assignee: Some("ana".to_owned()),
+            assignee_display: Some("Ana Silva".to_owned()),
+            status: StoredFollowUpStatus::Open,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            created_by: "operator".to_owned(),
+            completed_at: None,
+            completed_by: None,
+        };
+
+        ReminderFixture {
+            entities: HashMap::from([(entity.id, entity.clone())]),
+            books: HashMap::from([(book.id, book)]),
+            acts: HashMap::from([(act.id, act)]),
+            follow_ups: HashMap::from([(follow_up.id.clone(), follow_up)]),
+            registry_extracts: HashMap::new(),
+        }
+    }
+
+    fn reminders_for_policy(
+        fixture: &ReminderFixture,
+        policy: &WorkflowReminderSettings,
+    ) -> Vec<DashboardReminder> {
+        dashboard_reminders_with_follow_ups(
+            &fixture.entities,
+            &fixture.books,
+            &fixture.acts,
+            &fixture.follow_ups,
+            &fixture.registry_extracts,
+            date!(2026 - 07 - 09),
+            policy,
+        )
+    }
+
+    fn source_rules(reminders: &[DashboardReminder]) -> Vec<String> {
+        reminders
+            .iter()
+            .map(|reminder| reminder.source_rule.clone())
+            .collect()
+    }
+
+    fn has_source_rule(rules: &[String], expected: &str) -> bool {
+        rules.iter().any(|rule| rule == expected)
     }
 
     #[test]
@@ -2210,6 +2326,124 @@ mod tests {
     }
 
     #[test]
+    fn default_reminder_policy_preserves_existing_families() {
+        let fixture = reminder_fixture();
+        let reminders = reminders_for_policy(&fixture, &WorkflowReminderSettings::default());
+
+        assert_eq!(
+            source_rules(&reminders),
+            [
+                "csc-art376-annual".to_owned(),
+                "act-follow-up".to_owned(),
+                "act-attendance-missing".to_owned()
+            ]
+        );
+        assert_eq!(reminders.len(), 3);
+    }
+
+    #[test]
+    fn disabled_reminder_policy_suppresses_only_reminder_output() {
+        let fixture = reminder_fixture();
+        let current_work = dashboard_current_work(&fixture.entities, &fixture.books, &fixture.acts);
+        let policy = WorkflowReminderSettings {
+            enabled: false,
+            ..WorkflowReminderSettings::default()
+        };
+
+        let reminders = reminders_for_policy(&fixture, &policy);
+
+        assert!(reminders.is_empty());
+        assert_eq!(current_work.open_books.len(), 1);
+        assert_eq!(current_work.act_counts_by_state.review, 1);
+    }
+
+    #[test]
+    fn reminder_source_toggles_suppress_only_their_family() {
+        let fixture = reminder_fixture();
+
+        let policy = WorkflowReminderSettings {
+            sources: WorkflowReminderSourceSettings {
+                profile_calendar: false,
+                ..WorkflowReminderSourceSettings::default()
+            },
+            ..WorkflowReminderSettings::default()
+        };
+        let rules = source_rules(&reminders_for_policy(&fixture, &policy));
+        assert!(!has_source_rule(&rules, "csc-art376-annual"));
+        assert!(has_source_rule(&rules, "act-follow-up"));
+        assert!(has_source_rule(&rules, "act-attendance-missing"));
+
+        let policy = WorkflowReminderSettings {
+            sources: WorkflowReminderSourceSettings {
+                act_follow_ups: false,
+                ..WorkflowReminderSourceSettings::default()
+            },
+            ..WorkflowReminderSettings::default()
+        };
+        let rules = source_rules(&reminders_for_policy(&fixture, &policy));
+        assert!(has_source_rule(&rules, "csc-art376-annual"));
+        assert!(!has_source_rule(&rules, "act-follow-up"));
+        assert!(has_source_rule(&rules, "act-attendance-missing"));
+
+        let policy = WorkflowReminderSettings {
+            sources: WorkflowReminderSourceSettings {
+                attendance_hygiene: false,
+                ..WorkflowReminderSourceSettings::default()
+            },
+            ..WorkflowReminderSettings::default()
+        };
+        let rules = source_rules(&reminders_for_policy(&fixture, &policy));
+        assert!(has_source_rule(&rules, "csc-art376-annual"));
+        assert!(has_source_rule(&rules, "act-follow-up"));
+        assert!(!has_source_rule(&rules, "act-attendance-missing"));
+    }
+
+    #[test]
+    fn reminder_numeric_policy_controls_limit_and_day_windows() {
+        let fixture = reminder_fixture();
+
+        let policy = WorkflowReminderSettings {
+            dashboard_limit: 1,
+            ..WorkflowReminderSettings::default()
+        };
+        let reminders = reminders_for_policy(&fixture, &policy);
+        assert_eq!(reminders.len(), 1);
+        assert_eq!(reminders[0].source_rule, "csc-art376-annual");
+
+        let policy = WorkflowReminderSettings {
+            due_soon_days: 5,
+            sources: WorkflowReminderSourceSettings {
+                profile_calendar: false,
+                act_follow_ups: false,
+                attendance_hygiene: true,
+            },
+            ..WorkflowReminderSettings::default()
+        };
+        let reminders = reminders_for_policy(&fixture, &policy);
+        assert_eq!(reminders.len(), 1);
+        assert_eq!(reminders[0].source_rule, "act-attendance-missing");
+        assert_eq!(reminders[0].status, "Upcoming");
+
+        let policy = WorkflowReminderSettings {
+            attendance_lookahead_days: 5,
+            ..policy
+        };
+        assert!(reminders_for_policy(&fixture, &policy).is_empty());
+    }
+
+    #[test]
+    fn reminder_status_uses_calendar_day_delta_across_year_boundary() {
+        assert_eq!(
+            reminder_status(date!(2026 - 12 - 20), date!(2027 - 02 - 10), 45),
+            "Upcoming"
+        );
+        assert_eq!(
+            reminder_status(date!(2026 - 12 - 20), date!(2027 - 01 - 10), 45),
+            "DueSoon"
+        );
+    }
+
+    #[test]
     fn missing_fiscal_year_uses_default_for_profile_calendar_reminder() {
         let entity = entity_of(EntityKind::SociedadeAnonima);
         let mut entities = HashMap::new();
@@ -2394,6 +2628,7 @@ mod tests {
             &follow_ups,
             &HashMap::new(),
             date!(2026 - 07 - 09),
+            &WorkflowReminderSettings::default(),
         );
 
         let follow_up_reminders = reminders

@@ -63,6 +63,9 @@ import {
   type TsaProviderSettings,
   type TslSourceSettings,
   type UiSettings,
+  type WorkflowReminderSettings,
+  type WorkflowReminderSourceSettings,
+  type WorkflowSettings,
 } from '../../api/types';
 import { UI_VERSION } from '../../api/versionCheck';
 import { useT } from '../../i18n';
@@ -102,6 +105,15 @@ import { UsersList } from '../users/UserListPage';
 
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
+
+function numberValue(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function integerValue(value: number, fallback: number): number {
+  return Number.isFinite(value) ? Math.trunc(value) : fallback;
+}
 
 const TRUST_SOURCE_ID_PREFIX = 'trust-source';
 const TSA_PROVIDER_ID_PREFIX = 'tsa-provider';
@@ -226,12 +238,21 @@ function ensureOneEnabledDefaultProvider(
 
 type SettingsWithMaybeAi = Omit<
   Settings,
-  'ai' | 'signing' | 'registry_auto_update' | 'ui' | 'platform'
+  'ai' | 'signing' | 'registry_auto_update' | 'ui' | 'platform' | 'workflow'
 > & {
   ai?: Partial<AiSettings> | null;
   ui?: Partial<UiSettings> | null;
   platform?: Partial<PlatformSettings> | null;
   registry_auto_update?: Partial<RegistryAutoUpdateSettings> | null;
+  workflow?:
+    | (Partial<Omit<WorkflowSettings, 'reminders'>> & {
+        reminders?:
+          | (Partial<Omit<WorkflowReminderSettings, 'sources'>> & {
+              sources?: Partial<WorkflowReminderSourceSettings> | null;
+            })
+          | null;
+      })
+    | null;
   signing: Omit<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'> &
     Partial<Pick<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'>>;
 };
@@ -239,6 +260,9 @@ type SettingsWithMaybeAi = Omit<
 function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
   const platform: Partial<PlatformSettings> = settings.platform ?? {};
   const platformLogging: Partial<PlatformSettings['logging']> = platform.logging ?? {};
+  const workflow = settings.workflow ?? {};
+  const workflowReminders = workflow.reminders ?? {};
+  const workflowReminderSources = workflowReminders.sources ?? {};
   return {
     ...settings,
     signing: {
@@ -288,6 +312,18 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
           DEFAULT_SETTINGS.registry_auto_update.entity_defaults.enabled_profiles,
       },
     },
+    workflow: {
+      ...DEFAULT_SETTINGS.workflow,
+      ...workflow,
+      reminders: {
+        ...DEFAULT_SETTINGS.workflow.reminders,
+        ...workflowReminders,
+        sources: {
+          ...DEFAULT_SETTINGS.workflow.reminders.sources,
+          ...workflowReminderSources,
+        },
+      },
+    },
   };
 }
 
@@ -332,6 +368,30 @@ function toWireBody(draft: Settings): Settings {
         enabled_profiles: draft.registry_auto_update.entity_defaults.enabled_profiles
           .map((profile) => profile.trim())
           .filter(Boolean),
+      },
+    },
+    workflow: {
+      ...draft.workflow,
+      reminders: {
+        ...draft.workflow.reminders,
+        enabled: draft.workflow.reminders.enabled === true,
+        dashboard_limit: integerValue(
+          draft.workflow.reminders.dashboard_limit,
+          DEFAULT_SETTINGS.workflow.reminders.dashboard_limit,
+        ),
+        due_soon_days: integerValue(
+          draft.workflow.reminders.due_soon_days,
+          DEFAULT_SETTINGS.workflow.reminders.due_soon_days,
+        ),
+        attendance_lookahead_days: integerValue(
+          draft.workflow.reminders.attendance_lookahead_days,
+          DEFAULT_SETTINGS.workflow.reminders.attendance_lookahead_days,
+        ),
+        sources: {
+          profile_calendar: draft.workflow.reminders.sources.profile_calendar === true,
+          act_follow_ups: draft.workflow.reminders.sources.act_follow_ups === true,
+          attendance_hygiene: draft.workflow.reminders.sources.attendance_hygiene === true,
+        },
       },
     },
   };
@@ -772,6 +832,39 @@ export function SettingsPage() {
     setDraft((d) => (d ? { ...d, ui: { ...d.ui, [key]: value } } : d));
   const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
     setDraft((d) => (d ? { ...d, registry_auto_update } : d));
+  const setWorkflowReminder = <K extends keyof WorkflowReminderSettings>(
+    key: K,
+    value: WorkflowReminderSettings[K],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            workflow: {
+              ...d.workflow,
+              reminders: { ...d.workflow.reminders, [key]: value },
+            },
+          }
+        : d,
+    );
+  const setWorkflowReminderSource = <K extends keyof WorkflowReminderSourceSettings>(
+    key: K,
+    value: WorkflowReminderSourceSettings[K],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            workflow: {
+              ...d.workflow,
+              reminders: {
+                ...d.workflow.reminders,
+                sources: { ...d.workflow.reminders.sources, [key]: value },
+              },
+            },
+          }
+        : d,
+    );
   const setPlatform = (platform: PlatformSettings) => setDraft((d) => (d ? { ...d, platform } : d));
   const setTslSources = (updater: (sources: TslSourceSettings[]) => TslSourceSettings[]) =>
     setDraft((d) =>
@@ -843,6 +936,7 @@ export function SettingsPage() {
   };
 
   const a = draft.appearance;
+  const reminderPolicy = draft.workflow.reminders;
 
   return (
     <div className="stack">
@@ -1481,6 +1575,108 @@ export function SettingsPage() {
                     <ButtonLink to="/ferramentas" icon={<Icon.Wrench />}>
                       {t('settings.management.toolsLink')}
                     </ButtonLink>
+                  </div>
+                </div>
+              </Card>
+              <Card title="Lembretes do painel">
+                <div className="form">
+                  <Toggle
+                    label="Gerar lembretes locais"
+                    checked={reminderPolicy.enabled}
+                    onChange={(enabled) => setWorkflowReminder('enabled', enabled)}
+                  />
+                  <p className="field__hint">
+                    Política local e consultiva; não agenda calendários externos nem declara
+                    suficiência legal.
+                  </p>
+
+                  <div className="registry-auto-update-grid">
+                    <Field
+                      label="Limite no painel"
+                      htmlFor="workflow-reminders-dashboard-limit"
+                      hint="Número máximo de cartões de lembrete devolvidos pelo painel."
+                    >
+                      <Input
+                        id="workflow-reminders-dashboard-limit"
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={reminderPolicy.dashboard_limit}
+                        onChange={(e) =>
+                          setWorkflowReminder(
+                            'dashboard_limit',
+                            numberValue(e.target.value, reminderPolicy.dashboard_limit),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label="Prazo breve"
+                      htmlFor="workflow-reminders-due-soon-days"
+                      hint="Dias até ao vencimento para classificar como breve."
+                    >
+                      <Input
+                        id="workflow-reminders-due-soon-days"
+                        type="number"
+                        min={0}
+                        max={365}
+                        value={reminderPolicy.due_soon_days}
+                        onChange={(e) =>
+                          setWorkflowReminder(
+                            'due_soon_days',
+                            numberValue(e.target.value, reminderPolicy.due_soon_days),
+                          )
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label="Janela de presenças"
+                      htmlFor="workflow-reminders-attendance-lookahead-days"
+                      hint="Dias futuros analisados para atos com presenças por completar."
+                    >
+                      <Input
+                        id="workflow-reminders-attendance-lookahead-days"
+                        type="number"
+                        min={0}
+                        max={365}
+                        value={reminderPolicy.attendance_lookahead_days}
+                        onChange={(e) =>
+                          setWorkflowReminder(
+                            'attendance_lookahead_days',
+                            numberValue(e.target.value, reminderPolicy.attendance_lookahead_days),
+                          )
+                        }
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="stack--tight">
+                    <p className="card__label">Fontes</p>
+                    <div
+                      className="checkbox-grid"
+                      role="group"
+                      aria-label="Fontes de lembretes do painel"
+                    >
+                      <Toggle
+                        label="Calendário do perfil"
+                        checked={reminderPolicy.sources.profile_calendar}
+                        onChange={(checked) =>
+                          setWorkflowReminderSource('profile_calendar', checked)
+                        }
+                      />
+                      <Toggle
+                        label="Seguimentos de atas"
+                        checked={reminderPolicy.sources.act_follow_ups}
+                        onChange={(checked) => setWorkflowReminderSource('act_follow_ups', checked)}
+                      />
+                      <Toggle
+                        label="Higiene de presenças"
+                        checked={reminderPolicy.sources.attendance_hygiene}
+                        onChange={(checked) =>
+                          setWorkflowReminderSource('attendance_hygiene', checked)
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
               </Card>

@@ -188,6 +188,98 @@ const RETENTION_POLICY_ONE = {
   updated_by: 'amelia.marques',
 };
 
+const RETENTION_DUE_CANDIDATES_REPORT = {
+  generated_at: '2026-07-09T14:00:00Z',
+  scope: 'book_archive',
+  category: 'documents',
+  candidate_count: 2,
+  candidates: [
+    {
+      candidate_id: 'retention-candidate-1',
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-1',
+      book_id: 'book-archive-1',
+      entity_id: 'entity-1',
+      closing_date: '2024-06-01',
+      due_date: '2026-06-01',
+      overdue: true,
+      policy_id: 'retention-1',
+      policy_name: 'Mensagens de suporte',
+      schedule_id: 'support-messages-v1',
+      retention_period: 'P2Y',
+      disposal_action: 'review',
+      destructive_action: false,
+      legal_hold_blockers: [],
+      required_approvals: [
+        {
+          code: 'retention_manual_review',
+          required_from: 'privacy_or_settings_manager',
+          reason: 'review evidence only before any separate operational process',
+        },
+      ],
+      blockers: [],
+      findings: [],
+      outcome: 'manual_review_required',
+      status: 'awaiting_manual_review',
+      would_execute: false,
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      next_step: 'Review evidence only; no deletion or anonymization is performed.',
+    },
+    {
+      candidate_id: 'retention-candidate-unsupported',
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-blocked',
+      book_id: 'book-archive-blocked',
+      entity_id: 'entity-2',
+      closing_date: '2023-02-10',
+      due_date: null,
+      overdue: false,
+      policy_id: 'retention-unsupported',
+      policy_name: 'Unsupported archival period',
+      schedule_id: 'archive-unsupported-v1',
+      retention_period: 'PXBROKEN',
+      disposal_action: 'review',
+      destructive_action: false,
+      legal_hold_blockers: [
+        {
+          policy_id: 'retention-unsupported',
+          name: 'Board preservation hold',
+          reason: 'legal hold active on archived book',
+        },
+      ],
+      required_approvals: [
+        {
+          code: 'unsupported_period_review',
+          required_from: 'privacy_or_settings_manager',
+          reason: 'unsupported period must be corrected before operational review',
+        },
+      ],
+      blockers: [
+        {
+          code: 'unsupported_retention_period',
+          message: 'Retention period PXBROKEN is not supported.',
+        },
+      ],
+      findings: [
+        {
+          code: 'unsupported_retention_period',
+          message: 'Retention period PXBROKEN is not supported.',
+          severity: 'warning',
+        },
+      ],
+      outcome: 'blocked_unsupported_period',
+      status: 'blocked',
+      would_execute: false,
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      next_step: 'Correct the retention schedule; this scan records evidence only.',
+    },
+  ],
+};
+
 type RetentionExecutionMetadata = {
   id: string;
   execution_status: 'awaiting_review' | 'blocked' | 'executed';
@@ -440,6 +532,7 @@ type DpiaRecordMetadata = typeof DPIA_ONE;
 type BreachPlaybookMetadata = typeof BREACH_PLAYBOOK_ONE;
 type TransferControlMetadata = typeof TRANSFER_CONTROL_ONE;
 type RetentionPolicyMetadata = typeof RETENTION_POLICY_ONE;
+type RetentionDueCandidatesReportMetadata = typeof RETENTION_DUE_CANDIDATES_REPORT;
 
 function apiKeyIdFromUrl(url: string): string | undefined {
   return url.match(/\/v1\/api-keys\/([^/]+)/)?.[1];
@@ -462,6 +555,8 @@ function materializeSettings(value: unknown): TestSettings {
   const partial = cloneJson(value) as Partial<TestSettings>;
   const platform = partial.platform ?? DEFAULT_SETTINGS.platform;
   const logging = platform.logging ?? DEFAULT_SETTINGS.platform.logging;
+  const workflow = partial.workflow ?? DEFAULT_SETTINGS.workflow;
+  const workflowReminders = workflow.reminders ?? DEFAULT_SETTINGS.workflow.reminders;
   return {
     ...DEFAULT_SETTINGS,
     ...partial,
@@ -491,6 +586,18 @@ function materializeSettings(value: unknown): TestSettings {
         enabled_profiles:
           partial.registry_auto_update?.entity_defaults?.enabled_profiles ??
           DEFAULT_SETTINGS.registry_auto_update.entity_defaults.enabled_profiles,
+      },
+    },
+    workflow: {
+      ...DEFAULT_SETTINGS.workflow,
+      ...(partial.workflow ?? {}),
+      reminders: {
+        ...DEFAULT_SETTINGS.workflow.reminders,
+        ...(partial.workflow?.reminders ?? {}),
+        sources: {
+          ...DEFAULT_SETTINGS.workflow.reminders.sources,
+          ...(workflowReminders.sources ?? {}),
+        },
       },
     },
     platform: {
@@ -977,6 +1084,7 @@ function privacyFetch(
   initialBreachPlaybooks: BreachPlaybookMetadata[] = [BREACH_PLAYBOOK_ONE],
   initialTransferControls: TransferControlMetadata[] = [TRANSFER_CONTROL_ONE],
   initialRetentionPolicies: RetentionPolicyMetadata[] = [RETENTION_POLICY_ONE],
+  initialRetentionDueCandidatesReport: RetentionDueCandidatesReportMetadata = RETENTION_DUE_CANDIDATES_REPORT,
   initialRetentionExecutions: RetentionExecutionMetadata[] = [
     RETENTION_EXECUTION_BLOCKED,
     RETENTION_EXECUTION_AWAITING,
@@ -1011,7 +1119,8 @@ function privacyFetch(
     evidence_receipts: [...record.evidence_receipts],
   }));
   let retentionPolicies = initialRetentionPolicies.map((record) => ({ ...record }));
-  const retentionExecutions = initialRetentionExecutions.map((record) => cloneJson(record));
+  const retentionDueCandidatesReport = cloneJson(initialRetentionDueCandidatesReport);
+  let retentionExecutions = initialRetentionExecutions.map((record) => cloneJson(record));
 
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -1126,6 +1235,12 @@ function privacyFetch(
         scope: string;
         category: string;
         record_id?: string;
+        execution_request?: {
+          requested_policy_id?: string;
+          execution_mode?: 'review_only' | 'execute_supported';
+          operator_notes?: string;
+          evidence?: { label: string; value: string }[];
+        };
       };
       const matches = retentionPolicies
         .filter(
@@ -1149,6 +1264,113 @@ function privacyFetch(
           would_execute: false,
           reason: 'Dry-run only; no disposal executed.',
         }));
+      if (body.execution_request) {
+        const requestedPolicy = retentionPolicies.find(
+          (policy) => policy.id === body.execution_request?.requested_policy_id,
+        );
+        const executionRecord = cloneJson(RETENTION_EXECUTION_AWAITING);
+        executionRecord.id = `retention-exec-requested-${retentionExecutions.length + 1}`;
+        executionRecord.requested_at = '2026-07-09T14:05:00Z';
+        executionRecord.execution_intent = body.execution_request.execution_mode ?? 'review_only';
+        executionRecord.execution_status = 'awaiting_review';
+        executionRecord.operator_review_decision = 'review_required';
+        executionRecord.candidate = {
+          scope: body.scope,
+          category: body.category,
+          record_id: body.record_id,
+        };
+        executionRecord.requested_policy = {
+          id: body.execution_request.requested_policy_id,
+          found: Boolean(requestedPolicy),
+          name: requestedPolicy?.name,
+          scope: body.scope,
+          category: body.category,
+          schedule_id: requestedPolicy?.schedule_id,
+          retention_period: requestedPolicy?.retention_period,
+          disposal_action: 'review',
+          status: requestedPolicy?.status,
+          active: requestedPolicy?.active,
+          stale: false,
+          matches_candidate: Boolean(requestedPolicy),
+          destructive_action: false,
+        };
+        executionRecord.matched_records_summary = {
+          scope: body.scope,
+          category: body.category,
+          record_id: body.record_id,
+          record_count: body.record_id ? 1 : 0,
+          policy_match_count: requestedPolicy ? 1 : 0,
+          destructive_policy_count: 0,
+          policy_ids: body.execution_request.requested_policy_id
+            ? [body.execution_request.requested_policy_id]
+            : [],
+        };
+        if (body.execution_request.operator_notes) {
+          executionRecord.operator_notes = body.execution_request.operator_notes;
+        } else {
+          delete executionRecord.operator_notes;
+        }
+        executionRecord.audit_evidence = body.execution_request.evidence ?? [];
+        executionRecord.outcome = 'manual_review_required';
+        executionRecord.block_reason =
+          'retention execution request is recorded for manual review only';
+        executionRecord.workflow = {
+          status: 'awaiting_manual_review',
+          blockers: [],
+          required_approvals: [
+            {
+              code: 'retention_manual_review',
+              required_from: 'privacy_or_settings_manager',
+              reason: 'review retained evidence only before any separate operational process',
+            },
+          ],
+          next_step: 'Review retained evidence only; no disposal has been executed.',
+        };
+        executionRecord.execution_result = {
+          bounded_executor: true,
+          targets_considered: [
+            {
+              target_type: 'retention_candidate_record',
+              target_id: body.record_id ?? `${body.scope}:${body.category}`,
+              action: 'bounded_review_evidence',
+              reason_code: 'target_considered',
+              detail: 'candidate queued for review-only evidence evaluation',
+            },
+          ],
+          targets_acted: [],
+          targets_skipped: [
+            {
+              target_type: 'retention_candidate_record',
+              target_id: body.record_id ?? `${body.scope}:${body.category}`,
+              action: 'bounded_review_evidence',
+              reason_code: 'review_only_intent',
+              detail: 'manual review request only',
+            },
+          ],
+          reason_codes: ['retention_manual_review', 'review_only_intent'],
+          next_step: 'Review retained evidence only; no disposal has been executed.',
+          destructive_disposal_completed: false,
+          full_erasure_completed: false,
+          blocker_metadata: [],
+        };
+        executionRecord.would_execute = false;
+        retentionExecutions = [executionRecord, ...retentionExecutions];
+        return Promise.resolve(
+          jsonResponse({
+            mode: 'execution_request',
+            execution_supported: false,
+            destructive_execution_supported: false,
+            candidate: {
+              scope: body.scope,
+              category: body.category,
+              record_id: body.record_id,
+            },
+            matched_count: matches.length,
+            matches,
+            execution_record: executionRecord,
+          }),
+        );
+      }
       return Promise.resolve(
         jsonResponse({
           mode: 'dry_run',
@@ -1172,6 +1394,12 @@ function privacyFetch(
           ? retentionExecutions.filter((record) => record.execution_status === status)
           : retentionExecutions;
       return Promise.resolve(jsonResponse(filtered));
+    }
+    if (url.includes('/v1/privacy/retention-due-candidates')) {
+      if (method !== 'GET') {
+        return Promise.resolve(jsonResponse({ error: 'method not allowed' }, 405));
+      }
+      return Promise.resolve(jsonResponse(retentionDueCandidatesReport));
     }
     if (url.includes('/v1/privacy/processors')) {
       if (method === 'POST') {
@@ -1392,6 +1620,62 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Gestão' })).toBeTruthy();
     expect(screen.queryByRole('switch', { name: 'Ativar IA/MCP' })).toBeNull();
+  });
+
+  it('renders and autosaves the workflow reminder policy fields', async () => {
+    const olderSettings = cloneJson(DEFAULT_SETTINGS) as Partial<typeof DEFAULT_SETTINGS>;
+    delete olderSettings.workflow;
+    const { fn, calls } = settingsFetch(olderSettings);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=gestao']);
+
+    const enabled = (await screen.findByRole('switch', {
+      name: 'Gerar lembretes locais',
+    })) as HTMLInputElement;
+    expect(enabled.checked).toBe(true);
+    expect((screen.getByLabelText('Limite no painel') as HTMLInputElement).value).toBe('5');
+    expect((screen.getByLabelText('Prazo breve') as HTMLInputElement).value).toBe('45');
+    expect((screen.getByLabelText('Janela de presenças') as HTMLInputElement).value).toBe('45');
+    expect(
+      (screen.getByRole('switch', { name: 'Calendário do perfil' }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('switch', { name: 'Seguimentos de atas' }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('switch', { name: 'Higiene de presenças' }) as HTMLInputElement).checked,
+    ).toBe(true);
+
+    fireEvent.click(enabled);
+    fireEvent.change(screen.getByLabelText('Limite no painel'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('Prazo breve'), { target: { value: '12' } });
+    fireEvent.change(screen.getByLabelText('Janela de presenças'), {
+      target: { value: '20' },
+    });
+    fireEvent.click(screen.getByRole('switch', { name: 'Calendário do perfil' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Seguimentos de atas' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Higiene de presenças' }));
+
+    await waitFor(
+      () => {
+        const put = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(put).toBeTruthy();
+        const sent = JSON.parse(put!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(sent.workflow.reminders).toEqual({
+          enabled: false,
+          dashboard_limit: 7,
+          due_soon_days: 12,
+          attendance_lookahead_days: 20,
+          sources: {
+            profile_calendar: false,
+            act_follow_ups: false,
+            attendance_hygiene: false,
+          },
+        });
+      },
+      { timeout: 3000 },
+    );
   });
 
   it('shows platform API and MCP status with honest control limitations', async () => {
@@ -2133,6 +2417,265 @@ describe('SettingsPage', () => {
       },
     });
     expect(await screen.findByText('EU to US analytics export')).toBeTruthy();
+  });
+
+  it('renders due retention candidates from the read-only GET scan', async () => {
+    const { fn } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    expect(await within(candidatesPanel!).findByText('archive-doc-1')).toBeTruthy();
+    expect(within(candidatesPanel!).getByText('Livro: book-archive-1')).toBeTruthy();
+    expect(within(candidatesPanel!).getByText('Mensagens de suporte')).toBeTruthy();
+    expect(within(candidatesPanel!).getByText('Vencimento: 2026-06-01')).toBeTruthy();
+    expect(within(candidatesPanel!).getByText(/awaiting_manual_review/)).toBeTruthy();
+    expect(within(candidatesPanel!).getByText(/retention_manual_review/)).toBeTruthy();
+    expect(within(candidatesPanel!).getAllByText(/would_execute:\s*false/).length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it('shows already queued review state for a due retention candidate without posting again', async () => {
+    const queuedReview = cloneJson(RETENTION_EXECUTION_AWAITING) as RetentionExecutionMetadata & {
+      requested_policy: Record<string, unknown>;
+      candidate: Record<string, unknown>;
+      matched_records_summary: Record<string, unknown>;
+      execution_result: Record<string, unknown>;
+    };
+    queuedReview.id = 'retention-exec-queued-due';
+    queuedReview.requested_at = '2026-07-09T14:10:00Z';
+    queuedReview.requested_policy = {
+      ...((queuedReview.requested_policy as Record<string, unknown>) ?? {}),
+      id: 'retention-1',
+      found: true,
+      name: 'Mensagens de suporte',
+      scope: 'book_archive',
+      category: 'documents',
+      schedule_id: 'support-messages-v1',
+      retention_period: 'P2Y',
+      disposal_action: 'review',
+      status: 'active',
+      active: true,
+      stale: false,
+      matches_candidate: true,
+      destructive_action: false,
+    };
+    queuedReview.candidate = {
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-1',
+    };
+    queuedReview.matched_records_summary = {
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-1',
+      record_count: 1,
+      policy_match_count: 1,
+      destructive_policy_count: 0,
+      policy_ids: ['retention-1'],
+    };
+    queuedReview.execution_result = {
+      ...queuedReview.execution_result,
+      targets_acted: [],
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+    };
+    queuedReview.would_execute = false;
+
+    const { fn, calls } = privacyFetch(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [queuedReview],
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    const candidateRow = (await within(candidatesPanel!).findByText('archive-doc-1')).closest('tr');
+    expect(candidateRow).toBeTruthy();
+    expect(within(candidateRow!).getByText('Revisão já na fila')).toBeTruthy();
+    expect(
+      within(candidateRow!).getByText(/awaiting_review · retention-exec-queued-due/),
+    ).toBeTruthy();
+    expect(within(candidateRow!).getByText(/Pedido em/)).toBeTruthy();
+    expect(
+      within(candidateRow!).queryByRole('button', { name: 'Pedir revisão de evidência' }),
+    ).toBeNull();
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'POST' && call.url.endsWith('/v1/privacy/retention-policies/dry-run'),
+      ),
+    ).toBe(false);
+  });
+
+  it('records a review-only request from a due retention candidate row', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    const candidateRow = (await within(candidatesPanel!).findByText('archive-doc-1')).closest('tr');
+    expect(candidateRow).toBeTruthy();
+    expect(
+      within(candidateRow!).getByRole('button', { name: 'Pedir revisão de evidência' }),
+    ).toBeTruthy();
+
+    const initialDueCandidateGets = calls.filter(
+      (call) => call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+    ).length;
+    const initialExecutionGets = calls.filter(
+      (call) => call.method === 'GET' && call.url.includes('/v1/privacy/retention-executions'),
+    ).length;
+
+    fireEvent.click(
+      within(candidateRow!).getByRole('button', { name: 'Pedir revisão de evidência' }),
+    );
+
+    const reviewRequest = await waitFor(() => {
+      const call = calls.find(
+        (c) =>
+          c.method === 'POST' &&
+          c.url.endsWith('/v1/privacy/retention-policies/dry-run') &&
+          Boolean(c.body?.includes('execution_request')),
+      );
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(JSON.parse(reviewRequest.body as string)).toEqual({
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: 'archive-doc-1',
+      execution_request: {
+        requested_policy_id: 'retention-1',
+        execution_mode: 'review_only',
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (call) =>
+            call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+        ).length,
+      ).toBeGreaterThan(initialDueCandidateGets),
+    );
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (call) => call.method === 'GET' && call.url.includes('/v1/privacy/retention-executions'),
+        ).length,
+      ).toBeGreaterThan(initialExecutionGets),
+    );
+    const executionQueue = (await screen.findByText('Fila de revisão de execução')).closest(
+      'section',
+    );
+    expect(executionQueue).toBeTruthy();
+    expect(await within(executionQueue!).findByText('archive-doc-1')).toBeTruthy();
+    expect(
+      calls.some(
+        (call) => call.method === 'POST' && call.url.includes('/v1/privacy/retention-executions'),
+      ),
+    ).toBe(false);
+    expect(
+      calls.some(
+        (call) =>
+          ['POST', 'PATCH', 'DELETE'].includes(call.method) &&
+          call.url.includes('/v1/privacy/retention-policies') &&
+          !call.url.endsWith('/v1/privacy/retention-policies/dry-run'),
+      ),
+    ).toBe(false);
+    expect(
+      calls.some((call) => call.method !== 'GET' && /disposal|erasure|legal-hold/.test(call.url)),
+    ).toBe(false);
+    expect(
+      calls.every(
+        (call) =>
+          !call.body?.includes('execute_supported') &&
+          !call.body?.includes('"execute"') &&
+          !call.body?.includes('"delete"') &&
+          !call.body?.includes('"anonymize"'),
+      ),
+    ).toBe(true);
+  });
+
+  it('loads retention due candidates without posting execution, disposal, or erasure requests', async () => {
+    const { fn, calls } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    await screen.findByText('Candidatos de retenção vencidos');
+    cleanup();
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+    await screen.findByText('Candidatos de retenção vencidos');
+
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (call) =>
+            call.method === 'GET' && call.url.endsWith('/v1/privacy/retention-due-candidates'),
+        ).length,
+      ).toBeGreaterThanOrEqual(2),
+    );
+    expect(
+      calls.some(
+        (call) =>
+          call.method === 'POST' &&
+          (call.url.includes('/v1/privacy/retention-executions') ||
+            call.url.includes('/disposal') ||
+            call.url.includes('/erasure') ||
+            call.url.includes('/retention-policies/dry-run')),
+      ),
+    ).toBe(false);
+  });
+
+  it('shows unsupported-period blocked due candidates without a destructive completion claim', async () => {
+    const { fn } = privacyFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage />, ['/configuracoes?sec=privacidade']);
+
+    const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
+      'section',
+    );
+    expect(candidatesPanel).toBeTruthy();
+    expect(await within(candidatesPanel!).findByText('archive-doc-blocked')).toBeTruthy();
+    expect(within(candidatesPanel!).getByText('Unsupported archival period')).toBeTruthy();
+    expect(
+      within(candidatesPanel!).getAllByText(/unsupported_retention_period/).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(candidatesPanel!).getAllByText(/Retention period PXBROKEN is not supported/).length,
+    ).toBeGreaterThan(0);
+    expect(within(candidatesPanel!).getByText(/Board preservation hold/)).toBeTruthy();
+    expect(within(candidatesPanel!).getByText(/unsupported_period_review/)).toBeTruthy();
+    expect(
+      within(candidatesPanel!).queryByText(/destructive_disposal_completed:\s*true/),
+    ).toBeNull();
+    expect(
+      within(candidatesPanel!).getAllByText(/destructive_disposal_completed:\s*false/).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(candidatesPanel!).getAllByText(/full_erasure_completed:\s*false/).length,
+    ).toBeGreaterThan(0);
   });
 
   it('lists, creates, patches, and dry-runs retention policies without destructive execution', async () => {

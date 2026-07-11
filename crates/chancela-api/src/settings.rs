@@ -70,6 +70,8 @@ pub struct Settings {
         skip_serializing_if = "RegistryAutoUpdateSettings::is_default"
     )]
     pub registry_auto_update: RegistryAutoUpdateSettings,
+    /// Local workflow policy for advisory dashboard behavior.
+    pub workflow: WorkflowSettings,
     /// Tenant-level AI/MCP controls. Defaults off so older settings documents do not enable AI.
     pub ai: AiSettings,
     /// Platform operations controls: service desired state, logging levels, and audit metadata.
@@ -91,6 +93,7 @@ impl Default for Settings {
             catalog: CatalogSettings::default(),
             signing: SigningSettings::default(),
             registry_auto_update: RegistryAutoUpdateSettings::default(),
+            workflow: WorkflowSettings::default(),
             ai: AiSettings::default(),
             platform: PlatformSettings::default(),
             appearance: AppearanceSettings::default(),
@@ -185,6 +188,102 @@ impl RegistryAutoUpdateSettings {
             }
         }
         Ok(())
+    }
+}
+
+pub const DEFAULT_WORKFLOW_REMINDER_DASHBOARD_LIMIT: u16 = 5;
+pub const DEFAULT_WORKFLOW_REMINDER_DUE_SOON_DAYS: u16 = 45;
+pub const DEFAULT_WORKFLOW_REMINDER_ATTENDANCE_LOOKAHEAD_DAYS: u16 = 45;
+
+const MAX_WORKFLOW_REMINDER_DASHBOARD_LIMIT: u16 = 50;
+const MAX_WORKFLOW_REMINDER_DAYS: u16 = 365;
+
+/// Local workflow controls. These are advisory settings for in-app surfaces only; they do not
+/// create legal-calendar authority, external delivery guarantees, or workflow-completion gates.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorkflowSettings {
+    /// Dashboard reminder generation policy.
+    pub reminders: WorkflowReminderSettings,
+}
+
+impl WorkflowSettings {
+    pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        self.reminders.validate()
+    }
+}
+
+/// Advisory dashboard reminder policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorkflowReminderSettings {
+    /// Master switch for local dashboard reminder cards/feed entries.
+    pub enabled: bool,
+    /// Maximum number of local reminders returned by the dashboard.
+    pub dashboard_limit: u16,
+    /// Due dates within this many days are labelled `DueSoon`.
+    pub due_soon_days: u16,
+    /// Future meeting dates within this many days are scanned for attendance hygiene reminders.
+    pub attendance_lookahead_days: u16,
+    /// Per-family source switches for the existing local reminder generators.
+    pub sources: WorkflowReminderSourceSettings,
+}
+
+impl Default for WorkflowReminderSettings {
+    fn default() -> Self {
+        WorkflowReminderSettings {
+            enabled: true,
+            dashboard_limit: DEFAULT_WORKFLOW_REMINDER_DASHBOARD_LIMIT,
+            due_soon_days: DEFAULT_WORKFLOW_REMINDER_DUE_SOON_DAYS,
+            attendance_lookahead_days: DEFAULT_WORKFLOW_REMINDER_ATTENDANCE_LOOKAHEAD_DAYS,
+            sources: WorkflowReminderSourceSettings::default(),
+        }
+    }
+}
+
+impl WorkflowReminderSettings {
+    fn validate(&self) -> Result<(), ApiError> {
+        if self.dashboard_limit > MAX_WORKFLOW_REMINDER_DASHBOARD_LIMIT {
+            return Err(ApiError::Unprocessable(format!(
+                "workflow.reminders.dashboard_limit must be between 0 and {}, got {}",
+                MAX_WORKFLOW_REMINDER_DASHBOARD_LIMIT, self.dashboard_limit
+            )));
+        }
+        if self.due_soon_days > MAX_WORKFLOW_REMINDER_DAYS {
+            return Err(ApiError::Unprocessable(format!(
+                "workflow.reminders.due_soon_days must be between 0 and {}, got {}",
+                MAX_WORKFLOW_REMINDER_DAYS, self.due_soon_days
+            )));
+        }
+        if self.attendance_lookahead_days > MAX_WORKFLOW_REMINDER_DAYS {
+            return Err(ApiError::Unprocessable(format!(
+                "workflow.reminders.attendance_lookahead_days must be between 0 and {}, got {}",
+                MAX_WORKFLOW_REMINDER_DAYS, self.attendance_lookahead_days
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Per-family switches for local dashboard reminder generation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorkflowReminderSourceSettings {
+    /// Annual/profile calendar advisory reminders.
+    pub profile_calendar: bool,
+    /// Open act follow-up reminders.
+    pub act_follow_ups: bool,
+    /// Draft/review act attendance hygiene reminders.
+    pub attendance_hygiene: bool,
+}
+
+impl Default for WorkflowReminderSourceSettings {
+    fn default() -> Self {
+        WorkflowReminderSourceSettings {
+            profile_calendar: true,
+            act_follow_ups: true,
+            attendance_hygiene: true,
+        }
     }
 }
 
@@ -1428,6 +1527,7 @@ impl Settings {
         validate_tsl_sources(&self.signing.tsl_sources)?;
         validate_tsa_providers(&self.signing.tsa_providers)?;
         self.registry_auto_update.validate()?;
+        self.workflow.validate()?;
         self.platform.validate()?;
         Ok(())
     }

@@ -24,6 +24,60 @@ fn sample_settings() -> Value {
             "preferred_family": "ChaveMovelDigital",
             "tsa_url": "https://tsa.example.pt/tsr",
             "tsl_url": "https://tsl.example.pt/tsl.xml",
+            "tsl_sources": [
+                {
+                    "id": "pt-gns",
+                    "name": "Portugal GNS Trusted List",
+                    "enabled": true,
+                    "url": "https://www.gns.gov.pt/media/TSLPT.xml",
+                    "path": null,
+                    "country": "PT",
+                    "scheme": "eidas",
+                    "digest": null,
+                    "timeout_seconds": 30,
+                    "max_bytes": 26214400,
+                    "refresh": {
+                        "enabled": false,
+                        "cadence": {
+                            "kind": "daily",
+                            "hour_utc": 3
+                        }
+                    }
+                },
+                {
+                    "id": "eu-lotl",
+                    "name": "EU List of Trusted Lists",
+                    "enabled": false,
+                    "url": "https://ec.europa.eu/tools/lotl/eu-lotl.xml",
+                    "path": null,
+                    "country": "EU",
+                    "scheme": "lotl",
+                    "digest": null,
+                    "timeout_seconds": 30,
+                    "max_bytes": 26214400,
+                    "refresh": {
+                        "enabled": false,
+                        "cadence": {
+                            "kind": "daily",
+                            "hour_utc": 2
+                        }
+                    }
+                }
+            ],
+            "tsa_providers": [
+                {
+                    "id": "pt-cc",
+                    "name": "Portugal Cartao de Cidadao TSA",
+                    "enabled": true,
+                    "url": "http://ts.cartaodecidadao.pt/tsa/server",
+                    "path": null,
+                    "default": true,
+                    "policy": null,
+                    "digest": "sha256",
+                    "timeout_seconds": 30,
+                    "max_bytes": 1048576
+                }
+            ],
             "require_qualified_for_seal": true,
             "cmd": {
                 "env": "preprod",
@@ -69,7 +123,40 @@ fn sample_settings() -> Value {
                 }
             ]
         },
+        "workflow": {
+            "reminders": {
+                "enabled": true,
+                "dashboard_limit": 7,
+                "due_soon_days": 30,
+                "attendance_lookahead_days": 21,
+                "sources": {
+                    "profile_calendar": true,
+                    "act_follow_ups": false,
+                    "attendance_hygiene": true
+                }
+            }
+        },
         "appearance": { "theme": "dark", "leather_texture": false, "texture_intensity": 25, "button_texture": false },
+        "platform": {
+            "logging": {
+                "global": "info",
+                "app": "info",
+                "api": "info",
+                "mcp": "info",
+                "service_overrides": {}
+            },
+            "api_server": {
+                "enabled": true,
+                "desired_state": "running",
+                "last_action": null
+            },
+            "mcp_stdio_server": {
+                "enabled": false,
+                "desired_state": "stopped",
+                "last_action": null
+            },
+            "audit": []
+        },
         "ui": {
             "registered_entity_columns": ["Name", "Nipc", "Type", "LastActivity", "Actions"]
         },
@@ -93,6 +180,20 @@ async fn settings_round_trip_validation_and_persistence() {
     assert_eq!(defaults["documents"]["locale"], "pt-PT");
     assert_eq!(defaults["appearance"]["theme"], "system");
     assert_eq!(defaults["appearance"]["texture_intensity"], 60);
+    assert_eq!(
+        defaults["workflow"]["reminders"],
+        json!({
+            "enabled": true,
+            "dashboard_limit": 5,
+            "due_soon_days": 45,
+            "attendance_lookahead_days": 45,
+            "sources": {
+                "profile_calendar": true,
+                "act_follow_ups": true,
+                "attendance_hygiene": true
+            }
+        })
+    );
 
     // A full PUT round-trips and is reflected by the next GET.
     let (status, stored) = h
@@ -115,9 +216,10 @@ async fn settings_round_trip_validation_and_persistence() {
         "a settings.updated event was appended"
     );
 
-    // Validation: out-of-range intensity, a bad locale, and a non-http URL each 422.
-    let cases: [fn(&mut Value); 3] = [
+    // Validation: out-of-range intensity/reminder policy, a bad locale, and a non-http URL each 422.
+    let cases: [fn(&mut Value); 4] = [
         |s| s["appearance"]["texture_intensity"] = json!(150),
+        |s| s["workflow"]["reminders"]["dashboard_limit"] = json!(51),
         // `fr-FR` is now a supported locale; use a tag outside the 14-locale set.
         |s| s["documents"]["locale"] = json!("zz-ZZ"),
         |s| s["signing"]["tsa_url"] = json!("ftp://tsa.example.pt"),

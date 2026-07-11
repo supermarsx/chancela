@@ -106,3 +106,19 @@ describe('DEFAULT_SETTINGS.platform', () => {
     expect(DEFAULT_SETTINGS.platform.audit).toEqual([]);
   });
 });
+
+describe('DEFAULT_SETTINGS.workflow', () => {
+  it('defaults local dashboard reminders to the existing generated output policy', () => {
+    expect(DEFAULT_SETTINGS.workflow.reminders).toEqual({
+      enabled: true,
+      dashboard_limit: 5,
+      due_soon_days: 45,
+      attendance_lookahead_days: 45,
+      sources: {
+        profile_calendar: true,
+        act_follow_ups: true,
+        attendance_hygiene: true,
+      },
+    });
+  });
+});
