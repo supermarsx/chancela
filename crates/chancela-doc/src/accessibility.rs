@@ -305,6 +305,8 @@ pub struct NonTextContentReport {
     pub decorative_artifact_count: usize,
     /// Count of writer-owned rule artifacts this writer emits as known decorative content.
     pub known_decorative_block_count: usize,
+    /// Known writer-owned decorative rule targets were emitted as PDF artifacts by this writer.
+    pub writer_owned_decorative_artifacts_accounted_for: bool,
     /// Known decorative artifact targets absent from the supplied decorative entries.
     pub missing_decorative_artifacts: Vec<String>,
     /// Alternate text entries with blank target or text.
@@ -367,7 +369,7 @@ impl AccessibilityReport {
             .join(",");
 
         format!(
-            "{{\"version\":6,\
+            "{{\"version\":7,\
 \"pdf_ua_claimed\":{pdf_ua_claimed},\
 \"metadata\":{{\
 \"title\":{{\"value\":{title},\"source_present\":{title_present},\"fallback_used\":{title_fallback}}},\
@@ -392,7 +394,7 @@ impl AccessibilityReport {
 \"structure_depth\":{{\"bounded_local_profile\":{bounded_local_profile},\"max_depth\":{max_depth},\"top_level_semantic_block_count\":{top_level_count},\"table_count\":{depth_table_count},\"table_row_count\":{table_row_count},\"table_cell_count\":{table_cell_count},\"document_root_children_are_top_level_semantic_blocks\":{root_children_top_level},\"tables_contain_rows_only\":{tables_rows_only},\"rows_contain_header_or_data_cells_only\":{rows_cells_only},\"row_and_cell_roles_are_table_scoped\":{row_cell_scoped},\"complete_for_local_profile\":{depth_complete}}},\
 \"artifact_marking\":{{\"layout_artifacts_marked\":{artifact_layout_marked},\"known_layout_artifact_count\":{artifact_count},\"header_rule_artifact_count\":{header_artifacts},\"horizontal_rule_artifact_count\":{rule_artifacts},\"vote_table_rule_artifact_count\":{vote_rule_artifacts},\"signature_line_artifact_count\":{signature_artifacts}}}\
 }},\
-\"non_text_content\":{{\"model_supplied\":{non_text_model_supplied},\"all_non_text_content_accounted_for\":{non_text_all_accounted},\"text_alternative_count\":{text_alt_count},\"decorative_artifact_count\":{decorative_count},\"known_decorative_block_count\":{known_decorative_count},\"missing_decorative_artifacts\":[{missing_decorative}],\"invalid_text_alternative_count\":{invalid_text_alts},\"invalid_decorative_artifact_count\":{invalid_decorative},\"complete\":{non_text_complete}}},\
+\"non_text_content\":{{\"model_supplied\":{non_text_model_supplied},\"all_non_text_content_accounted_for\":{non_text_all_accounted},\"text_alternative_count\":{text_alt_count},\"decorative_artifact_count\":{decorative_count},\"known_decorative_block_count\":{known_decorative_count},\"writer_owned_decorative_artifacts_accounted_for\":{writer_decorative_accounted},\"missing_decorative_artifacts\":[{missing_decorative}],\"invalid_text_alternative_count\":{invalid_text_alts},\"invalid_decorative_artifact_count\":{invalid_decorative},\"complete\":{non_text_complete}}},\
 \"alt_text_model_present\":{alt_text},\
 \"pdf_ua_blockers\":[{blockers}]\
 }}",
@@ -455,6 +457,9 @@ impl AccessibilityReport {
             text_alt_count = self.non_text_content.text_alternative_count,
             decorative_count = self.non_text_content.decorative_artifact_count,
             known_decorative_count = self.non_text_content.known_decorative_block_count,
+            writer_decorative_accounted = self
+                .non_text_content
+                .writer_owned_decorative_artifacts_accounted_for,
             missing_decorative =
                 json_string_array(&self.non_text_content.missing_decorative_artifacts),
             invalid_text_alts = self.non_text_content.invalid_text_alternative_count,
@@ -473,8 +478,8 @@ pub fn report<'a>(input: impl Into<AccessibilityInput<'a>>) -> AccessibilityRepo
     let table_semantics = table_semantics(input.doc);
     let structure_depth = structure_depth(input.doc);
     let artifact_marking = artifact_marking(input.doc);
-    let non_text_content = non_text_content(input.doc, input.alt_text_model);
-    let alt_text_model_present = non_text_content.complete;
+    let non_text_content = non_text_content(input.doc, input.alt_text_model, &artifact_marking);
+    let alt_text_model_present = non_text_content.model_supplied && non_text_content.complete;
 
     let mut blockers = Vec::new();
     if !heading_hierarchy.no_skipped_levels {
@@ -893,9 +898,15 @@ fn artifact_marking(doc: &DocumentModel) -> ArtifactMarkingReport {
     }
 }
 
-fn non_text_content(doc: &DocumentModel, model: Option<&AltTextModel>) -> NonTextContentReport {
+fn non_text_content(
+    doc: &DocumentModel,
+    model: Option<&AltTextModel>,
+    artifact_marking: &ArtifactMarkingReport,
+) -> NonTextContentReport {
     let known_decorative_targets = known_decorative_targets(doc);
     let known_decorative_block_count = known_decorative_targets.len();
+    let writer_owned_decorative_artifacts_accounted_for = artifact_marking.layout_artifacts_marked
+        && artifact_marking.known_layout_artifact_count == known_decorative_block_count;
     let Some(model) = model else {
         return NonTextContentReport {
             model_supplied: false,
@@ -903,10 +914,15 @@ fn non_text_content(doc: &DocumentModel, model: Option<&AltTextModel>) -> NonTex
             text_alternative_count: 0,
             decorative_artifact_count: 0,
             known_decorative_block_count,
-            missing_decorative_artifacts: known_decorative_targets,
+            writer_owned_decorative_artifacts_accounted_for,
+            missing_decorative_artifacts: if writer_owned_decorative_artifacts_accounted_for {
+                Vec::new()
+            } else {
+                known_decorative_targets
+            },
             invalid_text_alternative_count: 0,
             invalid_decorative_artifact_count: 0,
-            complete: false,
+            complete: writer_owned_decorative_artifacts_accounted_for,
         };
     };
 
@@ -925,14 +941,19 @@ fn non_text_content(doc: &DocumentModel, model: Option<&AltTextModel>) -> NonTex
         .iter()
         .map(|artifact| artifact.target.trim())
         .collect::<BTreeSet<_>>();
-    let missing_decorative_artifacts = known_decorative_targets
-        .into_iter()
-        .filter(|target| !decorative_targets.contains(target.as_str()))
-        .collect::<Vec<_>>();
+    let missing_decorative_artifacts = if writer_owned_decorative_artifacts_accounted_for {
+        Vec::new()
+    } else {
+        known_decorative_targets
+            .into_iter()
+            .filter(|target| !decorative_targets.contains(target.as_str()))
+            .collect::<Vec<_>>()
+    };
     let complete = model.all_non_text_content_accounted_for
         && invalid_text_alternative_count == 0
         && invalid_decorative_artifact_count == 0
-        && missing_decorative_artifacts.is_empty();
+        && missing_decorative_artifacts.is_empty()
+        && writer_owned_decorative_artifacts_accounted_for;
 
     NonTextContentReport {
         model_supplied: true,
@@ -940,6 +961,7 @@ fn non_text_content(doc: &DocumentModel, model: Option<&AltTextModel>) -> NonTex
         text_alternative_count: model.text_alternatives.len(),
         decorative_artifact_count: model.decorative_artifacts.len(),
         known_decorative_block_count,
+        writer_owned_decorative_artifacts_accounted_for,
         missing_decorative_artifacts,
         invalid_text_alternative_count,
         invalid_decorative_artifact_count,
@@ -951,6 +973,12 @@ fn known_decorative_targets(doc: &DocumentModel) -> Vec<String> {
     let mut targets = vec![header_rule_target()];
     for (index, block) in doc.blocks.iter().enumerate() {
         match block {
+            // New caller-owned non-text block variants must update this accounting before
+            // `no_alt_text_model` can be suppressed by writer-owned decorative artifacts.
+            Block::Heading { .. }
+            | Block::Paragraph { .. }
+            | Block::KeyValue { .. }
+            | Block::PageBreak => {}
             Block::Rule => targets.push(block_rule_target(index)),
             Block::VoteTable { .. } => {
                 targets.push(vote_table_rule_target(index, "header"));
@@ -961,7 +989,6 @@ fn known_decorative_targets(doc: &DocumentModel) -> Vec<String> {
                     (0..slots.len()).map(|slot_index| signature_line_target(index, slot_index)),
                 );
             }
-            _ => {}
         }
     }
     targets

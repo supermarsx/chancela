@@ -95,17 +95,6 @@ fn fixture() -> DocumentModel {
     doc
 }
 
-fn fixture_decorative_targets() -> Vec<String> {
-    vec![
-        "layout:header-rule".to_string(),
-        "block:4:vote-table-header-rule".to_string(),
-        "block:4:vote-table-footer-rule".to_string(),
-        "block:5:rule".to_string(),
-        "block:6:signature-line:0".to_string(),
-        "block:6:signature-line:1".to_string(),
-    ]
-}
-
 fn catalog(parsed: &Document) -> &Dictionary {
     let root = parsed
         .trailer
@@ -758,7 +747,7 @@ fn implausible_language_metadata_is_reported_and_falls_back() {
     assert!(report.metadata.language.fallback_used);
     assert!(!report.pdf_ua_claimed);
     assert!(
-        report
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
     );
@@ -846,12 +835,20 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
     assert!(report.structure_depth.complete_for_local_profile);
     assert_eq!(report.artifact_marking.known_layout_artifact_count, 6);
     assert_eq!(report.non_text_content.known_decorative_block_count, 6);
-    assert_eq!(
-        report.non_text_content.missing_decorative_artifacts,
-        fixture_decorative_targets()
+    assert!(
+        report
+            .non_text_content
+            .writer_owned_decorative_artifacts_accounted_for
     );
     assert!(
         report
+            .non_text_content
+            .missing_decorative_artifacts
+            .is_empty()
+    );
+    assert!(report.non_text_content.complete);
+    assert!(
+        !report
             .pdf_ua_blockers
             .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
     );
@@ -922,7 +919,6 @@ fn accessibility_heading_hierarchy_reports_skipped_and_unsupported_levels() {
         vec![
             pdfa::PdfUaBlocker::HeadingHierarchySkipsLevels,
             pdfa::PdfUaBlocker::UnsupportedHeadingLevel,
-            pdfa::PdfUaBlocker::NoAltTextModel,
             pdfa::PdfUaBlocker::LimitedTaggedStructure,
         ]
     );
@@ -986,7 +982,7 @@ fn accessibility_report_records_space_emission_without_pdfua_claim() {
     );
 
     let json = report.to_json();
-    assert!(json.contains("\"version\":6"));
+    assert!(json.contains("\"version\":7"));
     assert!(json.contains("\"structure_depth\":{"));
     assert!(json.contains("\"bounded_local_profile\":true"));
     assert!(json.contains("\"inter_word_spaces_emitted\":true"));
@@ -1122,6 +1118,68 @@ fn accessibility_page_breaks_do_not_require_decorative_accounting() {
 }
 
 #[test]
+fn accessibility_non_text_accounting_covers_current_block_variants() {
+    let mut doc = DocumentModel::new("Variantes", "Encosto Estratégico Lda", "Todos os blocos");
+    doc.blocks = vec![
+        Block::Heading {
+            level: 1,
+            text: "Secao".to_string(),
+        },
+        Block::Paragraph {
+            runs: vec![Run {
+                text: "Texto".to_string(),
+                bold: false,
+                italic: false,
+            }],
+        },
+        Block::KeyValue {
+            rows: vec![KvRow {
+                key: "Data".to_string(),
+                value: "2026-07-11".to_string(),
+            }],
+        },
+        Block::VoteTable {
+            rows: vec![VoteRow {
+                label: "Ponto 1".to_string(),
+                favor: 1,
+                against: 0,
+                abstain: 0,
+            }],
+        },
+        Block::SignatureBlock {
+            slots: vec![SignatureSlot {
+                role: "Presidente".to_string(),
+                name: "Amelia Marques".to_string(),
+            }],
+        },
+        Block::PageBreak,
+        Block::Rule,
+    ];
+
+    let report = pdfa::accessibility_report(&doc);
+
+    assert_eq!(report.artifact_marking.known_layout_artifact_count, 5);
+    assert_eq!(report.non_text_content.known_decorative_block_count, 5);
+    assert!(
+        report
+            .non_text_content
+            .writer_owned_decorative_artifacts_accounted_for
+    );
+    assert!(report.non_text_content.complete);
+    assert!(
+        !report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::NoAltTextModel)
+    );
+    assert!(!report.pdf_ua_claimed);
+    assert!(
+        report
+            .pdf_ua_blockers
+            .contains(&pdfa::PdfUaBlocker::LimitedTaggedStructure)
+    );
+}
+
+#[test]
 fn accessibility_non_text_accounting_reports_missing_and_invalid_entries() {
     let mut doc = DocumentModel::new("Decorativos", "Encosto Estratégico Lda", "Teste");
     doc.blocks = vec![Block::PageBreak, Block::Rule];
@@ -1142,9 +1200,16 @@ fn accessibility_non_text_accounting_reports_missing_and_invalid_entries() {
     assert_eq!(report.non_text_content.text_alternative_count, 1);
     assert_eq!(report.non_text_content.decorative_artifact_count, 2);
     assert_eq!(report.non_text_content.known_decorative_block_count, 2);
-    assert_eq!(
-        report.non_text_content.missing_decorative_artifacts,
-        vec!["layout:header-rule".to_string(), "block:1:rule".to_string()]
+    assert!(
+        report
+            .non_text_content
+            .writer_owned_decorative_artifacts_accounted_for
+    );
+    assert!(
+        report
+            .non_text_content
+            .missing_decorative_artifacts
+            .is_empty()
     );
     assert_eq!(report.non_text_content.invalid_text_alternative_count, 1);
     assert_eq!(report.non_text_content.invalid_decorative_artifact_count, 1);
@@ -1165,7 +1230,7 @@ fn accessibility_report_json_is_deterministic() {
     assert_eq!(a, b);
     assert_eq!(
         a,
-        "{\"version\":6,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"display_doc_title\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true,\"inter_word_spaces_emitted\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":true,\"tagged_content_present\":true,\"layout_artifacts_marked\":true,\"pages_use_structure_tab_order\":true},\"tagged_structure\":{\"heading_hierarchy\":{\"document_title_tagged_as_h1\":true,\"heading_count\":2,\"max_observed_level\":2,\"no_skipped_levels\":true,\"unsupported_levels\":[]},\"role_map\":{\"present\":true,\"required_custom_roles\":[\"ChancelaDocument\",\"ChancelaDocumentTitle\",\"ChancelaHeaderMetadata\",\"ChancelaHeading1\",\"ChancelaHeading2\",\"ChancelaParagraph\",\"ChancelaKeyValue\",\"ChancelaVoteTable\",\"ChancelaSignatureBlock\"],\"missing_custom_roles\":[],\"standard_targets_only\":true,\"complete\":true},\"tables\":{\"key_value_table_count\":1,\"vote_table_count\":1,\"key_value_tables_have_table_semantics\":true,\"vote_tables_have_table_semantics\":true,\"vote_table_headers_tagged\":true,\"complete\":true},\"structure_depth\":{\"bounded_local_profile\":true,\"max_depth\":4,\"top_level_semantic_block_count\":9,\"table_count\":2,\"table_row_count\":5,\"table_cell_count\":16,\"document_root_children_are_top_level_semantic_blocks\":true,\"tables_contain_rows_only\":true,\"rows_contain_header_or_data_cells_only\":true,\"row_and_cell_roles_are_table_scoped\":true,\"complete_for_local_profile\":true},\"artifact_marking\":{\"layout_artifacts_marked\":true,\"known_layout_artifact_count\":6,\"header_rule_artifact_count\":1,\"horizontal_rule_artifact_count\":1,\"vote_table_rule_artifact_count\":2,\"signature_line_artifact_count\":2}},\"non_text_content\":{\"model_supplied\":false,\"all_non_text_content_accounted_for\":false,\"text_alternative_count\":0,\"decorative_artifact_count\":0,\"known_decorative_block_count\":6,\"missing_decorative_artifacts\":[\"layout:header-rule\",\"block:4:vote-table-header-rule\",\"block:4:vote-table-footer-rule\",\"block:5:rule\",\"block:6:signature-line:0\",\"block:6:signature-line:1\"],\"invalid_text_alternative_count\":0,\"invalid_decorative_artifact_count\":0,\"complete\":false},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"no_alt_text_model\",\"limited_tagged_structure\"]}"
+        "{\"version\":7,\"pdf_ua_claimed\":false,\"metadata\":{\"title\":{\"value\":\"Ata da Assembleia Geral\",\"source_present\":true,\"fallback_used\":false},\"language\":{\"value\":\"pt-PT\",\"source_present\":true,\"fallback_used\":false},\"catalog_lang\":true,\"display_doc_title\":true,\"xmp_title\":true,\"xmp_language\":true},\"text\":{\"embedded_fonts\":true,\"to_unicode_cmaps\":true,\"inter_word_spaces_emitted\":true},\"reading_order\":{\"content_streams_follow_model_order\":true,\"structure_tree_present\":true,\"tagged_content_present\":true,\"layout_artifacts_marked\":true,\"pages_use_structure_tab_order\":true},\"tagged_structure\":{\"heading_hierarchy\":{\"document_title_tagged_as_h1\":true,\"heading_count\":2,\"max_observed_level\":2,\"no_skipped_levels\":true,\"unsupported_levels\":[]},\"role_map\":{\"present\":true,\"required_custom_roles\":[\"ChancelaDocument\",\"ChancelaDocumentTitle\",\"ChancelaHeaderMetadata\",\"ChancelaHeading1\",\"ChancelaHeading2\",\"ChancelaParagraph\",\"ChancelaKeyValue\",\"ChancelaVoteTable\",\"ChancelaSignatureBlock\"],\"missing_custom_roles\":[],\"standard_targets_only\":true,\"complete\":true},\"tables\":{\"key_value_table_count\":1,\"vote_table_count\":1,\"key_value_tables_have_table_semantics\":true,\"vote_tables_have_table_semantics\":true,\"vote_table_headers_tagged\":true,\"complete\":true},\"structure_depth\":{\"bounded_local_profile\":true,\"max_depth\":4,\"top_level_semantic_block_count\":9,\"table_count\":2,\"table_row_count\":5,\"table_cell_count\":16,\"document_root_children_are_top_level_semantic_blocks\":true,\"tables_contain_rows_only\":true,\"rows_contain_header_or_data_cells_only\":true,\"row_and_cell_roles_are_table_scoped\":true,\"complete_for_local_profile\":true},\"artifact_marking\":{\"layout_artifacts_marked\":true,\"known_layout_artifact_count\":6,\"header_rule_artifact_count\":1,\"horizontal_rule_artifact_count\":1,\"vote_table_rule_artifact_count\":2,\"signature_line_artifact_count\":2}},\"non_text_content\":{\"model_supplied\":false,\"all_non_text_content_accounted_for\":false,\"text_alternative_count\":0,\"decorative_artifact_count\":0,\"known_decorative_block_count\":6,\"writer_owned_decorative_artifacts_accounted_for\":true,\"missing_decorative_artifacts\":[],\"invalid_text_alternative_count\":0,\"invalid_decorative_artifact_count\":0,\"complete\":true},\"alt_text_model_present\":false,\"pdf_ua_blockers\":[\"limited_tagged_structure\"]}"
     );
 }
 
