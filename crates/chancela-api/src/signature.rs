@@ -89,6 +89,7 @@ use crate::authz::{require_permission, scope_of_act};
 use crate::error::ApiError;
 use crate::external_signing::{
     EnvelopeView, ExternalSignerSlotStatusDto, ExternalSigningOrderPolicyDto,
+    LinkedExternalInviteSlotSignOutcome, LinkedExternalInviteSlotSignedPdfEvidence,
 };
 use crate::settings::{RuntimeTsaProvider, RuntimeTslSource};
 
@@ -725,6 +726,14 @@ pub struct ExternalSignerInviteEnvelopeView {
     pub order_policy: Option<ExternalSigningOrderPolicyDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slot_status: Option<ExternalSignerSlotStatusDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub technical_upload_auto_sign: Option<ExternalSignerInviteEnvelopeAutoSignView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExternalSignerInviteEnvelopeAutoSignView {
+    pub status: &'static str,
+    pub reason: &'static str,
 }
 
 /// Public invite view. No token secret or token hash is serialized.
@@ -812,18 +821,39 @@ async fn external_invite_external_envelope_view(
         return Ok(None);
     };
 
-    let envelopes = state.external_signing_envelopes.read().await;
-    let envelope = envelopes.get(&link.envelope_id).ok_or(ApiError::NotFound)?;
-    if envelope.act_id != record.act_id {
-        return Err(ApiError::NotFound);
-    }
-    let slot = envelope.slot(link.slot_id).ok_or(ApiError::NotFound)?;
+    let (order_policy, slot_status, has_identity_requirements) = {
+        let envelopes = state.external_signing_envelopes.read().await;
+        let envelope = envelopes.get(&link.envelope_id).ok_or(ApiError::NotFound)?;
+        if envelope.act_id != record.act_id {
+            return Err(ApiError::NotFound);
+        }
+        let slot = envelope.slot(link.slot_id).ok_or(ApiError::NotFound)?;
+        (
+            envelope.order_policy.into(),
+            slot.status.into(),
+            !slot.identity_requirements.is_empty(),
+        )
+    };
+    let technical_upload_auto_sign = if has_identity_requirements
+        && slot_status != ExternalSignerSlotStatusDto::Signed
+        && external_invite_signed_artifact_status(state, record.act_id)
+            .await?
+            .is_some()
+    {
+        Some(ExternalSignerInviteEnvelopeAutoSignView {
+            status: "blocked",
+            reason: "linked slot has identity requirements; signed PDF upload remains technical act evidence only",
+        })
+    } else {
+        None
+    };
 
     Ok(Some(ExternalSignerInviteEnvelopeView {
         id: link.envelope_id.to_string(),
         slot_id: link.slot_id.to_string(),
-        order_policy: Some(envelope.order_policy.into()),
-        slot_status: Some(slot.status.into()),
+        order_policy: Some(order_policy),
+        slot_status: Some(slot_status),
+        technical_upload_auto_sign,
     }))
 }
 
@@ -846,6 +876,7 @@ fn external_invite_external_envelope_view_from_envelope_view(
         slot_id,
         order_policy: Some(envelope.order_policy),
         slot_status: Some(slot.status),
+        technical_upload_auto_sign: None,
     })
 }
 
@@ -4430,6 +4461,14 @@ async fn store_external_invite_signed_pdf_evidence(
         if existing.signature_family == FAMILY_EXTERNAL_SIGNER_HANDOFF
             && existing.signed_pdf_digest == signed_pdf_digest
         {
+            mark_linked_external_invite_slot_from_signed_pdf(
+                state,
+                attestor,
+                record,
+                &existing.document_id,
+                &existing.signed_pdf_digest,
+            )
+            .await?;
             return Ok(());
         }
         return Err(ApiError::Conflict(
@@ -4491,7 +4530,48 @@ async fn store_external_invite_signed_pdf_evidence(
         .await
         .insert(record.act_id, prepared.stored);
 
+    mark_linked_external_invite_slot_from_signed_pdf(
+        state,
+        attestor,
+        record,
+        &document_id,
+        &signed_pdf_digest,
+    )
+    .await?;
+
     Ok(())
+}
+
+async fn mark_linked_external_invite_slot_from_signed_pdf(
+    state: &AppState,
+    attestor: &CurrentAttestor,
+    record: &ExternalSignerInviteRecord,
+    document_id: &str,
+    signed_pdf_digest: &str,
+) -> Result<(), ApiError> {
+    let Some(link) = record.external_envelope else {
+        return Ok(());
+    };
+    let actor_name = format!("external-signer:{}", record.id);
+    match crate::external_signing::sign_linked_external_invite_slot_from_signed_pdf(
+        state,
+        LinkedExternalInviteSlotSignedPdfEvidence {
+            actor: &actor_name,
+            attestor,
+            act_id: record.act_id,
+            envelope_id: link.envelope_id,
+            slot_id: link.slot_id,
+            invite_id: record.id,
+            document_id,
+            signed_pdf_digest,
+        },
+    )
+    .await?
+    {
+        LinkedExternalInviteSlotSignOutcome::Signed
+        | LinkedExternalInviteSlotSignOutcome::AlreadySigned
+        | LinkedExternalInviteSlotSignOutcome::IdentityRequirementsPresent => Ok(()),
+    }
 }
 
 async fn external_invite_signed_artifact_status(

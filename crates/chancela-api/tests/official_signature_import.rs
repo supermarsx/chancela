@@ -310,6 +310,82 @@ async fn create_external_invite(state: &AppState, token: &str, act_id: &str) -> 
     invite["token"].as_str().expect("invite token").to_owned()
 }
 
+async fn create_external_envelope(
+    state: &AppState,
+    token: &str,
+    act_id: &str,
+    linked_slot_identity_requirements: Vec<&str>,
+) -> Value {
+    let mut linked_slot = json!({
+        "signer_label": "Linked External Signer",
+        "contact_hint": "external.signer@example.test",
+        "required": true
+    });
+    if !linked_slot_identity_requirements.is_empty() {
+        linked_slot["identity_requirements"] = json!(linked_slot_identity_requirements);
+    }
+
+    let (status, envelope) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/external-signing/envelopes"),
+            token,
+            json!({
+                "order_policy": "parallel",
+                "slots": [
+                    linked_slot,
+                    { "signer_label": "Second External Signer", "required": true }
+                ]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create envelope: {envelope}");
+    envelope
+}
+
+async fn create_linked_external_invite(
+    state: &AppState,
+    token: &str,
+    act_id: &str,
+    envelope_id: &str,
+    slot_id: &str,
+) -> String {
+    let expires_at = (time::OffsetDateTime::now_utc() + time::Duration::days(1))
+        .format(&Rfc3339)
+        .expect("expires_at");
+    let (status, invite) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/external-invites"),
+            token,
+            json!({
+                "recipient_name": "External Signer",
+                "recipient_email": "external.signer@example.test",
+                "provider_hint": "manual-provider",
+                "external_envelope_id": envelope_id,
+                "external_slot_id": slot_id,
+                "expires_at": expires_at,
+                "purpose": "Assinar a ata por fluxo externo"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "create linked invite: {invite}"
+    );
+    assert_eq!(invite["invite"]["workflow"], "external_envelope");
+    assert_eq!(
+        invite["invite"]["external_envelope"]["slot_status"],
+        "initiated"
+    );
+    invite["token"].as_str().expect("invite token").to_owned()
+}
+
 async fn create_signing_act(state: &AppState, token: &str, book_id: &str, title: &str) -> String {
     let (status, act) = send(
         state,
@@ -417,6 +493,10 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usize {
+    event_kind_count(state, token, act_id, "document.signed").await
+}
+
+async fn event_kind_count(state: &AppState, token: &str, act_id: &str, kind: &str) -> usize {
     let (status, events) = send(
         state,
         get_req(&format!("/v1/ledger/events?scope=act:{act_id}"), token),
@@ -427,7 +507,7 @@ async fn signed_event_count(state: &AppState, token: &str, act_id: &str) -> usiz
         .as_array()
         .unwrap()
         .iter()
-        .filter(|e| e["kind"] == "document.signed")
+        .filter(|e| e["kind"] == kind)
         .count()
 }
 
@@ -715,6 +795,296 @@ async fn external_invite_response_upload_stores_signed_pdf_as_technical_evidence
     assert_eq!(view["evidence"]["legal_b_lta_claimed"], false);
     assert_eq!(view["evidence"]["status_scope"], "technical_evidence_only");
     assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+}
+
+#[tokio::test]
+async fn linked_external_invite_upload_marks_only_linked_slot_signed() {
+    let state = AppState::default();
+    let (token, _) = bootstrap(&state).await;
+    state
+        .settings
+        .write()
+        .await
+        .signing
+        .require_qualified_for_seal = true;
+    let book_id = seed_book(&state, &token).await;
+    let act_id = create_signing_act(&state, &token, &book_id, "Ata convite ligado").await;
+    seal_act(&state, &token, &act_id).await;
+    let envelope = create_external_envelope(&state, &token, &act_id, Vec::new()).await;
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let linked_slot_id = envelope["slots"][0]["id"].as_str().expect("linked slot id");
+    let other_slot_id = envelope["slots"][1]["id"].as_str().expect("other slot id");
+    let invite_token =
+        create_linked_external_invite(&state, &token, &act_id, envelope_id, linked_slot_id).await;
+    let envelope_update_events_before_upload = event_kind_count(
+        &state,
+        &token,
+        &act_id,
+        "signature.external_envelope.updated",
+    )
+    .await;
+
+    let sealed_pdf = sealed_pdf_bytes(&state, &act_id).await;
+    let signed_pdf = signed_pdf_for_import(&sealed_pdf, 9);
+    validate_pdf_signature(&signed_pdf).expect("test signed PDF validates");
+    let signed_pdf_digest = sha256_hex(&signed_pdf);
+
+    let (status, response) = send(
+        &state,
+        external_invite_response_with_signed_pdf_req(&invite_token, &signed_pdf),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "linked invite response: {response}");
+    assert_eq!(response["status"], "accepted");
+    assert_eq!(response["workflow"], "external_envelope");
+    assert_eq!(response["external_envelope"]["slot_id"], linked_slot_id);
+    assert_eq!(response["external_envelope"]["slot_status"], "signed");
+    assert!(
+        response["external_envelope"]
+            .get("technical_upload_auto_sign")
+            .is_none()
+    );
+    assert_eq!(
+        response["signed_artifact"]["family"],
+        "ExternalSignerHandoff"
+    );
+    assert_eq!(
+        response["signed_artifact"]["signed_pdf_digest"],
+        signed_pdf_digest
+    );
+    assert_eq!(
+        response["signed_artifact"]["status_scope"],
+        "technical_evidence_only"
+    );
+    assert_eq!(response["signed_artifact"]["qualification_claimed"], false);
+    assert_eq!(response["signed_artifact"]["legal_status_claimed"], false);
+
+    let (status, envelope) = send(
+        &state,
+        get_req(
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "read linked envelope: {envelope}");
+    assert_eq!(envelope["completed"], false);
+    assert_eq!(envelope["completion"]["required_slot_count"], 2);
+    assert_eq!(envelope["completion"]["signed_required_slot_count"], 1);
+    assert_eq!(
+        envelope["completion"]["blocking_required_slot_ids"],
+        json!([other_slot_id])
+    );
+    assert_eq!(envelope["slots"][0]["id"], linked_slot_id);
+    assert_eq!(envelope["slots"][0]["status"], "signed");
+    assert_eq!(envelope["slots"][1]["id"], other_slot_id);
+    assert_eq!(envelope["slots"][1]["status"], "pending");
+    assert_eq!(
+        envelope["slots"][0]["evidence"][0]["label"],
+        "external signed PDF artifact"
+    );
+    assert!(
+        envelope["slots"][0]["evidence"][0]["reference"]
+            .as_str()
+            .expect("artifact reference")
+            .starts_with("act-signed-document:")
+    );
+    assert_eq!(
+        envelope["slots"][0]["evidence"][0]["digest"],
+        signed_pdf_digest
+    );
+    assert_eq!(
+        envelope["slots"][0]["evidence"][1]["label"],
+        "external invite upload source"
+    );
+    assert!(
+        envelope["slots"][0]["evidence"][1]["reference"]
+            .as_str()
+            .expect("source reference")
+            .contains(":signed-pdf")
+    );
+    assert_eq!(
+        envelope["slots"][0]["evidence"][1]["digest"],
+        signed_pdf_digest
+    );
+    assert_eq!(
+        envelope["slots"][1]["evidence"]
+            .as_array()
+            .expect("other slot evidence")
+            .len(),
+        0
+    );
+
+    let (status, signature) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "signature view: {signature}");
+    assert_eq!(signature["finalization"], "aguarda_assinatura_qualificada");
+    assert_eq!(signature["signed"]["family"], "ExternalSignerHandoff");
+    assert_eq!(signature["signed"]["trusted_list_status"], Value::Null);
+    assert_eq!(signature["evidence"]["legal_b_lt_claimed"], false);
+    assert_eq!(signature["evidence"]["legal_b_lta_claimed"], false);
+    assert_eq!(
+        signature["evidence"]["status_scope"],
+        "technical_evidence_only"
+    );
+    assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+    assert_eq!(state.signed_documents.read().await.len(), 1);
+    assert_eq!(
+        event_kind_count(
+            &state,
+            &token,
+            &act_id,
+            "signature.external_envelope.updated",
+        )
+        .await,
+        envelope_update_events_before_upload + 1
+    );
+
+    let (status, replay) = send(
+        &state,
+        external_invite_response_with_signed_pdf_req(&invite_token, &signed_pdf),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "replay response is OK: {replay}");
+    assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+    assert_eq!(state.signed_documents.read().await.len(), 1);
+    assert_eq!(
+        event_kind_count(
+            &state,
+            &token,
+            &act_id,
+            "signature.external_envelope.updated",
+        )
+        .await,
+        envelope_update_events_before_upload + 1
+    );
+    let (status, envelope_after_replay) = send(
+        &state,
+        get_req(
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "read envelope after replay: {envelope_after_replay}"
+    );
+    assert_eq!(
+        envelope_after_replay["slots"][0]["evidence"]
+            .as_array()
+            .expect("linked slot evidence")
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn linked_external_invite_upload_does_not_auto_sign_identity_required_slot() {
+    let state = AppState::default();
+    let (token, _) = bootstrap(&state).await;
+    let book_id = seed_book(&state, &token).await;
+    let act_id = create_signing_act(
+        &state,
+        &token,
+        &book_id,
+        "Ata convite ligado com identidade",
+    )
+    .await;
+    seal_act(&state, &token, &act_id).await;
+    let envelope = create_external_envelope(&state, &token, &act_id, vec!["contact_control"]).await;
+    let envelope_id = envelope["id"].as_str().expect("envelope id");
+    let linked_slot_id = envelope["slots"][0]["id"].as_str().expect("linked slot id");
+    let invite_token =
+        create_linked_external_invite(&state, &token, &act_id, envelope_id, linked_slot_id).await;
+    let envelope_update_events_before_upload = event_kind_count(
+        &state,
+        &token,
+        &act_id,
+        "signature.external_envelope.updated",
+    )
+    .await;
+
+    let signed_pdf = signed_pdf_for_import(&sealed_pdf_bytes(&state, &act_id).await, 10);
+    validate_pdf_signature(&signed_pdf).expect("test signed PDF validates");
+
+    let (status, response) = send(
+        &state,
+        external_invite_response_with_signed_pdf_req(&invite_token, &signed_pdf),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "identity-gated linked invite response: {response}"
+    );
+    assert_eq!(response["status"], "accepted");
+    assert_eq!(response["external_envelope"]["slot_status"], "initiated");
+    assert_eq!(
+        response["external_envelope"]["technical_upload_auto_sign"]["status"],
+        "blocked"
+    );
+    assert!(
+        response["external_envelope"]["technical_upload_auto_sign"]["reason"]
+            .as_str()
+            .expect("blocked reason")
+            .contains("identity requirements")
+    );
+    assert_eq!(
+        response["signed_artifact"]["family"],
+        "ExternalSignerHandoff"
+    );
+    assert_eq!(response["signed_artifact"]["qualification_claimed"], false);
+    assert_eq!(response["signed_artifact"]["legal_status_claimed"], false);
+
+    let (status, envelope) = send(
+        &state,
+        get_req(
+            &format!("/v1/external-signing/envelopes/{envelope_id}"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "read identity-gated envelope: {envelope}"
+    );
+    assert_eq!(envelope["slots"][0]["status"], "initiated");
+    assert_eq!(
+        envelope["slots"][0]["identity_requirements"],
+        json!(["contact_control"])
+    );
+    assert_eq!(
+        envelope["slots"][0]["evidence"]
+            .as_array()
+            .expect("identity slot evidence")
+            .len(),
+        0
+    );
+    assert_eq!(envelope["completion"]["signed_required_slot_count"], 0);
+    assert_eq!(
+        envelope["completion"]["blocking_required_slot_ids"],
+        json!([
+            linked_slot_id,
+            envelope["slots"][1]["id"].as_str().expect("other slot id")
+        ])
+    );
+    assert_eq!(signed_event_count(&state, &token, &act_id).await, 1);
+    assert_eq!(
+        event_kind_count(
+            &state,
+            &token,
+            &act_id,
+            "signature.external_envelope.updated",
+        )
+        .await,
+        envelope_update_events_before_upload
+    );
 }
 
 #[tokio::test]

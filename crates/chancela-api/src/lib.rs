@@ -1362,7 +1362,9 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/v1/signature/external-invites/respond",
-            post(signature::respond_external_signer_invite),
+            post(signature::respond_external_signer_invite).layer(DefaultBodyLimit::max(
+                signature::OFFICIAL_SIGNATURE_IMPORT_ENVELOPE_BYTES,
+            )),
         )
         .route(
             "/v1/signature/providers",

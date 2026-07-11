@@ -226,6 +226,24 @@ pub struct CompletionSummaryView {
     pub blocking_required_slot_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinkedExternalInviteSlotSignOutcome {
+    Signed,
+    AlreadySigned,
+    IdentityRequirementsPresent,
+}
+
+pub(crate) struct LinkedExternalInviteSlotSignedPdfEvidence<'a> {
+    pub(crate) actor: &'a str,
+    pub(crate) attestor: &'a CurrentAttestor,
+    pub(crate) act_id: ActId,
+    pub(crate) envelope_id: ExternalSignatureEnvelopeId,
+    pub(crate) slot_id: ExternalSignerSlotId,
+    pub(crate) invite_id: Uuid,
+    pub(crate) document_id: &'a str,
+    pub(crate) signed_pdf_digest: &'a str,
+}
+
 pub async fn create_envelope(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -465,6 +483,86 @@ pub(crate) async fn commit_envelope_slot_for_external_invite(
         previous,
         view,
     })
+}
+
+pub(crate) async fn sign_linked_external_invite_slot_from_signed_pdf(
+    state: &AppState,
+    req: LinkedExternalInviteSlotSignedPdfEvidence<'_>,
+) -> Result<LinkedExternalInviteSlotSignOutcome, ApiError> {
+    let digest = crate::hex::parse_hex32(req.signed_pdf_digest).ok_or_else(|| {
+        ApiError::Internal("stored signed PDF digest is not a SHA-256 hex digest".to_owned())
+    })?;
+    let evidence =
+        linked_external_invite_signed_pdf_evidence(req.invite_id, req.document_id, digest);
+
+    let previous = find_envelope(state, req.envelope_id).await?;
+    if previous.act_id != req.act_id {
+        return Err(ApiError::NotFound);
+    }
+    let slot = previous.slot(req.slot_id).ok_or(ApiError::NotFound)?;
+    if !slot.identity_requirements.is_empty() {
+        return Ok(LinkedExternalInviteSlotSignOutcome::IdentityRequirementsPresent);
+    }
+    if slot.status == ExternalSignerSlotStatus::Signed {
+        if linked_external_invite_slot_has_evidence(slot, &evidence) {
+            return Ok(LinkedExternalInviteSlotSignOutcome::AlreadySigned);
+        }
+        return Err(ApiError::Conflict(
+            "linked external envelope slot is already signed with different evidence".to_owned(),
+        ));
+    }
+
+    let mut updated = previous;
+    updated
+        .sign_slot_with_evidence(req.slot_id, evidence)
+        .map_err(map_external_signing_error)?;
+    let view = EnvelopeView::from(&updated);
+
+    state
+        .external_signing_envelopes
+        .write()
+        .await
+        .insert(req.envelope_id, updated);
+    persist_envelopes(state).await?;
+    record_envelope_event(
+        state,
+        req.actor,
+        req.attestor,
+        req.act_id,
+        "signature.external_envelope.updated",
+        &view,
+    )
+    .await?;
+
+    Ok(LinkedExternalInviteSlotSignOutcome::Signed)
+}
+
+fn linked_external_invite_signed_pdf_evidence(
+    invite_id: Uuid,
+    document_id: &str,
+    digest: [u8; 32],
+) -> Vec<ExternalSignatureEvidence> {
+    vec![
+        ExternalSignatureEvidence::new(
+            "external signed PDF artifact",
+            format!("act-signed-document:{document_id}"),
+            Some(digest),
+        ),
+        ExternalSignatureEvidence::new(
+            "external invite upload source",
+            format!("external-invite-upload:{invite_id}:signed-pdf"),
+            Some(digest),
+        ),
+    ]
+}
+
+fn linked_external_invite_slot_has_evidence(
+    slot: &ExternalSignerSlot,
+    expected: &[ExternalSignatureEvidence],
+) -> bool {
+    expected
+        .iter()
+        .all(|item| slot.evidence.iter().any(|existing| existing == item))
 }
 
 async fn restore_envelope_snapshot(
