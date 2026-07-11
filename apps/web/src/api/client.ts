@@ -139,6 +139,7 @@ import type {
   CreateExternalSigningEnvelopeBody,
   ExternalSignerInviteDecision,
   ExternalSignerInvitePublicView,
+  ExternalSignerInviteRespondOptions,
   ExternalSignerInviteView,
   ExternalSigningEnvelopeView,
   ExternalValidatorReportUploadRequest,
@@ -655,10 +656,15 @@ export const api = {
     ),
   lookupExternalSignerInvite: (token: string) =>
     post<ExternalSignerInvitePublicView>('/v1/signature/external-invites/lookup', { token }),
-  respondExternalSignerInvite: (token: string, decision: ExternalSignerInviteDecision) =>
+  respondExternalSignerInvite: (
+    token: string,
+    decision: ExternalSignerInviteDecision,
+    options: ExternalSignerInviteRespondOptions = {},
+  ) =>
     post<ExternalSignerInvitePublicView>('/v1/signature/external-invites/respond', {
       token,
       decision,
+      ...options,
     }),
   fetchExternalSignerInviteWorkingCopy: (token: string) =>
     postTextDownload('/v1/signature/external-invites/document/working-copy', { token }),

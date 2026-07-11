@@ -4231,6 +4231,17 @@ export interface ExternalSignerInviteEnvelopeView {
   slot_id: string;
   order_policy?: ExternalSigningOrderPolicy;
   slot_status?: ExternalSignerSlotStatus;
+  technical_upload_auto_sign?: ExternalSignerInviteEnvelopeAutoSignView;
+}
+
+export interface ExternalSignerInviteEnvelopeAutoSignView {
+  status: 'blocked' | string;
+  reason: string;
+}
+
+export interface ExternalSignerInviteRespondOptions {
+  signed_pdf_base64?: string;
+  filename?: string;
 }
 
 /** Public invite metadata. The plaintext token and token hash are never listed. */
@@ -4286,6 +4297,17 @@ export interface ExternalSignerInviteDocumentPublicView {
   artifact: ExternalSignerInviteArtifactPublicView;
 }
 
+export interface ExternalSignerInviteSignedArtifactPublicView {
+  family: string;
+  evidentiary_level: string;
+  signed_pdf_digest: string;
+  timestamp_token: boolean;
+  status_scope: string;
+  qualification_claimed: boolean;
+  legal_status_claimed: boolean;
+  notice: string;
+}
+
 /**
  * Public token-holder envelope. This is acknowledgement/tracking metadata only: it never contains
  * token material, document bytes, canonical PDF URLs, or a qualified-signature completion claim.
@@ -4303,6 +4325,7 @@ export interface ExternalSignerInvitePublicView {
   created_at: string;
   expires_at: string;
   responded_at?: string;
+  signed_artifact?: ExternalSignerInviteSignedArtifactPublicView;
   notice: string;
 }
 

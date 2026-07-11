@@ -756,7 +756,10 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const lookedUp = await api.lookupExternalSignerInvite('cxi_fulltoken');
-    const accepted = await api.respondExternalSignerInvite('cxi_fulltoken', 'accept');
+    const accepted = await api.respondExternalSignerInvite('cxi_fulltoken', 'accept', {
+      signed_pdf_base64: 'JVBERi0xLjQKc2lnbmVk',
+      filename: 'signed.pdf',
+    });
     const workingCopy = await api.fetchExternalSignerInviteWorkingCopy('cxi_fulltoken');
 
     expect(fetchMock.mock.calls[0][0]).toBe('/v1/signature/external-invites/lookup');
@@ -769,6 +772,8 @@ describe('api client', () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({
       token: 'cxi_fulltoken',
       decision: 'accept',
+      signed_pdf_base64: 'JVBERi0xLjQKc2lnbmVk',
+      filename: 'signed.pdf',
     });
     expect(fetchMock.mock.calls[2][0]).toBe('/v1/signature/external-invites/document/working-copy');
     expect(fetchMock.mock.calls[2][1]?.method).toBe('POST');
@@ -777,6 +782,7 @@ describe('api client', () => {
     });
     expect(lookedUp).not.toHaveProperty('token');
     expect(accepted.status).toBe('accepted');
+    expect(JSON.stringify(fetchMock.mock.calls[1][1])).not.toContain('/cxi_fulltoken');
     expect(workingCopy.text).toBe('# working copy');
   });
 

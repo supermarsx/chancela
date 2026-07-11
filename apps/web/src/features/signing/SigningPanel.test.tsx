@@ -565,6 +565,53 @@ describe('SigningPanel — external signer invites', () => {
     expect(screen.getByText('Iniciado')).toBeTruthy();
   });
 
+  it('displays completed external-signing envelope progress from the backend summary', async () => {
+    const envelope = externalEnvelope({
+      slots: [
+        {
+          id: 'slot-1',
+          signer_label: 'Bruno Dias',
+          contact_hint: 'bruno@example.test',
+          required: true,
+          status: 'signed',
+          evidence: [
+            {
+              label: 'Signed PDF SHA-256',
+              reference: 'technical upload',
+              digest: 'f'.repeat(64),
+            },
+          ],
+        },
+      ],
+      completed: true,
+      completion: {
+        completed: true,
+        required_slot_count: 1,
+        signed_required_slot_count: 1,
+        blocking_required_slot_ids: [],
+      },
+    });
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/signature/providers')) return json([]);
+      if (url.endsWith('/signature') && method === 'GET') return json(unsignedStatus);
+      if (url.endsWith('/external-signing/envelopes') && method === 'GET') {
+        return json([envelope]);
+      }
+      if (url.endsWith('/signature/external-invites') && method === 'GET') return json([]);
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<SigningPanel act={sealedAct} />);
+
+    expect(await screen.findByText('1 de 1 assinados')).toBeTruthy();
+    expect(screen.getByText('Concluído')).toBeTruthy();
+    expect(screen.getByText('Nenhum')).toBeTruthy();
+    expect(screen.getByText('Assinado')).toBeTruthy();
+  });
+
   it('creates an external-signing envelope with order policy and signer slots', async () => {
     let envelopes: ExternalSigningEnvelopeView[] = [];
     const bodies: unknown[] = [];

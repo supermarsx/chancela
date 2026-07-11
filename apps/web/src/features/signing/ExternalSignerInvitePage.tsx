@@ -5,8 +5,20 @@ import type {
   ExternalSignerInviteDecision,
   ExternalSignerInvitePublicView,
   ExternalSignerInviteStatus,
+  ExternalSignerSlotStatus,
 } from '../../api/types';
-import { Badge, Button, Digest, ErrorNote, Icon, InlineWarning, Loading, useToast } from '../../ui';
+import {
+  Badge,
+  Button,
+  Digest,
+  ErrorNote,
+  Field,
+  Icon,
+  InlineWarning,
+  Input,
+  Loading,
+  useToast,
+} from '../../ui';
 import { TitleBar } from '../../desktop/TitleBar';
 import { useT, type TFunction } from '../../i18n';
 
@@ -21,6 +33,9 @@ type ArtifactState =
   | { kind: 'loading' }
   | { kind: 'ready'; text: string }
   | { kind: 'error'; error: unknown };
+
+// Raw PDF bytes; the backend route has a larger JSON/base64 envelope limit for this cap.
+export const EXTERNAL_INVITE_SIGNED_PDF_RAW_MAX_BYTES = 16 * 1024 * 1024;
 
 function formatDateTime(value?: string): string {
   if (!value) return '-';
@@ -42,6 +57,22 @@ function statusBadge(status: ExternalSignerInviteStatus, t: TFunction) {
   return <Badge tone="neutral">{t('externalInvite.status.revoked')}</Badge>;
 }
 
+function slotStatusLabel(status: ExternalSignerSlotStatus, t: TFunction): string {
+  if (status === 'pending') return t('signing.envelopes.slot.status.pending');
+  if (status === 'initiated') return t('signing.envelopes.slot.status.initiated');
+  if (status === 'signed') return t('signing.envelopes.slot.status.signed');
+  if (status === 'declined') return t('signing.envelopes.slot.status.declined');
+  if (status === 'revoked') return t('signing.envelopes.slot.status.revoked');
+  return t('signing.envelopes.slot.status.expired');
+}
+
+function slotStatusBadge(status: ExternalSignerSlotStatus, t: TFunction) {
+  if (status === 'signed') return <Badge tone="ok">{slotStatusLabel(status, t)}</Badge>;
+  if (status === 'pending' || status === 'initiated')
+    return <Badge tone="accent">{slotStatusLabel(status, t)}</Badge>;
+  return <Badge tone="warn">{slotStatusLabel(status, t)}</Badge>;
+}
+
 function unavailableMessage(error: unknown, t: TFunction) {
   if (error instanceof ApiError && error.status === 404) {
     return (
@@ -51,6 +82,60 @@ function unavailableMessage(error: unknown, t: TFunction) {
     );
   }
   return <ErrorNote error={error} />;
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const buffer =
+    typeof file.arrayBuffer === 'function'
+      ? await file.arrayBuffer()
+      : await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (reader.result instanceof ArrayBuffer) {
+              resolve(reader.result);
+            } else {
+              reject(new Error('Could not read the selected PDF.'));
+            }
+          };
+          reader.onerror = () =>
+            reject(reader.error ?? new Error('Could not read the selected PDF.'));
+          reader.readAsArrayBuffer(file);
+        });
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return 'unknown';
+  if (value < 1024) return `${value} bytes`;
+  const units = ['KB', 'MB', 'GB'];
+  let amount = value;
+  let unit = 'bytes';
+  for (const candidate of units) {
+    amount /= 1024;
+    unit = candidate;
+    if (amount < 1024) break;
+  }
+  const decimals = amount >= 10 || Number.isInteger(amount) ? 0 : 1;
+  return `${amount.toFixed(decimals)} ${unit}`;
+}
+
+function signedPdfSizeError(file: File, t: TFunction): Error | null {
+  if (file.size <= EXTERNAL_INVITE_SIGNED_PDF_RAW_MAX_BYTES) return null;
+  return new Error(
+    t('externalInvite.upload.file.tooLarge', {
+      max: formatBytes(EXTERNAL_INVITE_SIGNED_PDF_RAW_MAX_BYTES),
+    }),
+  );
+}
+
+function canUploadSignedPdf(envelope: ExternalSignerInvitePublicView): boolean {
+  return envelope.workflow === 'external_envelope' && Boolean(envelope.external_envelope);
 }
 
 export function ExternalSignerInvitePage() {
@@ -64,6 +149,9 @@ export function ExternalSignerInvitePage() {
   );
   const [action, setAction] = useState<ExternalSignerInviteDecision | null>(null);
   const [artifact, setArtifact] = useState<ArtifactState>({ kind: 'idle' });
+  const [signedPdfFile, setSignedPdfFile] = useState<File | null>(null);
+  const [signedPdfAcknowledged, setSignedPdfAcknowledged] = useState(false);
+  const [signedPdfError, setSignedPdfError] = useState<unknown | null>(null);
 
   useEffect(() => {
     if (searchParams.has('token')) {
@@ -84,6 +172,9 @@ export function ExternalSignerInvitePage() {
         if (!cancelled) {
           setLoad({ kind: 'ready', envelope });
           setArtifact({ kind: 'idle' });
+          setSignedPdfFile(null);
+          setSignedPdfAcknowledged(false);
+          setSignedPdfError(null);
         }
       })
       .catch((error: unknown) => {
@@ -96,16 +187,36 @@ export function ExternalSignerInvitePage() {
 
   async function respond(decision: ExternalSignerInviteDecision) {
     if (!token || load.kind !== 'ready') return;
+    if (decision === 'accept' && canUploadSignedPdf(load.envelope) && signedPdfFile) {
+      const sizeError = signedPdfSizeError(signedPdfFile, t);
+      if (sizeError) {
+        setSignedPdfError(sizeError);
+        return;
+      }
+    }
     setAction(decision);
+    setSignedPdfError(null);
     try {
-      const envelope = await api.respondExternalSignerInvite(token, decision);
+      const options =
+        decision === 'accept' && canUploadSignedPdf(load.envelope)
+          ? {
+              signed_pdf_base64: await fileToBase64(signedPdfFile!),
+              filename: signedPdfFile?.name,
+            }
+          : undefined;
+      const envelope = await api.respondExternalSignerInvite(token, decision, options);
       setLoad({ kind: 'ready', envelope });
+      setSignedPdfFile(null);
+      setSignedPdfAcknowledged(false);
       toast.success(
         decision === 'accept'
           ? t('externalInvite.toast.accepted')
           : t('externalInvite.toast.declined'),
       );
     } catch (error) {
+      if (decision === 'accept' && canUploadSignedPdf(load.envelope)) {
+        setSignedPdfError(error);
+      }
       toast.error(error);
     } finally {
       setAction(null);
@@ -125,6 +236,8 @@ export function ExternalSignerInvitePage() {
 
   const envelope = load.kind === 'ready' ? load.envelope : null;
   const answered = envelope?.status === 'accepted' || envelope?.status === 'declined';
+  const showSignedPdfUpload = envelope ? canUploadSignedPdf(envelope) && !answered : false;
+  const canSubmitSignedPdf = Boolean(signedPdfFile) && signedPdfAcknowledged && !action;
 
   return (
     <>
@@ -255,8 +368,163 @@ export function ExternalSignerInvitePage() {
                   </InlineWarning>
                 )}
 
+                {envelope.external_envelope || envelope.signed_artifact ? (
+                  <div className="stack--tight" data-testid="external-invite-technical-result">
+                    <p className="card__label">{t('externalInvite.technical.title')}</p>
+                    {envelope.external_envelope ? (
+                      <dl className="deflist external-signature-deflist">
+                        <div>
+                          <dt>{t('externalInvite.technical.envelope')}</dt>
+                          <dd className="mono">{envelope.external_envelope.id}</dd>
+                        </div>
+                        <div>
+                          <dt>{t('externalInvite.technical.slot')}</dt>
+                          <dd className="mono">{envelope.external_envelope.slot_id}</dd>
+                        </div>
+                        {envelope.external_envelope.slot_status ? (
+                          <div>
+                            <dt>{t('externalInvite.technical.slotStatus')}</dt>
+                            <dd>{slotStatusBadge(envelope.external_envelope.slot_status, t)}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                    ) : null}
+                    {envelope.external_envelope?.technical_upload_auto_sign?.status ===
+                    'blocked' ? (
+                      <InlineWarning
+                        tone="warn"
+                        title={t('externalInvite.technical.blocked.title')}
+                      >
+                        {envelope.external_envelope.technical_upload_auto_sign.reason}
+                      </InlineWarning>
+                    ) : null}
+                    {envelope.signed_artifact ? (
+                      <>
+                        <InlineWarning
+                          tone="info"
+                          title={t('externalInvite.technical.artifact.title')}
+                        >
+                          {envelope.signed_artifact.notice}
+                        </InlineWarning>
+                        <dl className="deflist external-signature-deflist">
+                          <div>
+                            <dt>{t('externalInvite.technical.evidenceLevel')}</dt>
+                            <dd>{envelope.signed_artifact.evidentiary_level}</dd>
+                          </div>
+                          <div>
+                            <dt>{t('externalInvite.technical.scope')}</dt>
+                            <dd>{envelope.signed_artifact.status_scope}</dd>
+                          </div>
+                          <div>
+                            <dt>{t('externalInvite.technical.digest')}</dt>
+                            <dd>
+                              <Digest
+                                value={envelope.signed_artifact.signed_pdf_digest}
+                                copyable={false}
+                              />
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>{t('externalInvite.technical.timestamp')}</dt>
+                            <dd>
+                              {envelope.signed_artifact.timestamp_token
+                                ? t('common.yes')
+                                : t('common.no')}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>{t('externalInvite.technical.qualificationClaimed')}</dt>
+                            <dd>
+                              {envelope.signed_artifact.qualification_claimed
+                                ? t('common.yes')
+                                : t('common.no')}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>{t('externalInvite.technical.legalStatusClaimed')}</dt>
+                            <dd>
+                              {envelope.signed_artifact.legal_status_claimed
+                                ? t('common.yes')
+                                : t('common.no')}
+                            </dd>
+                          </div>
+                        </dl>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {answered ? (
                   <p className="field__hint">{t('externalInvite.alreadyAnswered')}</p>
+                ) : showSignedPdfUpload ? (
+                  <form
+                    className="form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (canSubmitSignedPdf) void respond('accept');
+                    }}
+                  >
+                    <InlineWarning tone="warn" title={t('externalInvite.upload.guardrail.title')}>
+                      {t('externalInvite.upload.guardrail.body')}
+                    </InlineWarning>
+                    <Field
+                      label={t('externalInvite.upload.file.label')}
+                      htmlFor="external-signed-pdf"
+                      hint={t('externalInvite.upload.file.hint')}
+                    >
+                      <Input
+                        id="external-signed-pdf"
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        disabled={!!action}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          const sizeError = file ? signedPdfSizeError(file, t) : null;
+                          setSignedPdfFile(sizeError ? null : file);
+                          setSignedPdfAcknowledged(false);
+                          setSignedPdfError(null);
+                          if (sizeError) {
+                            event.target.value = '';
+                            setSignedPdfError(sizeError);
+                          }
+                        }}
+                      />
+                    </Field>
+                    <label className="checkline" htmlFor="external-signed-pdf-ack">
+                      <input
+                        id="external-signed-pdf-ack"
+                        type="checkbox"
+                        checked={signedPdfAcknowledged}
+                        disabled={!!action}
+                        onChange={(event) => setSignedPdfAcknowledged(event.target.checked)}
+                      />
+                      {t('externalInvite.upload.ack')}
+                    </label>
+                    {signedPdfError ? <ErrorNote error={signedPdfError} /> : null}
+                    <div className="form__actions">
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        icon={<Icon.FileText />}
+                        disabled={!canSubmitSignedPdf}
+                      >
+                        {action === 'accept'
+                          ? t('externalInvite.registering')
+                          : t('externalInvite.upload.submit')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.Close />}
+                        disabled={!!action}
+                        onClick={() => void respond('decline')}
+                      >
+                        {action === 'decline'
+                          ? t('externalInvite.registering')
+                          : t('externalInvite.decline')}
+                      </Button>
+                    </div>
+                  </form>
                 ) : (
                   <div className="form__actions">
                     <Button
