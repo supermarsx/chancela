@@ -2873,9 +2873,29 @@ function assertCheckpointMap() {
     "web CSC pending session generic remote confirm reload-adoption coverage",
   );
   assertFileContains(
+    "apps/web/e2e/remote-signing-pending-session.spec.ts",
+    "pending CSC/QTSP session resumes after reload and confirms through provider remote endpoint",
+    "web pending CSC/QTSP route-stubbed browser resume coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/remote-signing-pending-session.spec.ts",
+    "legacy CMD pending session resumes after reload and confirms through CMD endpoint",
+    "web legacy CMD route-stubbed browser resume coverage",
+  );
+  assertFileContains(
+    "apps/web/e2e/remote-signing-pending-session.spec.ts",
+    "endpointMismatches",
+    "web pending-session negative endpoint assertion marker",
+  );
+  assertFileContains(
     "SPEC-COVERAGE.md",
     "`GET\n  /v1/acts/{id}/signature` returns additive pending-session provider metadata",
     "spec coverage pending-session provider identity bridge marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Focused route-stubbed Playwright proof now pins\n  reload adoption/routing",
+    "spec coverage pending-session browser proof marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
@@ -2913,9 +2933,24 @@ function assertCheckpointMap() {
     "CI/E2E hardening pending-session provider identity no-claim marker",
   );
   assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "e2e/remote-signing-pending-session.spec.ts",
+    "CI/E2E hardening pending-session browser command marker",
+  );
+  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "core-only no-API/no-web boundary",
     "CI checkpoints repeated remote-session core-only marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "apps/web/e2e/remote-signing-pending-session.spec.ts",
+    "CI checkpoints pending-session browser proof marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "route-stubbed reload adoption/routing only and uses fake activation/OTP\nvalues",
+    "CI checkpoints pending-session browser boundary marker",
   );
   assertFileContains(
     "crates/chancela-api/src/signature.rs",

@@ -1026,9 +1026,15 @@ Implementation checkpoints covered here:
   call the matching confirm endpoint. The pending status now carries
   `provider_id`, `family`, and optional `activation_hint`; the web adopts that
   pending session into either the dedicated CMD confirm path or the generic
-  remote-provider confirm path. This is pending-session adoption/routing only:
-  no production provider approval, live CSC readiness, trust-list/legal
-  validation, SCAP/legal-capacity verification, remote batch,
+  remote-provider confirm path. Focused route-stubbed Playwright proof now pins
+  reload adoption/routing in
+  `apps/web/e2e/remote-signing-pending-session.spec.ts` for both an already-open
+  CSC/QTSP pending session calling
+  `/v1/acts/{id}/signature/remote/{provider}/confirm` and a legacy CMD pending
+  session calling `/v1/acts/{id}/signature/cmd/confirm`, using fake activation
+  codes only and negative endpoint assertions. This is pending-session adoption/routing only:
+  no production provider approval, live CSC readiness,
+  trust-list/legal validation, SCAP/legal-capacity verification, remote batch,
   qualified-signature certification, act finalization, or legal-validity claim.
 - `2451730` keeps Workflows/Documents/UX/CI **PARTIAL**: focused browser E2E now
   covers preserving a paper-book package as non-canonical evidence, creating and
@@ -1824,6 +1830,13 @@ behavior, legal disposal, or legal-effect claims.
   provider-certified remote batch, not single OTP/PIN/SAD authorizing multiple
   documents, not CMD multiple-sign, not CSC/QTSP multi-hash/SAD batch, and not
   SCAP/legal-capacity proof.
+- **Pending remote-signing session resume browser proof:** route-stubbed
+  Playwright coverage in `apps/web/e2e/remote-signing-pending-session.spec.ts`
+  proves reload adoption/routing only: a pending CSC/QTSP session calls the
+  provider-specific remote confirm endpoint, while a legacy CMD pending session
+  calls the dedicated CMD confirm endpoint. The proof uses fake activation/OTP
+  values and makes no live provider, device, trust-list, SCAP, batch,
+  finalization, or legal-validity claim.
 - **Written-resolution evidence status binding:** written-resolution evidence
   can now be patched as structured checklist references/digests, reported in
   act/compliance views as missing/referenced-only/bound-present status, and

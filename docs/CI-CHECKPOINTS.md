@@ -72,7 +72,9 @@ multiple-sign / CSC/QTSP multi-hash/SAD / SCAP/legal-capacity claim,
 pending-session provider identity bridge markers for additive
 `GET /v1/acts/{id}/signature` metadata (`provider_id`, `family`, and optional
 `activation_hint`) plus web reload adoption routing to the dedicated CMD
-confirm path or generic CSC/QTSP remote confirm path,
+confirm path or generic CSC/QTSP remote confirm path, including the focused
+route-stubbed browser proof
+`apps/web/e2e/remote-signing-pending-session.spec.ts`,
 seeded role drift diagnostics, archive readability/ZK caveat
 metadata, template family/channel rule guards, MCP trust-catalog filter
 discoverability, redacted external-validator report summary tools, external
@@ -459,6 +461,10 @@ after reload to the matching confirm endpoint; they do not prove production
 provider approval, live CSC readiness, trust-list/legal validation,
 SCAP/legal-capacity verification, remote batch, qualified-signature
 certification, act finalization, or legal-validity.
+Focused browser execution for that slice is
+`npm run test:browser --workspace apps/web -- e2e/remote-signing-pending-session.spec.ts`;
+it is route-stubbed reload adoption/routing only and uses fake activation/OTP
+values.
 Run only that static portion with
 `npm run test:checkpoint:recent-landed:static`.
 
