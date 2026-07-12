@@ -25,6 +25,7 @@ use crate::authz::require_permission;
 use crate::documents::PDFA_PROFILE;
 use crate::error::ApiError;
 use crate::hex::hex;
+use crate::ledger_events_page::{LedgerEventsSelectorQuery, select_ledger_events_page};
 use crate::ledger_filter::{LedgerEventFilters, filter_summary, normalized_page_limit};
 
 #[derive(Debug, Deserialize)]
@@ -105,29 +106,6 @@ fn parse_chain(raw: Option<&str>) -> Result<ChainId, ApiError> {
     }
 }
 
-fn filtered_events<'a>(
-    events: impl DoubleEndedIterator<Item = &'a Event>,
-    chain: &ChainId,
-    filters: &LedgerEventFilters,
-    limit: usize,
-) -> Vec<&'a Event> {
-    let mut selected = Vec::with_capacity(limit);
-    for event in events.rev() {
-        if !event_in_chain(event, chain) || !filters.matches(event) {
-            continue;
-        }
-        selected.push(event);
-        if selected.len() == limit {
-            break;
-        }
-    }
-    selected
-}
-
-fn event_in_chain(event: &Event, chain: &ChainId) -> bool {
-    chain.is_global() || event.links.iter().any(|link| &link.chain == chain)
-}
-
 /// `GET /v1/ledger/archive/document` — render the filtered ledger archive as PDF/A-2u bytes.
 pub async fn export_archive_document(
     State(state): State<AppState>,
@@ -157,16 +135,26 @@ pub async fn export_archive_document(
         .clone()
         .unwrap_or_else(|| "Chancela".to_owned());
 
-    let (status, records, reanchors) = {
+    let (status, reanchors) = {
         let ledger = state.ledger.read().await;
         let status = ledger.chain_status(&chain).ok_or(ApiError::NotFound)?;
-        let events = filtered_events(ledger.events().iter(), &chain, &filters, limit);
-        let records = events
-            .into_iter()
-            .map(|event| RenderRecord::from_event(event, &chain))
-            .collect::<Vec<_>>();
-        (status, records, ledger.reanchored_segments())
+        (status, ledger.reanchored_segments())
     };
+    let selected = select_ledger_events_page(
+        &state,
+        LedgerEventsSelectorQuery {
+            before_seq: None,
+            limit,
+            chain: Some(chain.clone()),
+            filters: &filters,
+        },
+    )
+    .await?;
+    let records = selected
+        .events
+        .iter()
+        .map(|event| RenderRecord::from_event(event, &chain))
+        .collect::<Vec<_>>();
     let degraded = *state.degraded.read().await;
 
     let generated_at = OffsetDateTime::now_utc()
@@ -708,8 +696,8 @@ mod tests {
     use super::*;
     use chancela_ledger::Ledger;
 
-    #[test]
-    fn filtered_events_applies_kind_scope_actor_and_last_limit() {
+    #[tokio::test]
+    async fn filtered_events_applies_kind_scope_actor_and_last_limit() {
         let mut ledger = Ledger::new();
         ledger.append("amelia.marques", "settings", "settings.updated", None, b"1");
         ledger.append("bruno.dias", "entity:e1/book:b1", "book.opened", None, b"2");
@@ -737,9 +725,21 @@ mod tests {
             None,
         )
         .expect("filters parse");
-        let selected = filtered_events(ledger.events().iter(), &ChainId::Global, &filters, 1);
+        let state = AppState::default();
+        *state.ledger.write().await = ledger;
+        let selected = select_ledger_events_page(
+            &state,
+            LedgerEventsSelectorQuery {
+                before_seq: None,
+                limit: 1,
+                chain: Some(ChainId::Global),
+                filters: &filters,
+            },
+        )
+        .await
+        .expect("events selected");
 
-        assert_eq!(selected.len(), 1);
-        assert_eq!(selected[0].kind, "act.sealed");
+        assert_eq!(selected.events.len(), 1);
+        assert_eq!(selected.events[0].kind, "act.sealed");
     }
 }

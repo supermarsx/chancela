@@ -103,6 +103,7 @@ mod followups;
 mod hex;
 mod law;
 mod ledger;
+mod ledger_events_page;
 mod ledger_filter;
 mod ltv;
 mod notifications;
@@ -3673,6 +3674,119 @@ mod tests {
         );
     }
 
+    async fn install_test_ledger(state: &AppState, ledger: Ledger) {
+        if let Some(store) = &state.store {
+            let events = ledger.events().to_vec();
+            store
+                .persist(|tx| {
+                    for event in &events {
+                        tx.append_event(event)?;
+                    }
+                    Ok(())
+                })
+                .expect("test ledger persisted");
+        }
+        *state.ledger.write().await = ledger;
+    }
+
+    fn store_pager_fixture_ledger() -> Ledger {
+        let mut ledger = Ledger::new();
+        ledger.append(
+            "store.actor",
+            "entity:company-a",
+            "entity.created",
+            Some("company genesis"),
+            b"company-a",
+        );
+        ledger.append(
+            "store.actor",
+            "entity:company-a/book:book-a",
+            "book.opened",
+            Some("book genesis"),
+            b"book-a",
+        );
+        ledger.append(
+            "store.actor",
+            "entity:company-a/book:book-a/act:match-0",
+            "act.sealed",
+            Some("needle archive"),
+            b"match-0",
+        );
+        ledger.append(
+            "store.actor",
+            "entity:company-a/book:book-a/act:match-1",
+            "act.sealed",
+            Some("needle archive"),
+            b"match-1",
+        );
+        ledger.append(
+            "other.actor",
+            "entity:company-a/book:book-a/act:match-noise",
+            "act.sealed",
+            Some("needle archive"),
+            b"actor-noise",
+        );
+        ledger.append(
+            "store.actor",
+            "entity:company-a/book:book-a/act:match-2",
+            "act.sealed",
+            Some("needle archive"),
+            b"match-2",
+        );
+        ledger.append(
+            "store.actor",
+            "settings/archive",
+            "settings.updated",
+            Some("needle archive"),
+            b"settings-noise",
+        );
+        ledger.append(
+            "store.actor",
+            "entity:company-a/book:book-a/act:match-3",
+            "act.sealed",
+            Some("needle archive"),
+            b"match-3",
+        );
+        ledger.append(
+            "store.actor",
+            "entity:company-a/book:book-a/act:match-4",
+            "act.sealed",
+            Some("needle archive"),
+            b"match-4",
+        );
+        ledger
+    }
+
+    async fn install_archive_limit_ledger(state: &AppState) {
+        let mut ledger = Ledger::new();
+        for i in 0..300 {
+            ledger.append(
+                "limit.actor",
+                "archive/limit-target",
+                "limit.target",
+                None,
+                format!("target-{i}").as_bytes(),
+            );
+        }
+        ledger.append(
+            "limit.actor",
+            "archive/limit-noise",
+            "limit.noise",
+            None,
+            b"noise",
+        );
+        install_test_ledger(state, ledger).await;
+    }
+
+    fn event_seqs(value: &Value) -> Vec<u64> {
+        value["events"]
+            .as_array()
+            .expect("events")
+            .iter()
+            .map(|event| event["seq"].as_u64().expect("seq"))
+            .collect()
+    }
+
     #[tokio::test]
     async fn ledger_events_page_handles_thousand_event_chain_without_duplicates() {
         let state = fresh_state().await;
@@ -3796,75 +3910,118 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ledger_archive_document_limit_matches_paged_list_for_filtered_exports() {
-        let state = fresh_state().await;
+    async fn ledger_events_page_uses_store_pager_after_reload_and_memory_clear() {
+        let tmp = TempDir::new();
         {
-            let mut ledger = state.ledger.write().await;
-            for i in 0..300 {
-                ledger.append(
-                    "limit.actor",
-                    "archive/limit-target",
-                    "limit.target",
-                    None,
-                    format!("target-{i}").as_bytes(),
-                );
-            }
-            ledger.append(
-                "limit.actor",
-                "archive/limit-noise",
-                "limit.noise",
-                None,
-                b"noise",
-            );
+            let first = AppState::with_data_dir(tmp.dir.clone());
+            install_test_ledger(&first, store_pager_fixture_ledger()).await;
         }
 
+        let restarted = AppState::with_data_dir(tmp.dir.clone());
+        let uri = "/v1/ledger/events/page?q=needle&chain=book:book-a&scope=act:match&kind=act.sealed&actor=store.actor&limit=3";
+        let (status, reloaded_page) = send(restarted.clone(), get(uri)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(event_seqs(&reloaded_page), vec![8, 7, 5]);
+        assert_eq!(reloaded_page["has_more"], true);
+        assert_eq!(reloaded_page["next_cursor"], 5);
+        assert!(
+            reloaded_page["events"]
+                .as_array()
+                .expect("events")
+                .iter()
+                .all(|event| {
+                    event["chains"]
+                        .as_array()
+                        .expect("chains")
+                        .iter()
+                        .any(|chain| chain == "book:book-a")
+                })
+        );
+
+        *restarted.ledger.write().await = Ledger::new();
+        let (status, after_clear) = send(restarted.clone(), get(uri)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            event_seqs(&after_clear),
+            vec![8, 7, 5],
+            "store-backed route must not fall back to the cleared in-memory ledger"
+        );
+
+        let (status, older) = send(
+            restarted,
+            get("/v1/ledger/events/page?q=needle&chain=book:book-a&scope=act:match&kind=act.sealed&actor=store.actor&limit=3&before_seq=5"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(event_seqs(&older), vec![3, 2]);
+        assert_eq!(older["has_more"], false);
+        assert_eq!(older["next_cursor"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn ledger_archive_document_limit_matches_paged_list_for_filtered_exports() {
         let base =
             "/v1/ledger/events/page?chain=application&scope=archive/limit-target&kind=limit.target";
         let export_base = "/v1/ledger/archive/document?chain=application&scope=archive/limit-target&kind=limit.target&format=json";
+        let persistent_tmp = TempDir::new();
 
-        for (raw_limit, expected_limit) in [("0", 1_usize), ("500", 250_usize)] {
-            let (status, page) =
-                send(state.clone(), get(&format!("{base}&limit={raw_limit}"))).await;
-            assert_eq!(status, StatusCode::OK);
-            assert_eq!(page["limit"], expected_limit);
-            let page_events = page["events"].as_array().expect("page events");
-            assert_eq!(page_events.len(), expected_limit);
+        for (mode, state) in [
+            ("in-memory", fresh_state().await),
+            (
+                "store-backed",
+                AppState::with_data_dir(persistent_tmp.dir.clone()),
+            ),
+        ] {
+            install_archive_limit_ledger(&state).await;
+            let (status, page) = send(state.clone(), get(&format!("{base}&limit=10"))).await;
+            assert_eq!(status, StatusCode::OK, "{mode} page");
+            assert_eq!(page["limit"], 10);
 
-            let (status, ctype, _disposition, export_bytes) = send_download(
-                state.clone(),
-                get(&format!("{export_base}&limit={raw_limit}")),
-            )
-            .await;
-            assert_eq!(status, StatusCode::OK);
-            assert_eq!(ctype, "application/json");
-            let export: Value = serde_json::from_slice(&export_bytes).expect("archive json");
-            assert_eq!(export["event_count"], expected_limit);
-            assert!(
-                export["filters"]
-                    .as_str()
-                    .expect("filters")
-                    .contains(&format!("limit={expected_limit}")),
-                "{export}"
-            );
-            let export_events = export["events"].as_array().expect("export events");
-            assert_eq!(export_events.len(), page_events.len());
-            assert_eq!(
-                export_events
-                    .iter()
-                    .map(|event| event["seq"].as_u64().expect("export seq"))
-                    .collect::<Vec<_>>(),
-                page_events
-                    .iter()
-                    .map(|event| event["seq"].as_u64().expect("page seq"))
-                    .collect::<Vec<_>>()
-            );
-            assert!(export_events.iter().all(|event| {
-                event["kind"] == "limit.target"
-                    && event["scope"]
+            for (raw_limit, expected_limit) in [("0", 1_usize), ("500", 250_usize)] {
+                let (status, page) =
+                    send(state.clone(), get(&format!("{base}&limit={raw_limit}"))).await;
+                assert_eq!(status, StatusCode::OK, "{mode} page limit={raw_limit}");
+                assert_eq!(page["limit"], expected_limit);
+                let page_events = page["events"].as_array().expect("page events");
+                assert_eq!(page_events.len(), expected_limit);
+
+                let (status, ctype, _disposition, export_bytes) = send_download(
+                    state.clone(),
+                    get(&format!("{export_base}&limit={raw_limit}")),
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK, "{mode} export limit={raw_limit}");
+                assert_eq!(ctype, "application/json");
+                let export: Value = serde_json::from_slice(&export_bytes).expect("archive json");
+                assert_eq!(export["event_count"], expected_limit);
+                assert!(
+                    export["filters"]
                         .as_str()
-                        .expect("scope")
-                        .contains("archive/limit-target")
-            }));
+                        .expect("filters")
+                        .contains(&format!("limit={expected_limit}")),
+                    "{mode}: {export}"
+                );
+                let export_events = export["events"].as_array().expect("export events");
+                assert_eq!(export_events.len(), page_events.len());
+                assert_eq!(
+                    export_events
+                        .iter()
+                        .map(|event| event["seq"].as_u64().expect("export seq"))
+                        .collect::<Vec<_>>(),
+                    page_events
+                        .iter()
+                        .map(|event| event["seq"].as_u64().expect("page seq"))
+                        .collect::<Vec<_>>(),
+                    "{mode}: export order must match page order"
+                );
+                assert!(export_events.iter().all(|event| {
+                    event["kind"] == "limit.target"
+                        && event["scope"]
+                            .as_str()
+                            .expect("scope")
+                            .contains("archive/limit-target")
+                }));
+            }
         }
     }
 

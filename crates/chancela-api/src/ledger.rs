@@ -6,7 +6,7 @@ use std::str::FromStr;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use chancela_authz::{Permission, Scope};
-use chancela_ledger::{ChainId, Event};
+use chancela_ledger::ChainId;
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
@@ -15,6 +15,7 @@ use crate::attestation::{self, Attestation};
 use crate::authz::require_permission;
 use crate::dto::{AttestationSummary, LedgerEventView, LedgerQuery};
 use crate::error::ApiError;
+use crate::ledger_events_page::{LedgerEventsSelectorQuery, select_ledger_events_page};
 use crate::ledger_filter::{LedgerEventFilters, normalized_page_limit};
 
 /// Default and maximum number of events returned by `GET /v1/ledger/events?limit=` (t41 L3).
@@ -123,32 +124,20 @@ pub async fn list_ledger_events_page(
         q.to.as_deref(),
     )?;
     let limit = normalized_page_limit(q.limit);
-    let ledger = state.ledger.read().await;
+    let page = select_ledger_events_page(
+        &state,
+        LedgerEventsSelectorQuery {
+            before_seq: q.before_seq,
+            limit,
+            chain,
+            filters: &filters,
+        },
+    )
+    .await?;
     let attestations = state.attestations.read().await;
-
-    let mut selected = Vec::with_capacity(limit.saturating_add(1));
-    for event in ledger.events().iter().rev() {
-        if q.before_seq.is_some_and(|before| event.seq >= before) {
-            continue;
-        }
-        if !event_in_chain(event, chain.as_ref()) || !filters.matches(event) {
-            continue;
-        }
-        selected.push(event);
-        if selected.len() > limit {
-            break;
-        }
-    }
-
-    let has_more = selected.len() > limit;
-    if has_more {
-        selected.truncate(limit);
-    }
-    let next_cursor = has_more
-        .then(|| selected.last().map(|event| event.seq))
-        .flatten();
-    let events = selected
-        .into_iter()
+    let events = page
+        .events
+        .iter()
         .map(|event| {
             let mut view = LedgerEventView::from(event);
             view.attestation = attestations.get(&event.seq).map(AttestationSummary::from);
@@ -158,17 +147,10 @@ pub async fn list_ledger_events_page(
 
     Ok(Json(LedgerEventsPage {
         events,
-        next_cursor,
-        has_more,
-        limit,
+        next_cursor: page.next_cursor,
+        has_more: page.has_more,
+        limit: page.limit,
     }))
-}
-
-fn event_in_chain(event: &Event, chain: Option<&ChainId>) -> bool {
-    match chain {
-        None | Some(ChainId::Global) => true,
-        Some(chain) => event.links.iter().any(|link| &link.chain == chain),
-    }
 }
 
 fn parse_chain(raw: &str) -> Result<ChainId, ApiError> {
