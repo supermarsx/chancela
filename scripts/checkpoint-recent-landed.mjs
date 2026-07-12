@@ -2142,6 +2142,41 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
+    "archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only",
+    "CI checkpoints generated dispatch archive preservation test marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata",
+    "CI checkpoints generated dispatch bundle preservation test marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "validation_report.evidence_index.generated_dispatch_evidence",
+    "CI checkpoints generated dispatch bundle evidence-index marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "evidence/generated-dispatch/{document_id}.json",
+    "CI checkpoints generated dispatch archive sidecar marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "no promotion into top-level/canonical `manifest.document_ids`",
+    "CI checkpoints generated dispatch no manifest promotion marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "exclusion of `operator_note`, `idempotency_key`, note-derived stable fingerprints, generated communication bytes, and imported proof bytes",
+    "CI checkpoints generated dispatch redaction marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "false `proof_bytes_included`, `bytes_included`, `operator_note_included`, `dispatch_completed`, legal-notice/legal-sufficiency, provider, registry, DGLAB, and legal-archive acceptance flags",
+    "CI checkpoints generated dispatch false-claim marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
     "including raw metadata and raw-report\n  byte downloads",
     "CI checkpoints external-validator raw metadata/raw-report command marker",
   );
@@ -4497,6 +4532,101 @@ function assertCheckpointMap() {
     "crates/chancela-store/tests/store.rs",
     "generated_document_dispatch_evidence_round_trips_idempotently_by_idempotency_key",
     "store generated-document dispatch-evidence round-trip coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "pub(crate) struct GeneratedDispatchEvidencePreservationIndex",
+    "API generated dispatch preservation index marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "pub(crate) struct GeneratedDispatchEvidencePreservationRecord",
+    "API generated dispatch preservation record marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "pub(crate) async fn generated_dispatch_evidence_preservation_indexes_for_act",
+    "API generated dispatch preservation index loader marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "generated_dispatch_evidence: generated_dispatch_evidence.to_vec()",
+    "API document bundle generated dispatch evidence index marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "proof_bytes_included: false",
+    "API generated dispatch no proof bytes marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "bytes_included: false",
+    "API generated dispatch record no bytes marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "operator_note_included: false",
+    "API generated dispatch no operator-note marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/archive_package.rs",
+    'const GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PREFIX: &str = "evidence/generated-dispatch/";',
+    "API archive generated dispatch sidecar prefix marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/archive_package.rs",
+    'const GENERATED_DISPATCH_EVIDENCE_ARCHIVE_PATH_PATTERN: &str =\n    "evidence/generated-dispatch/{document_id}.json";',
+    "API archive generated dispatch sidecar pattern marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/archive_package.rs",
+    "file.act_id = Some(parse_generated_dispatch_act_id(entry)?);",
+    "API archive generated dispatch sidecar act-only marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/archive_package.rs",
+    "generated_dispatch_evidence_archive_index",
+    "API archive generated dispatch evidence index marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only",
+    "API archive generated dispatch preservation coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata",
+    "API document bundle generated dispatch preservation coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "generated communication metadata sidecar must not promote its id into manifest.document_ids",
+    "API archive generated dispatch no manifest promotion coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "generated communication proof/PDF bytes are not added by this metadata-only slice",
+    "API archive generated dispatch no generated bytes coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "free-form operator notes are excluded from preservation output",
+    "API archive generated dispatch operator-note redaction coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "note-derived stable identifiers are excluded from preservation output",
+    "API archive generated dispatch idempotency redaction coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "operator notes stay out of preservation evidence",
+    "API bundle generated dispatch operator-note redaction coverage marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "note-derived stable identifiers stay out of preservation evidence",
+    "API bundle generated dispatch idempotency redaction coverage marker",
   );
   assertFileContains(
     "crates/chancela-api/src/documents.rs",
@@ -7091,6 +7221,66 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     "no mail, email, SMS, or provider sending, and no delivery, legal notice completion, legal sufficiency, legal effect, provider execution, registry filing, signing, bundle readiness, template legal review, threshold correctness, law verification claim, or dashboard ledger-event append",
     "spec coverage generated-document no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "validation_report.evidence_index.generated_dispatch_evidence",
+    "spec coverage generated dispatch bundle evidence-index marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "evidence/generated-dispatch/{document_id}.json",
+    "spec coverage generated dispatch archive sidecar marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`EvidenceReport` metadata entries with `act_id` only and no `document_id`",
+    "spec coverage generated dispatch EvidenceReport act-only marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "manifest.document_ids",
+    "spec coverage generated dispatch no manifest promotion marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "It excludes `operator_note`, `idempotency_key`, note-derived stable fingerprints, generated communication bytes, and imported proof bytes",
+    "spec coverage generated dispatch redaction marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only",
+    "spec coverage generated dispatch archive preservation test marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata",
+    "spec coverage generated dispatch bundle preservation test marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "generated dispatch-evidence bundle/archive indexes are metadata-only preservation pointers, not canonical document promotion",
+    "spec coverage generated dispatch metadata-only matrix marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "document-bundle/archive generated dispatch-evidence metadata preservation",
+    "CI/E2E plan generated dispatch preservation header marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "validation_report.evidence_index.generated_dispatch_evidence",
+    "CI/E2E plan generated dispatch bundle evidence-index marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "evidence/generated-dispatch/{document_id}.json",
+    "CI/E2E plan generated dispatch archive sidecar marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "not promoted into top-level/canonical `manifest.document_ids`",
+    "CI/E2E plan generated dispatch no manifest promotion marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

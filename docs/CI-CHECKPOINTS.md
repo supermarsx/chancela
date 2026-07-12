@@ -108,6 +108,10 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --locked absent_owner_dispatch_evidence_`
   plus
   `cargo test -p chancela-store --test store --locked generated_document_dispatch_evidence`
+  plus
+  `cargo test -p chancela-api --test archive_package --locked archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
+  plus
+  `cargo test -p chancela-api --locked document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`
   plus the `cargo test -p chancela-api --locked reminder_` lane for
   `reminder_generated_absent_owner_dispatch_evidence_required_pending_routes_to_act_document_workflow`,
   `reminder_generated_absent_owner_dispatch_evidence_partial_routes_to_act_document_workflow`,
@@ -125,7 +129,20 @@ It intentionally reuses existing test surfaces:
   without a duplicate ledger event, selected absent-recipient evidence coverage,
   evidence-attached/status headers, `x-chancela-dispatch-completed=false`, and
   the `absent_owner_communication.dispatch_evidence_recorded` false/no-claim
-  flags. Web/UI markers pin `listGeneratedDocuments`,
+  flags. Document-bundle markers pin
+  `validation_report.evidence_index.generated_dispatch_evidence` while the
+  bundle `document` and canonical download remain the sealed Ata. Archive
+  package markers pin metadata-only `EvidenceReport` JSON sidecars at
+  `evidence/generated-dispatch/{document_id}.json`, `evidence/index.json`
+  references, `act_id` without `document_id` on sidecar manifest entries, and
+  no promotion into top-level/canonical `manifest.document_ids`. Preservation
+  markers pin safe status/coverage/recipient/channel/reference/evidence
+  locator/imported-document/timestamp fields; exclusion of `operator_note`,
+  `idempotency_key`, note-derived stable fingerprints, generated communication
+  bytes, and imported proof bytes; and false `proof_bytes_included`,
+  `bytes_included`, `operator_note_included`, `dispatch_completed`,
+  legal-notice/legal-sufficiency, provider, registry, DGLAB, and legal-archive
+  acceptance flags. Web/UI markers pin `listGeneratedDocuments`,
   `getGeneratedDocumentDispatchEvidence`,
   `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
   communication listing, generated PDF fetch, stored evidence rows,
@@ -220,7 +237,9 @@ absent-owner communication auto-generation, dispatch-evidence store,
 idempotency, selected-recipient evidence coverage, evidence-attached headers,
 no dispatch completion, web client/hooks/panel/i18n metadata-only evidence UI,
 no send/delivery/legal-notice copy, no-claim markers, and dashboard reminder
-source/action/no-date ordering/fixture markers,
+source/action/no-date ordering/fixture markers, plus document-bundle
+`generated_dispatch_evidence` metadata and archive
+`evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
 live-provider assurance markers, validator manifest,
 Arquivo paged-ledger route/default-limit/cursor markers, 1000+ event first-page
 and load-more coverage, shared list/export search (`q`), chain/scope filter,
@@ -267,6 +286,7 @@ review, threshold correctness, law verification, provider execution, registry
 filing, legal-effect claims, mail/email/SMS/provider sending, provider
 dispatch-sent proof, dispatch completion from operator evidence, delivery proof,
 legal notice completion, generated communication legal sufficiency,
+promotion of generated dispatch-evidence metadata sidecars into canonical documents,
 canonical paper-book conversion,
 paper-book canonical act/document/archive-package creation, paper-book PDF/A/PDF-UA,
 paper-book signature/seal creation, paper-book OCR/conversion behavior, or legal effect for mutable draft acts created from

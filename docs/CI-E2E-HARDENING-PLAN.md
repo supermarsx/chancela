@@ -18,6 +18,7 @@ API, the MCP workflow provenance and draft-vs-signed comparison review aids,
 dashboard guest recent-events redaction, generated-document by-id download route,
 condominium absent-owner communication auto-generation, and operator-supplied
 dispatch-evidence recording with dashboard reminder surfacing,
+document-bundle/archive generated dispatch-evidence metadata preservation,
 imported-document review receipt UI, trust catalog identifier-match explanations,
 password-required account creation/session hardening,
 plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage,
@@ -249,7 +250,27 @@ test operating checklist for driving Chancela toward release confidence.
   evidence-attached/status headers while keeping
   `x-chancela-dispatch-completed=false`, and emits
   `absent_owner_communication.dispatch_evidence_recorded` with false/no-claim
-  flags. The web follow-on slice covers `listGeneratedDocuments`, generated PDF
+  flags. Document bundles now keep the canonical bundle `document` and
+  `/v1/acts/{act_id}/document` download as the sealed Ata while adding generated
+  absent-owner dispatch metadata under
+  `validation_report.evidence_index.generated_dispatch_evidence`. Archive
+  package exports add metadata-only JSON sidecars at
+  `evidence/generated-dispatch/{document_id}.json`, reference them from
+  `evidence/index.json`, and register those sidecars as `EvidenceReport`
+  metadata entries with `act_id` only and no `document_id`, so generated
+  evidence sidecars are not promoted into top-level/canonical
+  `manifest.document_ids`. The projection excludes `operator_note`,
+  `idempotency_key`, note-derived stable fingerprints, generated communication
+  bytes, and imported proof bytes; includes safe status/coverage fields,
+  recipients, channel, reference, evidence locator, `imported_document_id`, and
+  timestamps; and keeps `proof_bytes_included=false`, `bytes_included=false`,
+  `operator_note_included=false`, `dispatch_completed=false`,
+  legal-notice/legal-sufficiency, provider, registry, DGLAB, and legal-archive
+  acceptance flags false. Focused preservation tests are
+  `archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
+  and
+  `document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`.
+  The web follow-on slice covers `listGeneratedDocuments`, generated PDF
   fetch, `getGeneratedDocumentDispatchEvidence`,
   `recordGeneratedDocumentDispatchEvidence`, generated absent-owner
   communication listing, stored evidence rows, permission-gated metadata-only
@@ -259,7 +280,8 @@ test operating checklist for driving Chancela toward release confidence.
   Ata, or generated-byte mutation; no mail, email, SMS, or provider sending; no
   delivery, legal notice completion, legal sufficiency, legal effect, provider
   execution, registry filing, signing, bundle readiness, template legal review,
-  threshold correctness, or law verification claim.
+  threshold correctness, or law verification claim. It also makes no DGLAB
+  certification or legal archive acceptance claim.
 - The current imported-document receipt slice derives a `Recibo de revisão`
   panel from the existing imported-document view. Pending rows show no fake
   receipt, while reviewed rows show status, reviewer, time, note, required and
@@ -1301,7 +1323,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, plus generated-document by-id route, absent-owner dispatch-evidence
   route/store/idempotency/selected-recipient coverage/evidence-attached/
   no-completion/no-claim markers and focused generated absent-owner evidence
-  web client/panel/i18n/dashboard/contract markers,
+  web client/panel/i18n/dashboard/contract markers, plus document-bundle
+  `generated_dispatch_evidence` metadata and archive
+  `evidence/generated-dispatch/{document_id}.json` sidecar/index markers,
   plus Arquivo paged ledger route/default-limit/cursor markers,
   1000+ event first-page/load-more tests, shared list/export search (`q`),
   chain/scope filter, and limit normalization markers, numeric `next_cursor`

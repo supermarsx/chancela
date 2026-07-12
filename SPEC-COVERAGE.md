@@ -116,7 +116,8 @@ guidance and draft-vs-signed comparison review aid, dashboard guest
 recent-events redaction, generated-document by-id download routing,
 retention due-candidate prior bounded execution projection, automatic
 condominium absent-owner communication generation with pending dispatch
-evidence status and dashboard reminder surfacing, settings.read-gated raw
+evidence status, generated dispatch-evidence preservation indexes, and
+dashboard reminder surfacing, settings.read-gated raw
 external-validator raw-report byte downloads,
 imported-document review receipt rendering, and trust catalog identifier-match
 explanations, plus release clean-source provenance gating, seeded role-drift
@@ -487,7 +488,29 @@ Implementation checkpoints covered here:
   `absent_owner_communication.dispatch_evidence_recorded` with selected/required
   recipients plus false `sending_performed_by_chancela`, `delivery_confirmed`,
   `legal_sufficiency_claimed`, `legal_notice_completion_claimed`, and
-  `bytes_in_payload` flags. Follow-on web coverage now surfaces the generated
+  `bytes_in_payload` flags. Document bundles now keep the canonical bundle
+  `document` and `/v1/acts/{act_id}/document` download as the sealed Ata while
+  adding generated absent-owner dispatch metadata under
+  `validation_report.evidence_index.generated_dispatch_evidence`. Archive
+  package exports add metadata-only JSON sidecars at
+  `evidence/generated-dispatch/{document_id}.json`, reference them from
+  `evidence/index.json`, and register those sidecars as `EvidenceReport`
+  metadata entries with `act_id` only and no `document_id`, so generated
+  evidence sidecars are not promoted into top-level/canonical
+  `manifest.document_ids`. The preservation projection keeps only safe
+  status/coverage fields, recipients, channel, reference, evidence locator,
+  `imported_document_id`, and timestamps. It excludes `operator_note`,
+  `idempotency_key`, note-derived stable fingerprints, generated communication
+  bytes, and imported proof bytes, and pins false `proof_bytes_included`,
+  `bytes_included`, `operator_note_included`, `dispatch_completed`,
+  `legal_notice_completion_claimed`, `legal_sufficiency_claimed`,
+  `provider_execution_claimed`, `registry_filing_claimed`,
+  `dglab_certification_claimed`, and `legal_archive_acceptance_claimed` flags.
+  Focused preservation tests are
+  `archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only`
+  and
+  `document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata`.
+  Follow-on web coverage now surfaces the generated
   absent-owner communication list, generated PDF fetch, stored evidence rows,
   metadata-only evidence recording form, `operator_evidence_*` status display,
   and `documents.generated.noClaim.*` copy through the web client/hooks and
@@ -511,7 +534,8 @@ Implementation checkpoints covered here:
   sending, and no delivery, legal notice completion, legal sufficiency, legal
   effect, provider execution, registry filing, signing, bundle readiness,
   template legal review, threshold correctness, law verification claim, or
-  dashboard ledger-event append is added.
+  dashboard ledger-event append is added. It also makes no DGLAB certification
+  or legal archive acceptance claim.
 - Working tree keeps Documents/Archive/API/CI **PARTIAL**: `GET
   /v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by
   `book.export@Book`, returns a deterministic local
@@ -1462,7 +1486,9 @@ metadata-only coverage; and the richer Ata editor statement-source provenance
 rendering plus the MCP draft-vs-signed comparison prompt/resource are AI/UX
 human-review coverage. Guest dashboard recent-event redaction is read-response
 redaction only. Generated-document by-id downloads are Documents/Workflow
-plumbing for non-Ata generated rows only. Retained-export cleanup dry-run
+plumbing for non-Ata generated rows only, and generated dispatch-evidence
+bundle/archive indexes are metadata-only preservation pointers, not canonical
+document promotion. Retained-export cleanup dry-run
 planning/execution UX is retained local export file cleanup coverage only, with
 execution exposed after preview plus shared modal confirmation, and the post-act
 `Certidao`/`Extrato` sealed-provenance lint is Template Catalog/CI
@@ -2634,6 +2660,8 @@ behavior, legal disposal, or legal-effect claims.
   markers, dashboard guest `recent_events: []` redaction markers,
   generated-document by-id download route plus absent-owner dispatch-evidence
   route/store/idempotency/coverage/evidence-attached/no-completion/no-claim
+  markers plus document-bundle `generated_dispatch_evidence` and archive
+  `evidence/generated-dispatch/{document_id}.json` metadata-only sidecar
   markers, external-signing
   envelope UI/safe-409/Ferramentas label markers, PDF verifier DSS/VRI
   `/TU` plus local renewal/no-live-trust/no-legal-claim UI markers, hardening-plan head markers,
