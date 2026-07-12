@@ -1,12 +1,16 @@
-//! Journey: Arquivo ledger archive PDF export over the real server binary.
+//! Journey: Arquivo ledger archive exports over the real server binary.
 //!
 //! Covers the composed, RBAC-gated endpoint that renders the current ledger archive as PDF/A bytes:
 //! global `ledger.read` success, accepted chain/scope filters, structured invalid-chain failures,
-//! and the read-only invariant (exporting must not append a ledger event).
+//! audit/interchange export formats, default newest-first ordering, and the read-only invariant
+//! (exporting must not append a ledger event).
 
 mod common;
 
 use common::*;
+use serde_json::{Value, json};
+
+const TEST_PASSWORD: &str = "Archive-Safe7!";
 
 /// Fetch raw bytes (not JSON) from the running server. Archive exports are PDF bytes, so the JSON
 /// harness helpers would try to parse the body incorrectly.
@@ -43,6 +47,32 @@ fn assert_archive_pdf(status: u16, ctype: &str, bytes: &[u8], label: &str) {
     assert!(!bytes.is_empty(), "{label} should return a nonempty body");
 }
 
+async fn bootstrap_archive_session(h: &ServerHarness) -> String {
+    let (status, user) = h
+        .post_json(
+            "/v1/users",
+            json!({
+                "username": "e2e.operator",
+                "display_name": "E2E Operator",
+                "password": TEST_PASSWORD,
+            }),
+        )
+        .await;
+    assert_eq!(status, 201, "bootstrap archive user: {user}");
+    let user_id = user["id"].as_str().expect("user id");
+
+    let (status, session) = h
+        .post_json(
+            "/v1/session",
+            json!({ "user_id": user_id, "password": TEST_PASSWORD }),
+        )
+        .await;
+    assert_eq!(status, 200, "bootstrap archive session: {session}");
+    let token = session["token"].as_str().expect("session token").to_owned();
+    h.set_default_token(&token);
+    token
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg_attr(
     not(feature = "e2e"),
@@ -50,7 +80,7 @@ fn assert_archive_pdf(status: u16, ctype: &str, bytes: &[u8], label: &str) {
 )]
 async fn ledger_archive_document_is_pdf_filterable_structured_and_read_only() {
     let h = ServerHarness::start().await;
-    let token = bootstrap_session(&h).await;
+    let token = bootstrap_archive_session(&h).await;
     let entity_id = create_entity(
         &h,
         "Encosto Estratégico, S.A.",
@@ -72,6 +102,53 @@ async fn ledger_archive_document_is_pdf_filterable_structured_and_read_only() {
     );
     let (status, ctype, filtered_pdf) = get_bytes(&h, &filtered_path, &token).await;
     assert_archive_pdf(status, &ctype, &filtered_pdf, "filtered archive export");
+
+    // The dropdown's non-PDF formats are backed by real server responses, not just UI options.
+    let (status, ctype, json_bytes) = get_bytes(
+        &h,
+        "/v1/ledger/archive/document?format=json&limit=2",
+        &token,
+    )
+    .await;
+    assert_eq!(status, 200, "JSON archive export status");
+    assert_eq!(ctype, "application/json", "JSON archive export ctype");
+    let export: Value = serde_json::from_slice(&json_bytes).expect("JSON archive export parses");
+    assert_eq!(export["export_kind"], "audit_interchange");
+    assert_eq!(export["canonical_preserved_evidence"], false);
+    assert_eq!(export["canonical_evidence_format"], "pdfa");
+    assert_eq!(export["order"], "seq_desc");
+    assert_eq!(export["event_count"], 2);
+    let events = export["events"].as_array().expect("JSON export events");
+    assert_eq!(events.len(), 2);
+    assert!(
+        events[0]["seq"].as_u64().expect("first seq")
+            > events[1]["seq"].as_u64().expect("second seq"),
+        "JSON archive export defaults to newest-first order: {export}"
+    );
+
+    for (format, expected_ctype, expected_marker) in [
+        ("txt", "text/plain; charset=utf-8", "kind=book.opened"),
+        (
+            "csv",
+            "text/csv; charset=utf-8",
+            "seq,chain_seq,kind,scope,actor,timestamp",
+        ),
+        ("html", "text/html; charset=utf-8", "<table>"),
+    ] {
+        let path = format!("{filtered_path}&format={format}");
+        let (status, ctype, bytes) = get_bytes(&h, &path, &token).await;
+        assert_eq!(status, 200, "{format} archive export status");
+        assert_eq!(ctype, expected_ctype, "{format} archive export ctype");
+        let body = String::from_utf8(bytes).expect("archive interchange export is UTF-8");
+        assert!(
+            body.contains("Audit/interchange export only"),
+            "{format} archive export carries the non-canonical notice: {body}"
+        );
+        assert!(
+            body.contains(expected_marker),
+            "{format} archive export carries expected event data: {body}"
+        );
+    }
 
     // Bad chain ids produce the structured 422 JSON envelope used by the ledger API.
     let (status, body) = h
