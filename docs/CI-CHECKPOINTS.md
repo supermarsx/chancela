@@ -38,8 +38,11 @@ archive timestamp append markers, raw-byte per-book import preflight markers for
 no-mutation operator previews,
 paper-book OCR API/UI markers including accepted OCR draft to mutable draft-act
 creation plus focused paper-book OCR review browser workflow markers,
-retention duplicate review-only request guards, queued-review status surfacing,
-prior bounded execution projection, and eligible no-action bounded evidence UI,
+retention explicit evidence-state markers (`review_queued`, `blocked`,
+`bounded_archive_recorded`, `bounded_no_action_recorded`,
+`prior_bounded_evidence_available`), duplicate review-only request guards,
+queued-review status surfacing, prior bounded execution projection, and eligible
+bounded archive/no-action evidence UI,
 retained-export cleanup preview-token/manifest gating, forwarded platform-log sanitized
 accepted/denied/rejected/suppressed audit markers, post-act template
 sealed-provenance lint, all-family standalone agenda-item templates,
@@ -110,9 +113,10 @@ It intentionally reuses existing test surfaces:
   `cargo test -p chancela-api --test local_pkcs12_signing --locked`
 - API bounded retention execution:
   `cargo test -p chancela-api --test privacy --locked retention_`
-  including due-candidate prior bounded archive/no-action projection, safe
-  internal evidence gating, non-mutating GET behavior, and canonical
-  `prior_execution.next_step` text.
+  including explicit non-destructive evidence states, due-candidate prior
+  bounded archive/no-action projection, bounded archive/no-action
+  `execute_supported` records, safe internal evidence gating, non-mutating GET
+  behavior, and canonical `prior_execution.next_step` text.
 - API dashboard guest event redaction:
   `cargo test -p chancela-api --locked dashboard_recent_events_redacts_guest_feed_but_keeps_owner_and_reader_feed`
   including guest `recent_events: []`, retained Owner/Leitor recent events, and
@@ -260,8 +264,9 @@ service/control desired-state markers, encrypted-build-default markers, external
 metadata API durability markers, the settings.read raw metadata and raw-report
 byte download
 route/tests, Settings privacy retention-policy list/create/patch/dry-run UI,
-retention due-candidate duplicate-review, queued-status, prior-execution
-projection, projected-row duplicate-action suppression, eligible no-action
+retention due-candidate explicit evidence-state enum markers,
+duplicate-review, queued-status, prior-execution projection, projected-row
+duplicate-action suppression, eligible bounded archive/no-action
 `execute_supported` UI markers, ineligible review-only/badge paths, locale keys,
 and non-destructive payload assertions, Ferramentas
 panel/client/i18n markers including compact validator-report actions,
@@ -322,8 +327,10 @@ password hash and attestation key; web onboarding, sign-in, current-user
 switching, user creation, and E2E helpers all submit passwords. These markers
 are not SSO, legal identity proof, tenant model, email verification, credential
 recovery completion, or broad Playwright-browser-suite proof.
-Static markers are deletion/rename guards only; the retention no-action markers
-pin bounded evidence UI copy and payload shape, not legal disposal completion.
+Static markers are deletion/rename guards only; the retention archive/no-action
+markers pin explicit non-destructive evidence states and bounded evidence UI
+copy/payload shape, not physical deletion, anonymization, GDPR erasure, or
+legal disposal completion.
 They do not certify legal validity, legal retention schedules or approvals,
 retention deletion or anonymization/redaction execution, retention execution
 completion, destructive GDPR erasure, full erasure, template legal effect, DRE

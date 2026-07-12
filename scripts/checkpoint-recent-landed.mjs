@@ -2319,12 +2319,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "retention duplicate review-only request guards, queued-review status surfacing,\nprior bounded execution projection, and eligible no-action bounded evidence UI",
+    "retention explicit evidence-state markers (`review_queued`, `blocked`,\n`bounded_archive_recorded`, `bounded_no_action_recorded`,\n`prior_bounded_evidence_available`), duplicate review-only request guards",
     "CI checkpoints retention duplicate-review lane marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "retention due-candidate duplicate-review, queued-status, prior-execution\nprojection, projected-row duplicate-action suppression, eligible no-action\n`execute_supported` UI markers, ineligible review-only/badge paths",
+    "retention due-candidate explicit evidence-state enum markers,\nduplicate-review, queued-status, prior-execution projection, projected-row\nduplicate-action suppression, eligible bounded archive/no-action\n`execute_supported` UI markers",
     "CI checkpoints retention prior projection static marker",
   );
   assertFileContains(
@@ -3129,8 +3129,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "function retentionCandidateCanRecordArchiveEvidence",
+    "Settings retention due-candidate archive eligibility helper",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
     "candidate.disposal_action === 'no_action'",
     "Settings retention due-candidate no-action disposal gate",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "candidate.disposal_action === 'archive'",
+    "Settings retention due-candidate archive disposal gate",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
@@ -3169,8 +3179,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Registar evidência de arquivo",
+    "Settings retention due-candidate bounded archive evidence copy",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
     "Regista apenas evidência delimitada de no-action; não aprova nem executa",
     "Settings retention due-candidate bounded no-action caveat copy",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "Regista apenas evidência delimitada de arquivo; não aprova nem executa",
+    "Settings retention due-candidate bounded archive caveat copy",
   );
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
@@ -3234,8 +3254,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "records bounded archive evidence from an eligible due retention candidate row",
+    "Settings retention due-candidate bounded archive evidence coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
     "keeps bounded no-action evidence unavailable for ineligible due retention candidates",
     "Settings retention due-candidate ineligible no-action evidence coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "keeps bounded archive evidence unavailable for unsafe due retention candidates",
+    "Settings retention due-candidate unsafe archive evidence coverage",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
@@ -3246,6 +3276,11 @@ function assertCheckpointMap() {
     "apps/web/src/features/settings/SettingsPage.test.tsx",
     "requested_policy_id: 'retention-no-action'",
     "Settings retention due-candidate no-action policy payload assertion",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SettingsPage.test.tsx",
+    "requested_policy_id: 'retention-archive'",
+    "Settings retention due-candidate archive policy payload assertion",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
@@ -3301,6 +3336,26 @@ function assertCheckpointMap() {
     "apps/web/src/features/settings/SettingsPage.test.tsx",
     "!call.body?.includes('execute_supported')",
     "Settings retention due-candidate no execute-supported payload marker",
+  );
+  assertFileContains(
+    "apps/web/src/api/types.ts",
+    "export const RETENTION_EVIDENCE_STATES = [\n  'review_queued',\n  'blocked',\n  'bounded_archive_recorded',\n  'bounded_no_action_recorded',\n  'prior_bounded_evidence_available',",
+    "web retention explicit evidence-state enum marker",
+  );
+  assertFileContains(
+    "contracts/retention.executions.json",
+    '"evidence_state": "bounded_archive_recorded"',
+    "retention executions fixture bounded archive evidence-state marker",
+  );
+  assertFileContains(
+    "contracts/retention.due-candidates.json",
+    '"candidate_evidence_state": "bounded_archive_recorded"',
+    "retention due-candidates fixture bounded archive evidence-state marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/privacy.rs",
+    "json!(\"Bounded archive evidence recorded; no destructive operation was performed.\")",
+    "API retention bounded archive no-destructive next-step marker",
   );
   assertFileContains(
     "crates/chancela-api/tests/privacy.rs",
@@ -6614,7 +6669,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-11 from the current CI configuration and head `3e72e08`",
+    "Updated 2026-07-12 from the current CI configuration and head `8f3310b`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
@@ -7449,8 +7504,13 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree retention due-candidate checks",
+    "Current retention evidence checks through `8f3310b`",
     "CI/E2E hardening plan retention due-candidates checks marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "explicit and\n  non-destructive: `review_queued`, `blocked`, `bounded_archive_recorded`,\n  `bounded_no_action_recorded`, and `prior_bounded_evidence_available`",
+    "CI/E2E hardening plan retention explicit evidence-state marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7459,28 +7519,28 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "dry-run `execution_request` with forced/default `review_only`",
+    "dry-run `execution_request` with forced/default `review_only` for review\n  queues or `execute_supported` for bounded evidence recording",
     "CI/E2E hardening plan retention due-candidates review-only request marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Duplicate `review_only` requests for the same candidate/policy,\n  including concurrent duplicates, reuse the existing `awaiting_review`\n  execution record",
+    "Duplicate `review_only` requests for the same candidate/policy, including\n  concurrent duplicates, reuse the existing `awaiting_review` execution record",
     "CI/E2E hardening plan retention duplicate-review marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Due-candidate reads can also project prior safe bounded `executed`\n  archive/no-action evidence",
+    "Due-candidate\n  reads can also project prior safe bounded `executed` archive/no-action\n  evidence",
     "CI/E2E hardening plan retention prior projection marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "canonical bounded `prior_execution.next_step` text",
+    "canonical bounded\n  `prior_execution.next_step` text",
     "CI/E2E hardening plan retention prior canonical next-step marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "existing dry-run-backed `execute_supported` path only for eligible no-action\n  due-candidates",
-    "CI/E2E hardening plan retention eligible no-action execute-supported marker",
+    "`execute_supported` path only for eligible `disposal_action === archive` or\n  `disposal_action === no_action` due-candidates",
+    "CI/E2E hardening plan retention eligible archive/no-action execute-supported marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -7489,7 +7549,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "candidate\n  disposal is implemented",
+    "bounded archive/no-action evidence\n  UI only: no physical deletion, anonymization, redaction completion",
     "CI/E2E hardening plan retention due-candidates no-disposal caveat marker",
   );
   assertFileContains(
@@ -8134,7 +8194,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "forced/default `review_only`",
+    "record bounded archive evidence for\n  `disposal_action: archive` or bounded no-action evidence for `disposal_action: no_action`",
     "spec coverage retention due-candidates review-only request marker",
   );
   assertFileContains(
@@ -8149,22 +8209,22 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Due-candidate reads can also project safe prior bounded\n  `executed` archive/no-action evidence",
+    "Due-candidate reads can also project prior safe bounded\n  `executed` archive/no-action evidence",
     "spec coverage retention prior bounded projection marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "uses canonical bounded `prior_execution.next_step` text\n  instead of persisted free-form text",
+    "Candidate evidence states are explicit:\n  `review_queued`, `blocked`, `bounded_archive_recorded`, `bounded_no_action_recorded`, and\n  `prior_bounded_evidence_available`",
     "spec coverage retention prior projection canonical text marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Projected\n  prior bounded archive/no-action executions on due-candidate rows are read-only\n  internal evidence projections",
+    "Projected prior bounded archive/no-action executions on due-candidate rows are\n  read-only internal evidence projections",
     "spec coverage retention prior projection no-overclaim marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "candidates, approve legal disposal",
+    "legal disposal\n  completion, or GDPR erasure",
     "spec coverage retention due-candidates no-resolution caveat marker",
   );
   assertFileContains(

@@ -2030,10 +2030,12 @@ behavior, legal disposal, or legal-effect claims.
   trust, legal validity, live provider readiness, DGLAB certification, or full
   release hardening.
 - **Bounded retention execution evidence:** non-destructive retention policies can
-  now record bounded archive/no-action execution evidence with approvals,
-  acted/skipped targets, reason codes, next steps, and idempotent repeat detection.
-  Destructive delete/anonymize, physical deletion, disposal approval, and GDPR
-  erasure remain outside this slice and are explicitly blocked/false.
+  now record explicit bounded evidence states (`review_queued`, `blocked`,
+  `bounded_archive_recorded`, `bounded_no_action_recorded`, and
+  `prior_bounded_evidence_available`) with approvals, acted/skipped targets,
+  reason codes, next steps, and idempotent repeat detection. Destructive
+  delete/anonymize, physical deletion, disposal approval, and GDPR erasure remain
+  outside this slice and are explicitly blocked/false.
 - **Notification popup browser hardening:** Playwright now covers the notification
   popup as real browser UI for portal/z-index behavior, outside-click closing,
   action routing, and read-state count updates.
@@ -2050,10 +2052,11 @@ behavior, legal disposal, or legal-effect claims.
   only; they do not prove attendance, meeting legality, canonical conversion,
   signed-import validity, or legal acceptance.
 - **Retention review workflow state:** retention execution records now expose
-  review-only intent, execution status, operator review decision, and normalized
-  audit evidence fields. The records remain review/evidence artifacts; no
-  retention execution, anonymization, deletion, disposal approval, or GDPR erasure
-  is performed.
+  review-only intent, execution status, operator review decision, normalized
+  audit evidence fields, and explicit non-destructive evidence states for queued,
+  blocked, bounded archive/no-action, and prior bounded evidence paths. The
+  records remain review/evidence artifacts; no retention execution,
+  anonymization, deletion, disposal approval, or GDPR erasure is performed.
 - **Tighter tagged-PDF self-checks:** local structural checks now validate
   standard RoleMap targets, struct-element role mapping, and marked-content scope
   rules in addition to the earlier ParentTree/MCID/MCR checks. This is regression
@@ -2400,12 +2403,14 @@ behavior, legal disposal, or legal-effect claims.
   unsupported-period findings, and explicit `would_execute: false`,
   `destructive_disposal_completed: false`, and `full_erasure_completed: false` flags. Settings
   renders those candidates on page load without creating retention execution, disposal, or erasure
-  records. An eligible no-action row (`disposal_action: no_action`, non-destructive, no
-  blockers/legal holds, no queued review, and no prior execution) can record bounded no-action
-  evidence by posting only the dry-run endpoint, candidate/policy identifiers, and
+  records. Eligible bounded evidence rows can record bounded archive evidence for
+  `disposal_action: archive` or bounded no-action evidence for `disposal_action: no_action` by
+  posting only the dry-run endpoint, candidate/policy identifiers, and
   `execution_mode: "execute_supported"`, then refreshing the due-candidate and execution-history
-  queries once the execution record is returned. Ineligible rows stay on the review-only,
-  disabled, queued-review, or existing-evidence badge path. Duplicate `review_only`
+  queries once the execution record is returned. Eligibility requires a concrete record id,
+  non-destructive policy, no blockers/legal holds, no queued review, no prior execution, and no
+  suppressed evidence state. Ineligible rows stay on the review-only, disabled, queued-review, or
+  existing-evidence badge path. Duplicate `review_only`
   requests for the same candidate/policy reuse the existing `awaiting_review` execution, including
   concurrent duplicate guards, without adding another execution record or ledger event; the
   due-candidate GET remains read-only and the UI shows queued review status/id/time instead of
@@ -2415,9 +2420,11 @@ behavior, legal disposal, or legal-effect claims.
   `bounded_executor: true`, acted targets, and false destructive/full-erasure
   flags; projected `prior_execution.next_step` is canonical bounded text, not
   persisted free-form text, and the UI suppresses duplicate review actions only
-  for projected rows. This is retention register, dry-run, due-candidate
-  scanner, review-request, bounded no-action evidence, and execution-history evidence only: it
-  still performs no deletion, anonymization, redaction completion, archive disposal, destructive
+  for projected rows. Candidate evidence states are explicit:
+  `review_queued`, `blocked`, `bounded_archive_recorded`, `bounded_no_action_recorded`, and
+  `prior_bounded_evidence_available`. This is retention register, dry-run, due-candidate
+  scanner, review-request, bounded archive/no-action evidence, and execution-history evidence only:
+  it still performs no physical deletion, anonymization, redaction completion, archive disposal, destructive
   GDPR erasure, full erasure, legal disposal completion, legal-retention certification, legal
   default scheduling, legal disposal approval, policy or legal-hold mutation, candidate resolution,
   or candidate disposal execution.
@@ -2723,7 +2730,7 @@ behavior, legal disposal, or legal-effect claims.
 - **Recent-landed checkpoint:** `npm run test:checkpoint:recent-landed` and the GitHub Actions
   `recent-landed` job pin the cross-cutting recent work: paper import API tests including
   canonical-conversion preflight markers, archive package and DocTimeStamp evidence tests, local
-  PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution tests, Settings retention policy list/create/patch/dry-run UI markers and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests including bounded same-document `URI="#id"` fragment markers and raw P-256 ECDSA-SHA256 `r||s` signature markers, trust/import/static hardening markers for unsafe TSL/TSA URL refusal, scoped test-only loopback, import fail-closed cache preservation, `/v1/books/import` body limits, security headers, and CC signing invalid-TSL refusal, MCP
+  PKCS#12 API signing tests, multi-signature PAdES renewal-plan API tests, bounded retention execution and due-candidate archive/no-action evidence tests, Settings retention policy list/create/patch/dry-run UI markers, explicit retention evidence-state markers, and non-destructive payload assertions, privacy breach/transfer review-receipt tests, TSL XML-DSig hardening tests including bounded same-document `URI="#id"` fragment markers and raw P-256 ECDSA-SHA256 `r||s` signature markers, trust/import/static hardening markers for unsafe TSL/TSA URL refusal, scoped test-only loopback, import fail-closed cache preservation, `/v1/books/import` body limits, security headers, and CC signing invalid-TSL refusal, MCP
   per-book raw-byte import preflight route/no-mutation/API tests and web preview-confirm stale-guard
   markers, resource/prompt tests, API dashboard reminder policy/default/source-toggle/window/year-boundary
   tests, web contract/client/settings-default/dashboard/ferramentas/signing/i18n/trust tests,
@@ -3148,15 +3155,19 @@ behavior, legal disposal, or legal-effect claims.
   They do not change cleanup targets, execute retention, delete files, prove
   legal custody, or certify data-lifecycle compliance.
 - Retention due-candidate scanner rows, review-only `execution_request` records,
-  retention execution history, workflow blockers, required approvals, operator
-  decisions, and audit evidence record requests, outcomes, and operator next
-  steps for audit/review. Duplicate `review_only` requests reuse queued
-  `awaiting_review` evidence and queued-review status surfacing only. Projected
-  prior bounded archive/no-action executions on due-candidate rows are read-only
-  internal evidence projections gated by false destructive/full-erasure flags
-  and canonical bounded next-step text; they are not retention execution,
+  bounded archive/no-action evidence records, retention execution history,
+  workflow blockers, required approvals, operator decisions, and audit evidence
+  record requests, outcomes, and operator next steps for audit/review. Explicit
+  states (`review_queued`, `blocked`, `bounded_archive_recorded`,
+  `bounded_no_action_recorded`, `prior_bounded_evidence_available`) describe
+  non-destructive evidence posture only. Duplicate `review_only` requests reuse
+  queued `awaiting_review` evidence and queued-review status surfacing only.
+  Projected prior bounded archive/no-action executions on due-candidate rows are
+  read-only internal evidence projections gated by false destructive/full-erasure
+  flags and canonical bounded next-step text; they are not retention execution,
   candidate resolution, anonymization, redaction completion, physical deletion,
-  policy or legal-hold mutation, legal disposal approval, or GDPR erasure.
+  policy or legal-hold mutation, legal disposal approval, legal disposal
+  completion, or GDPR erasure.
 - Dashboard legal-hold, sealed-not-archived, and missing-attendance alerts are advisory operational
   next steps; they do not certify legal-hold handling, approve disposal, prove archival completion,
   prove attendance, or validate meeting legality.

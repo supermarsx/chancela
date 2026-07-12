@@ -1,10 +1,10 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-11 from the current CI configuration and head `3e72e08`, plus
-the current working-tree coverage notes for the bounded PAdES DSS
-validation-time, PDF/UA v6 structural-depth, retention due-candidate review
-request plus duplicate-review guard/status surfacing and prior bounded
-execution projection, recovery-drill custody
+Updated 2026-07-12 from the current CI configuration and head `8f3310b`,
+including coverage notes for the bounded PAdES DSS validation-time, PDF/UA v6
+structural-depth, retention due-candidate explicit evidence states, bounded
+archive/no-action evidence UI, duplicate-review guard/status surfacing, and
+prior bounded execution projection, recovery-drill custody
 receipt and optional-key contract tolerance, paper-book OCR conversion-dossier UI,
 CSC quota/delegation/revocation and standalone agenda-item template parity,
 retained-export cleanup dry-run planning, post-act template sealed-provenance lint,
@@ -932,37 +932,42 @@ settingsDefaults.test.ts contracts.test.ts`.
   guardrails. These remain review/status/UI markers only; they do not claim
   destructive retention execution, hardware-key custody, production SQLCipher
   completion, live trust validation, PDF/UA, or legal validity.
-- Current working-tree retention due-candidate checks: API and Settings markers
+- Current retention evidence checks through `8f3310b`: API and Settings markers
   pin read-only `GET /v1/privacy/retention-due-candidates` for closed-book
   archive/document candidates selected from active retention policies, closing
-  date plus supported retention periods, legal-hold blockers, required approvals,
-  unsupported-period findings, and explicit false destructive/full-erasure flags.
+  date plus supported retention periods, legal-hold blockers, required
+  approvals, unsupported-period findings, and explicit false
+  destructive/full-erasure flags. The evidence state surface is explicit and
+  non-destructive: `review_queued`, `blocked`, `bounded_archive_recorded`,
+  `bounded_no_action_recorded`, and `prior_bounded_evidence_available`.
   Settings renders the candidates without creating execution, disposal, or
-  erasure records on page load, and now exposes an explicit candidate-row action
-  that posts a dry-run `execution_request` with forced/default `review_only`,
-  then refreshes due-candidate and execution-history queries after an execution
-  record. Duplicate `review_only` requests for the same candidate/policy,
-  including concurrent duplicates, reuse the existing `awaiting_review`
-  execution record and do not append another history record or ledger event.
-  Due-candidate GET remains read-only while surfacing existing queued review
-  status/id/time, and Settings shows that queued state instead of posting again.
-  Due-candidate reads can also project prior safe bounded `executed`
-  archive/no-action evidence for the same candidate/policy with no write,
-  audit, policy, or legal-hold mutation; projection requires bounded executor
-  evidence, acted targets, and false destructive/full-erasure flags, uses
-  canonical bounded `prior_execution.next_step` text, and Settings suppresses
-  duplicate review only for projected rows. Settings can also initiate the
-  existing dry-run-backed `execute_supported` path only for eligible no-action
-  due-candidates: `disposal_action === no_action`, non-destructive, no blockers
-  or legal holds, no queued review, and no prior execution. That UI payload
-  remains scoped to the dry-run endpoint, candidate/policy identifiers, and
+  erasure records on page load, and exposes candidate-row actions that post a
+  dry-run `execution_request` with forced/default `review_only` for review
+  queues or `execute_supported` for bounded evidence recording, then refresh
+  due-candidate and execution-history queries after an execution record.
+  Duplicate `review_only` requests for the same candidate/policy, including
+  concurrent duplicates, reuse the existing `awaiting_review` execution record
+  and do not append another history record or ledger event. Due-candidate GET
+  remains read-only while surfacing existing queued review status/id/time, and
+  Settings shows that queued state instead of posting again. Due-candidate
+  reads can also project prior safe bounded `executed` archive/no-action
+  evidence for the same candidate/policy with no write, audit, policy, or
+  legal-hold mutation; projection requires bounded executor evidence, acted
+  targets, and false destructive/full-erasure flags, uses canonical bounded
+  `prior_execution.next_step` text, and Settings suppresses duplicate review
+  only for projected rows. Settings can initiate the dry-run-backed
+  `execute_supported` path only for eligible `disposal_action === archive` or
+  `disposal_action === no_action` due-candidates: concrete record id,
+  non-destructive, no blockers or legal holds, no queued review, no prior
+  execution, and no suppressed evidence state. That UI payload remains scoped to
+  the dry-run endpoint, candidate/policy identifiers, and
   `execution_mode: "execute_supported"`; ineligible rows remain review-only,
   disabled, queued-review, or existing-evidence badge paths.
-  This remains non-destructive scanner/review/bounded no-action evidence UI
-  only: no physical deletion, anonymization, redaction completion, destructive
-  GDPR erasure, full erasure, legal disposal completion, legal disposal
-  approval, disposal execution, legal-hold/policy mutation, or candidate
-  disposal is implemented.
+  This remains non-destructive scanner/review/bounded archive/no-action evidence
+  UI only: no physical deletion, anonymization, redaction completion,
+  destructive GDPR erasure, full erasure, legal disposal completion, legal
+  disposal approval, disposal execution, legal-hold/policy mutation, or
+  candidate disposal is implemented.
 - Current working-tree AI provenance checks: MCP/API draft creation now carries
   deterministic `ai_provenance.statement_sources[]` rows, the API persists those
   rows while clamping unsafe row-level human-verified, authoritative-source, and
@@ -1331,7 +1336,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   markers, web SQLite table-usage rows, keyed VRI `/TU` evidence markers,
   compact notification/bell badge assertions, and entity filter nowrap/mobile
   wrap markers, compact template filter markers, structured book termo signatory
-  markers, retention execution review-queue markers, backend database-encryption
+  markers, retention execution review-queue markers, retention due-candidate
+  bounded archive/no-action evidence and explicit evidence-state markers,
+  backend database-encryption
   key-source/hardware-fallback markers, and PDF verifier DSS/VRI `/TU` plus
   local-renewal/legal-boundary markers, plus raw external-validator report
   attachment parser, size-bound, redaction, archive-package, document-bundle, web
