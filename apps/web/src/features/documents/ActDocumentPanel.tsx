@@ -14,7 +14,7 @@
  * idiom (success + error) per CONVENTIONS §2/§3.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DISPATCH_CHANNELS } from '../../api/types';
 import type {
   ActView,
@@ -75,6 +75,11 @@ import {
 import { DocumentPreview } from './DocumentPreview';
 import { TemplatePicker } from './TemplatePicker';
 import './documents.css';
+
+export interface ActDocumentPanelTarget {
+  generatedDocumentId?: string | null;
+  focus?: 'dispatch-evidence' | null;
+}
 
 /** A 422/404 from the document endpoints is the "family has no template" signal. */
 function isNoTemplate(error: unknown): boolean {
@@ -1037,7 +1042,9 @@ function GeneratedDispatchEvidenceForm({
 
   return (
     <form
+      id="generated-dispatch-evidence"
       className="form"
+      tabIndex={-1}
       aria-label={t('documents.generated.form.aria')}
       onSubmit={(event) => {
         event.preventDefault();
@@ -1466,14 +1473,17 @@ export function ActDocumentPanel({
   act,
   entityName,
   family,
+  target,
 }: {
   act: ActView;
   entityName?: string;
   family?: EntityFamily;
+  target?: ActDocumentPanelTarget;
 }) {
   const t = useT();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const handledGeneratedTargetRef = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
   const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
   const [importError, setImportError] = useState<unknown>(null);
@@ -1536,6 +1546,9 @@ export function ActDocumentPanel({
     mutationFn: (document: GeneratedDocumentView) => api.fetchGeneratedDocumentPdf(document.id),
   });
 
+  const generatedDocumentTargetId = target?.generatedDocumentId?.trim() || null;
+  const generatedDocumentFocusTarget =
+    target?.focus === 'dispatch-evidence' ? 'dispatch-evidence' : null;
   const importList = importedDocuments.data ?? [];
   const generatedCommunications = (generatedDocuments.data ?? []).filter(
     (document) => document.template_id === ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
@@ -1577,6 +1590,44 @@ export function ActDocumentPanel({
       setSelectedGeneratedDocumentId(generatedCommunications[0].id);
     }
   }, [sealed, generatedCommunications, selectedGeneratedDocumentId]);
+
+  useEffect(() => {
+    if (!sealed || generatedDocuments.isLoading || !generatedDocumentTargetId) return;
+
+    const targetKey = `${act.id}:${generatedDocumentTargetId}:${generatedDocumentFocusTarget ?? ''}`;
+    if (handledGeneratedTargetRef.current === targetKey) return;
+
+    const target = generatedCommunications.find(
+      (document) => document.id === generatedDocumentTargetId,
+    );
+    if (!target) return;
+
+    setSelectedGeneratedDocumentId(target.id);
+    if (generatedDocumentFocusTarget !== 'dispatch-evidence') {
+      handledGeneratedTargetRef.current = targetKey;
+      return;
+    }
+
+    const focusTarget = () => {
+      const control = document.getElementById('generated-dispatch-evidence');
+      control?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      control?.focus({ preventScroll: true });
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(focusTarget);
+    } else {
+      window.setTimeout(focusTarget, 0);
+    }
+    handledGeneratedTargetRef.current = targetKey;
+  }, [
+    act.id,
+    sealed,
+    generatedDocuments.isLoading,
+    generatedCommunications,
+    generatedDocumentTargetId,
+    generatedDocumentFocusTarget,
+  ]);
 
   useEffect(() => {
     setDispatchRecipients(generatedRequiredRecipients);

@@ -6,7 +6,9 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ActDocumentPanel } from './ActDocumentPanel';
+import { keys } from '../../api/hooks';
 import { renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import type {
@@ -1023,6 +1025,186 @@ describe('ActDocumentPanel — generated absent-owner communications', () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText('Aviso legal válido')).toBeNull();
+  });
+
+  it('selects and focuses dispatch evidence from the generated-document navigation target once', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const otherCommunication: GeneratedDocumentView = {
+      ...absentOwnerCommunication,
+      id: 'generated-absent-2',
+      download: '/v1/documents/generated/generated-absent-2',
+      created_at: '2026-07-11T09:30:00Z',
+      pdf_digest: 'e'.repeat(64),
+    };
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/v1/acts/act-1/documents/generated')) {
+        return json([absentOwnerCommunication, otherCommunication]);
+      }
+      if (url.includes('/v1/documents/imported')) return json([importedDocument]);
+      if (url.includes('/v1/documents/generated/') && url.includes('/dispatch-evidence')) {
+        const documentId = url.includes('generated-absent-2')
+          ? 'generated-absent-2'
+          : 'generated-absent-1';
+        return json({ ...absentOwnerEvidence, document_id: documentId });
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(
+      <ActDocumentPanel
+        act={sealed}
+        family="Condominium"
+        target={{ generatedDocumentId: 'generated-absent-2', focus: 'dispatch-evidence' }}
+      />,
+    );
+
+    const list = await screen.findByRole('list', { name: 'Comunicações geradas' });
+    const items = within(list).getAllByRole('listitem');
+    const firstItem = items.find((item) => item.textContent?.includes('generated-absent-1'));
+    const targetedItem = items.find((item) => item.textContent?.includes('generated-absent-2'));
+    expect(firstItem).toBeTruthy();
+    expect(targetedItem?.getAttribute('aria-current')).toBe('true');
+
+    const form = await screen.findByRole('form', {
+      name: 'Registar evidência da comunicação gerada',
+    });
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    await waitFor(() => expect(document.activeElement).toBe(form));
+
+    fireEvent.click(within(firstItem as HTMLElement).getByRole('button', { name: 'Ver evidência' }));
+    await waitFor(() => expect(firstItem?.getAttribute('aria-current')).toBe('true'));
+    expect(targetedItem?.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('selects and focuses a generated-document navigation target that appears after refetch', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const targetCommunication: GeneratedDocumentView = {
+      ...absentOwnerCommunication,
+      id: 'generated-absent-2',
+      download: '/v1/documents/generated/generated-absent-2',
+      created_at: '2026-07-11T09:30:00Z',
+      pdf_digest: 'e'.repeat(64),
+    };
+    let includeTarget = false;
+
+    function RefetchHarness() {
+      const queryClient = useQueryClient();
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              void queryClient.invalidateQueries({ queryKey: keys.generatedDocuments(sealed.id) });
+            }}
+          >
+            Refetch generated documents
+          </button>
+          <ActDocumentPanel
+            act={sealed}
+            family="Condominium"
+            target={{ generatedDocumentId: 'generated-absent-2', focus: 'dispatch-evidence' }}
+          />
+        </>
+      );
+    }
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/v1/acts/act-1/documents/generated')) {
+        return json(includeTarget ? [absentOwnerCommunication, targetCommunication] : [absentOwnerCommunication]);
+      }
+      if (url.includes('/v1/documents/imported')) return json([importedDocument]);
+      if (url.includes('/v1/documents/generated/') && url.includes('/dispatch-evidence')) {
+        const documentId = url.includes('generated-absent-2')
+          ? 'generated-absent-2'
+          : 'generated-absent-1';
+        return json({ ...absentOwnerEvidence, document_id: documentId });
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<RefetchHarness />);
+
+    const initialList = await screen.findByRole('list', { name: 'Comunicações geradas' });
+    const initialSelectedItem = within(initialList)
+      .getAllByRole('listitem')
+      .find((item) => item.getAttribute('aria-current') === 'true');
+    expect(initialSelectedItem?.textContent).toContain('generated-absent-1');
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    includeTarget = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Refetch generated documents' }));
+
+    await waitFor(() => {
+      const items = within(initialList).getAllByRole('listitem');
+      const targetedItem = items.find((item) => item.textContent?.includes('generated-absent-2'));
+      expect(targetedItem?.getAttribute('aria-current')).toBe('true');
+    });
+
+    const form = await screen.findByRole('form', {
+      name: 'Registar evidência da comunicação gerada',
+    });
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(document.activeElement).toBe(form));
+
+    includeTarget = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Refetch generated documents' }));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps the default generated document when the query target is missing', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const otherCommunication: GeneratedDocumentView = {
+      ...absentOwnerCommunication,
+      id: 'generated-absent-2',
+      download: '/v1/documents/generated/generated-absent-2',
+      created_at: '2026-07-11T09:30:00Z',
+      pdf_digest: 'e'.repeat(64),
+    };
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/bundle')) return json(bundle);
+      if (url.includes('/v1/acts/act-1/documents/generated')) {
+        return json([absentOwnerCommunication, otherCommunication]);
+      }
+      if (url.includes('/v1/documents/imported')) return json([importedDocument]);
+      if (url.includes('/v1/documents/generated/generated-absent-1/dispatch-evidence')) {
+        return json(absentOwnerEvidence);
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(
+      <ActDocumentPanel
+        act={sealed}
+        family="Condominium"
+        target={{ generatedDocumentId: 'missing-generated', focus: 'dispatch-evidence' }}
+      />,
+    );
+
+    const list = await screen.findByRole('list', { name: 'Comunicações geradas' });
+    const selectedItem = within(list)
+      .getAllByRole('listitem')
+      .find((item) => item.getAttribute('aria-current') === 'true');
+    expect(selectedItem?.textContent).toContain('generated-absent-1');
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('posts metadata-only evidence with selected recipients and a locator', async () => {

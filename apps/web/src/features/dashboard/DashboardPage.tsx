@@ -290,6 +290,33 @@ function frontendRouteFromApi(path: string | null | undefined): string | undefin
   return undefined;
 }
 
+function generatedDispatchDocumentIdFromApi(path: string | null | undefined): string | undefined {
+  const route = path?.trim();
+  if (!route) return undefined;
+  const match = /^\/v1\/documents\/generated\/([^/?#]+)\/dispatch-evidence(?:[?#/]|$)/.exec(
+    route,
+  );
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function generatedDispatchEvidenceRoute(
+  actRoute: string | undefined,
+  documentId: string | undefined,
+): string | undefined {
+  const trimmedDocumentId = documentId?.trim();
+  if (!actRoute || !trimmedDocumentId) return undefined;
+  const url = new URL(actRoute, 'http://chancela.local');
+  url.searchParams.set('generated_document_id', trimmedDocumentId);
+  url.searchParams.set('focus', 'dispatch-evidence');
+  url.hash = 'generated-dispatch-evidence';
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 function routeFromAlert(alert: DashboardAlert): string | undefined {
   const metadataRoute =
     frontendRouteFromApi(alert.action?.route) ?? frontendRouteFromApi(alert.action?.api_href);
@@ -307,6 +334,17 @@ function routeFromAlert(alert: DashboardAlert): string | undefined {
 }
 
 function routeFromReminder(reminder: DashboardReminder): string | undefined {
+  if (reminder.action?.kind === 'open_absent_owner_dispatch_evidence') {
+    const actRoute =
+      frontendRouteFromApi(reminder.action.route) ??
+      (reminder.params?.act_id?.trim() ? `/atas/${reminder.params.act_id.trim()}` : undefined);
+    const documentId =
+      reminder.params?.document_id?.trim() ??
+      generatedDispatchDocumentIdFromApi(reminder.action.api_href);
+    const route = generatedDispatchEvidenceRoute(actRoute, documentId);
+    if (route) return route;
+  }
+
   const metadataRoute =
     frontendRouteFromApi(reminder.action?.route) ?? frontendRouteFromApi(reminder.action?.api_href);
   if (metadataRoute) return metadataRoute;

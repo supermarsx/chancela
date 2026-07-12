@@ -640,7 +640,9 @@ describe('DashboardPage', () => {
     const link = within(item).getByRole('link', {
       name: 'Evidência de expedição pendente: Ata da assembleia de condóminos',
     });
-    expect(link.getAttribute('href')).toBe('/atas/act-absent-1');
+    expect(link.getAttribute('href')).toBe(
+      '/atas/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence',
+    );
     expect(within(item).getByText('Pendente')).toBeTruthy();
     expect(
       within(item).getByText(

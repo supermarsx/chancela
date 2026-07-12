@@ -17,7 +17,7 @@
  */
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   useAct,
   useAdvanceAct,
@@ -89,7 +89,7 @@ import {
 import { CompliancePanel } from './CompliancePanel';
 import { FollowUpsPanel } from './FollowUpsPanel';
 import { ataFieldHelp } from './fieldHelp';
-import { ActDocumentPanel } from '../documents/ActDocumentPanel';
+import { ActDocumentPanel, type ActDocumentPanelTarget } from '../documents/ActDocumentPanel';
 import { SigningPanel } from '../signing/SigningPanel';
 import { GateButton, scopeBook, type CanScope } from '../session/permissions';
 
@@ -114,6 +114,23 @@ interface Draft {
   convening: DraftConvening;
   attachments: ActAttachment[];
   signatories: ActSignatory[];
+}
+
+export function actDocumentPanelTargetFromLocation(
+  search: string,
+  hash: string,
+): ActDocumentPanelTarget | undefined {
+  const params = new URLSearchParams(search);
+  const generatedDocumentId =
+    params.get('generated_document_id')?.trim() || params.get('generatedDocument')?.trim() || null;
+  const focus =
+    params.get('focus')?.trim() === 'dispatch-evidence' ||
+    hash === '#generated-dispatch-evidence'
+      ? 'dispatch-evidence'
+      : null;
+
+  if (!generatedDocumentId && !focus) return undefined;
+  return { generatedDocumentId, focus };
 }
 
 interface DraftConvening {
@@ -1440,6 +1457,8 @@ export function AtaEditorPage() {
   const t = useT();
   const toast = useToast();
   const { id = '' } = useParams();
+  const location = useLocation();
+  const documentPanelTarget = actDocumentPanelTargetFromLocation(location.search, location.hash);
   const act = useAct(id);
   const book = useBook(act.data?.book_id ?? '');
   const entity = useEntity(book.data?.entity_id ?? '');
@@ -1822,7 +1841,12 @@ export function AtaEditorPage() {
             />
           </Card>
 
-          <ActDocumentPanel act={a} entityName={entity.data?.name} family={entity.data?.family} />
+          <ActDocumentPanel
+            act={a}
+            entityName={entity.data?.name}
+            family={entity.data?.family}
+            target={documentPanelTarget}
+          />
 
           {/* Qualified CMD signing — mounts only once the act is sealed (SigningPanel self-gates). */}
           <SigningPanel act={a} entityName={entity.data?.name} />

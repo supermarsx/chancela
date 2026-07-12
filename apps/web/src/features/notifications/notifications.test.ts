@@ -436,6 +436,50 @@ describe('buildDashboardNotifications', () => {
     expect(items[0]?.detail).not.toContain('attendance_reference');
   });
 
+  it('preserves absent-owner generated document and dispatch-evidence targets', () => {
+    const items = buildDashboardNotifications(
+      dashboard({
+        reminders: [
+          reminder({
+            due_date: '',
+            status: 'Pending',
+            reason: 'Raw backend dispatch fallback.',
+            source_rule: 'absent-owner-dispatch-evidence',
+            source_profile: 'condominium-generated-communication',
+            params: {
+              act_id: 'act-absent-1',
+              act_title: 'Ata da assembleia de condóminos',
+              document_id: 'generated-absent-1',
+              dispatch_evidence_status: 'operator_evidence_partial',
+              missing_recipients: 'Fração C',
+            },
+            action: {
+              kind: 'open_absent_owner_dispatch_evidence',
+              label_key: 'notifications.reminder.absentOwnerDispatch.action',
+              api_href: '/v1/documents/generated/generated-absent-1/dispatch-evidence',
+              route: '/atas/act-absent-1',
+            },
+            i18n: {
+              title_key: 'notifications.reminder.absentOwnerDispatch.title',
+              body_key: 'notifications.reminder.absentOwnerDispatch.body',
+              action_key: 'notifications.reminder.absentOwnerDispatch.action',
+            },
+          }),
+        ],
+      }),
+      t,
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'reminder',
+      action: {
+        href: '/atas/act-absent-1?generated_document_id=generated-absent-1&focus=dispatch-evidence#generated-dispatch-evidence',
+        label: 'Abrir ata',
+      },
+    });
+  });
+
   it('prioritizes actionable alerts and reminders in the popup over recent operations', () => {
     const items = buildDashboardNotifications(
       dashboard({

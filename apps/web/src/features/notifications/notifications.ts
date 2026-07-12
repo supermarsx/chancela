@@ -230,6 +230,39 @@ function frontendRouteFromApi(path: string | null | undefined): string | undefin
   return undefined;
 }
 
+function generatedDispatchDocumentIdFromApi(path: string | null | undefined): string | undefined {
+  const route = path?.trim();
+  if (!route) return undefined;
+  const match = /^\/v1\/documents\/generated\/([^/?#]+)\/dispatch-evidence(?:[?#/]|$)/.exec(
+    route,
+  );
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function paramText(params: TParams | undefined, key: string): string | undefined {
+  const value = params?.[key];
+  const text = value == null ? undefined : String(value).trim();
+  return text || undefined;
+}
+
+function generatedDispatchEvidenceRoute(
+  actRoute: string | undefined,
+  documentId: string | undefined,
+): string | undefined {
+  const trimmedDocumentId = documentId?.trim();
+  if (!actRoute || !trimmedDocumentId) return undefined;
+  const url = new URL(actRoute, 'http://chancela.local');
+  url.searchParams.set('generated_document_id', trimmedDocumentId);
+  url.searchParams.set('focus', 'dispatch-evidence');
+  url.hash = 'generated-dispatch-evidence';
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 function routeFromTargetId(prefix: string, id: string | null | undefined): string | undefined {
   const trimmed = id?.trim();
   return trimmed ? `${prefix}/${trimmed}` : undefined;
@@ -254,7 +287,14 @@ function actionFromMetadata(
   params?: TParams,
 ): NotificationAction | undefined {
   if (!action) return undefined;
-  const href = frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href);
+  const href =
+    action.kind === 'open_absent_owner_dispatch_evidence'
+      ? generatedDispatchEvidenceRoute(
+          frontendRouteFromApi(action.route) ??
+            (paramText(params, 'act_id') ? `/atas/${paramText(params, 'act_id')}` : undefined),
+          paramText(params, 'document_id') ?? generatedDispatchDocumentIdFromApi(action.api_href),
+        )
+      : (frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href));
   const labelKey = messageKey(action.label_key);
   if (!href || !labelKey) return undefined;
   return { href, label: t(labelKey, params) };

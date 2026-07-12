@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { AtaEditorPage } from './AtaEditorPage';
+import { AtaEditorPage, actDocumentPanelTargetFromLocation } from './AtaEditorPage';
 import { ataFieldHelp } from './fieldHelp';
 import { makeClient } from '../../test/utils';
 import { ToastProvider } from '../../ui/toast';
@@ -174,6 +174,18 @@ afterEach(() => {
 });
 
 describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
+  it('parses generated document dispatch-evidence deep links for the document panel', () => {
+    expect(
+      actDocumentPanelTargetFromLocation(
+        '?generated_document_id=generated-absent-1&focus=dispatch-evidence',
+        '#generated-dispatch-evidence',
+      ),
+    ).toEqual({
+      generatedDocumentId: 'generated-absent-1',
+      focus: 'dispatch-evidence',
+    });
+  });
+
   it('adds inline help to top-level meeting and free-text fields', async () => {
     const shared = stateful({ ...baseAct, channel: 'Hybrid' });
     vi.stubGlobal('fetch', shared.fetchImpl);
