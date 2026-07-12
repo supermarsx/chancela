@@ -1053,6 +1053,26 @@ function assertCheckpointMap() {
     "API external-signing signed slot evidence no-complete coverage",
   );
   assertFileContains(
+    "apps/web/e2e/external-signing-operator-evidence.spec.ts",
+    "signed-in operator records external signer slot evidence as technical evidence only",
+    "browser external-signing operator evidence proof marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/external-signing-operator-evidence.spec.ts",
+    "expect(updateBodies[0]).not.toHaveProperty('complete');",
+    "browser external-signing operator evidence no-complete marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/external-signing-operator-evidence.spec.ts",
+    "assertNoProviderCredentialOrClaimFields(updateBodies[0]);",
+    "browser external-signing operator evidence no-provider-secret marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/external-signing-operator-evidence.spec.ts",
+    "expect(unexpectedProviderCalls).toEqual([]);",
+    "browser external-signing operator evidence no-provider-calls marker",
+  );
+  assertFileContains(
     "apps/web/src/features/ferramentas/ExternalSigningWorkflowsPage.tsx",
     "if (workflow === 'external_envelope') return t('signing.invites.workflow.externalEnvelope');",
     "web Ferramentas external envelope workflow label marker",
@@ -2206,6 +2226,16 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "`PATCH` slot payloads that omit `complete:true`",
     "CI checkpoints external-signing PATCH no-complete lane marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "e2e/external-signing-operator-evidence.spec.ts",
+    "CI checkpoints external-signing operator evidence browser command marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "browser no-secret boundary for PIN, OTP, CAN, credential, token, password, passphrase",
+    "CI checkpoints external-signing operator evidence browser no-secret marker",
   );
   assertFileMatches(
     "docs/CI-CHECKPOINTS.md",
@@ -7724,6 +7754,16 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
+    "external-signing-operator-evidence.spec.ts",
+    "CI/E2E hardening plan external-signing operator evidence browser spec marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "stored slot evidence metadata after the update, browser no-secret boundary",
+    "CI/E2E hardening plan external-signing operator evidence browser boundary marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
     "plus local ASiC inspection endpoint and ASiC ZIP decompression-bound coverage",
     "CI/E2E hardening plan ASiC header marker",
   );
@@ -8996,6 +9036,16 @@ function assertCheckpointMap() {
     "SPEC-COVERAGE.md",
     /This is operator-supplied technical workflow evidence only[\s\S]*not provider\s+signing[\s\S]*provider completion[\s\S]*legal envelope completion[\s\S]*QES\/\s*qualified status[\s\S]*act\s+finalization/u,
     "spec coverage external-signing operator evidence no-claim marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "apps/web/e2e/external-signing-operator-evidence.spec.ts",
+    "spec coverage external-signing operator evidence browser spec marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "captured `PATCH /v1/external-signing/envelopes/{id}` request body, browser no-secret boundary",
+    "spec coverage external-signing operator evidence browser request marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",

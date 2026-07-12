@@ -443,7 +443,14 @@ signed-PDF markers prove act-scoped technical signed evidence and the linked
 no-identity external slot status path only. The operator-supplied
 external-signing slot evidence markers prove stored technical evidence display
 and PATCH recording for pending/initiated slots with required identity-tagged
-rows and no `complete:true`; they do not prove provider calls, trust-list
+rows and no `complete:true`. The focused browser proof is
+`npm run test:browser --workspace apps/web --
+e2e/external-signing-operator-evidence.spec.ts`; it route-stubs the signed-in
+operator path, captures the `PATCH /v1/external-signing/envelopes/{id}`
+`slots` payload that omits `complete:true`, verifies the browser no-secret
+boundary for PIN, OTP, CAN, credential, token, password, passphrase, and
+private-key material, and keeps the envelope open as operator-supplied
+technical workflow evidence only; they do not prove provider calls, trust-list
 checks, QES/qualified status, legal validity, provider completion, act
 finalization, provider-backed slot signing, or full envelope legal completion.
 The pending-session provider identity bridge markers prove only that additive

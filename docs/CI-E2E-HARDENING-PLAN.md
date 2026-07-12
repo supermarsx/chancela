@@ -1195,7 +1195,15 @@ settingsDefaults.test.ts contracts.test.ts`.
   evidence metadata display, and pending/initiated-only evidence actions;
   `client.test.ts` covers the client PATCH route/payload, and
   `external_signing_envelopes.rs` pins that signed slot evidence without
-  `complete:true` leaves the workflow envelope open. Focused web coverage in
+  `complete:true` leaves the workflow envelope open. Focused route-stubbed
+  browser proof in `external-signing-operator-evidence.spec.ts` now covers the
+  signed-in operator path, exact `PATCH /v1/external-signing/envelopes/{id}`
+  `slots` payload that omits `complete:true`, identity-requirement-tagged
+  evidence rows, stored slot evidence metadata after the update, browser
+  no-secret boundary for PIN, OTP, CAN, credential, token, password, passphrase,
+  and private-key material, and no provider calls, trust-list checks,
+  QES/qualified status, legal validity, provider completion, act finalization,
+  or full envelope legal completion. Focused web coverage in
   `SigningPanel.test.tsx`, `client.test.ts`, and
   `ExternalSigningWorkflowsPage.test.tsx` also pins workflow-only envelope
   list/create UI, order policy and signer-slot payloads, optional linked-slot
@@ -1210,7 +1218,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   src/contracts/contracts.test.ts
   src/features/signing/ExternalSignerInvitePage.test.tsx
   src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx
-  src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`. This is
+  src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`; run the
+  browser proof with `npm run test:browser --workspace apps/web --
+  e2e/external-signing-operator-evidence.spec.ts`. This is
   invite/envelope tracking plus linked no-identity-slot technical evidence
   status and operator-supplied workflow slot evidence only; it is not provider
   signing, PIN/OTP/passphrase collection, provider calls, trust-list checks,

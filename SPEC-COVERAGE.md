@@ -2645,9 +2645,13 @@ behavior, legal disposal, or legal-effect claims.
   /v1/external-signing/envelopes/{id}`. The web action sends only a `slots` payload with
   `{ id, status: 'signed', evidence: [...] }`, requires identity-requirement-tagged evidence rows
   before submit when a slot declares identity requirements, and deliberately sends no
-  `complete:true`. This is operator-supplied technical workflow evidence only, not provider
-  signing, provider completion, legal envelope completion, QES/qualified status, or act
-  finalization.
+  `complete:true`. Focused route-stubbed browser proof in
+  `apps/web/e2e/external-signing-operator-evidence.spec.ts` covers the signed-in operator path,
+  captured `PATCH /v1/external-signing/envelopes/{id}` request body, browser no-secret boundary,
+  stored slot evidence metadata after the update, and visible no-claim copy.
+  This is operator-supplied technical workflow evidence only, not provider signing, provider calls,
+  trust-list checks, provider completion, legal envelope completion, QES/qualified status, legal
+  validity, act finalization, or full envelope legal completion.
 - **External signing workflow tool:** Ferramentas now includes an External Signing tool at
   `/ferramentas?tool=external-signing` for operational tracking. It lists redacted invite records,
   summarizes response/status state, maps `workflow: external_envelope` to a localized external
