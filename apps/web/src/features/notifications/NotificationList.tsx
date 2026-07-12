@@ -4,6 +4,7 @@ import { useLocale, useT, type TFunction } from '../../i18n';
 import { Badge, EmptyState, Icon, Tooltip } from '../../ui';
 import type { NotificationTriageStatus } from '../../api/types';
 import type { TriagedNotificationItem } from './triage';
+import { notificationTypeGlyph } from './icons';
 
 function compactKindLabel(item: TriagedNotificationItem, t: TFunction): string {
   if (item.kind === 'reminder') return t('notifications.filter.reminders');
@@ -115,6 +116,7 @@ export function NotificationList({
                 ? t('notifications.status.acknowledged')
                 : null;
         const resolved = item.triageStatus === 'dismissed' || item.triageStatus === 'acknowledged';
+        const typeGlyph = notificationTypeGlyph(item);
         const compactTitleTags: string[] = [];
         if (compact) {
           const kindLabel = compactKindLabel(item, t);
@@ -132,73 +134,82 @@ export function NotificationList({
             data-triage-status={item.triageStatus}
             key={item.id}
           >
-            <div className="notifications-list__head">
-              {compact ? null : <Badge tone={item.tone}>{item.badge}</Badge>}
-              {!compact && statusLabel ? <Badge>{statusLabel}</Badge> : null}
-              <span className="notifications-list__title" title={item.title}>
-                {compactTitleTags.map((tag) => (
-                  <span className="notifications-list__title-tag" key={tag}>
-                    {tag}
-                  </span>
-                ))}
-                <span className="notifications-list__title-text">{item.title}</span>
-              </span>
+            <span
+              className={`notifications-list__icon notifications-list__icon--${item.tone}`}
+              data-notification-icon={typeGlyph.name}
+              aria-hidden="true"
+            >
+              {typeGlyph.icon}
+            </span>
+            <div className="notifications-list__body">
+              <div className="notifications-list__head">
+                {compact ? null : <Badge tone={item.tone}>{item.badge}</Badge>}
+                {!compact && statusLabel ? <Badge>{statusLabel}</Badge> : null}
+                <span className="notifications-list__title" title={item.title}>
+                  {compactTitleTags.map((tag) => (
+                    <span className="notifications-list__title-tag" key={tag}>
+                      {tag}
+                    </span>
+                  ))}
+                  <span className="notifications-list__title-text">{item.title}</span>
+                </span>
+              </div>
+              <p className="notifications-list__detail muted">{item.detail}</p>
+              {item.meta.length > 0 || timestamp ? (
+                <div className="notifications-list__meta">
+                  {timestamp ? <span className="muted">{timestamp}</span> : null}
+                  {item.meta.map((meta) => (
+                    <span className="muted" key={meta}>
+                      {meta}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {item.action || onTriage ? (
+                <div className="notifications-list__actions">
+                  {item.action ? (
+                    <NotificationActionLink
+                      href={item.action.href}
+                      label={item.action.label}
+                      icon={<Icon.ArrowRight />}
+                      onClick={onAction}
+                    />
+                  ) : null}
+                  {onTriage && resolved ? (
+                    <NotificationTriageButton
+                      label={restoreLabel}
+                      icon={<Icon.Refresh />}
+                      disabled={triageDisabled}
+                      onClick={() => onTriage(item.id, 'unread')}
+                    />
+                  ) : null}
+                  {onTriage && !resolved && item.triageStatus === 'unread' ? (
+                    <NotificationTriageButton
+                      label={readLabel}
+                      icon={<Icon.Check />}
+                      disabled={triageDisabled}
+                      onClick={() => onTriage(item.id, 'read')}
+                    />
+                  ) : null}
+                  {onTriage && !resolved && item.kind !== 'operation' ? (
+                    <NotificationTriageButton
+                      label={acknowledgeLabel}
+                      icon={<Icon.Check />}
+                      disabled={triageDisabled}
+                      onClick={() => onTriage(item.id, 'acknowledged')}
+                    />
+                  ) : null}
+                  {onTriage && !resolved ? (
+                    <NotificationTriageButton
+                      label={dismissLabel}
+                      icon={<Icon.Close />}
+                      disabled={triageDisabled}
+                      onClick={() => onTriage(item.id, 'dismissed')}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-            <p className="notifications-list__detail muted">{item.detail}</p>
-            {item.meta.length > 0 || timestamp ? (
-              <div className="notifications-list__meta">
-                {timestamp ? <span className="muted">{timestamp}</span> : null}
-                {item.meta.map((meta) => (
-                  <span className="muted" key={meta}>
-                    {meta}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            {item.action || onTriage ? (
-              <div className="notifications-list__actions">
-                {item.action ? (
-                  <NotificationActionLink
-                    href={item.action.href}
-                    label={item.action.label}
-                    icon={<Icon.ArrowRight />}
-                    onClick={onAction}
-                  />
-                ) : null}
-                {onTriage && resolved ? (
-                  <NotificationTriageButton
-                    label={restoreLabel}
-                    icon={<Icon.Refresh />}
-                    disabled={triageDisabled}
-                    onClick={() => onTriage(item.id, 'unread')}
-                  />
-                ) : null}
-                {onTriage && !resolved && item.triageStatus === 'unread' ? (
-                  <NotificationTriageButton
-                    label={readLabel}
-                    icon={<Icon.Check />}
-                    disabled={triageDisabled}
-                    onClick={() => onTriage(item.id, 'read')}
-                  />
-                ) : null}
-                {onTriage && !resolved && item.kind !== 'operation' ? (
-                  <NotificationTriageButton
-                    label={acknowledgeLabel}
-                    icon={<Icon.Check />}
-                    disabled={triageDisabled}
-                    onClick={() => onTriage(item.id, 'acknowledged')}
-                  />
-                ) : null}
-                {onTriage && !resolved ? (
-                  <NotificationTriageButton
-                    label={dismissLabel}
-                    icon={<Icon.Close />}
-                    disabled={triageDisabled}
-                    onClick={() => onTriage(item.id, 'dismissed')}
-                  />
-                ) : null}
-              </div>
-            ) : null}
           </li>
         );
       })}

@@ -5306,11 +5306,55 @@ a.btn--primary {
 }
 
 .notifications-list__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.7rem;
   min-width: 0;
   padding: 0.8rem 0.85rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.notifications-list__body {
+  min-width: 0;
+}
+
+/* Leading type chip: a tinted, tone-coloured container so an alert, a reminder and an
+   operation-log entry are scannable at a glance in both the page and the compact popup.
+   Colours come from the shared tone tokens (light/dark aware) — never a hard-coded hex. */
+.notifications-list__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.95rem;
+  height: 1.95rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  line-height: 0;
+}
+
+.notifications-list__icon--accent {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.notifications-list__icon--warn {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--border));
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.notifications-list__icon--error {
+  border-color: color-mix(in srgb, var(--error) 50%, var(--border));
+  background: var(--error-bg);
+  color: var(--error);
 }
 
 .notifications-list__item.is-read {
@@ -5323,7 +5367,14 @@ a.btn--primary {
 }
 
 .notifications-list--compact .notifications-list__item {
+  gap: 0.5rem;
   padding: 0.42rem 0.48rem;
+}
+
+.notifications-list--compact .notifications-list__icon {
+  width: 1.55rem;
+  height: 1.55rem;
+  font-size: 0.9rem;
 }
 
 .notifications-list__item--accent {
