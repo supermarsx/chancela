@@ -53,8 +53,9 @@ use chancela_csc::{
     HttpCscTransport,
 };
 use chancela_pades::{
-    PreparedSignature, SignOptions, add_doc_timestamp_revision, add_signature_timestamp,
-    embed_signature, prepare_signature,
+    ImageSeal, PreparedSignature, SealAppearance, SealContent, SealImageFormat, SealPlacement,
+    SignOptions, TextSeal, add_doc_timestamp_revision, add_signature_timestamp, embed_signature,
+    prepare_signature_with_appearance,
 };
 use chancela_signing::pipeline::attach_pdf_dss_with_validation_time;
 use chancela_signing::{
@@ -137,9 +138,9 @@ const DSS_REVOCATION_NOT_PRESENT: &str = "not_present";
 const DSS_REVOCATION_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
 const DSS_REVOCATION_LOCAL_TECHNICAL_ONLY: &str = "present_local_technical_only";
 const DSS_REVOCATION_PRESENT_WITHOUT_TIMESTAMP: &str = "present_without_signature_timestamp";
-const PRODUCTION_B_LT_NOT_CLAIMED: &str = "not_claimed";
-const PRODUCTION_B_LTA_NOT_CLAIMED: &str = "not_claimed";
-const TECHNICAL_EVIDENCE_ONLY: &str = "technical_evidence_only";
+pub(crate) const PRODUCTION_B_LT_NOT_CLAIMED: &str = "not_claimed";
+pub(crate) const PRODUCTION_B_LTA_NOT_CLAIMED: &str = "not_claimed";
+pub(crate) const TECHNICAL_EVIDENCE_ONLY: &str = "technical_evidence_only";
 const DOC_TIMESTAMP_INSPECTION_INSPECTED: &str = "inspected_from_signed_pdf";
 const DOC_TIMESTAMP_INSPECTION_UNAVAILABLE: &str = "inspection_unavailable";
 const RENEWAL_POLICY_NOT_CONFIGURED: &str = "not_configured";
@@ -178,6 +179,178 @@ pub(crate) const ARCHIVE_TIMESTAMP_APPEND_ENVELOPE_BYTES: usize = 4 * 1024 * 102
 
 // --- request / response DTOs ------------------------------------------------------------------
 
+/// The most decoded seal-image bytes a sign request may carry (defense-in-depth on top of the
+/// per-route body limit): a raster seal larger than this is rejected with a 4xx before it reaches
+/// the PNG/JPEG embedder, so an oversized image can never drive a large decode.
+pub(crate) const SEAL_IMAGE_MAX_BYTES: usize = 2 * 1024 * 1024;
+
+/// Optional visible-seal appearance on a sign request (t67-e9). Absent, or with `invisible` left at
+/// its `true` default, keeps the backward-compatible invisible locked widget (no `/Rect`, no `/AP`).
+/// When `invisible` is `false` the geometry (`page`/`x`/`y`/`w`/`h`) and exactly one content source
+/// (`template` **or** `image_base64`) are validated and mapped to a
+/// [`chancela_signing::SealAppearance`] by [`seal_appearance_from_request`].
+///
+/// Coordinate convention (honored verbatim from e3's [`SealPlacement`] spec): `page` is zero-based;
+/// units are PDF points; the origin is the page's bottom-left with `y` increasing upward; `x`/`y`
+/// are the lower-left corner of the seal rectangle; `w`/`h` are its width/height (both > 0).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SealAppearanceRequest {
+    /// Whether the signature widget stays invisible (default `true`, backward compatible). A visible
+    /// seal is placed only when this is explicitly `false`.
+    #[serde(default = "seal_invisible_default")]
+    pub invisible: bool,
+    /// Zero-based target page index (`0` = first page). Out-of-range is rejected downstream with a
+    /// 4xx (the PAdES layer reports the page count) — never a panic.
+    #[serde(default)]
+    pub page: usize,
+    /// Lower-left `x` of the seal rectangle, in PDF points (origin bottom-left, `x`-right).
+    #[serde(default)]
+    pub x: f32,
+    /// Lower-left `y` of the seal rectangle, in PDF points (origin bottom-left, `y`-up).
+    #[serde(default)]
+    pub y: f32,
+    /// Seal width in points (must be `> 0` when visible).
+    #[serde(default)]
+    pub w: f32,
+    /// Seal height in points (must be `> 0` when visible).
+    #[serde(default)]
+    pub h: f32,
+    /// A predefined text template. Mutually exclusive with `image_base64`.
+    #[serde(default)]
+    pub template: Option<SealTemplateRequest>,
+    /// A base64-encoded raster image (PNG or JPEG). Mutually exclusive with `template`; requires
+    /// `image_format`. Bounded by [`SEAL_IMAGE_MAX_BYTES`].
+    #[serde(default)]
+    pub image_base64: Option<String>,
+    /// The raster format of `image_base64`.
+    #[serde(default)]
+    pub image_format: Option<SealImageFormatRequest>,
+}
+
+fn seal_invisible_default() -> bool {
+    true
+}
+
+/// A predefined text-seal template. The API is a thin mapper: the caller supplies the exact strings
+/// to draw, so nothing is inferred or faked.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SealTemplateRequest {
+    /// A bold signer **name** over a smaller **date/detail** line, boxed.
+    NameDate { name: String, date: String },
+    /// A small **heading**, the bold signer **name**, and a **date** line, boxed.
+    SignedBy {
+        heading: String,
+        name: String,
+        date: String,
+    },
+}
+
+/// The raster format of a seal image.
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum SealImageFormatRequest {
+    Png,
+    Jpeg,
+}
+
+/// Validate and map an optional [`SealAppearanceRequest`] to a [`chancela_signing::SealAppearance`].
+///
+/// Returns `Ok(None)` when no visible seal is requested (absent spec, or `invisible == true`) — the
+/// caller then keeps the invisible-widget default. A visible spec is validated up-front (finite,
+/// positive `w`/`h`, non-negative `x`/`y`, exactly one content source, bounded image size, known
+/// format) and rejected with a clear `422` on any violation — never a panic. Page-bounds are
+/// enforced downstream by the PAdES layer (out-of-range ⇒ a mapped `422`).
+pub(crate) fn seal_appearance_from_request(
+    seal: Option<SealAppearanceRequest>,
+) -> Result<Option<SealAppearance>, ApiError> {
+    let Some(seal) = seal else {
+        return Ok(None);
+    };
+    if seal.invisible {
+        return Ok(None);
+    }
+
+    for (name, value) in [("x", seal.x), ("y", seal.y), ("w", seal.w), ("h", seal.h)] {
+        if !value.is_finite() {
+            return Err(ApiError::Unprocessable(format!(
+                "o campo do selo '{name}' tem de ser um número finito"
+            )));
+        }
+    }
+    if !(seal.w > 0.0 && seal.h > 0.0) {
+        return Err(ApiError::Unprocessable(
+            "a largura e a altura do selo têm de ser positivas".to_owned(),
+        ));
+    }
+    if seal.x < 0.0 || seal.y < 0.0 {
+        return Err(ApiError::Unprocessable(
+            "as coordenadas x e y do selo têm de ser não negativas (pontos PDF, origem no canto \
+             inferior esquerdo)"
+                .to_owned(),
+        ));
+    }
+
+    let content = match (seal.template, seal.image_base64) {
+        (Some(_), Some(_)) => {
+            return Err(ApiError::Unprocessable(
+                "indique um modelo de texto ou uma imagem para o selo, não ambos".to_owned(),
+            ));
+        }
+        (Some(template), None) => SealContent::Text(match template {
+            SealTemplateRequest::NameDate { name, date } => TextSeal::name_date(name, date),
+            SealTemplateRequest::SignedBy {
+                heading,
+                name,
+                date,
+            } => TextSeal::signed_by(heading, name, date),
+        }),
+        (None, Some(image_base64)) => {
+            let format = seal.image_format.ok_or_else(|| {
+                ApiError::Unprocessable(
+                    "image_format é obrigatório com image_base64 (png|jpeg)".to_owned(),
+                )
+            })?;
+            let data = B64.decode(image_base64.trim()).map_err(|e| {
+                ApiError::Unprocessable(format!("imagem do selo em base64 inválida: {e}"))
+            })?;
+            if data.is_empty() {
+                return Err(ApiError::Unprocessable(
+                    "a imagem do selo está vazia".to_owned(),
+                ));
+            }
+            if data.len() > SEAL_IMAGE_MAX_BYTES {
+                return Err(ApiError::Unprocessable(format!(
+                    "a imagem do selo tem {} bytes; o limite é {SEAL_IMAGE_MAX_BYTES} bytes",
+                    data.len()
+                )));
+            }
+            let format = match format {
+                SealImageFormatRequest::Png => SealImageFormat::Png,
+                SealImageFormatRequest::Jpeg => SealImageFormat::Jpeg,
+            };
+            SealContent::Image(ImageSeal { data, format })
+        }
+        (None, None) => {
+            return Err(ApiError::Unprocessable(
+                "um selo visível requer um modelo de texto ou uma imagem".to_owned(),
+            ));
+        }
+    };
+
+    Ok(Some(SealAppearance {
+        placement: SealPlacement {
+            page: seal.page,
+            x: seal.x,
+            y: seal.y,
+            w: seal.w,
+            h: seal.h,
+        },
+        content,
+    }))
+}
+
 /// Body of `POST /v1/acts/{id}/signature/cmd/initiate`.
 #[derive(Deserialize)]
 pub struct CmdInitiateRequest {
@@ -191,6 +364,10 @@ pub struct CmdInitiateRequest {
     /// Actor override for attribution when no session names one.
     #[serde(default)]
     pub actor: Option<String>,
+    /// Optional visible-seal appearance (t67-e9). The seal is baked into the prepared PAdES revision
+    /// at initiate and carried unchanged into confirm. Absent / invisible ⇒ the invisible widget.
+    #[serde(default)]
+    pub seal: Option<SealAppearanceRequest>,
 }
 
 /// Response of a successful initiate — **carries no secret** (no PIN, no OTP, no process id).
@@ -600,6 +777,12 @@ pub struct LocalPkcs12SignRequest {
     /// Actor override for attribution.
     #[serde(default)]
     pub actor: Option<String>,
+    /// Optional visible-seal appearance (t67-e9). See [`SealAppearanceRequest`]. **Note:** the local
+    /// PKCS#12 path signs through the `chancela-signing` `sign_pdf_pades` wrapper, which does not yet
+    /// expose the seal seam, so a *visible* seal here is rejected with a clear 4xx; absent / invisible
+    /// is the normal path. (Threading is a follow-up once the wrapper carries an appearance.)
+    #[serde(default)]
+    pub seal: Option<SealAppearanceRequest>,
 }
 
 /// Response of a successful local PKCS#12 software-certificate signature. This is deliberately
@@ -1427,13 +1610,18 @@ pub async fn initiate_cmd_signature(
         location: None,
         contact_info: None,
     };
-    let prepared = prepare_signature(&unsigned.pdf_bytes, &opts).map_err(|e| {
-        // A sealed PDF/A that the two-phase PAdES cannot prepare (e.g. xref-stream form) is a
-        // client-visible precondition, not a 500.
-        ApiError::Unprocessable(format!(
-            "não foi possível preparar o PDF para assinatura: {e}"
-        ))
-    })?;
+    // Optional visible seal (t67-e9): validated up-front and baked into the prepared revision, so the
+    // ByteRange the SCMD signature attests already covers it; confirm just embeds the CMS.
+    let appearance = seal_appearance_from_request(req.seal)?;
+    let prepared =
+        prepare_signature_with_appearance(&unsigned.pdf_bytes, &opts, appearance.as_ref())
+            .map_err(|e| {
+                // A sealed PDF/A that the two-phase PAdES cannot prepare (e.g. xref-stream form) or a
+                // bad seal page/geometry is a client-visible precondition, not a 500.
+                ApiError::Unprocessable(format!(
+                    "não foi possível preparar o PDF para assinatura: {e}"
+                ))
+            })?;
 
     let doc_name = format!("ata-{}.pdf", act_id);
     let session = run_cmd_initiate(
@@ -1701,6 +1889,12 @@ pub struct CcSignRequest {
     /// `Serialize`/`Debug`, so it cannot leak through this DTO). Absent = protected-auth at the reader.
     #[serde(default)]
     pub pin: Option<String>,
+    /// Optional visible-seal appearance (t67-e9). See [`SealAppearanceRequest`]. **Note:** the
+    /// single-shot Cartão de Cidadão path signs through the `chancela-signing` CC wrapper, which does
+    /// not yet expose the seal seam, so a *visible* seal here is rejected with a clear 4xx; absent /
+    /// invisible is the normal path. (Threading is a follow-up once the wrapper carries an appearance.)
+    #[serde(default)]
+    pub seal: Option<SealAppearanceRequest>,
 }
 
 /// Response of a successful CC signature — the **same shape** as the CMD confirm response (t57-S3),
@@ -1873,6 +2067,17 @@ pub async fn sign_cc_signature(
     if !state.local_signing {
         return Err(ApiError::Conflict(
             "a assinatura com Cartão de Cidadão só está disponível na aplicação de secretária"
+                .to_owned(),
+        ));
+    }
+
+    // Visible seals are not yet available on the single-shot Cartão de Cidadão path: it signs through
+    // the `chancela-signing` CC wrapper, which does not expose e3's appearance seam. Validate the spec
+    // anyway (so a malformed one still yields a precise 422), then reject a valid *visible* seal
+    // honestly rather than silently dropping it. Absent / invisible is the normal path.
+    if seal_appearance_from_request(req.seal)?.is_some() {
+        return Err(ApiError::Unprocessable(
+            "o selo visível ainda não está disponível na assinatura com Cartão de Cidadão"
                 .to_owned(),
         ));
     }
@@ -2718,6 +2923,10 @@ pub struct RemoteInitiateRequest {
     /// Actor override for attribution when no session names one.
     #[serde(default)]
     pub actor: Option<String>,
+    /// Optional visible-seal appearance (t67-e9). Baked into the prepared PAdES revision at initiate
+    /// and carried into confirm. Absent / invisible ⇒ the invisible widget.
+    #[serde(default)]
+    pub seal: Option<SealAppearanceRequest>,
 }
 
 /// Response of a successful generic initiate — **carries no secret** (no PIN, no OTP, no token).
@@ -2919,11 +3128,16 @@ pub async fn initiate_remote_signature(
         location: None,
         contact_info: None,
     };
-    let prepared = prepare_signature(&unsigned.pdf_bytes, &opts).map_err(|e| {
-        ApiError::Unprocessable(format!(
-            "não foi possível preparar o PDF para assinatura: {e}"
-        ))
-    })?;
+    // Optional visible seal (t67-e9): validated up-front and baked into the prepared revision, so the
+    // ByteRange the remote (CMD/CSC) signature attests already covers it; confirm just embeds the CMS.
+    let appearance = seal_appearance_from_request(req.seal)?;
+    let prepared =
+        prepare_signature_with_appearance(&unsigned.pdf_bytes, &opts, appearance.as_ref())
+            .map_err(|e| {
+                ApiError::Unprocessable(format!(
+                    "não foi possível preparar o PDF para assinatura: {e}"
+                ))
+            })?;
 
     let doc_name = format!("ata-{}.pdf", act_id);
     // The non-secret display hint (a masked phone for CMD; how to authorize for a CSC provider).
@@ -3725,6 +3939,16 @@ pub async fn sign_local_pkcs12_signature(
         ));
     }
 
+    // Visible seals are not yet available on the local PKCS#12 path: it signs through the
+    // `chancela-signing` `sign_pdf_pades` wrapper, which does not expose e3's appearance seam.
+    // Validate the spec (precise 422 on a malformed one) and reject a valid *visible* seal honestly.
+    if seal_appearance_from_request(req.seal)?.is_some() {
+        return Err(ApiError::Unprocessable(
+            "o selo visível ainda não está disponível na assinatura local com certificado PKCS#12"
+                .to_owned(),
+        ));
+    }
+
     {
         let acts = state.acts.read().await;
         let act = acts.get(&act_id).ok_or(ApiError::NotFound)?;
@@ -4033,7 +4257,9 @@ pub(crate) fn finalization_status(
     }
 }
 
-fn signature_evidence_status(signed: Option<&StoredSignedDocument>) -> SignatureEvidenceStatus {
+pub(crate) fn signature_evidence_status(
+    signed: Option<&StoredSignedDocument>,
+) -> SignatureEvidenceStatus {
     let pades_report =
         signed.and_then(|doc| chancela_pades::validate_pdf_signature(&doc.signed_pdf_bytes).ok());
     let timestamped = signed.is_some_and(|doc| doc.timestamp_token_der.is_some())
@@ -4552,7 +4778,7 @@ async fn sealed_act_audit_scope(state: &AppState, act_id: ActId) -> Result<Strin
     Ok(scope)
 }
 
-async fn act_audit_scope(state: &AppState, act_id: ActId) -> Result<String, ApiError> {
+pub(crate) async fn act_audit_scope(state: &AppState, act_id: ActId) -> Result<String, ApiError> {
     let entities = state.entities.read().await;
     let books = state.books.read().await;
     let acts = state.acts.read().await;
@@ -5247,7 +5473,7 @@ fn official_import_legal_validation() -> OfficialSignatureLegalValidation {
     }
 }
 
-fn parse_rfc3339(value: &str, field: &'static str) -> Result<OffsetDateTime, ApiError> {
+pub(crate) fn parse_rfc3339(value: &str, field: &'static str) -> Result<OffsetDateTime, ApiError> {
     OffsetDateTime::parse(value.trim(), &Rfc3339)
         .map_err(|_| ApiError::Unprocessable(format!("{field} must be an RFC 3339 timestamp")))
 }
@@ -5265,7 +5491,7 @@ fn generate_invite_token() -> String {
     format!("cxi_{}", crate::hex::hex(&bytes))
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let digest: [u8; 32] = Sha256::digest(bytes).into();
     crate::hex::hex(&digest)
 }
@@ -5320,7 +5546,7 @@ impl TslSource for RuntimeTslSource {
     }
 }
 
-struct BoundedTsaTransport {
+pub(crate) struct BoundedTsaTransport {
     inner: chancela_tsa::HttpTsaTransport,
     provider_id: String,
     max_bytes: u64,
@@ -5339,6 +5565,32 @@ impl chancela_tsa::TsaTransport for BoundedTsaTransport {
         }
         Ok(bytes)
     }
+}
+
+/// Build a bounded RFC 3161 [`chancela_tsa::TsaClient`] from a resolved [`RuntimeTsaProvider`] for
+/// LTV execution (t67-e9). The provider is expected to have passed [`configured_tsa_provider`]
+/// (HTTP URL + sha256 digest); the per-response size cap is enforced by [`BoundedTsaTransport`]. The
+/// returned client implements [`chancela_signing::pipeline::TimestampProvider`], so it drives
+/// `execute_pdf_lta` / `renew_pdf_ltv` directly as `&dyn TimestampProvider`.
+pub(crate) fn build_bounded_tsa_client(
+    provider: &RuntimeTsaProvider,
+) -> Result<chancela_tsa::TsaClient<BoundedTsaTransport>, ApiError> {
+    let tsa_url = provider.location.url().ok_or_else(|| {
+        ApiError::Unprocessable(format!(
+            "prestador TSA '{}' usa path local; a execução LTV requer um URL HTTP RFC 3161",
+            provider.id
+        ))
+    })?;
+    let transport = chancela_tsa::HttpTsaTransport::with_timeout(
+        tsa_url,
+        StdDuration::from_secs(u64::from(provider.timeout_seconds)),
+    )
+    .map_err(|e| ApiError::Unprocessable(format!("configuração TSA inválida: {e}")))?;
+    Ok(chancela_tsa::TsaClient::new(BoundedTsaTransport {
+        inner: transport,
+        provider_id: provider.id.clone(),
+        max_bytes: provider.max_bytes,
+    }))
 }
 
 /// Phase-1 driver: run `cmd_initiate` over the injected transport inline (tests, no network), or a
@@ -5620,7 +5872,7 @@ fn validate_signed_pdf(
     Ok(report)
 }
 
-fn validate_signed_pdf_with_incremental_updates(
+pub(crate) fn validate_signed_pdf_with_incremental_updates(
     signed_pdf: &[u8],
     expected_signer_cert_der: &[u8],
 ) -> Result<chancela_pades::PdfSignatureReport, ApiError> {
@@ -5640,7 +5892,9 @@ fn validate_signed_pdf_with_incremental_updates(
     Ok(report)
 }
 
-async fn configured_tsa_provider(state: &AppState) -> Result<Option<RuntimeTsaProvider>, ApiError> {
+pub(crate) async fn configured_tsa_provider(
+    state: &AppState,
+) -> Result<Option<RuntimeTsaProvider>, ApiError> {
     let selection = state.settings.read().await.signing.runtime_tsa_selection();
     if let Some(error) = selection.selection_error {
         return Err(ApiError::Unprocessable(format!(
@@ -5710,7 +5964,7 @@ fn dss_attach_evidence_from_request(
     })
 }
 
-fn decode_single_der_base64(field: &str, value: &str) -> Result<Vec<u8>, ApiError> {
+pub(crate) fn decode_single_der_base64(field: &str, value: &str) -> Result<Vec<u8>, ApiError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Err(ApiError::Unprocessable(format!("{field} is required")));
@@ -5737,7 +5991,7 @@ fn decode_der_base64_list(field: &str, values: Vec<String>) -> Result<Vec<Vec<u8
         .collect()
 }
 
-fn map_dss_attach_error(e: chancela_signing::SigningError) -> ApiError {
+pub(crate) fn map_dss_attach_error(e: chancela_signing::SigningError) -> ApiError {
     ApiError::Unprocessable(format!("falha ao anexar DSS/VRI local: {e}"))
 }
 
@@ -5810,13 +6064,31 @@ fn map_local_pkcs12_signing_error(e: chancela_signing::SigningError) -> ApiError
     }
 }
 
-fn map_revocation_collect_error(e: chancela_signing::RevocationError) -> ApiError {
+pub(crate) fn map_revocation_collect_error(e: chancela_signing::RevocationError) -> ApiError {
     ApiError::Unprocessable(format!(
         "falha ao recolher evidência de revogação CRL/OCSP: {e}"
     ))
 }
 
-fn collected_revocation_status(
+/// Map a [`chancela_signing::SigningError`] from the LTV-execution pipeline
+/// ([`chancela_signing::pipeline::execute_pdf_lta`] / `renew_pdf_ltv`) to a client-safe [`ApiError`]
+/// (t67-e9). Revocation-collection failures surface as `SigningError::Pades(String)` (the pipeline
+/// flattens the finer `RevocationError` there) and archive-timestamp failures as
+/// `SigningError::Timestamp` — both are client-actionable `422`s carrying only the honest reason
+/// (never a secret; the error type holds none). Anything else is an upstream `502`.
+pub(crate) fn map_ltv_execution_error(e: chancela_signing::SigningError) -> ApiError {
+    use chancela_signing::SigningError as S;
+    match e {
+        S::Timestamp(msg) => ApiError::Unprocessable(format!(
+            "falha ao obter carimbo temporal de arquivo para a execução LTV: {msg}"
+        )),
+        S::Pades(msg) => ApiError::Unprocessable(format!("falha na execução LTV: {msg}")),
+        S::Cades(msg) => ApiError::Internal(format!("falha ao montar a evidência LTV: {msg}")),
+        other => ApiError::Upstream(format!("falha no serviço de execução LTV: {other}")),
+    }
+}
+
+pub(crate) fn collected_revocation_status(
     evidence: &chancela_signing::RevocationEvidence,
 ) -> CollectedRevocationEvidenceStatus {
     CollectedRevocationEvidenceStatus {
@@ -5842,7 +6114,7 @@ fn collected_revocation_status(
 }
 
 /// Load the signed variant for an act (in-memory read model, falling back to the store on a miss).
-async fn load_signed(
+pub(crate) async fn load_signed(
     state: &AppState,
     act_id: ActId,
 ) -> Result<Option<StoredSignedDocument>, ApiError> {

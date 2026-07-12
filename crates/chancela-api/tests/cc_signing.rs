@@ -2182,3 +2182,139 @@ async fn cc_sign_with_pin_still_409_when_not_co_located() {
     );
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
+
+// --- visible-seal options (t67-e9) ----------------------------------------------------------------
+
+/// A malformed *visible* seal spec (non-positive width/height) is rejected with a precise `422` — the
+/// geometry validation runs before any card interaction, so nothing is signed. This exercises the
+/// shared `seal_appearance_from_request` validator that every sign DTO now carries.
+#[tokio::test]
+async fn cc_sign_rejects_malformed_visible_seal_geometry() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({
+                "seal": {
+                    "invisible": false,
+                    "page": 0,
+                    "x": 72.0,
+                    "y": 72.0,
+                    "w": 0.0,
+                    "h": 40.0,
+                    "template": { "kind": "name_date", "name": "Amélia Marques", "date": "2026-07-12" }
+                }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "non-positive seal geometry → 422: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("largura e a altura"),
+        "the geometry error is reported: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+/// A well-formed *visible* seal is honestly rejected on the single-shot Cartão de Cidadão path (the
+/// `chancela-signing` CC wrapper does not yet carry the appearance seam), with a clear `422` — never
+/// silently dropped, and nothing signed.
+#[tokio::test]
+async fn cc_sign_rejects_visible_seal_not_yet_available_on_cc_path() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({
+                "seal": {
+                    "invisible": false,
+                    "page": 0,
+                    "x": 72.0,
+                    "y": 700.0,
+                    "w": 180.0,
+                    "h": 48.0,
+                    "template": { "kind": "signed_by", "heading": "Assinado por", "name": "Amélia Marques", "date": "2026-07-12" }
+                }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "visible seal on CC path → honest 422: {err}"
+    );
+    assert!(
+        err["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("selo visível ainda não está disponível"),
+        "honest not-yet-available message: {err}"
+    );
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
+/// An explicitly *invisible* seal (the backward-compatible default shape) is ignored: the CC signature
+/// proceeds exactly as with no `seal` field at all, producing a validating signed artifact.
+#[tokio::test]
+async fn cc_sign_ignores_explicit_invisible_seal() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let issuer = card.issuer_cert_der.clone();
+    let factory = provider_factory(card, Some(issuer));
+    let state = state_at(&dir.0, Some(factory), true, true);
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, done) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({
+                "capacity": "Administrador",
+                "seal": { "invisible": true, "w": 0.0, "h": 0.0 }
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "invisible seal is ignored, signing proceeds: {done}"
+    );
+    let (_, view) = send(
+        &state,
+        get_req(&format!("/v1/acts/{act_id}/signature"), &token),
+    )
+    .await;
+    assert_eq!(view["status"], "signed");
+}

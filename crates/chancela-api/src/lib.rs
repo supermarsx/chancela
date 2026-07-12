@@ -103,6 +103,7 @@ mod hex;
 mod law;
 mod ledger;
 mod ledger_filter;
+mod ltv;
 mod notifications;
 mod paper_import;
 mod password_policy;
@@ -1330,6 +1331,14 @@ pub fn router(state: AppState) -> Router {
             post(signature::append_archive_timestamp).layer(DefaultBodyLimit::max(
                 signature::ARCHIVE_TIMESTAMP_APPEND_ENVELOPE_BYTES,
             )),
+        )
+        .route(
+            "/v1/acts/{id}/signature/ltv/execute",
+            post(ltv::execute_ltv).layer(DefaultBodyLimit::max(ltv::LTV_REQUEST_ENVELOPE_BYTES)),
+        )
+        .route(
+            "/v1/acts/{id}/signature/ltv/renew",
+            post(ltv::renew_ltv).layer(DefaultBodyLimit::max(ltv::LTV_REQUEST_ENVELOPE_BYTES)),
         )
         .route(
             "/v1/acts/{id}/signature/remote/{provider}/initiate",
